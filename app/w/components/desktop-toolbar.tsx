@@ -2,6 +2,37 @@
 
 import { useState } from 'react'
 import { ToolbarTabs } from './toolbar-tabs'
+import { Block } from './block'
+
+const BLOCK_COLORS = {
+  agent: '#7F2FFF',
+  api: '#2F55FF',
+  conditional: '#FF972F',
+} as const
+
+const BASIC_BLOCKS = [
+  {
+    type: 'agent',
+    title: 'Agent',
+    description: 'Use any LLM',
+    imagePath: '/blocks/agent.svg',
+    bgColor: BLOCK_COLORS.agent,
+  },
+  {
+    type: 'api',
+    title: 'API',
+    description: 'Connect to any API',
+    imagePath: '/blocks/api.svg',
+    bgColor: BLOCK_COLORS.api,
+  },
+  {
+    type: 'conditional',
+    title: 'Conditional',
+    description: 'Create branching logic',
+    imagePath: '/blocks/conditional.svg',
+    bgColor: BLOCK_COLORS.conditional,
+  },
+] as const
 
 export function DesktopToolbar() {
   const [activeTab, setActiveTab] = useState<'basic' | 'advanced'>('basic')
@@ -12,9 +43,10 @@ export function DesktopToolbar() {
 
       <div className="p-4">
         {activeTab === 'basic' ? (
-          <div>
-            {/* Basic tab content */}
-            Basic Content Here
+          <div className="flex flex-col gap-3">
+            {BASIC_BLOCKS.map((block) => (
+              <Block key={block.type} {...block} />
+            ))}
           </div>
         ) : (
           <div>
