@@ -15,8 +15,26 @@ export function Block({
   type,
   bgColor,
 }: BlockProps) {
+  const handleDragStart = (e: React.DragEvent) => {
+    // Pass block data as JSON string
+    e.dataTransfer.setData(
+      'application/json',
+      JSON.stringify({
+        type,
+        title,
+        description,
+        imagePath,
+        bgColor,
+      })
+    )
+  }
+
   return (
-    <div className="group flex items-center gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 cursor-pointer">
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      className="group flex items-center gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing"
+    >
       <div
         className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg"
         style={{ backgroundColor: bgColor }}

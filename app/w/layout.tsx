@@ -24,19 +24,9 @@ import {
   SheetTrigger,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb'
-import { SearchInput } from './components/search'
-import { User } from './components/user'
 import Image from 'next/image'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DesktopToolbar } from './components/desktop-toolbar'
+import { WorkflowControlBar } from './components/workflow-control-bar'
 
 export default function WorkspaceLayout({
   children,
@@ -49,12 +39,15 @@ export default function WorkspaceLayout({
         <div className="flex">
           <DesktopNav />
           <DesktopToolbar />
+          <div className="fixed top-0 left-[344px] right-0 z-30">
+            <WorkflowControlBar />
+          </div>
         </div>
-        <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-[344px]">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
+        <div className="flex flex-col sm:gap-4 sm:pt-[56px] sm:pl-[344px]">
+          <header className="sticky top-0 z-30 flex h-14 items-center border-b bg-background sm:static sm:hidden">
             <MobileNav />
           </header>
-          <main className="grid flex-1 items-start gap-2 p-4 sm:px-6 sm:py-0 md:gap-4 bg-muted/40">
+          <main className="grid flex-1 items-start gap-2 sm:py-0 md:gap-4 bg-muted/40">
             {children}
           </main>
         </div>

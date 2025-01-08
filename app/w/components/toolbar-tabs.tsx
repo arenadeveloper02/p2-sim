@@ -12,7 +12,7 @@ export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
         <button
           onClick={() => onTabChange('basic')}
           className={`text-sm font-medium transition-colors hover:text-black ${
-            activeTab === 'basic' ? 'text-black' : 'text-gray-500'
+            activeTab === 'basic' ? 'text-black' : 'text-muted-foreground'
           }`}
         >
           Basic
@@ -20,7 +20,7 @@ export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
         <button
           onClick={() => onTabChange('advanced')}
           className={`text-sm font-medium transition-colors hover:text-black ${
-            activeTab === 'advanced' ? 'text-black' : 'text-gray-500'
+            activeTab === 'advanced' ? 'text-black' : 'text-muted-foreground'
           }`}
         >
           Advanced
@@ -28,7 +28,7 @@ export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
       </div>
 
       <div className="relative mt-2">
-        <div className="absolute bottom-0 h-[1px] w-full bg-gray-200" />
+        <div className="absolute bottom-0 h-[1px] w-full bg-[#E2E8F0]" />
         <div
           className="absolute bottom-0 h-[1.5px] bg-black transition-transform duration-200"
           style={{
