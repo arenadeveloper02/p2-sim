@@ -1,29 +1,28 @@
-import Image from 'next/image'
+import { AgentIcon, ApiIcon, ConditionalIcon } from '@/components/icons'
 
 export interface BlockProps {
   title: string
   description: string
-  imagePath: string
   type: 'agent' | 'api' | 'conditional'
   bgColor: string
 }
 
-export function Block({
-  title,
-  description,
-  imagePath,
-  type,
-  bgColor,
-}: BlockProps) {
+const BLOCK_ICONS = {
+  agent: AgentIcon,
+  api: ApiIcon,
+  conditional: ConditionalIcon,
+} as const
+
+export function Block({ title, description, type, bgColor }: BlockProps) {
+  const Icon = BLOCK_ICONS[type]
+
   const handleDragStart = (e: React.DragEvent) => {
-    // Pass block data as JSON string
     e.dataTransfer.setData(
       'application/json',
       JSON.stringify({
         type,
         title,
         description,
-        imagePath,
         bgColor,
       })
     )
@@ -39,12 +38,10 @@ export function Block({
         className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg"
         style={{ backgroundColor: bgColor }}
       >
-        <Image
-          src={imagePath}
-          alt={`${title} icon`}
-          width={22}
-          height={22}
-          className="transition-transform duration-200 group-hover:scale-110"
+        <Icon
+          className={`text-white transition-transform duration-200 group-hover:scale-110 ${
+            type === 'agent' ? 'w-[24px] h-[24px]' : 'w-[22px] h-[22px]'
+          }`}
         />
       </div>
       <div className="flex flex-col gap-1">

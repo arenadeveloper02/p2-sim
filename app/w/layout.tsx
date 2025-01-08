@@ -27,6 +27,7 @@ import {
 import Image from 'next/image'
 import { DesktopToolbar } from './components/desktop-toolbar'
 import { WorkflowControlBar } from './components/workflow-control-bar'
+import { AgentIcon } from '@/components/icons'
 
 export default function WorkspaceLayout({
   children,
@@ -64,13 +65,7 @@ function DesktopNav() {
           href="#"
           className="group flex h-8 w-8 items-center justify-center rounded-lg bg-[#7F2FFF]"
         >
-          <Image
-            src="/logo.svg"
-            alt="Sim Studio"
-            width={20}
-            height={20}
-            className="transition-all group-hover:scale-110 -translate-y-[0.5px]"
-          />
+          <AgentIcon className="text-white transition-all group-hover:scale-110 -translate-y-[0.5px] w-5 h-5" />
           <span className="sr-only">Sim Studio</span>
         </Link>
 

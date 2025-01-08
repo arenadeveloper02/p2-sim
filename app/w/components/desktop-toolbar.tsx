@@ -15,21 +15,18 @@ const BASIC_BLOCKS = [
     type: 'agent',
     title: 'Agent',
     description: 'Use any LLM',
-    imagePath: '/blocks/agent.svg',
     bgColor: BLOCK_COLORS.agent,
   },
   {
     type: 'api',
     title: 'API',
     description: 'Connect to any API',
-    imagePath: '/blocks/api.svg',
     bgColor: BLOCK_COLORS.api,
   },
   {
     type: 'conditional',
     title: 'Conditional',
     description: 'Create branching logic',
-    imagePath: '/blocks/conditional.svg',
     bgColor: BLOCK_COLORS.conditional,
   },
 ] as const
