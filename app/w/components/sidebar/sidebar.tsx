@@ -1,16 +1,6 @@
 import Link from 'next/link'
 import { NavItem } from './nav-item'
-import {
-  Home,
-  ShoppingCart,
-  Package,
-  Users2,
-  LineChart,
-  Settings,
-  PanelLeft,
-  Package2,
-  Plus,
-} from 'lucide-react'
+import { Settings, Plus } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,

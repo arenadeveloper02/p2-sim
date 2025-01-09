@@ -1,7 +1,7 @@
 import Providers from './providers'
 import { Toolbar } from './components/toolbar/toolbar'
 import { ControlBar } from './components/control-bar'
-import { Sidebar } from './components/sidebar'
+import { Sidebar } from './components/sidebar/sidebar'
 
 export default function WorkspaceLayout({
   children,
