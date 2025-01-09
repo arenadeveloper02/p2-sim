@@ -1,21 +1,14 @@
-import { AgentIcon, ApiIcon, ConditionalIcon } from '@/components/icons'
+import type { BlockConfig } from './blocks'
 
-export interface BlockProps {
-  title: string
-  description: string
-  type: 'agent' | 'api' | 'conditional'
-  bgColor: string
-}
+export type BlockProps = BlockConfig
 
-const BLOCK_ICONS = {
-  agent: AgentIcon,
-  api: ApiIcon,
-  conditional: ConditionalIcon,
-} as const
-
-export function Block({ title, description, type, bgColor }: BlockProps) {
-  const Icon = BLOCK_ICONS[type]
-
+export function Block({
+  title,
+  description,
+  type,
+  bgColor,
+  icon: Icon,
+}: BlockProps) {
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(
       'application/json',
@@ -32,7 +25,7 @@ export function Block({ title, description, type, bgColor }: BlockProps) {
     <div
       draggable
       onDragStart={handleDragStart}
-      className="group flex items-center gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing"
+      className="group flex items-center gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 cursor-pointer active:cursor-grabbing"
     >
       <div
         className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg"

@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { History, Bell, Play } from 'lucide-react'
 
-export function WorkflowControlBar() {
+export function ControlBar() {
   return (
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b">
       {/* Left Section - Workflow Info */}
@@ -24,7 +24,7 @@ export function WorkflowControlBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon">
-              <History className="h-5 w-5" />
+              <History />
               <span className="sr-only">Version History</span>
             </Button>
           </DropdownMenuTrigger>
@@ -37,7 +37,7 @@ export function WorkflowControlBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon">
-              <Bell className="h-5 w-5" />
+              <Bell />
               <span className="sr-only">Notifications</span>
             </Button>
           </DropdownMenuTrigger>

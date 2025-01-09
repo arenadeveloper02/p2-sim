@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { BlockProps } from '../components/block'
+import { BlockProps } from '../components/block/block'
 
 const ZOOM_SPEED = 0.005
 const MIN_ZOOM = 0.5
