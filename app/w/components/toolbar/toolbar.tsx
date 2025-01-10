@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ToolbarTabs } from './toolbar-tabs'
-import { Block } from '../block/block'
+import { ToolbarBlock } from '../block/toolbar-block'
 import { BLOCKS } from '../block/blocks'
 
 export function Toolbar() {
@@ -14,9 +14,13 @@ export function Toolbar() {
 
       <div className="p-4">
         <div className="flex flex-col gap-3">
-          {BLOCKS.filter((block) => block.category === activeTab).map(
+          {BLOCKS.filter((block) => block.toolbar.category === activeTab).map(
             (block) => (
-              <Block key={block.type} {...block} />
+              <ToolbarBlock
+                key={block.type}
+                type={block.type}
+                toolbar={block.toolbar}
+              />
             )
           )}
         </div>

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { BlockProps } from '../components/block/block'
+import { BlockConfig, BLOCKS } from '../components/block/blocks'
+import { WorkflowBlock } from '../components/block/workflow-block'
 
 const ZOOM_SPEED = 0.005
 const MIN_ZOOM = 0.5
@@ -10,7 +11,12 @@ const CANVAS_SIZE = 5000 // 5000px x 5000px virtual canvas
 
 export default function Workflow() {
   const [blocks, setBlocks] = useState<
-    (BlockProps & { id: string; position: { x: number; y: number } })[]
+    {
+      id: string
+      position: { x: number; y: number }
+      type: string
+      config: BlockConfig
+    }[]
   >([])
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -62,7 +68,7 @@ export default function Workflow() {
     try {
       const blockData = JSON.parse(
         e.dataTransfer.getData('application/json')
-      ) as BlockProps
+      ) as BlockConfig
 
       // Get the canvas element's bounding rectangle
       const rect = e.currentTarget.getBoundingClientRect()
@@ -77,7 +83,7 @@ export default function Workflow() {
       const x = mouseX / zoom
       const y = mouseY / zoom
 
-      setBlocks((prev) => [
+      setBlocks((prev: any) => [
         ...prev,
         {
           ...blockData,
@@ -194,23 +200,20 @@ export default function Workflow() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {blocks.map((block) => (
-          <div
-            key={block.id}
-            style={{
-              position: 'absolute',
-              left: `${block.position.x}px`,
-              top: `${block.position.y}px`,
-              transform: 'translate(-50%, -50%)',
-              backgroundColor: block.bgColor,
-              width: '160px', // 40 * 4 (w-40)
-              height: '80px', // 20 * 4 (h-20)
-              borderRadius: '8px', // rounded-lg
-              cursor: 'move',
-              userSelect: 'none',
-            }}
-          />
-        ))}
+        {blocks.map((block, index) => {
+          const blockConfig =
+            BLOCKS.find((b) => b.type === block.type) || block.config
+          return (
+            <WorkflowBlock
+              key={block.id}
+              id={block.id}
+              type={block.type}
+              position={block.position}
+              config={blockConfig}
+              name={`${blockConfig.toolbar.title} ${index + 1}`}
+            />
+          )
+        })}
       </div>
     </div>
   )
