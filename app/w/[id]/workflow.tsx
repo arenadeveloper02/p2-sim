@@ -23,7 +23,6 @@ export default function Workflow() {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const [startPanPos, setStartPanPos] = useState({ x: 0, y: 0 })
-  const [draggedBlock, setDraggedBlock] = useState<string | null>(null)
 
   // Initialize pan position after mount
   useEffect(() => {
