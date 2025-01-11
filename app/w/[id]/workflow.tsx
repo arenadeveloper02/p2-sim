@@ -23,6 +23,7 @@ export default function Workflow() {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const [startPanPos, setStartPanPos] = useState({ x: 0, y: 0 })
+  const [draggedBlock, setDraggedBlock] = useState<string | null>(null)
 
   // Initialize pan position after mount
   useEffect(() => {
@@ -178,6 +179,18 @@ export default function Workflow() {
     return () => document.removeEventListener('wheel', preventDefaultZoom)
   }, [])
 
+  // Add this new function to handle block position updates
+  const updateBlockPosition = useCallback(
+    (id: string, newPosition: { x: number; y: number }) => {
+      setBlocks((prevBlocks) =>
+        prevBlocks.map((block) =>
+          block.id === id ? { ...block, position: newPosition } : block
+        )
+      )
+    },
+    []
+  )
+
   return (
     <div
       className="w-full h-[calc(100vh-56px)] overflow-hidden"
@@ -208,6 +221,8 @@ export default function Workflow() {
             position={block.position}
             config={block.config}
             name={`${block.config.toolbar.title} ${index + 1}`}
+            onPositionUpdate={updateBlockPosition}
+            zoom={zoom}
           />
         ))}
       </div>
