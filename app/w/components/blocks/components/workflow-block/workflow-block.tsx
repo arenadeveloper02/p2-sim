@@ -67,7 +67,7 @@ export function WorkflowBlock({
         <span className="font-medium text-md">{name}</span>
       </div>
 
-      <div className="px-4 pt-2 pb-4 space-y-4">
+      <div className="px-4 pt-3 pb-4 space-y-4">
         {subBlockRows.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`} className="flex gap-4">
             {row.map((subBlock, blockIndex) => (
