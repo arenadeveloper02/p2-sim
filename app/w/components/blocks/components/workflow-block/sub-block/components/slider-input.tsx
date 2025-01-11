@@ -30,13 +30,11 @@ export function SliderInput({
           left: `clamp(0%, ${
             ((sliderValue - min) / (max - min)) * 100
           }%, 100%)`,
-          transform: `translateX(-${
-            ((sliderValue - min) / (max - min)) * 100 === 0
-              ? 0
-              : ((sliderValue - min) / (max - min)) * 100 === 100
-              ? 100
-              : 50
-          }%)`,
+          transform: `translateX(-${(() => {
+            const percentage = ((sliderValue - min) / (max - min)) * 100
+            const bias = -25 * Math.sin((percentage * Math.PI) / 50)
+            return percentage === 0 ? 0 : percentage === 100 ? 100 : 50 + bias
+          })()}%)`,
           top: '24px',
         }}
       >
