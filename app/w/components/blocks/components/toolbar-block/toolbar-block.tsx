@@ -1,13 +1,15 @@
-import type { BlockConfig } from './blocks'
+import type { BlockConfig } from '../../types/block'
 
 export type ToolbarBlockProps = {
-  type: string
-  toolbar: BlockConfig['toolbar']
+  config: BlockConfig
 }
 
-export function ToolbarBlock({ type, toolbar }: ToolbarBlockProps) {
+export function ToolbarBlock({ config }: ToolbarBlockProps) {
   const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({ type }))
+    e.dataTransfer.setData(
+      'application/json',
+      JSON.stringify({ type: config.type })
+    )
   }
 
   return (
@@ -18,17 +20,19 @@ export function ToolbarBlock({ type, toolbar }: ToolbarBlockProps) {
     >
       <div
         className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg"
-        style={{ backgroundColor: toolbar.bgColor }}
+        style={{ backgroundColor: config.toolbar.bgColor }}
       >
-        <toolbar.icon
+        <config.toolbar.icon
           className={`text-white transition-transform duration-200 group-hover:scale-110 ${
-            type === 'agent' ? 'w-[24px] h-[24px]' : 'w-[22px] h-[22px]'
+            config.type === 'agent' ? 'w-[24px] h-[24px]' : 'w-[22px] h-[22px]'
           }`}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <h3 className="font-medium leading-none">{toolbar.title}</h3>
-        <p className="text-sm text-muted-foreground">{toolbar.description}</p>
+        <h3 className="font-medium leading-none">{config.toolbar.title}</h3>
+        <p className="text-sm text-muted-foreground">
+          {config.toolbar.description}
+        </p>
       </div>
     </div>
   )

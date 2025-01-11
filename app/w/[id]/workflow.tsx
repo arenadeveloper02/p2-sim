@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { BlockConfig, BLOCKS } from '../components/block/blocks'
-import { WorkflowBlock } from '../components/block/workflow-block'
+import { BlockConfig } from '../components/blocks/types/block'
+import { WorkflowBlock } from '../components/blocks/components/workflow-block/workflow-block'
+import { getBlock } from '../components/blocks/configs'
+
+interface WorkflowBlock {
+  id: string
+  type: string
+  position: { x: number; y: number }
+  config: BlockConfig
+}
 
 const ZOOM_SPEED = 0.005
 const MIN_ZOOM = 0.5
@@ -10,14 +18,7 @@ const MAX_ZOOM = 2
 const CANVAS_SIZE = 5000 // 5000px x 5000px virtual canvas
 
 export default function Workflow() {
-  const [blocks, setBlocks] = useState<
-    {
-      id: string
-      position: { x: number; y: number }
-      type: string
-      config: BlockConfig
-    }[]
-  >([])
+  const [blocks, setBlocks] = useState<WorkflowBlock[]>([])
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -66,29 +67,28 @@ export default function Workflow() {
     e.preventDefault()
 
     try {
-      const blockData = JSON.parse(
-        e.dataTransfer.getData('application/json')
-      ) as BlockConfig
+      const { type } = JSON.parse(e.dataTransfer.getData('application/json'))
+      const blockConfig = getBlock(type)
 
-      // Get the canvas element's bounding rectangle
+      if (!blockConfig) {
+        console.error('Invalid block type:', type)
+        return
+      }
+
       const rect = e.currentTarget.getBoundingClientRect()
-
-      // Calculate the drop position in canvas coordinates
-      // 1. Get the mouse position relative to the canvas element
-      // 2. Remove the pan offset (scaled by zoom)
-      // 3. Scale by zoom to get true canvas coordinates
       const mouseX = e.clientX - rect.left
       const mouseY = e.clientY - rect.top
 
       const x = mouseX / zoom
       const y = mouseY / zoom
 
-      setBlocks((prev: any) => [
+      setBlocks((prev) => [
         ...prev,
         {
-          ...blockData,
           id: crypto.randomUUID(),
+          type,
           position: { x, y },
+          config: blockConfig,
         },
       ])
     } catch (err) {
@@ -200,20 +200,16 @@ export default function Workflow() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {blocks.map((block, index) => {
-          const blockConfig =
-            BLOCKS.find((b) => b.type === block.type) || block.config
-          return (
-            <WorkflowBlock
-              key={block.id}
-              id={block.id}
-              type={block.type}
-              position={block.position}
-              config={blockConfig}
-              name={`${blockConfig.toolbar.title} ${index + 1}`}
-            />
-          )
-        })}
+        {blocks.map((block, index) => (
+          <WorkflowBlock
+            key={block.id}
+            id={block.id}
+            type={block.type}
+            position={block.position}
+            config={block.config}
+            name={`${block.config.toolbar.title} ${index + 1}`}
+          />
+        ))}
       </div>
     </div>
   )

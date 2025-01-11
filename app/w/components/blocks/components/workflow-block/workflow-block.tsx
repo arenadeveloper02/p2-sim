@@ -1,7 +1,7 @@
 import { Card } from '@/components/ui/card'
-import { BlockConfig, SubBlockConfig } from './blocks'
+import { BlockConfig, SubBlockConfig } from '../../types/block'
 import { cn } from '@/lib/utils'
-import { SubBlock } from './sub-block'
+import { SubBlock } from './sub-block/sub-block'
 
 export interface WorkflowBlockProps {
   id: string
@@ -69,7 +69,7 @@ export function WorkflowBlock({
 
       <div className="px-4 pt-2 pb-4 space-y-4">
         {subBlockRows.map((row, rowIndex) => (
-          <div key={`row-${rowIndex}`} className="flex gap-2">
+          <div key={`row-${rowIndex}`} className="flex gap-4">
             {row.map((subBlock, blockIndex) => (
               <div
                 key={`${id}-${rowIndex}-${blockIndex}`}
