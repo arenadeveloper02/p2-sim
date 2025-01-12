@@ -212,18 +212,25 @@ export default function Workflow() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {blocks.map((block, index) => (
-          <WorkflowBlock
-            key={block.id}
-            id={block.id}
-            type={block.type}
-            position={block.position}
-            config={block.config}
-            name={`${block.config.toolbar.title} ${index + 1}`}
-            onPositionUpdate={updateBlockPosition}
-            zoom={zoom}
-          />
-        ))}
+        {blocks.map((block, index) => {
+          // Count how many blocks of this type appear before the current index
+          const typeCount = blocks
+            .slice(0, index + 1)
+            .filter((b) => b.type === block.type).length
+
+          return (
+            <WorkflowBlock
+              key={block.id}
+              id={block.id}
+              type={block.type}
+              position={block.position}
+              config={block.config}
+              name={`${block.config.toolbar.title} ${typeCount}`}
+              onPositionUpdate={updateBlockPosition}
+              zoom={zoom}
+            />
+          )
+        })}
       </div>
     </div>
   )
