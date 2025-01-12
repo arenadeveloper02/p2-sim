@@ -41,7 +41,7 @@ export const ApiBlock: BlockConfig = {
       },
       {
         title: 'Body',
-        type: 'long-input',
+        type: 'code',
         layout: 'full',
       },
     ],

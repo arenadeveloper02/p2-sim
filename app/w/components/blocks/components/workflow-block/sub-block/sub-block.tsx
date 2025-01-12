@@ -5,6 +5,7 @@ import { LongInput } from './components/long-input'
 import { Dropdown } from './components/dropdown'
 import { SliderInput } from './components/slider-input'
 import { Table } from './components/table'
+import { Code } from './components/code'
 
 interface SubBlockProps {
   config: SubBlockConfig
@@ -39,6 +40,8 @@ export function SubBlock({ config }: SubBlockProps) {
         )
       case 'table':
         return <Table columns={config.columns ?? []} />
+      case 'code':
+        return <Code />
       default:
         return null
     }
