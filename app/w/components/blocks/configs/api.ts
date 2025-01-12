@@ -35,8 +35,9 @@ export const ApiBlock: BlockConfig = {
       },
       {
         title: 'Headers',
-        type: 'long-input',
+        type: 'table',
         layout: 'full',
+        columns: ['Key', 'Value'],
       },
       {
         title: 'Body',

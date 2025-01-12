@@ -29,7 +29,7 @@ export const AgentBlock: BlockConfig = {
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
-        options: ['GPT-4', 'GPT-3.5', 'Claude', 'Gemini'],
+        options: ['GPT-4o', 'Gemini 2.0', 'Gemini 1.5 Pro', 'DeepSeek V3', 'Grok 2'],
       },
       {
         title: 'Temperature',
