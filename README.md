@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sim Studio
+
+<p align="center">
+  <!-- You can add your logo here -->
+  <h3 align="center">Next-Generation API Workflow Testing Platform</h3>
+</p>
+
+## Overview
+
+Sim Studio is an open-source, drag-and-drop workflow builder designed specifically for developers to test and simulate API workflows. Think of it as Postman evolved - with a focus on visual workflow creation, real-time testing, and developer experience.
+
+### Key Features
+
+- 🎨 **Visual Workflow Builder** - Intuitive drag-and-drop interface for creating complex API workflows
+- ⚡ **Fast & Responsive** - Built with performance in mind using Next.js
+- 🔄 **Real-time Testing** - Instant feedback as you build and modify your workflows
+- 🛠️ **Developer-First** - Created by developers, for developers
+- 📱 **Modern UI/UX** - Clean, intuitive interface that stays out of your way
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18.0 or later
+- npm (Node Package Manager)
+
+### Installation
+
+1. Clone the repository
+
+```bash
+git clone https://github.com/yourusername/sim-studio.git
+cd sim-studio
+```
+
+2. Install dependencies
+
+```bash
+npm install
+```
+
+3. Start the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser to see Sim Studio in action
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Why Sim Studio?
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Easy to Use**: Visual workflow building that doesn't sacrifice power
+- **Fast**: Built on Next.js for optimal performance
+- **Reliable**: Robust testing capabilities you can trust
+- **Open Source**: Community-driven development and transparency
 
-## Learn More
+## Contributing
 
-To learn more about Next.js, take a look at the following resources:
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Deploy on Vercel
+## Support
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 📚 [Documentation](docs/README.md)
+- 💬 [Discord Community](your-discord-link)
+- 🐛 [Issue Tracker](issues)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Acknowledgments
+
+Built with [Next.js](https://nextjs.org/) and lots of ☕
+
+---
+
+<p align="center">Made with ❤️ by the Sim Studio Team</p>
