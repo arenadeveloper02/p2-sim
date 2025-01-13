@@ -80,6 +80,8 @@ export function Code() {
   const contentWrapperRef = useRef<HTMLDivElement>(null)
   const [contentWidth, setContentWidth] = useState(0)
   const [maxLineWidth, setMaxLineWidth] = useState(0)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!contentWrapperRef.current) return
@@ -91,6 +93,19 @@ export function Code() {
     })
 
     resizeObserver.observe(contentWrapperRef.current)
+    return () => resizeObserver.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+
+    resizeObserver.observe(containerRef.current)
     return () => resizeObserver.disconnect()
   }, [])
 
@@ -539,6 +554,7 @@ export function Code() {
 
   return (
     <div
+      ref={containerRef}
       className="font-mono text-sm border rounded-md overflow-hidden relative"
       onWheel={handleScroll}
     >
@@ -553,7 +569,11 @@ export function Code() {
           className="overflow-auto scrollbar-hide h-full"
           onScroll={handleContainerScroll}
           style={{
-            maxWidth: `${Math.max(maxLineWidth + 35, contentWidth)}px`,
+            maxWidth: `${Math.max(
+              maxLineWidth + 35,
+              contentWidth,
+              containerWidth
+            )}px`,
           }}
         >
           <div ref={contentWrapperRef} className="w-fit">
@@ -562,7 +582,11 @@ export function Code() {
                 key={line.id}
                 className="flex pl-8 w-fit"
                 style={{
-                  width: `${Math.max(maxLineWidth + 35, contentWidth)}px`,
+                  width: `${Math.max(
+                    maxLineWidth + 35,
+                    contentWidth,
+                    containerWidth
+                  )}px`,
                 }}
               >
                 <textarea
