@@ -1,8 +1,9 @@
 import { Card } from '@/components/ui/card'
 import { BlockConfig, SubBlockConfig } from '../../types/block'
 import { cn } from '@/lib/utils'
-import { SubBlock } from './sub-block/sub-block'
+import { SubBlock } from './components/sub-block/sub-block'
 import { useCallback, useState, MouseEvent, useEffect } from 'react'
+import { ConnectionPoint } from './components/connection/connection-point'
 
 export interface WorkflowBlockProps {
   id: string
@@ -109,7 +110,7 @@ export function WorkflowBlock({
   return (
     <Card
       className={cn(
-        'absolute w-[320px] shadow-md cursor-move select-none',
+        'absolute w-[320px] shadow-md cursor-move select-none group',
         'transform -translate-x-1/2 -translate-y-1/2',
         isDragging && 'pointer-events-none'
       )}
@@ -119,6 +120,8 @@ export function WorkflowBlock({
       }}
       onMouseDown={handleMouseDown}
     >
+      <ConnectionPoint position="top" />
+
       <div className="flex items-center gap-3 p-3 border-b">
         <div
           className="flex items-center justify-center w-7 h-7 rounded"
@@ -146,6 +149,8 @@ export function WorkflowBlock({
           </div>
         ))}
       </div>
+
+      <ConnectionPoint position="bottom" />
     </Card>
   )
 }
