@@ -29,7 +29,7 @@ Sim Studio is an open-source, drag-and-drop workflow builder designed specifical
 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/sim-studio.git
+git clone https://github.com/emir-karabeg/sim.git
 cd sim-studio
 ```
 
