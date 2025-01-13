@@ -2,7 +2,7 @@
 
 <p align="center">
   <!-- You can add your logo here -->
-  <h3 align="center">AI Workflow Testing Platform</h3>
+  <h3 align="center">Agent Workflow Testing Platform</h3>
 </p>
 
 ## Overview
