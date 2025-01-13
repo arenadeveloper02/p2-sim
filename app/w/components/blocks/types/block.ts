@@ -15,6 +15,8 @@ export interface SubBlockConfig {
   max?: number
   layout?: SubBlockLayout
   columns?: string[]
+  placeholder?: string
+  password?: boolean
 }
 
 export interface BlockConfig {

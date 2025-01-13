@@ -19,7 +19,10 @@ export function SubBlock({ config }: SubBlockProps) {
   const renderInput = () => {
     switch (config.type) {
       case 'short-input':
-        return <ShortInput />
+        return <ShortInput 
+          placeholder={config.placeholder ?? ''} 
+          password={config.password}
+        />
       case 'long-input':
         return <LongInput />
       case 'dropdown':

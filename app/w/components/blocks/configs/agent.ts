@@ -29,7 +29,7 @@ export const AgentBlock: BlockConfig = {
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
-        options: ['GPT-4o', 'Gemini 2.0', 'Gemini 1.5 Pro', 'DeepSeek V3', 'Grok 2'],
+        options: ['GPT-4o', 'Gemini 2.0', 'Claude 3.5 Sonnet', 'DeepSeek V3', 'Grok 2'],
       },
       {
         title: 'Temperature',
@@ -38,6 +38,13 @@ export const AgentBlock: BlockConfig = {
         min: 0,
         max: 2,
       },
+      {
+        title: "API Key",
+        type: "short-input",
+        layout: "full",
+        placeholder: "Enter your API key",
+        password: true
+      }
     ],
   },
 }
