@@ -118,6 +118,15 @@ export function Code() {
       const end = textarea.selectionEnd
       const currentContent = lines[currentLine].content
 
+      // Check if cursor is before a matching closing character
+      if (start === end && currentContent[start] === closingChar) {
+        // Just move the cursor past the existing closing character
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + 1
+        }, 0)
+        return true
+      }
+
       // Handle selected text - wrap it in brackets/quotes
       if (start !== end) {
         const selectedText = currentContent.substring(start, end)
