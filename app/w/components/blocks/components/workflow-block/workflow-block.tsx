@@ -109,7 +109,7 @@ export function WorkflowBlock({
   return (
     <Card
       className={cn(
-        'absolute w-[320px] shadow-md cursor-move',
+        'absolute w-[320px] shadow-md cursor-move select-none',
         'transform -translate-x-1/2 -translate-y-1/2',
         isDragging && 'pointer-events-none'
       )}

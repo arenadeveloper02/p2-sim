@@ -192,7 +192,7 @@ export default function Workflow() {
 
   return (
     <div
-      className="w-full h-[calc(100vh-56px)] overflow-hidden"
+      className="w-full h-[calc(100vh-56px)] overflow-hidden select-none"
       onWheel={handleWheel}
     >
       <div

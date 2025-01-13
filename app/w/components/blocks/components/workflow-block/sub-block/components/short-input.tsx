@@ -2,7 +2,7 @@ import { Input } from '@/components/ui/input'
 import { useState } from 'react'
 
 interface ShortInputProps {
-  placeholder: string
+  placeholder?: string
   password?: boolean
 }
 
@@ -13,7 +13,7 @@ export function ShortInput({ placeholder, password }: ShortInputProps) {
   return (
     <Input
       className="w-full"
-      placeholder={placeholder}
+      placeholder={placeholder ?? ''}
       type={password && !isFocused ? 'password' : 'text'}
       value={value}
       onChange={(e) => setValue(e.target.value)}
