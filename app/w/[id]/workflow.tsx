@@ -23,15 +23,21 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { getBlock } from '../components/blocks/configs'
 import { WorkflowBlock } from '../components/blocks/components/workflow-block/workflow-block'
+import { BlockConfig } from '../components/blocks/types/block'
+import { BlockType } from '../components/blocks/types/block'
 
-// Types
+/**
+ * Represents the data structure for a workflow node
+ */
 interface WorkflowNodeData {
-  type: string
-  config: any // Consider adding a proper type for config
+  type: BlockType // Updated to use the proper type from block.ts
+  config: BlockConfig // Updated to use the proper type
   name: string
 }
 
-// Node Components
+/**
+ * Custom node component for rendering workflow blocks
+ */
 const WorkflowNode = ({
   data,
   id,
@@ -47,11 +53,9 @@ const WorkflowNode = ({
   />
 )
 
-const nodeTypes: NodeTypes = {
-  workflowBlock: WorkflowNode,
-}
-
-// Add this custom edge component
+/**
+ * Custom edge component with animated dashed line styling
+ */
 const CustomEdge = (props: EdgeProps) => {
   const [edgePath] = getSmoothStepPath({
     sourceX: props.sourceX,
@@ -75,34 +79,43 @@ const CustomEdge = (props: EdgeProps) => {
   )
 }
 
-const edgeTypes: EdgeTypes = {
-  custom: CustomEdge,
-}
+// Component type definitions
+const nodeTypes: NodeTypes = { workflowBlock: WorkflowNode }
+const edgeTypes: EdgeTypes = { custom: CustomEdge }
 
-// Main Canvas Component
+/**
+ * Main canvas component for the workflow editor
+ */
 function WorkflowCanvas() {
-  // State
+  // Flow state management
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { project } = useReactFlow()
 
-  // Handlers
+  /**
+   * Handles new edge connections between nodes
+   */
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
     [setEdges]
   )
 
+  /**
+   * Handles dropping new blocks onto the canvas
+   */
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault()
 
       try {
+        // Calculate drop position
         const reactFlowBounds = event.currentTarget.getBoundingClientRect()
         const position = project({
           x: event.clientX - reactFlowBounds.left,
           y: event.clientY - reactFlowBounds.top,
         })
 
+        // Get block configuration
         const { type } = JSON.parse(
           event.dataTransfer.getData('application/json')
         )
@@ -113,6 +126,7 @@ function WorkflowCanvas() {
           return
         }
 
+        // Create new node
         const newNode = {
           id: crypto.randomUUID(),
           type: 'workflowBlock',
@@ -134,20 +148,17 @@ function WorkflowCanvas() {
     [project, nodes, setNodes]
   )
 
+  // Keyframe animation styles
+  const keyframeStyles = `
+    @keyframes dashdraw {
+      from { stroke-dashoffset: 10; }
+      to { stroke-dashoffset: -10; }
+    }
+  `
+
   return (
     <div className="w-full h-[calc(100vh-56px)]">
-      <style>
-        {`
-          @keyframes dashdraw {
-            from {
-              stroke-dashoffset: 10;
-            }
-            to {
-              stroke-dashoffset: -10;
-            }
-          }
-        `}
-      </style>
+      <style>{keyframeStyles}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -158,11 +169,9 @@ function WorkflowCanvas() {
         onDrop={onDrop}
         onDragOver={(e) => e.preventDefault()}
         fitView
-        maxZoom={1.1}
+        maxZoom={1}
         panOnScroll
-        defaultEdgeOptions={{
-          type: 'custom',
-        }}
+        defaultEdgeOptions={{ type: 'custom' }}
         edgeTypes={edgeTypes}
         connectionLineStyle={{
           stroke: '#94a3b8',
@@ -179,6 +188,9 @@ function WorkflowCanvas() {
   )
 }
 
+/**
+ * Root workflow component wrapped with ReactFlow provider
+ */
 export default function Workflow() {
   return (
     <ReactFlowProvider>
