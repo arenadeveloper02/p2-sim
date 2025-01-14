@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { ToolbarTabs } from './toolbar-tabs'
-import { ToolbarBlock } from '../blocks/components/toolbar-block/toolbar-block'
-import { getBlocksByCategory, BlockCategory } from '../blocks'
+import { ToolbarBlock } from '../toolbar-block/toolbar-block'
+import { getBlocksByCategory, BlockCategory } from '../../../../blocks'
 
 export function Toolbar() {
   const [activeTab, setActiveTab] = useState<BlockCategory>('basic')

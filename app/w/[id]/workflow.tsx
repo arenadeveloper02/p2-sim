@@ -21,10 +21,10 @@ import ReactFlow, {
   getSmoothStepPath,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { getBlock } from '../components/blocks/configs'
-import { WorkflowBlock } from '../components/blocks/components/workflow-block/workflow-block'
-import { BlockConfig } from '../components/blocks/types/block'
-import { BlockType } from '../components/blocks/types/block'
+import { getBlock } from '../../../blocks/configs'
+import { WorkflowBlock } from '../components/workflow-block/workflow-block'
+import { BlockConfig } from '../../../blocks/types/block'
+import { BlockType } from '../../../blocks/types/block'
 
 /**
  * Represents the data structure for a workflow node
