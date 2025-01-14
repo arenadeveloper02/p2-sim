@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { BlockConfig } from '../components/blocks/types/block'
 import { WorkflowBlock } from '../components/blocks/components/workflow-block/workflow-block'
 import { getBlock } from '../components/blocks/configs'
+import { CoordinateTransformer } from '../lib/coordinates'
 
 interface WorkflowBlock {
   id: string
@@ -15,7 +16,7 @@ interface WorkflowBlock {
 const ZOOM_SPEED = 0.005
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2
-const CANVAS_SIZE = 5000 // 5000px x 5000px virtual canvas
+const CANVAS_SIZE = 5000
 
 export default function Workflow() {
   const [blocks, setBlocks] = useState<WorkflowBlock[]>([])
@@ -26,33 +27,28 @@ export default function Workflow() {
 
   // Initialize pan position after mount
   useEffect(() => {
-    const viewportWidth = window.innerWidth - 344 // Account for sidebar
-    const viewportHeight = window.innerHeight - 56 // Account for header
+    const { width, height } = CoordinateTransformer.getViewportDimensions()
     setPan({
-      x: (viewportWidth - CANVAS_SIZE) / 2,
-      y: (viewportHeight - CANVAS_SIZE) / 2,
+      x: (width - CANVAS_SIZE) / 2,
+      y: (height - CANVAS_SIZE) / 2,
     })
   }, [])
 
   const constrainPan = useCallback(
     (newPan: { x: number; y: number }, currentZoom: number) => {
-      // Calculate the visible area dimensions
-      const viewportWidth = window.innerWidth
-      const viewportHeight = window.innerHeight - 56 // Adjust for header height
+      const { width, height } = CoordinateTransformer.getViewportDimensions()
 
       // Calculate the scaled canvas size
       const scaledCanvasWidth = CANVAS_SIZE * currentZoom
       const scaledCanvasHeight = CANVAS_SIZE * currentZoom
 
       // Calculate the maximum allowed pan values
-      const maxX = 0
-      const minX = viewportWidth - scaledCanvasWidth
-      const maxY = 0
-      const minY = viewportHeight - scaledCanvasHeight
+      const minX = Math.min(0, width - scaledCanvasWidth)
+      const minY = Math.min(0, height - scaledCanvasHeight)
 
       return {
-        x: Math.min(maxX, Math.max(minX, newPan.x)),
-        y: Math.min(maxY, Math.max(minY, newPan.y)),
+        x: Math.min(0, Math.max(minX, newPan.x)),
+        y: Math.min(0, Math.max(minY, newPan.y)),
       }
     },
     []
@@ -75,19 +71,24 @@ export default function Workflow() {
         return
       }
 
-      const rect = e.currentTarget.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
+      const canvasElement = e.currentTarget as HTMLElement
+      const dropPoint = {
+        x: e.clientX,
+        y: e.clientY,
+      }
 
-      const x = mouseX / zoom
-      const y = mouseY / zoom
+      // Convert drop coordinates to canvas space
+      const canvasPoint = CoordinateTransformer.viewportToCanvas(
+        CoordinateTransformer.clientToViewport(dropPoint),
+        canvasElement
+      )
 
       setBlocks((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           type,
-          position: { x, y },
+          position: canvasPoint,
           config: blockConfig,
         },
       ])
@@ -98,12 +99,10 @@ export default function Workflow() {
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      // Prevent browser zooming
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault()
         const delta = -e.deltaY * ZOOM_SPEED
         setZoom((prevZoom) => {
-          // If we're at max/min zoom and trying to zoom further, return current zoom
           if (
             (prevZoom >= MAX_ZOOM && delta > 0) ||
             (prevZoom <= MIN_ZOOM && delta < 0)
@@ -114,12 +113,10 @@ export default function Workflow() {
             MAX_ZOOM,
             Math.max(MIN_ZOOM, prevZoom + delta)
           )
-          // Adjust pan when zooming to keep the point under cursor fixed
           setPan((prevPan) => constrainPan(prevPan, newZoom))
           return newZoom
         })
       } else {
-        // Regular scrolling for pan
         setPan((prevPan) =>
           constrainPan(
             {
@@ -137,9 +134,15 @@ export default function Workflow() {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button === 1 || e.button === 0) {
-        // Middle mouse or left click
         setIsPanning(true)
-        setStartPanPos({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+        const viewportPoint = CoordinateTransformer.clientToViewport({
+          x: e.clientX,
+          y: e.clientY,
+        })
+        setStartPanPos({
+          x: viewportPoint.x - pan.x,
+          y: viewportPoint.y - pan.y,
+        })
       }
     },
     [pan]
@@ -148,11 +151,15 @@ export default function Workflow() {
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (isPanning) {
+        const viewportPoint = CoordinateTransformer.clientToViewport({
+          x: e.clientX,
+          y: e.clientY,
+        })
         setPan((prevPan) =>
           constrainPan(
             {
-              x: e.clientX - startPanPos.x,
-              y: e.clientY - startPanPos.y,
+              x: viewportPoint.x - startPanPos.x,
+              y: viewportPoint.y - startPanPos.y,
             },
             zoom
           )
@@ -166,7 +173,6 @@ export default function Workflow() {
     setIsPanning(false)
   }, [])
 
-  // Add this useEffect to prevent browser zoom
   useEffect(() => {
     const preventDefaultZoom = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -178,7 +184,6 @@ export default function Workflow() {
     return () => document.removeEventListener('wheel', preventDefaultZoom)
   }, [])
 
-  // Add this new function to handle block position updates
   const updateBlockPosition = useCallback(
     (id: string, newPosition: { x: number; y: number }) => {
       setBlocks((prevBlocks) =>
@@ -213,7 +218,6 @@ export default function Workflow() {
         onDrop={handleDrop}
       >
         {blocks.map((block, index) => {
-          // Count how many blocks of this type appear before the current index
           const typeCount = blocks
             .slice(0, index + 1)
             .filter((b) => b.type === block.type).length

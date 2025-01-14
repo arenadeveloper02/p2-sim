@@ -54,6 +54,11 @@ export function WorkflowBlock({
 
   const handleMouseDown = useCallback(
     (e: MouseEvent) => {
+      // Don't handle drag if clicking on a connection point
+      if ((e.target as HTMLElement).closest('[data-connection-point]')) {
+        return
+      }
+
       e.stopPropagation()
       setIsDragging(true)
 
