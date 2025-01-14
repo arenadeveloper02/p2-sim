@@ -2,6 +2,7 @@ import { Card } from '@/components/ui/card'
 import { BlockConfig, SubBlockConfig } from '../../types/block'
 import { SubBlock } from './sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
+import { cn } from '@/lib/utils'
 
 interface WorkflowBlockProps {
   id: string
@@ -45,7 +46,13 @@ export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-white border-2 border-blue-500"
+        className={cn(
+          '!w-3 !h-3',
+          '!bg-white !rounded-full !border !border-gray-200',
+          '!opacity-0 group-hover:!opacity-100',
+          '!transition-opacity !duration-200 !cursor-crosshair',
+          'hover:!border-blue-500'
+        )}
       />
 
       <div className="flex items-center gap-3 p-3 border-b">
@@ -78,7 +85,13 @@ export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-white border-2 border-blue-500"
+        className={cn(
+          '!w-3 !h-3',
+          '!bg-white !rounded-full !border !border-gray-200',
+          '!opacity-0 group-hover:!opacity-100',
+          '!transition-opacity !duration-200 !cursor-crosshair',
+          'hover:!border-blue-500'
+        )}
       />
     </Card>
   )

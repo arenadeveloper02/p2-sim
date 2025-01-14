@@ -15,6 +15,7 @@ import ReactFlow, {
   XYPosition,
   useReactFlow,
   ReactFlowProvider,
+  ConnectionLineType,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { getBlock } from '../components/blocks/configs'
@@ -104,6 +105,18 @@ function WorkflowCanvas() {
 
   return (
     <div className="w-full h-[calc(100vh-56px)]">
+      <style>
+        {`
+          @keyframes dashdraw {
+            from {
+              stroke-dashoffset: 10;
+            }
+            to {
+              stroke-dashoffset: -10;
+            }
+          }
+        `}
+      </style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -114,8 +127,26 @@ function WorkflowCanvas() {
         onDrop={onDrop}
         onDragOver={(e) => e.preventDefault()}
         fitView
-        maxZoom={1}
+        maxZoom={1.1}
         panOnScroll
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+          style: {
+            stroke: '#94a3b8',
+            strokeWidth: 2,
+            strokeDasharray: '5',
+            strokeDashoffset: '0',
+            animation: 'dashdraw 1s linear infinite',
+          },
+        }}
+        connectionLineStyle={{
+          stroke: '#94a3b8',
+          strokeWidth: 2,
+          strokeDasharray: '5',
+          strokeDashoffset: '0',
+          animation: 'dashdraw 1s linear infinite',
+        }}
+        connectionLineType={ConnectionLineType.SmoothStep}
       >
         <Background />
       </ReactFlow>
