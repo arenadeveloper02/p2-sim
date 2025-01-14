@@ -16,6 +16,9 @@ import ReactFlow, {
   useReactFlow,
   ReactFlowProvider,
   ConnectionLineType,
+  BaseEdge,
+  EdgeProps,
+  getSmoothStepPath,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { getBlock } from '../components/blocks/configs'
@@ -46,6 +49,34 @@ const WorkflowNode = ({
 
 const nodeTypes: NodeTypes = {
   workflowBlock: WorkflowNode,
+}
+
+// Add this custom edge component
+const CustomEdge = (props: EdgeProps) => {
+  const [edgePath] = getSmoothStepPath({
+    sourceX: props.sourceX,
+    sourceY: props.sourceY,
+    targetX: props.targetX,
+    targetY: props.targetY,
+  })
+
+  return (
+    <BaseEdge
+      {...props}
+      path={edgePath}
+      style={{
+        stroke: props.selected ? '#475569' : '#94a3b8',
+        strokeWidth: 2,
+        strokeDasharray: '5',
+        strokeDashoffset: '0',
+        animation: 'dashdraw 1s linear infinite',
+      }}
+    />
+  )
+}
+
+const edgeTypes: EdgeTypes = {
+  custom: CustomEdge,
 }
 
 // Main Canvas Component
@@ -130,15 +161,9 @@ function WorkflowCanvas() {
         maxZoom={1.1}
         panOnScroll
         defaultEdgeOptions={{
-          type: 'smoothstep',
-          style: {
-            stroke: '#94a3b8',
-            strokeWidth: 2,
-            strokeDasharray: '5',
-            strokeDashoffset: '0',
-            animation: 'dashdraw 1s linear infinite',
-          },
+          type: 'custom',
         }}
+        edgeTypes={edgeTypes}
         connectionLineStyle={{
           stroke: '#94a3b8',
           strokeWidth: 2,
