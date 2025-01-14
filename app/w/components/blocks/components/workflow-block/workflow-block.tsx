@@ -1,7 +1,6 @@
 import { Card } from '@/components/ui/card'
 import { BlockConfig, SubBlockConfig } from '../../types/block'
-import { SubBlock } from './components/sub-block/sub-block'
-import { ConnectionPoint } from './components/connection/connection-point'
+import { SubBlock } from './sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 
 interface WorkflowBlockProps {
