@@ -1,131 +1,53 @@
 import { Card } from '@/components/ui/card'
 import { BlockConfig, SubBlockConfig } from '../../types/block'
-import { cn } from '@/lib/utils'
 import { SubBlock } from './components/sub-block/sub-block'
-import { useCallback, useState, MouseEvent, useEffect } from 'react'
 import { ConnectionPoint } from './components/connection/connection-point'
+import { Handle, Position } from 'reactflow'
 
-export interface WorkflowBlockProps {
+interface WorkflowBlockProps {
   id: string
   type: string
   position: { x: number; y: number }
   config: BlockConfig
   name: string
-  onPositionUpdate: (id: string, position: { x: number; y: number }) => void
-  zoom: number
 }
 
-function groupSubBlocks(subBlocks: SubBlockConfig[]) {
-  const rows: SubBlockConfig[][] = []
-  let currentRow: SubBlockConfig[] = []
-  let currentRowWidth = 0
+export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
+  const { toolbar, workflow } = config
 
-  subBlocks.forEach((block) => {
-    const blockWidth = block.layout === 'half' ? 0.5 : 1
+  function groupSubBlocks(subBlocks: SubBlockConfig[]) {
+    const rows: SubBlockConfig[][] = []
+    let currentRow: SubBlockConfig[] = []
+    let currentRowWidth = 0
 
-    if (currentRowWidth + blockWidth > 1) {
-      rows.push([...currentRow])
-      currentRow = [block]
-      currentRowWidth = blockWidth
-    } else {
-      currentRow.push(block)
-      currentRowWidth += blockWidth
+    subBlocks.forEach((block) => {
+      const blockWidth = block.layout === 'half' ? 0.5 : 1
+      if (currentRowWidth + blockWidth > 1) {
+        rows.push([...currentRow])
+        currentRow = [block]
+        currentRowWidth = blockWidth
+      } else {
+        currentRow.push(block)
+        currentRowWidth += blockWidth
+      }
+    })
+
+    if (currentRow.length > 0) {
+      rows.push(currentRow)
     }
-  })
 
-  if (currentRow.length > 0) {
-    rows.push(currentRow)
+    return rows
   }
 
-  return rows
-}
-
-export function WorkflowBlock({
-  id,
-  type,
-  position,
-  config,
-  name,
-  onPositionUpdate,
-  zoom,
-}: WorkflowBlockProps) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-
-  const handleMouseDown = useCallback(
-    (e: MouseEvent) => {
-      // Don't handle drag if clicking on a connection point
-      if ((e.target as HTMLElement).closest('[data-connection-point]')) {
-        return
-      }
-
-      e.stopPropagation()
-      setIsDragging(true)
-
-      // Account for the sidebar width (344px) and control bar height (56px)
-      const sidebarWidth = 344 // 72px (sidebar) + 272px (toolbar)
-      const controlBarHeight = 56
-
-      const rect = e.currentTarget.getBoundingClientRect()
-      setDragOffset({
-        x: (e.clientX - sidebarWidth) / zoom - position.x,
-        y: (e.clientY - controlBarHeight) / zoom - position.y,
-      })
-    },
-    [zoom, position]
-  )
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (isDragging) {
-        e.stopPropagation()
-
-        // Account for the sidebar width and control bar height
-        const sidebarWidth = 344
-        const controlBarHeight = 56
-
-        const newX = (e.clientX - sidebarWidth) / zoom - dragOffset.x
-        const newY = (e.clientY - controlBarHeight) / zoom - dragOffset.y
-
-        onPositionUpdate(id, { x: newX, y: newY })
-      }
-    },
-    [id, isDragging, dragOffset, onPositionUpdate, zoom]
-  )
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-  }, [])
-
-  // Add event listeners to handle dragging outside the block
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove as any)
-      document.addEventListener('mouseup', handleMouseUp)
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove as any)
-        document.removeEventListener('mouseup', handleMouseUp)
-      }
-    }
-  }, [isDragging, handleMouseMove, handleMouseUp])
-
-  const { toolbar, workflow } = config
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
   return (
-    <Card
-      className={cn(
-        'absolute w-[320px] shadow-md cursor-move select-none group',
-        'transform -translate-x-1/2 -translate-y-1/2',
-        isDragging && 'pointer-events-none'
-      )}
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-      }}
-      onMouseDown={handleMouseDown}
-    >
-      <ConnectionPoint position="top" />
+    <Card className="w-[320px] shadow-md select-none group">
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-3 h-3 bg-white border-2 border-blue-500"
+      />
 
       <div className="flex items-center gap-3 p-3 border-b">
         <div
@@ -143,10 +65,9 @@ export function WorkflowBlock({
             {row.map((subBlock, blockIndex) => (
               <div
                 key={`${id}-${rowIndex}-${blockIndex}`}
-                className={cn(
-                  'space-y-1',
+                className={`space-y-1 ${
                   subBlock.layout === 'half' ? 'flex-1' : 'w-full'
-                )}
+                }`}
               >
                 <SubBlock config={subBlock} />
               </div>
@@ -155,7 +76,11 @@ export function WorkflowBlock({
         ))}
       </div>
 
-      <ConnectionPoint position="bottom" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-3 h-3 bg-white border-2 border-blue-500"
+      />
     </Card>
   )
 }

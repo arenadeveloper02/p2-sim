@@ -10,6 +10,7 @@ export function ToolbarBlock({ config }: ToolbarBlockProps) {
       'application/json',
       JSON.stringify({ type: config.type })
     )
+    e.dataTransfer.effectAllowed = 'move'
   }
 
   return (
