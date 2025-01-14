@@ -1,4 +1,4 @@
-import { SubBlockConfig } from '../../../types/block'
+import { SubBlockConfig } from '../../../../types/block'
 import { Label } from '@/components/ui/label'
 import { ShortInput } from './components/short-input'
 import { LongInput } from './components/long-input'
