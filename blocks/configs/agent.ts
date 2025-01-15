@@ -26,6 +26,11 @@ export const AgentBlock: BlockConfig = {
         layout: 'full',
       },
       {
+        title: 'Context',
+        type: 'long-input',
+        layout: 'full',
+      },
+      {
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
@@ -44,7 +49,12 @@ export const AgentBlock: BlockConfig = {
         layout: "full",
         placeholder: "Enter your API key",
         password: true
-      }
+      },
+      {
+        title: 'Response Format',
+        type: 'code',
+        layout: 'full',
+      },
     ],
   },
 }
