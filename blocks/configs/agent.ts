@@ -27,7 +27,7 @@ export const AgentBlock: BlockConfig = {
       },
       {
         title: 'Context',
-        type: 'long-input',
+        type: 'short-input',
         layout: 'full',
       },
       {

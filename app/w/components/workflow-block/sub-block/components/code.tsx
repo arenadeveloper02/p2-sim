@@ -124,6 +124,23 @@ export function Code() {
 
   const handleAutoClose = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // If we're typing a closing character (not an opening one)
+      if (Object.values(MATCHING_PAIRS).includes(e.key)) {
+        const textarea = e.currentTarget
+        const start = textarea.selectionStart
+        const currentContent = lines[currentLine].content
+
+        // If cursor is before the same closing character, just move cursor
+        if (currentContent[start] === e.key) {
+          e.preventDefault()
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + 1
+          }, 0)
+          return true
+        }
+      }
+
+      // Handle opening characters
       const closingChar = MATCHING_PAIRS[e.key]
       if (!closingChar) return false
 
