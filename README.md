@@ -21,7 +21,7 @@ Sim Studio is an open-source, drag-and-drop workflow builder designed specifical
 
 Sim Studio comes with a comprehensive set of built-in icons for your workflows:
 
-`ApiIcon`, `ConditionalIcon`, `AirplaneIcon`, `WorkIcon`, `WarnIcon`, `UploadIcon`, `TrashIcon`, `StudentIcon`, `SignalIcon`, `SectionIcon`, `ReminderIcon`, `NotificationsIcon`, `MailIcon`, `ErrorIcon`, `DatabaseIcon`, `CrateIcon`, `CookieIcon`, `ComponentIcon`, `ChromeIcon`, `CalendarIcon`, `BoatIcon`, `BankIcon`, `AmbulanceIcon`, `AtomIcon`, `ElevatorIcon`, `DollarIcon`, `CreditCardIcon`, `CancelIcon`, `BrightIcon`, `ChartBarIcon`, `CodeIcon`, `MessagesIcon`
+`AirplaneIcon`, `AmbulanceIcon`, `ApiIcon`, `AtomIcon`, `BankIcon`, `BoatIcon`, `BrightIcon`, `CalendarIcon`, `CancelIcon`, `ChartBarIcon`, `ChromeIcon`, `CodeIcon`, `ComponentIcon`, `ConditionalIcon`, `CookieIcon`, `CrateIcon`, `CreditCardIcon`, `DatabaseIcon`, `DollarIcon`, `ElevatorIcon`, `ErrorIcon`, `MailIcon`, `MessagesIcon`, `NotificationsIcon`, `ReminderIcon`, `SectionIcon`, `SignalIcon`, `StudentIcon`, `TrashIcon`, `UploadIcon`, `WarnIcon`, `WorkIcon`
 
 All icons are available as React components and can be imported from `components/icons.tsx`:
 
