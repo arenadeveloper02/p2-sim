@@ -17,6 +17,21 @@ Sim Studio is an open-source, drag-and-drop workflow builder designed specifical
 - 🛠️ **Developer-First** - Created by developers, for developers
 - 📱 **Modern UI/UX** - Clean, intuitive interface that stays out of your way
 
+## Icons Library
+
+Sim Studio comes with a comprehensive set of built-in icons for your workflows:
+
+`ApiIcon`, `ConditionalIcon`, `AirplaneIcon`, `WorkIcon`, `WarnIcon`, `UploadIcon`, `TrashIcon`, `StudentIcon`, `SignalIcon`, `SectionIcon`, `ReminderIcon`, `NotificationsIcon`, `MailIcon`, `ErrorIcon`, `DatabaseIcon`, `CrateIcon`, `CookieIcon`, `ComponentIcon`, `ChromeIcon`, `CalendarIcon`, `BoatIcon`, `BankIcon`, `AmbulanceIcon`, `AtomIcon`, `ElevatorIcon`, `DollarIcon`, `CreditCardIcon`, `CancelIcon`, `BrightIcon`, `ChartBarIcon`, `CodeIcon`, `MessagesIcon`
+
+All icons are available as React components and can be imported from `components/icons.tsx`:
+
+```tsx
+import { ApiIcon, CodeIcon, ErrorIcon } from '@/components/icons'
+
+// Usage
+;<ApiIcon className="w-6 h-6" />
+```
+
 ## Getting Started
 
 ### Prerequisites
