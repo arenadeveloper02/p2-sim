@@ -24,11 +24,13 @@ export const AgentBlock: BlockConfig = {
         title: 'System Prompt',
         type: 'long-input',
         layout: 'full',
+        placeholder: 'Enter prompt',
       },
       {
         title: 'Context',
         type: 'short-input',
         layout: 'full',
+        placeholder: 'Enter text',
       },
       {
         title: 'Model',

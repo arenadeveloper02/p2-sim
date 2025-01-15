@@ -12,7 +12,7 @@ export function ShortInput({ placeholder, password }: ShortInputProps) {
 
   return (
     <Input
-      className="w-full"
+      className="w-full placeholder:text-muted-foreground/50"
       placeholder={placeholder ?? ''}
       type={password && !isFocused ? 'password' : 'text'}
       value={value}

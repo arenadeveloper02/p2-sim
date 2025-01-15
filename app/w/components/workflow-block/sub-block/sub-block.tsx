@@ -26,7 +26,7 @@ export function SubBlock({ config }: SubBlockProps) {
           />
         )
       case 'long-input':
-        return <LongInput />
+        return <LongInput placeholder={config.placeholder} />
       case 'dropdown':
         return (
           <div onMouseDown={handleMouseDown}>

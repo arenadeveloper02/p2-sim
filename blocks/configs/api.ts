@@ -26,6 +26,7 @@ export const ApiBlock: BlockConfig = {
         title: 'URL',
         type: 'short-input',
         layout: 'full',
+        placeholder: 'Enter URL',
       },
       {
         title: 'Method',
