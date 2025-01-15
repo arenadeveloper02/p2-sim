@@ -173,6 +173,7 @@ function WorkflowCanvas() {
         panOnScroll
         defaultEdgeOptions={{ type: 'custom' }}
         edgeTypes={edgeTypes}
+        proOptions={{ hideAttribution: true }}
         connectionLineStyle={{
           stroke: '#94a3b8',
           strokeWidth: 2,
