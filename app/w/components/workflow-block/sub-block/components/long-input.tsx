@@ -1,5 +1,5 @@
 import { Textarea } from '@/components/ui/textarea'
-import { useState } from 'react'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface LongInputProps {
   placeholder?: string
@@ -12,14 +12,14 @@ export function LongInput({
   blockId,
   subBlockId,
 }: LongInputProps) {
-  const [value, setValue] = useState('')
+  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
 
   return (
     <Textarea
       className="w-full resize-none placeholder:text-muted-foreground/50"
       rows={3}
       placeholder={placeholder ?? ''}
-      value={value}
+      value={value?.toString() ?? ''}
       onChange={(e) => setValue(e.target.value)}
     />
   )

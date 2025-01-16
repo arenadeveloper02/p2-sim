@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface DropdownProps {
   options: string[]
@@ -19,8 +20,13 @@ export function Dropdown({
   blockId,
   subBlockId,
 }: DropdownProps) {
+  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+
   return (
-    <Select defaultValue={defaultValue ?? options[0]}>
+    <Select
+      defaultValue={defaultValue ?? options[0]}
+      onValueChange={(value) => setValue(value)}
+    >
       <SelectTrigger>
         <SelectValue placeholder="Select an option" />
       </SelectTrigger>

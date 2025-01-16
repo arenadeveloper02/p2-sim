@@ -10,7 +10,7 @@ export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' 
 export type SubBlockLayout = 'full' | 'half'
 
 export interface SubBlockConfig {
-  id?: string
+  id: string
   title: string
   type: SubBlockType
   layout?: SubBlockLayout

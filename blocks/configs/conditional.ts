@@ -14,6 +14,7 @@ export const ConditionalBlock: BlockConfig = {
     outputType: 'boolean',
     subBlocks: [
       {
+        id: 'conditionType',
         title: 'Condition Type',
         type: 'dropdown',
         layout: 'full',
@@ -26,6 +27,7 @@ export const ConditionalBlock: BlockConfig = {
         ],
       },
       {
+        id: 'value',
         title: 'Value',
         type: 'short-input',
         layout: 'full',

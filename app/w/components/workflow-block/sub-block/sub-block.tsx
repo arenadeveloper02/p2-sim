@@ -23,7 +23,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
         return (
           <ShortInput
             blockId={blockId}
-            subBlockId={config.id || ''}
+            subBlockId={config.id}
             placeholder={config.placeholder}
             password={config.password}
           />
@@ -32,7 +32,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
         return (
           <LongInput
             blockId={blockId}
-            subBlockId={config.id || ''}
+            subBlockId={config.id}
             placeholder={config.placeholder}
           />
         )
@@ -41,7 +41,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
           <div onMouseDown={handleMouseDown}>
             <Dropdown
               blockId={blockId}
-              subBlockId={config.id || ''}
+              subBlockId={config.id}
               options={config.options ?? []}
             />
           </div>
@@ -50,7 +50,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
         return (
           <SliderInput
             blockId={blockId}
-            subBlockId={config.id || ''}
+            subBlockId={config.id}
             min={config.min}
             max={config.max}
             defaultValue={
