@@ -29,13 +29,13 @@ import { initializeStateLogger } from '@/stores/workflow/state-logger'
  * Represents the data structure for a workflow node
  */
 interface WorkflowNodeData {
-  type: BlockType // Updated to use the proper type from block.ts
-  config: BlockConfig // Updated to use the proper type
+  type: BlockType
+  config: BlockConfig
   name: string
 }
 
 /**
- * Custom node component for rendering workflow blocks
+ * Custom node component for rendering workflow blocks in the workflow editor
  */
 const WorkflowNode = ({
   data,
@@ -53,7 +53,7 @@ const WorkflowNode = ({
 )
 
 /**
- * Custom edge component with animated dashed line styling
+ * Custom edge component that renders an animated dashed line between nodes
  */
 const CustomEdge = (props: EdgeProps) => {
   const [edgePath] = getSmoothStepPath({
@@ -78,15 +78,17 @@ const CustomEdge = (props: EdgeProps) => {
   )
 }
 
-// Component type definitions
+/**
+ * Component type definitions for ReactFlow nodes and edges
+ */
 const nodeTypes: NodeTypes = { workflowBlock: WorkflowNode }
 const edgeTypes: EdgeTypes = { custom: CustomEdge }
 
 /**
- * Main canvas component for the workflow editor
+ * Main canvas component that handles the interactive workflow editor functionality
+ * including drag and drop, node connections, and position updates
  */
 function WorkflowCanvas() {
-  // Replace useNodesState and useEdgesState with our store
   const { blocks, edges, addBlock, updateBlockPosition, addEdge, removeEdge } =
     useWorkflowStore()
 
@@ -104,6 +106,9 @@ function WorkflowCanvas() {
 
   const { project } = useReactFlow()
 
+  /**
+   * Handles updating node positions when they are dragged
+   */
   const onNodesChange = useCallback(
     (changes: any) => {
       changes.forEach((change: any) => {
@@ -115,6 +120,9 @@ function WorkflowCanvas() {
     [updateBlockPosition]
   )
 
+  /**
+   * Handles edge removal when they are deleted
+   */
   const onEdgesChange = useCallback(
     (changes: any) => {
       changes.forEach((change: any) => {
@@ -126,6 +134,9 @@ function WorkflowCanvas() {
     [removeEdge]
   )
 
+  /**
+   * Handles creating new connections between nodes
+   */
   const onConnect = useCallback(
     (connection: any) => {
       addEdge({
@@ -137,7 +148,9 @@ function WorkflowCanvas() {
     [addEdge]
   )
 
-  // Update onDrop to use our store
+  /**
+   * Handles the drop event when a new block is dragged onto the canvas
+   */
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault()
@@ -172,7 +185,9 @@ function WorkflowCanvas() {
     [project, blocks, addBlock]
   )
 
-  // Keyframe animation styles
+  /**
+   * CSS keyframe animation for the dashed line effect
+   */
   const keyframeStyles = `
     @keyframes dashdraw {
       from { stroke-dashoffset: 10; }
@@ -218,7 +233,7 @@ function WorkflowCanvas() {
 }
 
 /**
- * Root workflow component wrapped with ReactFlow provider
+ * Root workflow component that provides the ReactFlow context to the canvas
  */
 export default function Workflow() {
   return (

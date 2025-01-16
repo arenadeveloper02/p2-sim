@@ -11,11 +11,11 @@ export interface BlockState {
   type: BlockType
   name: string
   position: Position
-  inputs: Record<string, BlockInput>
+  subBlocks: Record<string, SubBlock>
   outputType: OutputType
 }
 
-export interface BlockInput {
+export interface SubBlock {
   id: string
   type: SubBlockType
   value: string | number | string[][] | null

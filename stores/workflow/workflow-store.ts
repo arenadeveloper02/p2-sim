@@ -21,9 +21,9 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const blockConfig = getBlock(type)
         if (!blockConfig) return
 
-        const inputs: Record<string, any> = {}
+        const subBlocks: Record<string, any> = {}
         blockConfig.workflow.subBlocks.forEach((subBlock) => {
-          inputs[subBlock.id || crypto.randomUUID()] = {
+          subBlocks[subBlock.id || crypto.randomUUID()] = {
             id: subBlock.id || crypto.randomUUID(),
             type: subBlock.type,
             value: null,
@@ -38,7 +38,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
               type,
               name,
               position,
-              inputs,
+              subBlocks,
               outputType: 
                 typeof blockConfig.workflow.outputType === 'string'
                   ? blockConfig.workflow.outputType
@@ -66,10 +66,10 @@ export const useWorkflowStore = create<WorkflowStore>()(
             ...state.blocks,
             [blockId]: {
               ...state.blocks[blockId],
-              inputs: {
-                ...state.blocks[blockId].inputs,
+              subBlocks: {
+                ...state.blocks[blockId].subBlocks,
                 [inputId]: {
-                  ...state.blocks[blockId].inputs[inputId],
+                  ...state.blocks[blockId].subBlocks[inputId],
                   value,
                 },
               },
