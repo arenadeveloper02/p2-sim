@@ -3,7 +3,7 @@ import { HttpRequestConfig, HttpResponse, HttpError } from './types/http';
 export class HttpService {
   private static instance: HttpService;
 
-  private constructor() {}
+  constructor() {}
 
   public static getInstance(): HttpService {
     if (!HttpService.instance) {

@@ -1,15 +1,15 @@
-import { AgentConfig } from '@/app/w/core/types/runner';
 import { ModelProvider, ModelRequestOptions, ModelResponse } from './types/model';
 import { OpenAIProvider } from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
 import { GoogleProvider } from './providers/google';
 import { XAIProvider } from './providers/xai';
+import { AgentConfig } from './types/agent';
 
 export class ModelService {
   private static instance: ModelService;
   private providers: Map<string, ModelProvider>;
 
-  private constructor() {
+  constructor() {
     this.providers = new Map();
     this.initializeProviders();
   }

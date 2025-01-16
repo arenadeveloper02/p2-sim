@@ -1,369 +1,467 @@
-import { describe, expect, test } from '@jest/globals';
+import { Node, Edge } from 'reactflow';
 import { Serializer } from '../index';
-import { BlockConfig, BlockType } from '@/blocks/types/block';
-import { Node } from 'reactflow';
 import { SerializedWorkflow } from '../types';
 
-jest.mock('@/components/icons', () => ({
-  AgentIcon: jest.fn(),
-  ApiIcon: jest.fn(),
-  ConditionalIcon: jest.fn()
-}));
-
-import { AgentIcon, ApiIcon, ConditionalIcon } from '@/components/icons';
-
 describe('Serializer', () => {
-  const serializer = new Serializer();
+  let serializer: Serializer;
 
-  test('should serialize an agent block correctly', () => {
-    const mockAgentBlock: Node<BlockConfig> = {
-      id: 'agent-1',
-      type: 'custom',
-      position: { x: 100, y: 200 },
-      data: {
-        type: 'agent',
-        toolbar: {
-          title: 'Agent',
-          description: 'Use any LLM',
-          bgColor: '#7F2FFF',
-          icon: AgentIcon,
-          category: 'basic',
-        },
-        workflow: {
-          inputs: {
-            prompt: 'string',
-            context: 'string'
-          },
-          outputs: {
-            response: 'string',
-            tokens: 'number'
-          },
-          subBlocks: [
-            {
-              title: 'System Prompt',
-              type: 'long-input',
-              layout: 'full',
-              placeholder: 'Enter prompt'
-            },
-            {
-              title: 'Model',
-              type: 'dropdown',
-              layout: 'half',
-              options: ['GPT-4o', 'Gemini 2.0']
-            }
-          ]
-        }
-      }
-    };
-
-    const serialized = serializer.serializeWorkflow([mockAgentBlock], []);
-    
-    // Check basic structure
-    expect(serialized.version).toBe('1.0');
-    expect(serialized.blocks).toHaveLength(1);
-    
-    const serializedBlock = serialized.blocks[0];
-    
-    // Check block properties
-    expect(serializedBlock.id).toBe('agent-1');
-    expect(serializedBlock.type).toBe('agent');
-    expect(serializedBlock.position).toEqual({ x: 100, y: 200 });
-    
-    // Check config
-    expect(serializedBlock.config.inputs).toEqual({
-      prompt: 'string',
-      context: 'string'
-    });
-    expect(serializedBlock.config.outputs).toEqual({
-      response: 'string',
-      tokens: 'number'
-    });
-    
-    // Check extracted values from subBlocks
-    expect(serializedBlock.config.system_prompt).toBe('');
-    expect(serializedBlock.config.model).toBe('GPT-4o');
+  beforeEach(() => {
+    serializer = new Serializer();
   });
 
-  test('should serialize an HTTP block correctly', () => {
-    const mockHttpBlock: Node<BlockConfig> = {
-      id: 'http-1',
-      type: 'custom',
-      position: { x: 150, y: 250 },
-      data: {
-        type: 'api' as BlockType,
-        toolbar: {
-          title: 'HTTP',
-          description: 'Make HTTP requests',
-          bgColor: '#FF4D4D',
-          icon: ApiIcon,
-          category: 'basic',
-        },
-        workflow: {
-          inputs: {
-            headers: 'object',
-            body: 'object'
-          },
-          outputs: {
-            response: 'object',
-            status: 'number'
-          },
-          subBlocks: [
-            {
-              title: 'URL',
-              type: 'short-input',
-              layout: 'full',
-              placeholder: 'Enter URL'
-            },
-            {
-              title: 'Method',
-              type: 'dropdown',
-              layout: 'half',
-              options: ['GET', 'POST', 'PUT', 'DELETE']
-            },
-            {
-              title: 'Headers',
-              type: 'code',
-              layout: 'full'
-            },
-            {
-              title: 'Body',
-              type: 'code',
-              layout: 'full'
-            }
-          ]
-        }
-      }
-    };
-
-    const serialized = serializer.serializeWorkflow([mockHttpBlock], []);
-    const serializedBlock = serialized.blocks[0];
-    
-    // Check block properties
-    expect(serializedBlock.id).toBe('http-1');
-    expect(serializedBlock.type).toBe('api');
-    expect(serializedBlock.position).toEqual({ x: 150, y: 250 });
-    
-    // Check config
-    expect(serializedBlock.config.inputs).toEqual({
-      headers: 'object',
-      body: 'object'
-    });
-    expect(serializedBlock.config.outputs).toEqual({
-      response: 'object',
-      status: 'number'
-    });
-    
-    // Check extracted values from subBlocks
-    expect(serializedBlock.config.url).toBe('');
-    expect(serializedBlock.config.method).toBe('GET');
-    expect(serializedBlock.config.headers).toBe('');
-    expect(serializedBlock.config.body).toBe('');
-  });
-
-  test('should serialize a conditional block correctly', () => {
-    const mockConditionBlock: Node<BlockConfig> = {
-      id: 'condition-1',
-      type: 'custom',
-      position: { x: 200, y: 300 },
-      data: {
-        type: 'conditional' as BlockType,
-        toolbar: {
-          title: 'Condition',
-          description: 'Branch based on condition',
-          bgColor: '#00B8D9',
-          icon: ConditionalIcon,
-          category: 'basic',
-        },
-        workflow: {
-          inputs: {
-            value: 'any'
-          },
-          outputs: {
-            result: 'boolean'
-          },
-          subBlocks: [
-            {
-              title: 'Condition',
-              type: 'code',
-              layout: 'full',
-              placeholder: 'Enter condition'
-            },
-            {
-              title: 'Operator',
-              type: 'dropdown',
-              layout: 'half',
-              options: ['equals', 'contains', 'greater than', 'less than']
-            },
-            {
-              title: 'Value',
-              type: 'short-input',
-              layout: 'half',
-              placeholder: 'Compare value'
-            }
-          ]
-        }
-      }
-    };
-
-    const serialized = serializer.serializeWorkflow([mockConditionBlock], []);
-    const serializedBlock = serialized.blocks[0];
-    
-    // Check block properties
-    expect(serializedBlock.id).toBe('condition-1');
-    expect(serializedBlock.type).toBe('conditional');
-    expect(serializedBlock.position).toEqual({ x: 200, y: 300 });
-    
-    // Check config
-    expect(serializedBlock.config.inputs).toEqual({
-      value: 'any'
-    });
-    expect(serializedBlock.config.outputs).toEqual({
-      result: 'boolean'
-    });
-    
-    // Check extracted values from subBlocks
-    expect(serializedBlock.config.condition).toBe('');
-    expect(serializedBlock.config.operator).toBe('equals');
-    expect(serializedBlock.config.value).toBe('');
-  });
-
-  test('should serialize connections correctly', () => {
-    const mockConnections = [
-      {
-        id: 'conn-1',
-        source: 'agent-1',
-        target: 'agent-2',
-        sourceHandle: 'output',
-        targetHandle: 'input'
-      }
-    ];
-
-    const serialized = serializer.serializeWorkflow([], mockConnections);
-    
-    expect(serialized.connections).toHaveLength(1);
-    const conn = serialized.connections[0];
-    expect(conn.source).toBe('agent-1');
-    expect(conn.target).toBe('agent-2');
-    expect(conn.sourceHandle).toBe('output');
-    expect(conn.targetHandle).toBe('input');
-  });
-
-  test('should deserialize back to ReactFlow format', () => {
-    const mockWorkflow = {
-      version: '1.0',
-      blocks: [{
-        id: 'agent-1',
-        type: 'agent',
-        position: { x: 100, y: 200 },
-        config: {
-          system_prompt: 'You are a helpful assistant',
-          model: 'GPT-4o',
-          inputs: { prompt: 'string' },
-          outputs: { response: 'string' }
-        }
-      }],
-      connections: [{
-        source: 'agent-1',
-        target: 'agent-2',
-        sourceHandle: 'output',
-        targetHandle: 'input'
-      }]
-    };
-
-    const deserialized = serializer.deserializeWorkflow(mockWorkflow);
-    
-    // Check blocks
-    expect(deserialized.blocks).toHaveLength(1);
-    const block = deserialized.blocks[0];
-    expect(block.id).toBe('agent-1');
-    expect(block.position).toEqual({ x: 100, y: 200 });
-    expect(block.data.type).toBe('agent');
-    
-    // Check connections
-    expect(deserialized.connections).toHaveLength(1);
-    const conn = deserialized.connections[0];
-    expect(conn.source).toBe('agent-1');
-    expect(conn.target).toBe('agent-2');
-    expect(conn.sourceHandle).toBe('output');
-    expect(conn.targetHandle).toBe('input');
-  });
-
-  test('should handle empty workflow', () => {
-    const serialized = serializer.serializeWorkflow([], []);
-    expect(serialized.blocks).toHaveLength(0);
-    expect(serialized.connections).toHaveLength(0);
-    
-    const deserialized = serializer.deserializeWorkflow(serialized);
-    expect(deserialized.blocks).toHaveLength(0);
-    expect(deserialized.connections).toHaveLength(0);
-  });
-
-  test('should handle a complex workflow with multiple block types', () => {
-    const mockWorkflow: SerializedWorkflow = {
-      version: '1.0',
-      blocks: [
+  describe('serializeWorkflow', () => {
+    it('should serialize a workflow with model and http blocks', () => {
+      const blocks: Node[] = [
         {
-          id: 'agent-1',
-          type: 'agent',
+          id: 'model-1',
+          type: 'custom',
           position: { x: 100, y: 100 },
-          config: {
-            system_prompt: 'Analyze this',
-            model: 'GPT-4o',
-            inputs: { prompt: 'string' },
-            outputs: { response: 'string' }
+          data: {
+            tool: 'model',
+            params: {
+              model: 'gpt-4o',
+              systemPrompt: 'You are helpful',
+              temperature: 0.7
+            },
+            interface: {
+              inputs: {
+                prompt: 'string'
+              },
+              outputs: {
+                response: 'string',
+                tokens: 'number'
+              }
+            },
+            title: 'GPT-4o Agent',
+            description: 'Language model block',
+            category: 'AI',
+            icon: 'brain',
+            color: '#7F2FFF'
           }
         },
         {
           id: 'http-1',
-          type: 'api',
-          position: { x: 300, y: 100 },
-          config: {
-            url: 'https://api.example.com',
-            method: 'GET',
-            inputs: { headers: 'string', body: 'string' },
-            outputs: { response: 'string', status: 'string' }
-          }
-        },
-        {
-          id: 'condition-1',
-          type: 'conditional',
-          position: { x: 200, y: 300 },
-          config: {
-            condition: 'value > 0',
-            operator: 'greater than',
-            value: '',
-            inputs: { value: 'string' },
-            outputs: { result: 'string' }
+          type: 'custom',
+          position: { x: 400, y: 100 },
+          data: {
+            tool: 'http',
+            params: {
+              url: 'https://api.example.com',
+              method: 'GET'
+            },
+            interface: {
+              inputs: {
+                body: 'object'
+              },
+              outputs: {
+                data: 'object',
+                status: 'number'
+              }
+            },
+            title: 'API Call',
+            description: 'HTTP request block',
+            category: 'Web',
+            icon: 'globe',
+            color: '#00FF00'
           }
         }
-      ],
-      connections: [
+      ];
+
+      const connections: Edge[] = [
         {
-          source: 'agent-1',
+          id: 'conn-1',
+          source: 'model-1',
           target: 'http-1',
           sourceHandle: 'response',
-          targetHandle: 'headers'
+          targetHandle: 'body'
+        }
+      ];
+
+      const serialized = serializer.serializeWorkflow(blocks, connections);
+
+      // Test workflow structure
+      expect(serialized.version).toBe('1.0');
+      expect(serialized.blocks).toHaveLength(2);
+      expect(serialized.connections).toHaveLength(1);
+
+      // Test model block serialization
+      const modelBlock = serialized.blocks.find(b => b.id === 'model-1');
+      expect(modelBlock).toBeDefined();
+      expect(modelBlock?.config.tool).toBe('model');
+      expect(modelBlock?.config.params).toEqual({
+        model: 'gpt-4o',
+        systemPrompt: 'You are helpful',
+        temperature: 0.7
+      });
+      expect(modelBlock?.metadata).toEqual({
+        title: 'GPT-4o Agent',
+        description: 'Language model block',
+        category: 'AI',
+        icon: 'brain',
+        color: '#7F2FFF'
+      });
+
+      // Test http block serialization
+      const httpBlock = serialized.blocks.find(b => b.id === 'http-1');
+      expect(httpBlock).toBeDefined();
+      expect(httpBlock?.config.tool).toBe('http');
+      expect(httpBlock?.config.params).toEqual({
+        url: 'https://api.example.com',
+        method: 'GET'
+      });
+
+      // Test connection serialization
+      const connection = serialized.connections[0];
+      expect(connection).toEqual({
+        source: 'model-1',
+        target: 'http-1',
+        sourceHandle: 'response',
+        targetHandle: 'body'
+      });
+    });
+
+    it('should handle blocks with minimal required configuration', () => {
+      const blocks: Node[] = [{
+        id: 'minimal-1',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          tool: 'model',
+          params: {
+            model: 'gpt-4'
+          },
+          interface: {
+            inputs: {},
+            outputs: {}
+          }
+        }
+      }];
+
+      const serialized = serializer.serializeWorkflow(blocks, []);
+      const block = serialized.blocks[0];
+      
+      expect(block.id).toBe('minimal-1');
+      expect(block.config.tool).toBe('model');
+      expect(block.config.params).toEqual({ model: 'gpt-4' });
+      expect(block.metadata).toBeUndefined();
+    });
+
+    it('should handle complex workflow with multiple interconnected blocks', () => {
+      const blocks: Node[] = [
+        {
+          id: 'input-1',
+          type: 'custom',
+          position: { x: 100, y: 100 },
+          data: {
+            tool: 'http',
+            params: {
+              url: 'https://api.data.com',
+              method: 'GET'
+            },
+            interface: {
+              inputs: {},
+              outputs: {
+                data: 'object'
+              }
+            }
+          }
         },
         {
-          source: 'http-1',
-          target: 'condition-1',
-          sourceHandle: 'response',
-          targetHandle: 'value'
+          id: 'process-1',
+          type: 'custom',
+          position: { x: 300, y: 100 },
+          data: {
+            tool: 'model',
+            params: {
+              model: 'gpt-4',
+              systemPrompt: 'Process this data'
+            },
+            interface: {
+              inputs: {
+                data: 'object',
+                config: 'object'
+              },
+              outputs: {
+                result: 'string'
+              }
+            }
+          }
+        },
+        {
+          id: 'output-1',
+          type: 'custom',
+          position: { x: 500, y: 100 },
+          data: {
+            tool: 'http',
+            params: {
+              url: 'https://api.output.com',
+              method: 'POST'
+            },
+            interface: {
+              inputs: {
+                body: 'string'
+              },
+              outputs: {
+                status: 'number'
+              }
+            }
+          }
         }
-      ]
-    };
+      ];
 
-    const deserialized = serializer.deserializeWorkflow(mockWorkflow);
-    
-    // Check blocks
-    expect(deserialized.blocks).toHaveLength(3);
-    expect(deserialized.blocks.map(b => b.data.type)).toEqual(['agent', 'api', 'conditional']);
-    
-    // Check connections maintain workflow logic
-    expect(deserialized.connections).toHaveLength(2);
-    expect(deserialized.connections[0].source).toBe('agent-1');
-    expect(deserialized.connections[0].target).toBe('http-1');
-    expect(deserialized.connections[1].source).toBe('http-1');
-    expect(deserialized.connections[1].target).toBe('condition-1');
+      const connections: Edge[] = [
+        {
+          id: 'conn-1',
+          source: 'input-1',
+          target: 'process-1',
+          sourceHandle: 'data',
+          targetHandle: 'data'
+        },
+        {
+          id: 'conn-2',
+          source: 'process-1',
+          target: 'output-1',
+          sourceHandle: 'result',
+          targetHandle: 'body'
+        }
+      ];
+
+      const serialized = serializer.serializeWorkflow(blocks, connections);
+
+      // Verify workflow structure
+      expect(serialized.blocks).toHaveLength(3);
+      expect(serialized.connections).toHaveLength(2);
+
+      // Verify data flow chain
+      const conn1 = serialized.connections[0];
+      const conn2 = serialized.connections[1];
+      expect(conn1.source).toBe('input-1');
+      expect(conn1.target).toBe('process-1');
+      expect(conn2.source).toBe('process-1');
+      expect(conn2.target).toBe('output-1');
+
+      // Verify interface matching
+      const process = serialized.blocks.find(b => b.id === 'process-1');
+      expect(process?.config.interface.inputs).toHaveProperty('data');
+      expect(process?.config.interface.outputs).toHaveProperty('result');
+    });
+
+    it('should preserve tool-specific parameters', () => {
+      const blocks: Node[] = [{
+        id: 'model-1',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          tool: 'model',
+          params: {
+            model: 'gpt-4',
+            temperature: 0.7,
+            maxTokens: 1000,
+            topP: 0.9,
+            frequencyPenalty: 0.5,
+            presencePenalty: 0.5,
+            stop: ['###']
+          },
+          interface: {
+            inputs: { prompt: 'string' },
+            outputs: { response: 'string' }
+          }
+        }
+      }];
+
+      const serialized = serializer.serializeWorkflow(blocks, []);
+      const block = serialized.blocks[0];
+      
+      expect(block.config.params).toEqual({
+        model: 'gpt-4',
+        temperature: 0.7,
+        maxTokens: 1000,
+        topP: 0.9,
+        frequencyPenalty: 0.5,
+        presencePenalty: 0.5,
+        stop: ['###']
+      });
+    });
   });
-}); 
+
+  describe('deserializeWorkflow', () => {
+    it('should deserialize a workflow back to ReactFlow format', () => {
+      const serialized: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [
+          {
+            id: 'model-1',
+            position: { x: 100, y: 100 },
+            config: {
+              tool: 'model',
+              params: {
+                model: 'gpt-4o',
+                systemPrompt: 'You are helpful'
+              },
+              interface: {
+                inputs: { prompt: 'string' },
+                outputs: { response: 'string' }
+              }
+            },
+            metadata: {
+              title: 'GPT-4o Agent',
+              category: 'AI'
+            }
+          }
+        ],
+        connections: [
+          {
+            source: 'model-1',
+            target: 'http-1',
+            sourceHandle: 'response',
+            targetHandle: 'body'
+          }
+        ]
+      };
+
+      const deserialized = serializer.deserializeWorkflow(serialized);
+
+      // Test blocks deserialization
+      expect(deserialized.blocks).toHaveLength(1);
+      const block = deserialized.blocks[0];
+      expect(block.id).toBe('model-1');
+      expect(block.type).toBe('custom');
+      expect(block.position).toEqual({ x: 100, y: 100 });
+      expect(block.data).toEqual({
+        tool: 'model',
+        params: {
+          model: 'gpt-4o',
+          systemPrompt: 'You are helpful'
+        },
+        interface: {
+          inputs: { prompt: 'string' },
+          outputs: { response: 'string' }
+        },
+        title: 'GPT-4o Agent',
+        category: 'AI'
+      });
+
+      // Test connections deserialization
+      expect(deserialized.connections).toHaveLength(1);
+      const connection = deserialized.connections[0];
+      expect(connection).toEqual({
+        id: 'model-1-http-1',
+        source: 'model-1',
+        target: 'http-1',
+        sourceHandle: 'response',
+        targetHandle: 'body'
+      });
+    });
+
+    it('should handle empty workflow', () => {
+      const serialized: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [],
+        connections: []
+      };
+
+      const deserialized = serializer.deserializeWorkflow(serialized);
+      expect(deserialized.blocks).toHaveLength(0);
+      expect(deserialized.connections).toHaveLength(0);
+    });
+
+    it('should handle blocks with complex interface types', () => {
+      const serialized: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [{
+          id: 'complex-1',
+          position: { x: 0, y: 0 },
+          config: {
+            tool: 'model',
+            params: {
+              model: 'gpt-4'
+            },
+            interface: {
+              inputs: {
+                context: 'object',
+                options: 'array',
+                metadata: 'Record<string, any>',
+                callback: 'function'
+              },
+              outputs: {
+                result: 'object',
+                errors: 'array',
+                logs: 'string[]'
+              }
+            }
+          }
+        }],
+        connections: []
+      };
+
+      const deserialized = serializer.deserializeWorkflow(serialized);
+      const block = deserialized.blocks[0];
+      
+      expect(block.data.interface.inputs).toEqual({
+        context: 'object',
+        options: 'array',
+        metadata: 'Record<string, any>',
+        callback: 'function'
+      });
+      expect(block.data.interface.outputs).toEqual({
+        result: 'object',
+        errors: 'array',
+        logs: 'string[]'
+      });
+    });
+
+    it('should handle circular connections', () => {
+      const serialized: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [
+          {
+            id: 'loop-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'model',
+              params: {},
+              interface: {
+                inputs: { input: 'string' },
+                outputs: { output: 'string' }
+              }
+            }
+          },
+          {
+            id: 'loop-2',
+            position: { x: 200, y: 0 },
+            config: {
+              tool: 'model',
+              params: {},
+              interface: {
+                inputs: { input: 'string' },
+                outputs: { output: 'string' }
+              }
+            }
+          }
+        ],
+        connections: [
+          {
+            source: 'loop-1',
+            target: 'loop-2',
+            sourceHandle: 'output',
+            targetHandle: 'input'
+          },
+          {
+            source: 'loop-2',
+            target: 'loop-1',
+            sourceHandle: 'output',
+            targetHandle: 'input'
+          }
+        ]
+      };
+
+      const deserialized = serializer.deserializeWorkflow(serialized);
+      
+      expect(deserialized.connections).toHaveLength(2);
+      expect(deserialized.connections[0].source).toBe('loop-1');
+      expect(deserialized.connections[0].target).toBe('loop-2');
+      expect(deserialized.connections[1].source).toBe('loop-2');
+      expect(deserialized.connections[1].target).toBe('loop-1');
+    });
+  });
+});

@@ -20,12 +20,25 @@ export interface Position {
 
 export interface SerializedBlock {
   id: string;
-  type: string;
   position: Position;
   config: {
-    inputs: Record<string, string>;
-    outputs: Record<string, string>;
-    [key: string]: any;
+    // The tool this block uses
+    tool: string;
+    // Tool-specific parameters
+    params: Record<string, any>;
+    // Block's input/output interface
+    interface: {
+      inputs: Record<string, string>;
+      outputs: Record<string, string>;
+    };
+  };
+  // UI-specific metadata (optional)
+  metadata?: {
+    title?: string;
+    description?: string;
+    category?: string;
+    icon?: string;
+    color?: string;
   };
 }
 

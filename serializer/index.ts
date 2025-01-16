@@ -1,72 +1,56 @@
-import { BlockConfig, SubBlockConfig, BlockType } from "@/blocks/types/block";
-import { Connection, Node } from "reactflow";
+import { Node, Edge } from "reactflow";
 import { SerializedBlock, SerializedConnection, SerializedWorkflow } from "./types";
 
 export class Serializer {
-  serializeWorkflow(blocks: Node<BlockConfig>[], connections: Connection[]): SerializedWorkflow {
+  serializeWorkflow(blocks: Node[], connections: Edge[]): SerializedWorkflow {
     return {
       version: '1.0',
       blocks: blocks.map(block => this.serializeBlock(block)),
       connections: connections.map(conn => ({
-        source: conn.source || '',
-        target: conn.target || '',
+        source: conn.source,
+        target: conn.target,
         sourceHandle: conn.sourceHandle || undefined,
         targetHandle: conn.targetHandle || undefined
       }))
     };
   }
 
-  private serializeBlock(block: Node<BlockConfig>): SerializedBlock {
-    const values = this.extractSubBlockValues(block.data);
-
-    return {
+  private serializeBlock(block: Node): SerializedBlock {
+    const { data } = block;
+    const serialized: SerializedBlock = {
       id: block.id,
-      type: block.data.type,
       position: {
         x: block.position.x,
         y: block.position.y
       },
       config: {
-        ...values,
-        inputs: block.data.workflow.inputs,
-        outputs: block.data.workflow.outputs
+        tool: data.tool,
+        params: data.params || {},
+        interface: {
+          inputs: data.interface?.inputs || {},
+          outputs: data.interface?.outputs || {}
+        }
       }
     };
-  }
 
-  private extractSubBlockValues(block: BlockConfig): Record<string, any> {
-    return block.workflow.subBlocks.reduce((acc, subBlock: SubBlockConfig) => {
-      const key = subBlock.title.toLowerCase().replace(/\s/g, '_');
-      let value: any;
+    const metadata = {
+      title: data.title,
+      description: data.description,
+      category: data.category,
+      icon: data.icon,
+      color: data.color
+    };
 
-      switch (subBlock.type) {
-        case 'long-input':
-        case 'short-input':
-          value = '';
-          break;
-        case 'dropdown':
-          value = subBlock.options?.[0] || '';
-          break;
-        case 'slider':
-          value = subBlock.min || 0;
-          break;
-        case 'code':
-          value = '';
-          break;
-        default:
-          value = null;
-      }
+    if (Object.values(metadata).some(value => value !== undefined)) {
+      serialized.metadata = metadata;
+    }
 
-      return {
-        ...acc,
-        [key]: value
-      };
-    }, {});
+    return serialized;
   }
 
   deserializeWorkflow(serialized: SerializedWorkflow): {
-    blocks: Node<Partial<BlockConfig>>[];
-    connections: Partial<Connection>[];
+    blocks: Node[];
+    connections: Edge[];
   } {
     return {
       blocks: serialized.blocks.map(block => this.deserializeBlock(block)),
@@ -80,18 +64,16 @@ export class Serializer {
     };
   }
 
-  private deserializeBlock(serialized: SerializedBlock): Node<Partial<BlockConfig>> {
+  private deserializeBlock(serialized: SerializedBlock): Node {
     return {
       id: serialized.id,
-      type: 'custom', // or whatever node type you use in ReactFlow
+      type: 'custom',
       position: serialized.position,
       data: {
-        type: serialized.type as BlockType,
-        workflow: {
-          inputs: serialized.config.inputs,
-          outputs: serialized.config.outputs,
-          subBlocks: []
-        }
+        tool: serialized.config.tool,
+        params: serialized.config.params,
+        interface: serialized.config.interface,
+        ...(serialized.metadata || {})
       }
     };
   }
