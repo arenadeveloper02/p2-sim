@@ -22,9 +22,9 @@ export interface SubBlockConfig {
   password?: boolean
 }
 
-export interface OutputTypeConfig {
+export type OutputTypeConfig = OutputType | {
   default: OutputType
-  dependsOn?: {
+  dependsOn: {
     subBlockId: string
     condition: {
       whenEmpty: OutputType

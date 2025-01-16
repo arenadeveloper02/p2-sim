@@ -11,9 +11,7 @@ export const ConditionalBlock: BlockConfig = {
     category: 'basic',
   },
   workflow: {
-    outputType: {
-      default: 'boolean'
-    },
+    outputType: 'boolean',
     subBlocks: [
       {
         title: 'Condition Type',
