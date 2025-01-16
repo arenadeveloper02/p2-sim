@@ -1,5 +1,3 @@
-import { BlockConfig } from "@/blocks/types/block";
-
 export interface SerializedWorkflow {
   version: string;
   blocks: SerializedBlock[];

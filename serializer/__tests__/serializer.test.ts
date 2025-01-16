@@ -128,7 +128,7 @@ describe('Serializer', () => {
         data: {
           tool: 'model',
           params: {
-            model: 'gpt-4'
+            model: 'gpt-4o'
           },
           interface: {
             inputs: {},
@@ -142,7 +142,7 @@ describe('Serializer', () => {
       
       expect(block.id).toBe('minimal-1');
       expect(block.config.tool).toBe('model');
-      expect(block.config.params).toEqual({ model: 'gpt-4' });
+      expect(block.config.params).toEqual({ model: 'gpt-4o' });
       expect(block.metadata).toBeUndefined();
     });
 
@@ -173,7 +173,7 @@ describe('Serializer', () => {
           data: {
             tool: 'model',
             params: {
-              model: 'gpt-4',
+              model: 'gpt-4o',
               systemPrompt: 'Process this data'
             },
             interface: {
@@ -254,7 +254,7 @@ describe('Serializer', () => {
         data: {
           tool: 'model',
           params: {
-            model: 'gpt-4',
+            model: 'gpt-4o',
             temperature: 0.7,
             maxTokens: 1000,
             topP: 0.9,
@@ -273,7 +273,7 @@ describe('Serializer', () => {
       const block = serialized.blocks[0];
       
       expect(block.config.params).toEqual({
-        model: 'gpt-4',
+        model: 'gpt-4o',
         temperature: 0.7,
         maxTokens: 1000,
         topP: 0.9,
@@ -374,7 +374,7 @@ describe('Serializer', () => {
           config: {
             tool: 'model',
             params: {
-              model: 'gpt-4'
+              model: 'gpt-4o'
             },
             interface: {
               inputs: {
