@@ -4,19 +4,33 @@ import type { JSX } from 'react'
 export type BlockType = 'agent' | 'api' | 'conditional'
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'basic' | 'advanced'
+export type OutputType = 'string' | 'number' | 'json' | 'boolean'
+
 export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code'
 export type SubBlockLayout = 'full' | 'half'
 
 export interface SubBlockConfig {
+  id?: string
   title: string
   type: SubBlockType
+  layout?: SubBlockLayout
   options?: string[]
   min?: number
   max?: number
-  layout?: SubBlockLayout
   columns?: string[]
   placeholder?: string
   password?: boolean
+}
+
+export interface OutputTypeConfig {
+  default: OutputType
+  dependsOn?: {
+    subBlockId: string
+    condition: {
+      whenEmpty: OutputType
+      whenFilled: OutputType
+    }
+  }
 }
 
 export interface BlockConfig {
@@ -29,8 +43,7 @@ export interface BlockConfig {
     category: BlockCategory
   }
   workflow: {
-    inputs: Record<string, string>
-    outputs: Record<string, string>
+    outputType: OutputTypeConfig
     subBlocks: SubBlockConfig[]
   }
 }

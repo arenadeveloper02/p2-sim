@@ -11,20 +11,22 @@ export const AgentBlock: BlockConfig = {
     category: 'basic',
   },
   workflow: {
-    inputs: {
-      prompt: 'string',
-      context: 'string',
-    },
-    outputs: {
-      response: 'string',
-      tokens: 'number',
+    outputType: {
+      default: 'string',
+      dependsOn: {
+        subBlockId: 'responseFormat',
+        condition: {
+          whenEmpty: 'string',
+          whenFilled: 'json'
+        }
+      }
     },
     subBlocks: [
       {
         title: 'System Prompt',
         type: 'long-input',
         layout: 'full',
-        placeholder: 'Enter prompt',
+        placeholder: 'Enter prompt'
       },
       {
         title: 'Context',
@@ -53,10 +55,11 @@ export const AgentBlock: BlockConfig = {
         password: true
       },
       {
+        id: 'responseFormat',
         title: 'Response Format',
         type: 'code',
-        layout: 'full',
-      },
-    ],
-  },
+        layout: 'full'
+      }
+    ]
+  }
 }

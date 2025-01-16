@@ -11,13 +11,8 @@ export const ConditionalBlock: BlockConfig = {
     category: 'basic',
   },
   workflow: {
-    inputs: {
-      condition: 'boolean',
-      value: 'any',
-    },
-    outputs: {
-      result: 'any',
-      path: 'string',
+    outputType: {
+      default: 'boolean'
     },
     subBlocks: [
       {

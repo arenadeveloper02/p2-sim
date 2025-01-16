@@ -11,15 +11,8 @@ export const ApiBlock: BlockConfig = {
     category: 'basic',
   },
   workflow: {
-    inputs: {
-      url: 'string',
-      method: 'string',
-      headers: 'object',
-      body: 'string',
-    },
-    outputs: {
-      response: 'string',
-      statusCode: 'number',
+    outputType: {
+      default: 'json'
     },
     subBlocks: [
       {
