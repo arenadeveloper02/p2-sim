@@ -11,11 +11,11 @@ export interface BlockState {
   type: BlockType
   name: string
   position: Position
-  subBlocks: Record<string, SubBlock>
+  subBlocks: Record<string, SubBlockState>
   outputType: OutputType
 }
 
-export interface SubBlock {
+export interface SubBlockState {
   id: string
   type: SubBlockType
   value: string | number | string[][] | null
@@ -35,7 +35,7 @@ export interface WorkflowActions {
     position: Position
   ) => void
   updateBlockPosition: (id: string, position: Position) => void
-  updateBlockInput: (blockId: string, inputId: string, value: any) => void
+  updateSubBlock: (blockId: string, subBlockId: string, subBlock: SubBlockState) => void
   removeBlock: (id: string) => void
   addEdge: (edge: Edge) => void
   removeEdge: (edgeId: string) => void

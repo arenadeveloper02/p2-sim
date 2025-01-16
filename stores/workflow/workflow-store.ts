@@ -2,8 +2,7 @@ import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { Edge } from 'reactflow'
 import { BlockType } from '@/blocks/types/block'
-import { Position } from '@/stores/workflow/types'
-import { WorkflowStore } from './types'
+import { Position, WorkflowStore } from './types'
 import { getBlock } from '@/blocks/configs'
 
 const initialState = {
@@ -23,8 +22,9 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
         const subBlocks: Record<string, any> = {}
         blockConfig.workflow.subBlocks.forEach((subBlock) => {
-          subBlocks[subBlock.id || crypto.randomUUID()] = {
-            id: subBlock.id || crypto.randomUUID(),
+          const subBlockId = subBlock.id || crypto.randomUUID()
+          subBlocks[subBlockId] = {
+            id: subBlockId,
             type: subBlock.type,
             value: null,
           }
@@ -60,7 +60,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
         }))
       },
 
-      updateBlockInput: (blockId: string, inputId: string, value: any) => {
+      updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
         set((state) => ({
           blocks: {
             ...state.blocks,
@@ -68,8 +68,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
               ...state.blocks[blockId],
               subBlocks: {
                 ...state.blocks[blockId].subBlocks,
-                [inputId]: {
-                  ...state.blocks[blockId].subBlocks[inputId],
+                [subBlockId]: {
+                  ...state.blocks[blockId].subBlocks[subBlockId],
                   value,
                 },
               },
@@ -94,7 +94,14 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
       addEdge: (edge: Edge) => {
         set((state) => ({
-          edges: [...state.edges, edge],
+          edges: [
+            ...state.edges,
+            {
+              id: edge.id || crypto.randomUUID(),
+              source: edge.source,
+              target: edge.target,
+            },
+          ],
         }))
       },
 

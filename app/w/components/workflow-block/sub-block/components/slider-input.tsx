@@ -5,12 +5,16 @@ interface SliderInputProps {
   min?: number
   max?: number
   defaultValue: number
+  blockId: string
+  subBlockId: string
 }
 
 export function SliderInput({
   min = 0,
   max = 100,
   defaultValue,
+  blockId,
+  subBlockId,
 }: SliderInputProps) {
   const [sliderValue, setSliderValue] = useState(defaultValue)
 

@@ -75,7 +75,7 @@ export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
                   subBlock.layout === 'half' ? 'flex-1' : 'w-full'
                 }`}
               >
-                <SubBlock config={subBlock} />
+                <SubBlock blockId={id} config={subBlock} />
               </div>
             ))}
           </div>

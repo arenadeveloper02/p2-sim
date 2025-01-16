@@ -3,9 +3,15 @@ import { useState } from 'react'
 
 interface LongInputProps {
   placeholder?: string
+  blockId: string
+  subBlockId: string
 }
 
-export function LongInput({ placeholder }: LongInputProps) {
+export function LongInput({
+  placeholder,
+  blockId,
+  subBlockId,
+}: LongInputProps) {
   const [value, setValue] = useState('')
 
   return (

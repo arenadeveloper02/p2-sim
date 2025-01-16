@@ -8,10 +8,11 @@ import { Table } from './components/table'
 import { Code } from './components/code'
 
 interface SubBlockProps {
+  blockId: string
   config: SubBlockConfig
 }
 
-export function SubBlock({ config }: SubBlockProps) {
+export function SubBlock({ blockId, config }: SubBlockProps) {
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
   }
@@ -21,21 +22,35 @@ export function SubBlock({ config }: SubBlockProps) {
       case 'short-input':
         return (
           <ShortInput
+            blockId={blockId}
+            subBlockId={config.id || ''}
             placeholder={config.placeholder}
             password={config.password}
           />
         )
       case 'long-input':
-        return <LongInput placeholder={config.placeholder} />
+        return (
+          <LongInput
+            blockId={blockId}
+            subBlockId={config.id || ''}
+            placeholder={config.placeholder}
+          />
+        )
       case 'dropdown':
         return (
           <div onMouseDown={handleMouseDown}>
-            <Dropdown options={config.options ?? []} />
+            <Dropdown
+              blockId={blockId}
+              subBlockId={config.id || ''}
+              options={config.options ?? []}
+            />
           </div>
         )
       case 'slider':
         return (
           <SliderInput
+            blockId={blockId}
+            subBlockId={config.id || ''}
             min={config.min}
             max={config.max}
             defaultValue={

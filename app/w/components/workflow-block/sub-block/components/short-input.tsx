@@ -4,9 +4,16 @@ import { useState } from 'react'
 interface ShortInputProps {
   placeholder?: string
   password?: boolean
+  blockId: string
+  subBlockId: string
 }
 
-export function ShortInput({ placeholder, password }: ShortInputProps) {
+export function ShortInput({
+  blockId,
+  subBlockId,
+  placeholder,
+  password,
+}: ShortInputProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useState('')
 
