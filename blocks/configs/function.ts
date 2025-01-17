@@ -12,6 +12,9 @@ export const FunctionBlock: BlockConfig = {
   },
   workflow: {
     outputType: 'json',
+    tools: {
+      access: ['function']
+    },
     subBlocks: [
       {
         id: 'code',

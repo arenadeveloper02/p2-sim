@@ -21,6 +21,9 @@ export const AgentBlock: BlockConfig = {
         }
       }
     },
+    tools: {
+      access: ['model']
+    },
     subBlocks: [
       {
         id: 'systemPrompt',

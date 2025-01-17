@@ -44,5 +44,9 @@ export interface BlockConfig {
   workflow: {
     outputType: OutputTypeConfig
     subBlocks: SubBlockConfig[]
+    tools?: {
+      access: string[]
+      config?: Record<string, any>
+    }
   }
 }
