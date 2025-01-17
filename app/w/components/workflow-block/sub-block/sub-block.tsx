@@ -59,7 +59,13 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
           />
         )
       case 'table':
-        return <Table columns={config.columns ?? []} />
+        return (
+          <Table
+            blockId={blockId}
+            subBlockId={config.id}
+            columns={config.columns ?? []}
+          />
+        )
       case 'code':
         return <Code />
       default:

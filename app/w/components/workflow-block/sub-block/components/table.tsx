@@ -1,58 +1,59 @@
 import { Trash2 } from 'lucide-react'
-import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface TableProps {
   columns: string[]
+  blockId: string
+  subBlockId: string
 }
 
 interface TableRow {
   id: string
-  cells: string[]
+  cells: Record<string, string>
 }
 
-export function Table({ columns }: TableProps) {
-  const [rows, setRows] = useState<TableRow[]>([
-    { id: crypto.randomUUID(), cells: Array(columns.length).fill('') },
-  ])
+export function Table({ columns, blockId, subBlockId }: TableProps) {
+  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+
+  // Initialize with empty row if no value exists
+  const rows = (value as any[]) || [
+    {
+      id: crypto.randomUUID(),
+      cells: Object.fromEntries(columns.map((col) => [col, ''])),
+    },
+  ]
 
   const handleCellChange = (
     rowIndex: number,
-    cellIndex: number,
+    column: string,
     value: string
   ) => {
-    setRows((currentRows) => {
-      const updatedRows = currentRows.map((row, idx) =>
-        idx === rowIndex
-          ? {
-              ...row,
-              cells: row.cells.map((cell, cidx) =>
-                cidx === cellIndex ? value : cell
-              ),
-            }
-          : row
-      )
+    const updatedRows = rows.map((row, idx) =>
+      idx === rowIndex
+        ? {
+            ...row,
+            cells: { ...row.cells, [column]: value },
+          }
+        : row
+    )
 
-      // Add new row if typing in the last row
-      if (rowIndex === currentRows.length - 1 && value !== '') {
-        updatedRows.push({
-          id: crypto.randomUUID(),
-          cells: Array(columns.length).fill(''),
-        })
-      }
+    // Add new row if typing in the last row
+    if (rowIndex === rows.length - 1 && value !== '') {
+      updatedRows.push({
+        id: crypto.randomUUID(),
+        cells: Object.fromEntries(columns.map((col) => [col, ''])),
+      })
+    }
 
-      return updatedRows
-    })
+    setValue(updatedRows)
   }
 
   const handleDeleteRow = (rowIndex: number) => {
-    setRows((currentRows) => {
-      // Don't delete if it's the last row
-      if (currentRows.length === 1) return currentRows
-      return currentRows.filter((_, index) => index !== rowIndex)
-    })
+    if (rows.length === 1) return // Don't delete if it's the last row
+    setValue(rows.filter((_, index) => index !== rowIndex))
   }
 
   return (
@@ -62,7 +63,7 @@ export function Table({ columns }: TableProps) {
           <tr className="border-b">
             {columns.map((column, index) => (
               <th
-                key={index}
+                key={column}
                 className={cn(
                   'px-4 py-2 text-left text-sm font-medium',
                   index < columns.length - 1 && 'border-r'
@@ -76,19 +77,19 @@ export function Table({ columns }: TableProps) {
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={row.id} className="border-t group relative">
-              {row.cells.map((cell, cellIndex) => (
+              {columns.map((column, cellIndex) => (
                 <td
-                  key={`${row.id}-${cellIndex}`}
+                  key={`${row.id}-${column}`}
                   className={cn(
                     'p-1',
                     cellIndex < columns.length - 1 && 'border-r'
                   )}
                 >
                   <Input
-                    value={cell}
-                    placeholder={columns[cellIndex]}
+                    value={row.cells[column] || ''}
+                    placeholder={column}
                     onChange={(e) =>
-                      handleCellChange(rowIndex, cellIndex, e.target.value)
+                      handleCellChange(rowIndex, column, e.target.value)
                     }
                     className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-muted-foreground placeholder:text-muted-foreground/50"
                   />
