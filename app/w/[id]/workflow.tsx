@@ -41,6 +41,7 @@ const WorkflowNode = ({
   id,
   xPos,
   yPos,
+  selected,
 }: NodeProps<WorkflowNodeData>) => (
   <WorkflowBlock
     id={id}
@@ -48,6 +49,7 @@ const WorkflowNode = ({
     position={{ x: xPos, y: yPos }}
     config={data.config}
     name={data.name}
+    selected={selected}
   />
 )
 
@@ -88,14 +90,22 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
  * including drag and drop, node connections, and position updates
  */
 function WorkflowCanvas() {
-  const { blocks, edges, addBlock, updateBlockPosition, addEdge, removeEdge } =
-    useWorkflowStore()
+  const {
+    blocks,
+    edges,
+    addBlock,
+    updateBlockPosition,
+    addEdge,
+    removeEdge,
+    setSelectedBlock,
+  } = useWorkflowStore()
 
   // Convert blocks to ReactFlow nodes
   const nodes = Object.values(blocks).map((block) => ({
     id: block.id,
     type: 'workflowBlock',
     position: block.position,
+    selected: block.id === useWorkflowStore.getState().selectedBlockId,
     data: {
       type: block.type,
       config: getBlock(block.type),
@@ -177,12 +187,34 @@ function WorkflowCanvas() {
         }`
 
         addBlock(id, type, name, position)
+        setSelectedBlock(id)
       } catch (err) {
         console.error('Error dropping block:', err)
       }
     },
     [project, blocks, addBlock]
   )
+
+  // Handler for node clicks
+  const onNodeClick = useCallback(
+    (event: React.MouseEvent, node: any) => {
+      event.stopPropagation()
+      setSelectedBlock(node.id)
+    },
+    [setSelectedBlock]
+  )
+
+  // Handler for clicks on the empty canvas
+  const onPaneClick = useCallback(
+    (event: React.MouseEvent) => {
+      setSelectedBlock(null)
+    },
+    [setSelectedBlock]
+  )
+
+  useEffect(() => {
+    initializeStateLogger()
+  }, [])
 
   /**
    * CSS keyframe animation for the dashed line effect
@@ -193,10 +225,6 @@ function WorkflowCanvas() {
       to { stroke-dashoffset: -10; }
     }
   `
-
-  useEffect(() => {
-    initializeStateLogger()
-  }, [])
 
   return (
     <div className="w-full h-[calc(100vh-56px)]">
@@ -224,6 +252,12 @@ function WorkflowCanvas() {
           animation: 'dashdraw 1s linear infinite',
         }}
         connectionLineType={ConnectionLineType.SmoothStep}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        elementsSelectable={true}
+        selectNodesOnDrag={false}
+        nodesConnectable={true}
+        nodesDraggable={true}
       >
         <Background />
       </ReactFlow>

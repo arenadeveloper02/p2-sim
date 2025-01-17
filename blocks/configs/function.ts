@@ -8,7 +8,7 @@ export const FunctionBlock: BlockConfig = {
     description: 'Add custom logic',
     bgColor: '#FF8D2F',
     icon: CodeIcon,
-    category: 'basic',
+    category: 'advanced',
   },
   workflow: {
     outputType: 'json',

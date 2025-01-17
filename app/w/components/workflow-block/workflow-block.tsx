@@ -3,6 +3,7 @@ import { BlockConfig, SubBlockConfig } from '../../../../blocks/types/block'
 import { SubBlock } from './sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
+import { ActionBar } from './action-block/action-block'
 
 interface WorkflowBlockProps {
   id: string
@@ -10,9 +11,16 @@ interface WorkflowBlockProps {
   position: { x: number; y: number }
   config: BlockConfig
   name: string
+  selected?: boolean
 }
 
-export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
+export function WorkflowBlock({
+  id,
+  type,
+  config,
+  name,
+  selected,
+}: WorkflowBlockProps) {
   const { toolbar, workflow } = config
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
@@ -42,7 +50,9 @@ export function WorkflowBlock({ id, type, config, name }: WorkflowBlockProps) {
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
   return (
-    <Card className="w-[320px] shadow-md select-none group">
+    <Card className="w-[320px] shadow-md select-none group relative">
+      {selected && <ActionBar blockId={id} />}
+
       <Handle
         type="target"
         position={Position.Top}
