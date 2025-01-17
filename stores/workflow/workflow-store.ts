@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { Edge } from 'reactflow'
-import { BlockType } from '@/blocks/types/block'
 import { Position, WorkflowStore } from './types'
 import { getBlock } from '@/blocks/configs'
 
@@ -16,7 +15,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
     (set, get) => ({
       ...initialState,
 
-      addBlock: (id: string, type: BlockType, name: string, position: Position) => {
+      addBlock: (id: string, type: string, name: string, position: Position) => {
         const blockConfig = getBlock(type)
         if (!blockConfig) return
 

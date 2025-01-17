@@ -1,27 +1,29 @@
-import { BlockConfig, BlockType } from '../types/block'
+import { BlockConfig } from '../types/block'
+
+// Import blocks
 import { AgentBlock } from './agent'
 import { ApiBlock } from './api'
-import { ConditionalBlock } from './conditional'
+import { FunctionBlock } from './function'
 
-// Export individual blocks
-export { AgentBlock, ApiBlock, ConditionalBlock }
+// Export blocks for ease of use
+export { AgentBlock, ApiBlock, FunctionBlock }
 
 // Combined blocks registry
 export const BLOCKS: BlockConfig[] = [
   AgentBlock,
   ApiBlock,
-  ConditionalBlock,
+  FunctionBlock,
 ]
 
 // Helper functions
-export const getBlock = (type: BlockType): BlockConfig | undefined =>
+export const getBlock = (type: string): BlockConfig | undefined =>
   BLOCKS.find(block => block.type === type)
 
 export const getBlocksByCategory = (category: 'basic' | 'advanced'): BlockConfig[] =>
   BLOCKS.filter(block => block.toolbar.category === category)
 
-export const getAllBlockTypes = (): BlockType[] =>
+export const getAllBlockTypes = (): string[] =>
   BLOCKS.map(block => block.type)
 
-export const isValidBlockType = (type: string): type is BlockType =>
+export const isValidBlockType = (type: string): type is string =>
   BLOCKS.some(block => block.type === type)

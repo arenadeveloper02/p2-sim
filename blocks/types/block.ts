@@ -1,7 +1,6 @@
 import type { SVGProps } from 'react'
 import type { JSX } from 'react'
 
-export type BlockType = 'agent' | 'api' | 'conditional'
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'basic' | 'advanced'
 export type OutputType = 'string' | 'number' | 'json' | 'boolean'
@@ -34,7 +33,7 @@ export type OutputTypeConfig = OutputType | {
 }
 
 export interface BlockConfig {
-  type: BlockType
+  type: string
   toolbar: {
     title: string
     description: string

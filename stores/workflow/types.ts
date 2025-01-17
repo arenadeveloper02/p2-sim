@@ -1,5 +1,5 @@
 import { Node, Edge } from 'reactflow'
-import { BlockType, OutputType, SubBlockType } from '@/blocks/types/block'
+import { OutputType, SubBlockType } from '@/blocks/types/block'
 
 export interface Position {
   x: number
@@ -8,7 +8,7 @@ export interface Position {
 
 export interface BlockState {
   id: string
-  type: BlockType
+  type: string
   name: string
   position: Position
   subBlocks: Record<string, SubBlockState>
@@ -30,7 +30,7 @@ export interface WorkflowState {
 export interface WorkflowActions {
   addBlock: (
     id: string,
-    type: BlockType,
+    type: string,
     name: string,
     position: Position
   ) => void

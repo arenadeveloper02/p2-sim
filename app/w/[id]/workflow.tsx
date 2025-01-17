@@ -21,7 +21,6 @@ import 'reactflow/dist/style.css'
 import { getBlock } from '../../../blocks/configs'
 import { WorkflowBlock } from '../components/workflow-block/workflow-block'
 import { BlockConfig } from '../../../blocks/types/block'
-import { BlockType } from '../../../blocks/types/block'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import { initializeStateLogger } from '@/stores/workflow/state-logger'
 
@@ -29,7 +28,7 @@ import { initializeStateLogger } from '@/stores/workflow/state-logger'
  * Represents the data structure for a workflow node
  */
 interface WorkflowNodeData {
-  type: BlockType
+  type: string
   config: BlockConfig
   name: string
 }
