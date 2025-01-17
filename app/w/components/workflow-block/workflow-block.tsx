@@ -50,7 +50,7 @@ export function WorkflowBlock({
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
   return (
-    <Card className="w-[320px] shadow-md select-none group relative">
+    <Card className="w-[320px] shadow-md select-none group relative [&:active]:cursor-grabbing cursor-grab">
       {selected && <ActionBar blockId={id} />}
 
       <Handle
@@ -75,7 +75,7 @@ export function WorkflowBlock({
         <span className="font-medium text-md">{name}</span>
       </div>
 
-      <div className="px-4 pt-3 pb-4 space-y-4">
+      <div className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
         {subBlockRows.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`} className="flex gap-4">
             {row.map((subBlock, blockIndex) => (

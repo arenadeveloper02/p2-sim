@@ -192,7 +192,6 @@ function WorkflowCanvas() {
         }`
 
         addBlock(id, type, name, position)
-        setSelectedBlock(id)
       } catch (err) {
         console.error('Error dropping block:', err)
       }

@@ -10,7 +10,7 @@ export function ActionBar({ blockId }: ActionBarProps) {
   const removeBlock = useWorkflowStore((state) => state.removeBlock)
 
   return (
-    <div className="absolute -top-20 left-0 right-0 flex items-center justify-between gap-2 p-2 bg-white rounded-md shadow-sm border border-gray-200 animate-in fade-in slide-in-from-top-2">
+    <div className="absolute -top-20 right-0 inline-flex items-center gap-2 p-2 bg-white rounded-md shadow-sm border border-gray-200 animate-in fade-in slide-in-from-bottom-2">
       <Button
         variant="ghost"
         size="sm"
