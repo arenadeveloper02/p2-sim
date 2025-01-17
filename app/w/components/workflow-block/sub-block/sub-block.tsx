@@ -67,7 +67,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
           />
         )
       case 'code':
-        return <Code />
+        return <Code blockId={blockId} subBlockId={config.id} />
       default:
         return null
     }

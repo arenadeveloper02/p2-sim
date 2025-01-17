@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface CodeLine {
   id: string
@@ -25,15 +26,32 @@ const MATCHING_PAIRS: Record<string, string> = {
   '`': '`',
 }
 
-function useCodeLines() {
-  const [lines, setLines] = useState<CodeLine[]>(() =>
-    Array(INITIAL_LINES)
+interface CodeProps {
+  blockId: string
+  subBlockId: string
+}
+
+function useCodeLines(blockId: string, subBlockId: string) {
+  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+
+  // Initialize lines from store value or create initial state
+  const [lines, setLines] = useState<any[]>(() => {
+    if (Array.isArray(value)) {
+      return value
+    }
+    return Array(INITIAL_LINES)
       .fill(null)
       .map(() => ({
         id: crypto.randomUUID(),
         content: '',
       }))
-  )
+  })
+
+  // Update store whenever lines change
+  useEffect(() => {
+    setValue(lines)
+  }, [lines, setValue])
+
   const [currentLine, setCurrentLine] = useState(0)
   const [selection, setSelection] = useState<SelectionState | null>(null)
 
@@ -65,7 +83,7 @@ function useCodeLines() {
   }
 }
 
-export function Code() {
+export function Code({ blockId, subBlockId }: CodeProps) {
   const {
     lines,
     setLines,
@@ -74,7 +92,7 @@ export function Code() {
     handleChange,
     selection,
     setSelection,
-  } = useCodeLines()
+  } = useCodeLines(blockId, subBlockId)
   const textareaRefs = useRef<(HTMLTextAreaElement | null)[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const contentWrapperRef = useRef<HTMLDivElement>(null)
