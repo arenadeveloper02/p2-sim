@@ -3,10 +3,10 @@ import { ModelProvider, ModelRequestOptions, ModelResponse } from '../types/mode
 
 export class GoogleProvider implements ModelProvider {
   private readonly SUPPORTED_MODELS = ['gemini-pro'];
-  private readonly API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+  private readonly API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
 
   async callModel(config: AgentConfig, options: ModelRequestOptions): Promise<ModelResponse> {
-    const response = await fetch(`${this.API_URL}/${config.model}:generateContent?key=${config.apiKey}`, {
+    const response = await fetch(`${this.API_URL}?key=${config.apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -32,7 +32,7 @@ export class GoogleProvider implements ModelProvider {
     const data = await response.json();
     return {
       response: data.candidates[0].content.parts[0].text,
-      tokens: data.usage.totalTokens,
+      tokens: data.usage?.totalTokens || 0,
       model: config.model
     };
   }

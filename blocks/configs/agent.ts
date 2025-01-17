@@ -41,7 +41,7 @@ export const AgentBlock: BlockConfig = {
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
-        options: ['GPT-4o', 'Gemini 2.0', 'Claude 3.5 Sonnet', 'DeepSeek V3', 'Grok 2'],
+        options: ['gpt-4o', 'gemini-pro', 'claude-3-5-sonnet-20241022', 'grok-2-latest', 'deepseek-v3'],
       },
       {
         id: 'temperature',

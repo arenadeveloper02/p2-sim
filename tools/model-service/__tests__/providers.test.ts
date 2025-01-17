@@ -74,7 +74,7 @@ describe('Model Providers', () => {
       } as Response);
 
       const config: AgentConfig = {
-        model: 'claude-3.5-sonnet',
+        model: 'claude-3-5-sonnet-20241022',
         systemPrompt: 'Test prompt',
         temperature: 0.7,
         apiKey: 'test-key'
@@ -83,7 +83,7 @@ describe('Model Providers', () => {
       const result = await provider.callModel(config, { maxTokens: 100 });
       expect(result.response).toBe('Test response');
       expect(result.tokens).toBe(10);
-      expect(result.model).toBe('claude-3.5-sonnet');
+      expect(result.model).toBe('claude-3-5-sonnet-20241022');
     });
 
     test('should handle API errors', async () => {
@@ -93,7 +93,7 @@ describe('Model Providers', () => {
       } as Response);
 
       const config: AgentConfig = {
-        model: 'claude-3.5-sonnet',
+        model: 'claude-3-5-sonnet-20241022',
         systemPrompt: 'Test prompt',
         temperature: 0.7,
         apiKey: 'invalid-key'
@@ -122,7 +122,7 @@ describe('Model Providers', () => {
       } as Response);
 
       const config: AgentConfig = {
-        model: 'gemini-2-flash',
+        model: 'gemini-pro',
         systemPrompt: 'Test prompt',
         temperature: 0.7,
         apiKey: 'test-key'
@@ -131,7 +131,7 @@ describe('Model Providers', () => {
       const result = await provider.callModel(config, { maxTokens: 100 });
       expect(result.response).toBe('Test response');
       expect(result.tokens).toBe(10);
-      expect(result.model).toBe('gemini-2-flash');
+      expect(result.model).toBe('gemini-pro');
     });
 
     test('should handle API errors', async () => {
@@ -141,7 +141,7 @@ describe('Model Providers', () => {
       } as Response);
 
       const config: AgentConfig = {
-        model: 'gemini-2-flash',
+        model: 'gemini-pro',
         systemPrompt: 'Test prompt',
         temperature: 0.7,
         apiKey: 'invalid-key'

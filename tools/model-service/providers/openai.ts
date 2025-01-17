@@ -2,7 +2,7 @@ import { AgentConfig } from '../types/agent';
 import { ModelProvider, ModelRequestOptions, ModelResponse } from '../types/model';
 
 export class OpenAIProvider implements ModelProvider {
-  private readonly SUPPORTED_MODELS = ['gpt-4', 'gpt-3.5-turbo'];
+  private readonly SUPPORTED_MODELS = ['gpt-4o'];
   private readonly API_URL = 'https://api.openai.com/v1/chat/completions';
 
   async callModel(config: AgentConfig, options: ModelRequestOptions): Promise<ModelResponse> {

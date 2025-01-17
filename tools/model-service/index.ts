@@ -30,10 +30,10 @@ export class ModelService {
     this.providers.set('gpt-4o', openai);
 
     // Anthropic models
-    this.providers.set('claude-3.5-sonnet', anthropic);
+    this.providers.set('claude-3-5-sonnet-20241022', anthropic);
 
     // Google models
-    this.providers.set('gemini-2-flash', google);
+    this.providers.set('gemini-pro', google);
 
     // XAI models
     this.providers.set('grok-2-latest', xai);

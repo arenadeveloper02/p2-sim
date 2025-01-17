@@ -2,7 +2,7 @@ import { AgentConfig } from '../types/agent';
 import { ModelProvider, ModelRequestOptions, ModelResponse } from '../types/model';
 
 export class AnthropicProvider implements ModelProvider {
-  private readonly SUPPORTED_MODELS = ['claude-3-sonnet', 'claude-3-opus'];
+  private readonly SUPPORTED_MODELS = ['claude-3-5-sonnet-20241022'];
   private readonly API_URL = 'https://api.anthropic.com/v1/messages';
 
   async callModel(config: AgentConfig, options: ModelRequestOptions): Promise<ModelResponse> {

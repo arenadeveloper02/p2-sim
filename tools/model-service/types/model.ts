@@ -17,10 +17,9 @@ export interface ModelResponse {
   }
 
 export const DEFAULT_MODEL_CONFIGS = {
-  'gpt-4': { provider: 'openai' },
-  'gpt-3.5-turbo': { provider: 'openai' },
-  'claude-3-sonnet': { provider: 'anthropic' },
-  'claude-3-opus': { provider: 'anthropic' },
-  'gemini-pro': { provider: 'google' },
-  'grok-2-latest': { provider: 'xai' }
+  'gpt-4o': { provider: 'openai' },
+  'claude': { provider: 'anthropic' },
+  'gemini': { provider: 'google' },
+  'grok': { provider: 'xai' },
+  'deepseek': { provider: 'deepseek' }
 } as const;
