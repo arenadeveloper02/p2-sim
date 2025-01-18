@@ -1,18 +1,47 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { Edge } from 'reactflow'
-import { Position, WorkflowStore } from './types'
+import { Position, SubBlockState, WorkflowStore } from './types'
 import { getBlock } from '@/blocks'
+import { withHistory, WorkflowStoreWithHistory, pushHistory } from './history-middleware'
 
 const initialState = {
   blocks: {},
   edges: [],
+  history: {
+    past: [],
+    present: {
+      state: { blocks: {}, edges: [] },
+      timestamp: Date.now(),
+    },
+    future: [],
+  },
 }
 
-export const useWorkflowStore = create<WorkflowStore>()(
+export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
   devtools(
-    (set, get) => ({
+    withHistory((set, get) => ({
       ...initialState,
+      undo: () => {},
+      redo: () => {},
+      canUndo: () => false,
+      canRedo: () => false,
+
+      updateSubBlock: (blockId: string, subBlockId: string, subBlock: SubBlockState) => {
+        set((state) => ({
+          blocks: {
+            ...state.blocks,
+            [blockId]: {
+              ...state.blocks[blockId],
+              subBlocks: {
+                ...state.blocks[blockId].subBlocks,
+                [subBlockId]: subBlock,
+              },
+            },
+          },
+          edges: [...state.edges],
+        }))
+      },
 
       addBlock: (id: string, type: string, name: string, position: Position) => {
         const blockConfig = getBlock(type)
@@ -28,9 +57,9 @@ export const useWorkflowStore = create<WorkflowStore>()(
           }
         })
 
-        set((state) => ({
+        const newState = {
           blocks: {
-            ...state.blocks,
+            ...get().blocks,
             [id]: {
               id,
               type,
@@ -43,7 +72,11 @@ export const useWorkflowStore = create<WorkflowStore>()(
                   : blockConfig.workflow.outputType.default,
             },
           },
-        }))
+          edges: [...get().edges],
+        }
+
+        set(newState)
+        pushHistory(set, get, newState)
       },
 
       updateBlockPosition: (id: string, position: Position) => {
@@ -55,63 +88,56 @@ export const useWorkflowStore = create<WorkflowStore>()(
               position,
             },
           },
-        }))
-      },
-
-      updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
-        set((state) => ({
-          blocks: {
-            ...state.blocks,
-            [blockId]: {
-              ...state.blocks[blockId],
-              subBlocks: {
-                ...state.blocks[blockId].subBlocks,
-                [subBlockId]: {
-                  ...state.blocks[blockId].subBlocks[subBlockId],
-                  value,
-                },
-              },
-            },
-          },
+          edges: [...state.edges],
         }))
       },
 
       removeBlock: (id: string) => {
-        set((state) => {
-          const { [id]: _, ...remainingBlocks } = state.blocks
-          const remainingEdges = state.edges.filter(
+        const newState = {
+          blocks: { ...get().blocks },
+          edges: [...get().edges].filter(
             (edge) => edge.source !== id && edge.target !== id
-          )
-          return {
-            blocks: remainingBlocks,
-            edges: remainingEdges,
-          }
-        })
+          ),
+        }
+        delete newState.blocks[id]
+        
+        set(newState)
+        pushHistory(set, get, newState)
       },
 
       addEdge: (edge: Edge) => {
-        set((state) => ({
+        const newState = {
+          blocks: { ...get().blocks },
           edges: [
-            ...state.edges,
+            ...get().edges,
             {
               id: edge.id || crypto.randomUUID(),
               source: edge.source,
               target: edge.target,
             },
           ],
-        }))
+        }
+        
+        set(newState)
+        pushHistory(set, get, newState)
       },
 
       removeEdge: (edgeId: string) => {
-        set((state) => ({
-          edges: state.edges.filter((edge) => edge.id !== edgeId),
-        }))
+        const newState = {
+          blocks: { ...get().blocks },
+          edges: get().edges.filter((edge) => edge.id !== edgeId),
+        }
+        
+        set(newState)
+        pushHistory(set, get, newState)
       },
 
       clear: () => {
-        set(initialState)
+        const newState = initialState
+        set(newState)
+        pushHistory(set, get, newState)
       },
-    }),
+    })),
     { name: 'workflow-store' }
   )
 ) 

@@ -3,9 +3,15 @@ import { useWorkflowStore } from './workflow-store'
 export function initializeStateLogger() {
   useWorkflowStore.subscribe((state) => {
     console.log('Workflow State Updated:', {
-      blocks: state.blocks,
-      edges: state.edges,
-      selectedBlockId: state.selectedBlockId,
+      current: {
+        blocks: state.blocks,
+        edges: state.edges,
+      },
+      history: {
+        past: state.history.past,
+        present: state.history.present,
+        future: state.history.future,
+      }
     })
   })
 } 

@@ -97,8 +97,18 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
 function WorkflowCanvas() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
 
-  const { blocks, edges, addBlock, updateBlockPosition, addEdge, removeEdge } =
-    useWorkflowStore()
+  const {
+    blocks,
+    edges,
+    addBlock,
+    updateBlockPosition,
+    addEdge,
+    removeEdge,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+  } = useWorkflowStore()
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionResult, setExecutionResult] = useState<any>(null)
   const { addNotification } = useNotificationStore()
@@ -371,6 +381,23 @@ function WorkflowCanvas() {
       setIsExecuting(false)
     }
   }
+
+  // Add keyboard shortcut handler
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+        if (event.shiftKey) {
+          if (canRedo()) redo()
+        } else {
+          if (canUndo()) undo()
+        }
+        event.preventDefault()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [canUndo, canRedo, undo, redo])
 
   return (
     <div className="relative w-full h-[calc(100vh-56px)]">
