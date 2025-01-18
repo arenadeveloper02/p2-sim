@@ -3,8 +3,9 @@ import { Terminal, AlertCircle } from 'lucide-react'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import {
   NotificationType,
-  useNotificationStore,
-} from '@/stores/notifications/notifications-store'
+  NotificationStore,
+} from '@/stores/notifications/types'
+import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
 
