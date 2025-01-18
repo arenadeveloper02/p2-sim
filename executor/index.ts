@@ -1,6 +1,6 @@
 import { SerializedWorkflow, SerializedBlock, BlockConfig } from '@/serializer/types';
 import { ExecutionContext, ExecutionResult, Tool } from './types';
-import { tools } from '@/tools/registry';
+import { tools } from '@/tools';
 
 export class Executor {
   private workflow: SerializedWorkflow;

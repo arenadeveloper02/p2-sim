@@ -35,13 +35,17 @@ export const AgentBlock: BlockConfig = {
       config: {
         tool: (params: Record<string, any>) => {
           const model = params.model || 'gpt-4o';
+
           if (!model) {
             throw new Error('No model selected');
           }
+
           const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS];
+
           if (!tool) {
             throw new Error(`Invalid model selected: ${model}`);
           }
+          
           return tool;
         }
       }
