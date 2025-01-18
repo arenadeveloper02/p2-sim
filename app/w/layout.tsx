@@ -14,11 +14,11 @@ export default function WorkspaceLayout({
         <nav className="flex">
           <Sidebar />
           <Toolbar />
-          <div className="fixed top-0 left-[344px] right-0 z-30">
+          <div className="fixed top-0 left-[312px] right-0 z-30">
             <ControlBar />
           </div>
         </nav>
-        <main className="flex-1 grid items-start gap-2 sm:gap-4 sm:py-0 md:gap-4 sm:pt-[56px] sm:pl-[344px] bg-muted/40">
+        <main className="flex-1 grid items-start gap-2 sm:gap-4 sm:py-0 md:gap-4 sm:pt-[56px] sm:pl-[312px] bg-muted/40">
           {children}
         </main>
       </div>

@@ -10,7 +10,7 @@ export function Toolbar() {
   const [activeTab, setActiveTab] = useState<BlockCategory>('basic')
 
   return (
-    <div className="fixed left-14 top-0 z-1 hidden h-full w-72 border-r bg-background sm:block">
+    <div className="fixed left-14 top-0 z-1 hidden h-full w-64 border-r bg-background sm:block">
       <ToolbarTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="p-4">
