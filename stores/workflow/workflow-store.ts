@@ -7,7 +7,6 @@ import { getBlock } from '@/blocks'
 const initialState = {
   blocks: {},
   edges: [],
-  selectedBlockId: null,
 }
 
 export const useWorkflowStore = create<WorkflowStore>()(
@@ -86,7 +85,6 @@ export const useWorkflowStore = create<WorkflowStore>()(
           return {
             blocks: remainingBlocks,
             edges: remainingEdges,
-            selectedBlockId: state.selectedBlockId === id ? null : state.selectedBlockId,
           }
         })
       },
@@ -108,10 +106,6 @@ export const useWorkflowStore = create<WorkflowStore>()(
         set((state) => ({
           edges: state.edges.filter((edge) => edge.id !== edgeId),
         }))
-      },
-
-      setSelectedBlock: (id: string | null) => {
-        set({ selectedBlockId: id })
       },
 
       clear: () => {

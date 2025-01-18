@@ -3,7 +3,7 @@ import { BlockConfig, SubBlockConfig } from '../../../../blocks/types'
 import { SubBlock } from './components/sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
-import { ActionBar } from './components/action-block/action-block'
+import { ActionBar } from './components/action-bar/action-bar'
 
 interface WorkflowBlockProps {
   id: string

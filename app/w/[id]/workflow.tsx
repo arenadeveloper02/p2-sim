@@ -95,25 +95,20 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
  * including drag and drop, node connections, and position updates
  */
 function WorkflowCanvas() {
-  const {
-    blocks,
-    edges,
-    addBlock,
-    updateBlockPosition,
-    addEdge,
-    removeEdge,
-    setSelectedBlock,
-  } = useWorkflowStore()
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+
+  const { blocks, edges, addBlock, updateBlockPosition, addEdge, removeEdge } =
+    useWorkflowStore()
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionResult, setExecutionResult] = useState<any>(null)
   const { addNotification } = useNotificationStore()
 
-  // Convert blocks to ReactFlow nodes
+  // Convert blocks to ReactFlow nodes using local selectedBlockId
   const nodes = Object.values(blocks).map((block) => ({
     id: block.id,
     type: 'workflowBlock',
     position: block.position,
-    selected: block.id === useWorkflowStore.getState().selectedBlockId,
+    selected: block.id === selectedBlockId,
     data: {
       type: block.type,
       config: getBlock(block.type),
@@ -203,21 +198,15 @@ function WorkflowCanvas() {
   )
 
   // Handler for node clicks
-  const onNodeClick = useCallback(
-    (event: React.MouseEvent, node: any) => {
-      event.stopPropagation()
-      setSelectedBlock(node.id)
-    },
-    [setSelectedBlock]
-  )
+  const onNodeClick = useCallback((event: React.MouseEvent, node: any) => {
+    event.stopPropagation()
+    setSelectedBlockId(node.id)
+  }, [])
 
   // Handler for clicks on the empty canvas
-  const onPaneClick = useCallback(
-    (event: React.MouseEvent) => {
-      setSelectedBlock(null)
-    },
-    [setSelectedBlock]
-  )
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    setSelectedBlockId(null)
+  }, [])
 
   useEffect(() => {
     initializeStateLogger()
@@ -271,13 +260,13 @@ function WorkflowCanvas() {
    * @returns {Object} The initial input parameters for the block
    */
   const getInitialInput = (block: BlockState, blockConfig: BlockConfig) => {
-    const params: Record<string, any> = {};
+    const params: Record<string, any> = {}
     Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
       if (subBlock?.value !== undefined) {
-        params[id] = subBlock.value;
+        params[id] = subBlock.value
       }
-    });
-    return params;
+    })
+    return params
   }
 
   /**
@@ -292,23 +281,23 @@ function WorkflowCanvas() {
       throw new Error(`Block configuration not found for type: ${block.type}`)
     }
 
-    const tools = blockConfig.workflow.tools;
+    const tools = blockConfig.workflow.tools
     if (!tools?.access || tools.access.length === 0) {
-      throw new Error(`No tools specified for block type: ${block.type}`);
+      throw new Error(`No tools specified for block type: ${block.type}`)
     }
 
     // Get all values from subBlocks
-    const params: Record<string, any> = {};
+    const params: Record<string, any> = {}
     Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
       if (subBlock?.value !== undefined) {
-        params[id] = subBlock.value;
+        params[id] = subBlock.value
       }
     })
 
     // Get the tool ID from the block's configuration
-    const toolId = tools.config?.tool?.(params) || params.tool;
+    const toolId = tools.config?.tool?.(params) || params.tool
     if (!toolId || !tools.access.includes(toolId)) {
-      throw new Error(`Invalid or unauthorized tool: ${toolId}`);
+      throw new Error(`Invalid or unauthorized tool: ${toolId}`)
     }
 
     return {
@@ -321,11 +310,12 @@ function WorkflowCanvas() {
         interface: {
           inputs: blockConfig.workflow.inputs || {},
           outputs: {
-            output: typeof blockConfig.workflow.outputType === 'string' 
-              ? blockConfig.workflow.outputType 
-              : blockConfig.workflow.outputType.default
-          }
-        }
+            output:
+              typeof blockConfig.workflow.outputType === 'string'
+                ? blockConfig.workflow.outputType
+                : blockConfig.workflow.outputType.default,
+          },
+        },
       },
     }
   }

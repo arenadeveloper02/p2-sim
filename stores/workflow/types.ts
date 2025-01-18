@@ -24,7 +24,6 @@ export interface SubBlockState {
 export interface WorkflowState {
   blocks: Record<string, BlockState>
   edges: Edge[]
-  selectedBlockId: string | null
 }
 
 export interface WorkflowActions {
@@ -39,7 +38,6 @@ export interface WorkflowActions {
   removeBlock: (id: string) => void
   addEdge: (edge: Edge) => void
   removeEdge: (edgeId: string) => void
-  setSelectedBlock: (id: string | null) => void
   clear: () => void
 }
 
