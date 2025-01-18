@@ -1,6 +1,6 @@
-import { SerializedWorkflow, SerializedBlock } from '@/serializer/types';
+import { SerializedWorkflow, SerializedBlock, BlockConfig } from '@/serializer/types';
 import { ExecutionContext, ExecutionResult, Tool } from './types';
-import { toolRegistry } from '@/tools/registry';
+import { tools } from '@/tools/registry';
 
 export class Executor {
   private workflow: SerializedWorkflow;
@@ -14,39 +14,64 @@ export class Executor {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<Record<string, any>> {
-    // Get the tool specified by the block's tool property
-    const toolName = block.config.tool;
-    if (!toolName) {
+    const config = block.config as BlockConfig;
+    const toolId = config.tool;
+
+    if (!toolId) {
       throw new Error(`Block ${block.id} does not specify a tool`);
     }
 
-    const tool = toolRegistry[toolName];
+    const tool = tools[toolId];
     if (!tool) {
-      throw new Error(`Tool not found: ${toolName}`);
+      throw new Error(`Tool not found: ${toolId}`);
     }
 
     // Validate interface compatibility
     this.validateInterface(block, inputs);
 
-    // Merge tool parameters with runtime inputs
+    // Merge block parameters with runtime inputs
     const params = {
-      ...block.config.params,
+      ...config.params,
       ...inputs
     };
 
-    // Validate the parameters against tool requirements
-    const validationResult = tool.validateParams(params);
-    if (typeof validationResult === 'string') {
-      throw new Error(`Invalid parameters for tool ${toolName}: ${validationResult}`);
-    }
+    // Validate tool parameters
+    this.validateToolParams(tool, params);
 
     try {
-      // Execute the tool and validate its output matches the interface
-      const result = await tool.execute(params);
+      // Make the HTTP request
+      const url = typeof tool.request.url === 'function' 
+        ? tool.request.url(params)
+        : tool.request.url;
+
+      const response = await fetch(url, {
+        method: tool.request.method,
+        headers: tool.request.headers(params),
+        body: tool.request.body ? JSON.stringify(tool.request.body(params)) : undefined
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(tool.transformError(error));
+      }
+
+      const data = await response.json();
+      const result = tool.transformResponse(data);
+
+      // Validate the output matches the interface
       this.validateToolOutput(block, result);
       return result;
     } catch (error) {
-      throw new Error(`Tool ${toolName} execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Tool ${toolId} execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private validateToolParams(tool: Tool, params: Record<string, any>): void {
+    // Check required parameters
+    for (const [paramName, paramConfig] of Object.entries(tool.params)) {
+      if (paramConfig.required && !(paramName in params)) {
+        throw new Error(`Missing required parameter '${paramName}' for tool ${tool.id}`);
+      }
     }
   }
 

@@ -1,76 +1,63 @@
-import { Tool, ToolRegistry } from '@/executor/types';
-import { ModelService } from './model-service';
-import { HttpService } from './http-service';
-import { AgentConfig } from './model-service/types/agent';
+import { ToolConfig } from './types';
+import { chatTool as openaiChat } from './openai/chat';
+import { chatTool as anthropicChat } from './anthropic/chat';
+import { chatTool as googleChat } from './google/chat';
+import { chatTool as xaiChat } from './xai/chat';
+import { requestTool as httpRequest } from './http/request';
+import { contactsTool as hubspotContacts } from './hubspot/contacts';
+import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities';
 
-class ModelTool implements Tool {
-  name = 'model';
-  private service: ModelService;
+// Registry of all available tools
+export const tools: Record<string, ToolConfig> = {
+  // AI Models
+  'openai.chat': openaiChat,
+  'anthropic.chat': anthropicChat,
+  'google.chat': googleChat,
+  'xai.chat': xaiChat,
+  // HTTP
+  'http.request': httpRequest,
+  // CRM Tools
+  'hubspot.contacts': hubspotContacts,
+  'salesforce.opportunities': salesforceOpportunities
+};
 
-  constructor() {
-    this.service = ModelService.getInstance();
-  }
-
-  validateParams(params: Record<string, any>): boolean | string {
-    const required = ['model', 'prompt'];
-    const missing = required.filter(param => !params[param]);
-    if (missing.length > 0) {
-      return `Missing required parameters: ${missing.join(', ')}`;
-    }
-    return true;
-  }
-
-  async execute(params: Record<string, any>): Promise<Record<string, any>> {
-    const config: AgentConfig = {
-      model: params.model,
-      systemPrompt: params.systemPrompt || 'You are a helpful assistant.',
-      prompt: params.prompt,
-      temperature: params.temperature || 0.7,
-      apiKey: params.apiKey || process.env.OPENAI_API_KEY || ''
-    };
-
-    const response = await this.service.callModel(config);
-    return {
-      response: response.response,
-      tokens: response.tokens,
-      model: response.model
-    };
-  }
+// Get a tool by its ID
+export function getTool(toolId: string): ToolConfig | undefined {
+  return tools[toolId];
 }
 
-class HttpTool implements Tool {
-  name = 'http';
-  private service: HttpService;
+// Execute a tool with parameters
+export async function executeTool(
+  toolId: string,
+  params: Record<string, any>
+): Promise<any> {
+  const tool = getTool(toolId);
 
-  constructor() {
-    this.service = HttpService.getInstance();
+  if (!tool) {
+    throw new Error(`Tool not found: ${toolId}`);
   }
 
-  validateParams(params: Record<string, any>): boolean | string {
-    if (!params.url) {
-      return 'Missing required parameter: url';
-    }
-    return true;
-  }
+  try {
+    // Get the URL (which might be a function or string)
+    const url = typeof tool.request.url === 'function' 
+      ? tool.request.url(params) 
+      : tool.request.url;
 
-  async execute(params: Record<string, any>): Promise<Record<string, any>> {
-    const response = await this.service.request({
-      url: params.url,
-      method: params.method || 'GET',
-      headers: params.headers || {},
-      body: params.body,
-      timeout: params.timeout
+    // Make the HTTP request
+    const response = await fetch(url, {
+      method: tool.request.method,
+      headers: tool.request.headers(params),
+      body: tool.request.body ? JSON.stringify(tool.request.body(params)) : undefined
     });
 
-    return {
-      data: response.data,
-      status: response.status,
-      headers: response.headers
-    };
-  }
-}
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(tool.transformError(error));
+    }
 
-export const toolRegistry: ToolRegistry = {
-  model: new ModelTool(),
-  http: new HttpTool()
-}; 
+    const data = await response.json();
+    return tool.transformResponse(data);
+  } catch (error) {
+    throw new Error(tool.transformError(error));
+  }
+} 

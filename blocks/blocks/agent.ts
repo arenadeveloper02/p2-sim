@@ -1,6 +1,15 @@
 import { AgentIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 
+// Map of models to their tools
+const MODEL_TOOLS = {
+  'gpt-4o': 'openai.chat',
+  'o1-mini': 'openai.chat',
+  'claude-3-5-sonnet-20241022': 'anthropic.chat',
+  'gemini-pro': 'google.chat',
+  'grok-2-latest': 'xai.chat'
+} as const;
+
 export const AgentBlock: BlockConfig = {
   type: 'agent',
   toolbar: {
@@ -22,7 +31,23 @@ export const AgentBlock: BlockConfig = {
       }
     },
     tools: {
-      access: ['model']
+      access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat'],
+      config: {
+        tool: (params: Record<string, any>) => {
+          const model = params.model || 'gpt-4o';
+          if (!model) {
+            throw new Error('No model selected');
+          }
+          const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS];
+          if (!tool) {
+            throw new Error(`Invalid model selected: ${model}`);
+          }
+          return tool;
+        }
+      }
+    },
+    inputs: {
+      systemPrompt: 'string'
     },
     subBlocks: [
       {
@@ -37,14 +62,14 @@ export const AgentBlock: BlockConfig = {
         title: 'Context',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter text',
+        placeholder: 'Enter text'
       },
       {
         id: 'model',
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
-        options: ['gpt-4o', 'gemini-pro', 'claude-3-5-sonnet-20241022', 'grok-2-latest', 'deepseek-v3'],
+        options: Object.keys(MODEL_TOOLS)
       },
       {
         id: 'temperature',

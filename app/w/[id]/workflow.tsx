@@ -271,23 +271,13 @@ function WorkflowCanvas() {
    * @returns {Object} The initial input parameters for the block
    */
   const getInitialInput = (block: BlockState, blockConfig: BlockConfig) => {
-    if (block.type === 'agent') {
-      return {
-        model: block.subBlocks?.['model']?.value || 'gpt-4o',
-        systemPrompt: block.subBlocks?.['systemPrompt']?.value,
-        temperature: block.subBlocks?.['temperature']?.value,
-        apiKey: block.subBlocks?.['apiKey']?.value,
-        prompt: block.subBlocks?.['systemPrompt']?.value,
+    const params: Record<string, any> = {};
+    Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
+      if (subBlock?.value !== undefined) {
+        params[id] = subBlock.value;
       }
-    } else if (block.type === 'api') {
-      return {
-        url: block.subBlocks?.['url']?.value,
-        method: block.subBlocks?.['method']?.value,
-        headers: block.subBlocks?.['headers']?.value,
-        body: block.subBlocks?.['body']?.value,
-      }
-    }
-    return {}
+    });
+    return params;
   }
 
   /**
@@ -302,35 +292,40 @@ function WorkflowCanvas() {
       throw new Error(`Block configuration not found for type: ${block.type}`)
     }
 
-    const tools = blockConfig.workflow.tools
-    if (!tools || !tools.access || tools.access.length === 0) {
-      throw new Error(`No tools specified for block type: ${block.type}`)
+    const tools = blockConfig.workflow.tools;
+    if (!tools?.access || tools.access.length === 0) {
+      throw new Error(`No tools specified for block type: ${block.type}`);
     }
 
-    // Get the values from subBlocks
-    const params: Record<string, any> = {}
+    // Get all values from subBlocks
+    const params: Record<string, any> = {};
     Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
-      if (subBlock) {
-        params[id] = subBlock.value
+      if (subBlock?.value !== undefined) {
+        params[id] = subBlock.value;
       }
     })
+
+    // Get the tool ID from the block's configuration
+    const toolId = tools.config?.tool?.(params) || params.tool;
+    if (!toolId || !tools.access.includes(toolId)) {
+      throw new Error(`Invalid or unauthorized tool: ${toolId}`);
+    }
 
     return {
       id: block.id,
       type: 'custom',
       position: block.position,
       data: {
-        tool: tools.access[0],
-        params,
+        tool: toolId,
+        params: params,
         interface: {
-          inputs: block.type === 'agent' ? { prompt: 'string' } : {},
+          inputs: blockConfig.workflow.inputs || {},
           outputs: {
-            [block.type === 'agent' ? 'response' : 'output']:
-              typeof blockConfig.workflow.outputType === 'string'
-                ? blockConfig.workflow.outputType
-                : blockConfig.workflow.outputType.default,
-          },
-        },
+            output: typeof blockConfig.workflow.outputType === 'string' 
+              ? blockConfig.workflow.outputType 
+              : blockConfig.workflow.outputType.default
+          }
+        }
       },
     }
   }

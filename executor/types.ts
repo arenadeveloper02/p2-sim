@@ -1,7 +1,24 @@
-export interface Tool {
+export interface Tool<P = any, R = any> {
+  id: string;
   name: string;
-  execute(params: Record<string, any>): Promise<Record<string, any>>;
-  validateParams(params: Record<string, any>): boolean | string;
+  description: string;
+  version: string;
+  params: {
+    [key: string]: {
+      type: string;
+      required?: boolean;
+      description?: string;
+      default?: any;
+    };
+  };
+  request: {
+    url: string | ((params: P) => string);
+    method: string;
+    headers: (params: P) => Record<string, string>;
+    body?: (params: P) => Record<string, any>;
+  };
+  transformResponse: (response: any) => R;
+  transformError: (error: any) => string;
 }
 
 export interface ToolRegistry {

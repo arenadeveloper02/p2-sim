@@ -13,7 +13,13 @@ export const ApiBlock: BlockConfig = {
   workflow: {
     outputType: 'json',
     tools: {
-      access: ['http']
+      access: ['http.request']
+    },
+    inputs: {
+      url: 'string',
+      method: 'string',
+      headers: 'json',
+      body: 'json'
     },
     subBlocks: [
       {

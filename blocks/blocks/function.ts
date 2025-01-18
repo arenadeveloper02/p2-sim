@@ -15,6 +15,9 @@ export const FunctionBlock: BlockConfig = {
     tools: {
       access: ['function']
     },
+    inputs: {
+      code: 'string'
+    },
     subBlocks: [
       {
         id: 'code',
