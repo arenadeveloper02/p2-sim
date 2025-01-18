@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ToolbarTabs } from './toolbar-tabs'
+import { ToolbarTabs } from './components/toolbar-tabs'
 import { ToolbarBlock } from '../toolbar-block/toolbar-block'
 import { getBlocksByCategory, BlockCategory } from '../../../../blocks'
 

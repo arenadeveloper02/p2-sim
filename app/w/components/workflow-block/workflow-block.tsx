@@ -1,9 +1,9 @@
 import { Card } from '@/components/ui/card'
 import { BlockConfig, SubBlockConfig } from '../../../../blocks/types/block'
-import { SubBlock } from './sub-block/sub-block'
+import { SubBlock } from './components/sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
-import { ActionBar } from './action-block/action-block'
+import { ActionBar } from './components/action-block/action-block'
 
 interface WorkflowBlockProps {
   id: string

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { NavItem } from './nav-item'
+import { NavItem } from './components/nav-item'
 import { Settings, Plus } from 'lucide-react'
 import {
   Tooltip,

@@ -1,3 +1,5 @@
+'use client'
+
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -6,8 +8,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { History, Bell, Play } from 'lucide-react'
+import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { NotificationDropdownItem } from './components/notification-dropdown-item'
 
 export function ControlBar() {
+  const { notifications } = useNotificationStore()
+
   return (
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b">
       {/* Left Section - Workflow Info */}
@@ -41,9 +47,28 @@ export function ControlBar() {
               <span className="sr-only">Notifications</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>No new notifications</DropdownMenuItem>
-          </DropdownMenuContent>
+
+          {notifications.length === 0 ? (
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem className="text-sm text-muted-foreground">
+                No new notifications
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          ) : (
+            <DropdownMenuContent align="end" className="w-60">
+              {[...notifications]
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((notification) => (
+                  <NotificationDropdownItem
+                    id={notification.id}
+                    key={notification.id}
+                    type={notification.type}
+                    message={notification.message}
+                    timestamp={notification.timestamp}
+                  />
+                ))}
+            </DropdownMenuContent>
+          )}
         </DropdownMenu>
 
         <Button className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90">

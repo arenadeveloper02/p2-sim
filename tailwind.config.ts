@@ -55,7 +55,38 @@ export default {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
-  		}
+  		},
+		keyframes: {
+			'slide-down': {
+				'0%': { transform: 'translate(-50%, -100%)', opacity: '0' },
+				'100%': { transform: 'translate(-50%, 0)', opacity: '1' },
+			},
+			'notification-slide': {
+				'0%': { 
+					opacity: '0',
+					transform: 'translateY(-100%)'
+				},
+				'100%': { 
+					opacity: '1',
+					transform: 'translateY(0)'
+				},
+			},
+			'notification-fade-out': {
+				'0%': { 
+					opacity: '1',
+					transform: 'translateY(0)'
+				},
+				'100%': { 
+					opacity: '0',
+					transform: 'translateY(0)'
+				},
+			}
+		},
+		animation: {
+			'slide-down': 'slide-down 0.3s ease-out',
+			'notification-slide': 'notification-slide 0.3s ease-out forwards',
+			'notification-fade-out': 'notification-fade-out 0.2s ease-out forwards'
+		},
   	}
   },
   plugins: [require("tailwindcss-animate")],
