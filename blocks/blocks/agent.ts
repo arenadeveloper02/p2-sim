@@ -1,5 +1,5 @@
 import { AgentIcon } from '@/components/icons'
-import { BlockConfig } from '../types/block'
+import { BlockConfig } from '../types'
 
 export const AgentBlock: BlockConfig = {
   type: 'agent',

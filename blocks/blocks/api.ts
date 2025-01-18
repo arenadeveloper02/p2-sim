@@ -1,5 +1,5 @@
 import { ApiIcon } from '@/components/icons'
-import { BlockConfig } from '../types/block'
+import { BlockConfig } from '../types'
 
 export const ApiBlock: BlockConfig = {
   type: 'api',

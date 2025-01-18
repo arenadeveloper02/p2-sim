@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { Edge } from 'reactflow'
 import { Position, WorkflowStore } from './types'
-import { getBlock } from '@/blocks/configs'
+import { getBlock } from '@/blocks'
 
 const initialState = {
   blocks: {},

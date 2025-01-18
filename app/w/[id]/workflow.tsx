@@ -18,9 +18,9 @@ import ReactFlow, {
   getSmoothStepPath,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { getBlock } from '../../../blocks/configs'
+import { getBlock } from '../../../blocks'
 import { WorkflowBlock } from '../components/workflow-block/workflow-block'
-import { BlockConfig } from '../../../blocks/types/block'
+import { BlockConfig } from '../../../blocks/types'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import { initializeStateLogger } from '@/stores/workflow/state-logger'
 import { Serializer } from '@/serializer'

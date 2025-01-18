@@ -1,5 +1,5 @@
 import { CodeIcon } from '@/components/icons'
-import { BlockConfig } from '../types/block'
+import { BlockConfig } from '../types'
   
 export const FunctionBlock: BlockConfig = {
   type: 'function',
