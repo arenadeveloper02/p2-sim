@@ -1,5 +1,5 @@
 import { Node, Edge } from 'reactflow'
-import { OutputType, SubBlockType } from '@/blocks/block'
+import { OutputType, SubBlockType } from '@/blocks/types'
 
 export interface Position {
   x: number
