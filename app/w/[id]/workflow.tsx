@@ -387,16 +387,10 @@ function WorkflowCanvas() {
     }
   }
 
-  const testNotification = () => {
-    addNotification('console', 'Response: hey')
-  }
-
   return (
     <div className="relative w-full h-[calc(100vh-56px)]">
       <NotificationList />
       <style>{keyframeStyles}</style>
-
-      <button onClick={testNotification}>Test Notification</button>
       <ReactFlow
         nodes={nodes}
         edges={edges}
