@@ -1,6 +1,47 @@
-import { Node, Edge } from 'reactflow';
+import { Edge } from 'reactflow';
 import { Serializer } from '../index';
 import { SerializedWorkflow } from '../types';
+import { BlockState } from '@/stores/workflow/types';
+import { OutputType } from '@/blocks/types';
+
+jest.mock('@/blocks', () => ({
+  getBlock: (type: string) => {
+    if (type === 'http') {
+      return {
+        type,
+        workflow: {
+          tools: {
+            access: ['http.request'],
+            config: {
+              tool: () => 'http.request'
+            }
+          },
+          inputs: {
+            url: 'string',
+            method: 'string'
+          },
+          outputType: 'json'
+        }
+      };
+    }
+    // Default agent block config
+    return {
+      type,
+      workflow: {
+        tools: {
+          access: ['openai.chat'],
+          config: {
+            tool: () => 'openai.chat'
+          }
+        },
+        inputs: {
+          prompt: 'string'
+        },
+        outputType: 'string'
+      }
+    };
+  }
+}));
 
 describe('Serializer', () => {
   let serializer: Serializer;
@@ -11,61 +52,51 @@ describe('Serializer', () => {
 
   describe('serializeWorkflow', () => {
     it('should serialize a workflow with agent and http blocks', () => {
-      const blocks: Node[] = [
-        {
+      const blocks: Record<string, BlockState> = {
+        'agent-1': {
           id: 'agent-1',
-          type: 'custom',
+          type: 'agent',
+          name: 'GPT-4o Agent',
           position: { x: 100, y: 100 },
-          data: {
-            tool: 'openai.chat',
-            params: {
-              model: 'gpt-4o',
-              systemPrompt: 'You are helpful',
-              temperature: 0.7
+          subBlocks: {
+            'model': {
+              id: 'model',
+              type: 'dropdown',
+              value: 'gpt-4o'
             },
-            interface: {
-              inputs: {
-                prompt: 'string'
-              },
-              outputs: {
-                response: 'string',
-                tokens: 'number'
-              }
+            'systemPrompt': {
+              id: 'systemPrompt',
+              type: 'long-input',
+              value: 'You are helpful'
             },
-            title: 'GPT-4o Agent',
-            description: 'Language model block',
-            category: 'AI',
-            icon: 'brain',
-            color: '#7F2FFF'
-          }
+            'temperature': {
+              id: 'temperature',
+              type: 'slider',
+              value: 0.7
+            }
+          },
+          outputType: 'string'
         },
-        {
+        'http-1': {
           id: 'http-1',
-          type: 'custom',
+          type: 'http',
+          name: 'API Call',
           position: { x: 400, y: 100 },
-          data: {
-            tool: 'http.request',
-            params: {
-              url: 'https://api.example.com',
-              method: 'GET'
+          subBlocks: {
+            'url': {
+              id: 'url',
+              type: 'short-input',
+              value: 'https://api.example.com'
             },
-            interface: {
-              inputs: {
-                body: 'object'
-              },
-              outputs: {
-                data: 'object',
-                status: 'number'
-              }
-            },
-            title: 'API Call',
-            description: 'HTTP request block',
-            category: 'Web',
-            icon: 'globe',
-            color: '#00FF00'
-          }
+            'method': {
+              id: 'method',
+              type: 'dropdown',
+              value: 'GET'
+            }
+          },
+          outputType: 'json'
         }
-      ];
+      };
 
       const connections: Edge[] = [
         {
@@ -93,13 +124,6 @@ describe('Serializer', () => {
         systemPrompt: 'You are helpful',
         temperature: 0.7
       });
-      expect(agentBlock?.metadata).toEqual({
-        title: 'GPT-4o Agent',
-        description: 'Language model block',
-        category: 'AI',
-        icon: 'brain',
-        color: '#7F2FFF'
-      });
 
       // Test http block serialization
       const httpBlock = serialized.blocks.find(b => b.id === 'http-1');
@@ -112,21 +136,22 @@ describe('Serializer', () => {
     });
 
     it('should handle blocks with minimal required configuration', () => {
-      const blocks: Node[] = [{
-        id: 'minimal-1',
-        type: 'custom',
-        position: { x: 0, y: 0 },
-        data: {
-          tool: 'openai.chat',
-          params: {
-            model: 'gpt-4o'
+      const blocks: Record<string, BlockState> = {
+        'minimal-1': {
+          id: 'minimal-1',
+          type: 'agent',
+          name: 'Minimal Agent',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            'model': {
+              id: 'model',
+              type: 'dropdown',
+              value: 'gpt-4o'
+            }
           },
-          interface: {
-            inputs: {},
-            outputs: {}
-          }
+          outputType: 'string'
         }
-      }];
+      };
 
       const serialized = serializer.serializeWorkflow(blocks, []);
       const block = serialized.blocks[0];
@@ -134,71 +159,68 @@ describe('Serializer', () => {
       expect(block.id).toBe('minimal-1');
       expect(block.config.tool).toBe('openai.chat');
       expect(block.config.params).toEqual({ model: 'gpt-4o' });
-      expect(block.metadata).toBeUndefined();
     });
 
     it('should handle complex workflow with multiple interconnected blocks', () => {
-      const blocks: Node[] = [
-        {
+      const blocks: Record<string, BlockState> = {
+        'input-1': {
           id: 'input-1',
-          type: 'custom',
+          type: 'http',
+          name: 'Data Input',
           position: { x: 100, y: 100 },
-          data: {
-            tool: 'http.request',
-            params: {
-              url: 'https://api.data.com',
-              method: 'GET'
+          subBlocks: {
+            'url': {
+              id: 'url',
+              type: 'short-input',
+              value: 'https://api.data.com'
             },
-            interface: {
-              inputs: {},
-              outputs: {
-                data: 'object'
-              }
+            'method': {
+              id: 'method',
+              type: 'dropdown',
+              value: 'GET'
             }
-          }
+          },
+          outputType: 'json'
         },
-        {
+        'process-1': {
           id: 'process-1',
-          type: 'custom',
+          type: 'agent',
+          name: 'Data Processor',
           position: { x: 300, y: 100 },
-          data: {
-            tool: 'openai.chat',
-            params: {
-              model: 'gpt-4o',
-              systemPrompt: 'Process this data'
+          subBlocks: {
+            'model': {
+              id: 'model',
+              type: 'dropdown',
+              value: 'gpt-4o'
             },
-            interface: {
-              inputs: {
-                data: 'object',
-                config: 'object'
-              },
-              outputs: {
-                result: 'string'
-              }
+            'systemPrompt': {
+              id: 'systemPrompt',
+              type: 'long-input',
+              value: 'Process this data'
             }
-          }
+          },
+          outputType: 'string'
         },
-        {
+        'output-1': {
           id: 'output-1',
-          type: 'custom',
+          type: 'http',
+          name: 'Data Output',
           position: { x: 500, y: 100 },
-          data: {
-            tool: 'http.request',
-            params: {
-              url: 'https://api.output.com',
-              method: 'POST'
+          subBlocks: {
+            'url': {
+              id: 'url',
+              type: 'short-input',
+              value: 'https://api.output.com'
             },
-            interface: {
-              inputs: {
-                body: 'string'
-              },
-              outputs: {
-                status: 'number'
-              }
+            'method': {
+              id: 'method',
+              type: 'dropdown',
+              value: 'POST'
             }
-          }
+          },
+          outputType: 'json'
         }
-      ];
+      };
 
       const connections: Edge[] = [
         {
@@ -230,57 +252,56 @@ describe('Serializer', () => {
       expect(conn1.target).toBe('process-1');
       expect(conn2.source).toBe('process-1');
       expect(conn2.target).toBe('output-1');
-
-      // Verify interface matching
-      const process = serialized.blocks.find(b => b.id === 'process-1');
-      expect(process?.config.interface.inputs).toHaveProperty('data');
-      expect(process?.config.interface.outputs).toHaveProperty('result');
     });
 
     it('should preserve tool-specific parameters', () => {
-      const blocks: Node[] = [{
-        id: 'agent-1',
-        type: 'custom',
-        position: { x: 0, y: 0 },
-        data: {
-          tool: 'openai.chat',
-          params: {
-            model: 'gpt-4o',
-            temperature: 0.7,
-            maxTokens: 1000,
-            topP: 0.9,
-            frequencyPenalty: 0.1,
-            presencePenalty: 0.1
+      const blocks: Record<string, BlockState> = {
+        'agent-1': {
+          id: 'agent-1',
+          type: 'agent',
+          name: 'Advanced Agent',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            'model': {
+              id: 'model',
+              type: 'dropdown',
+              value: 'gpt-4o'
+            },
+            'temperature': {
+              id: 'temperature',
+              type: 'slider',
+              value: 0.7
+            },
+            'maxTokens': {
+              id: 'maxTokens',
+              type: 'slider',
+              value: 1000
+            }
           },
-          interface: {
-            inputs: { prompt: 'string' },
-            outputs: { response: 'string' }
-          }
+          outputType: 'string'
         }
-      }];
+      };
 
       const serialized = serializer.serializeWorkflow(blocks, []);
       const block = serialized.blocks[0];
 
+      expect(block.config.tool).toBe('openai.chat');
       expect(block.config.params).toEqual({
         model: 'gpt-4o',
         temperature: 0.7,
-        maxTokens: 1000,
-        topP: 0.9,
-        frequencyPenalty: 0.1,
-        presencePenalty: 0.1
+        maxTokens: 1000
       });
     });
   });
 
   describe('deserializeWorkflow', () => {
-    it('should deserialize a workflow back to ReactFlow format', () => {
+    it('should deserialize a workflow back to blocks and connections', () => {
       const workflow: SerializedWorkflow = {
         version: '1.0',
         blocks: [
           {
             id: 'agent-1',
-            position: { x: 100, y: 100 },
+            position: { x: 0, y: 0 },
             config: {
               tool: 'openai.chat',
               params: {
@@ -289,27 +310,21 @@ describe('Serializer', () => {
               },
               interface: {
                 inputs: { prompt: 'string' },
-                outputs: { response: 'string' }
+                outputs: { output: 'string' }
               }
-            },
-            metadata: {
-              title: 'GPT-4o Agent',
-              category: 'AI'
             }
           }
         ],
         connections: []
       };
 
-      const { blocks, connections } = serializer.deserializeWorkflow(workflow);
+      const { blocks } = serializer.deserializeWorkflow(workflow);
+      const block = blocks['agent-1'];
 
-      expect(blocks).toHaveLength(1);
-      const block = blocks[0];
-      expect(block.id).toBe('agent-1');
-      expect(block.type).toBe('custom');
-      expect(block.data.tool).toBe('openai.chat');
-      expect(block.data.params.model).toBe('gpt-4o');
-      expect(block.data.title).toBe('GPT-4o Agent');
+      expect(block.type).toBe('openai.chat');
+      expect(block.subBlocks.model.value).toBe('gpt-4o');
+      expect(block.subBlocks.systemPrompt.value).toBe('You are helpful');
+      expect(block.outputType).toBe('string');
     });
   });
 });

@@ -1,6 +1,7 @@
-import { SerializedWorkflow, SerializedBlock, BlockConfig } from '@/serializer/types';
+import { SerializedWorkflow, SerializedBlock } from '@/serializer/types';
 import { ExecutionContext, ExecutionResult, Tool } from './types';
 import { tools } from '@/tools';
+import { BlockState } from '@/stores/workflow/types';
 
 export class Executor {
   private workflow: SerializedWorkflow;
@@ -14,7 +15,7 @@ export class Executor {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<Record<string, any>> {
-    const config = block.config as BlockConfig;
+    const config = block.config;
     const toolId = config.tool;
 
     if (!toolId) {
@@ -113,15 +114,17 @@ export class Executor {
         return typeof value === 'number';
       case 'boolean':
         return typeof value === 'boolean';
-      case 'object':
-        return typeof value === 'object' && value !== null;
-      case 'array':
-        return Array.isArray(value);
-      case 'function':
-        return typeof value === 'function';
+      case 'json':
+        try {
+          if (typeof value === 'string') {
+            JSON.parse(value);
+          }
+          return true;
+        } catch {
+          return false;
+        }
       default:
-        // For complex types like 'Record<string, any>', 'string[]', etc.
-        // We just do basic object/array validation
+        // For complex types, we just do basic object/array validation
         return true;
     }
   }
@@ -187,20 +190,22 @@ export class Executor {
       }
     });
     
-    // If this is a start block, pass through workflow inputs
-    if (Object.keys(inputs).length === 0 && context.input) {
-      return context.input;
+    // If this is a start block with no inputs, use the block's params
+    if (Object.keys(inputs).length === 0) {
+      const targetBlock = this.workflow.blocks.find(b => b.id === block.id);
+      if (targetBlock) {
+        return targetBlock.config.params;
+      }
     }
     
     return inputs;
   }
 
-  async execute(workflowId: string, input: Record<string, any>): Promise<ExecutionResult> {
+  async execute(workflowId: string): Promise<ExecutionResult> {
     const startTime = new Date();
     const context: ExecutionContext = {
       workflowId,
       blockStates: new Map(),
-      input,
       metadata: {
         startTime: startTime.toISOString()
       }

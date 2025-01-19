@@ -28,7 +28,7 @@ export interface ToolRegistry {
 export interface ExecutionContext {
   workflowId: string;
   blockStates: Map<string, any>;
-  input: Record<string, any>;
+  input?: Record<string, any>;
   metadata?: Record<string, any>;
 }
 

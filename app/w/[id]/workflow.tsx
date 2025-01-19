@@ -237,33 +237,6 @@ function WorkflowCanvas() {
   }, [])
 
   /**
-   * Gets the initial node in the workflow by finding the node with no incoming edges
-   * @returns {Object} Object containing the initial block and its configuration
-   * @throws {Error} If no initial block is found or block configuration is invalid
-   */
-  const getInitialNode = () => {
-    const initialBlockId = Object.values(blocks).find(
-      (block) => !edges.some((edge) => edge.target === block.id)
-    )?.id
-
-    if (!initialBlockId) {
-      throw new Error('Could not determine the initial block in the workflow')
-    }
-
-    const blockConfig = getBlock(blocks[initialBlockId].type)
-    if (!blockConfig) {
-      throw new Error(
-        `Block configuration not found for type: ${blocks[initialBlockId].type}`
-      )
-    }
-
-    return {
-      block: blocks[initialBlockId],
-      config: blockConfig,
-    }
-  }
-
-  /**
    * Determines the initial input parameters based on the block type
    * @param {BlockState} block - The block to get initial input for
    * @param {BlockConfig} blockConfig - The block's configuration
@@ -339,27 +312,20 @@ function WorkflowCanvas() {
       setIsExecuting(true)
       setExecutionResult(null)
 
-      // 1. Get initial node
-      const { block: initialBlock, config: initialBlockConfig } =
-        getInitialNode()
-
-      // 2. Serialize the workflow
+      // 1. Serialize the workflow
       const serializer = new Serializer()
       const serializedWorkflow = serializer.serializeWorkflow(
-        Object.values(blocks).map(serializeBlock),
+        blocks,
         edges
       )
 
-      // 3. Create executor and run workflow
+      // 2. Create executor and run workflow
       const executor = new Executor(serializedWorkflow)
-      const initialInput = getInitialInput(initialBlock, initialBlockConfig)
-
       const result = await executor.execute(
-        window.location.pathname.split('/').pop() || 'workflow',
-        initialInput
+        window.location.pathname.split('/').pop() || 'workflow'
       )
 
-      // 4. Handle result
+      // 3. Handle result
       setExecutionResult(result)
 
       if (result.success) {
@@ -403,6 +369,13 @@ function WorkflowCanvas() {
     <div className="relative w-full h-[calc(100vh-56px)]">
       <NotificationList />
       <style>{keyframeStyles}</style>
+      {/* <button
+        onClick={handleRunWorkflow}
+        disabled={isExecuting}
+        className="absolute top-4 right-4 z-10 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+      >
+        {isExecuting ? 'Running...' : 'Test Run'}
+      </button> */}
       <ReactFlow
         nodes={nodes}
         edges={edges}

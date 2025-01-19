@@ -1,11 +1,14 @@
-import { Node, Edge } from "reactflow";
-import { SerializedBlock, SerializedConnection, SerializedWorkflow } from "./types";
+import { BlockState, SubBlockState } from '@/stores/workflow/types';
+import { Edge } from 'reactflow';
+import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types';
+import { getBlock } from '@/blocks';
+import { OutputType, SubBlockType } from '@/blocks/types';
 
 export class Serializer {
-  serializeWorkflow(blocks: Node[], connections: Edge[]): SerializedWorkflow {
+  serializeWorkflow(blocks: Record<string, BlockState>, connections: Edge[]): SerializedWorkflow {
     return {
       version: '1.0',
-      blocks: blocks.map(block => this.serializeBlock(block)),
+      blocks: Object.values(blocks).map(block => this.serializeBlock(block)),
       connections: connections.map(conn => ({
         source: conn.source,
         target: conn.target,
@@ -15,45 +18,60 @@ export class Serializer {
     };
   }
 
-  private serializeBlock(block: Node): SerializedBlock {
-    const { data } = block;
-    const serialized: SerializedBlock = {
+  private serializeBlock(block: BlockState): SerializedBlock {
+    const blockConfig = getBlock(block.type);
+    if (!blockConfig) {
+      throw new Error(`Block configuration not found for type: ${block.type}`);
+    }
+
+    // Get the tool ID from the block's configuration
+    const tools = blockConfig.workflow.tools;
+    if (!tools?.access || tools.access.length === 0) {
+      throw new Error(`No tools specified for block type: ${block.type}`);
+    }
+
+    // Get all values from subBlocks
+    const params: Record<string, any> = {};
+    Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
+      if (subBlock?.value !== undefined) {
+        params[id] = subBlock.value;
+      }
+    });
+
+    // Get the tool ID from the block's configuration
+    const toolId = tools.config?.tool?.(params) || params.tool || tools.access[0];
+    if (!toolId || !tools.access.includes(toolId)) {
+      throw new Error(`Invalid or unauthorized tool: ${toolId}`);
+    }
+
+    return {
       id: block.id,
-      position: {
-        x: block.position.x,
-        y: block.position.y
-      },
+      position: block.position,
       config: {
-        tool: data.tool,
-        params: data.params || {},
+        tool: toolId,
+        params: params,
         interface: {
-          inputs: data.interface?.inputs || {},
-          outputs: data.interface?.outputs || {}
+          inputs: blockConfig.workflow.inputs || {},
+          outputs: {
+            output: block.outputType
+          }
         }
       }
     };
-
-    const metadata = {
-      title: data.title,
-      description: data.description,
-      category: data.category,
-      icon: data.icon,
-      color: data.color
-    };
-
-    if (Object.values(metadata).some(value => value !== undefined)) {
-      serialized.metadata = metadata;
-    }
-
-    return serialized;
   }
 
   deserializeWorkflow(serialized: SerializedWorkflow): {
-    blocks: Node[];
+    blocks: Record<string, BlockState>;
     connections: Edge[];
   } {
+    const blocks: Record<string, BlockState> = {};
+    serialized.blocks.forEach(block => {
+      const deserialized = this.deserializeBlock(block);
+      blocks[deserialized.id] = deserialized;
+    });
+
     return {
-      blocks: serialized.blocks.map(block => this.deserializeBlock(block)),
+      blocks,
       connections: serialized.connections.map(conn => ({
         id: `${conn.source}-${conn.target}`,
         source: conn.source,
@@ -64,17 +82,31 @@ export class Serializer {
     };
   }
 
-  private deserializeBlock(serialized: SerializedBlock): Node {
+  private deserializeBlock(serialized: SerializedBlock): BlockState {
     return {
       id: serialized.id,
-      type: 'custom',
+      type: serialized.config.tool,
+      name: `${serialized.config.tool} Block`,
       position: serialized.position,
-      data: {
-        tool: serialized.config.tool,
-        params: serialized.config.params,
-        interface: serialized.config.interface,
-        ...(serialized.metadata || {})
-      }
+      subBlocks: Object.entries(serialized.config.params).reduce((acc, [key, value]) => {
+        acc[key] = {
+          id: key,
+          type: this.inferSubBlockType(value),
+          value: value
+        };
+        return acc;
+      }, {} as Record<string, SubBlockState>),
+      outputType: serialized.config.interface.outputs.output as OutputType
     };
+  }
+
+  private inferSubBlockType(value: any): SubBlockType {
+    if (Array.isArray(value) && Array.isArray(value[0])) {
+      return 'table';
+    }
+    if (typeof value === 'string' && value.length > 100) {
+      return 'long-input';
+    }
+    return 'short-input';
   }
 }
