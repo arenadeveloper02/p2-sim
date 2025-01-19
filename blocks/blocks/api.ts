@@ -10,11 +10,11 @@ export const ApiBlock: BlockConfig = {
     icon: ApiIcon,
     category: 'basic',
   },
+  tools: {
+    access: ['http.request']
+  },
   workflow: {
     outputType: 'json',
-    tools: {
-      access: ['http.request']
-    },
     inputs: {
       url: 'string',
       method: 'string',

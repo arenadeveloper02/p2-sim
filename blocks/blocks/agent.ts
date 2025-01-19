@@ -19,6 +19,26 @@ export const AgentBlock: BlockConfig = {
     icon: AgentIcon,
     category: 'basic',
   },
+  tools: {
+    access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat'],
+    config: {
+      tool: (params: Record<string, any>) => {
+        const model = params.model || 'gpt-4o';
+
+        if (!model) {
+          throw new Error('No model selected');
+        }
+
+        const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS];
+
+        if (!tool) {
+          throw new Error(`Invalid model selected: ${model}`);
+        }
+        
+        return tool;
+      }
+    }
+  },
   workflow: {
     outputType: {
       default: 'string',
@@ -27,26 +47,6 @@ export const AgentBlock: BlockConfig = {
         condition: {
           whenEmpty: 'string',
           whenFilled: 'json'
-        }
-      }
-    },
-    tools: {
-      access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat'],
-      config: {
-        tool: (params: Record<string, any>) => {
-          const model = params.model || 'gpt-4o';
-
-          if (!model) {
-            throw new Error('No model selected');
-          }
-
-          const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS];
-
-          if (!tool) {
-            throw new Error(`Invalid model selected: ${model}`);
-          }
-          
-          return tool;
         }
       }
     },

@@ -10,11 +10,11 @@ export const FunctionBlock: BlockConfig = {
     icon: CodeIcon,
     category: 'advanced',
   },
+  tools: {
+    access: ['function']
+  },
   workflow: {
     outputType: 'json',
-    tools: {
-      access: ['function']
-    },
     inputs: {
       code: 'string'
     },

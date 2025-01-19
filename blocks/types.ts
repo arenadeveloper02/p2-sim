@@ -42,15 +42,15 @@ export interface BlockConfig {
     icon: BlockIcon
     category: BlockCategory
   }
+  tools: {
+    access: string[]
+    config?: {
+      tool: (params: Record<string, any>) => string
+    }
+  }
   workflow: {
     outputType: OutputTypeConfig
     subBlocks: SubBlockConfig[]
-    tools: {
-      access: string[]
-      config?: {
-        tool: (params: Record<string, any>) => string
-      }
-    }
     inputs?: Record<string, ParamType>
   }
 }

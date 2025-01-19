@@ -1,7 +1,7 @@
 import { BlockState, SubBlockState } from '@/stores/workflow/types';
 import { Edge } from 'reactflow';
 import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types';
-import { getBlock } from '@/blocks';
+import { getBlock, getBlockTypeForTool } from '@/blocks';
 import { OutputType, SubBlockType } from '@/blocks/types';
 
 export class Serializer {
@@ -25,7 +25,7 @@ export class Serializer {
     }
 
     // Get the tool ID from the block's configuration
-    const tools = blockConfig.workflow.tools;
+    const tools = blockConfig.tools;
     if (!tools?.access || tools.access.length === 0) {
       throw new Error(`No tools specified for block type: ${block.type}`);
     }
@@ -83,30 +83,33 @@ export class Serializer {
   }
 
   private deserializeBlock(serialized: SerializedBlock): BlockState {
+    const toolId = serialized.config.tool;
+    const blockType = getBlockTypeForTool(toolId);
+
+    if (!blockType) {
+      throw new Error(`Could not determine block type for tool: ${toolId}`);
+    }
+
+    const blockConfig = getBlock(blockType);
+    if (!blockConfig) {
+      throw new Error(`Block configuration not found for type: ${blockType}`);
+    }
+
     return {
       id: serialized.id,
-      type: serialized.config.tool,
-      name: `${serialized.config.tool} Block`,
+      type: blockType,
+      name: `${blockType} Block`,
       position: serialized.position,
       subBlocks: Object.entries(serialized.config.params).reduce((acc, [key, value]) => {
+        const subBlock = blockConfig.workflow.subBlocks?.find(sb => sb.id === key);
         acc[key] = {
           id: key,
-          type: this.inferSubBlockType(value),
+          type: subBlock?.type || 'short-input',
           value: value
         };
         return acc;
       }, {} as Record<string, SubBlockState>),
       outputType: serialized.config.interface.outputs.output as OutputType
     };
-  }
-
-  private inferSubBlockType(value: any): SubBlockType {
-    if (Array.isArray(value) && Array.isArray(value[0])) {
-      return 'table';
-    }
-    if (typeof value === 'string' && value.length > 100) {
-      return 'long-input';
-    }
-    return 'short-input';
   }
 }

@@ -4,42 +4,71 @@ import { SerializedWorkflow } from '../types';
 import { BlockState } from '@/stores/workflow/types';
 import { OutputType } from '@/blocks/types';
 
+// Mock icons
+jest.mock('@/components/icons', () => ({
+  AgentIcon: () => 'AgentIcon',
+  ApiIcon: () => 'ApiIcon',
+  CodeIcon: () => 'CodeIcon',
+}));
+
+// Mock blocks
 jest.mock('@/blocks', () => ({
   getBlock: (type: string) => {
-    if (type === 'http') {
+    if (type === 'api') {
       return {
         type,
+        toolbar: {
+          title: 'API',
+          description: 'Use any API',
+          bgColor: '#2F55FF',
+          icon: () => null,
+          category: 'basic',
+        },
+        tools: {
+          access: ['http.request']
+        },
         workflow: {
-          tools: {
-            access: ['http.request'],
-            config: {
-              tool: () => 'http.request'
-            }
-          },
+          outputType: 'json',
           inputs: {
             url: 'string',
             method: 'string'
           },
-          outputType: 'json'
+          subBlocks: []
         }
       };
     }
     // Default agent block config
     return {
       type,
+      toolbar: {
+        title: 'Agent',
+        description: 'Use any LLM',
+        bgColor: '#7F2FFF',
+        icon: () => null,
+        category: 'basic',
+      },
+      tools: {
+        access: ['openai.chat'],
+        config: {
+          tool: () => 'openai.chat'
+        }
+      },
       workflow: {
-        tools: {
-          access: ['openai.chat'],
-          config: {
-            tool: () => 'openai.chat'
-          }
-        },
+        outputType: 'string',
         inputs: {
           prompt: 'string'
         },
-        outputType: 'string'
+        subBlocks: []
       }
     };
+  },
+  getBlockTypeForTool: (toolId: string) => {
+    const toolToType: Record<string, string> = {
+      'openai.chat': 'agent',
+      'http.request': 'api',
+      'function': 'function'
+    };
+    return toolToType[toolId];
   }
 }));
 
@@ -79,7 +108,7 @@ describe('Serializer', () => {
         },
         'http-1': {
           id: 'http-1',
-          type: 'http',
+          type: 'api',
           name: 'API Call',
           position: { x: 400, y: 100 },
           subBlocks: {
@@ -165,7 +194,7 @@ describe('Serializer', () => {
       const blocks: Record<string, BlockState> = {
         'input-1': {
           id: 'input-1',
-          type: 'http',
+          type: 'api',
           name: 'Data Input',
           position: { x: 100, y: 100 },
           subBlocks: {
@@ -203,7 +232,7 @@ describe('Serializer', () => {
         },
         'output-1': {
           id: 'output-1',
-          type: 'http',
+          type: 'api',
           name: 'Data Output',
           position: { x: 500, y: 100 },
           subBlocks: {
@@ -321,7 +350,7 @@ describe('Serializer', () => {
       const { blocks } = serializer.deserializeWorkflow(workflow);
       const block = blocks['agent-1'];
 
-      expect(block.type).toBe('openai.chat');
+      expect(block.type).toBe('agent');
       expect(block.subBlocks.model.value).toBe('gpt-4o');
       expect(block.subBlocks.systemPrompt.value).toBe('You are helpful');
       expect(block.outputType).toBe('string');
