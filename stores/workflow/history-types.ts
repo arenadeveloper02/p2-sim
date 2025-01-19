@@ -3,6 +3,7 @@ import { WorkflowState } from './types'
 export interface HistoryEntry {
   state: WorkflowState
   timestamp: number
+  action: string
 }
 
 export interface WorkflowHistory {

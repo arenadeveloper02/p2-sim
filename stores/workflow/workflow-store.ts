@@ -13,6 +13,7 @@ const initialState = {
     present: {
       state: { blocks: {}, edges: [] },
       timestamp: Date.now(),
+      action: 'Initial state',
     },
     future: [],
   },
@@ -76,7 +77,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
 
         set(newState)
-        pushHistory(set, get, newState)
+        pushHistory(set, get, newState, `Add ${type} block`)
       },
 
       updateBlockPosition: (id: string, position: Position) => {
@@ -102,7 +103,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         delete newState.blocks[id]
         
         set(newState)
-        pushHistory(set, get, newState)
+        pushHistory(set, get, newState, 'Remove block')
       },
 
       addEdge: (edge: Edge) => {
@@ -119,7 +120,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
         
         set(newState)
-        pushHistory(set, get, newState)
+        pushHistory(set, get, newState, 'Add connection')
       },
 
       removeEdge: (edgeId: string) => {
@@ -129,13 +130,13 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
         
         set(newState)
-        pushHistory(set, get, newState)
+        pushHistory(set, get, newState, 'Remove connection')
       },
 
       clear: () => {
         const newState = initialState
         set(newState)
-        pushHistory(set, get, newState)
+        pushHistory(set, get, newState, 'Clear workflow')
       },
     })),
     { name: 'workflow-store' }

@@ -10,9 +10,12 @@ import {
 import { History, Bell, Play } from 'lucide-react'
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { NotificationDropdownItem } from './components/notification-dropdown-item'
+import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { HistoryDropdownItem } from './components/history-dropdown-item'
 
 export function ControlBar() {
   const { notifications } = useNotificationStore()
+  const { history, undo, redo } = useWorkflowStore()
 
   return (
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b">
@@ -34,10 +37,25 @@ export function ControlBar() {
               <span className="sr-only">Version History</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>View History</DropdownMenuItem>
-            <DropdownMenuItem>Compare Versions</DropdownMenuItem>
-          </DropdownMenuContent>
+
+          {history.past.length === 0 ? (
+            <DropdownMenuContent align="end" className="w-50">
+              <DropdownMenuItem className="text-sm text-muted-foreground">
+                No history available
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          ) : (
+            <DropdownMenuContent align="end" className="w-60">
+              {[...history.past].reverse().map((entry) => (
+                <HistoryDropdownItem
+                  key={entry.timestamp}
+                  action={entry.action}
+                  timestamp={entry.timestamp}
+                  onClick={undo}
+                />
+              ))}
+            </DropdownMenuContent>
+          )}
         </DropdownMenu>
 
         <DropdownMenu>

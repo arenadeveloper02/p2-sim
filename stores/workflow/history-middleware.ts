@@ -19,6 +19,7 @@ export const withHistory = (
         edges: initialState.edges,
       },
       timestamp: Date.now(),
+      action: 'Initial state',
     }
 
     return {
@@ -71,12 +72,16 @@ export const withHistory = (
   }
 }
 
-export const createHistoryEntry = (state: WorkflowState): HistoryEntry => ({
+export const createHistoryEntry = (
+  state: WorkflowState,
+  action: string
+): HistoryEntry => ({
   state: {
     blocks: { ...state.blocks },
-    edges: [...state.edges],
+    edges: [...state.edges ],
   },
   timestamp: Date.now(),
+  action,
 })
 
 export const pushHistory = (
@@ -89,10 +94,11 @@ export const pushHistory = (
     replace?: boolean
   ) => void,
   get: () => WorkflowStoreWithHistory,
-  newState: WorkflowState
+  newState: WorkflowState,
+  action: string
 ) => {
   const { history } = get()
-  const newEntry = createHistoryEntry(newState)
+  const newEntry = createHistoryEntry(newState, action)
 
   set({
     history: {
