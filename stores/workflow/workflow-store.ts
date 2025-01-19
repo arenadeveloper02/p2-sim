@@ -28,7 +28,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       canUndo: () => false,
       canRedo: () => false,
 
-      updateSubBlock: (blockId: string, subBlockId: string, subBlock: SubBlockState) => {
+      updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
         set((state) => ({
           blocks: {
             ...state.blocks,
@@ -36,11 +36,13 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               ...state.blocks[blockId],
               subBlocks: {
                 ...state.blocks[blockId].subBlocks,
-                [subBlockId]: subBlock,
+                [subBlockId]: {
+                  ...state.blocks[blockId].subBlocks[subBlockId],
+                  value,
+                },
               },
             },
           },
-          edges: [...state.edges],
         }))
       },
 
