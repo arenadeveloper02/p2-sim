@@ -23,11 +23,10 @@ import { WorkflowBlock } from '../components/workflow-block/workflow-block'
 import { BlockConfig } from '../../../blocks/types'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import { initializeStateLogger } from '@/stores/workflow/state-logger'
-import { Serializer } from '@/serializer'
-import { Executor } from '@/executor'
-import { BlockState, SubBlockState } from '@/stores/workflow/types'
+import { BlockState } from '@/stores/workflow/types'
 import { NotificationList } from '@/app/w/components/notifications/notifications'
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { executeWorkflow } from '@/lib/workflow'
 
 /**
  * Represents the data structure for a workflow node
@@ -232,77 +231,6 @@ function WorkflowCanvas() {
     }
   `
 
-  useEffect(() => {
-    initializeStateLogger()
-  }, [])
-
-  /**
-   * Determines the initial input parameters based on the block type
-   * @param {BlockState} block - The block to get initial input for
-   * @param {BlockConfig} blockConfig - The block's configuration
-   * @returns {Object} The initial input parameters for the block
-   */
-  const getInitialInput = (block: BlockState, blockConfig: BlockConfig) => {
-    const params: Record<string, any> = {}
-    Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
-      if (subBlock?.value !== undefined) {
-        params[id] = subBlock.value
-      }
-    })
-    return params
-  }
-
-  /**
-   * Serializes a block into the format expected by the executor
-   * @param {BlockState} block - The block to serialize
-   * @returns {Object} The serialized block with its configuration and parameters
-   * @throws {Error} If block configuration or tools are not properly defined
-   */
-  const serializeBlock = (block: BlockState) => {
-    const blockConfig = getBlock(block.type)
-    if (!blockConfig) {
-      throw new Error(`Block configuration not found for type: ${block.type}`)
-    }
-
-    const tools = blockConfig.workflow.tools
-    if (!tools?.access || tools.access.length === 0) {
-      throw new Error(`No tools specified for block type: ${block.type}`)
-    }
-
-    // Get all values from subBlocks
-    const params: Record<string, any> = {}
-    Object.entries(block.subBlocks || {}).forEach(([id, subBlock]) => {
-      if (subBlock?.value !== undefined) {
-        params[id] = subBlock.value
-      }
-    })
-
-    // Get the tool ID from the block's configuration
-    const toolId = tools.config?.tool?.(params) || params.tool
-    if (!toolId || !tools.access.includes(toolId)) {
-      throw new Error(`Invalid or unauthorized tool: ${toolId}`)
-    }
-
-    return {
-      id: block.id,
-      type: 'custom',
-      position: block.position,
-      data: {
-        tool: toolId,
-        params: params,
-        interface: {
-          inputs: blockConfig.workflow.inputs || {},
-          outputs: {
-            output:
-              typeof blockConfig.workflow.outputType === 'string'
-                ? blockConfig.workflow.outputType
-                : blockConfig.workflow.outputType.default,
-          },
-        },
-      },
-    }
-  }
-
   /**
    * Handles the execution of the workflow
    * Serializes the workflow, executes it, and handles the results
@@ -312,27 +240,17 @@ function WorkflowCanvas() {
       setIsExecuting(true)
       setExecutionResult(null)
 
-      // 1. Serialize the workflow
-      const serializer = new Serializer()
-      const serializedWorkflow = serializer.serializeWorkflow(
+      const result = await executeWorkflow(
         blocks,
-        edges
-      )
-
-      // 2. Create executor and run workflow
-      const executor = new Executor(serializedWorkflow)
-      const result = await executor.execute(
+        edges,
         window.location.pathname.split('/').pop() || 'workflow'
       )
 
-      // 3. Handle result
       setExecutionResult(result)
 
       if (result.success) {
-        console.log('Workflow executed successfully:', result.data)
         addNotification('console', 'Workflow completed successfully')
       } else {
-        console.error('Workflow execution failed:', result.error)
         addNotification('error', `Failed to execute workflow: ${result.error}`)
       }
     } catch (error: any) {
