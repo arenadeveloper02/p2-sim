@@ -39,21 +39,30 @@ export function ControlBar() {
           </DropdownMenuTrigger>
 
           {history.past.length === 0 ? (
-            <DropdownMenuContent align="end" className="w-50">
+            <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem className="text-sm text-muted-foreground">
                 No history available
               </DropdownMenuItem>
             </DropdownMenuContent>
           ) : (
             <DropdownMenuContent align="end" className="w-60">
-              {[...history.past].reverse().map((entry) => (
+              <>
                 <HistoryDropdownItem
-                  key={entry.timestamp}
-                  action={entry.action}
-                  timestamp={entry.timestamp}
-                  onClick={undo}
+                  key={history.present.timestamp}
+                  action={history.present.action}
+                  timestamp={history.present.timestamp}
+                  isCurrent={true}
+                  onClick={() => {}}
                 />
-              ))}
+                {[...history.past].reverse().map((entry) => (
+                  <HistoryDropdownItem
+                    key={entry.timestamp}
+                    action={entry.action}
+                    timestamp={entry.timestamp}
+                    onClick={undo}
+                  />
+                ))}
+              </>
             </DropdownMenuContent>
           )}
         </DropdownMenu>

@@ -7,12 +7,14 @@ interface HistoryDropdownItemProps {
   action: string
   timestamp: number
   onClick?: () => void
+  isCurrent?: boolean
 }
 
 export function HistoryDropdownItem({
   action,
   timestamp,
   onClick,
+  isCurrent = false,
 }: HistoryDropdownItemProps) {
   const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true })
 
@@ -24,7 +26,11 @@ export function HistoryDropdownItem({
       <Clock className="h-4 w-4 text-muted-foreground" />
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{timeAgo}</span>
+          {isCurrent ? (
+            <span className="text-xs text-muted-foreground">Current</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">{timeAgo}</span>
+          )}
         </div>
         <p className="text-sm text-foreground">{action}</p>
       </div>
