@@ -18,15 +18,21 @@ export function ShortInput({
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
 
+  const displayValue =
+    password && !isFocused
+      ? '•'.repeat(value?.toString().length ?? 0)
+      : value?.toString() ?? ''
+
   return (
     <Input
       className="w-full placeholder:text-muted-foreground/50"
       placeholder={placeholder ?? ''}
-      type={password && !isFocused ? 'password' : 'text'}
-      value={value?.toString() ?? ''}
+      type="text"
+      value={displayValue}
       onChange={(e) => setValue(e.target.value)}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
+      autoComplete="off"
     />
   )
 }
