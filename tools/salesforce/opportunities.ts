@@ -1,55 +1,52 @@
-import { ToolConfig } from '../types';
+import { ToolConfig, ToolResponse } from '../types';
 
 interface OpportunityParams {
-  instanceUrl: string;
-  accessToken: string;
-  name: string;
-  accountId?: string;
-  stage?: string;
-  amount?: number;
-  closeDate?: string;
-  probability?: number;
-  description?: string;
+  apiKey: string;
+  action: 'create' | 'update' | 'search' | 'delete';
   id?: string;
-  properties?: Record<string, any>;
-  query?: string;
-  limit?: number;
-}
-
-interface OpportunityResponse {
-  id: string;
-  name: string;
+  name?: string;
   accountId?: string;
   stage?: string;
   amount?: number;
   closeDate?: string;
   probability?: number;
-  description?: string;
-  createdDate: string;
-  lastModifiedDate: string;
-  [key: string]: any;
+  properties?: Record<string, any>;
+  limit?: number;
+  offset?: number;
+  data: Record<string, any>;
 }
 
-export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityResponse | OpportunityResponse[]> = {
+interface OpportunityResponse extends ToolResponse {
+  totalResults?: number;
+  pagination?: {
+    hasMore: boolean;
+    offset: number;
+  };
+}
+
+export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityResponse> = {
   id: 'salesforce.opportunities',
   name: 'Salesforce Opportunities',
   description: 'Manage Salesforce opportunities - create, query, and update opportunity records',
   version: '1.0.0',
 
   params: {
-    instanceUrl: {
+    apiKey: {
       type: 'string',
       required: true,
-      description: 'Salesforce instance URL'
+      description: 'Salesforce API key'
     },
-    accessToken: {
+    action: {
       type: 'string',
       required: true,
-      description: 'Salesforce access token'
+      description: 'Action to perform (create, update, search, delete)'
+    },
+    id: {
+      type: 'string',
+      description: 'Opportunity ID (required for updates)'
     },
     name: {
       type: 'string',
-      required: true,
       description: 'Opportunity name'
     },
     accountId: {
@@ -72,35 +69,28 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
       type: 'number',
       description: 'Probability of closing (%)'
     },
-    description: {
-      type: 'string',
-      description: 'Opportunity description'
-    },
-    id: {
-      type: 'string',
-      description: 'Opportunity ID (required for updates)'
-    },
     properties: {
       type: 'object',
       description: 'Additional opportunity fields'
-    },
-    query: {
-      type: 'string',
-      description: 'SOQL query for searching opportunities'
     },
     limit: {
       type: 'number',
       default: 100,
       description: 'Maximum number of records to return'
+    },
+    offset: {
+      type: 'number',
+      description: 'Offset for pagination'
+    },
+    data: {
+      type: 'object',
+      description: 'Data for the action'
     }
   },
 
   request: {
     url: (params) => {
-      const baseUrl = `${params.instanceUrl}/services/data/v58.0/sobjects/Opportunity`;
-      if (params.query) {
-        return `${params.instanceUrl}/services/data/v58.0/query?q=${encodeURIComponent(params.query)}`;
-      }
+      const baseUrl = `${params.apiKey}@salesforce.com/services/data/v58.0/sobjects/Opportunity`;
       if (params.id) {
         return `${baseUrl}/${params.id}`;
       }
@@ -109,13 +99,9 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.accessToken}`
+      'Authorization': `Bearer ${params.apiKey}`
     }),
     body: (params) => {
-      if (params.query) {
-        return {}; // Empty body for queries
-      }
-
       const fields = {
         Name: params.name,
         ...(params.accountId && { AccountId: params.accountId }),
@@ -123,7 +109,6 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
         ...(params.amount && { Amount: params.amount }),
         ...(params.closeDate && { CloseDate: params.closeDate }),
         ...(params.probability && { Probability: params.probability }),
-        ...(params.description && { Description: params.description }),
         ...params.properties
       };
 
@@ -131,36 +116,15 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
     }
   },
 
-  transformResponse: (data) => {
-    if (data.records) {
-      // Query response
-      return data.records.map((record: any) => ({
-        id: record.Id,
-        name: record.Name,
-        accountId: record.AccountId,
-        stage: record.StageName,
-        amount: record.Amount,
-        closeDate: record.CloseDate,
-        probability: record.Probability,
-        description: record.Description,
-        createdDate: record.CreatedDate,
-        lastModifiedDate: record.LastModifiedDate,
-        ...record
-      }));
-    }
-    // Single record response
+  transformResponse: async (response: Response) => {
+    const data = await response.json();
     return {
-      id: data.id || data.Id,
-      name: data.name || data.Name,
-      accountId: data.accountId || data.AccountId,
-      stage: data.stage || data.StageName,
-      amount: data.amount || data.Amount,
-      closeDate: data.closeDate || data.CloseDate,
-      probability: data.probability || data.Probability,
-      description: data.description || data.Description,
-      createdDate: data.CreatedDate,
-      lastModifiedDate: data.LastModifiedDate,
-      ...data
+      output: data.records || data,
+      totalResults: data.totalSize,
+      pagination: {
+        hasMore: !data.done,
+        offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0
+      }
     };
   },
 

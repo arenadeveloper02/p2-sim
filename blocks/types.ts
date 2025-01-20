@@ -3,7 +3,7 @@ import type { JSX } from 'react'
 
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'basic' | 'advanced'
-export type OutputType = 'string' | 'number' | 'json' | 'boolean'
+export type OutputType = 'string' | 'number' | 'json' | 'boolean' | 'any'
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
 export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code'

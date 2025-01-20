@@ -1,4 +1,4 @@
-import { ToolConfig } from '../types';
+import { ToolConfig, ToolResponse } from '../types';
 
 interface ChatParams {
   apiKey: string;
@@ -10,8 +10,7 @@ interface ChatParams {
   stream?: boolean;
 }
 
-interface ChatResponse {
-  output: string;
+interface ChatResponse extends ToolResponse {
   tokens?: number;
   model: string;
 }
@@ -68,10 +67,11 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     }
   },
 
-  transformResponse: (data) => {
+  transformResponse: async (response: Response) => {
+    const data = await response.json();
     return {
-      output: data.content[0].text,
-      tokens: data.usage?.input_tokens + data.usage?.output_tokens,
+      output: data.completion,
+      tokens: data.usage?.total_tokens,
       model: data.model
     };
   },

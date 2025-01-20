@@ -1,4 +1,4 @@
-import { ToolConfig, HttpMethod } from '../types';
+import { ToolConfig, HttpMethod, ToolResponse } from '../types';
 
 interface RequestParams {
   url: string;
@@ -12,8 +12,7 @@ interface RequestParams {
   validateStatus?: (status: number) => boolean;
 }
 
-interface RequestResponse {
-  data: any;
+interface RequestResponse extends ToolResponse {
   status: number;
   headers: Record<string, string>;
 }
@@ -120,23 +119,22 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
     }
   },
 
-  transformResponse: (response) => {
-    // Try to parse response based on content-type
-    const contentType = response.headers?.['content-type'] || '';
-    let data = response.data;
+  transformResponse: async (response: Response) => {
+    // Convert Headers to a plain object
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
 
-    if (contentType.includes('application/json')) {
-      try {
-        data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-      } catch (e) {
-        // Keep original data if parsing fails
-      }
-    }
+    // Parse response based on content type
+    const data = await (response.headers.get('content-type')?.includes('application/json')
+      ? response.json()
+      : response.text());
 
     return {
-      data,
+      output: data,
       status: response.status,
-      headers: response.headers
+      headers
     };
   },
 
@@ -148,4 +146,4 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
       : '';
     return `${message} (${code})${details}`;
   }
-}; 
+};

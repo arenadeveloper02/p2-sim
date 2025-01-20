@@ -14,7 +14,7 @@ export const ApiBlock: BlockConfig = {
     access: ['http.request']
   },
   workflow: {
-    outputType: 'json',
+    outputType: 'any',
     inputs: {
       url: 'string',
       method: 'string',

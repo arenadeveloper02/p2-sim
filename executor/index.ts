@@ -52,12 +52,11 @@ export class Executor {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ message: response.statusText }));
         throw new Error(tool.transformError(error));
       }
 
-      const data = await response.json();
-      const result = tool.transformResponse(data);
+      const result = await tool.transformResponse(response);
 
       // Validate the output matches the interface
       this.validateToolOutput(block, result);

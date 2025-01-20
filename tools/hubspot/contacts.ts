@@ -1,33 +1,29 @@
-import { ToolConfig } from '../types';
+import { ToolConfig, ToolResponse } from '../types';
 
-interface ContactParams {
+interface ContactsParams {
   apiKey: string;
-  email: string;
+  action: 'create' | 'update' | 'search' | 'delete';
+  id?: string;
+  email?: string;
   firstName?: string;
   lastName?: string;
   phone?: string;
   company?: string;
-  id?: string;
-  properties?: Record<string, string>;
+  properties?: Record<string, any>;
   limit?: number;
   after?: string;
+  data: Record<string, any>;
 }
 
-interface ContactResponse {
-  id: string;
-  properties: {
-    email: string;
-    firstname?: string;
-    lastname?: string;
-    phone?: string;
-    company?: string;
-    [key: string]: any;
+interface ContactsResponse extends ToolResponse {
+  totalResults?: number;
+  pagination?: {
+    hasMore: boolean;
+    offset: number;
   };
-  createdAt: string;
-  updatedAt: string;
 }
 
-export const contactsTool: ToolConfig<ContactParams, ContactResponse | ContactResponse[]> = {
+export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
   id: 'hubspot.contacts',
   name: 'HubSpot Contacts',
   description: 'Manage HubSpot contacts - create, search, and update contact records',
@@ -116,22 +112,12 @@ export const contactsTool: ToolConfig<ContactParams, ContactResponse | ContactRe
     }
   },
 
-  transformResponse: (data) => {
-    if (Array.isArray(data.results)) {
-      // Search response
-      return data.results.map((contact: { id: string; properties: Record<string, any>; createdAt: string; updatedAt: string }) => ({
-        id: contact.id,
-        properties: contact.properties,
-        createdAt: contact.createdAt,
-        updatedAt: contact.updatedAt
-      }));
-    }
-    // Single contact response
+  transformResponse: async (response: Response) => {
+    const data = await response.json();
     return {
-      id: data.id,
-      properties: data.properties,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt
+      output: data.results || data,
+      totalResults: data.total,
+      pagination: data.paging
     };
   },
 

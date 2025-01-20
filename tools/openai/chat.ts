@@ -1,4 +1,4 @@
-import { ToolConfig } from '../types';
+import { ToolConfig, ToolResponse } from '../types';
 
 interface ChatParams {
   apiKey: string;
@@ -12,8 +12,7 @@ interface ChatParams {
   stream?: boolean;
 }
 
-interface ChatResponse {
-  output: string;
+interface ChatResponse extends ToolResponse {
   tokens?: number;
   model: string;
 }
@@ -55,7 +54,6 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'Authorization': `Bearer ${params.apiKey}`
     }),
     body: (params) => {
-      console.log('OpenAI Chat Tool - Request Params:', JSON.stringify(params, null, 2));
       const body = {
         model: params.model || 'gpt-4o',
         messages: [
@@ -68,12 +66,12 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
         presence_penalty: params.presencePenalty,
         stream: params.stream
       };
-      console.log('OpenAI Chat Tool - Request Body:', JSON.stringify(body, null, 2));
       return body;
     }
   },
 
-  transformResponse: (data) => {
+  transformResponse: async (response: Response) => {
+    const data = await response.json();
     if (data.choices?.[0]?.delta?.content) {
       return {
         output: data.choices[0].delta.content,

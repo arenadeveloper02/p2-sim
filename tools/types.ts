@@ -1,6 +1,11 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
-export interface ToolConfig<P = any, R = any> {
+export interface ToolResponse {
+  output: any;  // All tools must provide an output field
+  [key: string]: any;  // Tools can include additional metadata
+}
+
+export interface ToolConfig<P = any, R extends ToolResponse = ToolResponse> {
   // Basic tool identification
   id: string;
   name: string;
@@ -24,6 +29,6 @@ export interface ToolConfig<P = any, R = any> {
   };
 
   // Response handling
-  transformResponse: (data: any) => R;
+  transformResponse: (response: Response) => Promise<R>;
   transformError: (error: any) => string;
 } 
