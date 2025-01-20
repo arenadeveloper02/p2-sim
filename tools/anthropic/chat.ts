@@ -3,6 +3,7 @@ import { ToolConfig, ToolResponse } from '../types';
 interface ChatParams {
   apiKey: string;
   systemPrompt: string;
+  context?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -32,6 +33,10 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       required: true,
       description: 'System prompt to send to the model'
     },
+    context: {
+      type: 'string',
+      description: 'User message/context to send to the model'
+    },
     model: {
       type: 'string',
       default: 'claude-3-5-sonnet-20241022',
@@ -53,11 +58,17 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'anthropic-version': '2023-06-01'
     }),
     body: (params) => {
+      const messages = [
+        { role: 'user', content: params.systemPrompt }
+      ];
+      
+      if (params.context) {
+        messages.push({ role: 'user', content: params.context });
+      }
+
       const body = {
         model: params.model || 'claude-3-5-sonnet-20241022',
-        messages: [
-          { role: 'user', content: params.systemPrompt }
-        ],
+        messages,
         temperature: params.temperature,
         max_tokens: params.maxTokens,
         top_p: params.topP,

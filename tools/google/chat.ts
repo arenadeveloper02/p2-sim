@@ -3,6 +3,7 @@ import { ToolConfig, ToolResponse } from '../types';
 interface ChatParams {
   apiKey: string;
   systemPrompt: string;
+  context?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -33,6 +34,10 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       required: true,
       description: 'System prompt to send to the model'
     },
+    context: {
+      type: 'string',
+      description: 'User message/context to send to the model'
+    },
     model: {
       type: 'string',
       default: 'gemini-pro',
@@ -53,13 +58,22 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'x-goog-api-key': params.apiKey
     }),
     body: (params) => {
+      const contents = [
+        {
+          role: 'model',
+          parts: [{ text: params.systemPrompt }]
+        }
+      ];
+
+      if (params.context) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: params.context }]
+        });
+      }
+
       const body = {
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: params.systemPrompt }]
-          }
-        ],
+        contents,
         generationConfig: {
           temperature: params.temperature,
           maxOutputTokens: params.maxTokens,
