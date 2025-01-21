@@ -4,6 +4,7 @@ import { SubBlock } from './components/sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
 import { ActionBar } from './components/action-bar/action-bar'
+import { ConnectionBlock } from './components/connection-block/connection-block'
 
 interface WorkflowBlockProps {
   id: string
@@ -52,6 +53,7 @@ export function WorkflowBlock({
   return (
     <Card className="w-[320px] shadow-md select-none group relative [&:active]:cursor-grabbing cursor-grab">
       {selected && <ActionBar blockId={id} />}
+      <ConnectionBlock blockId={id} />
 
       <Handle
         type="target"
