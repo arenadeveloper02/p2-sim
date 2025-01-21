@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
+import { useRef, useEffect } from 'react'
 
 interface TableProps {
   columns: string[]
@@ -17,6 +18,28 @@ interface TableRow {
 
 export function Table({ columns, blockId, subBlockId }: TableProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const activePositionRef = useRef<{ rowIndex: number; column: string } | null>(
+    null
+  )
+
+  // Log component renders
+  console.log('Table component rendering', {
+    blockId,
+    subBlockId,
+    value,
+  })
+
+  useEffect(() => {
+    if (activePositionRef.current && document.activeElement === document.body) {
+      const { rowIndex, column } = activePositionRef.current
+      const input = document.querySelector(
+        `input[data-row="${rowIndex}"][data-column="${column}"]`
+      ) as HTMLInputElement
+      if (input) {
+        input.focus()
+      }
+    }
+  })
 
   // Initialize with empty row if no value exists
   const rows = (value as any[]) || [
@@ -31,6 +54,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
     column: string,
     value: string
   ) => {
+    console.log('Cell change', { rowIndex, column, value })
     const updatedRows = rows.map((row, idx) =>
       idx === rowIndex
         ? {
@@ -86,11 +110,16 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
                   )}
                 >
                   <Input
+                    data-row={rowIndex}
+                    data-column={column}
                     value={row.cells[column] || ''}
                     placeholder={column}
                     onChange={(e) =>
                       handleCellChange(rowIndex, column, e.target.value)
                     }
+                    onFocus={() => {
+                      activePositionRef.current = { rowIndex, column }
+                    }}
                     className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-muted-foreground placeholder:text-muted-foreground/50"
                   />
                 </td>
