@@ -284,6 +284,10 @@ function WorkflowCanvas() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [canUndo, canRedo, undo, redo])
 
+  // useEffect(() => {
+  //   addNotification('console', 'Welcome to the workflow editor!')
+  // }, [])
+
   return (
     <div className="relative w-full h-[calc(100vh-56px)]">
       <NotificationList />
