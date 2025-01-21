@@ -51,7 +51,7 @@ export function WorkflowBlock({
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
   return (
-    <Card className="w-[320px] shadow-md select-none group relative [&:active]:cursor-grabbing cursor-grab">
+    <Card className="w-[320px] shadow-md select-none group relative cursor-default">
       {selected && <ActionBar blockId={id} />}
       <ConnectionBlock blockId={id} />
 
@@ -59,15 +59,16 @@ export function WorkflowBlock({
         type="target"
         position={Position.Top}
         className={cn(
-          '!w-3 !h-3',
+          '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
           '!opacity-0 group-hover:!opacity-100',
           '!transition-opacity !duration-200 !cursor-crosshair',
-          'hover:!border-blue-500'
+          'hover:!border-blue-500',
+          '!top-[-7px]'
         )}
       />
 
-      <div className="flex items-center gap-3 p-3 border-b">
+      <div className="flex items-center gap-3 p-3 border-b workflow-drag-handle cursor-grab [&:active]:cursor-grabbing">
         <div
           className="flex items-center justify-center w-7 h-7 rounded"
           style={{ backgroundColor: toolbar.bgColor }}
@@ -98,11 +99,12 @@ export function WorkflowBlock({
         type="source"
         position={Position.Bottom}
         className={cn(
-          '!w-3 !h-3',
+          '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
           '!opacity-0 group-hover:!opacity-100',
           '!transition-opacity !duration-200 !cursor-crosshair',
-          'hover:!border-blue-500'
+          'hover:!border-blue-500',
+          '!bottom-[-7px]'
         )}
       />
     </Card>

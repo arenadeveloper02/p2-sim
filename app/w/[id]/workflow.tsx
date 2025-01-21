@@ -118,6 +118,7 @@ function WorkflowCanvas() {
     type: 'workflowBlock',
     position: block.position,
     selected: block.id === selectedBlockId,
+    dragHandle: '.workflow-drag-handle',
     data: {
       type: block.type,
       config: getBlock(block.type),
@@ -323,6 +324,7 @@ function WorkflowCanvas() {
         selectNodesOnDrag={false}
         nodesConnectable={true}
         nodesDraggable={true}
+        draggable={false}
       >
         <Background />
       </ReactFlow>
