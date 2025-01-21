@@ -329,6 +329,7 @@ function WorkflowCanvas() {
         nodesConnectable={true}
         nodesDraggable={true}
         draggable={false}
+        noWheelClassName="allow-scroll"
       >
         <Background />
       </ReactFlow>

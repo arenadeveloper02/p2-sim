@@ -25,7 +25,7 @@ export function ShortInput({
 
   return (
     <Input
-      className="w-full placeholder:text-muted-foreground/50"
+      className="w-full placeholder:text-muted-foreground/50 allow-scroll"
       placeholder={placeholder ?? ''}
       type="text"
       value={displayValue}
