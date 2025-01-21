@@ -217,9 +217,9 @@ function WorkflowCanvas() {
     setSelectedBlockId(null)
   }, [])
 
-  useEffect(() => {
-    initializeStateLogger()
-  }, [])
+  // useEffect(() => {
+  //   initializeStateLogger()
+  // }, [])
 
   /**
    * CSS keyframe animation for the dashed line effect

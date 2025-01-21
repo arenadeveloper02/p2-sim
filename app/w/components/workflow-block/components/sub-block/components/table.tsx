@@ -22,13 +22,6 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
     null
   )
 
-  // Log component renders
-  console.log('Table component rendering', {
-    blockId,
-    subBlockId,
-    value,
-  })
-
   useEffect(() => {
     if (activePositionRef.current && document.activeElement === document.body) {
       const { rowIndex, column } = activePositionRef.current
@@ -54,7 +47,6 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
     column: string,
     value: string
   ) => {
-    console.log('Cell change', { rowIndex, column, value })
     const updatedRows = rows.map((row, idx) =>
       idx === rowIndex
         ? {
