@@ -112,7 +112,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
                     onFocus={() => {
                       activePositionRef.current = { rowIndex, column }
                     }}
-                    className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-muted-foreground placeholder:text-muted-foreground/50"
+                    className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-muted-foreground placeholder:text-muted-foreground/50 allow-scroll"
                   />
                 </td>
               ))}

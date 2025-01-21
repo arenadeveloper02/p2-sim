@@ -546,6 +546,7 @@ export function Code({ blockId, subBlockId }: CodeProps) {
         'text-muted-foreground placeholder:text-muted-foreground/50',
         'leading-none flex items-center',
         'whitespace-pre',
+        'allow-scroll',
         selection && 'selection:bg-primary/20'
       ),
     [selection]
