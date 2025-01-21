@@ -11,20 +11,21 @@ export const FunctionBlock: BlockConfig = {
     category: 'advanced',
   },
   tools: {
-    access: ['function']
+    access: ['function.execute'],
+    config: {
+      tool: () => 'function.execute'
+    }
   },
   workflow: {
     outputType: 'json',
-    inputs: {
-      code: 'string'
-    },
     subBlocks: [
       {
         id: 'code',
         title: 'Code',
         type: 'code',
         layout: 'full',
-      },  
-    ],
-  },
+        placeholder: 'Enter your code here...'
+      }
+    ]
+  }
 }

@@ -6,6 +6,7 @@ import { chatTool as xaiChat } from './xai/chat';
 import { requestTool as httpRequest } from './http/request';
 import { contactsTool as hubspotContacts } from './hubspot/contacts';
 import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities';
+import { functionExecuteTool as functionExecute } from './function/execute';
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -18,7 +19,9 @@ export const tools: Record<string, ToolConfig> = {
   'http.request': httpRequest,
   // CRM Tools
   'hubspot.contacts': hubspotContacts,
-  'salesforce.opportunities': salesforceOpportunities
+  'salesforce.opportunities': salesforceOpportunities,
+  // Function Tools
+  'function.execute': functionExecute,
 };
 
 // Get a tool by its ID
