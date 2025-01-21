@@ -23,7 +23,7 @@ export function ConnectionBlock({ blockId }: ConnectionBlockProps) {
               {connection.name.replace(' ', '').toLowerCase()}
             </span>
             <span className="text-muted-foreground">
-              .{connection.outputType}
+              .{connection.outputType === 'any' ? 'res' : connection.outputType}
             </span>
           </div>
         </Card>

@@ -4,6 +4,7 @@ import { Edge } from 'reactflow'
 import { Position, SubBlockState, WorkflowStore } from './types'
 import { getBlock } from '@/blocks'
 import { withHistory, WorkflowStoreWithHistory, pushHistory } from './history-middleware'
+import { resolveOutputType } from '@/blocks/utils'
 
 const initialState = {
   blocks: {},
@@ -29,21 +30,38 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       canRedo: () => false,
 
       updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
-        set((state) => ({
-          blocks: {
-            ...state.blocks,
-            [blockId]: {
-              ...state.blocks[blockId],
-              subBlocks: {
-                ...state.blocks[blockId].subBlocks,
-                [subBlockId]: {
-                  ...state.blocks[blockId].subBlocks[subBlockId],
-                  value,
-                },
+        set((state) => {
+          const block = state.blocks[blockId]
+          const blockConfig = getBlock(block.type)
+          
+          if (!blockConfig) return state
+
+          // Create new subBlocks state
+          const newSubBlocks = {
+            ...block.subBlocks,
+            [subBlockId]: {
+              ...block.subBlocks[subBlockId],
+              value,
+            },
+          }
+
+          // Resolve new output type
+          const newOutputType = resolveOutputType(
+            blockConfig.workflow.outputType,
+            newSubBlocks
+          )
+
+          return {
+            blocks: {
+              ...state.blocks,
+              [blockId]: {
+                ...block,
+                subBlocks: newSubBlocks,
+                outputType: newOutputType,
               },
             },
-          },
-        }))
+          }
+        })
       },
 
       addBlock: (id: string, type: string, name: string, position: Position) => {
