@@ -5,6 +5,7 @@ import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
+import { useState } from 'react'
 
 interface WorkflowBlockProps {
   id: string
@@ -23,6 +24,8 @@ export function WorkflowBlock({
   selected,
 }: WorkflowBlockProps) {
   const { toolbar, workflow } = config
+  // Dragging connection state
+  const [isConnecting, setIsConnecting] = useState(false)
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     const rows: SubBlockConfig[][] = []
@@ -53,7 +56,7 @@ export function WorkflowBlock({
   return (
     <Card className="w-[320px] shadow-md select-none group relative cursor-default">
       {selected && <ActionBar blockId={id} />}
-      <ConnectionBlocks blockId={id} />
+      <ConnectionBlocks blockId={id} setIsConnecting={setIsConnecting} />
 
       <Handle
         type="target"
@@ -88,7 +91,11 @@ export function WorkflowBlock({
                   subBlock.layout === 'half' ? 'flex-1' : 'w-full'
                 }`}
               >
-                <SubBlock blockId={id} config={subBlock} />
+                <SubBlock
+                  blockId={id}
+                  config={subBlock}
+                  isConnecting={isConnecting}
+                />
               </div>
             ))}
           </div>

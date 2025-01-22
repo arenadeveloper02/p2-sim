@@ -10,9 +10,10 @@ import { Code } from './components/code'
 interface SubBlockProps {
   blockId: string
   config: SubBlockConfig
+  isConnecting: boolean
 }
 
-export function SubBlock({ blockId, config }: SubBlockProps) {
+export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
   }
@@ -26,6 +27,7 @@ export function SubBlock({ blockId, config }: SubBlockProps) {
             subBlockId={config.id}
             placeholder={config.placeholder}
             password={config.password}
+            isConnecting={isConnecting}
           />
         )
       case 'long-input':

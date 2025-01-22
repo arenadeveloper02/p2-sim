@@ -3,9 +3,13 @@ import { Card } from '@/components/ui/card'
 
 interface ConnectionBlocksProps {
   blockId: string
+  setIsConnecting: (isConnecting: boolean) => void
 }
 
-export function ConnectionBlocks({ blockId }: ConnectionBlocksProps) {
+export function ConnectionBlocks({
+  blockId,
+  setIsConnecting,
+}: ConnectionBlocksProps) {
   const { incomingConnections, hasIncomingConnections } =
     useBlockConnections(blockId)
 
@@ -13,10 +17,11 @@ export function ConnectionBlocks({ blockId }: ConnectionBlocksProps) {
 
   const handleDragStart = (e: React.DragEvent, connection: any) => {
     e.stopPropagation() // Prevent parent drag handlers from firing
+    setIsConnecting(true)
     e.dataTransfer.setData(
       'application/json',
       JSON.stringify({
-        type: 'connection',
+        type: 'connectionBlock',
         connectionData: {
           id: connection.id,
           name: connection.name,
@@ -28,6 +33,10 @@ export function ConnectionBlocks({ blockId }: ConnectionBlocksProps) {
     e.dataTransfer.effectAllowed = 'copy'
   }
 
+  const handleDragEnd = (e: React.DragEvent) => {
+    setIsConnecting(false)
+  }
+
   return (
     <div className="absolute -left-[180px] top-0 space-y-2 flex flex-col items-end w-[160px]">
       {incomingConnections.map((connection) => (
@@ -35,6 +44,7 @@ export function ConnectionBlocks({ blockId }: ConnectionBlocksProps) {
           key={connection.id}
           draggable
           onDragStart={(e) => handleDragStart(e, connection)}
+          onDragEnd={handleDragEnd}
           className="group flex items-center rounded-lg border bg-card p-2 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing w-fit"
         >
           <div className="text-sm">

@@ -178,28 +178,32 @@ function WorkflowCanvas() {
       event.preventDefault()
 
       try {
+        const data = JSON.parse(event.dataTransfer.getData('application/json'))
+
+        // Early return if this is a connection block drag
+        if (data.type === 'connectionBlock') {
+          return
+        }
+
         const reactFlowBounds = event.currentTarget.getBoundingClientRect()
         const position = project({
           x: event.clientX - reactFlowBounds.left,
           y: event.clientY - reactFlowBounds.top,
         })
 
-        const { type } = JSON.parse(
-          event.dataTransfer.getData('application/json')
-        )
-        const blockConfig = getBlock(type)
+        const blockConfig = getBlock(data.type)
 
         if (!blockConfig) {
-          console.error('Invalid block type:', type)
+          console.error('Invalid block type:', data.type)
           return
         }
 
         const id = crypto.randomUUID()
         const name = `${blockConfig.toolbar.title} ${
-          Object.values(blocks).filter((b) => b.type === type).length + 1
+          Object.values(blocks).filter((b) => b.type === data.type).length + 1
         }`
 
-        addBlock(id, type, name, position)
+        addBlock(id, data.type, name, position)
       } catch (err) {
         console.error('Error dropping block:', err)
       }
