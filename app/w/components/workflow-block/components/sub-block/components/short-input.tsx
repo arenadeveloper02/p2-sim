@@ -34,7 +34,10 @@ export function ShortInput({
     e.preventDefault()
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'))
-      if (data.type === 'connectionBlock') {
+      if (
+        data.type === 'connectionBlock' &&
+        data.connectionData.sourceBlockId === blockId
+      ) {
         const currentValue = value?.toString() ?? ''
         const newValue =
           currentValue +
