@@ -1,11 +1,11 @@
 import { useBlockConnections } from '@/app/w/hooks/use-block-connections'
 import { Card } from '@/components/ui/card'
 
-interface ConnectionBlockProps {
+interface ConnectionBlocksProps {
   blockId: string
 }
 
-export function ConnectionBlock({ blockId }: ConnectionBlockProps) {
+export function ConnectionBlocks({ blockId }: ConnectionBlocksProps) {
   const { incomingConnections, hasIncomingConnections } =
     useBlockConnections(blockId)
 

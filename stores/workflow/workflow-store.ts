@@ -32,8 +32,9 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
         set((state) => {
           const block = state.blocks[blockId]
-          const blockConfig = getBlock(block.type)
+          if (!block) return state
           
+          const blockConfig = getBlock(block.type)
           if (!blockConfig) return state
 
           // Create new subBlocks state
