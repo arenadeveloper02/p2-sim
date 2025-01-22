@@ -12,17 +12,29 @@ import { useNotificationStore } from '@/stores/notifications/notifications-store
 import { NotificationDropdownItem } from './components/notification-dropdown-item'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import { HistoryDropdownItem } from './components/history-dropdown-item'
+import { formatDistanceToNow } from 'date-fns'
+import { useEffect, useState } from 'react'
 
 export function ControlBar() {
   const { notifications } = useNotificationStore()
   const { history, undo, redo } = useWorkflowStore()
+  const [, forceUpdate] = useState({})
+
+  // Update the time display every minute
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate({}), 60000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b">
       {/* Left Section - Workflow Info */}
       <div className="flex flex-col gap-[2px]">
         <h2 className="font-semibold text-sm">Workflow 1</h2>
-        <p className="text-xs text-muted-foreground">Saved 2 minutes ago</p>
+        <p className="text-xs text-muted-foreground">
+          Saved{' '}
+          {formatDistanceToNow(history.present.timestamp, { addSuffix: true })}
+        </p>
       </div>
 
       {/* Middle Section - Reserved for future use */}
