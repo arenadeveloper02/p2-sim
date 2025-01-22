@@ -21,6 +21,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
   const activePositionRef = useRef<{ rowIndex: number; column: string } | null>(
     null
   )
+  const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
 
   useEffect(() => {
     if (activePositionRef.current && document.activeElement === document.body) {
@@ -33,6 +34,20 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
       }
     }
   })
+
+  // Add new useEffect for handling input scrolling
+  useEffect(() => {
+    if (activePositionRef.current) {
+      const { rowIndex, column } = activePositionRef.current
+      const key = `${rowIndex}-${column}`
+      const input = inputRefs.current.get(key)
+
+      if (input) {
+        const scrollPosition = (input.selectionStart ?? 0) * 8
+        input.scrollLeft = scrollPosition - input.offsetWidth / 2
+      }
+    }
+  }, [value])
 
   // Initialize with empty row if no value exists
   const rows = (value as any[]) || [
@@ -102,6 +117,13 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
                   )}
                 >
                   <Input
+                    ref={(el) => {
+                      if (el) {
+                        inputRefs.current.set(`${rowIndex}-${column}`, el)
+                      } else {
+                        inputRefs.current.delete(`${rowIndex}-${column}`)
+                      }
+                    }}
                     data-row={rowIndex}
                     data-column={column}
                     value={row.cells[column] || ''}
@@ -111,6 +133,11 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
                     }
                     onFocus={() => {
                       activePositionRef.current = { rowIndex, column }
+                    }}
+                    onSelect={(e) => {
+                      const input = e.currentTarget
+                      const scrollPosition = (input.selectionStart ?? 0) * 8
+                      input.scrollLeft = scrollPosition - input.offsetWidth / 2
                     }}
                     className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-muted-foreground placeholder:text-muted-foreground/50 allow-scroll"
                   />

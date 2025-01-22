@@ -1,5 +1,5 @@
 import { Input } from '@/components/ui/input'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface ShortInputProps {
@@ -15,6 +15,7 @@ export function ShortInput({
   placeholder,
   password,
 }: ShortInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
 
@@ -23,8 +24,17 @@ export function ShortInput({
       ? '•'.repeat(value?.toString().length ?? 0)
       : value?.toString() ?? ''
 
+  useEffect(() => {
+    if (inputRef.current && isFocused) {
+      const input = inputRef.current
+      const scrollPosition = (input.selectionStart ?? 0) * 8
+      input.scrollLeft = scrollPosition - input.offsetWidth / 2
+    }
+  }, [value, isFocused])
+
   return (
     <Input
+      ref={inputRef}
       className="w-full placeholder:text-muted-foreground/50 allow-scroll"
       placeholder={placeholder ?? ''}
       type="text"
