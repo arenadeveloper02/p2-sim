@@ -27,6 +27,7 @@ import { BlockState } from '@/stores/workflow/types'
 import { NotificationList } from '@/app/w/components/notifications/notifications'
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { executeWorkflow } from '@/lib/workflow'
+import { useWorkflowExecution } from '../hooks/use-workflow-execution'
 
 /**
  * Represents the data structure for a workflow node
@@ -95,6 +96,7 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
  */
 function WorkflowCanvas() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const { isExecuting, executionResult, handleRunWorkflow } = useWorkflowExecution()
 
   const {
     blocks,
@@ -108,8 +110,6 @@ function WorkflowCanvas() {
     undo,
     redo,
   } = useWorkflowStore()
-  const [isExecuting, setIsExecuting] = useState(false)
-  const [executionResult, setExecutionResult] = useState<any>(null)
   const { addNotification } = useNotificationStore()
 
   // Convert blocks to ReactFlow nodes using local selectedBlockId
@@ -236,41 +236,6 @@ function WorkflowCanvas() {
     }
   `
 
-  /**
-   * Handles the execution of the workflow
-   * Serializes the workflow, executes it, and handles the results
-   */
-  const handleRunWorkflow = async () => {
-    try {
-      setIsExecuting(true)
-      setExecutionResult(null)
-
-      const result = await executeWorkflow(
-        blocks,
-        edges,
-        window.location.pathname.split('/').pop() || 'workflow'
-      )
-
-      setExecutionResult(result)
-
-      if (result.success) {
-        addNotification('console', 'Workflow completed successfully')
-      } else {
-        addNotification('error', `Failed to execute workflow: ${result.error}`)
-      }
-    } catch (error: any) {
-      console.error('Error executing workflow:', error)
-      setExecutionResult({
-        success: false,
-        error:
-          error instanceof Error ? error.message : 'Unknown error occurred',
-      })
-      addNotification('error', `Failed to execute workflow: ${error.message}`)
-    } finally {
-      setIsExecuting(false)
-    }
-  }
-
   // Add keyboard shortcut handler
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -296,13 +261,6 @@ function WorkflowCanvas() {
     <div className="relative w-full h-[calc(100vh-56px)]">
       <NotificationList />
       <style>{keyframeStyles}</style>
-      {/* <button
-        onClick={handleRunWorkflow}
-        disabled={isExecuting}
-        className="absolute top-4 right-4 z-10 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-      >
-        {isExecuting ? 'Running...' : 'Test Run'}
-      </button> */}
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -14,11 +14,13 @@ import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import { HistoryDropdownItem } from './components/history-dropdown-item'
 import { formatDistanceToNow } from 'date-fns'
 import { useEffect, useState } from 'react'
+import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
 
 export function ControlBar() {
   const { notifications } = useNotificationStore()
   const { history, undo, redo } = useWorkflowStore()
   const [, forceUpdate] = useState({})
+  const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
 
   // Update the time display every minute
   useEffect(() => {
@@ -110,9 +112,13 @@ export function ControlBar() {
           )}
         </DropdownMenu>
 
-        <Button className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90">
+        <Button 
+          className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90" 
+          onClick={handleRunWorkflow}
+          disabled={isExecuting}
+        >
           <Play fill="currentColor" className="!h-3.5 !w-3.5" />
-          Run
+          {isExecuting ? 'Running...' : 'Run'}
         </Button>
       </div>
     </div>
