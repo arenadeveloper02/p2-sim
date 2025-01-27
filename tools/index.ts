@@ -3,6 +3,8 @@ import { chatTool as openaiChat } from './openai/chat';
 import { chatTool as anthropicChat } from './anthropic/chat';
 import { chatTool as googleChat } from './google/chat';
 import { chatTool as xaiChat } from './xai/chat';
+import { chatTool as deepseekChat } from './deepseek/chat';
+import { reasonerTool as deepseekReasoner } from './deepseek/reasoner';
 import { requestTool as httpRequest } from './http/request';
 import { contactsTool as hubspotContacts } from './hubspot/contacts';
 import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities';
@@ -15,13 +17,15 @@ export const tools: Record<string, ToolConfig> = {
   'anthropic.chat': anthropicChat,
   'google.chat': googleChat,
   'xai.chat': xaiChat,
+  'deepseek.chat': deepseekChat,
+  'deepseek.reasoner': deepseekReasoner,
   // HTTP
   'http.request': httpRequest,
   // CRM Tools
   'hubspot.contacts': hubspotContacts,
   'salesforce.opportunities': salesforceOpportunities,
   // Function Tools
-  'function.execute': functionExecute,
+  'function.execute': functionExecute
 };
 
 // Get a tool by its ID

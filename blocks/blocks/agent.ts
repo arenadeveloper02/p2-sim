@@ -4,10 +4,11 @@ import { BlockConfig } from '../types'
 // Map of models to their tools
 const MODEL_TOOLS = {
   'gpt-4o': 'openai.chat',
-  'o1-mini': 'openai.chat',
   'claude-3-5-sonnet-20241022': 'anthropic.chat',
   'gemini-pro': 'google.chat',
-  'grok-2-latest': 'xai.chat'
+  'grok-2-latest': 'xai.chat',
+  'deepseek-v3': 'deepseek.chat',
+  'deepseek-r1': 'deepseek.reasoner'
 } as const;
 
 export const AgentBlock: BlockConfig = {
@@ -20,7 +21,7 @@ export const AgentBlock: BlockConfig = {
     category: 'basic',
   },
   tools: {
-    access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat'],
+    access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat', 'deepseek.chat', 'deepseek.reasoner'],
     config: {
       tool: (params: Record<string, any>) => {
         const model = params.model || 'gpt-4o';
