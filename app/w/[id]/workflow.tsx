@@ -96,7 +96,8 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
  */
 function WorkflowCanvas() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
-  const { isExecuting, executionResult, handleRunWorkflow } = useWorkflowExecution()
+  const { isExecuting, executionResult, handleRunWorkflow } =
+    useWorkflowExecution()
 
   const {
     blocks,
@@ -222,9 +223,9 @@ function WorkflowCanvas() {
     setSelectedBlockId(null)
   }, [])
 
-  // useEffect(() => {
-  //   initializeStateLogger()
-  // }, [])
+  useEffect(() => {
+    initializeStateLogger()
+  }, [])
 
   /**
    * CSS keyframe animation for the dashed line effect
