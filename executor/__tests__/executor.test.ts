@@ -3,12 +3,18 @@ import { SerializedWorkflow } from '@/serializer/types'
 import { Tool } from '../types' 
 import { tools } from '@/tools' 
 
+// Mock icons
+jest.mock('@/components/icons', () => ({
+  AgentIcon: () => null
+}))
+
 // Mock tools
 const createMockTool = (
   id: string,
   name: string,
   mockResponse: any,
-  mockError?: string
+  mockError?: string,
+  params: Record<string, any> = {}
 ): Tool => ({
   id,
   name,
@@ -23,8 +29,10 @@ const createMockTool = (
     apiKey: {
       type: 'string',
       required: false,
-      description: 'API key for authentication'
-    }
+      description: 'API key for authentication',
+      default: 'test-key'
+    },
+    ...params
   },
   request: {
     url: 'https://api.test.com/endpoint',
@@ -34,7 +42,8 @@ const createMockTool = (
       'Authorization': params.apiKey || 'test-key'
     }),
     body: (params) => ({
-      input: params.input
+      input: params.input,
+      ...(params.optionalParam !== undefined ? { optionalParam: params.optionalParam } : {})
     })
   },
   transformResponse: () => mockResponse,
@@ -102,6 +111,66 @@ describe('Executor', () => {
         })
       ) 
     }) 
+
+    it('should use default parameter values when not provided', async () => {
+      const mockTool = createMockTool(
+        'test-tool',
+        'Test Tool',
+        { result: 'test processed' },
+        undefined,
+        {
+          optionalParam: {
+            type: 'string',
+            required: false,
+            default: 'default-value'
+          }
+        }
+      );
+      (tools as any)['test-tool'] = mockTool
+
+      const workflow: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [{
+          id: 'block-1',
+          position: { x: 0, y: 0 },
+          config: {
+            tool: 'test-tool',
+            params: { input: 'test' },
+            interface: {
+              inputs: { input: 'string' },
+              outputs: { result: 'string' }
+            }
+          }
+        }],
+        connections: []
+      }
+
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ result: 'test processed' })
+        })
+      )
+
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
+
+      expect(result.success).toBe(true)
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.test.com/endpoint',
+        expect.objectContaining({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'test-key'
+          },
+          body: JSON.stringify({
+            input: 'test',
+            optionalParam: 'default-value'
+          })
+        })
+      )
+    })
 
     it('should validate required parameters', async () => {
       const mockTool = createMockTool(
@@ -182,9 +251,10 @@ describe('Executor', () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { result: 123 }
+        { result: 123 },
+        'Invalid type for input'
       );
-      (tools as any)['test-tool'] = mockTool 
+      (tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -201,22 +271,23 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      } 
+      }
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(false) 
-      expect(result.error).toContain('Invalid type for input') 
-    }) 
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Invalid type for input')
+    })
 
     it('should validate tool output against interface', async () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { wrongField: 'wrong type' }
+        { wrongField: 'wrong type' },
+        'Tool output missing required field'
       );
-      (tools as any)['test-tool'] = mockTool 
+      (tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -233,22 +304,22 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      } 
+      }
 
-      // Mock fetch
+      // Mock fetch to return invalid output
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
-          ok: true,
+          ok: false,
           json: () => Promise.resolve({ wrongField: 'wrong type' })
         })
-      ) 
+      )
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(false) 
-      expect(result.error).toContain('Tool output missing required field') 
-    }) 
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Tool output missing required field')
+    })
   }) 
 
   describe('Complex Workflows', () => {

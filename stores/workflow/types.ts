@@ -12,8 +12,9 @@ export interface BlockState {
   name: string
   position: Position
   subBlocks: Record<string, SubBlockState>
-  outputType: OutputType
+  outputs: Record<string, OutputType>
 }
+
 export interface SubBlockState {
   id: string
   type: SubBlockType

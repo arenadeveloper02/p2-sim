@@ -14,12 +14,14 @@ export const ApiBlock: BlockConfig = {
     access: ['http.request']
   },
   workflow: {
-    outputType: 'any',
     inputs: {
-      url: 'string',
-      method: 'string',
-      headers: 'json',
-      body: 'json'
+      url: { type: 'string', required: true },
+      method: { type: 'string', required: true },
+      headers: { type: 'json', required: false },
+      body: { type: 'json', required: false }
+    },
+    outputs: {
+      response: 'any'
     },
     subBlocks: [
       {

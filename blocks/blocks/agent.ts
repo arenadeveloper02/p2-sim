@@ -43,18 +43,24 @@ export const AgentBlock: BlockConfig = {
     }
   },
   workflow: {
-    outputType: {
-      default: 'string',
-      dependsOn: {
-        subBlockId: 'responseFormat',
-        condition: {
-          whenEmpty: 'string',
-          whenFilled: 'json'
+    inputs: {
+      systemPrompt: { type: 'string', required: true },
+      context: { type: 'string', required: false },
+      apiKey: { type: 'string', required: true },
+      responseFormat: { type: 'json', required: false },
+      temperature: { type: 'number', required: false }
+    },
+    outputs: {
+      response: {
+        type: 'string',
+        dependsOn: {
+          subBlockId: 'responseFormat',
+          condition: {
+            whenEmpty: 'string',
+            whenFilled: 'json'
+          }
         }
       }
-    },
-    inputs: {
-      systemPrompt: 'string'
     },
     subBlocks: [
       {

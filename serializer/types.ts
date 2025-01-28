@@ -1,3 +1,6 @@
+export type ParamType = 'string' | 'number' | 'boolean' | 'json'
+export type OutputType = 'string' | 'number' | 'json' | 'boolean' | 'any'
+
 export interface SerializedWorkflow {
   version: string 
   blocks: SerializedBlock[] 
@@ -20,8 +23,8 @@ export interface BlockConfig {
   tool: string 
   params: Record<string, any> 
   interface: {
-    inputs: Record<string, string> 
-    outputs: Record<string, string> 
+    inputs: Record<string, ParamType> 
+    outputs: Record<string, OutputType> 
   } 
 }
 

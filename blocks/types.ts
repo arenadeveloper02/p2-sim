@@ -9,6 +9,22 @@ export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code'
 export type SubBlockLayout = 'full' | 'half'
 
+export type OutputConfig = OutputType | {
+  type: OutputType
+  dependsOn: {
+    subBlockId: string
+    condition: {
+      whenEmpty: OutputType
+      whenFilled: OutputType
+    }
+  }
+}
+
+export interface ParamConfig {
+  type: ParamType
+  required: boolean
+}
+
 export interface SubBlockConfig {
   id: string
   title: string
@@ -20,17 +36,6 @@ export interface SubBlockConfig {
   columns?: string[]
   placeholder?: string
   password?: boolean
-}
-
-export type OutputTypeConfig = OutputType | {
-  default: OutputType
-  dependsOn: {
-    subBlockId: string
-    condition: {
-      whenEmpty: OutputType
-      whenFilled: OutputType
-    }
-  }
 }
 
 export interface BlockConfig {
@@ -49,8 +54,8 @@ export interface BlockConfig {
     }
   }
   workflow: {
-    outputType: OutputTypeConfig
     subBlocks: SubBlockConfig[]
-    inputs?: Record<string, ParamType>
+    inputs: Record<string, ParamConfig>
+    outputs: Record<string, OutputConfig>
   }
 }

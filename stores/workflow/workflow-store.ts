@@ -42,13 +42,13 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             ...block.subBlocks,
             [subBlockId]: {
               ...block.subBlocks[subBlockId],
-              value,
+              value
             },
           }
 
-          // Resolve new output type
-          const newOutputType = resolveOutputType(
-            blockConfig.workflow.outputType,
+          // Resolve new outputs
+          const newOutputs = resolveOutputType(
+            blockConfig.workflow.outputs,
             newSubBlocks
           )
 
@@ -58,7 +58,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               [blockId]: {
                 ...block,
                 subBlocks: newSubBlocks,
-                outputType: newOutputType,
+                outputs: newOutputs,
               },
             },
           }
@@ -69,15 +69,17 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         const blockConfig = getBlock(type)
         if (!blockConfig) return
 
-        const subBlocks: Record<string, any> = {}
+        const subBlocks: Record<string, SubBlockState> = {}
         blockConfig.workflow.subBlocks.forEach((subBlock) => {
-          const subBlockId = subBlock.id || crypto.randomUUID()
+          const subBlockId = subBlock.id
           subBlocks[subBlockId] = {
             id: subBlockId,
             type: subBlock.type,
             value: null,
           }
         })
+
+        const outputs = resolveOutputType(blockConfig.workflow.outputs, subBlocks)
 
         const newState = {
           blocks: {
@@ -88,10 +90,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               name,
               position,
               subBlocks,
-              outputType: 
-                typeof blockConfig.workflow.outputType === 'string'
-                  ? blockConfig.workflow.outputType
-                  : blockConfig.workflow.outputType.default,
+              outputs,
             },
           },
           edges: [...get().edges],
@@ -136,6 +135,8 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               id: edge.id || crypto.randomUUID(),
               source: edge.source,
               target: edge.target,
+              sourceHandle: edge.sourceHandle,
+              targetHandle: edge.targetHandle
             },
           ],
         }

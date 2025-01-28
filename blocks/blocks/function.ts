@@ -17,7 +17,12 @@ export const FunctionBlock: BlockConfig = {
     }
   },
   workflow: {
-    outputType: 'json',
+    inputs: {
+      code: { type: 'string', required: true }
+    },
+    outputs: {
+      result: 'any'
+    },
     subBlocks: [
       {
         id: 'code',
