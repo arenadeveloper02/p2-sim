@@ -21,6 +21,11 @@ export function ShortInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const [connections, setConnections] = useState<any[]>([])
+
+  useEffect(() => {
+    console.log(connections)
+  }, [connections])
 
   useEffect(() => {
     if (inputRef.current && isFocused) {
@@ -29,6 +34,22 @@ export function ShortInput({
       input.scrollLeft = scrollPosition - input.offsetWidth / 2
     }
   }, [value, isFocused])
+
+  // Add regex pattern for connection syntax
+  const connectionPattern = /<([a-z0-9]+)\.(string|number|boolean|res|any)>/g
+
+  const updateConnections = (inputValue: string) => {
+    const newConnections = Array.from(
+      inputValue.matchAll(connectionPattern)
+    ).map((match) => match[0].slice(1, -1)) // Remove < and >
+    setConnections(Array.from(new Set(newConnections))) // Use Set to ensure uniqueness
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value
+    setValue(newValue)
+    updateConnections(newValue)
+  }
 
   const handleDrop = (e: React.DragEvent<HTMLInputElement>) => {
     e.preventDefault()
@@ -39,13 +60,17 @@ export function ShortInput({
         data.connectionData.sourceBlockId === blockId
       ) {
         const currentValue = value?.toString() ?? ''
-        const newValue =
-          currentValue +
-          data.connectionData.name.replace(' ', '').toLowerCase() +
-          (data.connectionData.outputType === 'any'
-            ? '.res'
-            : `.${data.connectionData.outputType}`)
+        const formattedName = data.connectionData.name
+          .replace(' ', '')
+          .toLowerCase()
+        const connectionType =
+          data.connectionData.outputType === 'any'
+            ? 'res'
+            : data.connectionData.outputType
+        const newConnection = formattedName + '.' + connectionType
+        const newValue = currentValue + `<${newConnection}>`
         setValue(newValue)
+        updateConnections(newValue)
       }
     } catch (error) {
       console.error('Failed to parse drop data:', error)
@@ -54,6 +79,28 @@ export function ShortInput({
 
   const handleDragOver = (e: React.DragEvent<HTMLInputElement>) => {
     e.preventDefault() // This is needed to allow drops
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && inputRef.current) {
+      const cursorPosition: any = inputRef.current.selectionStart
+      const currentValue = value?.toString() ?? ''
+
+      // Check if cursor is right after a connection closing bracket
+      for (const connection of connections) {
+        const pattern = `<${connection}>`
+        const index = currentValue.lastIndexOf(pattern, cursorPosition)
+
+        if (index !== -1 && index + pattern.length === cursorPosition) {
+          e.preventDefault()
+          const newValue =
+            currentValue.slice(0, index) +
+            currentValue.slice(index + pattern.length)
+          setValue(newValue)
+          return
+        }
+      }
+    }
   }
 
   const displayValue =
@@ -71,7 +118,9 @@ export function ShortInput({
       placeholder={placeholder ?? ''}
       type="text"
       value={displayValue}
-      onChange={(e) => setValue(e.target.value)}
+      connections={connections}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onDrop={handleDrop}

@@ -14,20 +14,10 @@ export interface BlockState {
   subBlocks: Record<string, SubBlockState>
   outputType: OutputType
 }
-
-export interface Connection {
-  id: string
-  blockId: string
-  outputType: string
-  startIndex: number
-  endIndex: number
-}
-
 export interface SubBlockState {
   id: string
   type: SubBlockType
   value: string | number | string[][] | null
-  connections?: Connection[]
 }
 
 export interface WorkflowState {
