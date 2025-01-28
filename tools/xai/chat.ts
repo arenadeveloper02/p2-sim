@@ -1,21 +1,21 @@
-import { ToolConfig, ToolResponse } from '../types';
+import { ToolConfig, ToolResponse } from '../types' 
 
 interface ChatParams {
-  apiKey: string;
-  systemPrompt: string;
-  context?: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
+  apiKey: string 
+  systemPrompt: string 
+  context?: string 
+  model?: string 
+  temperature?: number 
+  maxTokens?: number 
+  topP?: number 
+  frequencyPenalty?: number 
+  presencePenalty?: number 
 }
 
 interface ChatResponse extends ToolResponse {
-  tokens?: number;
-  model: string;
-  reasoning?: string;
+  tokens?: number 
+  model: string 
+  reasoning?: string 
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -61,10 +61,10 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     body: (params) => {
       const messages = [
         { role: 'system', content: params.systemPrompt }
-      ];
+      ] 
       
       if (params.context) {
-        messages.push({ role: 'user', content: params.context });
+        messages.push({ role: 'user', content: params.context }) 
       }
 
       const body = {
@@ -75,24 +75,24 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
         top_p: params.topP,
         frequency_penalty: params.frequencyPenalty,
         presence_penalty: params.presencePenalty
-      };
-      return body;
+      } 
+      return body 
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json();
+    const data = await response.json() 
     return {
       output: data.choices[0].message.content,
       tokens: data.usage?.total_tokens,
       model: data.model,
       reasoning: data.choices[0]?.reasoning
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.error?.message || error.message;
-    const code = error.error?.type || error.code;
-    return `${message} (${code})`;
+    const message = error.error?.message || error.message 
+    const code = error.error?.type || error.code 
+    return `${message} (${code})` 
   }
-}; 
+}  

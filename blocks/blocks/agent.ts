@@ -11,7 +11,7 @@ const MODEL_TOOLS = {
   'claude-3-5-sonnet-20241022': 'anthropic.chat',
   'gemini-pro': 'google.chat',
   'grok-2-latest': 'xai.chat'
-} as const;
+} as const 
 
 export const AgentBlock: BlockConfig = {
   type: 'agent',
@@ -26,19 +26,19 @@ export const AgentBlock: BlockConfig = {
     access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat', 'deepseek.chat', 'deepseek.reasoner'],
     config: {
       tool: (params: Record<string, any>) => {
-        const model = params.model || 'gpt-4o';
+        const model = params.model || 'gpt-4o'
 
         if (!model) {
-          throw new Error('No model selected');
+          throw new Error('No model selected')
         }
 
-        const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS];
+        const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS]
 
         if (!tool) {
-          throw new Error(`Invalid model selected: ${model}`);
+          throw new Error(`Invalid model selected: ${model}`)
         }
         
-        return tool;
+        return tool 
       }
     }
   },

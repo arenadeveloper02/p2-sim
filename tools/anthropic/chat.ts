@@ -1,19 +1,19 @@
-import { ToolConfig, ToolResponse } from '../types';
+import { ToolConfig, ToolResponse } from '../types' 
 
 interface ChatParams {
-  apiKey: string;
-  systemPrompt: string;
-  context?: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  stream?: boolean;
+  apiKey: string 
+  systemPrompt: string 
+  context?: string 
+  model?: string 
+  temperature?: number 
+  maxTokens?: number 
+  topP?: number 
+  stream?: boolean 
 }
 
 interface ChatResponse extends ToolResponse {
-  tokens?: number;
-  model: string;
+  tokens?: number 
+  model: string 
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -60,10 +60,10 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     body: (params) => {
       const messages = [
         { role: 'user', content: params.systemPrompt }
-      ];
+      ] 
       
       if (params.context) {
-        messages.push({ role: 'user', content: params.context });
+        messages.push({ role: 'user', content: params.context }) 
       }
 
       const body = {
@@ -73,23 +73,23 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
         max_tokens: params.maxTokens,
         top_p: params.topP,
         stream: params.stream
-      };
-      return body;
+      } 
+      return body 
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json();
+    const data = await response.json() 
     return {
       output: data.completion,
       tokens: data.usage?.total_tokens,
       model: data.model
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.error?.message || error.message;
-    const code = error.error?.type || error.code;
-    return `${message} (${code})`;
+    const message = error.error?.message || error.message 
+    const code = error.error?.type || error.code 
+    return `${message} (${code})` 
   }
-}; 
+}  

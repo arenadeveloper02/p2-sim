@@ -1,23 +1,23 @@
-import { ToolConfig, ToolResponse } from '../types';
+import { ToolConfig, ToolResponse } from '../types' 
 
 interface ChatParams {
-  apiKey: string;
-  systemPrompt: string;
-  context?: string;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  maxCompletionTokens?: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  stream?: boolean;
+  apiKey: string 
+  systemPrompt: string 
+  context?: string 
+  model?: string 
+  temperature?: number 
+  maxTokens?: number 
+  maxCompletionTokens?: number 
+  topP?: number 
+  frequencyPenalty?: number 
+  presencePenalty?: number 
+  stream?: boolean 
 }
 
 interface ChatResponse extends ToolResponse {
-  tokens?: number;
-  model: string;
-  reasoning_tokens?: number;
+  tokens?: number 
+  model: string 
+  reasoning_tokens?: number 
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -65,60 +65,60 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'Authorization': `Bearer ${params.apiKey}`
     }),
     body: (params) => {
-      const isO1Model = params.model?.startsWith('o1');
-      const messages = [];
+      const isO1Model = params.model?.startsWith('o1') 
+      const messages = [] 
       
       // For o1-mini, we need to use 'user' role instead of 'system'
       if (params.model === 'o1-mini') {
-        messages.push({ role: 'user', content: params.systemPrompt });
+        messages.push({ role: 'user', content: params.systemPrompt }) 
       } else {
-        messages.push({ role: 'system', content: params.systemPrompt });
+        messages.push({ role: 'system', content: params.systemPrompt }) 
       }
       
       if (params.context) {
-        messages.push({ role: 'user', content: params.context });
+        messages.push({ role: 'user', content: params.context }) 
       }
 
       const body: any = {
         model: params.model || 'gpt-4o',
         messages
-      };
+      } 
 
       // Only add parameters supported by the model type
       if (!isO1Model) {
-        body.temperature = params.temperature;
-        body.max_tokens = params.maxTokens;
-        body.top_p = params.topP;
-        body.frequency_penalty = params.frequencyPenalty;
-        body.presence_penalty = params.presencePenalty;
+        body.temperature = params.temperature 
+        body.max_tokens = params.maxTokens 
+        body.top_p = params.topP 
+        body.frequency_penalty = params.frequencyPenalty 
+        body.presence_penalty = params.presencePenalty 
       } else if (params.maxCompletionTokens) {
-        body.max_completion_tokens = params.maxCompletionTokens;
+        body.max_completion_tokens = params.maxCompletionTokens 
       }
 
-      body.stream = params.stream;
-      return body;
+      body.stream = params.stream 
+      return body 
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json();
+    const data = await response.json() 
     if (data.choices?.[0]?.delta?.content) {
       return {
         output: data.choices[0].delta.content,
         model: data.model
-      };
+      } 
     }
     return {
       output: data.choices[0].message.content,
       tokens: data.usage?.total_tokens,
       model: data.model,
       reasoning_tokens: data.usage?.completion_tokens_details?.reasoning_tokens
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.error?.message || error.message;
-    const code = error.error?.type || error.code;
-    return `${message} (${code})`;
+    const message = error.error?.message || error.message 
+    const code = error.error?.type || error.code 
+    return `${message} (${code})` 
   }
-}; 
+}  

@@ -1,15 +1,15 @@
-import { Edge } from 'reactflow';
-import { Serializer } from '../index';
-import { SerializedWorkflow } from '../types';
-import { BlockState } from '@/stores/workflow/types';
-import { OutputType } from '@/blocks/types';
+import { Edge } from 'reactflow' 
+import { Serializer } from '../index' 
+import { SerializedWorkflow } from '../types' 
+import { BlockState } from '@/stores/workflow/types' 
+import { OutputType } from '@/blocks/types' 
 
 // Mock icons
 jest.mock('@/components/icons', () => ({
   AgentIcon: () => 'AgentIcon',
   ApiIcon: () => 'ApiIcon',
   CodeIcon: () => 'CodeIcon',
-}));
+})) 
 
 // Mock blocks
 jest.mock('@/blocks', () => ({
@@ -35,7 +35,7 @@ jest.mock('@/blocks', () => ({
           },
           subBlocks: []
         }
-      };
+      } 
     }
     // Default agent block config
     return {
@@ -60,24 +60,24 @@ jest.mock('@/blocks', () => ({
         },
         subBlocks: []
       }
-    };
+    } 
   },
   getBlockTypeForTool: (toolId: string) => {
     const toolToType: Record<string, string> = {
       'openai.chat': 'agent',
       'http.request': 'api',
       'function': 'function'
-    };
-    return toolToType[toolId];
+    } 
+    return toolToType[toolId] 
   }
-}));
+})) 
 
 describe('Serializer', () => {
-  let serializer: Serializer;
+  let serializer: Serializer 
 
   beforeEach(() => {
-    serializer = new Serializer();
-  });
+    serializer = new Serializer() 
+  }) 
 
   describe('serializeWorkflow', () => {
     it('should serialize a workflow with agent and http blocks', () => {
@@ -125,7 +125,7 @@ describe('Serializer', () => {
           },
           outputType: 'json'
         }
-      };
+      } 
 
       const connections: Edge[] = [
         {
@@ -135,34 +135,34 @@ describe('Serializer', () => {
           sourceHandle: 'response',
           targetHandle: 'body'
         }
-      ];
+      ] 
 
-      const serialized = serializer.serializeWorkflow(blocks, connections);
+      const serialized = serializer.serializeWorkflow(blocks, connections) 
 
       // Test workflow structure
-      expect(serialized.version).toBe('1.0');
-      expect(serialized.blocks).toHaveLength(2);
-      expect(serialized.connections).toHaveLength(1);
+      expect(serialized.version).toBe('1.0') 
+      expect(serialized.blocks).toHaveLength(2) 
+      expect(serialized.connections).toHaveLength(1) 
 
       // Test agent block serialization
-      const agentBlock = serialized.blocks.find(b => b.id === 'agent-1');
-      expect(agentBlock).toBeDefined();
-      expect(agentBlock?.config.tool).toBe('openai.chat');
+      const agentBlock = serialized.blocks.find(b => b.id === 'agent-1') 
+      expect(agentBlock).toBeDefined() 
+      expect(agentBlock?.config.tool).toBe('openai.chat') 
       expect(agentBlock?.config.params).toEqual({
         model: 'gpt-4o',
         systemPrompt: 'You are helpful',
         temperature: 0.7
-      });
+      }) 
 
       // Test http block serialization
-      const httpBlock = serialized.blocks.find(b => b.id === 'http-1');
-      expect(httpBlock).toBeDefined();
-      expect(httpBlock?.config.tool).toBe('http.request');
+      const httpBlock = serialized.blocks.find(b => b.id === 'http-1') 
+      expect(httpBlock).toBeDefined() 
+      expect(httpBlock?.config.tool).toBe('http.request') 
       expect(httpBlock?.config.params).toEqual({
         url: 'https://api.example.com',
         method: 'GET'
-      });
-    });
+      }) 
+    }) 
 
     it('should handle blocks with minimal required configuration', () => {
       const blocks: Record<string, BlockState> = {
@@ -180,15 +180,15 @@ describe('Serializer', () => {
           },
           outputType: 'string'
         }
-      };
+      } 
 
-      const serialized = serializer.serializeWorkflow(blocks, []);
-      const block = serialized.blocks[0];
+      const serialized = serializer.serializeWorkflow(blocks, []) 
+      const block = serialized.blocks[0] 
       
-      expect(block.id).toBe('minimal-1');
-      expect(block.config.tool).toBe('openai.chat');
-      expect(block.config.params).toEqual({ model: 'gpt-4o' });
-    });
+      expect(block.id).toBe('minimal-1') 
+      expect(block.config.tool).toBe('openai.chat') 
+      expect(block.config.params).toEqual({ model: 'gpt-4o' }) 
+    }) 
 
     it('should handle complex workflow with multiple interconnected blocks', () => {
       const blocks: Record<string, BlockState> = {
@@ -249,7 +249,7 @@ describe('Serializer', () => {
           },
           outputType: 'json'
         }
-      };
+      } 
 
       const connections: Edge[] = [
         {
@@ -266,22 +266,22 @@ describe('Serializer', () => {
           sourceHandle: 'result',
           targetHandle: 'body'
         }
-      ];
+      ] 
 
-      const serialized = serializer.serializeWorkflow(blocks, connections);
+      const serialized = serializer.serializeWorkflow(blocks, connections) 
 
       // Verify workflow structure
-      expect(serialized.blocks).toHaveLength(3);
-      expect(serialized.connections).toHaveLength(2);
+      expect(serialized.blocks).toHaveLength(3) 
+      expect(serialized.connections).toHaveLength(2) 
 
       // Verify data flow chain
-      const conn1 = serialized.connections[0];
-      const conn2 = serialized.connections[1];
-      expect(conn1.source).toBe('input-1');
-      expect(conn1.target).toBe('process-1');
-      expect(conn2.source).toBe('process-1');
-      expect(conn2.target).toBe('output-1');
-    });
+      const conn1 = serialized.connections[0] 
+      const conn2 = serialized.connections[1] 
+      expect(conn1.source).toBe('input-1') 
+      expect(conn1.target).toBe('process-1') 
+      expect(conn2.source).toBe('process-1') 
+      expect(conn2.target).toBe('output-1') 
+    }) 
 
     it('should preserve tool-specific parameters', () => {
       const blocks: Record<string, BlockState> = {
@@ -309,19 +309,19 @@ describe('Serializer', () => {
           },
           outputType: 'string'
         }
-      };
+      } 
 
-      const serialized = serializer.serializeWorkflow(blocks, []);
-      const block = serialized.blocks[0];
+      const serialized = serializer.serializeWorkflow(blocks, []) 
+      const block = serialized.blocks[0] 
 
-      expect(block.config.tool).toBe('openai.chat');
+      expect(block.config.tool).toBe('openai.chat') 
       expect(block.config.params).toEqual({
         model: 'gpt-4o',
         temperature: 0.7,
         maxTokens: 1000
-      });
-    });
-  });
+      }) 
+    }) 
+  }) 
 
   describe('deserializeWorkflow', () => {
     it('should deserialize a workflow back to blocks and connections', () => {
@@ -345,15 +345,15 @@ describe('Serializer', () => {
           }
         ],
         connections: []
-      };
+      } 
 
-      const { blocks } = serializer.deserializeWorkflow(workflow);
-      const block = blocks['agent-1'];
+      const { blocks } = serializer.deserializeWorkflow(workflow) 
+      const block = blocks['agent-1'] 
 
-      expect(block.type).toBe('agent');
-      expect(block.subBlocks.model.value).toBe('gpt-4o');
-      expect(block.subBlocks.systemPrompt.value).toBe('You are helpful');
-      expect(block.outputType).toBe('string');
-    });
-  });
-});
+      expect(block.type).toBe('agent') 
+      expect(block.subBlocks.model.value).toBe('gpt-4o') 
+      expect(block.subBlocks.systemPrompt.value).toBe('You are helpful') 
+      expect(block.outputType).toBe('string') 
+    }) 
+  }) 
+}) 

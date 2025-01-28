@@ -33,7 +33,7 @@ export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOu
     body: (params) => {
       const codeContent = Array.isArray(params.code)
         ? params.code.map(c => c.content).join('\n')
-        : params.code;
+        : params.code 
 
       return {
         language: 'js',
@@ -48,38 +48,38 @@ export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOu
         run_timeout: 3000,
         compile_memory_limit: -1,
         run_memory_limit: -1
-      };
+      } 
     },
   },
 
   transformResponse: async (response) => {
-    const result = await response.json();
+    const result = await response.json() 
     
     if (!response.ok) {
-      throw new Error(result.message || 'Execution failed');
+      throw new Error(result.message || 'Execution failed') 
     }
 
     if (result.run?.stderr) {
-      throw new Error(result.run.stderr);
+      throw new Error(result.run.stderr) 
     }
 
-    const stdout = result.run?.stdout || '';
+    const stdout = result.run?.stdout || '' 
     
     try {
       // Try parsing the output as JSON
-      const parsed = JSON.parse(stdout);
-      return { output: parsed };
+      const parsed = JSON.parse(stdout) 
+      return { output: parsed } 
     } catch {
       // If not JSON, wrap it in a JSON object
       return { 
         output: { 
           result: stdout 
         } 
-      };
+      } 
     }
   },
 
   transformError: (error: any) => {
-    return error.message || 'Code execution failed';
+    return error.message || 'Code execution failed' 
   },
 } 

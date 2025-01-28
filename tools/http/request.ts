@@ -1,20 +1,20 @@
-import { ToolConfig, HttpMethod, ToolResponse } from '../types';
+import { ToolConfig, HttpMethod, ToolResponse } from '../types' 
 
 interface RequestParams {
-  url: string;
-  method?: HttpMethod;
-  headers?: Record<string, string>;
-  body?: any;
-  queryParams?: Record<string, string>;
-  pathParams?: Record<string, string>;
-  formData?: Record<string, string | Blob>;
-  timeout?: number;
-  validateStatus?: (status: number) => boolean;
+  url: string 
+  method?: HttpMethod 
+  headers?: Record<string, string> 
+  body?: any 
+  queryParams?: Record<string, string> 
+  pathParams?: Record<string, string> 
+  formData?: Record<string, string | Blob> 
+  timeout?: number 
+  validateStatus?: (status: number) => boolean 
 }
 
 interface RequestResponse extends ToolResponse {
-  status: number;
-  headers: Record<string, string>;
+  status: number 
+  headers: Record<string, string> 
 }
 
 export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
@@ -67,83 +67,83 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
 
   request: {
     url: (params: RequestParams) => {
-      let url = params.url;
+      let url = params.url 
       
       // Replace path parameters
       if (params.pathParams) {
         Object.entries(params.pathParams).forEach(([key, value]) => {
-          url = url.replace(`:${key}`, encodeURIComponent(value));
-        });
+          url = url.replace(`:${key}`, encodeURIComponent(value)) 
+        }) 
       }
 
       // Append query parameters
       if (params.queryParams) {
         const queryString = Object.entries(params.queryParams)
           .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-          .join('&');
-        url += (url.includes('?') ? '&' : '?') + queryString;
+          .join('&') 
+        url += (url.includes('?') ? '&' : '?') + queryString 
       }
 
-      return url;
+      return url 
     },
     method: 'POST' as HttpMethod,
     headers: (params: RequestParams) => {
       const headers: Record<string, string> = {
         ...params.headers
-      };
+      } 
 
       // Set appropriate Content-Type
       if (params.formData) {
         // Don't set Content-Type for FormData, browser will set it with boundary
-        return headers;
+        return headers 
       } else if (params.body) {
-        headers['Content-Type'] = 'application/json';
+        headers['Content-Type'] = 'application/json' 
       }
 
-      return headers;
+      return headers 
     },
     body: (params: RequestParams) => {
       if (params.formData) {
-        const formData = new FormData();
+        const formData = new FormData() 
         Object.entries(params.formData).forEach(([key, value]) => {
-          formData.append(key, value);
-        });
-        return formData;
+          formData.append(key, value) 
+        }) 
+        return formData 
       }
 
       if (params.body) {
-        return params.body;
+        return params.body 
       }
 
-      return undefined;
+      return undefined 
     }
   },
 
   transformResponse: async (response: Response) => {
     // Convert Headers to a plain object
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {} 
     response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
+      headers[key] = value 
+    }) 
 
     // Parse response based on content type
     const data = await (response.headers.get('content-type')?.includes('application/json')
       ? response.json()
-      : response.text());
+      : response.text()) 
 
     return {
       output: data,
       status: response.status,
       headers
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.message || error.error?.message;
-    const code = error.status || error.error?.status;
+    const message = error.message || error.error?.message 
+    const code = error.status || error.error?.status 
     const details = error.response?.data 
       ? `\nDetails: ${JSON.stringify(error.response.data)}`
-      : '';
-    return `${message} (${code})${details}`;
+      : '' 
+    return `${message} (${code})${details}` 
   }
-};
+} 

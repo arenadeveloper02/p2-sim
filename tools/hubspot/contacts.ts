@@ -1,26 +1,26 @@
-import { ToolConfig, ToolResponse } from '../types';
+import { ToolConfig, ToolResponse } from '../types' 
 
 interface ContactsParams {
-  apiKey: string;
-  action: 'create' | 'update' | 'search' | 'delete';
-  id?: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-  company?: string;
-  properties?: Record<string, any>;
-  limit?: number;
-  after?: string;
-  data: Record<string, any>;
+  apiKey: string 
+  action: 'create' | 'update' | 'search' | 'delete' 
+  id?: string 
+  email?: string 
+  firstName?: string 
+  lastName?: string 
+  phone?: string 
+  company?: string 
+  properties?: Record<string, any> 
+  limit?: number 
+  after?: string 
+  data: Record<string, any> 
 }
 
 interface ContactsResponse extends ToolResponse {
-  totalResults?: number;
+  totalResults?: number 
   pagination?: {
-    hasMore: boolean;
-    offset: number;
-  };
+    hasMore: boolean 
+    offset: number 
+  } 
 }
 
 export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
@@ -77,11 +77,11 @@ export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
 
   request: {
     url: (params) => {
-      const baseUrl = 'https://api.hubapi.com/crm/v3/objects/contacts';
+      const baseUrl = 'https://api.hubapi.com/crm/v3/objects/contacts' 
       if (params.id) {
-        return `${baseUrl}/${params.id}`;
+        return `${baseUrl}/${params.id}` 
       }
-      return baseUrl;
+      return baseUrl 
     },
     method: 'POST',
     headers: (params) => ({
@@ -96,11 +96,11 @@ export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
         ...(params.phone && { phone: params.phone }),
         ...(params.company && { company: params.company }),
         ...params.properties
-      };
+      } 
 
       if (params.id) {
         // Update existing contact
-        return { properties };
+        return { properties } 
       }
 
       // Create new contact or search
@@ -108,22 +108,22 @@ export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
         properties,
         ...(params.limit && { limit: params.limit }),
         ...(params.after && { after: params.after })
-      };
+      } 
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json();
+    const data = await response.json() 
     return {
       output: data.results || data,
       totalResults: data.total,
       pagination: data.paging
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.message || error.error?.message;
-    const code = error.status || error.error?.status;
-    return `${message} (${code})`;
+    const message = error.message || error.error?.message 
+    const code = error.status || error.error?.status 
+    return `${message} (${code})` 
   }
-}; 
+}  

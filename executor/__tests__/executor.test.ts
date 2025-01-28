@@ -1,7 +1,7 @@
-import { Executor } from '../index';
-import { SerializedWorkflow } from '@/serializer/types';
-import { Tool } from '../types';
-import { tools } from '@/tools';
+import { Executor } from '../index' 
+import { SerializedWorkflow } from '@/serializer/types' 
+import { Tool } from '../types' 
+import { tools } from '@/tools' 
 
 // Mock tools
 const createMockTool = (
@@ -39,17 +39,17 @@ const createMockTool = (
   },
   transformResponse: () => mockResponse,
   transformError: () => mockError || 'Mock error'
-});
+}) 
 
 jest.mock('@/tools', () => ({
   tools: {}
-}));
+})) 
 
 describe('Executor', () => {
   beforeEach(() => {
     // Reset tools mock
-    (tools as any) = {};
-  });
+    (tools as any) = {} 
+  }) 
 
   describe('Tool Execution', () => {
     it('should execute a simple workflow with one tool', async () => {
@@ -58,7 +58,7 @@ describe('Executor', () => {
         'Test Tool',
         { result: 'test processed' }
       );
-      (tools as any)['test-tool'] = mockTool;
+      (tools as any)['test-tool'] = mockTool 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -75,7 +75,7 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      };
+      } 
 
       // Mock fetch
       global.fetch = jest.fn().mockImplementation(() =>
@@ -83,13 +83,13 @@ describe('Executor', () => {
           ok: true,
           json: () => Promise.resolve({ result: 'test processed' })
         })
-      );
+      ) 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual({ result: 'test processed' });
+      expect(result.success).toBe(true) 
+      expect(result.data).toEqual({ result: 'test processed' }) 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.test.com/endpoint',
         expect.objectContaining({
@@ -100,8 +100,8 @@ describe('Executor', () => {
           },
           body: JSON.stringify({ input: 'test' })
         })
-      );
-    });
+      ) 
+    }) 
 
     it('should validate required parameters', async () => {
       const mockTool = createMockTool(
@@ -109,7 +109,7 @@ describe('Executor', () => {
         'Test Tool',
         { result: 'test processed' }
       );
-      (tools as any)['test-tool'] = mockTool;
+      (tools as any)['test-tool'] = mockTool 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -126,14 +126,14 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      };
+      } 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Missing required parameter');
-    });
+      expect(result.success).toBe(false) 
+      expect(result.error).toContain('Missing required parameter') 
+    }) 
 
     it('should handle tool execution errors', async () => {
       const mockTool = createMockTool(
@@ -142,7 +142,7 @@ describe('Executor', () => {
         {},
         'API Error'
       );
-      (tools as any)['test-tool'] = mockTool;
+      (tools as any)['test-tool'] = mockTool 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -159,7 +159,7 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      };
+      } 
 
       // Mock fetch to fail
       global.fetch = jest.fn().mockImplementation(() =>
@@ -167,15 +167,15 @@ describe('Executor', () => {
           ok: false,
           json: () => Promise.resolve({ error: 'API Error' })
         })
-      );
+      ) 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('API Error');
-    });
-  });
+      expect(result.success).toBe(false) 
+      expect(result.error).toContain('API Error') 
+    }) 
+  }) 
 
   describe('Interface Validation', () => {
     it('should validate input types', async () => {
@@ -184,7 +184,7 @@ describe('Executor', () => {
         'Test Tool',
         { result: 123 }
       );
-      (tools as any)['test-tool'] = mockTool;
+      (tools as any)['test-tool'] = mockTool 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -201,14 +201,14 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      };
+      } 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid type for input');
-    });
+      expect(result.success).toBe(false) 
+      expect(result.error).toContain('Invalid type for input') 
+    }) 
 
     it('should validate tool output against interface', async () => {
       const mockTool = createMockTool(
@@ -216,7 +216,7 @@ describe('Executor', () => {
         'Test Tool',
         { wrongField: 'wrong type' }
       );
-      (tools as any)['test-tool'] = mockTool;
+      (tools as any)['test-tool'] = mockTool 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -233,7 +233,7 @@ describe('Executor', () => {
           }
         }],
         connections: []
-      };
+      } 
 
       // Mock fetch
       global.fetch = jest.fn().mockImplementation(() =>
@@ -241,15 +241,15 @@ describe('Executor', () => {
           ok: true,
           json: () => Promise.resolve({ wrongField: 'wrong type' })
         })
-      );
+      ) 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Tool output missing required field');
-    });
-  });
+      expect(result.success).toBe(false) 
+      expect(result.error).toContain('Tool output missing required field') 
+    }) 
+  }) 
 
   describe('Complex Workflows', () => {
     it('should execute blocks in correct order and pass data between them', async () => {
@@ -257,14 +257,14 @@ describe('Executor', () => {
         'tool-1',
         'Tool 1',
         { output: 'test data' }
-      );
+      ) 
       const mockTool2 = createMockTool(
         'tool-2',
         'Tool 2',
         { result: 'processed data' }
       );
       (tools as any)['tool-1'] = mockTool1;
-      (tools as any)['tool-2'] = mockTool2;
+      (tools as any)['tool-2'] = mockTool2 
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -302,7 +302,7 @@ describe('Executor', () => {
             targetHandle: 'input'
           }
         ]
-      };
+      } 
 
       // Mock fetch for both tools
       global.fetch = jest.fn()
@@ -317,15 +317,15 @@ describe('Executor', () => {
             ok: true,
             json: () => Promise.resolve({ result: 'processed data' })
           })
-        );
+        ) 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual({ result: 'processed data' });
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-    });
+      expect(result.success).toBe(true) 
+      expect(result.data).toEqual({ result: 'processed data' }) 
+      expect(global.fetch).toHaveBeenCalledTimes(2) 
+    }) 
 
     it('should handle cycles in workflow', async () => {
       const workflow: SerializedWorkflow = {
@@ -370,13 +370,13 @@ describe('Executor', () => {
             targetHandle: 'input'
           }
         ]
-      };
+      } 
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow) 
+      const result = await executor.execute('workflow-1') 
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Workflow contains cycles');
-    });
-  });
-});
+      expect(result.success).toBe(false) 
+      expect(result.error).toContain('Workflow contains cycles') 
+    }) 
+  }) 
+}) 

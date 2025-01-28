@@ -1,27 +1,27 @@
-import { ToolConfig, ToolResponse } from '../types';
+import { ToolConfig, ToolResponse } from '../types' 
 
 interface OpportunityParams {
-  apiKey: string;
-  action: 'create' | 'update' | 'search' | 'delete';
-  id?: string;
-  name?: string;
-  accountId?: string;
-  stage?: string;
-  amount?: number;
-  closeDate?: string;
-  probability?: number;
-  properties?: Record<string, any>;
-  limit?: number;
-  offset?: number;
-  data: Record<string, any>;
+  apiKey: string 
+  action: 'create' | 'update' | 'search' | 'delete' 
+  id?: string 
+  name?: string 
+  accountId?: string 
+  stage?: string 
+  amount?: number 
+  closeDate?: string 
+  probability?: number 
+  properties?: Record<string, any> 
+  limit?: number 
+  offset?: number 
+  data: Record<string, any> 
 }
 
 interface OpportunityResponse extends ToolResponse {
-  totalResults?: number;
+  totalResults?: number 
   pagination?: {
-    hasMore: boolean;
-    offset: number;
-  };
+    hasMore: boolean 
+    offset: number 
+  } 
 }
 
 export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityResponse> = {
@@ -90,11 +90,11 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
 
   request: {
     url: (params) => {
-      const baseUrl = `${params.apiKey}@salesforce.com/services/data/v58.0/sobjects/Opportunity`;
+      const baseUrl = `${params.apiKey}@salesforce.com/services/data/v58.0/sobjects/Opportunity` 
       if (params.id) {
-        return `${baseUrl}/${params.id}`;
+        return `${baseUrl}/${params.id}` 
       }
-      return baseUrl;
+      return baseUrl 
     },
     method: 'POST',
     headers: (params) => ({
@@ -110,14 +110,14 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
         ...(params.closeDate && { CloseDate: params.closeDate }),
         ...(params.probability && { Probability: params.probability }),
         ...params.properties
-      };
+      } 
 
-      return fields;
+      return fields 
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json();
+    const data = await response.json() 
     return {
       output: data.records || data,
       totalResults: data.totalSize,
@@ -125,12 +125,12 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
         hasMore: !data.done,
         offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0
       }
-    };
+    } 
   },
 
   transformError: (error) => {
-    const message = error.message || error.error?.message;
-    const code = error.errorCode || error.error?.errorCode;
-    return `${message} (${code})`;
+    const message = error.message || error.error?.message 
+    const code = error.errorCode || error.error?.errorCode 
+    return `${message} (${code})` 
   }
-}; 
+}  
