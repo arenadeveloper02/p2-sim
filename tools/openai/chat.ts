@@ -7,6 +7,7 @@ interface ChatParams {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  maxCompletionTokens?: number;
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
@@ -16,6 +17,7 @@ interface ChatParams {
 interface ChatResponse extends ToolResponse {
   tokens?: number;
   model: string;
+  reasoning_tokens?: number;
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -42,12 +44,16 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     model: {
       type: 'string',
       default: 'gpt-4o',
-      description: 'Model to use (gpt-4o, o1-mini)'
+      description: 'Model to use (gpt-4o, o1, o1-mini)'
     },
     temperature: {
       type: 'number',
       default: 0.7,
-      description: 'Controls randomness in the response'
+      description: 'Controls randomness in the response (not supported by o1 models)'
+    },
+    maxCompletionTokens: {
+      type: 'number',
+      description: 'Maximum number of tokens to generate (including reasoning tokens) for o1 models'
     }
   },
 
@@ -59,24 +65,37 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'Authorization': `Bearer ${params.apiKey}`
     }),
     body: (params) => {
-      const messages = [
-        { role: 'system', content: params.systemPrompt }
-      ];
+      const isO1Model = params.model?.startsWith('o1');
+      const messages = [];
+      
+      // For o1-mini, we need to use 'user' role instead of 'system'
+      if (params.model === 'o1-mini') {
+        messages.push({ role: 'user', content: params.systemPrompt });
+      } else {
+        messages.push({ role: 'system', content: params.systemPrompt });
+      }
       
       if (params.context) {
         messages.push({ role: 'user', content: params.context });
       }
 
-      const body = {
+      const body: any = {
         model: params.model || 'gpt-4o',
-        messages,
-        temperature: params.temperature,
-        max_tokens: params.maxTokens,
-        top_p: params.topP,
-        frequency_penalty: params.frequencyPenalty,
-        presence_penalty: params.presencePenalty,
-        stream: params.stream
+        messages
       };
+
+      // Only add parameters supported by the model type
+      if (!isO1Model) {
+        body.temperature = params.temperature;
+        body.max_tokens = params.maxTokens;
+        body.top_p = params.topP;
+        body.frequency_penalty = params.frequencyPenalty;
+        body.presence_penalty = params.presencePenalty;
+      } else if (params.maxCompletionTokens) {
+        body.max_completion_tokens = params.maxCompletionTokens;
+      }
+
+      body.stream = params.stream;
       return body;
     }
   },
@@ -92,7 +111,8 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     return {
       output: data.choices[0].message.content,
       tokens: data.usage?.total_tokens,
-      model: data.model
+      model: data.model,
+      reasoning_tokens: data.usage?.completion_tokens_details?.reasoning_tokens
     };
   },
 
