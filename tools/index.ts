@@ -9,6 +9,7 @@ import { requestTool as httpRequest } from './http/request'
 import { contactsTool as hubspotContacts } from './hubspot/contacts' 
 import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities' 
 import { functionExecuteTool as functionExecute } from './function/execute' 
+import { visionTool as crewAIVision } from './crewai/vision'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -25,7 +26,9 @@ export const tools: Record<string, ToolConfig> = {
   'hubspot.contacts': hubspotContacts,
   'salesforce.opportunities': salesforceOpportunities,
   // Function Tools
-  'function.execute': functionExecute
+  'function.execute': functionExecute,
+  // CrewAI Tools
+  'crewai.vision': crewAIVision
 } 
 
 // Get a tool by its ID
