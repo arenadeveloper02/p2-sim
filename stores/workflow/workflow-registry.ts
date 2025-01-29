@@ -195,6 +195,20 @@ const initializeRegistry = () => {
     const workflows = JSON.parse(savedRegistry)
     useWorkflowRegistry.setState({ workflows })
   }
+
+  // Add event listeners for page unload
+  window.addEventListener('beforeunload', () => {
+    // Save current workflow state
+    const currentId = useWorkflowRegistry.getState().activeWorkflowId
+    if (currentId) {
+      const currentState = useWorkflowStore.getState()
+      localStorage.setItem(`workflow-${currentId}`, JSON.stringify({
+        blocks: currentState.blocks,
+        edges: currentState.edges,
+        history: currentState.history
+      }))
+    }
+  })
 }
 
 // Call this in your app's entry point
