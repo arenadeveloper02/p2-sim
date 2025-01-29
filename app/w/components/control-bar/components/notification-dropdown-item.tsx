@@ -8,6 +8,7 @@ import {
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
+import { useState, useEffect } from 'react'
 
 interface NotificationDropdownItemProps {
   id: string
@@ -34,6 +35,14 @@ export function NotificationDropdownItem({
 }: NotificationDropdownItemProps) {
   const { showNotification } = useNotificationStore()
   const Icon = NotificationIcon[type]
+  const [, forceUpdate] = useState({})
+
+  // Update the time display every minute
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate({}), 60000)
+    return () => clearInterval(interval)
+  }, [])
+
   const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true })
 
   // Truncate message if it's too long

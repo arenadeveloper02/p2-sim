@@ -19,12 +19,17 @@ import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
 import { useRouter } from 'next/navigation'
 
 export function ControlBar() {
-  const { notifications } = useNotificationStore()
+  const { notifications, getWorkflowNotifications } = useNotificationStore()
   const { history, undo, redo } = useWorkflowStore()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
   const { workflows, removeWorkflow, activeWorkflowId } = useWorkflowRegistry()
   const router = useRouter()
+
+  // Get notifications for current workflow
+  const workflowNotifications = activeWorkflowId
+    ? getWorkflowNotifications(activeWorkflowId)
+    : notifications // Show all if no workflow is active
 
   const handleDeleteWorkflow = () => {
     if (!activeWorkflowId) return
@@ -120,7 +125,7 @@ export function ControlBar() {
             </Button>
           </DropdownMenuTrigger>
 
-          {notifications.length === 0 ? (
+          {workflowNotifications.length === 0 ? (
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem className="text-sm text-muted-foreground">
                 No new notifications
@@ -128,15 +133,12 @@ export function ControlBar() {
             </DropdownMenuContent>
           ) : (
             <DropdownMenuContent align="end" className="w-60">
-              {[...notifications]
+              {[...workflowNotifications]
                 .sort((a, b) => b.timestamp - a.timestamp)
                 .map((notification) => (
                   <NotificationDropdownItem
-                    id={notification.id}
                     key={notification.id}
-                    type={notification.type}
-                    message={notification.message}
-                    timestamp={notification.timestamp}
+                    {...notification}
                   />
                 ))}
             </DropdownMenuContent>

@@ -115,6 +115,8 @@ function WorkflowCanvas() {
   } = useWorkflowStore()
   const { addNotification } = useNotificationStore()
 
+  const params = useParams()
+
   // Convert blocks to ReactFlow nodes using local selectedBlockId
   const nodes = Object.values(blocks).map((block) => ({
     id: block.id,
@@ -255,10 +257,6 @@ function WorkflowCanvas() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [canUndo, canRedo, undo, redo])
-
-  // useEffect(() => {
-  //   addNotification('console', 'Welcome to the workflow editor!')
-  // }, [])
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)]">

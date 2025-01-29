@@ -4,11 +4,13 @@ import { Serializer } from '@/serializer'
 import { Executor } from '@/executor'
 import { ExecutionResult } from '@/executor/types'
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
 
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null)
   const { blocks, edges } = useWorkflowStore()
+  const { activeWorkflowId } = useWorkflowRegistry()
   const { addNotification } = useNotificationStore()
 
   const handleRunWorkflow = useCallback(async () => {
@@ -31,12 +33,13 @@ export function useWorkflowExecution() {
       const result = await executor.execute(crypto.randomUUID())
       setExecutionResult(result)
 
-      // Show execution result
+      // Show execution result with workflowId
       addNotification(
         result.success ? 'console' : 'error',
         result.success 
           ? 'Workflow completed successfully'
-          : `Failed to execute workflow: ${result.error}`
+          : `Failed to execute workflow: ${result.error}`,
+        activeWorkflowId
       )
 
       // Log detailed result to console
@@ -58,11 +61,11 @@ export function useWorkflowExecution() {
         data: {},
         error: errorMessage
       })
-      addNotification('error', `Failed to execute workflow: ${errorMessage}`)
+      addNotification('error', `Failed to execute workflow: ${errorMessage}`, activeWorkflowId)
     } finally {
       setIsExecuting(false)
     }
-  }, [blocks, edges, addNotification])
+  }, [blocks, edges, addNotification, activeWorkflowId])
 
   return { isExecuting, executionResult, handleRunWorkflow }
 } 
