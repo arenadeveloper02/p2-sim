@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { NavItem } from './components/nav-item'
+import { NavItem } from './components/nav-item/nav-item'
 import { Settings, Plus } from 'lucide-react'
 import {
   Tooltip,
@@ -12,6 +12,8 @@ import { AgentIcon } from '@/components/icons'
 import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import { SettingsModal } from './components/settings-modal/settings-modal'
 
 export function Sidebar() {
   const WORKFLOW_COLORS = [
@@ -23,6 +25,7 @@ export function Sidebar() {
   ]
   const { workflows, addWorkflow } = useWorkflowRegistry()
   const router = useRouter()
+  const [showSettings, setShowSettings] = useState(false)
 
   const handleCreateWorkflow = () => {
     const id = crypto.randomUUID()
@@ -84,20 +87,24 @@ export function Sidebar() {
         </div>
       </nav>
 
-      <nav className="flex flex-col items-center gap-4 px-2 py-5">
+      <nav className="flex flex-col items-center gap-4 px-2 py-[18px]">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link
-              href="#"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8"
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="flex !h-9 !w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-8"
             >
-              <Settings className="h-5 w-5" />
+              <Settings className="!h-5 !w-5" />
               <span className="sr-only">Settings</span>
-            </Link>
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="right">Settings</TooltipContent>
         </Tooltip>
       </nav>
+
+      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
     </aside>
   )
 }
