@@ -38,3 +38,6 @@ export const getAllBlockTypes = (): string[] =>
 
 export const isValidBlockType = (type: string): type is string =>
   type in blocks
+
+export const getAllBlocks = (): BlockConfig[] =>
+  Object.values(blocks)
