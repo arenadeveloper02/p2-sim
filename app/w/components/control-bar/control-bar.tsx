@@ -51,7 +51,9 @@ export function ControlBar() {
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b transition-all duration-300">
       {/* Left Section - Workflow Info */}
       <div className="flex flex-col gap-[2px]">
-        <h2 className="font-semibold text-sm">Workflow 1</h2>
+        <h2 className="font-semibold text-sm">
+          {activeWorkflowId ? workflows[activeWorkflowId].name : 'Workflow'}
+        </h2>
         <p className="text-xs text-muted-foreground">
           Saved{' '}
           {formatDistanceToNow(history.present.timestamp, { addSuffix: true })}
