@@ -3,140 +3,132 @@ import { ExecutionContext, ExecutionResult, Tool } from './types'
 import { tools } from '@/tools'
 
 export class Executor {
-  private workflow: SerializedWorkflow
-
-  constructor(workflow: SerializedWorkflow) {
-    this.workflow = workflow
-  }
+  constructor(
+    private workflow: SerializedWorkflow,
+    private initialBlockStates: Record<string, any> = {}
+  ) {}
 
   private async executeBlock(
     block: SerializedBlock,
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<Record<string, any>> {
-    const config = block.config
-    const toolId = config.tool
-
-    if (!toolId) {
-      throw new Error(`Block ${block.id} does not specify a tool`)
-    }
+    const toolId = block.config.tool
+    if (!toolId) throw new Error(`Block ${block.id} does not specify a tool`)
 
     const tool = tools[toolId]
-    if (!tool) {
-      throw new Error(`Tool not found: ${toolId}`)
-    }
+    if (!tool) throw new Error(`Tool not found: ${toolId}`)
 
-    // Merge block parameters with runtime inputs
-    const params = {
-      ...config.params,
-      ...inputs
-    }
-
-    // Validate tool parameters and apply defaults
-    const validatedParams: Record<string, any> = {}
-    for (const [paramName, paramConfig] of Object.entries(tool.params)) {
-      if (paramName in params) {
-        validatedParams[paramName] = params[paramName]
-      } else if ('default' in paramConfig) {
-        validatedParams[paramName] = paramConfig.default
-      } else if (paramConfig.required) {
-        throw new Error(`Missing required parameter '${paramName}' for tool ${toolId}`)
-      }
-    }
+    const validatedParams = this.validateToolParams(tool, { ...block.config.params, ...inputs })
 
     try {
-      // Make the HTTP request
-      const url = typeof tool.request.url === 'function'
-        ? tool.request.url(validatedParams)
-        : tool.request.url
+      const url = typeof tool.request.url === 'function' ? tool.request.url(validatedParams) : tool.request.url
+      const headers = tool.request.headers(validatedParams)
+      const method = typeof validatedParams.method === 'object' 
+        ? validatedParams.method.method 
+        : (validatedParams.method || tool.request.method)
 
-      const response = await fetch(url, {
-        method: tool.request.method,
-        headers: tool.request.headers(validatedParams),
-        body: tool.request.body ? JSON.stringify(tool.request.body(validatedParams)) : undefined
-      })
+      const body = (method !== 'GET' && method !== 'HEAD' && tool.request.body) 
+        ? JSON.stringify(tool.request.body(validatedParams)) 
+        : undefined
+
+      const response = await fetch(url, { method, headers, body })
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: response.statusText }))
         throw new Error(tool.transformError(error))
       }
-
       return await tool.transformResponse(response)
     } catch (error) {
       throw new Error(`Tool ${toolId} execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
+  private validateToolParams(tool: Tool, params: Record<string, any>): Record<string, any> {
+    return Object.entries(tool.params).reduce((validated, [name, config]) => {
+      if (name in params) validated[name] = params[name]
+      else if ('default' in config) validated[name] = config.default
+      else if (config.required) throw new Error(`Missing required parameter '${name}'`)
+      return validated
+    }, {} as Record<string, any>)
+  }
+
   private determineExecutionOrder(): string[] {
     const { blocks, connections } = this.workflow
     const order: string[] = []
     const visited = new Set<string>()
-    const inDegree = new Map<string, number>()
+    const inDegree = new Map(blocks.map(block => [block.id, 0]))
     
-    blocks.forEach(block => inDegree.set(block.id, 0))
     connections.forEach(conn => {
-      const target = conn.target
-      inDegree.set(target, (inDegree.get(target) || 0) + 1)
+      inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1)
     })
     
     const queue = blocks
-      .filter(block => (inDegree.get(block.id) || 0) === 0)
+      .filter(block => inDegree.get(block.id) === 0)
       .map(block => block.id)
     
     while (queue.length > 0) {
       const blockId = queue.shift()!
-      if (visited.has(blockId)) continue
-      
-      visited.add(blockId)
-      order.push(blockId)
-      
-      connections
-        .filter(conn => conn.source === blockId)
-        .forEach(conn => {
-          const targetId = conn.target
-          inDegree.set(targetId, (inDegree.get(targetId) || 0) - 1)
-          
-          if (inDegree.get(targetId) === 0) {
-            queue.push(targetId)
-          }
-        })
+      if (!visited.has(blockId)) {
+        visited.add(blockId)
+        order.push(blockId)
+        
+        connections
+          .filter(conn => conn.source === blockId)
+          .forEach(conn => {
+            const newDegree = (inDegree.get(conn.target) || 0) - 1
+            inDegree.set(conn.target, newDegree)
+            if (newDegree === 0) queue.push(conn.target)
+          })
+      }
     }
     
-    if (order.length !== blocks.length) {
-      throw new Error('Workflow contains cycles')
-    }
-    
+    if (order.length !== blocks.length) throw new Error('Workflow contains cycles')
     return order
   }
 
-  private resolveInputs(
-    block: SerializedBlock,
-    context: ExecutionContext
-  ): Record<string, any> {
-    const inputs: Record<string, any> = {}
-    
-    // Get all incoming connections for this block
-    const incomingConnections = this.workflow.connections.filter(
-      conn => conn.target === block.id
+  private resolveInputs(block: SerializedBlock, context: ExecutionContext): Record<string, any> {
+    const inputs = { ...block.config.params }
+    const blockNameMap = new Map(
+      this.workflow.blocks
+        .map(b => {
+          const name = b.metadata?.title?.toLowerCase().replace(' ', '') || ''
+          return name ? [name, b.id] as [string, string] : null
+        })
+        .filter((entry): entry is [string, string] => entry !== null)
     )
+
+    const blockStateMap = new Map(
+      Object.entries(this.initialBlockStates)
+        .filter(([_, state]) => state !== undefined)
+    )
+
+    const connectionPattern = /<([a-z0-9]+)\.(string|number|boolean|res|any)>/g
     
-    // Map outputs from previous blocks to inputs for this block
-    incomingConnections.forEach(conn => {
-      const sourceOutput = context.blockStates.get(conn.source)
-      if (sourceOutput && conn.sourceHandle && conn.targetHandle) {
-        inputs[conn.targetHandle] = sourceOutput[conn.sourceHandle]
+    return Object.entries(block.config.params || {}).reduce((acc, [key, value]) => {
+      if (typeof value === 'string') {
+        let resolvedValue = value
+        Array.from(value.matchAll(connectionPattern)).forEach(match => {
+          const [fullMatch, blockName, type] = match
+          const blockId = blockNameMap.get(blockName) || blockName
+          const sourceOutput = context.blockStates.get(blockId) || blockStateMap.get(blockId)
+          
+          if (sourceOutput) {
+            const replacementValue = type === 'res' 
+              ? (sourceOutput.response?.method || sourceOutput.response || sourceOutput)
+              : (sourceOutput.output || sourceOutput.response)
+            
+            if (replacementValue !== undefined) {
+              resolvedValue = resolvedValue.replace(fullMatch, replacementValue.toString())
+            }
+          }
+        })
+        acc[key] = resolvedValue
+      } else {
+        acc[key] = value
       }
-    })
-    
-    // If this is a start block with no inputs, use the block's params
-    if (Object.keys(inputs).length === 0) {
-      const targetBlock = this.workflow.blocks.find(b => b.id === block.id)
-      if (targetBlock) {
-        return targetBlock.config.params
-      }
-    }
-    
-    return inputs
+      return acc
+    }, inputs)
   }
 
   async execute(workflowId: string): Promise<ExecutionResult> {
@@ -144,9 +136,7 @@ export class Executor {
     const context: ExecutionContext = {
       workflowId,
       blockStates: new Map(),
-      metadata: {
-        startTime: startTime.toISOString()
-      }
+      metadata: { startTime: startTime.toISOString() }
     }
 
     try {
@@ -154,22 +144,16 @@ export class Executor {
       
       for (const blockId of executionOrder) {
         const block = this.workflow.blocks.find(b => b.id === blockId)
-        if (!block) {
-          throw new Error(`Block ${blockId} not found in workflow`)
-        }
+        if (!block) throw new Error(`Block ${blockId} not found in workflow`)
         
-        const blockInputs = this.resolveInputs(block, context)
-        const result = await this.executeBlock(block, blockInputs, context)
+        const result = await this.executeBlock(block, this.resolveInputs(block, context), context)
         context.blockStates.set(blockId, result)
       }
-
-      const lastBlockId = executionOrder[executionOrder.length - 1]
-      const finalOutput = context.blockStates.get(lastBlockId)
 
       const endTime = new Date()
       return {
         success: true,
-        data: finalOutput || {},
+        data: context.blockStates.get(executionOrder[executionOrder.length - 1]) || {},
         metadata: {
           duration: endTime.getTime() - startTime.getTime(),
           startTime: startTime.toISOString(),

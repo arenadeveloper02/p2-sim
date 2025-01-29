@@ -3,11 +3,6 @@ import { SerializedWorkflow } from '@/serializer/types'
 import { Tool } from '../types' 
 import { tools } from '@/tools' 
 
-// Mock icons
-jest.mock('@/components/icons', () => ({
-  AgentIcon: () => null
-}))
-
 // Mock tools
 const createMockTool = (
   id: string,
@@ -327,76 +322,71 @@ describe('Executor', () => {
       const mockTool1 = createMockTool(
         'tool-1',
         'Tool 1',
-        { output: 'test data' }
-      ) 
+        { response: 'test data' }
+      );
       const mockTool2 = createMockTool(
         'tool-2',
         'Tool 2',
-        { result: 'processed data' }
+        { response: 'processed data' }
       );
       (tools as any)['tool-1'] = mockTool1;
-      (tools as any)['tool-2'] = mockTool2 
+      (tools as any)['tool-2'] = mockTool2;
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
         blocks: [
           {
-            id: 'block-1',
+            id: 'block1',
             position: { x: 0, y: 0 },
             config: {
               tool: 'tool-1',
               params: { input: 'initial' },
               interface: {
                 inputs: {},
-                outputs: { output: 'string' }
+                outputs: { response: 'string' }
               }
             }
           },
           {
-            id: 'block-2',
+            id: 'block2',
             position: { x: 200, y: 0 },
             config: {
               tool: 'tool-2',
-              params: {},
+              params: { 
+                input: '<block1.string>'
+              },
               interface: {
                 inputs: { input: 'string' },
-                outputs: { result: 'string' }
+                outputs: { response: 'string' }
               }
             }
           }
         ],
-        connections: [
-          {
-            source: 'block-1',
-            target: 'block-2',
-            sourceHandle: 'output',
-            targetHandle: 'input'
-          }
-        ]
-      } 
+        connections: []
+      };
 
       // Mock fetch for both tools
       global.fetch = jest.fn()
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ output: 'test data' })
+            json: () => Promise.resolve({ response: 'test data' })
           })
         )
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ result: 'processed data' })
+            json: () => Promise.resolve({ response: 'processed data' })
           })
-        ) 
+        );
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow);
+      const result = await executor.execute('workflow-1');
 
-      expect(result.success).toBe(true) 
-      expect(result.data).toEqual({ result: 'processed data' }) 
-      expect(global.fetch).toHaveBeenCalledTimes(2) 
-    }) 
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ response: 'processed data' });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
 
     it('should handle cycles in workflow', async () => {
       const workflow: SerializedWorkflow = {
@@ -450,4 +440,234 @@ describe('Executor', () => {
       expect(result.error).toContain('Workflow contains cycles') 
     }) 
   }) 
+
+  describe('Connection Tests', () => {
+    it('should execute an Agent -> Function -> API chain', async () => {
+      // Mock the OpenAI chat tool
+      const openaiTool: Tool = {
+        id: 'openai.chat',
+        name: 'OpenAI Chat',
+        description: 'Chat with OpenAI models',
+        version: '1.0.0',
+        params: {
+          systemPrompt: {
+            type: 'string',
+            required: true,
+            description: 'System prompt'
+          },
+          apiKey: {
+            type: 'string',
+            required: true,
+            description: 'OpenAI API key'
+          }
+        },
+        request: {
+          url: 'https://api.openai.com/v1/chat/completions',
+          method: 'POST',
+          headers: (params) => ({
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${params.apiKey}`
+          }),
+          body: (params) => ({
+            model: 'gpt-4',
+            messages: [
+              { role: 'system', content: params.systemPrompt }
+            ]
+          })
+        },
+        transformResponse: async () => ({
+          response: 'https://api.example.com/data'
+        }),
+        transformError: () => 'OpenAI error'
+      };
+
+      // Mock the Function execution tool
+      const functionTool: Tool = {
+        id: 'function.execute',
+        name: 'Execute Function',
+        description: 'Execute custom code',
+        version: '1.0.0',
+        params: {
+          code: {
+            type: 'string',
+            required: true,
+            description: 'Code to execute'
+          },
+          url: {
+            type: 'string',
+            required: true,
+            description: 'URL to process'
+          }
+        },
+        request: {
+          url: 'http://localhost:3000/api/function',
+          method: 'POST',
+          headers: () => ({ 'Content-Type': 'application/json' }),
+          body: (params) => ({ code: params.code, url: params.url })
+        },
+        transformResponse: async () => ({
+          response: { method: 'GET', headers: { 'Accept': 'application/json' } }
+        }),
+        transformError: () => 'Function execution error'
+      };
+
+      // Mock the HTTP request tool
+      const httpTool: Tool = {
+        id: 'http.request',
+        name: 'HTTP Request',
+        description: 'Make HTTP requests',
+        version: '1.0.0',
+        params: {
+          url: {
+            type: 'string',
+            required: true,
+            description: 'URL to request'
+          },
+          method: {
+            type: 'string',
+            required: true,
+            description: 'HTTP method'
+          }
+        },
+        request: {
+          url: (params) => params.url,
+          method: 'GET',
+          headers: () => ({ 'Content-Type': 'application/json' }),
+          body: undefined
+        },
+        transformResponse: async () => ({
+          response: { status: 200, data: { message: 'Success!' } }
+        }),
+        transformError: () => 'HTTP request error'
+      };
+
+      (tools as any)['openai.chat'] = openaiTool;
+      (tools as any)['function.execute'] = functionTool;
+      (tools as any)['http.request'] = httpTool;
+
+      const workflow: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [
+          {
+            id: 'agent1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'openai.chat',
+              params: {
+                systemPrompt: 'Generate an API endpoint',
+                apiKey: 'test-key'
+              },
+              interface: {
+                inputs: {
+                  systemPrompt: 'string',
+                  apiKey: 'string'
+                },
+                outputs: {
+                  response: 'string'
+                }
+              }
+            }
+          },
+          {
+            id: 'function1',
+            position: { x: 200, y: 0 },
+            config: {
+              tool: 'function.execute',
+              params: {
+                code: 'return { method: "GET", headers: { "Accept": "application/json" } }',
+                url: '<agent1.string>'
+              },
+              interface: {
+                inputs: {
+                  code: 'string',
+                  url: 'string'
+                },
+                outputs: {
+                  response: 'any'
+                }
+              }
+            }
+          },
+          {
+            id: 'api1',
+            position: { x: 400, y: 0 },
+            config: {
+              tool: 'http.request',
+              params: {
+                url: '<agent1.string>',
+                method: '<function1.res>'
+              },
+              interface: {
+                inputs: {
+                  url: 'string',
+                  method: 'string'
+                },
+                outputs: {
+                  response: 'any'
+                }
+              }
+            }
+          }
+        ],
+        connections: []
+      };
+
+      // Mock fetch responses
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() =>
+          Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              response: 'https://api.example.com/data'
+            })
+          })
+        )
+        .mockImplementationOnce(() =>
+          Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              response: { method: 'GET', headers: { 'Accept': 'application/json' } }
+            })
+          })
+        )
+        .mockImplementationOnce(() =>
+          Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              response: { status: 200, data: { message: 'Success!' } }
+            })
+          })
+        );
+
+      const executor = new Executor(workflow);
+      const result = await executor.execute('test-workflow');
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({
+        response: { status: 200, data: { message: 'Success!' } }
+      });
+
+      // Verify the execution order and data flow
+      const fetchCalls = (global.fetch as jest.Mock).mock.calls;
+      expect(fetchCalls).toHaveLength(3);
+
+      // First call - Agent generates API endpoint
+      expect(JSON.parse(fetchCalls[0][1].body)).toEqual({
+        model: 'gpt-4',
+        messages: [
+          { role: 'system', content: 'Generate an API endpoint' }
+        ]
+      });
+
+      // Second call - Function processes the URL
+      expect(JSON.parse(fetchCalls[1][1].body)).toEqual({
+        code: 'return { method: "GET", headers: { "Accept": "application/json" } }',
+        url: 'https://api.example.com/data'
+      });
+
+      // Third call - API makes the request
+      expect(fetchCalls[2][0]).toBe('https://api.example.com/data');
+      expect(fetchCalls[2][1].method).toBe('GET');
+    });
+  });
 }) 
