@@ -259,7 +259,7 @@ function WorkflowCanvas() {
   // }, [])
 
   return (
-    <div className="relative w-full h-[calc(100vh-56px)]">
+    <div className="relative w-full h-[calc(100vh-4rem)]">
       <NotificationList />
       <style>{keyframeStyles}</style>
       <ReactFlow

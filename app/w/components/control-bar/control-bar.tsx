@@ -29,7 +29,7 @@ export function ControlBar() {
   }, [])
 
   return (
-    <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b">
+    <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b transition-all duration-300">
       {/* Left Section - Workflow Info */}
       <div className="flex flex-col gap-[2px]">
         <h2 className="font-semibold text-sm">Workflow 1</h2>
@@ -112,8 +112,8 @@ export function ControlBar() {
           )}
         </DropdownMenu>
 
-        <Button 
-          className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90" 
+        <Button
+          className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90"
           onClick={handleRunWorkflow}
           disabled={isExecuting}
         >
