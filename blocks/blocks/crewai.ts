@@ -6,7 +6,7 @@ export const CrewAIVisionBlock: BlockConfig = {
   toolbar: {
     title: 'CrewAI Vision',
     description: 'Analyze images with CrewAI Vision API',
-    bgColor: '#FF2F5E',
+    bgColor: '#C0392B',
     icon: CrewAIIcon,
     category: 'advanced'
   },
