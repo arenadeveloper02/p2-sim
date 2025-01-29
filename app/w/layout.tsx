@@ -11,7 +11,9 @@ export default function WorkspaceLayout({
   return (
     <Providers>
       <div className="flex min-h-screen w-full">
-        <Sidebar />
+        <div className="z-20">
+          <Sidebar />
+        </div>
         <div className="flex-1 flex flex-col pl-14">
           <ControlBar />
           <div className="h-16">
