@@ -14,9 +14,9 @@ export default function WorkspaceLayout({
         <Sidebar />
         <div className="flex-1 flex flex-col pl-14">
           <ControlBar />
-          <div className="flex flex-1 h-16">
+          <div className="h-16">
             <Toolbar />
-            <main className="flex-1 grid items-start gap-2 bg-muted/40 h-[calc(100vh-4rem)]">
+            <main className="grid items-start gap-2 bg-muted/40 h-[calc(100vh-4rem)]">
               {children}
             </main>
           </div>

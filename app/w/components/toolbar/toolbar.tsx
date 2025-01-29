@@ -49,7 +49,7 @@ export function Toolbar() {
   }
 
   return (
-    <div className="relative z-1 hidden h-[calc(100vh-4rem)] overflow-y-auto w-64 border-r bg-background sm:block">
+    <div className="fixed left-14 top-16 z-10 h-[calc(100vh-4rem)] overflow-y-auto w-64 border-r bg-background sm:block">
       <div className="px-4 pt-4">
         <div className="relative">
           <Search className="absolute left-3 top-[50%] h-4 w-4 -translate-y-[50%] text-muted-foreground" />
