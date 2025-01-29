@@ -78,7 +78,7 @@ export function Toolbar() {
         <TooltipTrigger asChild>
           <button
             onClick={() => setIsCollapsed(true)}
-            className="absolute right-4 bottom-5 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
+            className="absolute right-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
           >
             <PanelRightClose className="h-5 w-5" />
             <span className="sr-only">Close Toolbar</span>
