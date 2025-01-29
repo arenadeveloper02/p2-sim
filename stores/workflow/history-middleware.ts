@@ -68,6 +68,24 @@ export const withHistory = (
           },
         })
       },
+
+      clear: () => {
+        const newState = {
+          blocks: {},
+          edges: [],
+          history: {
+            past: [],
+            present: {
+              state: { blocks: {}, edges: [] },
+              timestamp: Date.now(),
+              action: 'Clear workflow'
+            },
+            future: []
+          }
+        }
+        set(newState)
+        return newState
+      },
     }
   }
 }

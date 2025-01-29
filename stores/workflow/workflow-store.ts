@@ -9,6 +9,7 @@ import { resolveOutputType } from '@/blocks/utils'
 const initialState = {
   blocks: {},
   edges: [],
+  lastSaved: undefined,
   history: {
     past: [],
     present: {
@@ -98,6 +99,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
 
         set(newState)
         pushHistory(set, get, newState, `Add ${type} block`)
+        get().updateLastSaved()
       },
 
       updateBlockPosition: (id: string, position: Position) => {
@@ -111,6 +113,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...state.edges],
         }))
+        get().updateLastSaved()
       },
 
       removeBlock: (id: string) => {
@@ -124,6 +127,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         
         set(newState)
         pushHistory(set, get, newState, 'Remove block')
+        get().updateLastSaved()
       },
 
       addEdge: (edge: Edge) => {
@@ -143,6 +147,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         
         set(newState)
         pushHistory(set, get, newState, 'Add connection')
+        get().updateLastSaved()
       },
 
       removeEdge: (edgeId: string) => {
@@ -153,12 +158,30 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         
         set(newState)
         pushHistory(set, get, newState, 'Remove connection')
+        get().updateLastSaved()
       },
 
       clear: () => {
-        const newState = initialState
+        const newState = {
+          blocks: {},
+          edges: [],
+          history: {
+            past: [],
+            present: {
+              state: { blocks: {}, edges: [] },
+              timestamp: Date.now(),
+              action: 'Initial state'
+            },
+            future: []
+          },
+          lastSaved: Date.now(),
+        }
         set(newState)
-        pushHistory(set, get, newState, 'Clear workflow')
+        return newState
+      },
+
+      updateLastSaved: () => {
+        set({ lastSaved: Date.now() })
       },
     })),
     { name: 'workflow-store' }

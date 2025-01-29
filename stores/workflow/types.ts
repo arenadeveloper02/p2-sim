@@ -1,5 +1,6 @@
 import { Node, Edge } from 'reactflow'
 import { OutputType, SubBlockType } from '@/blocks/types'
+import { WorkflowHistory } from './history-types'
 
 export interface Position {
   x: number
@@ -24,6 +25,7 @@ export interface SubBlockState {
 export interface WorkflowState {
   blocks: Record<string, BlockState>
   edges: Edge[]
+  lastSaved?: number
 }
 
 export interface WorkflowActions {
@@ -39,6 +41,7 @@ export interface WorkflowActions {
   addEdge: (edge: Edge) => void
   removeEdge: (edgeId: string) => void
   clear: () => void
+  updateLastSaved: () => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions 

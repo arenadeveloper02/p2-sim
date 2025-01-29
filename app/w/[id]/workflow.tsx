@@ -28,6 +28,8 @@ import { NotificationList } from '@/app/w/components/notifications/notifications
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { executeWorkflow } from '@/lib/workflow'
 import { useWorkflowExecution } from '../hooks/use-workflow-execution'
+import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useParams } from 'next/navigation'
 
 /**
  * Represents the data structure for a workflow node
@@ -304,6 +306,15 @@ function WorkflowCanvas() {
  * Root workflow component that provides the ReactFlow context to the canvas
  */
 export default function Workflow() {
+  const params = useParams()
+  const { setActiveWorkflow } = useWorkflowRegistry()
+
+  useEffect(() => {
+    if (params.id) {
+      setActiveWorkflow(params.id as string)
+    }
+  }, [params.id, setActiveWorkflow])
+
   return (
     <ReactFlowProvider>
       <WorkflowCanvas />

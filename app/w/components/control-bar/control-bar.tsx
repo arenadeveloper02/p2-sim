@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { History, Bell, Play } from 'lucide-react'
+import { History, Bell, Play, Trash2 } from 'lucide-react'
 import { useNotificationStore } from '@/stores/notifications/notifications-store'
 import { NotificationDropdownItem } from './components/notification-dropdown-item'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
@@ -15,12 +15,31 @@ import { HistoryDropdownItem } from './components/history-dropdown-item'
 import { formatDistanceToNow } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
+import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useRouter } from 'next/navigation'
 
 export function ControlBar() {
   const { notifications } = useNotificationStore()
   const { history, undo, redo } = useWorkflowStore()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
+  const { workflows, removeWorkflow, activeWorkflowId } = useWorkflowRegistry()
+  const router = useRouter()
+
+  const handleDeleteWorkflow = () => {
+    if (!activeWorkflowId) return
+    const newWorkflows = { ...workflows }
+    delete newWorkflows[activeWorkflowId]
+    const remainingIds = Object.keys(newWorkflows)
+
+    removeWorkflow(activeWorkflowId)
+
+    if (remainingIds.length > 0) {
+      router.push(`/w/${remainingIds[0]}`)
+    } else {
+      router.push('/')
+    }
+  }
 
   // Update the time display every minute
   useEffect(() => {
@@ -44,6 +63,16 @@ export function ControlBar() {
 
       {/* Right Section - Actions */}
       <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleDeleteWorkflow}
+          disabled={Object.keys(workflows).length <= 1}
+        >
+          <Trash2 className="h-5 w-5" />
+          <span className="sr-only">Delete Workflow</span>
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon">
