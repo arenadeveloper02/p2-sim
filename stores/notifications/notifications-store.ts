@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { NotificationType, Notification, NotificationStore } from './types'
+import { getTimestamp } from '@/lib/utils'
 
 export const useNotificationStore = create<NotificationStore>()(
   devtools(
@@ -8,10 +9,10 @@ export const useNotificationStore = create<NotificationStore>()(
       notifications: [],
       addNotification: (type, message) => {
         const notification: Notification = {
-          id: crypto.randomUUID(),
+          id: typeof window === 'undefined' ? '1' : crypto.randomUUID(),
           type,
           message,
-          timestamp: Date.now(),
+          timestamp: getTimestamp(),
           isVisible: true,
         }
         set((state) => ({

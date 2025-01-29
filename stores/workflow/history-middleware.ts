@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand'
 import { WorkflowState, WorkflowStore } from './types'
 import { HistoryEntry, WorkflowHistory, HistoryActions } from './history-types'
+import { getTimestamp } from '@/lib/utils'
 
 const MAX_HISTORY_LENGTH = 20
 
@@ -80,7 +81,7 @@ export const createHistoryEntry = (
     blocks: { ...state.blocks },
     edges: [...state.edges ],
   },
-  timestamp: Date.now(),
+  timestamp: getTimestamp(),
   action,
 })
 
