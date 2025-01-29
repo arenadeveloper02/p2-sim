@@ -38,67 +38,45 @@ export function SettingsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] p-6">
-        <DialogHeader className="pb-4">
-          <DialogTitle className="text-lg font-medium leading-none">
-            Environment Variables
-          </DialogTitle>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Environment Variables</DialogTitle>
         </DialogHeader>
-        <div className="max-h-[400px] overflow-y-auto scrollbar-hide">
-          <div className="space-y-4">
-            {envVars.map((envVar, index) => (
-              <div key={index} className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor={`key-${index}`}
-                    className="text-sm font-medium leading-none"
-                  >
-                    Key
-                  </Label>
-                  <Input
-                    id={`key-${index}`}
-                    value={envVar.key}
-                    onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
-                    placeholder="API_KEY"
-                    className="placeholder:text-muted-foreground/50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label
-                    htmlFor={`value-${index}`}
-                    className="text-sm font-medium leading-none"
-                  >
-                    Value
-                  </Label>
-                  <Input
-                    id={`value-${index}`}
-                    value={envVar.value}
-                    onChange={(e) =>
-                      updateEnvVar(index, 'value', e.target.value)
-                    }
-                    type="password"
-                    placeholder="Enter value"
-                    className="placeholder:text-muted-foreground/50"
-                  />
-                </div>
+        <div className="space-y-4">
+          {envVars.map((envVar, index) => (
+            <div key={index} className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor={`key-${index}`}>Key</Label>
+                <Input
+                  id={`key-${index}`}
+                  value={envVar.key}
+                  onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
+                  placeholder="API_KEY"
+                />
               </div>
-            ))}
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor={`value-${index}`}>Value</Label>
+                <Input
+                  id={`value-${index}`}
+                  value={envVar.value}
+                  onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
+                  type="password"
+                  placeholder="Enter value"
+                />
+              </div>
+            </div>
+          ))}
         </div>
         <Button
           variant="outline"
           size="sm"
           onClick={addEnvVar}
-          className="mt-4 w-full border bg-card shadow-sm hover:bg-accent/50"
+          className="mt-2"
         >
           Add Variable
         </Button>
-        <div className="flex justify-end space-x-3 pt-6">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="bg-card shadow-sm hover:bg-accent/50"
-          >
+        <div className="flex justify-end space-x-2 pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={() => onOpenChange(false)}>Save Changes</Button>
