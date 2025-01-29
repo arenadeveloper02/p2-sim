@@ -8,6 +8,7 @@ interface HistoryDropdownItemProps {
   timestamp: number
   onClick?: () => void
   isCurrent?: boolean
+  id?: string
 }
 
 export function HistoryDropdownItem({
@@ -15,6 +16,7 @@ export function HistoryDropdownItem({
   timestamp,
   onClick,
   isCurrent = false,
+  id,
 }: HistoryDropdownItemProps) {
   const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true })
 

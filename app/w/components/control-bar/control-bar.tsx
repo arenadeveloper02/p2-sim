@@ -62,15 +62,15 @@ export function ControlBar() {
             <DropdownMenuContent align="end" className="w-60">
               <>
                 <HistoryDropdownItem
-                  key={history.present.timestamp}
+                  key={`current-${history.present.timestamp}`}
                   action={history.present.action}
                   timestamp={history.present.timestamp}
                   isCurrent={true}
                   onClick={() => {}}
                 />
-                {[...history.past].reverse().map((entry) => (
+                {[...history.past].reverse().map((entry, index) => (
                   <HistoryDropdownItem
-                    key={entry.timestamp}
+                    key={`past-${entry.timestamp}-${index}`}
                     action={entry.action}
                     timestamp={entry.timestamp}
                     onClick={undo}
