@@ -1,69 +1,126 @@
 import { ToolConfig, ToolResponse } from '../types'
 
-interface CrewAIVisionParams {
+interface VisionParams {
   apiKey: string
-  imageUrl?: string
-  base64Image?: string
+  imageUrl: string
   model?: string
+  prompt?: string
 }
 
-interface CrewAIVisionResponse extends ToolResponse {
+interface VisionResponse extends ToolResponse {
+  response: string
   tokens?: number
   model?: string
 }
 
-export const visionTool: ToolConfig<CrewAIVisionParams, CrewAIVisionResponse> = {
+export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
   id: 'crewai.vision',
-  name: 'CrewAI Vision',
-  description: 'Analyze images using CrewAI\'s Vision model',
+  name: 'Vision Analysis',
+  description: 'Analyze images using vision models',
   version: '1.0.0',
 
   params: {
     apiKey: {
       type: 'string',
       required: true,
-      description: 'Your CrewAI API key'
+      description: 'API key for the selected model provider'
     },
     imageUrl: {
       type: 'string',
-      required: false,
+      required: true,
       description: 'Publicly accessible image URL'
-    },
-    base64Image: {
-      type: 'string',
-      required: false,
-      description: 'Base64-encoded image data'
     },
     model: {
       type: 'string',
       required: false,
-      default: 'vision-latest',
-      description: 'Model to use for image analysis'
+      description: 'Vision model to use (gpt-4o, claude-3-opus-20240229, etc)'
+    },
+    prompt: {
+      type: 'string',
+      required: false,
+      description: 'Custom prompt for image analysis'
     }
   },
 
   request: {
-    url: 'https://api.crewai.com/v1/vision/analyze',
     method: 'POST',
-    headers: (params) => ({
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
-    }),
+    url: (params) => {
+      if (params.model?.startsWith('claude-3')) {
+        return 'https://api.anthropic.com/v1/messages'
+      }
+      return 'https://api.openai.com/v1/chat/completions'
+    },
+    headers: (params) => {
+      const headers = {
+        'Content-Type': 'application/json',
+      }
+
+      return params.model?.startsWith('claude-3')
+        ? {
+            ...headers,
+            'x-api-key': params.apiKey,
+            'anthropic-version': '2023-06-01'
+          }
+        : {
+            ...headers,
+            'Authorization': `Bearer ${params.apiKey}`
+          }
+    },
     body: (params) => {
+      const defaultPrompt = "Please analyze this image and describe what you see in detail."
+      const prompt = params.prompt || defaultPrompt
+
+      if (params.model?.startsWith('claude-3')) {
+        return {
+          model: params.model,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image", source: { type: "url", url: params.imageUrl } }
+            ]
+          }]
+        }
+      }
+
       return {
-        model: params.model,
-        imageUrl: params.imageUrl,
-        base64: params.base64Image
+        model: 'gpt-4o',
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { 
+              type: "image_url", 
+              image_url: {
+                url: params.imageUrl
+              }
+            }
+          ]
+        }],
+        max_tokens: 1000
       }
     }
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
+    
+    if (data.error) {
+      throw new Error(data.error.message || 'Unknown error occurred')
+    }
+
+    const result = data.content?.[0]?.text || data.choices?.[0]?.message?.content
+    if (!result) {
+      throw new Error('No output content in response')
+    }
+
     return {
-      output: data.result,
-      tokens: data.usage?.total_tokens,
-      model: data.model
+      output: result,
+      response: result,
+      model: data.model,
+      tokens: data.content 
+        ? (data.usage?.input_tokens + data.usage?.output_tokens)
+        : data.usage?.total_tokens
     }
   },
 

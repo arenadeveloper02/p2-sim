@@ -90,32 +90,39 @@ export class Executor {
   private resolveInputs(block: SerializedBlock, context: ExecutionContext): Record<string, any> {
     const inputs = { ...block.config.params }
     const blockNameMap = new Map(
-      this.workflow.blocks
-        .map(b => {
-          const name = b.metadata?.title?.toLowerCase().replace(' ', '') || ''
-          return name ? [name, b.id] as [string, string] : null
-        })
-        .filter((entry): entry is [string, string] => entry !== null)
-    )
+      this.workflow.blocks.map(b => {
+        const title = b.metadata?.title || '';
+        const normalizedName = title.toLowerCase().replace(/\s+/g, '');
+        return [normalizedName, b.id];
+      })
+    );
 
     const blockStateMap = new Map(
       Object.entries(this.initialBlockStates)
         .filter(([_, state]) => state !== undefined)
     )
 
-    const connectionPattern = /<([a-z0-9]+)\.(string|number|boolean|res|any)>/g
+    const connectionPattern = /<([^>]+)\.(string|number|boolean|res|any)>/g
     
     return Object.entries(block.config.params || {}).reduce((acc, [key, value]) => {
       if (typeof value === 'string') {
         let resolvedValue = value
         Array.from(value.matchAll(connectionPattern)).forEach(match => {
           const [fullMatch, blockName, type] = match
-          const blockId = blockNameMap.get(blockName) || blockName
+          
+          // Try both the original format and normalized format
+          const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '');
+          const blockId = blockNameMap.get(normalizedBlockName);
+          
+          if (!blockId) {
+            return;
+          }
+          
           const sourceOutput = context.blockStates.get(blockId) || blockStateMap.get(blockId)
           
           if (sourceOutput) {
             const replacementValue = type === 'res' 
-              ? (sourceOutput.response?.method || sourceOutput.response || sourceOutput)
+              ? sourceOutput.response
               : (sourceOutput.output || sourceOutput.response)
             
             if (replacementValue !== undefined) {

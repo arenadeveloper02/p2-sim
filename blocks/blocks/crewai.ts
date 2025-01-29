@@ -4,8 +4,8 @@ import { CrewAIIcon } from '@/components/icons'
 export const CrewAIVisionBlock: BlockConfig = {
   type: 'crewaivision',
   toolbar: {
-    title: 'CrewAI Vision',
-    description: 'Analyze images with CrewAI Vision API',
+    title: 'CrewAI Vision Tool',
+    description: 'Analyze images using vision models',
     bgColor: '#C0392B',
     icon: CrewAIIcon,
     category: 'advanced'
@@ -16,9 +16,9 @@ export const CrewAIVisionBlock: BlockConfig = {
   workflow: {
     inputs: {
       apiKey: { type: 'string', required: true },
-      imageUrl: { type: 'string', required: false },
-      base64Image: { type: 'string', required: false },
-      model: { type: 'string', required: false }
+      imageUrl: { type: 'string', required: true },
+      model: { type: 'string', required: false },
+      prompt: { type: 'string', required: false }
     },
     outputs: {
       response: 'any'
@@ -29,7 +29,7 @@ export const CrewAIVisionBlock: BlockConfig = {
         title: 'API Key',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter your CrewAI API key',
+        placeholder: 'Enter your API key',
         password: true
       },
       {
@@ -37,21 +37,25 @@ export const CrewAIVisionBlock: BlockConfig = {
         title: 'Image URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter image URL'
-      },
-      {
-        id: 'base64Image',
-        title: 'Base64 Image',
-        type: 'code',
-        layout: 'full',
-        placeholder: 'Paste base64-encoded data'
+        placeholder: 'Enter publicly accessible image URL'
       },
       {
         id: 'model',
         title: 'Vision Model',
         type: 'dropdown',
         layout: 'half',
-        options: ['vision-latest', 'vision-beta']
+        options: [
+          'gpt-4o',
+          'claude-3-opus-20240229',
+          'claude-3-sonnet-20240229'
+        ]
+      },
+      {
+        id: 'prompt',
+        title: 'Custom Prompt',
+        type: 'long-input',
+        layout: 'full',
+        placeholder: 'Enter custom prompt for image analysis (optional)'
       }
     ]
   }
