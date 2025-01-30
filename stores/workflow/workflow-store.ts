@@ -29,6 +29,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       redo: () => {},
       canUndo: () => false,
       canRedo: () => false,
+      revertToHistoryState: () => {},
 
       updateSubBlock: (blockId: string, subBlockId: string, value: any) => {
         set((state) => {
