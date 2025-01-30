@@ -1,10 +1,8 @@
-// Imports
 import { Input } from '@/components/ui/input'
 import { useState, useRef, useEffect } from 'react'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 
-// Component Props Interface
 interface ShortInputProps {
   placeholder?: string
   password?: boolean
@@ -20,10 +18,9 @@ export function ShortInput({
   password,
   isConnecting,
 }: ShortInputProps) {
-  // Hooks and State
-  const inputRef = useRef<HTMLInputElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const inputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
   // Sync scroll position between input and overlay
@@ -104,7 +101,6 @@ export function ShortInput({
     })
   }
 
-  // Component render
   return (
     <div className="relative w-full">
       <Input
