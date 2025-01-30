@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
 import { useState } from 'react'
+import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 
 interface WorkflowBlockProps {
   id: string
@@ -26,6 +27,9 @@ export function WorkflowBlock({
   const { toolbar, workflow } = config
   // Dragging connection state
   const [isConnecting, setIsConnecting] = useState(false)
+  const isEnabled = useWorkflowStore(
+    (state) => state.blocks[id]?.enabled ?? true
+  )
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     const rows: SubBlockConfig[][] = []
@@ -54,7 +58,12 @@ export function WorkflowBlock({
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
   return (
-    <Card className="w-[320px] shadow-md select-none group relative cursor-default">
+    <Card
+      className={cn(
+        'w-[320px] shadow-md select-none group relative cursor-default',
+        !isEnabled && 'shadow-sm'
+      )}
+    >
       {selected && <ActionBar blockId={id} />}
       <ConnectionBlocks blockId={id} setIsConnecting={setIsConnecting} />
 
@@ -74,7 +83,7 @@ export function WorkflowBlock({
       <div className="flex items-center gap-3 p-3 border-b workflow-drag-handle cursor-grab [&:active]:cursor-grabbing">
         <div
           className="flex items-center justify-center w-7 h-7 rounded"
-          style={{ backgroundColor: toolbar.bgColor }}
+          style={{ backgroundColor: isEnabled ? toolbar.bgColor : 'gray' }}
         >
           <toolbar.icon className="w-5 h-5 text-white" />
         </div>
