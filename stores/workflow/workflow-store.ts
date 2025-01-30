@@ -198,7 +198,6 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
         
         set(newState)
-        pushHistory(set, get, newState, 'Enabled/disabled block')
         get().updateLastSaved()
       },
     })),
