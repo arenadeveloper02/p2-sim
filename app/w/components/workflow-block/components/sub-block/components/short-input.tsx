@@ -81,7 +81,6 @@ export function ShortInput({
       ? '•'.repeat(value?.toString().length ?? 0)
       : value?.toString() ?? ''
 
-  // Add this function to format the text with tags
   const formatDisplayText = (text: string) => {
     if (!text) return null
 
