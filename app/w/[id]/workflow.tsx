@@ -8,12 +8,12 @@ import { useParams, useRouter } from 'next/navigation'
 import { WorkflowCanvas } from './components/workflow-canvas/workflow-canvas'
 
 export default function Workflow() {
-  // Get URL parameters and routing functionality
+  // Track if initial data loading is complete
+  const [isInitialized, setIsInitialized] = useState(false)
+
   const params = useParams()
   const router = useRouter()
   const { workflows, setActiveWorkflow, addWorkflow } = useWorkflowRegistry()
-  // Track if initial data loading is complete
-  const [isInitialized, setIsInitialized] = useState(false)
 
   // Load saved workflows from localStorage on component mount
   useEffect(() => {
