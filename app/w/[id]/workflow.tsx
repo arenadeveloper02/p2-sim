@@ -29,7 +29,7 @@ import { useNotificationStore } from '@/stores/notifications/notifications-store
 import { executeWorkflow } from '@/lib/workflow'
 import { useWorkflowExecution } from '../hooks/use-workflow-execution'
 import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 /**
  * Represents the data structure for a workflow node
@@ -305,13 +305,48 @@ function WorkflowCanvas() {
  */
 export default function Workflow() {
   const params = useParams()
-  const { setActiveWorkflow } = useWorkflowRegistry()
+  const router = useRouter()
+  const { workflows, setActiveWorkflow, addWorkflow } = useWorkflowRegistry()
 
   useEffect(() => {
-    if (params.id) {
-      setActiveWorkflow(params.id as string)
+    // Helper function to create a new workflow
+    const createInitialWorkflow = () => {
+      const id = crypto.randomUUID()
+      const newWorkflow = {
+        id,
+        name: 'Workflow 1',
+        lastModified: new Date(),
+        description: 'New workflow',
+        color: '#3972F6',
+      }
+      addWorkflow(newWorkflow)
+      return id
     }
-  }, [params.id, setActiveWorkflow])
+
+    // Validate and handle workflow navigation
+    const validateAndNavigate = () => {
+      const workflowIds = Object.keys(workflows)
+      const currentId = params.id as string
+
+      // No workflows exist - create one and navigate
+      if (workflowIds.length === 0) {
+        const newId = createInitialWorkflow()
+        router.replace(`/w/${newId}`)
+        return
+      }
+
+      // Current workflow is invalid - navigate to first available
+      if (!workflows[currentId]) {
+        router.replace(`/w/${workflowIds[0]}`)
+        return
+      }
+
+      // Valid workflow - set it as active
+      setActiveWorkflow(currentId)
+    }
+
+    validateAndNavigate()
+  }, [params.id, workflows, setActiveWorkflow, addWorkflow, router])
 
   return (
     <ReactFlowProvider>
