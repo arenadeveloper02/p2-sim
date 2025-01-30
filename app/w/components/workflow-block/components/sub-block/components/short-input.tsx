@@ -78,7 +78,8 @@ export function ShortInput({
       ref={inputRef}
       className={cn(
         'w-full placeholder:text-muted-foreground/50 allow-scroll',
-        isConnecting && 'border-blue-500'
+        isConnecting &&
+          'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
       )}
       placeholder={placeholder ?? ''}
       type="text"
