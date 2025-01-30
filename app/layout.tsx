@@ -17,7 +17,16 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.INITIAL_TIMESTAMP = ${Date.now()};`,
+            __html: `window.INITIAL_TIMESTAMP = 0;`,
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined') {
+                window.INITIAL_TIMESTAMP = ${Date.now()};
+              }
+            `,
           }}
         />
       </head>
