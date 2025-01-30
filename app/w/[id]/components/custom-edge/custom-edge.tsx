@@ -56,7 +56,7 @@ export const CustomEdge = (props: EdgeProps) => {
               props.data?.onDelete?.(props.id)
             }}
           >
-            <X className="h-5 w-5 text-red-500" />
+            <X className="h-5 w-5 text-red-500 hover:text-red-600" />
           </div>
         </foreignObject>
       )}
