@@ -200,6 +200,47 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         set(newState)
         get().updateLastSaved()
       },
+
+      duplicateBlock: (id: string) => {
+        const block = get().blocks[id]
+        if (!block) return
+
+        const newId = crypto.randomUUID()
+        const offsetPosition = {
+          x: block.position.x + 250, // Offset to the right
+          y: block.position.y + 20,  // Slight offset down
+        }
+
+        // Deep clone the block's subBlocks
+        const newSubBlocks = Object.entries(block.subBlocks).reduce(
+          (acc, [subId, subBlock]) => ({
+            ...acc,
+            [subId]: {
+              ...subBlock,
+              value: JSON.parse(JSON.stringify(subBlock.value)), // Deep clone values
+            },
+          }),
+          {}
+        )
+
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [newId]: {
+              ...block,
+              id: newId,
+              name: `${block.name}`,
+              position: offsetPosition,
+              subBlocks: newSubBlocks,
+            },
+          },
+          edges: [...get().edges],
+        }
+
+        set(newState)
+        pushHistory(set, get, newState, `Duplicate ${block.type} block`)
+        get().updateLastSaved()
+      },
     })),
     { name: 'workflow-store' }
   )

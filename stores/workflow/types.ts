@@ -44,6 +44,7 @@ export interface WorkflowActions {
   clear: () => void
   updateLastSaved: () => void
   toggleBlockEnabled: (id: string) => void
+  duplicateBlock: (id: string) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions 
