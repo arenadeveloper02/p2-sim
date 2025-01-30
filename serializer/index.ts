@@ -1,8 +1,7 @@
 import { BlockState, SubBlockState } from '@/stores/workflow/types' 
 import { Edge } from 'reactflow' 
-import { SerializedBlock, SerializedConnection, SerializedWorkflow, BlockConfig, ParamType, OutputType } from './types' 
+import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types' 
 import { getBlock, getBlockTypeForTool } from '@/blocks' 
-import { resolveOutputType } from '@/blocks/utils'
 
 export class Serializer {
   serializeWorkflow(blocks: Record<string, BlockState>, edges: Edge[]): SerializedWorkflow {
@@ -32,30 +31,23 @@ export class Serializer {
     // Extract params from subBlocks
     const params = this.extractParams(block)
 
-    // Get input interface from block config
-    const inputs: Record<string, ParamType> = {}
-
-    // Map inputs from block config
+    // Get inputs from block config
+    const inputs: Record<string, any> = {}
     if (blockConfig.workflow.inputs) {
       Object.entries(blockConfig.workflow.inputs).forEach(([key, config]) => {
-        inputs[key] = config.type as ParamType
+        inputs[key] = config.type
       })
     }
-
-    // Use the block's actual output types
-    const outputs = block.outputs
 
     return {
       id: block.id,
       position: block.position,
       config: {
         tool: toolId,
-        params,
-        interface: {
-          inputs,
-          outputs
-        }
+        params
       },
+      inputs,
+      outputs: block.outputs,
       metadata: {
         title: block.name,
         description: blockConfig.toolbar.description,
@@ -117,15 +109,14 @@ export class Serializer {
       }
     })
 
-    const outputs = resolveOutputType(blockConfig.workflow.outputs, subBlocks)
-
     return {
       id: serializedBlock.id,
       type: blockType,
       name: serializedBlock.metadata?.title || blockConfig.toolbar.title,
       position: serializedBlock.position,
       subBlocks,
-      outputs
+      outputs: serializedBlock.outputs,
+      enabled: true
     }
   }
 }

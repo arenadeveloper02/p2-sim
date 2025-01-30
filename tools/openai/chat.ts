@@ -15,9 +15,12 @@ interface ChatParams {
 }
 
 interface ChatResponse extends ToolResponse {
-  tokens?: number 
-  model: string 
-  reasoning_tokens?: number 
+  output: {
+    content: string
+    model: string
+    tokens?: number
+    reasoning_tokens?: number
+  }
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -104,15 +107,21 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     const data = await response.json() 
     if (data.choices?.[0]?.delta?.content) {
       return {
-        output: data.choices[0].delta.content,
-        model: data.model
+        success: true,
+        output: {
+          content: data.choices[0].delta.content,
+          model: data.model
+        }
       } 
     }
     return {
-      output: data.choices[0].message.content,
-      tokens: data.usage?.total_tokens,
-      model: data.model,
-      reasoning_tokens: data.usage?.completion_tokens_details?.reasoning_tokens
+      success: true,
+      output: {
+        content: data.choices[0].message.content,
+        model: data.model,
+        tokens: data.usage?.total_tokens,
+        reasoning_tokens: data.usage?.completion_tokens_details?.reasoning_tokens
+      }
     } 
   },
 

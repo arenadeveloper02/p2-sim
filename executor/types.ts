@@ -1,4 +1,6 @@
-export interface Tool<P = any, R = any> {
+import { BlockOutput } from '@/blocks/types'
+
+export interface Tool<P = any, O = Record<string, any>> {
   id: string 
   name: string 
   description: string 
@@ -17,7 +19,11 @@ export interface Tool<P = any, R = any> {
     headers: (params: P) => Record<string, string> 
     body?: (params: P) => Record<string, any> 
   } 
-  transformResponse: (response: any) => R 
+  transformResponse: (response: any) => Promise<{
+    success: boolean
+    output: O
+    error?: string
+  }>
   transformError: (error: any) => string 
 }
 
@@ -27,14 +33,13 @@ export interface ToolRegistry {
 
 export interface ExecutionContext {
   workflowId: string 
-  blockStates: Map<string, any> 
-  input?: Record<string, any> 
+  blockStates: Map<string, BlockOutput> 
   metadata?: Record<string, any> 
 }
 
 export interface ExecutionResult {
   success: boolean 
-  data: Record<string, any> 
+  output: BlockOutput
   error?: string 
   metadata?: {
     duration: number 

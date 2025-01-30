@@ -6,7 +6,10 @@ interface CodeExecutionInput {
 }
 
 interface CodeExecutionOutput extends ToolResponse {
-  output: Record<string, any>  
+  output: {
+    result: any
+    stdout: string
+  }
 }
 
 export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOutput> = {
@@ -68,13 +71,21 @@ export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOu
     try {
       // Try parsing the output as JSON
       const parsed = JSON.parse(stdout) 
-      return { output: parsed } 
-    } catch {
-      // If not JSON, wrap it in a JSON object
       return { 
-        output: { 
-          result: stdout 
-        } 
+        success: true,
+        output: {
+          result: parsed,
+          stdout
+        }
+      } 
+    } catch {
+      // If not JSON, return as string
+      return { 
+        success: true,
+        output: {
+          result: stdout,
+          stdout
+        }
       } 
     }
   },

@@ -1,4 +1,4 @@
-import { ToolConfig } from './types'
+import { ToolConfig, ToolResponse } from './types'
 import { chatTool as openAIChat } from './openai/chat' 
 import { chatTool as anthropicChat } from './anthropic/chat' 
 import { chatTool as googleChat } from './google/chat' 
@@ -42,11 +42,15 @@ export function getTool(toolId: string): ToolConfig | undefined {
 export async function executeTool(
   toolId: string,
   params: Record<string, any>
-): Promise<any> {
+): Promise<ToolResponse> {
   const tool = getTool(toolId) 
 
   if (!tool) {
-    throw new Error(`Tool not found: ${toolId}`) 
+    return {
+      success: false,
+      output: {},
+      error: `Tool not found: ${toolId}`
+    }
   }
 
   try {
@@ -62,13 +66,15 @@ export async function executeTool(
       body: tool.request.body ? JSON.stringify(tool.request.body(params)) : undefined
     }) 
 
-    if (!response.ok) {
-      const error = await response.json() 
-      throw new Error(tool.transformError(error)) 
-    }
+    // Transform the response
+    const result = await tool.transformResponse(response)
+    return result
 
-    return tool.transformResponse(response) 
   } catch (error) {
-    throw new Error(tool.transformError(error)) 
+    return {
+      success: false,
+      output: {},
+      error: tool.transformError(error)
+    }
   }
 } 

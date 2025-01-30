@@ -21,7 +21,13 @@ export const ApiBlock: BlockConfig = {
       body: { type: 'json', required: false }
     },
     outputs: {
-      response: 'any'
+      response: {
+        type: {
+          body: 'any',
+          status: 'number',
+          headers: 'json'
+        }
+      }
     },
     subBlocks: [
       {

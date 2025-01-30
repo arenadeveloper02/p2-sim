@@ -1,5 +1,5 @@
 import { Node, Edge } from 'reactflow'
-import { OutputType, SubBlockType } from '@/blocks/types'
+import { BlockOutput, SubBlockType } from '@/blocks/types'
 import { WorkflowHistory } from './history-types'
 
 export interface Position {
@@ -13,7 +13,7 @@ export interface BlockState {
   name: string
   position: Position
   subBlocks: Record<string, SubBlockState>
-  outputs: Record<string, OutputType>
+  outputs: Record<string, BlockOutput>
   enabled: boolean
   horizontalHandles?: boolean
 }

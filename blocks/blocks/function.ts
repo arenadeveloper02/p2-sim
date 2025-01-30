@@ -21,7 +21,12 @@ export const FunctionBlock: BlockConfig = {
       code: { type: 'string', required: true }
     },
     outputs: {
-      result: 'any'
+      response: {
+        type: {
+          value: 'any',
+          stdout: 'string'
+        }
+      }
     },
     subBlocks: [
       {

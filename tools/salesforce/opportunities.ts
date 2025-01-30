@@ -17,11 +17,14 @@ interface OpportunityParams {
 }
 
 interface OpportunityResponse extends ToolResponse {
-  totalResults?: number 
-  pagination?: {
-    hasMore: boolean 
-    offset: number 
-  } 
+  output: {
+    records: any[]
+    totalResults?: number
+    pagination?: {
+      hasMore: boolean
+      offset: number
+    }
+  }
 }
 
 export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityResponse> = {
@@ -119,11 +122,14 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
   transformResponse: async (response: Response) => {
     const data = await response.json() 
     return {
-      output: data.records || data,
-      totalResults: data.totalSize,
-      pagination: {
-        hasMore: !data.done,
-        offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0
+      success: true,
+      output: {
+        records: data.records || [data],
+        totalResults: data.totalSize,
+        pagination: {
+          hasMore: !data.done,
+          offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0
+        }
       }
     } 
   },

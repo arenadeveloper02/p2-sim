@@ -1,5 +1,5 @@
-export type ParamType = 'string' | 'number' | 'boolean' | 'json'
-export type OutputType = 'string' | 'number' | 'json' | 'boolean' | 'any'
+import { Position } from '@/stores/workflow/types'
+import { BlockOutput, ParamType } from '@/blocks/types'
 
 export interface SerializedWorkflow {
   version: string 
@@ -14,24 +14,15 @@ export interface SerializedConnection {
   targetHandle?: string 
 }
 
-export interface Position {
-  x: number 
-  y: number 
-}
-
-export interface BlockConfig {
-  tool: string 
-  params: Record<string, any> 
-  interface: {
-    inputs: Record<string, ParamType> 
-    outputs: Record<string, OutputType> 
-  } 
-}
-
 export interface SerializedBlock {
   id: string 
   position: Position 
-  config: BlockConfig 
+  config: {
+    tool: string 
+    params: Record<string, any> 
+  } 
+  inputs: Record<string, ParamType>
+  outputs: Record<string, BlockOutput>
   metadata?: {
     title?: string 
     description?: string 

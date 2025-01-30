@@ -21,17 +21,15 @@ export const CrewAIVisionBlock: BlockConfig = {
       prompt: { type: 'string', required: false }
     },
     outputs: {
-      response: 'any'
+      response: {
+        type: {
+          text: 'string',
+          model: 'string',
+          tokens: 'number'
+        }
+      }
     },
     subBlocks: [
-      {
-        id: 'apiKey',
-        title: 'API Key',
-        type: 'short-input',
-        layout: 'full',
-        placeholder: 'Enter your API key',
-        password: true
-      },
       {
         id: 'imageUrl',
         title: 'Image URL',
@@ -49,6 +47,14 @@ export const CrewAIVisionBlock: BlockConfig = {
           'claude-3-opus-20240229',
           'claude-3-sonnet-20240229'
         ]
+      },
+      {
+        id: 'apiKey',
+        title: 'API Key',
+        type: 'short-input',
+        layout: 'full',
+        placeholder: 'Enter your API key',
+        password: true
       },
       {
         id: 'prompt',

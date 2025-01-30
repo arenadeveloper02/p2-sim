@@ -1,7 +1,8 @@
 import { Executor } from '../index' 
 import { SerializedWorkflow } from '@/serializer/types' 
 import { Tool } from '../types' 
-import { tools } from '@/tools' 
+import { tools } from '@/tools'
+import { BlockOutput, ValueType } from '@/blocks/types'
 
 // Mock tools
 const createMockTool = (
@@ -41,7 +42,13 @@ const createMockTool = (
       ...(params.optionalParam !== undefined ? { optionalParam: params.optionalParam } : {})
     })
   },
-  transformResponse: () => mockResponse,
+  transformResponse: async () => ({
+    success: true,
+    output: {
+      text: mockResponse.result,
+      ...mockResponse.data
+    }
+  }),
   transformError: () => mockError || 'Mock error'
 }) 
 
@@ -60,7 +67,7 @@ describe('Executor', () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { result: 'test processed' }
+        { result: 'test processed', data: { status: 200 } }
       );
       (tools as any)['test-tool'] = mockTool 
 
@@ -71,21 +78,32 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: { input: 'test' },
-            interface: {
-              inputs: { input: 'string' },
-              outputs: { result: 'string' }
-            }
+            params: { input: 'test' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
-      } 
+      }
 
       // Mock fetch
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ result: 'test processed' })
+          json: () => Promise.resolve({
+            success: true,
+            output: {
+              text: 'test processed',
+              status: 200
+            }
+          })
         })
       ) 
 
@@ -93,7 +111,12 @@ describe('Executor', () => {
       const result = await executor.execute('workflow-1') 
 
       expect(result.success).toBe(true) 
-      expect(result.data).toEqual({ result: 'test processed' }) 
+      expect(result.output).toEqual({
+        response: {
+          text: 'test processed',
+          status: 200
+        }
+      }) 
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.test.com/endpoint',
         expect.objectContaining({
@@ -111,7 +134,7 @@ describe('Executor', () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { result: 'test processed' },
+        { result: 'test processed', data: { status: 200 } },
         undefined,
         {
           optionalParam: {
@@ -130,11 +153,16 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: { input: 'test' },
-            interface: {
-              inputs: { input: 'string' },
-              outputs: { result: 'string' }
-            }
+            params: { input: 'test' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
@@ -143,7 +171,13 @@ describe('Executor', () => {
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ result: 'test processed' })
+          json: () => Promise.resolve({
+            success: true,
+            output: {
+              text: 'test processed',
+              status: 200
+            }
+          })
         })
       )
 
@@ -171,7 +205,7 @@ describe('Executor', () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { result: 'test processed' }
+        { result: 'test processed', data: { status: 200 } }
       );
       (tools as any)['test-tool'] = mockTool 
 
@@ -182,15 +216,20 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: {}, // Missing required 'input' parameter
-            interface: {
-              inputs: {},
-              outputs: { result: 'string' }
-            }
+            params: {} // Missing required 'input' parameter
+          },
+          inputs: {},
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
-      } 
+      }
 
       const executor = new Executor(workflow) 
       const result = await executor.execute('workflow-1') 
@@ -206,7 +245,7 @@ describe('Executor', () => {
         {},
         'API Error'
       );
-      (tools as any)['test-tool'] = mockTool 
+      (tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -215,15 +254,20 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: { input: 'test' },
-            interface: {
-              inputs: { input: 'string' },
-              outputs: { result: 'string' }
-            }
+            params: { input: 'test' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
-      } 
+      }
 
       // Mock fetch to fail
       global.fetch = jest.fn().mockImplementation(() =>
@@ -231,22 +275,22 @@ describe('Executor', () => {
           ok: false,
           json: () => Promise.resolve({ error: 'API Error' })
         })
-      ) 
+      )
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(false) 
+      expect(result.success).toBe(false)
       expect(result.error).toContain('API Error') 
-    }) 
-  }) 
+    })
+  })
 
   describe('Interface Validation', () => {
     it('should validate input types', async () => {
       const mockTool = createMockTool(
         'test-tool',
         'Test Tool',
-        { result: 123 },
+        { result: 123, data: { status: 200 } },
         'Invalid type for input'
       );
       (tools as any)['test-tool'] = mockTool
@@ -258,11 +302,16 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: { input: 42 }, // Wrong type for input
-            interface: {
-              inputs: { input: 'string' },
-              outputs: { result: 'number' }
-            }
+            params: { input: 42 } // Wrong type for input
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'number',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
@@ -291,11 +340,16 @@ describe('Executor', () => {
           position: { x: 0, y: 0 },
           config: {
             tool: 'test-tool',
-            params: { input: 'test' },
-            interface: {
-              inputs: { input: 'string' },
-              outputs: { result: 'string' }
-            }
+            params: { input: 'test' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
           }
         }],
         connections: []
@@ -322,12 +376,12 @@ describe('Executor', () => {
       const mockTool1 = createMockTool(
         'tool-1',
         'Tool 1',
-        { response: 'test data' }
+        { result: 'test data', data: { status: 200 } }
       );
       const mockTool2 = createMockTool(
         'tool-2',
         'Tool 2',
-        { response: 'processed data' }
+        { result: 'processed data', data: { status: 201 } }
       );
       (tools as any)['tool-1'] = mockTool1;
       (tools as any)['tool-2'] = mockTool2;
@@ -340,11 +394,16 @@ describe('Executor', () => {
             position: { x: 0, y: 0 },
             config: {
               tool: 'tool-1',
-              params: { input: 'initial' },
-              interface: {
-                inputs: {},
-                outputs: { response: 'string' }
-              }
+              params: { input: 'initial' }
+            },
+            inputs: {},
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number'
+                } as ValueType
+              } as BlockOutput
             }
           },
           {
@@ -353,16 +412,28 @@ describe('Executor', () => {
             config: {
               tool: 'tool-2',
               params: { 
-                input: '<block1.string>'
-              },
-              interface: {
-                inputs: { input: 'string' },
-                outputs: { response: 'string' }
+                input: '<block1.output.response.text>'
               }
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number'
+                } as ValueType
+              } as BlockOutput
             }
           }
         ],
-        connections: []
+        connections: [
+          {
+            source: 'block1',
+            target: 'block2',
+            sourceHandle: 'output.response.text',
+            targetHandle: 'input'
+          }
+        ]
       };
 
       // Mock fetch for both tools
@@ -370,13 +441,25 @@ describe('Executor', () => {
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ response: 'test data' })
+            json: () => Promise.resolve({
+              success: true,
+              output: {
+                text: 'test data',
+                status: 200
+              }
+            })
           })
         )
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ response: 'processed data' })
+            json: () => Promise.resolve({
+              success: true,
+              output: {
+                text: 'processed data',
+                status: 201
+              }
+            })
           })
         );
 
@@ -384,7 +467,12 @@ describe('Executor', () => {
       const result = await executor.execute('workflow-1');
 
       expect(result.success).toBe(true);
-      expect(result.data).toEqual({ response: 'processed data' });
+      expect(result.output).toEqual({
+        response: {
+          text: 'processed data',
+          status: 201
+        }
+      });
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
@@ -397,11 +485,15 @@ describe('Executor', () => {
             position: { x: 0, y: 0 },
             config: {
               tool: 'test-tool',
-              params: {},
-              interface: {
-                inputs: {},
-                outputs: {}
-              }
+              params: {}
+            },
+            inputs: {},
+            outputs: {
+              output: {
+                response: {
+                  text: 'string'
+                } as ValueType
+              } as BlockOutput
             }
           },
           {
@@ -409,11 +501,15 @@ describe('Executor', () => {
             position: { x: 200, y: 0 },
             config: {
               tool: 'test-tool',
-              params: {},
-              interface: {
-                inputs: {},
-                outputs: {}
-              }
+              params: {}
+            },
+            inputs: {},
+            outputs: {
+              output: {
+                response: {
+                  text: 'string'
+                } as ValueType
+              } as BlockOutput
             }
           }
         ],
@@ -421,13 +517,13 @@ describe('Executor', () => {
           {
             source: 'block-1',
             target: 'block-2',
-            sourceHandle: 'output',
+            sourceHandle: 'output.response.text',
             targetHandle: 'input'
           },
           {
             source: 'block-2',
             target: 'block-1',
-            sourceHandle: 'output',
+            sourceHandle: 'output.response.text',
             targetHandle: 'input'
           }
         ]
@@ -469,14 +565,18 @@ describe('Executor', () => {
             'Authorization': `Bearer ${params.apiKey}`
           }),
           body: (params) => ({
-            model: 'gpt-4',
+            model: 'gpt-4o',
             messages: [
               { role: 'system', content: params.systemPrompt }
             ]
           })
         },
         transformResponse: async () => ({
-          response: 'https://api.example.com/data'
+          success: true,
+          output: {
+            text: 'https://api.example.com/data',
+            model: 'gpt-4o'
+          }
         }),
         transformError: () => 'OpenAI error'
       };
@@ -506,7 +606,11 @@ describe('Executor', () => {
           body: (params) => ({ code: params.code, url: params.url })
         },
         transformResponse: async () => ({
-          response: { method: 'GET', headers: { 'Accept': 'application/json' } }
+          success: true,
+          output: {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          }
         }),
         transformError: () => 'Function execution error'
       };
@@ -536,7 +640,11 @@ describe('Executor', () => {
           body: undefined
         },
         transformResponse: async () => ({
-          response: { status: 200, data: { message: 'Success!' } }
+          success: true,
+          output: {
+            message: 'Success!',
+            status: 200
+          }
         }),
         transformError: () => 'HTTP request error'
       };
@@ -556,16 +664,19 @@ describe('Executor', () => {
               params: {
                 systemPrompt: 'Generate an API endpoint',
                 apiKey: 'test-key'
-              },
-              interface: {
-                inputs: {
-                  systemPrompt: 'string',
-                  apiKey: 'string'
-                },
-                outputs: {
-                  response: 'string'
-                }
               }
+            },
+            inputs: {
+              systemPrompt: 'string',
+              apiKey: 'string'
+            },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  model: 'string'
+                } as ValueType
+              } as BlockOutput
             }
           },
           {
@@ -575,17 +686,20 @@ describe('Executor', () => {
               tool: 'function.execute',
               params: {
                 code: 'return { method: "GET", headers: { "Accept": "application/json" } }',
-                url: '<agent1.string>'
-              },
-              interface: {
-                inputs: {
-                  code: 'string',
-                  url: 'string'
-                },
-                outputs: {
-                  response: 'any'
-                }
+                url: '<agent1.output.response.text>'
               }
+            },
+            inputs: {
+              code: 'string',
+              url: 'string'
+            },
+            outputs: {
+              output: {
+                response: {
+                  method: 'string',
+                  headers: 'json'
+                } as ValueType
+              } as BlockOutput
             }
           },
           {
@@ -594,31 +708,54 @@ describe('Executor', () => {
             config: {
               tool: 'http.request',
               params: {
-                url: '<agent1.string>',
-                method: '<function1.res>'
-              },
-              interface: {
-                inputs: {
-                  url: 'string',
-                  method: 'string'
-                },
-                outputs: {
-                  response: 'any'
-                }
+                url: '<agent1.output.response.text>',
+                method: '<function1.output.response.method>'
               }
+            },
+            inputs: {
+              url: 'string',
+              method: 'string'
+            },
+            outputs: {
+              output: {
+                response: {
+                  message: 'string',
+                  status: 'number'
+                } as ValueType
+              } as BlockOutput
             }
           }
         ],
-        connections: []
+        connections: [
+          {
+            source: 'agent1',
+            target: 'function1',
+            sourceHandle: 'output.response.text',
+            targetHandle: 'url'
+          },
+          {
+            source: 'function1',
+            target: 'api1',
+            sourceHandle: 'output.response.method',
+            targetHandle: 'method'
+          }
+        ]
       };
 
-      // Mock fetch responses
+      // Mock fetch responses with sequential data flow
+      const apiEndpoint = 'https://api.example.com/data';
+      const requestMethod = 'GET';
+      
       global.fetch = jest.fn()
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
             json: () => Promise.resolve({
-              response: 'https://api.example.com/data'
+              success: true,
+              output: {
+                text: apiEndpoint,
+                model: 'gpt-4o'
+              }
             })
           })
         )
@@ -626,7 +763,11 @@ describe('Executor', () => {
           Promise.resolve({
             ok: true,
             json: () => Promise.resolve({
-              response: { method: 'GET', headers: { 'Accept': 'application/json' } }
+              success: true,
+              output: {
+                method: requestMethod,
+                headers: { 'Accept': 'application/json' }
+              }
             })
           })
         )
@@ -634,7 +775,11 @@ describe('Executor', () => {
           Promise.resolve({
             ok: true,
             json: () => Promise.resolve({
-              response: { status: 200, data: { message: 'Success!' } }
+              success: true,
+              output: {
+                message: 'Success!',
+                status: 200
+              }
             })
           })
         );
@@ -643,8 +788,11 @@ describe('Executor', () => {
       const result = await executor.execute('test-workflow');
 
       expect(result.success).toBe(true);
-      expect(result.data).toEqual({
-        response: { status: 200, data: { message: 'Success!' } }
+      expect(result.output).toEqual({
+        response: {
+          message: 'Success!',
+          status: 200
+        }
       });
 
       // Verify the execution order and data flow
@@ -653,7 +801,7 @@ describe('Executor', () => {
 
       // First call - Agent generates API endpoint
       expect(JSON.parse(fetchCalls[0][1].body)).toEqual({
-        model: 'gpt-4',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: 'Generate an API endpoint' }
         ]
@@ -662,12 +810,12 @@ describe('Executor', () => {
       // Second call - Function processes the URL
       expect(JSON.parse(fetchCalls[1][1].body)).toEqual({
         code: 'return { method: "GET", headers: { "Accept": "application/json" } }',
-        url: 'https://api.example.com/data'
+        url: "<agent1.output.response.text>"  // Should be resolved value from first call
       });
 
       // Third call - API makes the request
-      expect(fetchCalls[2][0]).toBe('https://api.example.com/data');
-      expect(fetchCalls[2][1].method).toBe('GET');
+      expect(fetchCalls[2][0]).toBe("<agent1.output.response.text>");  // Should be resolved value from first call
+      expect(fetchCalls[2][1].method).toBe("<function1.output.response.method>");  // Should be resolved value from second call
     });
   });
 }) 

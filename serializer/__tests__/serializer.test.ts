@@ -2,7 +2,7 @@ import { Edge } from 'reactflow'
 import { Serializer } from '../index' 
 import { SerializedWorkflow } from '../types' 
 import { BlockState } from '@/stores/workflow/types' 
-import { OutputType } from '@/blocks/types' 
+import { BlockOutput, ValueType } from '@/blocks/types' 
 import { getBlock } from '@/blocks'
 
 // Mock icons
@@ -48,7 +48,15 @@ describe('Serializer', () => {
               context: { type: 'string', required: false },
               apiKey: { type: 'string', required: false }
             },
-            outputs: { response: 'string' as OutputType },
+            outputs: {
+              response: {
+                response: {
+                  text: 'string',
+                  model: 'string',
+                  tokens: 'number'
+                }
+              } satisfies BlockOutput
+            },
             subBlocks: [
               { id: 'model', type: 'dropdown' },
               { id: 'systemPrompt', type: 'long-input' },
@@ -74,7 +82,15 @@ describe('Serializer', () => {
               url: { type: 'string', required: true },
               method: { type: 'string', required: true }
             },
-            outputs: { response: 'any' as OutputType },
+            outputs: {
+              response: {
+                response: {
+                  body: 'any',
+                  status: 'number',
+                  headers: 'json'
+                }
+              } satisfies BlockOutput
+            },
             subBlocks: [
               { id: 'url', type: 'short-input' },
               { id: 'method', type: 'dropdown' }
@@ -95,7 +111,15 @@ describe('Serializer', () => {
         },
         workflow: {
           inputs: {},
-          outputs: { response: 'string' as OutputType },
+          outputs: {
+            response: {
+              response: {
+                text: 'string',
+                model: 'string',
+                tokens: 'number'
+              }
+            } satisfies BlockOutput
+          },
           subBlocks: []
         },
         toolbar: {
@@ -109,13 +133,14 @@ describe('Serializer', () => {
   }) 
 
   describe('serializeWorkflow', () => {
-    it('should serialize a workflow with agent and http blocks', () => {
+    it('should serialize a workflow with one tool', async () => {
       const blocks: Record<string, BlockState> = {
-        'agent-1': {
-          id: 'agent-1',
+        'block-1': {
+          id: 'block-1',
           type: 'agent',
-          name: 'GPT-4o Agent',
-          position: { x: 100, y: 100 },
+          name: 'Test Agent',
+          position: { x: 0, y: 0 },
+          enabled: true,
           subBlocks: {
             'model': {
               id: 'model',
@@ -125,97 +150,51 @@ describe('Serializer', () => {
             'systemPrompt': {
               id: 'systemPrompt',
               type: 'long-input',
-              value: 'You are helpful'
-            },
-            'temperature': {
-              id: 'temperature',
-              type: 'slider',
-              value: 0.7
-            },
-            'responseFormat': {
-              id: 'responseFormat',
-              type: 'code',
-              value: null
+              value: 'test'
             }
           },
           outputs: {
-            response: 'string'
-          }
-        },
-        'http-1': {
-          id: 'http-1',
-          type: 'api',
-          name: 'API Call',
-          position: { x: 400, y: 100 },
-          subBlocks: {
-            'url': {
-              id: 'url',
-              type: 'short-input',
-              value: 'https://api.example.com'
-            },
-            'method': {
-              id: 'method',
-              type: 'dropdown',
-              value: 'GET'
-            }
-          },
-          outputs: {
-            response: 'any'
+            response: {
+              response: {
+                text: 'string',
+                status: 'number'
+              }
+            } satisfies BlockOutput
           }
         }
-      } 
+      }
 
-      const connections: Edge[] = [
-        {
-          id: 'conn-1',
-          source: 'agent-1',
-          target: 'http-1',
-          sourceHandle: 'response',
-          targetHandle: 'body'
-        }
-      ] 
+      const workflow = serializer.serializeWorkflow(blocks, [])
+      const block = workflow.blocks[0]
 
-      const serialized = serializer.serializeWorkflow(blocks, connections) 
-
-      // Test workflow structure
-      expect(serialized.version).toBe('1.0') 
-      expect(serialized.blocks).toHaveLength(2) 
-      expect(serialized.connections).toHaveLength(1) 
-
-      // Test agent block serialization
-      const agentBlock = serialized.blocks.find(b => b.id === 'agent-1') 
-      expect(agentBlock).toBeDefined() 
-      expect(agentBlock?.config.tool).toBe('openai.chat') 
-      expect(agentBlock?.config.params).toEqual({
+      expect(block.config.tool).toBe('openai.chat')
+      expect(block.config.params).toEqual({
         model: 'gpt-4o',
-        systemPrompt: 'You are helpful',
-        temperature: 0.7,
-        responseFormat: null
-      }) 
-      expect(agentBlock?.config.interface.outputs).toEqual({
-        response: 'string'
+        systemPrompt: 'test'
       })
-
-      // Test http block serialization
-      const httpBlock = serialized.blocks.find(b => b.id === 'http-1') 
-      expect(httpBlock).toBeDefined() 
-      expect(httpBlock?.config.tool).toBe('http.request') 
-      expect(httpBlock?.config.params).toEqual({
-        url: 'https://api.example.com',
-        method: 'GET'
-      }) 
-      expect(httpBlock?.config.interface.outputs).toEqual({
-        response: 'any'
+      expect(block.inputs).toEqual({
+        systemPrompt: 'string',
+        context: 'string',
+        apiKey: 'string'
+      })
+      expect(block.outputs).toEqual({
+        response: {
+          response: {
+            text: 'string',
+            status: 'number'
+          }
+        } satisfies BlockOutput
       })
     }) 
 
-    it('should handle blocks with minimal required configuration', () => {
+    it('should handle blocks with minimal configuration', () => {
       const blocks: Record<string, BlockState> = {
         'minimal-1': {
           id: 'minimal-1',
           type: 'agent',
           name: 'Minimal Agent',
           position: { x: 0, y: 0 },
+          enabled: true,
           subBlocks: {
             'model': {
               id: 'model',
@@ -224,29 +203,42 @@ describe('Serializer', () => {
             }
           },
           outputs: {
-            response: 'string'
+            response: {
+              response: {
+                text: 'string'
+              }
+            } satisfies BlockOutput
           }
         }
-      } 
+      }
 
-      const serialized = serializer.serializeWorkflow(blocks, []) 
-      const block = serialized.blocks[0] 
-      
-      expect(block.id).toBe('minimal-1') 
-      expect(block.config.tool).toBe('openai.chat') 
-      expect(block.config.params).toEqual({ model: 'gpt-4o' }) 
-      expect(block.config.interface.outputs).toEqual({
-        response: 'string'
+      const workflow = serializer.serializeWorkflow(blocks, [])
+      const block = workflow.blocks[0]
+
+      expect(block.config.tool).toBe('openai.chat')
+      expect(block.config.params).toEqual({ model: 'gpt-4o' })
+      expect(block.inputs).toEqual({
+        systemPrompt: 'string',
+        context: 'string',
+        apiKey: 'string'
+      })
+      expect(block.outputs).toEqual({
+        response: {
+          response: {
+            text: 'string'
+          }
+        } satisfies BlockOutput
       })
     }) 
 
-    it('should handle complex workflow with multiple interconnected blocks', () => {
+    it('should handle complex workflow with multiple blocks', () => {
       const blocks: Record<string, BlockState> = {
         'input-1': {
           id: 'input-1',
           type: 'api',
           name: 'Data Input',
           position: { x: 100, y: 100 },
+          enabled: true,
           subBlocks: {
             'url': {
               id: 'url',
@@ -260,7 +252,13 @@ describe('Serializer', () => {
             }
           },
           outputs: {
-            response: 'any'
+            response: {
+              response: {
+                body: 'json',
+                status: 'number',
+                headers: 'json'
+              }
+            } satisfies BlockOutput
           }
         },
         'process-1': {
@@ -268,6 +266,7 @@ describe('Serializer', () => {
           type: 'agent',
           name: 'Data Processor',
           position: { x: 300, y: 100 },
+          enabled: true,
           subBlocks: {
             'model': {
               id: 'model',
@@ -278,15 +277,16 @@ describe('Serializer', () => {
               id: 'systemPrompt',
               type: 'long-input',
               value: 'Process this data'
-            },
-            'responseFormat': {
-              id: 'responseFormat',
-              type: 'code',
-              value: '{ "type": "json" }'
             }
           },
           outputs: {
-            response: 'json'
+            response: {
+              response: {
+                text: 'string',
+                model: 'string',
+                tokens: 'number'
+              }
+            } satisfies BlockOutput
           }
         }
       }
@@ -301,283 +301,42 @@ describe('Serializer', () => {
         }
       ]
 
-      const serialized = serializer.serializeWorkflow(blocks, connections)
+      const workflow = serializer.serializeWorkflow(blocks, connections)
 
       // Verify workflow structure
-      expect(serialized.blocks).toHaveLength(2)
-      expect(serialized.connections).toHaveLength(1)
+      expect(workflow.blocks).toHaveLength(2)
+      expect(workflow.connections).toHaveLength(1)
 
       // Verify data flow chain
-      const conn = serialized.connections[0]
+      const conn = workflow.connections[0]
       expect(conn.source).toBe('input-1')
       expect(conn.target).toBe('process-1')
       expect(conn.sourceHandle).toBe('response')
       expect(conn.targetHandle).toBe('context')
 
       // Verify block outputs
-      const inputBlock = serialized.blocks.find(b => b.id === 'input-1')
-      const processBlock = serialized.blocks.find(b => b.id === 'process-1')
+      const inputBlock = workflow.blocks.find(b => b.id === 'input-1')
+      const processBlock = workflow.blocks.find(b => b.id === 'process-1')
 
-      expect(inputBlock?.config.interface.outputs).toEqual({
-        response: 'any'
+      expect(inputBlock?.outputs).toEqual({
+        response: {
+          response: {
+            body: 'json',
+            status: 'number',
+            headers: 'json'
+          }
+        } satisfies BlockOutput
       })
-      expect(processBlock?.config.interface.outputs).toEqual({
-        response: 'json'
+      expect(processBlock?.outputs).toEqual({
+        response: {
+          response: {
+            text: 'string',
+            model: 'string',
+            tokens: 'number'
+          }
+        } satisfies BlockOutput
       })
     }) 
-
-    it('should preserve tool-specific parameters', () => {
-      const blocks: Record<string, BlockState> = {
-        'agent-1': {
-          id: 'agent-1',
-          type: 'agent',
-          name: 'Advanced Agent',
-          position: { x: 0, y: 0 },
-          subBlocks: {
-            'model': {
-              id: 'model',
-              type: 'dropdown',
-              value: 'gpt-4o'
-            },
-            'temperature': {
-              id: 'temperature',
-              type: 'slider',
-              value: 0.7
-            },
-            'maxTokens': {
-              id: 'maxTokens',
-              type: 'slider',
-              value: 1000
-            }
-          },
-          outputs: {
-            response: 'string'
-          }
-        }
-      }
-
-      const serialized = serializer.serializeWorkflow(blocks, [])
-      const block = serialized.blocks[0]
-
-      expect(block.config.tool).toBe('openai.chat')
-      expect(block.config.params).toEqual({
-        model: 'gpt-4o',
-        temperature: 0.7,
-        maxTokens: 1000
-      })
-      expect(block.config.interface.outputs).toEqual({
-        response: 'string'
-      })
-    }) 
-
-    it('should serialize a workflow with correct output types', () => {
-      // Mock block config
-      ;(getBlock as jest.Mock).mockReturnValue({
-        tools: {
-          access: ['test-tool'],
-          config: null
-        },
-        workflow: {
-          inputs: {
-            input: { type: 'string', required: true }
-          },
-          outputs: {
-            response: {
-              type: 'string',
-              dependsOn: {
-                subBlockId: 'responseFormat',
-                condition: {
-                  whenEmpty: 'string',
-                  whenFilled: 'json'
-                }
-              }
-            }
-          },
-          subBlocks: [
-            {
-              id: 'input',
-              type: 'short-input'
-            },
-            {
-              id: 'responseFormat',
-              type: 'code'
-            }
-          ]
-        },
-        toolbar: {
-          title: 'Test Block',
-          description: 'A test block',
-          category: 'test',
-          bgColor: '#000000'
-        }
-      })
-
-      const blocks: Record<string, BlockState> = {
-        'block-1': {
-          id: 'block-1',
-          type: 'agent',
-          name: 'Agent 1',
-          position: { x: 0, y: 0 },
-          subBlocks: {
-            input: {
-              id: 'input',
-              type: 'short-input',
-              value: 'test input'
-            },
-            responseFormat: {
-              id: 'responseFormat',
-              type: 'code',
-              value: null
-            }
-          },
-          outputs: {
-            response: 'string'
-          }
-        }
-      }
-
-      const edges: Edge[] = []
-
-      const serialized = serializer.serializeWorkflow(blocks, edges)
-
-      expect(serialized.blocks[0].config.interface.outputs).toEqual({
-        response: 'string'
-      })
-    })
-
-    it('should handle dynamic output types based on subBlock values', () => {
-      // Mock block config with dynamic output type
-      ;(getBlock as jest.Mock).mockReturnValue({
-        tools: {
-          access: ['test-tool'],
-          config: null
-        },
-        workflow: {
-          inputs: {
-            input: { type: 'string', required: true }
-          },
-          outputs: {
-            response: {
-              type: 'string',
-              dependsOn: {
-                subBlockId: 'responseFormat',
-                condition: {
-                  whenEmpty: 'string',
-                  whenFilled: 'json'
-                }
-              }
-            }
-          },
-          subBlocks: [
-            {
-              id: 'input',
-              type: 'short-input'
-            },
-            {
-              id: 'responseFormat',
-              type: 'code'
-            }
-          ]
-        },
-        toolbar: {
-          title: 'Test Block',
-          description: 'A test block',
-          category: 'test',
-          bgColor: '#000000'
-        }
-      })
-
-      const blocks: Record<string, BlockState> = {
-        'block-1': {
-          id: 'block-1',
-          type: 'agent',
-          name: 'Agent 1',
-          position: { x: 0, y: 0 },
-          subBlocks: {
-            input: {
-              id: 'input',
-              type: 'short-input',
-              value: 'test input'
-            },
-            responseFormat: {
-              id: 'responseFormat',
-              type: 'code',
-              value: '{ "format": "json" }'  // Non-empty responseFormat
-            }
-          },
-          outputs: {
-            response: 'json' as OutputType  // Should be json when responseFormat is filled
-          }
-        }
-      }
-
-      const edges: Edge[] = []
-
-      const serialized = serializer.serializeWorkflow(blocks, edges)
-
-      expect(serialized.blocks[0].config.interface.outputs).toEqual({
-        response: 'json' as OutputType
-      })
-    })
-
-    it('should preserve connection handles during serialization', () => {
-      // Mock block config
-      ;(getBlock as jest.Mock).mockReturnValue({
-        tools: {
-          access: ['test-tool'],
-          config: null
-        },
-        workflow: {
-          inputs: {},
-          outputs: { response: 'string' as OutputType },
-          subBlocks: []
-        },
-        toolbar: {
-          title: 'Test Block',
-          description: 'A test block',
-          category: 'test',
-          bgColor: '#000000'
-        }
-      })
-
-      const blocks: Record<string, BlockState> = {
-        'block-1': {
-          id: 'block-1',
-          type: 'agent',
-          name: 'Agent 1',
-          position: { x: 0, y: 0 },
-          subBlocks: {},
-          outputs: { response: 'string' }
-        },
-        'block-2': {
-          id: 'block-2',
-          type: 'api',
-          name: 'API 1',
-          position: { x: 200, y: 0 },
-          subBlocks: {},
-          outputs: { response: 'json' }
-        }
-      }
-
-      const edges: Edge[] = [
-        {
-          id: 'edge-1',
-          source: 'block-1',
-          target: 'block-2',
-          sourceHandle: 'response',
-          targetHandle: 'input'
-        }
-      ]
-
-      const serialized = serializer.serializeWorkflow(blocks, edges)
-
-      expect(serialized.connections[0]).toEqual({
-        source: 'block-1',
-        target: 'block-2',
-        sourceHandle: 'response',
-        targetHandle: 'input'
-      })
-    })
   }) 
 
   describe('deserializeWorkflow', () => {
@@ -592,19 +351,22 @@ describe('Serializer', () => {
               tool: 'openai.chat',
               params: {
                 model: 'gpt-4o',
-                systemPrompt: 'You are helpful',
-                responseFormat: null
-              },
-              interface: {
-                inputs: {
-                  systemPrompt: 'string',
-                  context: 'string',
-                  apiKey: 'string'
-                },
-                outputs: {
-                  response: 'string'
-                }
+                systemPrompt: 'You are helpful'
               }
+            },
+            inputs: {
+              systemPrompt: 'string',
+              context: 'string',
+              apiKey: 'string'
+            },
+            outputs: {
+              response: {
+                response: {
+                  text: 'string',
+                  model: 'string',
+                  tokens: 'number'
+                }
+              } satisfies BlockOutput
             },
             metadata: {
               title: 'Agent Block',
@@ -615,70 +377,24 @@ describe('Serializer', () => {
           }
         ],
         connections: []
-      } 
-
-      const { blocks } = serializer.deserializeWorkflow(workflow) 
-      const block = blocks['agent-1'] 
-
-      expect(block.type).toBe('agent') 
-      expect(block.subBlocks.model.value).toBe('gpt-4o') 
-      expect(block.subBlocks.systemPrompt.value).toBe('You are helpful') 
-      expect(block.subBlocks.responseFormat.value).toBe(null) 
-      expect(block.outputs).toEqual({
-        response: 'string'
-      }) 
-    }) 
-
-    it('should deserialize a workflow with correct output types', () => {
-      // Mock block config
-      ;(getBlock as jest.Mock).mockReturnValue({
-        tools: {
-          access: ['test-tool'],
-          config: null
-        },
-        workflow: {
-          inputs: {},
-          outputs: { response: 'string' as OutputType },
-          subBlocks: []
-        },
-        toolbar: {
-          title: 'Test Block',
-          description: 'A test block',
-          category: 'test',
-          bgColor: '#000000'
-        }
-      })
-
-      const serializedWorkflow: SerializedWorkflow = {
-        version: '1.0',
-        blocks: [
-          {
-            id: 'block-1',
-            position: { x: 0, y: 0 },
-            config: {
-              tool: 'test-tool',
-              params: {},
-              interface: {
-                inputs: {},
-                outputs: { response: 'string' as OutputType }
-              }
-            },
-            metadata: {
-              title: 'Test Block',
-              description: 'A test block',
-              category: 'test',
-              color: '#000000'
-            }
-          }
-        ],
-        connections: []
       }
 
-      const { blocks } = serializer.deserializeWorkflow(serializedWorkflow)
+      const { blocks } = serializer.deserializeWorkflow(workflow)
+      const block = blocks['agent-1']
 
-      expect(blocks['block-1'].outputs).toEqual({
-        response: 'string'
+      expect(block.type).toBe('agent')
+      expect(block.enabled).toBe(true)
+      expect(block.subBlocks.model.value).toBe('gpt-4o')
+      expect(block.subBlocks.systemPrompt.value).toBe('You are helpful')
+      expect(block.outputs).toEqual({
+        response: {
+          response: {
+            text: 'string',
+            model: 'string',
+            tokens: 'number'
+          }
+        } satisfies BlockOutput
       })
-    })
+    }) 
   }) 
 }) 

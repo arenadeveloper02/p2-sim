@@ -3,19 +3,26 @@ import type { JSX } from 'react'
 
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'basic' | 'advanced'
-export type OutputType = 'string' | 'number' | 'json' | 'boolean' | 'any'
+
+export type PrimitiveValueType = 'string' | 'number' | 'json' | 'boolean' | 'any'
+export type ValueType = PrimitiveValueType | Record<string, PrimitiveValueType>
+
+export interface BlockOutput {
+  response: ValueType
+}
+
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
 export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code' | 'switch'
 export type SubBlockLayout = 'full' | 'half'
 
-export type OutputConfig = OutputType | {
-  type: OutputType
-  dependsOn: {
+export interface OutputConfig {
+  type: ValueType
+  dependsOn?: {
     subBlockId: string
     condition: {
-      whenEmpty: OutputType
-      whenFilled: OutputType
+      whenEmpty: BlockOutput
+      whenFilled: BlockOutput
     }
   }
 }

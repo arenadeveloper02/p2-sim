@@ -13,8 +13,11 @@ interface RequestParams {
 }
 
 interface RequestResponse extends ToolResponse {
-  status: number 
-  headers: Record<string, string> 
+  output: {
+    data: any
+    status: number
+    headers: Record<string, string>
+  }
 }
 
 export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
@@ -132,9 +135,12 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
       : response.text()) 
 
     return {
-      output: data,
-      status: response.status,
-      headers
+      success: response.ok,
+      output: {
+        data,
+        status: response.status,
+        headers
+      }
     } 
   },
 

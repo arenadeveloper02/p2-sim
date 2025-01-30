@@ -13,9 +13,12 @@ interface ChatParams {
 }
 
 interface ChatResponse extends ToolResponse {
-  tokens?: number 
-  model: string 
-  reasoning?: string 
+  output: {
+    content: string
+    model: string
+    tokens?: number
+    reasoning?: string
+  }
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
@@ -83,10 +86,13 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   transformResponse: async (response: Response) => {
     const data = await response.json() 
     return {
-      output: data.choices[0].message.content,
-      tokens: data.usage?.total_tokens,
-      model: data.model,
-      reasoning: data.choices[0]?.reasoning
+      success: true,
+      output: {
+        content: data.choices[0].message.content,
+        model: data.model,
+        tokens: data.usage?.total_tokens,
+        reasoning: data.choices[0]?.reasoning
+      }
     } 
   },
 

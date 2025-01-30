@@ -18,8 +18,9 @@ export function useWorkflowExecution() {
     try {
       // Extract existing block states
       const currentBlockStates = Object.entries(blocks).reduce((acc, [id, block]) => {
-        if (block.subBlocks?.response?.value !== undefined) {
-          acc[id] = { response: block.subBlocks.response.value }
+        const responseValue = block.subBlocks?.response?.value
+        if (responseValue !== undefined) {
+          acc[id] = { response: responseValue }
         }
         return acc
       }, {} as Record<string, any>)
@@ -46,7 +47,7 @@ export function useWorkflowExecution() {
       if (result.success) {
         console.group('Workflow Execution Result')
         console.log('Status: ✅ Success')
-        console.log('Data:', result.data)
+        console.log('Output:', result.output)
         if (result.metadata) {
           console.log('Duration:', result.metadata.duration + 'ms')
           console.log('Start Time:', new Date(result.metadata.startTime).toLocaleTimeString())
@@ -58,7 +59,7 @@ export function useWorkflowExecution() {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       setExecutionResult({
         success: false,
-        data: {},
+        output: { response: {} },
         error: errorMessage
       })
       addNotification('error', `Failed to execute workflow: ${errorMessage}`, activeWorkflowId)

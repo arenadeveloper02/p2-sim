@@ -52,12 +52,20 @@ export const AgentBlock: BlockConfig = {
     },
     outputs: {
       response: {
-        type: 'string',
+        type: {
+          text: 'string',
+          model: 'string',
+          tokens: 'number'
+        },
         dependsOn: {
           subBlockId: 'responseFormat',
           condition: {
-            whenEmpty: 'string',
-            whenFilled: 'json'
+            whenEmpty: {
+              response: { type: 'string' }
+            },
+            whenFilled: {
+              response: { type: 'json' }
+            }
           }
         }
       }

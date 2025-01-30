@@ -1,5 +1,5 @@
 import { BlockState, SubBlockState } from '@/stores/workflow/types'
-import { OutputType, OutputConfig } from '@/blocks/types'
+import { BlockOutput, OutputConfig } from '@/blocks/types'
 
 interface CodeLine {
   id: string
@@ -28,23 +28,21 @@ function isCodeEditorValue(value: any[]): value is CodeLine[] {
 export function resolveOutputType(
   outputs: Record<string, OutputConfig>,
   subBlocks: Record<string, SubBlockState>
-): Record<string, OutputType> {
-  const resolvedOutputs: Record<string, OutputType> = {}
+): Record<string, BlockOutput> {
+  const resolvedOutputs: Record<string, BlockOutput> = {}
 
   for (const [key, outputConfig] of Object.entries(outputs)) {
-    // If outputType is a string, use it directly
-    if (typeof outputConfig === 'string') {
-      resolvedOutputs[key] = outputConfig
+    // If no dependencies, use the type directly
+    if (!outputConfig.dependsOn) {
+      resolvedOutputs[key] = { response: outputConfig.type }
       continue
     }
 
     // Handle dependent output types
-    const { dependsOn } = outputConfig
-    const subBlock = subBlocks[dependsOn.subBlockId]
-
+    const subBlock = subBlocks[outputConfig.dependsOn.subBlockId]
     resolvedOutputs[key] = isEmptyValue(subBlock?.value)
-      ? dependsOn.condition.whenEmpty
-      : dependsOn.condition.whenFilled
+      ? outputConfig.dependsOn.condition.whenEmpty
+      : outputConfig.dependsOn.condition.whenFilled
   }
 
   return resolvedOutputs

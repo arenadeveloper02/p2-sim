@@ -8,9 +8,11 @@ interface VisionParams {
 }
 
 interface VisionResponse extends ToolResponse {
-  response: string
-  tokens?: number
-  model?: string
+  output: {
+    content: string
+    model?: string
+    tokens?: number
+  }
 }
 
 export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
@@ -115,12 +117,14 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
     }
 
     return {
-      output: result,
-      response: result,
-      model: data.model,
-      tokens: data.content 
-        ? (data.usage?.input_tokens + data.usage?.output_tokens)
-        : data.usage?.total_tokens
+      success: true,
+      output: {
+        content: result,
+        model: data.model,
+        tokens: data.content 
+          ? (data.usage?.input_tokens + data.usage?.output_tokens)
+          : data.usage?.total_tokens
+      }
     }
   },
 

@@ -10,8 +10,7 @@ interface ScrapeParams {
 }
 
 interface ScrapeResponse extends ToolResponse {
-  success: boolean
-  data: {
+  output: {
     markdown: string
     html?: string
     metadata: {
@@ -77,9 +76,12 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     }
 
     return {
-      success: data.success,
-      data: data.data,
-      output: data.data.markdown
+      success: true,
+      output: {
+        markdown: data.data.markdown,
+        html: data.data.html,
+        metadata: data.data.metadata
+      }
     }
   },
 

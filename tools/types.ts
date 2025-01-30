@@ -1,8 +1,9 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' 
 
 export interface ToolResponse {
-  output: any   // All tools must provide an output field
-  [key: string]: any   // Tools can include additional metadata
+  success: boolean                // Whether the tool execution was successful
+  output: Record<string, any>     // The structured output from the tool
+  error?: string                  // Error message if success is false
 }
 
 export interface ToolConfig<P = any, R extends ToolResponse = ToolResponse> {

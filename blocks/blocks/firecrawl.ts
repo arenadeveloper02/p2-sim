@@ -20,7 +20,13 @@ export const FirecrawlScrapeBlock: BlockConfig = {
       scrapeOptions: { type: 'json', required: false }
     },
     outputs: {
-      response: 'any'
+      response: { 
+        type: {
+          markdown: 'string',
+          html: 'string',
+          metadata: 'json'
+        }
+      }
     },
     subBlocks: [
       {

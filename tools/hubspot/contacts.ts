@@ -16,11 +16,14 @@ interface ContactsParams {
 }
 
 interface ContactsResponse extends ToolResponse {
-  totalResults?: number 
-  pagination?: {
-    hasMore: boolean 
-    offset: number 
-  } 
+  output: {
+    contacts: any[]
+    totalResults?: number
+    pagination?: {
+      hasMore: boolean
+      offset: number
+    }
+  }
 }
 
 export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
@@ -115,9 +118,12 @@ export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
   transformResponse: async (response: Response) => {
     const data = await response.json() 
     return {
-      output: data.results || data,
-      totalResults: data.total,
-      pagination: data.paging
+      success: true,
+      output: {
+        contacts: data.results || [data],
+        totalResults: data.total,
+        pagination: data.paging
+      }
     } 
   },
 

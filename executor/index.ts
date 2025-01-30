@@ -1,18 +1,19 @@
 import { SerializedWorkflow, SerializedBlock } from '@/serializer/types'
 import { ExecutionContext, ExecutionResult, Tool } from './types'
 import { tools } from '@/tools'
+import { BlockOutput } from '@/blocks/types'
 
 export class Executor {
   constructor(
     private workflow: SerializedWorkflow,
-    private initialBlockStates: Record<string, any> = {}
+    private initialBlockStates: Record<string, BlockOutput> = {}
   ) {}
 
   private async executeBlock(
     block: SerializedBlock,
     inputs: Record<string, any>,
     context: ExecutionContext
-  ): Promise<Record<string, any>> {
+  ): Promise<BlockOutput> {
     const toolId = block.config.tool
     if (!toolId) throw new Error(`Block ${block.id} does not specify a tool`)
 
@@ -38,7 +39,16 @@ export class Executor {
         const error = await response.json().catch(() => ({ message: response.statusText }))
         throw new Error(tool.transformError(error))
       }
-      return await tool.transformResponse(response)
+
+      const result = await tool.transformResponse(response)
+      
+      if (!result.success) {
+        throw new Error(tool.transformError(result))
+      }
+      
+      return {
+        response: result.output
+      }
     } catch (error) {
       throw new Error(`Tool ${toolId} execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
@@ -89,57 +99,97 @@ export class Executor {
 
   private resolveInputs(block: SerializedBlock, context: ExecutionContext): Record<string, any> {
     const inputs = { ...block.config.params }
-    const blockNameMap = new Map(
-      this.workflow.blocks.map(b => {
-        const title = b.metadata?.title || '';
-        const normalizedName = title.toLowerCase().replace(/\s+/g, '');
-        return [normalizedName, b.id];
-      })
-    );
 
-    const blockStateMap = new Map(
-      Object.entries(this.initialBlockStates)
-        .filter(([_, state]) => state !== undefined)
+    // Create maps for both ID and name lookups
+    const blockById = new Map(
+      this.workflow.blocks.map(b => [b.id, b])
+    )
+    const blockByName = new Map(
+      this.workflow.blocks.map(b => [
+        b.metadata?.title?.toLowerCase().replace(/\s+/g, '') || '',
+        b
+      ])
     )
 
-    const connectionPattern = /<([^>]+)\.(string|number|boolean|res|any)>/g
-    
-    return Object.entries(block.config.params || {}).reduce((acc, [key, value]) => {
+    const resolvedInputs = Object.entries(inputs).reduce((acc, [key, value]) => {
       if (typeof value === 'string') {
-        let resolvedValue = value
-        Array.from(value.matchAll(connectionPattern)).forEach(match => {
-          const [fullMatch, blockName, type] = match
+        const matches = value.match(/<([^>]+)>/g)
+        
+        if (matches) {
+          let resolvedValue = value
           
-          // Try both the original format and normalized format
-          const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '');
-          const blockId = blockNameMap.get(normalizedBlockName);
-          
-          if (!blockId) {
-            return;
-          }
-          
-          const sourceOutput = context.blockStates.get(blockId) || blockStateMap.get(blockId)
-          
-          if (sourceOutput) {
-            const replacementValue = type === 'res' 
-              ? sourceOutput.response
-              : (sourceOutput.output || sourceOutput.response)
+          matches.forEach(match => {
+            const path = match.slice(1, -1) // Remove < and >
+            const [blockRef, ...pathParts] = path.split('.')
             
-            if (replacementValue !== undefined) {
-              resolvedValue = resolvedValue.replace(fullMatch, replacementValue.toString())
+            // Try to find block by ID first, then by normalized name
+            let sourceBlock = blockById.get(blockRef)
+            if (!sourceBlock) {
+              const normalizedName = blockRef.toLowerCase().replace(/\s+/g, '')
+              sourceBlock = blockByName.get(normalizedName)
             }
+
+            if (!sourceBlock) {
+              console.warn(`Block ${blockRef} not found by ID or name`)
+              return
+            }
+
+            const sourceState = context.blockStates.get(sourceBlock.id)
+            if (!sourceState) {
+              console.warn(`No state found for block ${sourceBlock.id}`)
+              return
+            }
+
+            // Start with the block's state
+            let replacementValue: any = sourceState
+            
+            // Traverse the path parts to get the final value
+            for (const part of pathParts) {
+              if (!replacementValue || typeof replacementValue !== 'object') {
+                console.warn(`Invalid path part ${part} in ${path}`)
+                return
+              }
+              replacementValue = replacementValue[part]
+            }
+
+            if (replacementValue !== undefined) {
+              // Replace the entire template expression with the resolved value
+              resolvedValue = resolvedValue.replace(match, 
+                typeof replacementValue === 'object' 
+                  ? JSON.stringify(replacementValue)
+                  : String(replacementValue)
+              )
+            } else {
+              console.warn(`No value found at path ${path}`)
+            }
+          })
+          
+          // Try to parse the value if it looks like JSON
+          try {
+            if (resolvedValue.startsWith('{') || resolvedValue.startsWith('[')) {
+              acc[key] = JSON.parse(resolvedValue)
+            } else {
+              acc[key] = resolvedValue
+            }
+          } catch {
+            acc[key] = resolvedValue
           }
-        })
-        acc[key] = resolvedValue
+        } else {
+          acc[key] = value
+        }
       } else {
         acc[key] = value
       }
+
       return acc
-    }, inputs)
+    }, {} as Record<string, any>)
+
+    return resolvedInputs
   }
 
   async execute(workflowId: string): Promise<ExecutionResult> {
     const startTime = new Date()
+    
     const context: ExecutionContext = {
       workflowId,
       blockStates: new Map(),
@@ -153,14 +203,20 @@ export class Executor {
         const block = this.workflow.blocks.find(b => b.id === blockId)
         if (!block) throw new Error(`Block ${blockId} not found in workflow`)
         
-        const result = await this.executeBlock(block, this.resolveInputs(block, context), context)
-        context.blockStates.set(blockId, result)
+        const output = await this.executeBlock(block, this.resolveInputs(block, context), context)
+        context.blockStates.set(blockId, output)
       }
 
       const endTime = new Date()
+      const lastOutput = context.blockStates.get(executionOrder[executionOrder.length - 1])
+      
+      if (!lastOutput) {
+        throw new Error('No output from workflow execution')
+      }
+
       return {
         success: true,
-        data: context.blockStates.get(executionOrder[executionOrder.length - 1]) || {},
+        output: lastOutput,
         metadata: {
           duration: endTime.getTime() - startTime.getTime(),
           startTime: startTime.toISOString(),
@@ -170,7 +226,7 @@ export class Executor {
     } catch (error) {
       return {
         success: false,
-        data: {},
+        output: { response: {} },
         error: error instanceof Error ? error.message : 'Unknown error'
       }
     }
