@@ -307,8 +307,23 @@ export default function Workflow() {
   const params = useParams()
   const router = useRouter()
   const { workflows, setActiveWorkflow, addWorkflow } = useWorkflowRegistry()
+  const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
+    // First, initialize the registry and wait for it
+    if (typeof window !== 'undefined') {
+      const savedRegistry = localStorage.getItem('workflow-registry')
+      if (savedRegistry) {
+        useWorkflowRegistry.setState({ workflows: JSON.parse(savedRegistry) })
+      }
+      setIsInitialized(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    // Only proceed if we've initialized the registry
+    if (!isInitialized) return
+
     // Helper function to create a new workflow
     const createInitialWorkflow = () => {
       const id = crypto.randomUUID()
@@ -346,7 +361,18 @@ export default function Workflow() {
     }
 
     validateAndNavigate()
-  }, [params.id, workflows, setActiveWorkflow, addWorkflow, router])
+  }, [
+    params.id,
+    workflows,
+    setActiveWorkflow,
+    addWorkflow,
+    router,
+    isInitialized,
+  ])
+
+  if (!isInitialized) {
+    return null // or a loading spinner
+  }
 
   return (
     <ReactFlowProvider>
