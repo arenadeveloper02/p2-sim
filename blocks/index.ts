@@ -5,16 +5,18 @@ import { AgentBlock } from './blocks/agent'
 import { ApiBlock } from './blocks/api'
 import { FunctionBlock } from './blocks/function'
 import { CrewAIVisionBlock } from './blocks/crewai'
+import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 
 // Export blocks for ease of use
-export { AgentBlock, ApiBlock, FunctionBlock, CrewAIVisionBlock }
+export { AgentBlock, ApiBlock, FunctionBlock, CrewAIVisionBlock, FirecrawlScrapeBlock }
 
 // Registry of all block configurations
 const blocks: Record<string, BlockConfig> = {
   agent: AgentBlock,
   api: ApiBlock,
   function: FunctionBlock,
-  crewaivision: CrewAIVisionBlock
+  crewaivision: CrewAIVisionBlock,
+  firecrawlscrape: FirecrawlScrapeBlock
 }
 
 // Build a reverse mapping of tools to block types

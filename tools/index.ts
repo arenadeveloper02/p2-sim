@@ -1,5 +1,5 @@
-import { ToolConfig } from './types' 
-import { chatTool as openaiChat } from './openai/chat' 
+import { ToolConfig } from './types'
+import { chatTool as openAIChat } from './openai/chat' 
 import { chatTool as anthropicChat } from './anthropic/chat' 
 import { chatTool as googleChat } from './google/chat' 
 import { chatTool as xaiChat } from './xai/chat' 
@@ -8,13 +8,13 @@ import { reasonerTool as deepseekReasoner } from './deepseek/reasoner'
 import { requestTool as httpRequest } from './http/request' 
 import { contactsTool as hubspotContacts } from './hubspot/contacts' 
 import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities' 
-import { functionExecuteTool as functionExecute } from './function/execute' 
+import { functionExecuteTool as functionExecute } from './function/execute'
 import { visionTool as crewAIVision } from './crewai/vision'
-
+import { scrapeTool } from './firecrawl/scrape'
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   // AI Models
-  'openai.chat': openaiChat,
+  'openai.chat': openAIChat,
   'anthropic.chat': anthropicChat,
   'google.chat': googleChat,
   'xai.chat': xaiChat,
@@ -28,7 +28,9 @@ export const tools: Record<string, ToolConfig> = {
   // Function Tools
   'function.execute': functionExecute,
   // CrewAI Tools
-  'crewai.vision': crewAIVision
+  'crewai.vision': crewAIVision,
+  // Firecrawl Tools
+  'firecrawl.scrape': scrapeTool
 } 
 
 // Get a tool by its ID
@@ -65,8 +67,7 @@ export async function executeTool(
       throw new Error(tool.transformError(error)) 
     }
 
-    const data = await response.json() 
-    return tool.transformResponse(data) 
+    return tool.transformResponse(response) 
   } catch (error) {
     throw new Error(tool.transformError(error)) 
   }

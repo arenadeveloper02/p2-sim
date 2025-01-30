@@ -6,7 +6,7 @@ export type BlockCategory = 'basic' | 'advanced'
 export type OutputType = 'string' | 'number' | 'json' | 'boolean' | 'any'
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
-export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code'
+export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code' | 'switch'
 export type SubBlockLayout = 'full' | 'half'
 
 export type OutputConfig = OutputType | {

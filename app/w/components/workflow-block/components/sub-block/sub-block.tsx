@@ -6,6 +6,7 @@ import { Dropdown } from './components/dropdown'
 import { SliderInput } from './components/slider-input'
 import { Table } from './components/table'
 import { Code } from './components/code'
+import { Switch } from './components/switch'
 
 interface SubBlockProps {
   blockId: string
@@ -70,6 +71,13 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
         )
       case 'code':
         return <Code blockId={blockId} subBlockId={config.id} />
+      case 'switch':
+        return (
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">{config.title}</Label>
+            <Switch blockId={blockId} subBlockId={config.id} />
+          </div>
+        )
       default:
         return null
     }
@@ -77,7 +85,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
 
   return (
     <div className="space-y-1" onMouseDown={handleMouseDown}>
-      <Label>{config.title}</Label>
+      {config.type !== 'switch' && <Label>{config.title}</Label>}
       {renderInput()}
     </div>
   )
