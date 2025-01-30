@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 interface ActionBarProps {
   blockId: string
@@ -22,33 +23,22 @@ export function ActionBar({ blockId }: ActionBarProps) {
   )
 
   return (
-    <div className="absolute -top-20 right-0 inline-flex items-center gap-2 p-2 bg-white rounded-md shadow-sm border border-gray-200 animate-in fade-in slide-in-from-bottom-2">
+    <div className="absolute top-0 -right-20 flex flex-col items-center gap-2 p-2 bg-white rounded-md shadow-sm border border-gray-200 animate-in fade-in slide-in-from-left-2">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant="ghost"
+            className={cn(
+              isEnabled
+                ? 'bg-[#7F2FFF] hover:bg-[#7F2FFF]/90'
+                : 'bg-gray-400 hover:bg-gray-400 cursor-not-allowed'
+            )}
             size="sm"
-            onClick={() => removeBlock(blockId)}
-            className="text-gray-500 hover:text-red-600"
+            disabled={!isEnabled}
           >
-            <Trash2 className="h-4 w-4" />
+            <Play fill="currentColor" className="!h-3.5 !w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Delete Block</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => duplicateBlock(blockId)}
-            className="text-gray-500"
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Duplicate Block</TooltipContent>
+        <TooltipContent side="right">Run Block</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -66,15 +56,38 @@ export function ActionBar({ blockId }: ActionBarProps) {
             )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>
+        <TooltipContent side="right">
           {isEnabled ? 'Disable Block' : 'Enable Block'}
         </TooltipContent>
       </Tooltip>
 
-      <Button className="gap-2 bg-[#7F2FFF] hover:bg-[#7F2FFF]/90" size="sm">
-        <Play fill="currentColor" className="!h-3.5 !w-3.5" />
-        Run
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => duplicateBlock(blockId)}
+            className="text-gray-500"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">Duplicate Block</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => removeBlock(blockId)}
+            className="text-gray-500 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">Delete Block</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
