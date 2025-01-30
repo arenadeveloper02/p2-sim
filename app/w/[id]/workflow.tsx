@@ -30,6 +30,7 @@ import { executeWorkflow } from '@/lib/workflow'
 import { useWorkflowExecution } from '../hooks/use-workflow-execution'
 import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
 import { useParams, useRouter } from 'next/navigation'
+import { X } from 'lucide-react'
 
 /**
  * Represents the data structure for a workflow node
@@ -71,18 +72,61 @@ const CustomEdge = (props: EdgeProps) => {
     targetY: props.targetY,
   })
 
+  const midPoint = {
+    x: (props.sourceX + props.targetX) / 2,
+    y: (props.sourceY + props.targetY) / 2,
+  }
+
+  const isSelected = props.id === props.data?.selectedEdgeId
+
   return (
-    <BaseEdge
-      {...props}
-      path={edgePath}
-      style={{
-        stroke: props.selected ? '#475569' : '#94a3b8',
-        strokeWidth: 2,
-        strokeDasharray: '5',
-        strokeDashoffset: '0',
-        animation: 'dashdraw 1s linear infinite',
-      }}
-    />
+    <g>
+      {/* Invisible wider path for better click interaction */}
+      <path
+        d={edgePath}
+        strokeWidth={20}
+        stroke="transparent"
+        fill="none"
+        className="react-flow__edge-interaction"
+      />
+      {/* Visible animated path */}
+      <path
+        d={edgePath}
+        strokeWidth={2}
+        stroke={isSelected ? '#475569' : '#94a3b8'}
+        fill="none"
+        strokeDasharray="5,5"
+      >
+        <animate
+          attributeName="stroke-dashoffset"
+          from="10"
+          to="0"
+          dur="1s"
+          repeatCount="indefinite"
+        />
+      </path>
+
+      {/* Delete button - only show when edge is selected */}
+      {isSelected && (
+        <foreignObject
+          width={24}
+          height={24}
+          x={midPoint.x - 12}
+          y={midPoint.y - 12}
+          className="overflow-visible"
+        >
+          <div
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-[#FAFBFC]"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.data?.onDelete?.(props.id)
+            }}
+          >
+            <X className="h-5 w-5 text-red-500" />
+          </div>
+        </foreignObject>
+      )}
+    </g>
   )
 }
 
@@ -98,6 +142,7 @@ const edgeTypes: EdgeTypes = { custom: CustomEdge }
  */
 function WorkflowCanvas() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const { isExecuting, executionResult, handleRunWorkflow } =
     useWorkflowExecution()
 
@@ -220,51 +265,58 @@ function WorkflowCanvas() {
   const onNodeClick = useCallback((event: React.MouseEvent, node: any) => {
     event.stopPropagation()
     setSelectedBlockId(node.id)
+    setSelectedEdgeId(null)
   }, [])
 
   // Handler for clicks on the empty canvas
   const onPaneClick = useCallback((event: React.MouseEvent) => {
     setSelectedBlockId(null)
+    setSelectedEdgeId(null)
   }, [])
 
-  useEffect(() => {
-    initializeStateLogger()
+  // Add this new handler
+  const onEdgeClick = useCallback((event: React.MouseEvent, edge: any) => {
+    setSelectedEdgeId(edge.id)
   }, [])
 
-  /**
-   * CSS keyframe animation for the dashed line effect
-   */
-  const keyframeStyles = `
-    @keyframes dashdraw {
-      from { stroke-dashoffset: 10; }
-      to { stroke-dashoffset: -10; }
-    }
-  `
-
-  // Add keyboard shortcut handler
+  // Add keyboard event handler
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
-        if (event.shiftKey) {
-          if (canRedo()) redo()
-        } else {
-          if (canUndo()) undo()
-        }
-        event.preventDefault()
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        selectedEdgeId
+      ) {
+        removeEdge(selectedEdgeId)
+        setSelectedEdgeId(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canUndo, canRedo, undo, redo])
+  }, [selectedEdgeId, removeEdge])
+
+  useEffect(() => {
+    initializeStateLogger()
+  }, [])
+
+  // Update the edges to include both selectedEdgeId and onDelete handler
+  const edgesWithSelection = edges.map((edge) => ({
+    ...edge,
+    data: {
+      selectedEdgeId,
+      onDelete: (edgeId: string) => {
+        removeEdge(edgeId)
+        setSelectedEdgeId(null)
+      },
+    },
+  }))
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)]">
       <NotificationList />
-      <style>{keyframeStyles}</style>
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={edgesWithSelection}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -280,19 +332,20 @@ function WorkflowCanvas() {
         connectionLineStyle={{
           stroke: '#94a3b8',
           strokeWidth: 2,
-          strokeDasharray: '5',
-          strokeDashoffset: '0',
-          animation: 'dashdraw 1s linear infinite',
+          strokeDasharray: '5,5',
         }}
         connectionLineType={ConnectionLineType.SmoothStep}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onEdgeClick={onEdgeClick}
         elementsSelectable={true}
         selectNodesOnDrag={false}
         nodesConnectable={true}
         nodesDraggable={true}
         draggable={false}
         noWheelClassName="allow-scroll"
+        edgesFocusable={true}
+        edgesUpdatable={true}
       >
         <Background />
       </ReactFlow>
