@@ -48,7 +48,7 @@ export function ShortInput({
 
       const currentValue = value?.toString() ?? ''
       const connectionName = data.connectionData.name
-        .replace(' ', '')
+        .replace(/\s+/g, '')
         .toLowerCase()
       const outputSuffix =
         data.connectionData.outputType === 'any'
