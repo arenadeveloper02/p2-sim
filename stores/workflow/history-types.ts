@@ -17,4 +17,5 @@ export interface HistoryActions {
   redo: () => void
   canUndo: () => boolean
   canRedo: () => boolean
+  revertToHistoryState: (index: number) => void
 } 

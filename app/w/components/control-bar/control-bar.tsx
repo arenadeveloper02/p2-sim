@@ -25,7 +25,7 @@ import {
 
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
-  const { history, undo, redo } = useWorkflowStore()
+  const { history, undo, redo, revertToHistoryState } = useWorkflowStore()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
   const { workflows, removeWorkflow, activeWorkflowId } = useWorkflowRegistry()
@@ -109,15 +109,33 @@ export function ControlBar() {
             </Button>
           </DropdownMenuTrigger>
 
-          {history.past.length === 0 ? (
+          {history.past.length === 0 && history.future.length === 0 ? (
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem className="text-sm text-muted-foreground">
                 No history available
               </DropdownMenuItem>
             </DropdownMenuContent>
           ) : (
-            <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuContent
+              align="end"
+              className="w-60 max-h-[300px] overflow-y-auto"
+            >
               <>
+                {[...history.future].reverse().map((entry, index) => (
+                  <HistoryDropdownItem
+                    key={`future-${entry.timestamp}-${index}`}
+                    action={entry.action}
+                    timestamp={entry.timestamp}
+                    onClick={() =>
+                      revertToHistoryState(
+                        history.past.length +
+                          1 +
+                          (history.future.length - 1 - index)
+                      )
+                    }
+                    isFuture={true}
+                  />
+                ))}
                 <HistoryDropdownItem
                   key={`current-${history.present.timestamp}`}
                   action={history.present.action}
@@ -130,7 +148,9 @@ export function ControlBar() {
                     key={`past-${entry.timestamp}-${index}`}
                     action={entry.action}
                     timestamp={entry.timestamp}
-                    onClick={undo}
+                    onClick={() =>
+                      revertToHistoryState(history.past.length - 1 - index)
+                    }
                   />
                 ))}
               </>
@@ -153,7 +173,10 @@ export function ControlBar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           ) : (
-            <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuContent
+              align="end"
+              className="w-60 max-h-[300px] overflow-y-auto"
+            >
               {[...workflowNotifications]
                 .sort((a, b) => b.timestamp - a.timestamp)
                 .map((notification) => (

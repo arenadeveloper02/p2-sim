@@ -86,6 +86,27 @@ export const withHistory = (
         set(newState)
         return newState
       },
+
+      revertToHistoryState: (index: number) => {
+        const { history, ...state } = get()
+        const allStates = [...history.past, history.present, ...history.future]
+        const targetState = allStates[index]
+        
+        if (!targetState) return
+
+        const newPast = allStates.slice(0, index)
+        const newFuture = allStates.slice(index + 1)
+
+        set({
+          ...state,
+          ...targetState.state,
+          history: {
+            past: newPast,
+            present: targetState,
+            future: newFuture,
+          },
+        })
+      },
     }
   }
 }
