@@ -17,15 +17,18 @@ import { WorkflowNode } from '../workflow-node/workflow-node'
 import { CustomEdge } from '../custom-edge/custom-edge'
 import { initializeStateLogger } from '@/stores/workflow/state-logger'
 
+// Define custom node and edge types for ReactFlow
 const nodeTypes: NodeTypes = { workflowBlock: WorkflowNode }
 const edgeTypes: EdgeTypes = { custom: CustomEdge }
 
 export function WorkflowCanvas() {
+  // Track selected elements in the workflow
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+
+  // Store references and state management hooks
   const { isExecuting, executionResult, handleRunWorkflow } =
     useWorkflowExecution()
-
   const {
     blocks,
     edges,
@@ -41,7 +44,7 @@ export function WorkflowCanvas() {
   const { addNotification } = useNotificationStore()
   const { project } = useReactFlow()
 
-  // Convert blocks to ReactFlow nodes
+  // Transform blocks into ReactFlow node format
   const nodes = Object.values(blocks).map((block) => ({
     id: block.id,
     type: 'workflowBlock',
@@ -55,6 +58,7 @@ export function WorkflowCanvas() {
     },
   }))
 
+  // Handle node position updates during drag operations
   const onNodesChange = useCallback(
     (changes: any) => {
       changes.forEach((change: any) => {
@@ -66,6 +70,7 @@ export function WorkflowCanvas() {
     [updateBlockPosition]
   )
 
+  // Handle edge removal and updates
   const onEdgesChange = useCallback(
     (changes: any) => {
       changes.forEach((change: any) => {
@@ -77,6 +82,7 @@ export function WorkflowCanvas() {
     [removeEdge]
   )
 
+  // Create new edges when nodes are connected
   const onConnect = useCallback(
     (connection: any) => {
       addEdge({
@@ -88,6 +94,7 @@ export function WorkflowCanvas() {
     [addEdge]
   )
 
+  // Handle new block creation from toolbar drag and drop
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault()
@@ -121,21 +128,25 @@ export function WorkflowCanvas() {
     [project, blocks, addBlock]
   )
 
+  // Update selection state when clicking nodes
   const onNodeClick = useCallback((event: React.MouseEvent, node: any) => {
     event.stopPropagation()
     setSelectedBlockId(node.id)
     setSelectedEdgeId(null)
   }, [])
 
+  // Clear selection when clicking on the canvas
   const onPaneClick = useCallback(() => {
     setSelectedBlockId(null)
     setSelectedEdgeId(null)
   }, [])
 
+  // Update selected edge when clicking on connections
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: any) => {
     setSelectedEdgeId(edge.id)
   }, [])
 
+  // Handle keyboard shortcuts for edge deletion
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -151,10 +162,12 @@ export function WorkflowCanvas() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedEdgeId, removeEdge])
 
+  // Initialize state logging for debugging
   useEffect(() => {
     initializeStateLogger()
   }, [])
 
+  // Add selection data to edges for visual feedback
   const edgesWithSelection = edges.map((edge) => ({
     ...edge,
     data: {

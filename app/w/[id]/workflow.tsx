@@ -8,11 +8,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { WorkflowCanvas } from './components/workflow-canvas/workflow-canvas'
 
 export default function Workflow() {
+  // Get URL parameters and routing functionality
   const params = useParams()
   const router = useRouter()
   const { workflows, setActiveWorkflow, addWorkflow } = useWorkflowRegistry()
+  // Track if initial data loading is complete
   const [isInitialized, setIsInitialized] = useState(false)
 
+  // Load saved workflows from localStorage on component mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedRegistry = localStorage.getItem('workflow-registry')
@@ -23,9 +26,11 @@ export default function Workflow() {
     }
   }, [])
 
+  // Handle workflow initialization and navigation
   useEffect(() => {
     if (!isInitialized) return
 
+    // Create a new workflow with default values
     const createInitialWorkflow = () => {
       const id = crypto.randomUUID()
       const newWorkflow = {
@@ -39,16 +44,19 @@ export default function Workflow() {
       return id
     }
 
+    // Ensure valid workflow ID and redirect if necessary
     const validateAndNavigate = () => {
       const workflowIds = Object.keys(workflows)
       const currentId = params.id as string
 
+      // Create first workflow if none exist
       if (workflowIds.length === 0) {
         const newId = createInitialWorkflow()
         router.replace(`/w/${newId}`)
         return
       }
 
+      // Redirect to first workflow if current ID is invalid
       if (!workflows[currentId]) {
         router.replace(`/w/${workflowIds[0]}`)
         return
@@ -67,6 +75,7 @@ export default function Workflow() {
     isInitialized,
   ])
 
+  // Don't render until initial data is loaded
   if (!isInitialized) {
     return null
   }
