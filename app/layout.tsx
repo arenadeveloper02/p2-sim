@@ -23,9 +23,9 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (typeof window !== 'undefined') {
-                window.INITIAL_TIMESTAMP = ${Date.now()};
-              }
+              document.addEventListener('DOMContentLoaded', function() {
+                window.INITIAL_TIMESTAMP = Date.now();
+              });
             `,
           }}
         />

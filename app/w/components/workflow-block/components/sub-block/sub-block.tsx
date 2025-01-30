@@ -73,10 +73,11 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
         return <Code blockId={blockId} subBlockId={config.id} />
       case 'switch':
         return (
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">{config.title}</Label>
-            <Switch blockId={blockId} subBlockId={config.id} />
-          </div>
+          <Switch
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title}
+          />
         )
       default:
         return null
