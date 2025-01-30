@@ -49,7 +49,7 @@ export function ConnectionBlocks({
         >
           <div className="text-sm">
             <span className="font-medium leading-none">
-              {connection.name.replace(' ', '').toLowerCase()}
+              {connection.name.replace(/\s+/g, '').toLowerCase()}
             </span>
             <span className="text-muted-foreground">
               .{connection.outputType === 'any' ? 'res' : connection.outputType}
