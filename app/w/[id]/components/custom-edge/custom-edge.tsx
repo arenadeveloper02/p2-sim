@@ -7,7 +7,7 @@ export const CustomEdge = (props: EdgeProps) => {
 
   // For horizontal handles, we'll add a minimum extension to ensure the path
   // always goes outward before going up/down
-  const [edgePath] = getSmoothStepPath({
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX: props.sourceX,
     sourceY: props.sourceY,
     sourcePosition: props.sourcePosition,
@@ -15,13 +15,8 @@ export const CustomEdge = (props: EdgeProps) => {
     targetY: props.targetY,
     targetPosition: props.targetPosition,
     borderRadius: 8,
-    offset: isHorizontal ? 30 : 20, // Increased offset for horizontal handles to ensure outward extension
+    offset: isHorizontal ? 30 : 20,
   })
-
-  const midPoint = {
-    x: (props.sourceX + props.targetX) / 2,
-    y: (props.sourceY + props.targetY) / 2,
-  }
 
   const isSelected = props.id === props.data?.selectedEdgeId
 
@@ -54,8 +49,8 @@ export const CustomEdge = (props: EdgeProps) => {
         <foreignObject
           width={24}
           height={24}
-          x={midPoint.x - 12}
-          y={midPoint.y - 12}
+          x={labelX - 12}
+          y={labelY - 12}
           className="overflow-visible"
         >
           <div
