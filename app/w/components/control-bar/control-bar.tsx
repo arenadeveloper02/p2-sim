@@ -17,6 +17,11 @@ import { useEffect, useState } from 'react'
 import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
 import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
 import { useRouter } from 'next/navigation'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
@@ -70,15 +75,21 @@ export function ControlBar() {
 
       {/* Right Section - Actions */}
       <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleDeleteWorkflow}
-          disabled={Object.keys(workflows).length <= 1}
-        >
-          <Trash2 className="h-5 w-5" />
-          <span className="sr-only">Delete Workflow</span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDeleteWorkflow}
+              disabled={Object.keys(workflows).length <= 1}
+              className="hover:text-red-600"
+            >
+              <Trash2 className="h-5 w-5" />
+              <span className="sr-only">Delete Workflow</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete Workflow</TooltipContent>
+        </Tooltip>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

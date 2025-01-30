@@ -14,6 +14,7 @@ export interface BlockState {
   position: Position
   subBlocks: Record<string, SubBlockState>
   outputs: Record<string, OutputType>
+  enabled: boolean
 }
 
 export interface SubBlockState {
@@ -42,6 +43,7 @@ export interface WorkflowActions {
   removeEdge: (edgeId: string) => void
   clear: () => void
   updateLastSaved: () => void
+  toggleBlockEnabled: (id: string) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions 

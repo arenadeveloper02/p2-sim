@@ -92,6 +92,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               position,
               subBlocks,
               outputs,
+              enabled: true,
             },
           },
           edges: [...get().edges],
@@ -182,6 +183,23 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
 
       updateLastSaved: () => {
         set({ lastSaved: Date.now() })
+      },
+
+      toggleBlockEnabled: (id: string) => {
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...get().blocks[id],
+              enabled: !get().blocks[id].enabled,
+            },
+          },
+          edges: [...get().edges],
+        }
+        
+        set(newState)
+        pushHistory(set, get, newState, 'Enabled/disabled block')
+        get().updateLastSaved()
       },
     })),
     { name: 'workflow-store' }
