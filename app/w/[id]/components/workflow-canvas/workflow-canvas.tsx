@@ -144,6 +144,7 @@ export function WorkflowCanvas() {
   // Update selected edge when clicking on connections
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: any) => {
     setSelectedEdgeId(edge.id)
+    setSelectedBlockId(null)
   }, [])
 
   // Handle keyboard shortcuts for edge deletion
