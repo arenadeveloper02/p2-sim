@@ -14,22 +14,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.INITIAL_TIMESTAMP = 0;`,
-          }}
-        />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              document.addEventListener('DOMContentLoaded', function() {
-                window.INITIAL_TIMESTAMP = Date.now();
-              });
-            `,
-          }}
-        />
-      </head>
       <body>{children}</body>
     </html>
   )

@@ -31,6 +31,12 @@ export function ControlBar() {
   const { workflows, removeWorkflow, activeWorkflowId } = useWorkflowRegistry()
   const router = useRouter()
 
+  // Use client-side only rendering for the timestamp
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   // Get notifications for current workflow
   const workflowNotifications = activeWorkflowId
     ? getWorkflowNotifications(activeWorkflowId)
@@ -64,10 +70,14 @@ export function ControlBar() {
         <h2 className="font-semibold text-sm">
           {activeWorkflowId ? workflows[activeWorkflowId].name : 'Workflow'}
         </h2>
-        <p className="text-xs text-muted-foreground">
-          Saved{' '}
-          {formatDistanceToNow(history.present.timestamp, { addSuffix: true })}
-        </p>
+        {mounted && ( // Only render the timestamp after client-side hydration
+          <p className="text-xs text-muted-foreground">
+            Saved{' '}
+            {formatDistanceToNow(history.present.timestamp, {
+              addSuffix: true,
+            })}
+          </p>
+        )}
       </div>
 
       {/* Middle Section - Reserved for future use */}
