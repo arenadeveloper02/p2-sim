@@ -1,5 +1,13 @@
 import { Button } from '@/components/ui/button'
-import { Trash2, Play, Circle, CircleOff, Copy } from 'lucide-react'
+import {
+  Trash2,
+  Play,
+  Circle,
+  CircleOff,
+  Copy,
+  ArrowLeftRight,
+  ArrowUpDown,
+} from 'lucide-react'
 import { useWorkflowStore } from '@/stores/workflow/workflow-store'
 import {
   Tooltip,
@@ -17,9 +25,15 @@ export function ActionBar({ blockId }: ActionBarProps) {
   const toggleBlockEnabled = useWorkflowStore(
     (state) => state.toggleBlockEnabled
   )
+  const toggleBlockHandles = useWorkflowStore(
+    (state) => state.toggleBlockHandles
+  )
   const duplicateBlock = useWorkflowStore((state) => state.duplicateBlock)
   const isEnabled = useWorkflowStore(
     (state) => state.blocks[blockId]?.enabled ?? true
+  )
+  const horizontalHandles = useWorkflowStore(
+    (state) => state.blocks[blockId]?.horizontalHandles ?? false
   )
 
   return (
@@ -73,6 +87,26 @@ export function ActionBar({ blockId }: ActionBarProps) {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="right">Duplicate Block</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => toggleBlockHandles(blockId)}
+            className="text-gray-500"
+          >
+            {horizontalHandles ? (
+              <ArrowLeftRight className="h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          {horizontalHandles ? 'Vertical Ports' : 'Horizontal Ports'}
+        </TooltipContent>
       </Tooltip>
 
       <Tooltip>

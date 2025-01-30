@@ -211,7 +211,6 @@ const initializeRegistry = () => {
   })
 }
 
-// Call this in your app's entry point
 if (typeof window !== 'undefined') {
   initializeRegistry()
 }

@@ -17,7 +17,7 @@ export function LongInput({
   return (
     <Textarea
       className="w-full resize-none placeholder:text-muted-foreground/50 allow-scroll"
-      rows={3}
+      rows={4}
       placeholder={placeholder ?? ''}
       value={value?.toString() ?? ''}
       onChange={(e) => setValue(e.target.value)}

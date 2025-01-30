@@ -31,6 +31,9 @@ export function WorkflowBlock({
   const isEnabled = useWorkflowStore(
     (state) => state.blocks[id]?.enabled ?? true
   )
+  const horizontalHandles = useWorkflowStore(
+    (state) => state.blocks[id]?.horizontalHandles ?? false
+  )
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     const rows: SubBlockConfig[][] = []
@@ -70,14 +73,14 @@ export function WorkflowBlock({
 
       <Handle
         type="target"
-        position={Position.Top}
+        position={horizontalHandles ? Position.Left : Position.Top}
         className={cn(
           '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
           '!opacity-0 group-hover:!opacity-100',
           '!transition-opacity !duration-200 !cursor-crosshair',
           'hover:!border-blue-500',
-          '!top-[-7px]'
+          horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
         )}
       />
 
@@ -124,14 +127,14 @@ export function WorkflowBlock({
 
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={horizontalHandles ? Position.Right : Position.Bottom}
         className={cn(
           '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
           '!opacity-0 group-hover:!opacity-100',
           '!transition-opacity !duration-200 !cursor-crosshair',
           'hover:!border-blue-500',
-          '!bottom-[-7px]'
+          horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
         )}
       />
     </Card>

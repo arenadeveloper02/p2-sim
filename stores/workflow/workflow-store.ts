@@ -242,6 +242,22 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         pushHistory(set, get, newState, `Duplicate ${block.type} block`)
         get().updateLastSaved()
       },
+
+      toggleBlockHandles: (id: string) => {
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...get().blocks[id],
+              horizontalHandles: !get().blocks[id].horizontalHandles,
+            },
+          },
+          edges: [...get().edges],
+        }
+        
+        set(newState)
+        get().updateLastSaved()
+      },
     })),
     { name: 'workflow-store' }
   )

@@ -15,6 +15,7 @@ export interface BlockState {
   subBlocks: Record<string, SubBlockState>
   outputs: Record<string, OutputType>
   enabled: boolean
+  horizontalHandles?: boolean
 }
 
 export interface SubBlockState {
@@ -45,6 +46,7 @@ export interface WorkflowActions {
   updateLastSaved: () => void
   toggleBlockEnabled: (id: string) => void
   duplicateBlock: (id: string) => void
+  toggleBlockHandles: (id: string) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions 

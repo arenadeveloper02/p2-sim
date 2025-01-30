@@ -2,11 +2,20 @@ import { EdgeProps, getSmoothStepPath } from 'reactflow'
 import { X } from 'lucide-react'
 
 export const CustomEdge = (props: EdgeProps) => {
+  const isHorizontal =
+    props.sourcePosition === 'right' || props.sourcePosition === 'left'
+
+  // For horizontal handles, we'll add a minimum extension to ensure the path
+  // always goes outward before going up/down
   const [edgePath] = getSmoothStepPath({
     sourceX: props.sourceX,
     sourceY: props.sourceY,
+    sourcePosition: props.sourcePosition,
     targetX: props.targetX,
     targetY: props.targetY,
+    targetPosition: props.targetPosition,
+    borderRadius: 8,
+    offset: isHorizontal ? 30 : 20, // Increased offset for horizontal handles to ensure outward extension
   })
 
   const midPoint = {
