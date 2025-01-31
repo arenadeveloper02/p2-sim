@@ -1,0 +1,75 @@
+import { useState, useMemo } from 'react'
+import { formatDistanceToNow, format } from 'date-fns'
+import {
+  Terminal,
+  Clock,
+  Calendar,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react'
+import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
+import { JSONView } from '../json-view/json-view'
+
+interface ConsoleEntryProps {
+  entry: ConsoleEntryType
+}
+
+export function ConsoleEntry({ entry }: ConsoleEntryProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  const timeAgo = useMemo(
+    () =>
+      formatDistanceToNow(new Date(entry.startedAt), {
+        addSuffix: true,
+      }),
+    [entry.startedAt]
+  )
+
+  const statusIcon = entry.error ? (
+    <AlertCircle className="h-4 w-4 text-destructive" />
+  ) : (
+    <CheckCircle2 className="h-4 w-4 text-success" />
+  )
+
+  return (
+    <div className="border-b border-border hover:bg-accent/50 transition-colors">
+      <div className="p-4 space-y-4">
+        {entry.blockName && (
+          <div className="flex items-center gap-2 text-sm">
+            {statusIcon}
+            <span className="text-muted-foreground">{entry.blockName}</span>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            <span>{format(new Date(entry.startedAt), 'HH:mm:ss')}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            <span>Duration: {entry.durationMs}ms</span>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-start gap-2">
+            <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
+            <div className="text-sm font-mono flex-1">
+              <JSONView data={entry.output} />
+            </div>
+          </div>
+
+          {entry.error && (
+            <div className="flex items-start gap-2 border rounded-md p-3 border-red-500 bg-red-50 text-destructive dark:border-border dark:text-foreground dark:bg-background">
+              <AlertCircle className="h-4 w-4 text-red-500 mt-1" />
+              <div className="flex-1 break-all">
+                <div className="font-medium">Error</div>
+                <pre className="text-sm whitespace-pre-wrap">{entry.error}</pre>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,16 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { formatDistanceToNow, format } from 'date-fns'
-import {
-  PanelLeftClose,
-  Terminal,
-  XCircle,
-  Clock,
-  Calendar,
-  CheckCircle2,
-  AlertCircle,
-} from 'lucide-react'
+import { PanelLeftClose, Terminal } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
@@ -19,115 +10,8 @@ import {
 import { useConsoleStore } from '@/stores/console/store'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
-import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
 import { useWorkflowRegistry } from '@/stores/workflow/registry'
-
-function JSONView({ data, level = 0 }: { data: any; level?: number }) {
-  const [isCollapsed, setIsCollapsed] = useState(true)
-
-  if (data === null) return <span className="text-muted-foreground">null</span>
-  if (typeof data !== 'object') {
-    return (
-      <span
-        className={`${
-          typeof data === 'string' ? 'text-success' : 'text-info'
-        } break-all`}
-      >
-        {JSON.stringify(data)}
-      </span>
-    )
-  }
-
-  const isArray = Array.isArray(data)
-  const items = isArray ? data : Object.entries(data)
-  const isEmpty = items.length === 0
-
-  if (isEmpty) {
-    return <span>{isArray ? '[]' : '{}'}</span>
-  }
-
-  return (
-    <div className="relative">
-      <span
-        className="cursor-pointer select-none"
-        onClick={(e) => {
-          e.stopPropagation()
-          setIsCollapsed(!isCollapsed)
-        }}
-      >
-        {isCollapsed ? '▶' : '▼'} {isArray ? '[' : '{'}
-        {isCollapsed ? '...' : ''}
-      </span>
-      {!isCollapsed && (
-        <div className="ml-4 break-words">
-          {isArray
-            ? items.map((item, index) => (
-                <div key={index} className="break-all">
-                  <JSONView data={item} level={level + 1} />
-                  {index < items.length - 1 && ','}
-                </div>
-              ))
-            : (items as [string, any][]).map(([key, value], index) => (
-                <div key={key} className="break-all">
-                  <span className="text-muted-foreground">{key}</span>:{' '}
-                  <JSONView data={value} level={level + 1} />
-                  {index < items.length - 1 && ','}
-                </div>
-              ))}
-        </div>
-      )}
-      <span>{isArray ? ']' : '}'}</span>
-    </div>
-  )
-}
-
-function ConsoleEntry({ entry }: { entry: ConsoleEntryType }) {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  const timeAgo = useMemo(
-    () =>
-      formatDistanceToNow(new Date(entry.startedAt), {
-        addSuffix: true,
-      }),
-    [entry.startedAt]
-  )
-
-  return (
-    <div className="border-b border-border hover:bg-accent/50 transition-colors">
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{format(new Date(entry.startedAt), 'HH:mm:ss')}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            <span>Duration: {entry.durationMs}ms</span>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-start gap-2">
-            <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
-            <div className="text-sm font-mono flex-1">
-              <JSONView data={entry.output} />
-            </div>
-          </div>
-
-          {entry.error && (
-            <div className="flex items-start gap-2 border rounded-md p-3 border-red-500 bg-red-50 text-destructive dark:border-border dark:text-foreground dark:bg-background">
-              <AlertCircle className="h-4 w-4 text-red-500 mt-1" />
-              <div className="flex-1 break-all">
-                <div className="font-medium">Error</div>
-                <pre className="text-sm whitespace-pre-wrap">{entry.error}</pre>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+import { ConsoleEntry } from './components/console-entry/console-entry'
 
 export function Console() {
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -137,7 +21,6 @@ export function Console() {
   const clearConsole = useConsoleStore((state) => state.clearConsole)
   const { activeWorkflowId } = useWorkflowRegistry()
 
-  // Filter entries for active workflow
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => entry.workflowId === activeWorkflowId)
   }, [entries, activeWorkflowId])

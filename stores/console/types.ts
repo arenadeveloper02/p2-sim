@@ -6,7 +6,8 @@ export interface ConsoleEntry {
   startedAt: string
   endedAt: string
   workflowId?: string | null
-  timestamp: string 
+  timestamp: string
+  blockName?: string
 }
 
 export interface ConsoleStore {

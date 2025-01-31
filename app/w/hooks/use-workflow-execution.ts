@@ -44,7 +44,8 @@ export function useWorkflowExecution() {
             startedAt: log.startedAt,
             endedAt: log.endedAt,
             workflowId: activeWorkflowId,
-            timestamp: log.startedAt // Using startedAt as the timestamp
+            timestamp: log.startedAt,
+            blockName: log.blockTitle
           })
         })
       }
@@ -57,7 +58,8 @@ export function useWorkflowExecution() {
         startedAt: result.metadata?.startTime || new Date().toISOString(),
         endedAt: result.metadata?.endTime || new Date().toISOString(),
         workflowId: activeWorkflowId,
-        timestamp: result.metadata?.startTime || new Date().toISOString()
+        timestamp: result.metadata?.startTime || new Date().toISOString(),
+        blockName: 'Workflow Result'
       })
 
       if (result.logs) {
@@ -111,7 +113,8 @@ export function useWorkflowExecution() {
         startedAt: new Date().toISOString(),
         endedAt: new Date().toISOString(),
         workflowId: activeWorkflowId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        blockName: 'Error'
       })
 
       addNotification('error', `Workflow execution failed: ${errorMessage}`, activeWorkflowId)
