@@ -22,6 +22,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
@@ -85,21 +96,43 @@ export function ControlBar() {
 
       {/* Right Section - Actions */}
       <div className="flex items-center gap-3">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleDeleteWorkflow}
-              disabled={Object.keys(workflows).length <= 1}
-              className="hover:text-red-600"
-            >
-              <Trash2 className="h-5 w-5" />
-              <span className="sr-only">Delete Workflow</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Delete Workflow</TooltipContent>
-        </Tooltip>
+        <AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={Object.keys(workflows).length <= 1}
+                  className="hover:text-red-600"
+                >
+                  <Trash2 className="h-5 w-5" />
+                  <span className="sr-only">Delete Workflow</span>
+                </Button>
+              </AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Delete Workflow</TooltipContent>
+          </Tooltip>
+
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Workflow</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this workflow? This action
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteWorkflow}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
