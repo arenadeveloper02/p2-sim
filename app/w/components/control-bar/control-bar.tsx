@@ -39,7 +39,8 @@ export function ControlBar() {
   const { history, undo, redo, revertToHistoryState } = useWorkflowStore()
   const [isEditing, setIsEditing] = useState(false)
   const [editedName, setEditedName] = useState('')
-  const { workflows, updateWorkflow, activeWorkflowId } = useWorkflowRegistry()
+  const { workflows, updateWorkflow, activeWorkflowId, removeWorkflow } =
+    useWorkflowRegistry()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
   const router = useRouter()
@@ -57,17 +58,23 @@ export function ControlBar() {
 
   const handleDeleteWorkflow = () => {
     if (!activeWorkflowId) return
+
+    // Remove the workflow from the registry
     const newWorkflows = { ...workflows }
     delete newWorkflows[activeWorkflowId]
+
+    // Get remaining workflow IDs
     const remainingIds = Object.keys(newWorkflows)
 
-    updateWorkflow(activeWorkflowId, { name: editedName.trim() })
-
+    // Navigate before removing the workflow to avoid any state inconsistencies
     if (remainingIds.length > 0) {
       router.push(`/w/${remainingIds[0]}`)
     } else {
       router.push('/')
     }
+
+    // Remove the workflow from the registry
+    removeWorkflow(activeWorkflowId)
   }
 
   // Update the time display every minute
