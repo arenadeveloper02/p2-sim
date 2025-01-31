@@ -84,19 +84,6 @@ export function useWorkflowExecution() {
           : `Workflow execution failed: ${result.error}`,
         activeWorkflowId
       )
-
-      // Also log final output info
-      if (result.success) {
-        console.group('Final Output')
-        console.log('Status: ✅ Success')
-        console.log('Output:', result.output)
-        if (result.metadata) {
-          console.log('Duration:', result.metadata.duration + 'ms')
-          console.log('StartedAt:', new Date(result.metadata.startTime).toLocaleTimeString())
-          console.log('EndedAt:', new Date(result.metadata.endTime).toLocaleTimeString())
-        }
-        console.groupEnd()
-      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       setExecutionResult({
