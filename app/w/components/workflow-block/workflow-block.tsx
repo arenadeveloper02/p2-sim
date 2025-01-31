@@ -34,6 +34,9 @@ export function WorkflowBlock({
   const horizontalHandles = useWorkflowStore(
     (state) => state.blocks[id]?.horizontalHandles ?? false
   )
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedName, setEditedName] = useState('')
+  const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     const rows: SubBlockConfig[][] = []
@@ -60,6 +63,26 @@ export function WorkflowBlock({
   }
 
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
+
+  const handleNameClick = () => {
+    setEditedName(name)
+    setIsEditing(true)
+  }
+
+  const handleNameSubmit = () => {
+    if (editedName.trim()) {
+      updateBlockName(id, editedName.trim())
+      setIsEditing(false)
+    }
+  }
+
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleNameSubmit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
 
   return (
     <Card
@@ -92,7 +115,25 @@ export function WorkflowBlock({
           >
             <toolbar.icon className="w-5 h-5 text-white" />
           </div>
-          <span className="font-medium text-md">{name}</span>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value.slice(0, 40))}
+              onBlur={handleNameSubmit}
+              onKeyDown={handleNameKeyDown}
+              autoFocus
+              className="font-medium text-md bg-transparent border-none outline-none p-0 w-[200px]"
+              maxLength={40}
+            />
+          ) : (
+            <span
+              className="font-medium text-md hover:text-muted-foreground cursor-text"
+              onClick={handleNameClick}
+            >
+              {name}
+            </span>
+          )}
         </div>
         {!isEnabled && (
           <Badge

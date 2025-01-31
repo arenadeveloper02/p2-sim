@@ -208,17 +208,22 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
 
         const newId = crypto.randomUUID()
         const offsetPosition = {
-          x: block.position.x + 250, // Offset to the right
-          y: block.position.y + 20,  // Slight offset down
+          x: block.position.x + 250,
+          y: block.position.y + 20,
         }
 
-        // Deep clone the block's subBlocks
+        // More efficient name handling
+        const match = block.name.match(/(.*?)(\d+)?$/)
+        const newName = match && match[2] 
+          ? `${match[1]}${parseInt(match[2]) + 1}`
+          : `${block.name} 1`
+
         const newSubBlocks = Object.entries(block.subBlocks).reduce(
           (acc, [subId, subBlock]) => ({
             ...acc,
             [subId]: {
               ...subBlock,
-              value: JSON.parse(JSON.stringify(subBlock.value)), // Deep clone values
+              value: JSON.parse(JSON.stringify(subBlock.value)),
             },
           }),
           {}
@@ -230,7 +235,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             [newId]: {
               ...block,
               id: newId,
-              name: `${block.name}`,
+              name: newName,
               position: offsetPosition,
               subBlocks: newSubBlocks,
             },
@@ -256,6 +261,23 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
         
         set(newState)
+        get().updateLastSaved()
+      },
+
+      updateBlockName: (id: string, name: string) => {
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...get().blocks[id],
+              name,
+            },
+          },
+          edges: [...get().edges],
+        }
+        
+        set(newState)
+        pushHistory(set, get, newState, `${name} block name updated`)
         get().updateLastSaved()
       },
     })),

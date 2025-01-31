@@ -47,6 +47,7 @@ export interface WorkflowActions {
   toggleBlockEnabled: (id: string) => void
   duplicateBlock: (id: string) => void
   toggleBlockHandles: (id: string) => void
+  updateBlockName: (id: string, name: string) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions 
