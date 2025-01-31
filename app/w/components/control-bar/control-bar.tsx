@@ -91,8 +91,11 @@ export function ControlBar() {
   }
 
   const handleNameSubmit = () => {
-    if (activeWorkflowId && editedName.trim()) {
-      updateWorkflow(activeWorkflowId, { name: editedName.trim() })
+    if (activeWorkflowId) {
+      const trimmedName = editedName.trim()
+      if (trimmedName && trimmedName !== workflows[activeWorkflowId].name) {
+        updateWorkflow(activeWorkflowId, { name: trimmedName })
+      }
       setIsEditing(false)
     }
   }
