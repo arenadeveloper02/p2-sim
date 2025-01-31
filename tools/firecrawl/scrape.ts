@@ -1,6 +1,6 @@
 import { ToolConfig, ToolResponse } from '../types'
 
-interface ScrapeParams {
+export interface ScrapeParams {
   apiKey: string
   url: string
   scrapeOptions?: {
@@ -9,7 +9,7 @@ interface ScrapeParams {
   }
 }
 
-interface ScrapeResponse extends ToolResponse {
+export interface ScrapeResponse extends ToolResponse {
   output: {
     markdown: string
     html?: string

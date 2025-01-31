@@ -1,11 +1,11 @@
 import { ToolConfig, ToolResponse } from '../types'
 
-interface CodeExecutionInput {
+export interface CodeExecutionInput {
   code: Array<{content: string, id: string}> | string
   input?: Record<string, any>  
 }
 
-interface CodeExecutionOutput extends ToolResponse {
+export interface CodeExecutionOutput extends ToolResponse {
   output: {
     result: any
     stdout: string

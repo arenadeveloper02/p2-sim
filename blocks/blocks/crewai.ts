@@ -1,7 +1,8 @@
 import { BlockConfig } from '../types'
 import { CrewAIIcon } from '@/components/icons'
+import { VisionResponse } from '@/tools/crewai/vision'
 
-export const CrewAIVisionBlock: BlockConfig = {
+export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
   type: 'crewaivision',
   toolbar: {
     title: 'CrewAI Vision Tool',
@@ -23,9 +24,9 @@ export const CrewAIVisionBlock: BlockConfig = {
     outputs: {
       response: {
         type: {
-          text: 'string',
-          model: 'string',
-          tokens: 'number'
+          content: 'string',
+          model: 'any',
+          tokens: 'any'
         }
       }
     },
@@ -55,7 +56,7 @@ export const CrewAIVisionBlock: BlockConfig = {
         layout: 'full',
         placeholder: 'Enter your API key',
         password: true
-      },
+  },
       {
         id: 'prompt',
         title: 'Custom Prompt',

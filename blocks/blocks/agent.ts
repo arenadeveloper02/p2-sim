@@ -1,5 +1,6 @@
 import { AgentIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
+import { ChatResponse } from '@/tools/openai/chat'
 
 // Map of models to their tools
 const MODEL_TOOLS = {
@@ -11,9 +12,9 @@ const MODEL_TOOLS = {
   'claude-3-5-sonnet-20241022': 'anthropic.chat',
   'gemini-pro': 'google.chat',
   'grok-2-latest': 'xai.chat'
-} as const 
+} as const
 
-export const AgentBlock: BlockConfig = {
+export const AgentBlock: BlockConfig<ChatResponse> = {
   type: 'agent',
   toolbar: {
     title: 'Agent',
@@ -53,20 +54,10 @@ export const AgentBlock: BlockConfig = {
     outputs: {
       response: {
         type: {
-          text: 'string',
+          content: 'string',
           model: 'string',
-          tokens: 'number'
-        },
-        dependsOn: {
-          subBlockId: 'responseFormat',
-          condition: {
-            whenEmpty: {
-              response: { type: 'string' }
-            },
-            whenFilled: {
-              response: { type: 'json' }
-            }
-          }
+          tokens: 'any',
+          reasoning_tokens: 'any'
         }
       }
     },

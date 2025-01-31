@@ -5,7 +5,7 @@ import { Executor } from '@/executor'
 
 export interface WorkflowExecutionResult {
   success: boolean
-  data?: Record<string, any>
+  output?: Record<string, any>
   error?: string
 }
 
@@ -32,10 +32,10 @@ export async function executeWorkflow(
 
     // 3. Return result
     if (result.success) {
-      console.log('Workflow executed successfully:', result.data)
+      console.log('Workflow executed successfully:', result.output)
       return {
         success: true,
-        data: result.data
+        output: result.output
       }
     } else {
       console.error('Workflow execution failed:', result.error)

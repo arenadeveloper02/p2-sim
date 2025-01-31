@@ -1,7 +1,8 @@
 import { BlockConfig } from '../types'
 import { FirecrawlIcon } from '@/components/icons'
+import { ScrapeResponse } from '@/tools/firecrawl/scrape'
 
-export const FirecrawlScrapeBlock: BlockConfig = {
+export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
   type: 'firecrawlscrape',
   toolbar: {
     title: 'Firecrawl Scraper',
@@ -20,10 +21,10 @@ export const FirecrawlScrapeBlock: BlockConfig = {
       scrapeOptions: { type: 'json', required: false }
     },
     outputs: {
-      response: { 
+      response: {
         type: {
           markdown: 'string',
-          html: 'string',
+          html: 'any',
           metadata: 'json'
         }
       }
@@ -43,7 +44,7 @@ export const FirecrawlScrapeBlock: BlockConfig = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter the webpage URL to scrape'
-      },
+  },
       {
         id: 'onlyMainContent',
         title: 'Only Main Content',

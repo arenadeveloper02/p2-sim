@@ -1,7 +1,8 @@
 import { CodeIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
-  
-export const FunctionBlock: BlockConfig = {
+import { CodeExecutionOutput } from '@/tools/function/execute'
+
+export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
   type: 'function',
   toolbar: {
     title: 'Function',
@@ -11,10 +12,7 @@ export const FunctionBlock: BlockConfig = {
     category: 'advanced',
   },
   tools: {
-    access: ['function.execute'],
-    config: {
-      tool: () => 'function.execute'
-    }
+    access: ['function.execute']
   },
   workflow: {
     inputs: {
@@ -23,7 +21,7 @@ export const FunctionBlock: BlockConfig = {
     outputs: {
       response: {
         type: {
-          value: 'any',
+          result: 'any',
           stdout: 'string'
         }
       }
@@ -34,8 +32,7 @@ export const FunctionBlock: BlockConfig = {
         title: 'Code',
         type: 'code',
         layout: 'full',
-        placeholder: 'Enter your code here...'
       }
-    ]
-  }
+    ],
+  },
 }

@@ -1,6 +1,6 @@
 import { ToolConfig, HttpMethod, ToolResponse } from '../types' 
 
-interface RequestParams {
+export interface RequestParams {
   url: string 
   method?: HttpMethod 
   headers?: Record<string, string> 
@@ -12,7 +12,7 @@ interface RequestParams {
   validateStatus?: (status: number) => boolean 
 }
 
-interface RequestResponse extends ToolResponse {
+export interface RequestResponse extends ToolResponse {
   output: {
     data: any
     status: number

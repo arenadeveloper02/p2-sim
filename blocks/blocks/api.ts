@@ -1,7 +1,8 @@
 import { ApiIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
+import { RequestResponse } from '@/tools/http/request'
 
-export const ApiBlock: BlockConfig = {
+export const ApiBlock: BlockConfig<RequestResponse> = {
   type: 'api',
   toolbar: {
     title: 'API',
@@ -23,7 +24,7 @@ export const ApiBlock: BlockConfig = {
     outputs: {
       response: {
         type: {
-          body: 'any',
+          data: 'any',
           status: 'number',
           headers: 'json'
         }

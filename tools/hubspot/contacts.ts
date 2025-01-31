@@ -1,6 +1,6 @@
 import { ToolConfig, ToolResponse } from '../types' 
 
-interface ContactsParams {
+export interface ContactsParams {
   apiKey: string 
   action: 'create' | 'update' | 'search' | 'delete' 
   id?: string 
@@ -15,7 +15,7 @@ interface ContactsParams {
   data: Record<string, any> 
 }
 
-interface ContactsResponse extends ToolResponse {
+export interface ContactsResponse extends ToolResponse {
   output: {
     contacts: any[]
     totalResults?: number

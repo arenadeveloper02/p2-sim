@@ -14,7 +14,7 @@ interface ChatParams {
   stream?: boolean 
 }
 
-interface ChatResponse extends ToolResponse {
+export interface ChatResponse extends ToolResponse {
   output: {
     content: string
     model: string

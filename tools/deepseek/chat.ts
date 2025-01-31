@@ -5,7 +5,7 @@ interface Message {
   content: string
 }
 
-interface ChatParams {
+export interface ChatParams {
   apiKey: string
   systemPrompt?: string
   context?: string
@@ -14,7 +14,7 @@ interface ChatParams {
   responseFormat?: string
 }
 
-interface ChatResponse extends ToolResponse {
+export interface ChatResponse extends ToolResponse {
   output: {
     content: string
     model: string

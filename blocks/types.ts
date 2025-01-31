@@ -1,5 +1,7 @@
 import type { SVGProps } from 'react'
 import type { JSX } from 'react'
+import { ToolResponse } from '@/tools/types'
+import { ExtractToolOutput, ToolOutputToValueType } from './utils'
 
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'basic' | 'advanced'
@@ -45,7 +47,7 @@ export interface SubBlockConfig {
   password?: boolean
 }
 
-export interface BlockConfig {
+export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   type: string
   toolbar: {
     title: string
@@ -63,6 +65,10 @@ export interface BlockConfig {
   workflow: {
     subBlocks: SubBlockConfig[]
     inputs: Record<string, ParamConfig>
-    outputs: Record<string, OutputConfig>
+    outputs: {
+      response: {
+        type: ToolOutputToValueType<ExtractToolOutput<T>>
+      }
+    }
   }
 }

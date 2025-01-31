@@ -1,6 +1,6 @@
 import { ToolConfig, ToolResponse } from '../types' 
 
-interface OpportunityParams {
+export interface OpportunityParams {
   apiKey: string 
   action: 'create' | 'update' | 'search' | 'delete' 
   id?: string 
@@ -16,7 +16,7 @@ interface OpportunityParams {
   data: Record<string, any> 
 }
 
-interface OpportunityResponse extends ToolResponse {
+export interface OpportunityResponse extends ToolResponse {
   output: {
     records: any[]
     totalResults?: number
