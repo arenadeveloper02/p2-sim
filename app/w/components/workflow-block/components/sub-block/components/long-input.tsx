@@ -89,7 +89,7 @@ export function LongInput({
         className={cn(
           'w-full resize-none placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap',
           isConnecting &&
-            config?.droppable !== false &&
+            config?.connectionDroppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
         )}
         rows={4}

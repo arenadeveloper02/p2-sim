@@ -110,7 +110,7 @@ export function ShortInput({
         className={cn(
           'w-full placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground',
           isConnecting &&
-            config?.droppable !== false &&
+            config?.connectionDroppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
         )}
         placeholder={placeholder ?? ''}

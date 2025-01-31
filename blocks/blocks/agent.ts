@@ -98,7 +98,7 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
         layout: "full",
         placeholder: "Enter your API key",
         password: true,
-        droppable: false
+        connectionDroppable: false
       },
       {
         id: 'responseFormat',
