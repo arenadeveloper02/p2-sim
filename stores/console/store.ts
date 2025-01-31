@@ -25,7 +25,11 @@ export const useConsoleStore = create<ConsoleStore>()(
           })
         },
 
-        clearConsole: () => set({ entries: [] }),
+        clearConsole: (workflowId: string | null) => {
+          set((state) => ({
+            entries: state.entries.filter(entry => !workflowId || entry.workflowId !== workflowId)
+          }))
+        },
 
         getWorkflowEntries: (workflowId) => {
           return get().entries.filter((entry) => entry.workflowId === workflowId)

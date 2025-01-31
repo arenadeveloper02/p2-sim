@@ -85,7 +85,7 @@ export function Console() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={clearConsole}
+          onClick={() => clearConsole(activeWorkflowId)}
           className="text-muted-foreground hover:text-foreground"
         >
           Clear

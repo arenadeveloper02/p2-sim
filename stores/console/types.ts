@@ -13,6 +13,6 @@ export interface ConsoleEntry {
 export interface ConsoleStore {
   entries: ConsoleEntry[]
   addConsole: (entry: Omit<ConsoleEntry, 'id'>) => void
-  clearConsole: () => void
+  clearConsole: (workflowId: string | null) => void
   getWorkflowEntries: (workflowId: string) => ConsoleEntry[]
 }
