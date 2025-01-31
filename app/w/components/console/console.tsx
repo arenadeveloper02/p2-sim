@@ -99,7 +99,7 @@ export function Console() {
           </div>
         ) : (
           filteredEntries.map((entry) => (
-            <ConsoleEntry key={entry.id} entry={entry} />
+            <ConsoleEntry key={entry.id} entry={entry} consoleWidth={width} />
           ))
         )}
       </ScrollArea>

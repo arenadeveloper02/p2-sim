@@ -50,18 +50,6 @@ export function useWorkflowExecution() {
         })
       }
 
-      // Add final execution result to console
-      addConsole({
-        output: result.output,
-        error: result.error,
-        durationMs: result.metadata?.duration ?? -1,
-        startedAt: result.metadata?.startTime || new Date().toISOString(),
-        endedAt: result.metadata?.endTime || new Date().toISOString(),
-        workflowId: activeWorkflowId,
-        timestamp: result.metadata?.startTime || new Date().toISOString(),
-        blockName: 'Workflow Result'
-      })
-
       if (result.logs) {
         console.group('Detailed Block Logs')
         result.logs.forEach((log) => {

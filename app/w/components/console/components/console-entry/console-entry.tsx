@@ -9,12 +9,14 @@ import {
 } from 'lucide-react'
 import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
 import { JSONView } from '../json-view/json-view'
+import { getBlock } from '@/blocks'
 
 interface ConsoleEntryProps {
   entry: ConsoleEntryType
+  consoleWidth: number
 }
 
-export function ConsoleEntry({ entry }: ConsoleEntryProps) {
+export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
   const timeAgo = useMemo(
@@ -25,29 +27,53 @@ export function ConsoleEntry({ entry }: ConsoleEntryProps) {
     [entry.startedAt]
   )
 
+  const blockConfig = useMemo(() => {
+    if (!entry.blockName) return null
+    const blockType = entry.blockName.split(' ')[0].toLowerCase()
+    return getBlock(blockType)
+  }, [entry.blockName])
+
+  const BlockIcon = blockConfig?.toolbar.icon
+
   const statusIcon = entry.error ? (
     <AlertCircle className="h-4 w-4 text-destructive" />
   ) : (
-    <CheckCircle2 className="h-4 w-4 text-success" />
+    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
   )
 
   return (
     <div className="border-b border-border hover:bg-accent/50 transition-colors">
       <div className="p-4 space-y-4">
-        {entry.blockName && (
-          <div className="flex items-center gap-2 text-sm">
-            {statusIcon}
-            <span className="text-muted-foreground">{entry.blockName}</span>
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            <span>{format(new Date(entry.startedAt), 'HH:mm:ss')}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            <span>Duration: {entry.durationMs}ms</span>
+        <div
+          className={`${
+            consoleWidth >= 400
+              ? 'flex items-center justify-between'
+              : 'grid gap-4 grid-cols-1'
+          }`}
+        >
+          {entry.blockName && (
+            <div className="flex items-center gap-2 text-sm">
+              {BlockIcon ? (
+                <BlockIcon className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Terminal className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="text-muted-foreground">{entry.blockName}</span>
+            </div>
+          )}
+          <div
+            className={`${
+              consoleWidth >= 400 ? 'flex gap-4' : 'grid grid-cols-2 gap-4'
+            } text-sm text-muted-foreground`}
+          >
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              <span>{format(new Date(entry.startedAt), 'HH:mm:ss')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              <span>Duration: {entry.durationMs}ms</span>
+            </div>
           </div>
         </div>
 
