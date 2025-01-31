@@ -26,32 +26,44 @@ export function useWorkflowExecution() {
       }, {} as Record<string, any>)
 
       // Execute workflow
-      const executor = new Executor(
-        new Serializer().serializeWorkflow(blocks, edges),
-        currentBlockStates
-      )
+      const workflow = new Serializer().serializeWorkflow(blocks, edges)
+      const executor = new Executor(workflow, currentBlockStates)
       
-      const result = await executor.execute(crypto.randomUUID())
+      const result = await executor.execute('my-run-id')
       setExecutionResult(result)
+
+      if (result.logs) {
+        console.group('Detailed Block Logs')
+        result.logs.forEach((log) => {
+          console.log(`Block ${log.blockTitle}: Success=${log.success}`, {
+            output: log.output,
+            error: log.error,
+            durationMs: log.durationMs,
+            startedAt: log.startedAt,
+            endedAt: log.endedAt
+          })
+        })
+        console.groupEnd()
+      }
 
       // Show execution result with workflowId
       addNotification(
         result.success ? 'console' : 'error',
         result.success 
           ? 'Workflow completed successfully'
-          : `Failed to execute workflow: ${result.error}`,
+          : `Workflow execution failed: ${result.error}`,
         activeWorkflowId
       )
 
-      // Log detailed result to console
+      // Also log final output info
       if (result.success) {
-        console.group('Workflow Execution Result')
+        console.group('Final Output')
         console.log('Status: ✅ Success')
         console.log('Output:', result.output)
         if (result.metadata) {
           console.log('Duration:', result.metadata.duration + 'ms')
-          console.log('Start Time:', new Date(result.metadata.startTime).toLocaleTimeString())
-          console.log('End Time:', new Date(result.metadata.endTime).toLocaleTimeString())
+          console.log('StartedAt:', new Date(result.metadata.startTime).toLocaleTimeString())
+          console.log('EndedAt:', new Date(result.metadata.endTime).toLocaleTimeString())
         }
         console.groupEnd()
       }
@@ -62,7 +74,7 @@ export function useWorkflowExecution() {
         output: { response: {} },
         error: errorMessage
       })
-      addNotification('error', `Failed to execute workflow: ${errorMessage}`, activeWorkflowId)
+      addNotification('error', `Workflow execution failed: ${errorMessage}`, activeWorkflowId)
     } finally {
       setIsExecuting(false)
     }
