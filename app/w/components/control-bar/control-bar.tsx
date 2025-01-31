@@ -37,9 +37,11 @@ import {
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
   const { history, undo, redo, revertToHistoryState } = useWorkflowStore()
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedName, setEditedName] = useState('')
+  const { workflows, updateWorkflow, activeWorkflowId } = useWorkflowRegistry()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
-  const { workflows, removeWorkflow, activeWorkflowId } = useWorkflowRegistry()
   const router = useRouter()
 
   // Use client-side only rendering for the timestamp
@@ -59,7 +61,7 @@ export function ControlBar() {
     delete newWorkflows[activeWorkflowId]
     const remainingIds = Object.keys(newWorkflows)
 
-    removeWorkflow(activeWorkflowId)
+    updateWorkflow(activeWorkflowId, { name: editedName.trim() })
 
     if (remainingIds.length > 0) {
       router.push(`/w/${remainingIds[0]}`)
@@ -74,13 +76,50 @@ export function ControlBar() {
     return () => clearInterval(interval)
   }, [])
 
+  const handleNameClick = () => {
+    if (activeWorkflowId) {
+      setEditedName(workflows[activeWorkflowId].name)
+      setIsEditing(true)
+    }
+  }
+
+  const handleNameSubmit = () => {
+    if (activeWorkflowId && editedName.trim()) {
+      updateWorkflow(activeWorkflowId, { name: editedName.trim() })
+      setIsEditing(false)
+    }
+  }
+
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleNameSubmit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
+
   return (
     <div className="flex h-16 w-full items-center justify-between bg-background px-6 border-b transition-all duration-300">
       {/* Left Section - Workflow Info */}
       <div className="flex flex-col gap-[2px]">
-        <h2 className="font-semibold text-sm">
-          {activeWorkflowId ? workflows[activeWorkflowId].name : 'Workflow'}
-        </h2>
+        {isEditing ? (
+          <input
+            type="text"
+            value={editedName}
+            onChange={(e) => setEditedName(e.target.value)}
+            onBlur={handleNameSubmit}
+            onKeyDown={handleNameKeyDown}
+            autoFocus
+            className="font-semibold text-sm bg-transparent border-none outline-none p-0 w-[200px]"
+          />
+        ) : (
+          <h2
+            className="font-semibold text-sm hover:text-muted-foreground w-fit"
+            onClick={handleNameClick}
+          >
+            {activeWorkflowId ? workflows[activeWorkflowId].name : 'Workflow'}
+          </h2>
+        )}
         {mounted && ( // Only render the timestamp after client-side hydration
           <p className="text-xs text-muted-foreground">
             Saved{' '}
