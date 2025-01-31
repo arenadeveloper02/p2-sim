@@ -5,7 +5,7 @@ import { useNotificationStore } from '@/stores/notifications/notifications-store
 import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
 
-const NOTIFICATION_TIMEOUT = 3000
+const NOTIFICATION_TIMEOUT = 4000
 const FADE_DURATION = 300
 
 const NotificationIcon = {
