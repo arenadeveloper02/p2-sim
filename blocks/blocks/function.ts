@@ -32,6 +32,7 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
         title: 'Code',
         type: 'code',
         layout: 'full',
+        placeholder: 'Enter your code here...'
       }
     ],
   },

@@ -3,7 +3,7 @@ import { FirecrawlIcon } from '@/components/icons'
 import { ScrapeResponse } from '@/tools/firecrawl/scrape'
 
 export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
-  type: 'firecrawlscrape',
+  type: 'firecrawl_scrape',
   toolbar: {
     title: 'Firecrawl Scraper',
     description: 'Extract clean content from any webpage',

@@ -11,6 +11,7 @@ import { opportunitiesTool as salesforceOpportunities } from './salesforce/oppor
 import { functionExecuteTool as functionExecute } from './function/execute'
 import { visionTool as crewAIVision } from './crewai/vision'
 import { scrapeTool } from './firecrawl/scrape'
+import { readUrlTool } from './jina/reader'
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   // AI Models
@@ -30,7 +31,9 @@ export const tools: Record<string, ToolConfig> = {
   // CrewAI Tools
   'crewai.vision': crewAIVision,
   // Firecrawl Tools
-  'firecrawl.scrape': scrapeTool
+  'firecrawl.scrape': scrapeTool,
+  // Jina Tools
+  'jina.readurl': readUrlTool
 } 
 
 // Get a tool by its ID

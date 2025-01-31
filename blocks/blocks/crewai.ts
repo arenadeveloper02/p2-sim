@@ -3,7 +3,7 @@ import { CrewAIIcon } from '@/components/icons'
 import { VisionResponse } from '@/tools/crewai/vision'
 
 export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
-  type: 'crewaivision',
+  type: 'crewai_vision',
   toolbar: {
     title: 'CrewAI Vision Tool',
     description: 'Analyze images using vision models',
