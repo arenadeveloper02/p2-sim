@@ -45,6 +45,7 @@ export interface SubBlockConfig {
   columns?: string[]
   placeholder?: string
   password?: boolean
+  droppable?: boolean
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {

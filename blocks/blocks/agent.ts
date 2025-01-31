@@ -97,7 +97,8 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
         type: "short-input",
         layout: "full",
         placeholder: "Enter your API key",
-        password: true
+        password: true,
+        droppable: false
       },
       {
         id: 'responseFormat',

@@ -2,12 +2,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
+import { SubBlockConfig } from '@/blocks/types'
 
 interface LongInputProps {
   placeholder?: string
   blockId: string
   subBlockId: string
   isConnecting: boolean
+  config: SubBlockConfig
 }
 
 export function LongInput({
@@ -15,6 +17,7 @@ export function LongInput({
   blockId,
   subBlockId,
   isConnecting,
+  config,
 }: LongInputProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -86,6 +89,7 @@ export function LongInput({
         className={cn(
           'w-full resize-none placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap',
           isConnecting &&
+            config?.droppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
         )}
         rows={4}

@@ -29,6 +29,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             placeholder={config.placeholder}
             password={config.password}
             isConnecting={isConnecting}
+            config={config}
           />
         )
       case 'long-input':
@@ -38,6 +39,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             subBlockId={config.id}
             placeholder={config.placeholder}
             isConnecting={isConnecting}
+            config={config}
           />
         )
       case 'dropdown':
@@ -71,7 +73,13 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
           />
         )
       case 'code':
-        return <Code blockId={blockId} subBlockId={config.id} />
+        return (
+          <Code
+            blockId={blockId}
+            subBlockId={config.id}
+            isConnecting={isConnecting}
+          />
+        )
       case 'switch':
         return (
           <Switch

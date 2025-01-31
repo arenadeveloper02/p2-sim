@@ -29,6 +29,7 @@ const MATCHING_PAIRS: Record<string, string> = {
 interface CodeProps {
   blockId: string
   subBlockId: string
+  isConnecting: boolean
 }
 
 function useCodeLines(blockId: string, subBlockId: string) {
@@ -72,6 +73,64 @@ function useCodeLines(blockId: string, subBlockId: string) {
     })
   }, [])
 
+  const handleDrop = useCallback(
+    (lineIndex: number, e: React.DragEvent<HTMLTextAreaElement>) => {
+      e.preventDefault()
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('application/json'))
+
+        const isValidConnectionBlock =
+          data.type === 'connectionBlock' &&
+          data.connectionData.sourceBlockId === blockId
+
+        if (!isValidConnectionBlock) return
+
+        const textarea = e.currentTarget
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const currentContent = lines[lineIndex].content
+
+        const connectionName = data.connectionData.name
+          .replace(/\s+/g, '')
+          .toLowerCase()
+        const outputSuffix =
+          data.connectionData.outputType === 'any'
+            ? 'res'
+            : data.connectionData.outputType
+
+        const tag = `<${connectionName}.${outputSuffix}>`
+        const newContent =
+          currentContent.substring(0, start) +
+          tag +
+          currentContent.substring(end)
+
+        setLines((prevLines) => {
+          const newLines = [...prevLines]
+          newLines[lineIndex] = {
+            ...newLines[lineIndex],
+            content: newContent,
+          }
+          return newLines
+        })
+
+        // Set cursor position after the inserted tag
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + tag.length
+        }, 0)
+      } catch (error) {
+        console.error('Failed to parse drop data:', error)
+      }
+    },
+    [blockId, lines, setLines]
+  )
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent<HTMLTextAreaElement>) => {
+      e.preventDefault() // Required to allow drops
+    },
+    []
+  )
+
   return {
     lines,
     setLines,
@@ -80,10 +139,12 @@ function useCodeLines(blockId: string, subBlockId: string) {
     handleChange,
     selection,
     setSelection,
+    handleDrop,
+    handleDragOver,
   }
 }
 
-export function Code({ blockId, subBlockId }: CodeProps) {
+export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   const {
     lines,
     setLines,
@@ -92,6 +153,8 @@ export function Code({ blockId, subBlockId }: CodeProps) {
     handleChange,
     selection,
     setSelection,
+    handleDrop,
+    handleDragOver,
   } = useCodeLines(blockId, subBlockId)
   const textareaRefs = useRef<(HTMLTextAreaElement | null)[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -591,7 +654,10 @@ export function Code({ blockId, subBlockId }: CodeProps) {
   return (
     <div
       ref={containerRef}
-      className="font-mono text-sm border rounded-md overflow-hidden relative"
+      className={cn(
+        'font-mono text-sm border rounded-md overflow-hidden relative',
+        isConnecting && 'ring-2 ring-blue-500 ring-offset-2'
+      )}
       onWheel={handleScroll}
     >
       <div className="absolute top-0 left-0 z-50 h-full bg-background">
@@ -634,6 +700,8 @@ export function Code({ blockId, subBlockId }: CodeProps) {
                   onChange={(e) => handleChange(i, e.target.value)}
                   onKeyDown={handleKeyDown}
                   onFocus={() => setCurrentLine(i)}
+                  onDrop={(e) => handleDrop(i, e)}
+                  onDragOver={handleDragOver}
                   className={cn(
                     textareaClassName,
                     'overflow-hidden w-full',

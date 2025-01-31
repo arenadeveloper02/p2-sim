@@ -2,6 +2,7 @@ import { Input } from '@/components/ui/input'
 import { useState, useRef, useEffect } from 'react'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
+import { SubBlockConfig } from '@/blocks/types'
 
 interface ShortInputProps {
   placeholder?: string
@@ -9,6 +10,7 @@ interface ShortInputProps {
   blockId: string
   subBlockId: string
   isConnecting: boolean
+  config: SubBlockConfig
 }
 
 export function ShortInput({
@@ -17,6 +19,7 @@ export function ShortInput({
   placeholder,
   password,
   isConnecting,
+  config,
 }: ShortInputProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
@@ -107,6 +110,7 @@ export function ShortInput({
         className={cn(
           'w-full placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground',
           isConnecting &&
+            config?.droppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
         )}
         placeholder={placeholder ?? ''}
