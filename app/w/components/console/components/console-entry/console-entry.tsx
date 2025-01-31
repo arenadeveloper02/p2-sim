@@ -78,12 +78,14 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
         </div>
 
         <div className="space-y-4">
-          <div className="flex items-start gap-2">
-            <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
-            <div className="text-sm font-mono flex-1">
-              <JSONView data={entry.output} />
+          {!entry.error && (
+            <div className="flex items-start gap-2">
+              <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
+              <div className="text-sm font-mono flex-1">
+                <JSONView data={entry.output} />
+              </div>
             </div>
-          </div>
+          )}
 
           {entry.error && (
             <div className="flex items-start gap-2 border rounded-md p-3 border-red-500 bg-red-50 text-destructive dark:border-border dark:text-foreground dark:bg-background">

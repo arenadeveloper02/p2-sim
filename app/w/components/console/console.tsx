@@ -80,7 +80,7 @@ export function Console() {
         onMouseDown={handleMouseDown}
       />
 
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between h-14 px-4 border-b">
         <h2 className="text-sm font-medium">Console</h2>
         <Button
           variant="ghost"
@@ -93,29 +93,33 @@ export function Console() {
       </div>
 
       <ScrollArea className="h-[calc(100%-4rem)]">
-        {filteredEntries.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground pt-4">
-            No console entries
-          </div>
-        ) : (
-          filteredEntries.map((entry) => (
-            <ConsoleEntry key={entry.id} entry={entry} consoleWidth={width} />
-          ))
-        )}
+        <div className="pb-16">
+          {filteredEntries.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground pt-4">
+              No console entries
+            </div>
+          ) : (
+            filteredEntries.map((entry) => (
+              <ConsoleEntry key={entry.id} entry={entry} consoleWidth={width} />
+            ))
+          )}
+        </div>
       </ScrollArea>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setIsCollapsed(true)}
-            className="absolute left-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
-          >
-            <PanelLeftClose className="h-5 w-5" />
-            <span className="sr-only">Close Console</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Close Console</TooltipContent>
-      </Tooltip>
+      <div className="absolute left-0 right-0 bottom-0 h-16 bg-background border-t">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setIsCollapsed(true)}
+              className="absolute left-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
+            >
+              <PanelLeftClose className="h-5 w-5" />
+              <span className="sr-only">Close Console</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Close Console</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   )
 }
