@@ -37,6 +37,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
+            isConnecting={isConnecting}
           />
         )
       case 'dropdown':
