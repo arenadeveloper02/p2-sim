@@ -5,6 +5,7 @@ import { Executor } from '@/executor'
 import { ExecutionResult } from '@/executor/types'
 import { useNotificationStore } from '@/stores/notifications/store'
 import { useWorkflowRegistry } from '@/stores/workflow/registry'
+import { useConsoleStore } from '@/stores/console/store'
 
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)
@@ -12,6 +13,7 @@ export function useWorkflowExecution() {
   const { blocks, edges } = useWorkflowStore()
   const { activeWorkflowId } = useWorkflowRegistry()
   const { addNotification } = useNotificationStore()
+  const { addConsole } = useConsoleStore()
 
   const handleRunWorkflow = useCallback(async () => {
     setIsExecuting(true)
@@ -31,6 +33,32 @@ export function useWorkflowExecution() {
       
       const result = await executor.execute('my-run-id')
       setExecutionResult(result)
+
+      // Add console entries for each block execution
+      if (result.logs) {
+        result.logs.forEach((log) => {
+          addConsole({
+            output: log.output,
+            error: log.error,
+            durationMs: log.durationMs,
+            startedAt: log.startedAt,
+            endedAt: log.endedAt,
+            workflowId: activeWorkflowId,
+            timestamp: log.startedAt // Using startedAt as the timestamp
+          })
+        })
+      }
+
+      // Add final execution result to console
+      addConsole({
+        output: result.output,
+        error: result.error,
+        durationMs: result.metadata?.duration || 0,
+        startedAt: result.metadata?.startTime || new Date().toISOString(),
+        endedAt: result.metadata?.endTime || new Date().toISOString(),
+        workflowId: activeWorkflowId,
+        timestamp: result.metadata?.startTime || new Date().toISOString()
+      })
 
       if (result.logs) {
         console.group('Detailed Block Logs')
@@ -74,11 +102,23 @@ export function useWorkflowExecution() {
         output: { response: {} },
         error: errorMessage
       })
+
+      // Add error entry to console
+      addConsole({
+        output: {},
+        error: errorMessage,
+        durationMs: 0,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        workflowId: activeWorkflowId,
+        timestamp: new Date().toISOString()
+      })
+
       addNotification('error', `Workflow execution failed: ${errorMessage}`, activeWorkflowId)
     } finally {
       setIsExecuting(false)
     }
-  }, [blocks, edges, addNotification, activeWorkflowId])
+  }, [blocks, edges, addNotification, activeWorkflowId, addConsole])
 
   return { isExecuting, executionResult, handleRunWorkflow }
 } 
