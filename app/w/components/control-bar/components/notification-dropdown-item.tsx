@@ -5,7 +5,7 @@ import {
   NotificationType,
   NotificationStore,
 } from '@/stores/notifications/types'
-import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { useNotificationStore } from '@/stores/notifications/store'
 import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
 import { useState, useEffect } from 'react'

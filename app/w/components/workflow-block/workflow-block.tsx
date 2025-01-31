@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
 import { useState } from 'react'
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { Badge } from '@/components/ui/badge'
 
 interface WorkflowBlockProps {

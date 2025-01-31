@@ -9,13 +9,13 @@ import ReactFlow, {
   ConnectionLineType,
 } from 'reactflow'
 import { getBlock } from '../../../../../blocks'
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
-import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
+import { useNotificationStore } from '@/stores/notifications/store'
 import { useWorkflowExecution } from '../../../hooks/use-workflow-execution'
 import { NotificationList } from '@/app/w/components/notifications/notifications'
 import { WorkflowNode } from '../workflow-node/workflow-node'
 import { CustomEdge } from '../custom-edge/custom-edge'
-import { initializeStateLogger } from '@/stores/workflow/state-logger'
+import { initializeStateLogger } from '@/stores/workflow/logger'
 
 // Define custom node and edge types for ReactFlow
 const nodeTypes: NodeTypes = { workflowBlock: WorkflowNode }

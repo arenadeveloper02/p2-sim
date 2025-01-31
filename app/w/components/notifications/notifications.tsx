@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Terminal } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { useNotificationStore } from '@/stores/notifications/store'
 import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
 

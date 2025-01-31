@@ -1,4 +1,4 @@
-import { useWorkflowStore } from './workflow-store'
+import { useWorkflowStore } from './store'
 
 export function initializeStateLogger() {
   useWorkflowStore.subscribe((state) => {

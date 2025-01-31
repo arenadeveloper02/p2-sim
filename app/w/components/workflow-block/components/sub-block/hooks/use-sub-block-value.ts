@@ -1,4 +1,4 @@
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { useCallback } from 'react'
 
 export function useSubBlockValue(blockId: string, subBlockId: string) {

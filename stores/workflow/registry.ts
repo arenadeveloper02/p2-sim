@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { WorkflowRegistry, WorkflowMetadata } from './registry-types'
-import { useWorkflowStore } from './workflow-store'
+import { useWorkflowStore } from './store'
 
 export const useWorkflowRegistry = create<WorkflowRegistry>()(
   devtools(

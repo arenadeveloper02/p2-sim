@@ -1,4 +1,4 @@
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { shallow } from 'zustand/shallow'
 
 export interface ConnectedBlock {

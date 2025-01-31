@@ -8,7 +8,7 @@ import {
   ArrowLeftRight,
   ArrowUpDown,
 } from 'lucide-react'
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import {
   Tooltip,
   TooltipContent,

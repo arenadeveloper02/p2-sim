@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react'
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { Serializer } from '@/serializer'
 import { Executor } from '@/executor'
 import { ExecutionResult } from '@/executor/types'
-import { useNotificationStore } from '@/stores/notifications/notifications-store'
-import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useNotificationStore } from '@/stores/notifications/store'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
 
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)

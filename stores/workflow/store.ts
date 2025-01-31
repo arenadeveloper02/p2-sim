@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware'
 import { Edge } from 'reactflow'
 import { Position, SubBlockState, WorkflowStore } from './types'
 import { getBlock } from '@/blocks'
-import { withHistory, WorkflowStoreWithHistory, pushHistory } from './history-middleware'
+import { withHistory, WorkflowStoreWithHistory, pushHistory } from './middleware'
 import { resolveOutputType } from '@/blocks/utils'
 
 const initialState = {

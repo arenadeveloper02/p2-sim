@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { AgentIcon } from '@/components/icons'
-import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'

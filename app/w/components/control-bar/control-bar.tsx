@@ -8,14 +8,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { History, Bell, Play, Trash2 } from 'lucide-react'
-import { useNotificationStore } from '@/stores/notifications/notifications-store'
+import { useNotificationStore } from '@/stores/notifications/store'
 import { NotificationDropdownItem } from './components/notification-dropdown-item'
-import { useWorkflowStore } from '@/stores/workflow/workflow-store'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { HistoryDropdownItem } from './components/history-dropdown-item'
 import { formatDistanceToNow } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
-import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useRouter } from 'next/navigation'
 import {
   Tooltip,

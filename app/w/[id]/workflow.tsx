@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ReactFlowProvider } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { useWorkflowRegistry } from '@/stores/workflow/workflow-registry'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useParams, useRouter } from 'next/navigation'
 import { WorkflowCanvas } from './components/workflow-canvas/workflow-canvas'
 
