@@ -87,7 +87,7 @@ export function LongInput({
       <Textarea
         ref={textareaRef}
         className={cn(
-          'w-full resize-none placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap',
+          'w-full placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap',
           isConnecting &&
             config?.connectionDroppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
