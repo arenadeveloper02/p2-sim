@@ -70,10 +70,11 @@ export function WorkflowBlock({
   }
 
   const handleNameSubmit = () => {
-    if (editedName.trim()) {
-      updateBlockName(id, editedName.trim())
-      setIsEditing(false)
+    const trimmedName = editedName.trim()
+    if (trimmedName && trimmedName !== name) {
+      updateBlockName(id, trimmedName)
     }
+    setIsEditing(false)
   }
 
   const handleNameKeyDown = (e: React.KeyboardEvent) => {
