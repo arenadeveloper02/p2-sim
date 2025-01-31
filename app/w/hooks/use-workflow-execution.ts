@@ -54,7 +54,7 @@ export function useWorkflowExecution() {
       addConsole({
         output: result.output,
         error: result.error,
-        durationMs: result.metadata?.duration || 0,
+        durationMs: result.metadata?.duration ?? -1,
         startedAt: result.metadata?.startTime || new Date().toISOString(),
         endedAt: result.metadata?.endTime || new Date().toISOString(),
         workflowId: activeWorkflowId,
@@ -96,7 +96,7 @@ export function useWorkflowExecution() {
       addConsole({
         output: {},
         error: errorMessage,
-        durationMs: 0,
+        durationMs: -1,
         startedAt: new Date().toISOString(),
         endedAt: new Date().toISOString(),
         workflowId: activeWorkflowId,
