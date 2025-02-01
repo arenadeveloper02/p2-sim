@@ -30,10 +30,18 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     null
   )
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     inputRefs.current = inputRefs.current.slice(0, envVars.length)
   }, [envVars.length])
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight
+    }
+  }, [envVars])
 
   const setInputRef = (el: HTMLInputElement | null, index: number) => {
     inputRefs.current[index] = el
@@ -161,7 +169,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             </div>
 
             <div className="relative">
-              <div className="overflow-y-auto max-h-[40vh] space-y-2 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/25 scrollbar-track-transparent pr-6 -mr-6 pb-2 pt-2 px-2 -mx-2">
+              <div
+                ref={scrollContainerRef}
+                className="overflow-y-auto max-h-[40vh] space-y-2 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/25 scrollbar-track-transparent pr-6 -mr-6 pb-2 pt-2 px-2 -mx-2"
+              >
                 {envVars.map(renderEnvVarRow)}
               </div>
             </div>
