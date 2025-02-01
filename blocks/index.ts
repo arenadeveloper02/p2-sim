@@ -43,8 +43,6 @@ const toolToBlockType = Object.entries(blocks).reduce((acc, [blockType, config])
 export const getBlock = (type: string): BlockConfig | undefined =>
   blocks[type]
 
-export const getBlockTypeForTool = (toolId: string): string | undefined =>
-  toolToBlockType[toolId]
 
 export const getBlocksByCategory = (category: 'basic' | 'advanced'): BlockConfig[] =>
   Object.values(blocks).filter(block => block.toolbar.category === category)

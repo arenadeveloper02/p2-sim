@@ -1,7 +1,7 @@
 import { BlockState, SubBlockState } from '@/stores/workflow/types' 
 import { Edge } from 'reactflow' 
 import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types' 
-import { getBlock, getBlockTypeForTool } from '@/blocks' 
+import { getBlock } from '@/blocks' 
 
 export class Serializer {
   serializeWorkflow(blocks: Record<string, BlockState>, edges: Edge[]): SerializedWorkflow {
@@ -52,7 +52,8 @@ export class Serializer {
         title: block.name,
         description: blockConfig.toolbar.description,
         category: blockConfig.toolbar.category,
-        color: blockConfig.toolbar.bgColor
+        color: blockConfig.toolbar.bgColor,
+        type: block.type
       },
       enabled: block.enabled
     } 
@@ -108,9 +109,9 @@ export class Serializer {
   }
 
   private deserializeBlock(serializedBlock: SerializedBlock): BlockState {
-    const blockType = getBlockTypeForTool(serializedBlock.config.tool)
+    const blockType = serializedBlock.metadata?.type
     if (!blockType) {
-      throw new Error(`Invalid tool ID: ${serializedBlock.config.tool}`)
+      throw new Error(`Invalid block type: ${serializedBlock.metadata?.type}`)
     }
 
     const blockConfig = getBlock(blockType)

@@ -15,18 +15,6 @@ jest.mock('@/components/icons', () => ({
 // Mock blocks
 jest.mock('@/blocks', () => ({
   getBlock: jest.fn(),
-  getBlockTypeForTool: jest.fn((toolId: string) => {
-    switch (toolId) {
-      case 'openai.chat':
-        return 'agent'
-      case 'http.request':
-        return 'api'
-      case 'test-tool':
-        return 'agent'
-      default:
-        return undefined
-    }
-  })
 })) 
 
 describe('Serializer', () => {
@@ -372,8 +360,10 @@ describe('Serializer', () => {
               title: 'Agent Block',
               description: 'Use any LLM',
               category: 'basic',
-              color: '#7F2FFF'
-            }
+              color: '#7F2FFF',
+              type: 'agent'
+            },
+            enabled: true
           }
         ],
         connections: []

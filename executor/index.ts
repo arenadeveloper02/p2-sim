@@ -18,7 +18,6 @@ import {
   BlockLog
 } from './types'
 import { tools } from '@/tools'
-import { getBlockTypeForTool } from '@/blocks'
 
 export class Executor {
   constructor(
@@ -126,7 +125,7 @@ export class Executor {
           const blockLog: Partial<BlockLog> = {
             blockId: block.id,
             blockTitle: block.metadata?.title,
-            blockType: getBlockTypeForTool(block.config.tool || ''),
+            blockType: block.metadata?.type,
             startedAt: new Date().toISOString(),
           }
 
