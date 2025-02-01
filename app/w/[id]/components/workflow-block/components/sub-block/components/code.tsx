@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
+import { formatDisplayText } from '@/components/ui/formatted-text'
 
 interface CodeLine {
   id: string
@@ -714,6 +715,9 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
                   wrap="off"
                   onPaste={handlePaste}
                 />
+                <div className="absolute inset-0 pointer-events-none px-3 py-1 whitespace-pre text-sm">
+                  {formatDisplayText(line.content)}
+                </div>
               </div>
             ))}
           </div>

@@ -6,31 +6,30 @@ import { BlockOutput } from '@/blocks/types'
 export interface BlockLog {
   blockId: string
   blockTitle?: string
-  success: boolean
-  error?: string
+  blockType?: string
   startedAt: string
   endedAt: string
   durationMs: number
+  success: boolean
   output?: any
-  blockType?: string
+  error?: string
 }
 
 /**
  * Describes the runtime context for executing a workflow,
  * including all block outputs (blockStates), metadata for timing, and block logs.
  */
+export interface ExecutionMetadata {
+  startTime?: string
+  endTime?: string
+}
+
 export interface ExecutionContext {
   workflowId: string
   blockStates: Map<string, BlockOutput>
-  // Make metadata non-optional so we can assign .startTime or .endTime without TS warnings
-  metadata: {
-    startTime?: string
-    endTime?: string
-    // You can keep an index signature if you want to store extra fields
-    [key: string]: any
-  }
-  // We store logs in an array so the final result includes a step-by-step record
   blockLogs: BlockLog[]
+  metadata: ExecutionMetadata
+  environmentVariables?: Record<string, string>
 }
 
 /**
@@ -41,13 +40,12 @@ export interface ExecutionResult {
   success: boolean
   output: BlockOutput
   error?: string
+  logs?: BlockLog[]
   metadata?: {
     duration: number
     startTime: string
     endTime: string
   }
-  // Detailed logs of what happened in each block
-  logs?: BlockLog[]
 }
 
 /**

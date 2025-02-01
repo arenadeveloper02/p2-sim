@@ -23,7 +23,8 @@ export class Executor {
   constructor(
     private workflow: SerializedWorkflow,
     // Initial block states can be passed in if you need to resume workflows or pre-populate data.
-    private initialBlockStates: Record<string, BlockOutput> = {}
+    private initialBlockStates: Record<string, BlockOutput> = {},
+    private environmentVariables: Record<string, string> = {}
   ) {}
 
   /**
@@ -40,6 +41,7 @@ export class Executor {
       metadata: {
         startTime: startTime.toISOString()
       },
+      environmentVariables: this.environmentVariables
     }
 
     // Pre-populate block states if initialBlockStates exist
@@ -314,10 +316,12 @@ export class Executor {
     const resolvedInputs = Object.entries(inputs).reduce(
       (acc, [key, value]) => {
         if (typeof value === 'string') {
-          const matches = value.match(/<([^>]+)>/g)
-          if (matches) {
-            let resolvedValue = value
-            for (const match of matches) {
+          let resolvedValue = value
+
+          // Handle block references with <> syntax
+          const blockMatches = value.match(/<([^>]+)>/g)
+          if (blockMatches) {
+            for (const match of blockMatches) {
               // e.g. "<someBlockId.response>"
               const path = match.slice(1, -1) // remove < and >
               const [blockRef, ...pathParts] = path.split('.')
@@ -365,20 +369,32 @@ export class Executor {
                 throw new Error(`No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`)
               }
             }
+          }
 
-            // Attempt JSON parse if it looks like JSON
-            try {
-              if (resolvedValue.startsWith('{') || resolvedValue.startsWith('[')) {
-                acc[key] = JSON.parse(resolvedValue)
-              } else {
-                acc[key] = resolvedValue
+          // Handle environment variables with {} syntax
+          const envMatches = resolvedValue.match(/\{([^}]+)\}/g)
+          if (envMatches) {
+            for (const match of envMatches) {
+              const envKey = match.slice(1, -1) // remove { and }
+              const envValue = context.environmentVariables?.[envKey]
+              
+              if (envValue === undefined) {
+                throw new Error(`Environment variable "${envKey}" was not found.`)
               }
-            } catch {
+
+              resolvedValue = resolvedValue.replace(match, envValue)
+            }
+          }
+
+          // After all replacements are done, attempt JSON parse if it looks like JSON
+          try {
+            if (resolvedValue.startsWith('{') || resolvedValue.startsWith('[')) {
+              acc[key] = JSON.parse(resolvedValue)
+            } else {
               acc[key] = resolvedValue
             }
-          } else {
-            // No placeholders
-            acc[key] = value
+          } catch {
+            acc[key] = resolvedValue
           }
         } else {
           // Not a string param

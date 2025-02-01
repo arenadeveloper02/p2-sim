@@ -6,6 +6,7 @@ import { ExecutionResult } from '@/executor/types'
 import { useNotificationStore } from '@/stores/notifications/store'
 import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useConsoleStore } from '@/stores/console/store'
+import { useEnvironmentStore } from '@/stores/environment/store'
 
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)
@@ -14,6 +15,7 @@ export function useWorkflowExecution() {
   const { activeWorkflowId } = useWorkflowRegistry()
   const { addNotification } = useNotificationStore()
   const { addConsole, toggleConsole, isOpen } = useConsoleStore()
+  const { getAllVariables } = useEnvironmentStore()
 
   const handleRunWorkflow = useCallback(async () => {
     if (!activeWorkflowId) return
@@ -34,9 +36,16 @@ export function useWorkflowExecution() {
         return acc
       }, {} as Record<string, any>)
 
+      // Get environment variables
+      const envVars = getAllVariables()
+      const envVarValues = Object.entries(envVars).reduce((acc, [key, variable]) => {
+        acc[key] = variable.value
+        return acc
+      }, {} as Record<string, string>)
+
       // Execute workflow
       const workflow = new Serializer().serializeWorkflow(blocks, edges)
-      const executor = new Executor(workflow, currentBlockStates)
+      const executor = new Executor(workflow, currentBlockStates, envVarValues)
       
       const result = await executor.execute('my-run-id')
       setExecutionResult(result)
@@ -85,7 +94,8 @@ export function useWorkflowExecution() {
       setExecutionResult({
         success: false,
         output: { response: {} },
-        error: errorMessage
+        error: errorMessage,
+        logs: []
       })
 
       // Add error entry to console
@@ -104,7 +114,7 @@ export function useWorkflowExecution() {
     } finally {
       setIsExecuting(false)
     }
-  }, [activeWorkflowId, blocks, edges, addNotification, addConsole, isOpen, toggleConsole])
+  }, [activeWorkflowId, blocks, edges, addNotification, addConsole, isOpen, toggleConsole, getAllVariables])
 
   return { isExecuting, executionResult, handleRunWorkflow }
 } 

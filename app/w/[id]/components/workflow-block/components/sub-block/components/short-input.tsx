@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 import { SubBlockConfig } from '@/blocks/types'
+import { formatDisplayText } from '@/components/ui/formatted-text'
 
 interface ShortInputProps {
   placeholder?: string
@@ -83,25 +84,6 @@ export function ShortInput({
     password && !isFocused
       ? '•'.repeat(value?.toString().length ?? 0)
       : value?.toString() ?? ''
-
-  const formatDisplayText = (text: string) => {
-    if (!text) return null
-
-    // Split the text by tag pattern <something.something>
-    const parts = text.split(/(<[^>]+>)/g)
-
-    return parts.map((part, index) => {
-      // Check if the part matches tag pattern
-      if (part.match(/^<[^>]+>$/)) {
-        return (
-          <span key={index} className="text-blue-500">
-            {part}
-          </span>
-        )
-      }
-      return <span key={index}>{part}</span>
-    })
-  }
 
   return (
     <div className="relative w-full">

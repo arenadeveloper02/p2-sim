@@ -3,6 +3,7 @@ import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
 import { SubBlockConfig } from '@/blocks/types'
+import { formatDisplayText } from '@/components/ui/formatted-text'
 
 interface LongInputProps {
   placeholder?: string
@@ -61,25 +62,6 @@ export function LongInput({
 
   const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
     e.preventDefault()
-  }
-
-  const formatDisplayText = (text: string) => {
-    if (!text) return null
-
-    // Split the text by tag pattern <something.something>
-    const parts = text.split(/(<[^>]+>)/g)
-
-    return parts.map((part, index) => {
-      // Check if the part matches tag pattern
-      if (part.match(/^<[^>]+>$/)) {
-        return (
-          <span key={index} className="text-blue-500">
-            {part}
-          </span>
-        )
-      }
-      return <span key={index}>{part}</span>
-    })
   }
 
   return (
