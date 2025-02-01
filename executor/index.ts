@@ -320,7 +320,7 @@ export class Executor {
               const path = match.slice(1, -1) // remove < and >
               const [blockRef, ...pathParts] = path.split('.')
 
-              // Try blockRef as ID, then as normalized name
+              // Try referencing as an ID, then as a normalized name.
               let sourceBlock = blockById.get(blockRef)
               if (!sourceBlock) {
                 const normalized = blockRef.toLowerCase().replace(/\s+/g, '')
@@ -329,6 +329,12 @@ export class Executor {
 
               if (!sourceBlock) {
                 console.warn(`Block reference "${blockRef}" not found by ID or name.`)
+                continue
+              }
+
+              // Check if the referenced block is disabled.
+              if (sourceBlock.enabled === false) {
+                console.warn(`Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`)
                 continue
               }
 

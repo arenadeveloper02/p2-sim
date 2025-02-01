@@ -30,4 +30,5 @@ export interface SerializedBlock {
     icon?: string 
     color?: string 
   } 
+  enabled: boolean
 }

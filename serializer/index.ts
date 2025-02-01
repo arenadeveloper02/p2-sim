@@ -53,7 +53,8 @@ export class Serializer {
         description: blockConfig.toolbar.description,
         category: blockConfig.toolbar.category,
         color: blockConfig.toolbar.bgColor
-      }
+      },
+      enabled: block.enabled
     } 
   }
 
