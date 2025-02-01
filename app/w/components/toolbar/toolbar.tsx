@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 export function Toolbar() {
   const [activeTab, setActiveTab] = useState<BlockCategory>('basic')
@@ -49,43 +50,49 @@ export function Toolbar() {
   }
 
   return (
-    <div className="fixed left-14 top-16 z-10 h-[calc(100vh-4rem)] overflow-y-auto w-64 border-r bg-background sm:block">
-      <div className="px-4 pt-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-[50%] h-4 w-4 -translate-y-[50%] text-muted-foreground" />
-          <Input
-            placeholder="Search blocks..."
-            className="pl-9"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+    <div className="fixed left-14 top-16 z-10 h-[calc(100vh-4rem)] w-64 border-r bg-background sm:block">
+      <div className="flex flex-col h-full">
+        <div className="px-4 pt-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-[50%] h-4 w-4 -translate-y-[50%] text-muted-foreground" />
+            <Input
+              placeholder="Search blocks..."
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {!searchQuery && (
+          <ToolbarTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        )}
+
+        <ScrollArea className="h-[calc(100%-4rem)]">
+          <div className="p-4 pb-16">
+            <div className="flex flex-col gap-3">
+              {blocks.map((block) => (
+                <ToolbarBlock key={block.type} config={block} />
+              ))}
+            </div>
+          </div>
+        </ScrollArea>
+
+        <div className="absolute left-0 right-0 bottom-0 h-16 bg-background border-t">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setIsCollapsed(true)}
+                className="absolute right-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
+              >
+                <PanelRightClose className="h-5 w-5" />
+                <span className="sr-only">Close Toolbar</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Close Toolbar</TooltipContent>
+          </Tooltip>
         </div>
       </div>
-
-      {!searchQuery && (
-        <ToolbarTabs activeTab={activeTab} onTabChange={setActiveTab} />
-      )}
-
-      <div className="p-4">
-        <div className="flex flex-col gap-3">
-          {blocks.map((block) => (
-            <ToolbarBlock key={block.type} config={block} />
-          ))}
-        </div>
-      </div>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setIsCollapsed(true)}
-            className="absolute right-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
-          >
-            <PanelRightClose className="h-5 w-5" />
-            <span className="sr-only">Close Toolbar</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Close Toolbar</TooltipContent>
-      </Tooltip>
     </div>
   )
 }
