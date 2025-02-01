@@ -52,7 +52,7 @@ export function Toolbar() {
   return (
     <div className="fixed left-14 top-16 z-10 h-[calc(100vh-4rem)] w-64 border-r bg-background sm:block">
       <div className="flex flex-col h-full">
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-4 sticky top-0 bg-background z-20">
           <div className="relative">
             <Search className="absolute left-3 top-[50%] h-4 w-4 -translate-y-[50%] text-muted-foreground" />
             <Input
@@ -65,7 +65,9 @@ export function Toolbar() {
         </div>
 
         {!searchQuery && (
-          <ToolbarTabs activeTab={activeTab} onTabChange={setActiveTab} />
+          <div className="sticky top-[72px] bg-background z-20">
+            <ToolbarTabs activeTab={activeTab} onTabChange={setActiveTab} />
+          </div>
         )}
 
         <ScrollArea className="h-[calc(100%-4rem)]">

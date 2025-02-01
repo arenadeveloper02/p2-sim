@@ -19,7 +19,7 @@ export const TranslateBlock: BlockConfig<ChatResponse> = {
     description: 'Translate text to any language',
     bgColor: '#FF4B4B',
     icon: TranslateIcon,
-    category: 'basic',
+    category: 'advanced',
   },
   tools: {
     access: ['openai.chat', 'anthropic.chat', 'google.chat'],
