@@ -41,7 +41,12 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   )
 
   return (
-    <div className="border-b border-border hover:bg-accent/50 transition-colors">
+    <div
+      className={`border-b border-border transition-colors ${
+        !entry.error ? 'hover:bg-accent/50 cursor-pointer' : ''
+      }`}
+      onClick={() => !entry.error && setIsExpanded(!isExpanded)}
+    >
       <div className="p-4 space-y-4">
         <div
           className={`${
@@ -81,7 +86,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
             <div className="flex items-start gap-2">
               <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
               <div className="text-sm font-mono flex-1">
-                <JSONView data={entry.output} />
+                <JSONView data={entry.output} initiallyExpanded={isExpanded} />
               </div>
             </div>
           )}

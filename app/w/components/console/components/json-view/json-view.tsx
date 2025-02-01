@@ -1,22 +1,65 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { ChevronRight, ChevronDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface JSONViewProps {
   data: any
   level?: number
+  initiallyExpanded?: boolean
 }
 
-export const JSONView = ({ data, level = 0 }: JSONViewProps) => {
-  const [isCollapsed, setIsCollapsed] = useState(true)
+const MAX_STRING_LENGTH = 150
+
+const TruncatedValue = ({ value }: { value: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  if (value.length <= MAX_STRING_LENGTH) {
+    return <span>{value}</span>
+  }
+
+  return (
+    <span>
+      {isExpanded ? value : `${value.slice(0, MAX_STRING_LENGTH)}...`}
+      <Button
+        variant="link"
+        size="sm"
+        className="px-1 h-auto text-xs text-muted-foreground hover:text-foreground"
+        onClick={(e) => {
+          e.stopPropagation()
+          setIsExpanded(!isExpanded)
+        }}
+      >
+        {isExpanded ? 'Show less' : 'Show more'}
+      </Button>
+    </span>
+  )
+}
+
+export const JSONView = ({
+  data,
+  level = 0,
+  initiallyExpanded = false,
+}: JSONViewProps) => {
+  const [isCollapsed, setIsCollapsed] = useState(!initiallyExpanded)
+
+  useEffect(() => {
+    setIsCollapsed(!initiallyExpanded)
+  }, [initiallyExpanded])
 
   if (data === null) return <span className="text-muted-foreground">null</span>
   if (typeof data !== 'object') {
+    const stringValue = JSON.stringify(data)
     return (
       <span
         className={`${
           typeof data === 'string' ? 'text-success' : 'text-info'
         } break-all`}
       >
-        {JSON.stringify(data)}
+        {typeof data === 'string' ? (
+          <TruncatedValue value={stringValue} />
+        ) : (
+          stringValue
+        )}
       </span>
     )
   }
@@ -26,19 +69,24 @@ export const JSONView = ({ data, level = 0 }: JSONViewProps) => {
   const isEmpty = items.length === 0
 
   if (isEmpty) {
-    return <span>{isArray ? '[]' : '{}'}</span>
+    return (
+      <span className="text-muted-foreground">{isArray ? '[]' : '{}'}</span>
+    )
   }
 
   return (
     <div className="relative">
       <span
-        className="cursor-pointer select-none"
+        className="cursor-pointer select-none inline-flex items-center text-muted-foreground"
         onClick={(e) => {
           e.stopPropagation()
           setIsCollapsed(!isCollapsed)
         }}
       >
-        {isCollapsed ? '▶' : '▼'} {isArray ? '[' : '{'}
+        <span className="text-xs leading-none mr-1">
+          {isCollapsed ? '▶' : '▼'}
+        </span>
+        <span>{isArray ? '[' : '{'}</span>
         {isCollapsed ? '...' : ''}
       </span>
       {!isCollapsed && (
@@ -59,7 +107,7 @@ export const JSONView = ({ data, level = 0 }: JSONViewProps) => {
               ))}
         </div>
       )}
-      <span>{isArray ? ']' : '}'}</span>
+      <span className="text-muted-foreground">{isArray ? ']' : '}'}</span>
     </div>
   )
 }
