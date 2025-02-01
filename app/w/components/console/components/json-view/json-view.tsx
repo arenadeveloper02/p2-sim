@@ -35,30 +35,66 @@ const TruncatedValue = ({ value }: { value: string }) => {
   )
 }
 
+const copyToClipboard = (data: any) => {
+  const stringified = JSON.stringify(data, null, 2)
+  navigator.clipboard.writeText(stringified)
+}
+
 export const JSONView = ({
   data,
   level = 0,
   initiallyExpanded = false,
 }: JSONViewProps) => {
   const [isCollapsed, setIsCollapsed] = useState(!initiallyExpanded)
+  const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number
+    y: number
+  } | null>(null)
 
   useEffect(() => {
     setIsCollapsed(!initiallyExpanded)
   }, [initiallyExpanded])
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setContextMenuPosition({ x: e.clientX, y: e.clientY })
+  }
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenuPosition(null)
+    if (contextMenuPosition) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [contextMenuPosition])
 
   if (data === null) return <span className="text-muted-foreground">null</span>
   if (typeof data !== 'object') {
     const stringValue = JSON.stringify(data)
     return (
       <span
+        onContextMenu={handleContextMenu}
         className={`${
           typeof data === 'string' ? 'text-success' : 'text-info'
-        } break-all`}
+        } break-all relative`}
       >
         {typeof data === 'string' ? (
           <TruncatedValue value={stringValue} />
         ) : (
           stringValue
+        )}
+        {contextMenuPosition && (
+          <div
+            className="fixed z-50 bg-popover border rounded-md shadow-md py-1 min-w-[160px]"
+            style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
+          >
+            <button
+              className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent"
+              onClick={() => copyToClipboard(data)}
+            >
+              Copy value
+            </button>
+          </div>
         )}
       </span>
     )
@@ -75,7 +111,7 @@ export const JSONView = ({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" onContextMenu={handleContextMenu}>
       <span
         className="cursor-pointer select-none inline-flex items-center text-muted-foreground"
         onClick={(e) => {
@@ -89,6 +125,19 @@ export const JSONView = ({
         <span>{isArray ? '[' : '{'}</span>
         {isCollapsed ? '...' : ''}
       </span>
+      {contextMenuPosition && (
+        <div
+          className="fixed z-50 bg-popover border rounded-md shadow-md py-1 min-w-[160px]"
+          style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
+        >
+          <button
+            className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent"
+            onClick={() => copyToClipboard(data)}
+          >
+            Copy object
+          </button>
+        </div>
+      )}
       {!isCollapsed && (
         <div className="ml-4 break-words">
           {isArray
