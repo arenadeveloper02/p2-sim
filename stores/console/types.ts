@@ -13,7 +13,9 @@ export interface ConsoleEntry {
 
 export interface ConsoleStore {
   entries: ConsoleEntry[]
+  isOpen: boolean
   addConsole: (entry: Omit<ConsoleEntry, 'id'>) => void
   clearConsole: (workflowId: string | null) => void
   getWorkflowEntries: (workflowId: string) => ConsoleEntry[]
+  toggleConsole: () => void
 }

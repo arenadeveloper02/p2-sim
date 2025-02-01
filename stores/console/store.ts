@@ -9,6 +9,7 @@ export const useConsoleStore = create<ConsoleStore>()(
     persist(
       (set, get) => ({
         entries: [],
+        isOpen: true,
 
         addConsole: (entry) => {
           set((state) => {
@@ -33,6 +34,10 @@ export const useConsoleStore = create<ConsoleStore>()(
 
         getWorkflowEntries: (workflowId) => {
           return get().entries.filter((entry) => entry.workflowId === workflowId)
+        },
+
+        toggleConsole: () => {
+          set((state) => ({ isOpen: !state.isOpen }))
         },
       }),
       {

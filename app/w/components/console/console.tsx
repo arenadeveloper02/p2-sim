@@ -14,9 +14,11 @@ import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { ConsoleEntry } from './components/console-entry/console-entry'
 
 export function Console() {
-  const [isCollapsed, setIsCollapsed] = useState(true)
   const [width, setWidth] = useState(336) // 84 * 4 = 336px (default width)
   const [isDragging, setIsDragging] = useState(false)
+
+  const isOpen = useConsoleStore((state) => state.isOpen)
+  const toggleConsole = useConsoleStore((state) => state.toggleConsole)
   const entries = useConsoleStore((state) => state.entries)
   const clearConsole = useConsoleStore((state) => state.clearConsole)
   const { activeWorkflowId } = useWorkflowRegistry()
@@ -53,12 +55,12 @@ export function Console() {
     }
   }, [isDragging])
 
-  if (isCollapsed) {
+  if (!isOpen) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={() => setIsCollapsed(false)}
+            onClick={toggleConsole}
             className="fixed right-4 bottom-[18px] z-10 flex h-9 w-9 items-center justify-center rounded-lg bg-background text-muted-foreground transition-colors hover:text-foreground hover:bg-accent border"
           >
             <Terminal className="h-5 w-5" />
@@ -110,7 +112,7 @@ export function Console() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => setIsCollapsed(true)}
+              onClick={toggleConsole}
               className="absolute left-4 bottom-[18px] flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
             >
               <PanelLeftClose className="h-5 w-5" />

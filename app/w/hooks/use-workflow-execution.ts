@@ -13,10 +13,17 @@ export function useWorkflowExecution() {
   const { blocks, edges } = useWorkflowStore()
   const { activeWorkflowId } = useWorkflowRegistry()
   const { addNotification } = useNotificationStore()
-  const { addConsole } = useConsoleStore()
+  const { addConsole, toggleConsole, isOpen } = useConsoleStore()
 
   const handleRunWorkflow = useCallback(async () => {
+    if (!activeWorkflowId) return
     setIsExecuting(true)
+
+    // Open console if it's not already open
+    if (!isOpen) {
+      toggleConsole()
+    }
+
     try {
       // Extract existing block states
       const currentBlockStates = Object.entries(blocks).reduce((acc, [id, block]) => {
@@ -97,7 +104,7 @@ export function useWorkflowExecution() {
     } finally {
       setIsExecuting(false)
     }
-  }, [blocks, edges, addNotification, activeWorkflowId, addConsole])
+  }, [activeWorkflowId, blocks, edges, addNotification, addConsole, isOpen, toggleConsole])
 
   return { isExecuting, executionResult, handleRunWorkflow }
 } 
