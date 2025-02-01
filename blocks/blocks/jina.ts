@@ -7,7 +7,7 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
   toolbar: {
     title: 'Jina Reader',
     description: 'Convert website content into text',
-    bgColor: '#1A1A1A',
+    bgColor: '#333333',
     icon: JinaAIIcon,
     category: 'advanced',
   },
