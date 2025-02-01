@@ -6,8 +6,8 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
   type: 'jina_reader',
   toolbar: {
     title: 'Jina Reader',
-    description: 'Convert any URL to LLM-friendly text',
-    bgColor: '#ffffff',
+    description: 'Convert website content into text',
+    bgColor: '#1A1A1A',
     icon: JinaAIIcon,
     category: 'advanced',
   },

@@ -6,8 +6,8 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
   type: 'crewai_vision',
   toolbar: {
     title: 'CrewAI Vision Tool',
-    description: 'Analyze images using vision models',
-    bgColor: '#C0392B',
+    description: 'Analyze images with vision models',
+    bgColor: '#FF5A50',
     icon: CrewAIIcon,
     category: 'advanced'
   },
