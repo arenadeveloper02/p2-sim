@@ -9,7 +9,7 @@ export const useConsoleStore = create<ConsoleStore>()(
     persist(
       (set, get) => ({
         entries: [],
-        isOpen: true,
+        isOpen: false,
 
         addConsole: (entry) => {
           set((state) => {
