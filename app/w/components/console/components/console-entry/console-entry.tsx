@@ -28,10 +28,9 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   )
 
   const blockConfig = useMemo(() => {
-    if (!entry.blockName) return null
-    const blockType = entry.blockName.split(' ')[0].toLowerCase()
-    return getBlock(blockType)
-  }, [entry.blockName])
+    if (!entry.blockType) return null
+    return getBlock(entry.blockType)
+  }, [entry.blockType])
 
   const BlockIcon = blockConfig?.toolbar.icon
 

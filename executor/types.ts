@@ -12,6 +12,7 @@ export interface BlockLog {
   endedAt: string
   durationMs: number
   output?: any
+  blockType?: string
 }
 
 /**

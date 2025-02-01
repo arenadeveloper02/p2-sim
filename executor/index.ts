@@ -18,6 +18,7 @@ import {
   BlockLog
 } from './types'
 import { tools } from '@/tools'
+import { getBlockTypeForTool } from '@/blocks'
 
 export class Executor {
   constructor(
@@ -185,10 +186,14 @@ export class Executor {
       ...inputs,
     })
 
+    // Get the block type from the tool ID using the helper function
+    const blockType = getBlockTypeForTool(toolId)
+
     // Prepare a new blockLog entry
     const blockLog: Partial<BlockLog> = {
       blockId: block.id,
       blockTitle: block.metadata?.title || 'Unnamed Block',
+      blockType: blockType,
       startedAt: new Date().toISOString(),
     }
 

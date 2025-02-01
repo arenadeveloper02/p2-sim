@@ -5,9 +5,10 @@ export interface ConsoleEntry {
   durationMs: number
   startedAt: string
   endedAt: string
-  workflowId?: string | null
+  workflowId: string | null
   timestamp: string
   blockName?: string
+  blockType?: string
 }
 
 export interface ConsoleStore {

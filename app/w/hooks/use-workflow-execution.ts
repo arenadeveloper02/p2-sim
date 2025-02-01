@@ -45,7 +45,8 @@ export function useWorkflowExecution() {
             endedAt: log.endedAt,
             workflowId: activeWorkflowId,
             timestamp: log.startedAt,
-            blockName: log.blockTitle
+            blockName: log.blockTitle,
+            blockType: log.blockType
           })
         })
       }
