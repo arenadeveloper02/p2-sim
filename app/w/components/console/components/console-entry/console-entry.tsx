@@ -6,6 +6,7 @@ import {
   Calendar,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react'
 import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
 import { JSONView } from '../json-view/json-view'
@@ -36,6 +37,8 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
 
   const statusIcon = entry.error ? (
     <AlertCircle className="h-4 w-4 text-destructive" />
+  ) : entry.warning ? (
+    <AlertTriangle className="h-4 w-4 text-warning" />
   ) : (
     <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
   )
@@ -43,9 +46,13 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   return (
     <div
       className={`border-b border-border transition-colors ${
-        !entry.error ? 'hover:bg-accent/50 cursor-pointer' : ''
+        !entry.error && !entry.warning
+          ? 'hover:bg-accent/50 cursor-pointer'
+          : ''
       }`}
-      onClick={() => !entry.error && setIsExpanded(!isExpanded)}
+      onClick={() =>
+        !entry.error && !entry.warning && setIsExpanded(!isExpanded)
+      }
     >
       <div className="p-4 space-y-4">
         <div
@@ -82,7 +89,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
         </div>
 
         <div className="space-y-4">
-          {!entry.error && (
+          {!entry.error && !entry.warning && (
             <div className="flex items-start gap-2">
               <Terminal className="h-4 w-4 text-muted-foreground mt-1" />
               <div className="text-sm font-mono flex-1">
@@ -97,6 +104,18 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
               <div className="flex-1 break-all">
                 <div className="font-medium">Error</div>
                 <pre className="text-sm whitespace-pre-wrap">{entry.error}</pre>
+              </div>
+            </div>
+          )}
+
+          {entry.warning && (
+            <div className="flex items-start gap-2 border rounded-md p-3 border-yellow-500 bg-yellow-50 text-yellow-700 dark:border-border dark:text-yellow-500 dark:bg-background">
+              <AlertTriangle className="h-4 w-4 text-yellow-500 mt-1" />
+              <div className="flex-1 break-all">
+                <div className="font-medium">Warning</div>
+                <pre className="text-sm whitespace-pre-wrap">
+                  {entry.warning}
+                </pre>
               </div>
             </div>
           )}

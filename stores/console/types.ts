@@ -2,6 +2,7 @@ export interface ConsoleEntry {
   id: string
   output: any
   error?: string
+  warning?: string
   durationMs: number
   startedAt: string
   endedAt: string
