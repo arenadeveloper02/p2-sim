@@ -1,5 +1,5 @@
 import { NodeProps } from 'reactflow'
-import { WorkflowBlock } from '../../../components/workflow-block/workflow-block'
+import { WorkflowBlock } from '../workflow-block/workflow-block'
 import { BlockConfig } from '../../../../../blocks/types'
 
 interface WorkflowNodeData {

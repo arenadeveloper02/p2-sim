@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card'
-import { BlockConfig, SubBlockConfig } from '../../../../blocks/types'
+import { BlockConfig, SubBlockConfig } from '../../../../../blocks/types'
 import { SubBlock } from './components/sub-block/sub-block'
 import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
