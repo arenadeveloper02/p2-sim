@@ -1,18 +1,7 @@
 import { AgentIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 import { ChatResponse } from '@/tools/openai/chat'
-
-// Map of models to their tools
-const MODEL_TOOLS = {
-  'gpt-4o': 'openai.chat',
-  'o1': 'openai.chat',
-  'o1-mini': 'openai.chat',
-  'deepseek-v3': 'deepseek.chat',
-  'deepseek-r1': 'deepseek.reasoner',
-  'claude-3-5-sonnet-20241022': 'anthropic.chat',
-  'gemini-pro': 'google.chat',
-  'grok-2-latest': 'xai.chat'
-} as const
+import { MODEL_TOOLS, ModelType } from '../consts'
 
 export const AgentBlock: BlockConfig<ChatResponse> = {
   type: 'agent',
@@ -33,7 +22,7 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
           throw new Error('No model selected')
         }
 
-        const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS]
+        const tool = MODEL_TOOLS[model as ModelType]
 
         if (!tool) {
           throw new Error(`Invalid model selected: ${model}`)

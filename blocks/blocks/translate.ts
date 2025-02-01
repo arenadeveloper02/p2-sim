@@ -1,14 +1,7 @@
 import { TranslateIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 import { ChatResponse } from '@/tools/openai/chat'
-
-const MODEL_TOOLS = {
-  'gpt-4o': 'openai.chat',
-  'o1': 'openai.chat',
-  'o1-mini': 'openai.chat',
-  'claude-3-5-sonnet-20241022': 'anthropic.chat',
-  'gemini-pro': 'google.chat',
-} as const
+import { MODEL_TOOLS, ModelType } from '../consts'
 
 const getTranslationPrompt = (targetLanguage: string) => `You are a highly skilled translator. Your task is to translate the given text into ${targetLanguage || 'English'} while:
 1. Preserving the original meaning and nuance
@@ -17,7 +10,7 @@ const getTranslationPrompt = (targetLanguage: string) => `You are a highly skill
 4. Preserving formatting and special characters
 5. Handling technical terms accurately
 
-Only return the translated text without any explanations or notes. The translation should be natural and fluent in ${targetLanguage || 'English'}.`
+Only return the translated text without any explanations or notes. The translation should be natural and fluent in ${targetLanguage || 'English'}.` 
 
 export const TranslateBlock: BlockConfig<ChatResponse> = {
   type: 'translate',
@@ -38,7 +31,7 @@ export const TranslateBlock: BlockConfig<ChatResponse> = {
           throw new Error('No model selected')
         }
 
-        const tool = MODEL_TOOLS[model as keyof typeof MODEL_TOOLS]
+        const tool = MODEL_TOOLS[model as ModelType]
 
         if (!tool) {
           throw new Error(`Invalid model selected: ${model}`)
