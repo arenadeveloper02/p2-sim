@@ -117,13 +117,51 @@ export class Executor {
             throw new Error(`Missing block ${blockId}`)
           }
 
-          // Resolve template references in block config params
-          const resolvedInputs = this.resolveInputs(block, context)
+          // Skip disabled blocks
+          if (block.enabled === false) {
+            return { response: {} }
+          }
 
-          // Execute the block, store the result
-          const output = await this.executeBlock(block, resolvedInputs, context)
-          context.blockStates.set(block.id, output)
-          return output
+          // Prepare a new blockLog entry
+          const blockLog: Partial<BlockLog> = {
+            blockId: block.id,
+            blockTitle: block.metadata?.title,
+            blockType: getBlockTypeForTool(block.config.tool || ''),
+            startedAt: new Date().toISOString(),
+          }
+
+          try {
+            // Resolve template references in block config params
+            const resolvedInputs = this.resolveInputs(block, context)
+
+            // Execute the block, store the result
+            const output = await this.executeBlock(block, resolvedInputs, context)
+            context.blockStates.set(block.id, output)
+
+            // Update block log with success
+            blockLog.success = true
+            blockLog.output = output.response
+            return output
+          } catch (error) {
+            // Update block log with error
+            blockLog.success = false
+            blockLog.error = error instanceof Error ? error.message : 'Unknown error'
+            throw error
+          } finally {
+            // Compute the end time and duration
+            const end = new Date()
+            blockLog.endedAt = end.toISOString()
+            
+            if (blockLog.startedAt) {
+              const started = new Date(blockLog.startedAt).getTime()
+              blockLog.durationMs = end.getTime() - started
+            } else {
+              blockLog.durationMs = 0
+            }
+
+            // Push the log entry
+            context.blockLogs.push(blockLog as BlockLog)
+          }
         })
       )
 
@@ -186,92 +224,57 @@ export class Executor {
       ...inputs,
     })
 
-    // Get the block type from the tool ID using the helper function
-    const blockType = getBlockTypeForTool(toolId)
-
-    // Prepare a new blockLog entry
-    const blockLog: Partial<BlockLog> = {
-      blockId: block.id,
-      blockTitle: block.metadata?.title || 'Unnamed Block',
-      blockType: blockType,
-      startedAt: new Date().toISOString(),
+    if (!tool.request) {
+      throw new Error(`Tool "${toolId}" has no request config.`)
     }
 
-    try {
-      if (!tool.request) {
-        throw new Error(`Tool "${toolId}" has no request config.`)
-      }
+    const { url: urlOrFn, method: defaultMethod, headers: headersFn, body: bodyFn } =
+      tool.request
 
-      const { url: urlOrFn, method: defaultMethod, headers: headersFn, body: bodyFn } =
-        tool.request
+    // Build the URL
+    const url = typeof urlOrFn === 'function' ? urlOrFn(validatedParams) : urlOrFn
+    // Determine HTTP method
+    const methodFromParams =
+      typeof validatedParams.method === 'object'
+        ? validatedParams.method.method
+        : validatedParams.method
+    const method = methodFromParams || defaultMethod || 'GET'
 
-      // Build the URL
-      const url = typeof urlOrFn === 'function' ? urlOrFn(validatedParams) : urlOrFn
-      // Determine HTTP method
-      const methodFromParams =
-        typeof validatedParams.method === 'object'
-          ? validatedParams.method.method
-          : validatedParams.method
-      const method = methodFromParams || defaultMethod || 'GET'
+    // Safely compute headers
+    const headers = headersFn?.(validatedParams) ?? {}
 
-      // Safely compute headers
-      const headers = headersFn?.(validatedParams) ?? {}
+    // Build body if needed
+    const bodyNeeded = method !== 'GET' && method !== 'HEAD' && !!bodyFn
+    const body = bodyNeeded
+      ? JSON.stringify(bodyFn!(validatedParams))
+      : undefined
 
-      // Build body if needed
-      const bodyNeeded = method !== 'GET' && method !== 'HEAD' && !!bodyFn
-      const body = bodyNeeded
-        ? JSON.stringify(bodyFn!(validatedParams))
-        : undefined
-
-      // Perform fetch()
-      const response = await fetch(url || '', { method, headers, body })
-      if (!response.ok) {
-        // In case there is a custom transformError
-        const transformError = tool.transformError ?? (() => 'Unknown error')
-        const errorBody = await response.json().catch(() => ({
-          message: response.statusText,
-        }))
-        throw new Error(transformError(errorBody))
-      }
-
-      // Transform the response
-      const transformResponse =
-        tool.transformResponse ??
-        (async (resp: Response) => ({
-          success: true,
-          output: await resp.json(),
-        }))
-
-      const result = await transformResponse(response)
-      if (!result.success) {
-        const transformError = tool.transformError ?? (() => 'Tool returned an error object')
-        throw new Error(transformError(result))
-      }
-
-      // Success: update the blockLog with success & output
-      blockLog.success = true
-      blockLog.output = result.output
-
-      return { response: result.output }
-    } catch (e) {
-      blockLog.success = false
-      blockLog.error = e instanceof Error ? e.message : 'Unknown error'
-      throw e
-    } finally {
-      // Compute the end time and duration
-      const end = new Date()
-      blockLog.endedAt = end.toISOString()
-
-      if (blockLog.startedAt) {
-        const started = new Date(blockLog.startedAt).getTime()
-        blockLog.durationMs = end.getTime() - started
-      } else {
-        blockLog.durationMs = 0
-      }
-
-      // Push the log entry
-      context.blockLogs.push(blockLog as BlockLog)
+    // Perform fetch()
+    const response = await fetch(url || '', { method, headers, body })
+    if (!response.ok) {
+      // In case there is a custom transformError
+      const transformError = tool.transformError ?? (() => 'Unknown error')
+      const errorBody = await response.json().catch(() => ({
+        message: response.statusText,
+      }))
+      throw new Error(transformError(errorBody))
     }
+
+    // Transform the response
+    const transformResponse =
+      tool.transformResponse ??
+      (async (resp: Response) => ({
+        success: true,
+        output: await resp.json(),
+      }))
+
+    const result = await transformResponse(response)
+    if (!result.success) {
+      const transformError = tool.transformError ?? (() => 'Tool returned an error object')
+      throw new Error(transformError(result))
+    }
+
+    return { response: result.output }
   }
 
   /**
@@ -328,29 +331,24 @@ export class Executor {
               }
 
               if (!sourceBlock) {
-                console.warn(`Block reference "${blockRef}" not found by ID or name.`)
-                continue
+                throw new Error(`Block reference "${blockRef}" was not found.`)
               }
 
               // Check if the referenced block is disabled.
               if (sourceBlock.enabled === false) {
-                console.warn(`Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`)
-                continue
+                throw new Error(`Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`)
               }
 
               const sourceState = context.blockStates.get(sourceBlock.id)
               if (!sourceState) {
-                console.warn(`No state found for block ID "${sourceBlock.id}".`)
-                continue
+                throw new Error(`No state found for block "${sourceBlock.metadata?.title}" (ID: ${sourceBlock.id}).`)
               }
 
               // Drill into the path
               let replacementValue: any = sourceState
               for (const part of pathParts) {
                 if (!replacementValue || typeof replacementValue !== 'object') {
-                  console.warn(`Invalid path part "${part}" in "${path}".`)
-                  replacementValue = undefined
-                  break
+                  throw new Error(`Invalid path part "${part}" in "${path}" for block "${block.metadata?.title}".`)
                 }
                 replacementValue = replacementValue[part]
               }
@@ -365,7 +363,7 @@ export class Executor {
                     : String(replacementValue)
                 )
               } else {
-                console.warn(`No value found at path "${path}".`)
+                throw new Error(`No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`)
               }
             }
 
