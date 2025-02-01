@@ -7,6 +7,7 @@ import { FunctionBlock } from './blocks/function'
 import { CrewAIVisionBlock } from './blocks/crewai'
 import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 import { JinaBlock } from './blocks/jina'
+import { TranslateBlock } from './blocks/translate'
 
 // Export blocks for ease of use
 export { 
@@ -15,7 +16,8 @@ export {
   FunctionBlock, 
   CrewAIVisionBlock, 
   FirecrawlScrapeBlock,
-  JinaBlock 
+  JinaBlock,
+  TranslateBlock
 }
 
 // Registry of all block configurations
@@ -25,7 +27,8 @@ const blocks: Record<string, BlockConfig> = {
   function: FunctionBlock,
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
-  jina_reader: JinaBlock
+  jina_reader: JinaBlock,
+  translate: TranslateBlock
 }
 
 // Build a reverse mapping of tools to block types

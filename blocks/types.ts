@@ -46,6 +46,8 @@ export interface SubBlockConfig {
   placeholder?: string
   password?: boolean
   connectionDroppable?: boolean
+  hidden?: boolean
+  value?: (params: Record<string, any>) => string
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {

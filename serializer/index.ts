@@ -58,10 +58,27 @@ export class Serializer {
   }
 
   private extractParams(block: BlockState): Record<string, any> {
+    const blockConfig = getBlock(block.type)
+    if (!blockConfig) {
+      throw new Error(`Invalid block type: ${block.type}`)
+    }
+
     const params: Record<string, any> = {}
+    
+    // First collect all current values from subBlocks
     Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
       params[id] = subBlock.value
     })
+
+    // Then check for any subBlocks with default values
+    blockConfig.workflow.subBlocks.forEach(subBlockConfig => {
+      const id = subBlockConfig.id
+      if (params[id] === null && subBlockConfig.value) {
+        // If the value is null and there's a default value function, use it
+        params[id] = subBlockConfig.value(params)
+      }
+    })
+
     return params
   }
 
