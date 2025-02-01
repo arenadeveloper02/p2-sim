@@ -14,7 +14,7 @@ import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { ConsoleEntry } from './components/console-entry/console-entry'
 
 export function Console() {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const [width, setWidth] = useState(336) // 84 * 4 = 336px (default width)
   const [isDragging, setIsDragging] = useState(false)
   const entries = useConsoleStore((state) => state.entries)
