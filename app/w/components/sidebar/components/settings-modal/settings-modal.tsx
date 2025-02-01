@@ -26,7 +26,9 @@ const INITIAL_ENV_VAR: EnvVar = { key: '', value: '' }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [envVars, setEnvVars] = useState<EnvVar[]>([INITIAL_ENV_VAR])
-  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(null)
+  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(
+    null
+  )
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
@@ -48,7 +50,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }, 0)
   }
 
-  const handleValueClick = (e: React.MouseEvent<HTMLInputElement>, index: number) => {
+  const handleValueClick = (
+    e: React.MouseEvent<HTMLInputElement>,
+    index: number
+  ) => {
     e.preventDefault()
     const input = inputRefs.current[index]
     if (input) {
@@ -65,11 +70,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handlePaste = (e: React.ClipboardEvent, index: number) => {
     const text = e.clipboardData.getData('text')
-    const lines = text.split('\n').filter(line => line.trim())
-    
+    const lines = text.split('\n').filter((line) => line.trim())
+
     if (lines.length === 0) return
     e.preventDefault()
-    
+
     if (lines.length === 1) {
       // Single line paste
       const [key, ...valueParts] = lines[0].split('=')
@@ -82,11 +87,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     } else {
       // Multi-line paste
       const parsedVars = lines
-        .map(line => {
+        .map((line) => {
           const [key, ...valueParts] = line.split('=')
           return {
             key: key.trim(),
-            value: valueParts.join('=').trim()
+            value: valueParts.join('=').trim(),
           }
         })
         .filter(({ key, value }) => key && value)
@@ -122,7 +127,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         ref={(el) => setInputRef(el, index)}
         value={envVar.value}
         onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
-        type={focusedValueIndex === index ? "text" : "password"}
+        type={focusedValueIndex === index ? 'text' : 'password'}
         onFocus={() => handleValueFocus(index)}
         onClick={(e) => handleValueClick(e, index)}
         onBlur={() => setFocusedValueIndex(null)}
@@ -146,33 +151,33 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         <DialogHeader>
           <DialogTitle>Environment Variables</DialogTitle>
         </DialogHeader>
-        
-        <div className="space-y-1.5 mt-2">
-          <div className={`${GRID_COLS} px-0.5`}>
-            <Label>Key</Label>
-            <Label>Value</Label>
-            <div />
+
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="space-y-1.5">
+            <div className={`${GRID_COLS} px-0.5`}>
+              <Label>Key</Label>
+              <Label>Value</Label>
+              <div />
+            </div>
+
+            <div className="relative">
+              <div className="overflow-y-auto max-h-[40vh] space-y-2 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/25 scrollbar-track-transparent pr-6 -mr-6 pb-2 pt-2 px-2 -mx-2">
+                {envVars.map(renderEnvVarRow)}
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            {envVars.map(renderEnvVarRow)}
-          </div>
-        </div>
-        
-        <div className="flex flex-col gap-4 pt-4 border-t mt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={addEnvVar}
-          >
-            Add Variable
-          </Button>
-          
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+          <div className="flex flex-col gap-4 pt-4 border-t mt-4">
+            <Button variant="outline" size="sm" onClick={addEnvVar}>
+              Add Variable
             </Button>
-            <Button onClick={() => onOpenChange(false)}>Save Changes</Button>
+
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => onOpenChange(false)}>Save Changes</Button>
+            </div>
           </div>
         </div>
       </DialogContent>
