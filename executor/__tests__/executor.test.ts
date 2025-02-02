@@ -898,4 +898,108 @@ describe('Executor', () => {
       expect(fetchCalls).toHaveLength(2);
     });
   });
+
+  describe('Environment Variables', () => {
+    beforeEach(() => {
+      // Reset fetch mock before each test
+      global.fetch = jest.fn()
+    })
+
+    it('should resolve environment variables with double curly braces', async () => {
+      const mockTool = createMockTool(
+        'test-tool',
+        'Test Tool',
+        { result: 'test processed', data: { status: 200 } }
+      );
+      (tools as any)['test-tool'] = mockTool
+
+      const workflow: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [{
+          id: 'block-1',
+          position: { x: 0, y: 0 },
+          config: {
+            tool: 'test-tool',
+            params: { input: 'test {{ENV_VAR}}' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
+          },
+          enabled: true
+        }],
+        connections: []
+      }
+
+      // Mock fetch response
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            output: {
+              text: 'test processed',
+              status: 200
+            }
+          })
+        })
+      )
+
+      const envVars = { ENV_VAR: 'value' }
+      const executor = new Executor(workflow, {}, envVars)
+      const result = await executor.execute('workflow-1')
+
+      expect(result.success).toBe(true)
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.test.com/endpoint',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ input: 'test value' })
+        })
+      )
+    })
+
+    it('should throw error for undefined environment variables', async () => {
+      const mockTool = createMockTool(
+        'test-tool',
+        'Test Tool',
+        { result: 'test processed', data: { status: 200 } }
+      );
+      (tools as any)['test-tool'] = mockTool
+
+      const workflow: SerializedWorkflow = {
+        version: '1.0',
+        blocks: [{
+          id: 'block-1',
+          position: { x: 0, y: 0 },
+          config: {
+            tool: 'test-tool',
+            params: { input: 'test {{UNDEFINED_VAR}}' }
+          },
+          inputs: { input: 'string' },
+          outputs: {
+            output: {
+              response: {
+                text: 'string',
+                status: 'number'
+              } as ValueType
+            } as BlockOutput
+          },
+          enabled: true
+        }],
+        connections: []
+      }
+
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Environment variable "UNDEFINED_VAR" was not found')
+    })
+  })
 }) 

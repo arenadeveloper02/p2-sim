@@ -371,12 +371,12 @@ export class Executor {
             }
           }
 
-          // Handle environment variables with {} syntax
-          const envMatches = resolvedValue.match(/\{([^}]+)\}/g)
+          // Handle environment variables with {{}} syntax
+          const envMatches = resolvedValue.match(/\{\{([^}]+)\}\}/g)
           if (envMatches) {
             for (const match of envMatches) {
-              const envKey = match.slice(1, -1) // remove { and }
-              const envValue = context.environmentVariables?.[envKey]
+              const envKey = match.slice(2, -2) // remove {{ and }}
+              const envValue = this.environmentVariables?.[envKey]
               
               if (envValue === undefined) {
                 throw new Error(`Environment variable "${envKey}" was not found.`)
