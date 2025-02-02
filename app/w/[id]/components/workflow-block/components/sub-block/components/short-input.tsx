@@ -4,6 +4,7 @@ import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
+import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
 
 interface ShortInputProps {
   placeholder?: string
@@ -23,9 +24,23 @@ export function ShortInput({
   config,
 }: ShortInputProps) {
   const [isFocused, setIsFocused] = useState(false)
+  const [showEnvVars, setShowEnvVars] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [cursorPosition, setCursorPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+
+  // Handle input changes
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value
+    const newCursorPosition = e.target.selectionStart ?? 0
+    setValue(newValue)
+    setCursorPosition(newCursorPosition)
+    const { show, searchTerm } = checkEnvVarTrigger(newValue, newCursorPosition)
+    setShowEnvVars(show)
+    setSearchTerm(searchTerm)
+  }
 
   // Sync scroll position between input and overlay
   const handleScroll = (e: React.UIEvent<HTMLInputElement>) => {
@@ -76,7 +91,14 @@ export function ShortInput({
   }
 
   const handleDragOver = (e: React.DragEvent<HTMLInputElement>) => {
-    e.preventDefault() // This is needed to allow drops
+    e.preventDefault()
+  }
+
+  // Handle key combinations
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setShowEnvVars(false)
+    }
   }
 
   // Value display logic
@@ -98,12 +120,17 @@ export function ShortInput({
         placeholder={placeholder ?? ''}
         type="text"
         value={displayValue}
-        onChange={(e) => setValue(e.target.value)}
-        onFocus={() => setIsFocused(true)}
+        onChange={handleChange}
+        onFocus={() => {
+          setIsFocused(true)
+          setShowEnvVars(false)
+          setSearchTerm('')
+        }}
         onBlur={() => setIsFocused(false)}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onScroll={handleScroll}
+        onKeyDown={handleKeyDown}
         autoComplete="off"
       />
       <div
@@ -114,6 +141,17 @@ export function ShortInput({
           ? '•'.repeat(value?.toString().length ?? 0)
           : formatDisplayText(value?.toString() ?? '')}
       </div>
+      <EnvVarDropdown
+        visible={showEnvVars}
+        onSelect={setValue}
+        searchTerm={searchTerm}
+        inputValue={value?.toString() ?? ''}
+        cursorPosition={cursorPosition}
+        onClose={() => {
+          setShowEnvVars(false)
+          setSearchTerm('')
+        }}
+      />
     </div>
   )
 }

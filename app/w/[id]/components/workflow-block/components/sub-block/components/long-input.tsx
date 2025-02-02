@@ -1,9 +1,10 @@
 import { Textarea } from '@/components/ui/textarea'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
+import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
 
 interface LongInputProps {
   placeholder?: string
@@ -21,8 +22,22 @@ export function LongInput({
   config,
 }: LongInputProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const [showEnvVars, setShowEnvVars] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [cursorPosition, setCursorPosition] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+
+  // Handle input changes
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
+    const newCursorPosition = e.target.selectionStart ?? 0
+    setValue(newValue)
+    setCursorPosition(newCursorPosition)
+    const { show, searchTerm } = checkEnvVarTrigger(newValue, newCursorPosition)
+    setShowEnvVars(show)
+    setSearchTerm(searchTerm)
+  }
 
   // Sync scroll position between textarea and overlay
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -64,6 +79,13 @@ export function LongInput({
     e.preventDefault()
   }
 
+  // Handle key combinations
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      setShowEnvVars(false)
+    }
+  }
+
   return (
     <div className="relative w-full">
       <Textarea
@@ -77,10 +99,15 @@ export function LongInput({
         rows={4}
         placeholder={placeholder ?? ''}
         value={value?.toString() ?? ''}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onScroll={handleScroll}
+        onKeyDown={handleKeyDown}
+        onFocus={() => {
+          setShowEnvVars(false)
+          setSearchTerm('')
+        }}
       />
       <div
         ref={overlayRef}
@@ -88,6 +115,17 @@ export function LongInput({
       >
         {formatDisplayText(value?.toString() ?? '')}
       </div>
+      <EnvVarDropdown
+        visible={showEnvVars}
+        onSelect={setValue}
+        searchTerm={searchTerm}
+        inputValue={value?.toString() ?? ''}
+        cursorPosition={cursorPosition}
+        onClose={() => {
+          setShowEnvVars(false)
+          setSearchTerm('')
+        }}
+      />
     </div>
   )
 }
