@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { History, Bell, Play, Trash2 } from 'lucide-react'
+import { History, Bell, Play, Trash2, MessageSquare } from 'lucide-react'
 import { useNotificationStore } from '@/stores/notifications/store'
 import { NotificationDropdownItem } from './components/notification-dropdown-item'
 import { useWorkflowStore } from '@/stores/workflow/store'
@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { useCommentStore } from '@/stores/comments/store'
 
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
@@ -44,6 +45,7 @@ export function ControlBar() {
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
   const router = useRouter()
+  const { isCommentMode, toggleCommentMode } = useCommentStore()
 
   // Use client-side only rendering for the timestamp
   const [mounted, setMounted] = useState(false)
@@ -161,6 +163,22 @@ export function ControlBar() {
               </AlertDialogTrigger>
             </TooltipTrigger>
             <TooltipContent>Delete Workflow</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={isCommentMode ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={toggleCommentMode}
+              >
+                <MessageSquare className="h-5 w-5" />
+                <span className="sr-only">Toggle Comment Mode</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isCommentMode ? 'Exit Comment Mode' : 'Add Comments'}
+            </TooltipContent>
           </Tooltip>
 
           <AlertDialogContent>
