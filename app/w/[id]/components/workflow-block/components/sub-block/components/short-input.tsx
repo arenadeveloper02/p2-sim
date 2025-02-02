@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
 import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
+import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 
 interface ShortInputProps {
   placeholder?: string
@@ -25,6 +26,7 @@ export function ShortInput({
 }: ShortInputProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [showEnvVars, setShowEnvVars] = useState(false)
+  const [showTags, setShowTags] = useState(false)
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
   const [searchTerm, setSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
@@ -37,9 +39,15 @@ export function ShortInput({
     const newCursorPosition = e.target.selectionStart ?? 0
     setValue(newValue)
     setCursorPosition(newCursorPosition)
-    const { show, searchTerm } = checkEnvVarTrigger(newValue, newCursorPosition)
-    setShowEnvVars(show)
-    setSearchTerm(searchTerm)
+    
+    // Check for environment variables trigger
+    const envVarTrigger = checkEnvVarTrigger(newValue, newCursorPosition)
+    setShowEnvVars(envVarTrigger.show)
+    setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
+    
+    // Check for tag trigger
+    const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
+    setShowTags(tagTrigger.show)
   }
 
   // Sync scroll position between input and overlay
@@ -63,41 +71,53 @@ export function ShortInput({
   }, [value, isFocused])
 
   // Drag and Drop handlers
-  const handleDrop = (e: React.DragEvent<HTMLInputElement>) => {
+  const handleDragOver = (e: React.DragEvent<HTMLInputElement>) => {
+    if (config?.connectionDroppable === false) return
     e.preventDefault()
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLInputElement>) => {
+    if (config?.connectionDroppable === false) return
+    e.preventDefault()
+
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'))
+      if (data.type !== 'connectionBlock') return
 
-      const isValidConnectionBlock =
-        data.type === 'connectionBlock' &&
-        data.connectionData.sourceBlockId === blockId
-
-      if (!isValidConnectionBlock) return
-
+      // Get current cursor position or append to end
+      const dropPosition = inputRef.current?.selectionStart ?? value?.toString().length ?? 0
+      
+      // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const connectionName = data.connectionData.name
-        .replace(/\s+/g, '')
-        .toLowerCase()
-      const outputSuffix =
-        data.connectionData.outputType === 'any'
-          ? 'res'
-          : data.connectionData.outputType
+      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
+      
+      // Focus the input first
+      inputRef.current?.focus()
 
-      const newValue = `${currentValue}<${connectionName}.${outputSuffix}>`
-      setValue(newValue)
+      // Update all state in a single batch
+      Promise.resolve().then(() => {
+        setValue(newValue)
+        setCursorPosition(dropPosition + 1)
+        setShowTags(true)
+
+        // Set cursor position after state updates
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.selectionStart = dropPosition + 1
+            inputRef.current.selectionEnd = dropPosition + 1
+          }
+        }, 0)
+      })
     } catch (error) {
       console.error('Failed to parse drop data:', error)
     }
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLInputElement>) => {
-    e.preventDefault()
   }
 
   // Handle key combinations
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       setShowEnvVars(false)
+      setShowTags(false)
     }
   }
 
@@ -124,6 +144,7 @@ export function ShortInput({
         onFocus={() => {
           setIsFocused(true)
           setShowEnvVars(false)
+          setShowTags(false)
           setSearchTerm('')
         }}
         onBlur={() => setIsFocused(false)}
@@ -150,6 +171,16 @@ export function ShortInput({
         onClose={() => {
           setShowEnvVars(false)
           setSearchTerm('')
+        }}
+      />
+      <TagDropdown
+        visible={showTags}
+        onSelect={setValue}
+        blockId={blockId}
+        inputValue={value?.toString() ?? ''}
+        cursorPosition={cursorPosition}
+        onClose={() => {
+          setShowTags(false)
         }}
       />
     </div>

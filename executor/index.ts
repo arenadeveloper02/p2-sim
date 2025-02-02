@@ -141,7 +141,7 @@ export class Executor {
 
             // Update block log with success
             blockLog.success = true
-            blockLog.output = output.response
+            blockLog.output = output
             return output
           } catch (error) {
             // Update block log with error

@@ -5,6 +5,8 @@ import { useState, useRef } from 'react'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
 import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
+import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
+import { useWorkflowStore } from '@/stores/workflow/store'
 
 interface LongInputProps {
   placeholder?: string
@@ -23,6 +25,7 @@ export function LongInput({
 }: LongInputProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
   const [showEnvVars, setShowEnvVars] = useState(false)
+  const [showTags, setShowTags] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -34,9 +37,15 @@ export function LongInput({
     const newCursorPosition = e.target.selectionStart ?? 0
     setValue(newValue)
     setCursorPosition(newCursorPosition)
-    const { show, searchTerm } = checkEnvVarTrigger(newValue, newCursorPosition)
-    setShowEnvVars(show)
-    setSearchTerm(searchTerm)
+    
+    // Check for environment variables trigger
+    const envVarTrigger = checkEnvVarTrigger(newValue, newCursorPosition)
+    setShowEnvVars(envVarTrigger.show)
+    setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
+    
+    // Check for tag trigger
+    const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
+    setShowTags(tagTrigger.show)
   }
 
   // Sync scroll position between textarea and overlay
@@ -48,41 +57,53 @@ export function LongInput({
   }
 
   // Drag and Drop handlers
-  const handleDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+  const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    if (config?.connectionDroppable === false) return
     e.preventDefault()
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    if (config?.connectionDroppable === false) return
+    e.preventDefault()
+
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'))
+      if (data.type !== 'connectionBlock') return
 
-      const isValidConnectionBlock =
-        data.type === 'connectionBlock' &&
-        data.connectionData.sourceBlockId === blockId
-
-      if (!isValidConnectionBlock) return
-
+      // Get current cursor position or append to end
+      const dropPosition = textareaRef.current?.selectionStart ?? value?.toString().length ?? 0
+      
+      // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const connectionName = data.connectionData.name
-        .replace(/\s+/g, '')
-        .toLowerCase()
-      const outputSuffix =
-        data.connectionData.outputType === 'any'
-          ? 'res'
-          : data.connectionData.outputType
+      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
+      
+      // Focus the textarea first
+      textareaRef.current?.focus()
 
-      const newValue = `${currentValue}<${connectionName}.${outputSuffix}>`
-      setValue(newValue)
+      // Update all state in a single batch
+      Promise.resolve().then(() => {
+        setValue(newValue)
+        setCursorPosition(dropPosition + 1)
+        setShowTags(true)
+
+        // Set cursor position after state updates
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = dropPosition + 1
+            textareaRef.current.selectionEnd = dropPosition + 1
+          }
+        }, 0)
+      })
     } catch (error) {
       console.error('Failed to parse drop data:', error)
     }
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
-    e.preventDefault()
   }
 
   // Handle key combinations
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape') {
       setShowEnvVars(false)
+      setShowTags(false)
     }
   }
 
@@ -106,6 +127,7 @@ export function LongInput({
         onKeyDown={handleKeyDown}
         onFocus={() => {
           setShowEnvVars(false)
+          setShowTags(false)
           setSearchTerm('')
         }}
       />
@@ -124,6 +146,16 @@ export function LongInput({
         onClose={() => {
           setShowEnvVars(false)
           setSearchTerm('')
+        }}
+      />
+      <TagDropdown
+        visible={showTags}
+        onSelect={setValue}
+        blockId={blockId}
+        inputValue={value?.toString() ?? ''}
+        cursorPosition={cursorPosition}
+        onClose={() => {
+          setShowTags(false)
         }}
       />
     </div>

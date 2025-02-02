@@ -24,7 +24,7 @@ export function useBlockConnections(blockId: string) {
       return {
         id: sourceBlock.id,
         type: sourceBlock.type,
-        outputType: 'response',
+        outputType: Object.keys(sourceBlock.outputs || {}),
         name: sourceBlock.name,
       }
     })

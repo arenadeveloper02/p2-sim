@@ -50,7 +50,7 @@ export function resolveOutputType(
   for (const [key, outputConfig] of Object.entries(outputs)) {
     // If no dependencies, use the type directly
     if (!outputConfig.dependsOn) {
-      resolvedOutputs[key] = { response: outputConfig.type }
+      resolvedOutputs[key] = outputConfig.type
       continue
     }
 

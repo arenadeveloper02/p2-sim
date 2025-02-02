@@ -9,9 +9,9 @@ export type BlockCategory = 'basic' | 'advanced'
 export type PrimitiveValueType = 'string' | 'number' | 'json' | 'boolean' | 'any'
 export type ValueType = PrimitiveValueType | Record<string, PrimitiveValueType>
 
-export interface BlockOutput {
-  response: ValueType
-}
+export type BlockOutput = 
+  | PrimitiveValueType        
+  | { [key: string]: BlockOutput }
 
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
