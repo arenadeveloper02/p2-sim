@@ -16,13 +16,10 @@ import { NotificationList } from '@/app/w/components/notifications/notifications
 import { WorkflowNode } from '../workflow-node/workflow-node'
 import { CustomEdge } from '../custom-edge/custom-edge'
 import { initializeStateLogger } from '@/stores/workflow/logger'
-import { useCommentStore } from '@/stores/comments/store'
-import { CommentBlock } from '../comment-block/comment-block'
 
 // Define custom node and edge types for ReactFlow
 const nodeTypes: NodeTypes = {
   workflowBlock: WorkflowNode,
-  commentBlock: CommentBlock,
 }
 const edgeTypes: EdgeTypes = { custom: CustomEdge }
 
@@ -48,8 +45,6 @@ export function WorkflowCanvas() {
   } = useWorkflowStore()
   const { addNotification } = useNotificationStore()
   const { project } = useReactFlow()
-  const { comments, isCommentMode, addComment, updateCommentPosition } =
-    useCommentStore()
 
   // Transform blocks into ReactFlow node format
   const nodes = Object.values(blocks).map((block) => ({
@@ -70,16 +65,11 @@ export function WorkflowCanvas() {
     (changes: any) => {
       changes.forEach((change: any) => {
         if (change.type === 'position' && change.position) {
-          if (change.id.startsWith('comment-')) {
-            const commentId = change.id.replace('comment-', '')
-            updateCommentPosition(commentId, change.position)
-          } else {
-            updateBlockPosition(change.id, change.position)
-          }
+          updateBlockPosition(change.id, change.position)
         }
       })
     },
-    [updateBlockPosition, updateCommentPosition]
+    [updateBlockPosition]
   )
 
   // Handle edge removal and updates
@@ -147,23 +137,11 @@ export function WorkflowCanvas() {
     setSelectedEdgeId(null)
   }, [])
 
-  // Update onPaneClick to handle comment mode
-  const onPaneClick = useCallback(
-    (event: React.MouseEvent) => {
-      setSelectedBlockId(null)
-      setSelectedEdgeId(null)
-
-      if (isCommentMode) {
-        const reactFlowBounds = event.currentTarget.getBoundingClientRect()
-        const position = project({
-          x: event.clientX - reactFlowBounds.left,
-          y: event.clientY - reactFlowBounds.top,
-        })
-        addComment(position)
-      }
-    },
-    [isCommentMode, project, addComment]
-  )
+  // Update onPaneClick to clear selections
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    setSelectedBlockId(null)
+    setSelectedEdgeId(null)
+  }, [])
 
   // Update selected edge when clicking on connections
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: any) => {
@@ -204,20 +182,11 @@ export function WorkflowCanvas() {
     },
   }))
 
-  // Create comment nodes
-  const commentNodes = Object.values(comments).map((comment) => ({
-    id: `comment-${comment.id}`,
-    type: 'commentBlock',
-    position: comment.position,
-    data: { id: comment.id, text: comment.text },
-    draggable: true,
-  }))
-
   return (
     <div className="relative w-full h-[calc(100vh-4rem)]">
       <NotificationList />
       <ReactFlow
-        nodes={[...nodes, ...commentNodes]}
+        nodes={nodes}
         edges={edgesWithSelection}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
