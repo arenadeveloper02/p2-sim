@@ -12,6 +12,8 @@ import { functionExecuteTool as functionExecute } from './function/execute'
 import { visionTool as crewAIVision } from './crewai/vision'
 import { scrapeTool } from './firecrawl/scrape'
 import { readUrlTool } from './jina/reader'
+import { slackMessageTool } from './slack/message'
+
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   // AI Models
@@ -33,7 +35,9 @@ export const tools: Record<string, ToolConfig> = {
   // Firecrawl Tools
   'firecrawl.scrape': scrapeTool,
   // Jina Tools
-  'jina.readurl': readUrlTool
+  'jina.readurl': readUrlTool,
+  // Slack Tools
+  'slack.message': slackMessageTool
 } 
 
 // Get a tool by its ID

@@ -8,6 +8,7 @@ import { CrewAIVisionBlock } from './blocks/crewai'
 import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 import { JinaBlock } from './blocks/jina'
 import { TranslateBlock } from './blocks/translate'
+import { SlackMessageBlock } from './blocks/slack'
 
 // Export blocks for ease of use
 export { 
@@ -17,7 +18,8 @@ export {
   CrewAIVisionBlock, 
   FirecrawlScrapeBlock,
   JinaBlock,
-  TranslateBlock
+  TranslateBlock,
+  SlackMessageBlock
 }
 
 // Registry of all block configurations
@@ -28,7 +30,8 @@ const blocks: Record<string, BlockConfig> = {
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,
-  translate: TranslateBlock
+  translate: TranslateBlock,
+  slack_message: SlackMessageBlock
 }
 
 // Build a reverse mapping of tools to block types
