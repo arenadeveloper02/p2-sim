@@ -182,12 +182,15 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         return {
           key: key.trim(),
           value,
+          id: Date.now() + Math.random()
         }
       })
       .filter(({ key, value }) => key && value)
 
     if (parsedVars.length > 0) {
-      setEnvVars(parsedVars)
+      // Merge existing vars with new ones, removing any empty rows at the end
+      const existingVars = envVars.filter(v => v.key || v.value)
+      setEnvVars([...existingVars, ...parsedVars])
     }
   }
 
