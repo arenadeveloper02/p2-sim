@@ -71,7 +71,7 @@ export function Toolbar() {
         )}
 
         <ScrollArea className="h-[calc(100%-4rem)]">
-          <div className="p-4 pb-16">
+          <div className="p-4 pb-20">
             <div className="flex flex-col gap-3">
               {blocks.map((block) => (
                 <ToolbarBlock key={block.type} config={block} />
