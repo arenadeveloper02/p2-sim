@@ -45,43 +45,40 @@ export function getTool(toolId: string): ToolConfig | undefined {
   return tools[toolId] 
 }
 
-// Execute a tool with parameters
+// Execute a tool by calling the reverse proxy endpoint.
 export async function executeTool(
   toolId: string,
   params: Record<string, any>
 ): Promise<ToolResponse> {
-  const tool = getTool(toolId) 
-
-  if (!tool) {
-    return {
-      success: false,
-      output: {},
-      error: `Tool not found: ${toolId}`
-    }
-  }
-
   try {
-    // Get the URL (which might be a function or string)
-    const url = typeof tool.request.url === 'function' 
-      ? tool.request.url(params) 
-      : tool.request.url 
-
-    // Make the HTTP request
-    const response = await fetch(url, {
-      method: tool.request.method,
-      headers: tool.request.headers(params),
-      body: tool.request.body ? JSON.stringify(tool.request.body(params)) : undefined
-    }) 
-
-    // Transform the response
-    const result = await tool.transformResponse(response)
+    const response = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toolId, params }),
+    })
+    
+    const result = await response.json()
+    
+    if (!result.success) {
+      // Format error message to include details if available
+      const errorMessage = result.details 
+        ? `${result.error} (${JSON.stringify(result.details)})`
+        : result.error
+        
+      return {
+        success: false,
+        output: {},
+        error: errorMessage
+      }
+    }
+    
     return result
-
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Tool execution error:', error)
     return {
       success: false,
       output: {},
-      error: tool.transformError(error)
+      error: `Error executing tool: ${error.message || 'Unknown error'}`
     }
   }
 } 

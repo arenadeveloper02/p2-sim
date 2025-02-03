@@ -17,7 +17,7 @@ import {
   ExecutionResult,
   BlockLog
 } from './types'
-import { tools } from '@/tools'
+import { tools, executeTool } from '@/tools'
 
 export class Executor {
   constructor(
@@ -219,59 +219,17 @@ export class Executor {
       throw new Error(`Tool not found: ${toolId}`)
     }
 
-    // Merge block's static params with dynamic inputs
+    // Merge block's static params with dynamic inputs and validate them
     const validatedParams = this.validateToolParams(tool, {
       ...block.config.params,
       ...inputs,
     })
 
-    if (!tool.request) {
-      throw new Error(`Tool "${toolId}" has no request config.`)
-    }
-
-    const { url: urlOrFn, method: defaultMethod, headers: headersFn, body: bodyFn } =
-      tool.request
-
-    // Build the URL
-    const url = typeof urlOrFn === 'function' ? urlOrFn(validatedParams) : urlOrFn
-    // Determine HTTP method
-    const methodFromParams =
-      typeof validatedParams.method === 'object'
-        ? validatedParams.method.method
-        : validatedParams.method
-    const method = methodFromParams || defaultMethod || 'GET'
-
-    // Safely compute headers
-    const headers = headersFn?.(validatedParams) ?? {}
-
-    // Build body if needed
-    const bodyNeeded = method !== 'GET' && method !== 'HEAD' && !!bodyFn
-    const body = bodyNeeded
-      ? JSON.stringify(bodyFn!(validatedParams))
-      : undefined
-
-    // Perform fetch()
-    const response = await fetch(url || '', { method, headers, body })
-    if (!response.ok) {
-      // In case there is a custom transformError
-      const transformError = tool.transformError ?? (() => 'Unknown error')
-      const errorBody = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(transformError(errorBody))
-    }
-
-    // Transform the response
-    const transformResponse =
-      tool.transformResponse ??
-      (async (resp: Response) => ({
-        success: true,
-        output: await resp.json(),
-      }))
-
-    const result = await transformResponse(response)
+    // Call centralized reverse proxy endpoint via executeTool().
+    const result = await executeTool(toolId, validatedParams)
+    
     if (!result.success) {
-      const transformError = tool.transformError ?? (() => 'Tool returned an error object')
+      const transformError = tool.transformError ?? (() => 'Tool returned an error')
       throw new Error(transformError(result))
     }
 

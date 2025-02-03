@@ -49,6 +49,11 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       type: 'number',
       default: 0.7,
       description: 'Controls randomness in the response'
+    },
+    maxTokens: {
+      type: 'number',
+      default: 4096,
+      description: 'Maximum number of tokens to generate'
     }
   },
 
@@ -61,41 +66,46 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       'anthropic-version': '2023-06-01'
     }),
     body: (params) => {
-      const messages = [
-        { role: 'user', content: params.systemPrompt }
-      ] 
+      const messages = []
       
+      // Add user message if context is provided
       if (params.context) {
-        messages.push({ role: 'user', content: params.context }) 
+        messages.push({
+          role: 'user',
+          content: params.context
+        })
       }
 
-      const body = {
+      return {
         model: params.model || 'claude-3-5-sonnet-20241022',
         messages,
-        temperature: params.temperature,
-        max_tokens: params.maxTokens,
-        top_p: params.topP,
-        stream: params.stream
-      } 
-      return body 
+        system: params.systemPrompt,
+        temperature: params.temperature || 0.7,
+        max_tokens: params.maxTokens || 4096
+      }
     }
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json() 
+    const data = await response.json()
+    
+    if (!data.content) {
+      throw new Error('Unable to extract content from Anthropic API response')
+    }
+
     return {
       success: true,
       output: {
-        content: data.completion,
+        content: data.content[0].text,
         model: data.model,
-        tokens: data.usage?.total_tokens
+        tokens: data.usage?.input_tokens + data.usage?.output_tokens
       }
-    } 
+    }
   },
 
   transformError: (error) => {
-    const message = error.error?.message || error.message 
-    const code = error.error?.type || error.code 
-    return `${message} (${code})` 
+    const message = error.error?.message || error.message
+    const code = error.error?.type || error.code
+    return `${message} (${code})`
   }
 }  
