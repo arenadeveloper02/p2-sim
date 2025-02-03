@@ -67,11 +67,12 @@ export class Executor {
         },
         logs: context.blockLogs,
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Ensure we return a meaningful error message
       return {
         success: false,
         output: { response: {} },
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error.message || 'Workflow execution failed',
         logs: context.blockLogs,
       }
     }
@@ -219,21 +220,40 @@ export class Executor {
       throw new Error(`Tool not found: ${toolId}`)
     }
 
-    // Merge block's static params with dynamic inputs and validate them
     const validatedParams = this.validateToolParams(tool, {
       ...block.config.params,
       ...inputs,
     })
 
-    // Call centralized reverse proxy endpoint via executeTool().
-    const result = await executeTool(toolId, validatedParams)
-    
-    if (!result.success) {
-      const transformError = tool.transformError ?? (() => 'Tool returned an error')
-      throw new Error(transformError(result))
-    }
+    try {
+      const result = await executeTool(toolId, validatedParams)
+      
+      if (!result.success) {
+        // Ensure we have a meaningful error message
+        const errorMessage = result.error || `Tool ${toolId} failed with no error message`
+        throw new Error(errorMessage)
+      }
 
-    return { response: result.output }
+      return { response: result.output }
+    } catch (error: any) {
+      // Update block log with error
+      const blockLog: Partial<BlockLog> = {
+        blockId: block.id,
+        blockTitle: block.metadata?.title,
+        blockType: block.metadata?.type,
+        success: false,
+        error: error.message || `Tool ${toolId} failed`,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        durationMs: 0
+      }
+      
+      // Add the log entry
+      context.blockLogs.push(blockLog as BlockLog)
+
+      // Re-throw the error
+      throw error
+    }
   }
 
   /**

@@ -60,25 +60,19 @@ export async function executeTool(
     const result = await response.json()
     
     if (!result.success) {
-      // Format error message to include details if available
-      const errorMessage = result.details 
-        ? `${result.error} (${JSON.stringify(result.details)})`
-        : result.error
-        
       return {
         success: false,
         output: {},
-        error: errorMessage
+        error: result.error
       }
     }
     
     return result
   } catch (error: any) {
-    console.error('Tool execution error:', error)
     return {
       success: false,
       output: {},
-      error: `Error executing tool: ${error.message || 'Unknown error'}`
+      error: error.message || 'Unknown error'
     }
   }
 } 
