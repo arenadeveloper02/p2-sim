@@ -52,14 +52,74 @@ const createMockTool = (
   transformError: () => mockError || 'Mock error'
 }) 
 
-jest.mock('@/tools', () => ({
-  tools: {}
-})) 
+jest.mock('@/tools', () => {
+  const toolsStore: Record<string, Tool> = {}
+  return {
+    get tools() {
+      return toolsStore
+    },
+    set tools(value) {
+      Object.keys(toolsStore).forEach(key => delete toolsStore[key])
+      Object.assign(toolsStore, value)
+    },
+    executeTool: async (toolId: string, params: Record<string, any>) => {
+      const tool = toolsStore[toolId]
+      if (!tool || !tool.request || !tool.transformResponse) {
+        throw new Error(`Tool not found: ${toolId}`)
+      }
+
+      try {
+        // Mock the fetch call for test assertions
+        const url = typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
+        const method = tool.request.method || 'POST'
+        const headers = typeof tool.request.headers === 'function' ? tool.request.headers(params) : tool.request.headers || {}
+        const body = typeof tool.request.body === 'function' ? tool.request.body(params) : tool.request.body
+
+        const fetchResponse = await global.fetch(url as string, {
+          method,
+          headers,
+          body: JSON.stringify(body)
+        })
+
+        // Get the fetch response
+        const fetchResult = fetchResponse.ok ? await fetchResponse.json() : { success: false, error: 'API Error' }
+
+        // If fetch failed, return error
+        if (!fetchResponse.ok || !fetchResult.success) {
+          return {
+            success: false,
+            error: tool.transformError ? tool.transformError(fetchResult) : 'API Error',
+            output: {}
+          }
+        }
+
+        // Return mocked response using the tool's transformResponse
+        const response = await tool.transformResponse({
+          status: fetchResponse.status,
+          headers: fetchResponse.headers,
+          data: fetchResult.output || { result: params.input + ' processed', status: 200 }
+        })
+
+        return {
+          success: true,
+          output: response.output
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: tool.transformError ? tool.transformError(error) : 'Invalid type for input',
+          output: {}
+        }
+      }
+    }
+  }
+}) 
 
 describe('Executor', () => {
   beforeEach(() => {
-    // Reset tools mock
-    (tools as any) = {} 
+    // Reset tools mock and fetch mock
+    (tools as any) = {}
+    global.fetch = jest.fn()
   }) 
 
   describe('Tool Execution', () => {
