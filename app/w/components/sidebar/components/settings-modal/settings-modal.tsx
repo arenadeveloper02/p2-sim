@@ -39,7 +39,9 @@ const INITIAL_ENV_VAR: UIEnvironmentVariable = { key: '', value: '' }
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { variables, setVariable, removeVariable } = useEnvironmentStore()
   const [envVars, setEnvVars] = useState<UIEnvironmentVariable[]>([])
-  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(null)
+  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(
+    null
+  )
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const pendingClose = useRef(false)
@@ -48,12 +50,12 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   // Check if there are unsaved changes by comparing with initial state
   const hasChanges = useMemo(() => {
     // Filter out empty rows from both initial and current state
-    const initialVars = initialVarsRef.current.filter(v => v.key || v.value)
-    const currentVars = envVars.filter(v => v.key || v.value)
+    const initialVars = initialVarsRef.current.filter((v) => v.key || v.value)
+    const currentVars = envVars.filter((v) => v.key || v.value)
 
     // Create maps for easier comparison
-    const initialMap = new Map(initialVars.map(v => [v.key, v.value]))
-    const currentMap = new Map(currentVars.map(v => [v.key, v.value]))
+    const initialMap = new Map(initialVars.map((v) => [v.key, v.value]))
+    const currentMap = new Map(currentVars.map((v) => [v.key, v.value]))
 
     // Different number of non-empty variables
     if (initialMap.size !== currentMap.size) return true
@@ -109,11 +111,15 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   useEffect(() => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight
     }
   }, [envVars])
 
-  const handleValueFocus = (index: number, e: React.FocusEvent<HTMLInputElement>) => {
+  const handleValueFocus = (
+    index: number,
+    e: React.FocusEvent<HTMLInputElement>
+  ) => {
     setFocusedValueIndex(index)
     // Always scroll to the start of the input
     e.target.scrollLeft = 0
@@ -131,37 +137,57 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }
 
-  const handlePaste = (e: React.ClipboardEvent, index: number) => {
-    const text = e.clipboardData.getData('text')
-    const lines = text.split('\n').filter((line) => line.trim())
+  const handlePaste = (
+    e: React.ClipboardEvent<HTMLInputElement>,
+    index: number
+  ) => {
+    const text = e.clipboardData.getData('text').trim()
+    if (!text) return
 
+    const lines = text.split('\n').filter((line) => line.trim())
     if (lines.length === 0) return
+
     e.preventDefault()
 
-    if (lines.length === 1) {
-      // Single line paste
-      const [key, ...valueParts] = lines[0].split('=')
-      const value = valueParts.join('=').trim()
-      if (key && value) {
-        const newEnvVars = [...envVars]
-        newEnvVars[index] = { key: key.trim(), value }
-        setEnvVars(newEnvVars)
-      }
-    } else {
-      // Multi-line paste
-      const parsedVars = lines
-        .map((line) => {
-          const [key, ...valueParts] = line.split('=')
-          return {
-            key: key.trim(),
-            value: valueParts.join('=').trim(),
-          }
-        })
-        .filter(({ key, value }) => key && value)
+    const inputType = (e.target as HTMLInputElement).getAttribute(
+      'data-input-type'
+    ) as 'key' | 'value'
+    const containsKeyValuePair = text.includes('=')
 
-      if (parsedVars.length > 0) {
-        setEnvVars(parsedVars)
-      }
+    // Handle single value paste into specific field
+    if (inputType && !containsKeyValuePair) {
+      handleSingleValuePaste(text, index, inputType)
+      return
+    }
+
+    // Handle key-value pair(s) paste
+    handleKeyValuePaste(lines)
+  }
+
+  const handleSingleValuePaste = (
+    text: string,
+    index: number,
+    inputType: 'key' | 'value'
+  ) => {
+    const newEnvVars = [...envVars]
+    newEnvVars[index][inputType] = text
+    setEnvVars(newEnvVars)
+  }
+
+  const handleKeyValuePaste = (lines: string[]) => {
+    const parsedVars = lines
+      .map((line) => {
+        const [key, ...valueParts] = line.split('=')
+        const value = valueParts.join('=').trim()
+        return {
+          key: key.trim(),
+          value,
+        }
+      })
+      .filter(({ key, value }) => key && value)
+
+    if (parsedVars.length > 0) {
+      setEnvVars(parsedVars)
     }
   }
 
@@ -171,7 +197,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setEnvVars([...envVars, newVar])
   }
 
-  const updateEnvVar = (index: number, field: 'key' | 'value', value: string) => {
+  const updateEnvVar = (
+    index: number,
+    field: 'key' | 'value',
+    value: string
+  ) => {
     const newEnvVars = [...envVars]
     newEnvVars[index][field] = value
     setEnvVars(newEnvVars)
@@ -184,31 +214,33 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handleSave = () => {
     // Save all valid environment variables to the store
-    const validVars = envVars.filter(v => v.key && v.value)
-    validVars.forEach(v => setVariable(v.key, v.value))
-    
+    const validVars = envVars.filter((v) => v.key && v.value)
+    validVars.forEach((v) => setVariable(v.key, v.value))
+
     // Remove any variables that were deleted
-    const currentKeys = new Set(validVars.map(v => v.key))
-    Object.keys(variables).forEach(key => {
+    const currentKeys = new Set(validVars.map((v) => v.key))
+    Object.keys(variables).forEach((key) => {
       if (!currentKeys.has(key)) {
         removeVariable(key)
       }
     })
-    
-    if (pendingClose.current) {
-      onOpenChange(false)
-    }
+
+    // Close both the alert dialog and the main modal
+    setShowUnsavedChanges(false)
+    onOpenChange(false)
   }
 
   const renderEnvVarRow = (envVar: UIEnvironmentVariable, index: number) => (
     <div key={envVar.id || index} className={`${GRID_COLS} items-center`}>
       <Input
+        data-input-type="key"
         value={envVar.key}
         onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
         onPaste={(e) => handlePaste(e, index)}
         placeholder="e.g. API_KEY"
       />
       <Input
+        data-input-type="value"
         value={envVar.value}
         onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
         type={focusedValueIndex === index ? 'text' : 'password'}
@@ -265,10 +297,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 <Button variant="outline" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleSave} 
-                  disabled={!hasChanges}
-                >
+                <Button onClick={handleSave} disabled={!hasChanges}>
                   Save Changes
                 </Button>
               </div>
@@ -277,7 +306,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={showUnsavedChanges} onOpenChange={setShowUnsavedChanges}>
+      <AlertDialog
+        open={showUnsavedChanges}
+        onOpenChange={setShowUnsavedChanges}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>

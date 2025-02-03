@@ -68,7 +68,7 @@ export function CommentBlock({ data }: NodeProps<CommentBlockData>) {
       )}
       onMouseLeave={() => !isEditing && setIsExpanded(false)}
     >
-      <div className="flex items-center justify-between p-2 border-b border-gray-200">
+      <div className="flex items-center justify-between p-2 border-b border-gray-200 cursor-grab active:cursor-grabbing">
         <div className="text-sm font-medium text-gray-600">Note</div>
         <button
           className="opacity-0 group-hover:opacity-100 transition-opacity"
@@ -96,7 +96,7 @@ export function CommentBlock({ data }: NodeProps<CommentBlockData>) {
             placeholder="Type your note here..."
           />
         ) : (
-          <div className="text-sm text-gray-900 whitespace-pre-wrap">
+          <div className="text-sm text-gray-900 whitespace-pre-wrap cursor-text">
             {text}
           </div>
         )}
