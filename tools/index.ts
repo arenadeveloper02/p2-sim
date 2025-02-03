@@ -13,6 +13,7 @@ import { visionTool as crewAIVision } from './crewai/vision'
 import { scrapeTool } from './firecrawl/scrape'
 import { readUrlTool } from './jina/reader'
 import { slackMessageTool } from './slack/message'
+import { repoInfoTool } from './github/repo'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -37,7 +38,9 @@ export const tools: Record<string, ToolConfig> = {
   // Jina Tools
   'jina.readurl': readUrlTool,
   // Slack Tools
-  'slack.message': slackMessageTool
+  'slack.message': slackMessageTool,
+  // GitHub Tools
+  'github.repoinfo': repoInfoTool
 } 
 
 // Get a tool by its ID

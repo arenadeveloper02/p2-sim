@@ -9,6 +9,7 @@ import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 import { JinaBlock } from './blocks/jina'
 import { TranslateBlock } from './blocks/translate'
 import { SlackMessageBlock } from './blocks/slack'
+import { GitHubBlock } from './blocks/github'
 
 // Export blocks for ease of use
 export { 
@@ -19,7 +20,8 @@ export {
   FirecrawlScrapeBlock,
   JinaBlock,
   TranslateBlock,
-  SlackMessageBlock
+  SlackMessageBlock,
+  GitHubBlock
 }
 
 // Registry of all block configurations
@@ -31,7 +33,8 @@ const blocks: Record<string, BlockConfig> = {
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,
   translate: TranslateBlock,
-  slack_message: SlackMessageBlock
+  slack_message: SlackMessageBlock,
+  github_repo_info: GitHubBlock
 }
 
 // Build a reverse mapping of tools to block types
