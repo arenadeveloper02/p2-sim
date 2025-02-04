@@ -26,7 +26,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   type: 'agent',
   toolbar: {
     title: 'Agent',
-    description: 'Add an AI agent with tool access',
+    description: 'Build an agent',
     bgColor: '#7F2FFF',
     icon: AgentIcon,
     category: 'blocks',
