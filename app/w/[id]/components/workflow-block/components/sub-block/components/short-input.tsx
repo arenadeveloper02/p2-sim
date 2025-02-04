@@ -4,7 +4,10 @@ import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
-import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
+import {
+  EnvVarDropdown,
+  checkEnvVarTrigger,
+} from '@/components/ui/env-var-dropdown'
 import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 
 interface ShortInputProps {
@@ -14,6 +17,8 @@ interface ShortInputProps {
   subBlockId: string
   isConnecting: boolean
   config: SubBlockConfig
+  value?: string
+  onChange?: (value: string) => void
 }
 
 export function ShortInput({
@@ -23,28 +28,39 @@ export function ShortInput({
   password,
   isConnecting,
   config,
+  value: propValue,
+  onChange,
 }: ShortInputProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [showEnvVars, setShowEnvVars] = useState(false)
   const [showTags, setShowTags] = useState(false)
-  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
+  const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
   const [searchTerm, setSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
+  // Use either controlled or uncontrolled value
+  const value = propValue !== undefined ? propValue : storeValue
+
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     const newCursorPosition = e.target.selectionStart ?? 0
-    setValue(newValue)
+
+    if (onChange) {
+      onChange(newValue)
+    } else {
+      setStoreValue(newValue)
+    }
+
     setCursorPosition(newCursorPosition)
-    
+
     // Check for environment variables trigger
     const envVarTrigger = checkEnvVarTrigger(newValue, newCursorPosition)
     setShowEnvVars(envVarTrigger.show)
     setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
-    
+
     // Check for tag trigger
     const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
     setShowTags(tagTrigger.show)
@@ -85,18 +101,22 @@ export function ShortInput({
       if (data.type !== 'connectionBlock') return
 
       // Get current cursor position or append to end
-      const dropPosition = inputRef.current?.selectionStart ?? value?.toString().length ?? 0
-      
+      const dropPosition =
+        inputRef.current?.selectionStart ?? value?.toString().length ?? 0
+
       // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
-      
+      const newValue =
+        currentValue.slice(0, dropPosition) +
+        '<' +
+        currentValue.slice(dropPosition)
+
       // Focus the input first
       inputRef.current?.focus()
 
       // Update all state in a single batch
       Promise.resolve().then(() => {
-        setValue(newValue)
+        setStoreValue(newValue)
         setCursorPosition(dropPosition + 1)
         setShowTags(true)
 
@@ -126,6 +146,15 @@ export function ShortInput({
     password && !isFocused
       ? '•'.repeat(value?.toString().length ?? 0)
       : value?.toString() ?? ''
+
+  // Modify the EnvVarDropdown to use the correct setter
+  const handleEnvVarSelect = (newValue: string) => {
+    if (onChange) {
+      onChange(newValue)
+    } else {
+      setStoreValue(newValue)
+    }
+  }
 
   return (
     <div className="relative w-full">
@@ -164,7 +193,7 @@ export function ShortInput({
       </div>
       <EnvVarDropdown
         visible={showEnvVars}
-        onSelect={setValue}
+        onSelect={handleEnvVarSelect}
         searchTerm={searchTerm}
         inputValue={value?.toString() ?? ''}
         cursorPosition={cursorPosition}
@@ -175,7 +204,7 @@ export function ShortInput({
       />
       <TagDropdown
         visible={showTags}
-        onSelect={setValue}
+        onSelect={handleEnvVarSelect}
         blockId={blockId}
         inputValue={value?.toString() ?? ''}
         cursorPosition={cursorPosition}

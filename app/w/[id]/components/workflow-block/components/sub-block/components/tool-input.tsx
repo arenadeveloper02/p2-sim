@@ -118,18 +118,17 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
     paramValue: string
   ) => {
     setValue(
-      selectedTools.map((tool) => {
-        if (tool.type === toolType) {
-          return {
-            ...tool,
-            params: {
-              ...tool.params,
-              [paramId]: paramValue,
-            },
-          }
-        }
-        return tool
-      })
+      selectedTools.map((tool) =>
+        tool.type === toolType
+          ? {
+              ...tool,
+              params: {
+                ...tool.params,
+                [paramId]: paramValue,
+              },
+            }
+          : tool
+      )
     )
   }
 
@@ -194,7 +193,6 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       ) : (
         <div className="flex flex-wrap gap-2 min-h-[2.5rem] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background">
           {selectedTools.map((tool) => {
-            // Get UI properties from toolBlocks for display
             const toolBlock = toolBlocks.find(
               (block) => block.type === tool.type
             )
@@ -233,20 +231,21 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                             {param.id}
                           </div>
                           <div className="relative">
-                            <input
-                              type={
-                                param.type === 'password' ? 'password' : 'text'
-                              }
-                              value={tool.params?.[param.id] || ''}
-                              onChange={(e) =>
-                                handleParamChange(
-                                  tool.type,
-                                  param.id,
-                                  e.target.value
-                                )
-                              }
+                            <ShortInput
+                              blockId={blockId}
+                              subBlockId={`${subBlockId}-param`}
                               placeholder={param.description}
-                              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                              password={param.type === 'password'}
+                              isConnecting={false}
+                              config={{
+                                id: `${subBlockId}-param`,
+                                type: 'short-input',
+                                title: param.id,
+                              }}
+                              value={tool.params[param.id] || ''}
+                              onChange={(value) =>
+                                handleParamChange(tool.type, param.id, value)
+                              }
                             />
                           </div>
                         </div>
