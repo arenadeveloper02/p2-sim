@@ -235,7 +235,10 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                               blockId={blockId}
                               subBlockId={`${subBlockId}-param`}
                               placeholder={param.description}
-                              password={param.type === 'password'}
+                              password={
+                                param.id.toLowerCase().replace(/\s+/g, '') ===
+                                'apikey'
+                              }
                               isConnecting={false}
                               config={{
                                 id: `${subBlockId}-param`,
