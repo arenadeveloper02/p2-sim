@@ -26,7 +26,7 @@ export function ConnectionBlocks({
           id: connection.id,
           name: connection.name,
           outputType: connection.outputType,
-          sourceBlockId: blockId,
+          sourceBlockId: connection.id,
         },
       })
     )

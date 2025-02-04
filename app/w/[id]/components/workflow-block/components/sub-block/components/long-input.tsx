@@ -4,7 +4,10 @@ import { cn } from '@/lib/utils'
 import { useState, useRef } from 'react'
 import { SubBlockConfig } from '@/blocks/types'
 import { formatDisplayText } from '@/components/ui/formatted-text'
-import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
+import {
+  EnvVarDropdown,
+  checkEnvVarTrigger,
+} from '@/components/ui/env-var-dropdown'
 import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 import { useWorkflowStore } from '@/stores/workflow/store'
 
@@ -30,6 +33,9 @@ export function LongInput({
   const [cursorPosition, setCursorPosition] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(
+    null
+  )
 
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -37,12 +43,12 @@ export function LongInput({
     const newCursorPosition = e.target.selectionStart ?? 0
     setValue(newValue)
     setCursorPosition(newCursorPosition)
-    
+
     // Check for environment variables trigger
     const envVarTrigger = checkEnvVarTrigger(newValue, newCursorPosition)
     setShowEnvVars(envVarTrigger.show)
     setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
-    
+
     // Check for tag trigger
     const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
     setShowTags(tagTrigger.show)
@@ -71,12 +77,16 @@ export function LongInput({
       if (data.type !== 'connectionBlock') return
 
       // Get current cursor position or append to end
-      const dropPosition = textareaRef.current?.selectionStart ?? value?.toString().length ?? 0
-      
+      const dropPosition =
+        textareaRef.current?.selectionStart ?? value?.toString().length ?? 0
+
       // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
-      
+      const newValue =
+        currentValue.slice(0, dropPosition) +
+        '<' +
+        currentValue.slice(dropPosition)
+
       // Focus the textarea first
       textareaRef.current?.focus()
 
@@ -85,6 +95,11 @@ export function LongInput({
         setValue(newValue)
         setCursorPosition(dropPosition + 1)
         setShowTags(true)
+
+        // Pass the source block ID from the dropped connection
+        if (data.connectionData?.sourceBlockId) {
+          setActiveSourceBlockId(data.connectionData.sourceBlockId)
+        }
 
         // Set cursor position after state updates
         setTimeout(() => {
@@ -152,10 +167,12 @@ export function LongInput({
         visible={showTags}
         onSelect={setValue}
         blockId={blockId}
+        activeSourceBlockId={activeSourceBlockId}
         inputValue={value?.toString() ?? ''}
         cursorPosition={cursorPosition}
         onClose={() => {
           setShowTags(false)
+          setActiveSourceBlockId(null)
         }}
       />
     </div>

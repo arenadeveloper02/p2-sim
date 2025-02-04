@@ -39,6 +39,9 @@ export function ShortInput({
   const [cursorPosition, setCursorPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(
+    null
+  )
 
   // Use either controlled or uncontrolled value
   const value = propValue !== undefined ? propValue : storeValue
@@ -119,6 +122,11 @@ export function ShortInput({
         setStoreValue(newValue)
         setCursorPosition(dropPosition + 1)
         setShowTags(true)
+
+        // Pass the source block ID from the dropped connection
+        if (data.connectionData?.sourceBlockId) {
+          setActiveSourceBlockId(data.connectionData.sourceBlockId)
+        }
 
         // Set cursor position after state updates
         setTimeout(() => {
@@ -206,10 +214,12 @@ export function ShortInput({
         visible={showTags}
         onSelect={handleEnvVarSelect}
         blockId={blockId}
+        activeSourceBlockId={activeSourceBlockId}
         inputValue={value?.toString() ?? ''}
         cursorPosition={cursorPosition}
         onClose={() => {
           setShowTags(false)
+          setActiveSourceBlockId(null)
         }}
       />
     </div>
