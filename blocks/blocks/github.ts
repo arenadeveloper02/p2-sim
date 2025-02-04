@@ -5,9 +5,9 @@ import { RepoInfoResponse } from '@/tools/github/repo'
 export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
   type: 'github_repo_info',
   toolbar: {
-    title: 'GitHub Repository Info',
-    description: 'Fetch GitHub repository information and metadata',
-    bgColor: '#ffffff',
+    title: 'GitHub Repository',
+    description: 'Fetch GitHub repository',
+    bgColor: '#181C1E',
     icon: GithubIcon,
     category: 'tools',
   },
