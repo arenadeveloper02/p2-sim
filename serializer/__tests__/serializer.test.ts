@@ -2,7 +2,7 @@ import { Edge } from 'reactflow'
 import { Serializer } from '../index' 
 import { SerializedWorkflow } from '../types' 
 import { BlockState } from '@/stores/workflow/types' 
-import { BlockOutput, ValueType } from '@/blocks/types' 
+import { BlockOutput } from '@/blocks/types' 
 import { getBlock } from '@/blocks'
 
 // Mock icons
