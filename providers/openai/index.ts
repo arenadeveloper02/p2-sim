@@ -1,4 +1,4 @@
-import { ProviderConfig, FunctionCallResponse, ProviderToolConfig } from '../types'
+import { ProviderConfig, FunctionCallResponse, ProviderToolConfig, ProviderRequest } from '../types'
 import { ToolConfig } from '@/tools/types'
 
 export const openaiProvider: ProviderConfig = {
@@ -22,17 +22,8 @@ export const openaiProvider: ProviderConfig = {
 
     return tools.map(tool => ({
       name: tool.id,
-      description: tool.description || '',
-      parameters: {
-        ...tool.parameters,
-        properties: Object.entries(tool.parameters.properties).reduce((acc, [key, value]) => ({
-          ...acc,
-          [key]: {
-            ...value,
-            ...(key in tool.params && { default: tool.params[key] })
-          }
-        }), {})
-      }
+      description: tool.description,
+      parameters: tool.parameters
     }))
   },
 
@@ -42,19 +33,47 @@ export const openaiProvider: ProviderConfig = {
       throw new Error('No function call found in response')
     }
 
-    const args = typeof functionCall.arguments === 'string' 
-      ? JSON.parse(functionCall.arguments)
-      : functionCall.arguments
-
     const tool = tools?.find(t => t.id === functionCall.name)
     const toolParams = tool?.params || {}
 
     return {
       name: functionCall.name,
       arguments: {
-        ...toolParams,  // First spread the stored params to ensure they're used as defaults
-        ...args         // Then spread any overrides from the function call
+        ...toolParams,
+        ...JSON.parse(functionCall.arguments)
       }
     }
+  },
+
+  transformRequest: (request: ProviderRequest, functions?: any) => {
+    return {
+      model: request.model || 'gpt-4o',
+      messages: [
+        { role: 'system', content: request.systemPrompt },
+        ...(request.context ? [{ role: 'user', content: request.context }] : []),
+        ...(request.messages || [])
+      ],
+      temperature: request.temperature,
+      max_tokens: request.maxTokens,
+      ...(functions && { 
+        functions,
+        function_call: 'auto'
+      })
+    }
+  },
+
+  transformResponse: (response: any) => {
+    return {
+      content: response.choices?.[0]?.message?.content || '',
+      tokens: response.usage && {
+        prompt: response.usage.prompt_tokens,
+        completion: response.usage.completion_tokens,
+        total: response.usage.total_tokens
+      }
+    }
+  },
+
+  hasFunctionCall: (response: any) => {
+    return !!response.choices?.[0]?.message?.function_call
   }
 } 

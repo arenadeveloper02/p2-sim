@@ -1,5 +1,16 @@
 import { ToolConfig } from '@/tools/types'
 
+export interface TokenInfo {
+  prompt?: number
+  completion?: number
+  total?: number
+}
+
+export interface TransformedResponse {
+  content: string
+  tokens?: TokenInfo
+}
+
 export interface ProviderConfig {
   id: string
   name: string
@@ -15,6 +26,13 @@ export interface ProviderConfig {
   // Tool calling support
   transformToolsToFunctions: (tools: ProviderToolConfig[]) => any
   transformFunctionCallResponse: (response: any, tools?: ProviderToolConfig[]) => FunctionCallResponse
+  
+  // Provider-specific request/response transformations
+  transformRequest: (request: ProviderRequest, functions?: any) => any
+  transformResponse: (response: any) => TransformedResponse
+  
+  // Function to check if response contains a function call
+  hasFunctionCall: (response: any) => boolean
 
   // Internal state for tool name mapping
   _toolNameMapping?: Map<string, string>
