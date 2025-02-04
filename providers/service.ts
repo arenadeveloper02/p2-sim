@@ -1,13 +1,14 @@
 import { ProviderConfig, ProviderRequest, ProviderResponse, TokenInfo } from './types'
 import { openaiProvider } from './openai'
 import { anthropicProvider } from './anthropic'
+import { googleProvider } from './google'
 import { getTool, executeTool } from '@/tools'
 
 // Register providers
 const providers: Record<string, ProviderConfig> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
-  // Add other providers here as they're implemented
+  google: googleProvider
 }
 
 export async function executeProviderRequest(

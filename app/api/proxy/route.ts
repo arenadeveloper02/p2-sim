@@ -3,10 +3,12 @@ import { getTool } from '@/tools'
 import { anthropicProvider } from '@/providers/anthropic'
 import { openaiProvider } from '@/providers/openai'
 import { ProviderConfig } from '@/providers/types'
+import { googleProvider } from '@/providers/google'
 
 const providers: Record<string, ProviderConfig> = {
   'anthropic/chat': anthropicProvider,
-  'openai/chat': openaiProvider
+  'openai/chat': openaiProvider,
+  'google/chat': googleProvider
 }
 
 export async function POST(request: Request) {
