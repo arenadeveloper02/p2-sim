@@ -23,6 +23,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     apiKey: {
       type: 'string',
       required: true,
+      requiredForToolCall: true,
       description: 'Your Slack API token'
     },
     channel: {

@@ -15,7 +15,7 @@ export type BlockOutput =
 
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
-export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code' | 'switch'
+export type SubBlockType = 'short-input' | 'long-input' | 'dropdown' | 'slider' | 'table' | 'code' | 'switch' | 'tool-input'
 export type SubBlockLayout = 'full' | 'half'
 
 export interface OutputConfig {

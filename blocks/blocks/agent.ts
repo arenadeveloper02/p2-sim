@@ -38,7 +38,8 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
       context: { type: 'string', required: false },
       apiKey: { type: 'string', required: true },
       responseFormat: { type: 'json', required: false },
-      temperature: { type: 'number', required: false }
+      temperature: { type: 'number', required: false },
+      tools: { type: 'json', required: false }
     },
     outputs: {
       response: {
@@ -90,11 +91,17 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
         connectionDroppable: false
       },
       {
+        id: 'tools',
+        title: 'Tools',
+        type: 'tool-input',
+        layout: 'full'
+      },
+      {
         id: 'responseFormat',
         title: 'Response Format',
         type: 'code',
         layout: 'full'
-      }
+      },
     ]
   }
 }

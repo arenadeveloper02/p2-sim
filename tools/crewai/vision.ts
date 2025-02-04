@@ -25,6 +25,7 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
     apiKey: {
       type: 'string',
       required: true,
+      requiredForToolCall: true,
       description: 'API key for the selected model provider'
     },
     imageUrl: {

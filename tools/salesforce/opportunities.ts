@@ -37,6 +37,7 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
     apiKey: {
       type: 'string',
       required: true,
+      requiredForToolCall: true,
       description: 'Salesforce API key'
     },
     action: {

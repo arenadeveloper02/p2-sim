@@ -36,6 +36,7 @@ export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
     apiKey: {
       type: 'string',
       required: true,
+      requiredForToolCall: true,
       description: 'HubSpot API key'
     },
     email: {

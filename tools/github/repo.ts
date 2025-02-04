@@ -36,6 +36,7 @@ export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
     },
     apiKey: {
       type: 'string',
+      requiredForToolCall: true,
       description: 'GitHub Personal Access Token'
     }
   },

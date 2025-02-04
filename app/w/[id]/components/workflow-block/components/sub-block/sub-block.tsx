@@ -7,6 +7,7 @@ import { SliderInput } from './components/slider-input'
 import { Table } from './components/table'
 import { Code } from './components/code'
 import { Switch } from './components/switch'
+import { ToolInput } from './components/tool-input'
 
 interface SubBlockProps {
   blockId: string
@@ -92,6 +93,8 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             title={config.title}
           />
         )
+      case 'tool-input':
+        return <ToolInput blockId={blockId} subBlockId={config.id} />
       default:
         return null
     }

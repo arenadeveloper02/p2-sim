@@ -9,7 +9,7 @@ export interface ToolResponse {
 export interface ToolConfig<P = any, R extends ToolResponse = ToolResponse> {
   // Basic tool identification
   id: string 
-  name: string 
+  name: string
   description: string 
   version: string 
 
@@ -17,6 +17,7 @@ export interface ToolConfig<P = any, R extends ToolResponse = ToolResponse> {
   params: Record<string, {
     type: string 
     required?: boolean 
+    requiredForToolCall?: boolean
     default?: any 
     description?: string 
   }> 

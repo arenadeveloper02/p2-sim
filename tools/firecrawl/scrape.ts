@@ -41,6 +41,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     apiKey: {
       type: 'string',
       required: true,
+      requiredForToolCall: true,
       description: 'Firecrawl API key'
     },
     url: {
