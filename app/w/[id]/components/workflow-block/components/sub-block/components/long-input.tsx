@@ -127,7 +127,7 @@ export function LongInput({
       <Textarea
         ref={textareaRef}
         className={cn(
-          'w-full placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap',
+          'w-full placeholder:text-muted-foreground/50 allow-scroll text-transparent caret-foreground break-words whitespace-pre-wrap box-border',
           isConnecting &&
             config?.connectionDroppable !== false &&
             'focus-visible:ring-blue-500 ring-2 ring-blue-500 ring-offset-2'
@@ -148,7 +148,8 @@ export function LongInput({
       />
       <div
         ref={overlayRef}
-        className="absolute inset-0 pointer-events-none px-3 py-2 overflow-auto whitespace-pre-wrap break-words scrollbar-none text-sm bg-transparent"
+        className="absolute inset-0 pointer-events-none px-3 py-2 overflow-auto whitespace-pre-wrap break-words scrollbar-none text-sm bg-transparent box-border"
+        style={{ width: 'calc(100% - 2px)' }}
       >
         {formatDisplayText(value?.toString() ?? '')}
       </div>
