@@ -13,7 +13,7 @@ export interface CodeExecutionOutput extends ToolResponse {
 }
 
 export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOutput> = {
-  id: 'function.execute',
+  id: 'function_execute',
   name: 'Function Execute',
   description: 'Execute code in a sandboxed environment',
   version: '1.0.0',

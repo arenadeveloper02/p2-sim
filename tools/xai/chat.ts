@@ -22,7 +22,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'xai.chat',
+  id: 'xai_chat',
   name: 'xAI Chat',
   description: 'Chat with xAI models',
   version: '1.0.0',

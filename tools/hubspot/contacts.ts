@@ -27,7 +27,7 @@ export interface ContactsResponse extends ToolResponse {
 }
 
 export const contactsTool: ToolConfig<ContactsParams, ContactsResponse> = {
-  id: 'hubspot.contacts',
+  id: 'hubspot_contacts',
   name: 'HubSpot Contacts',
   description: 'Manage HubSpot contacts - create, search, and update contact records',
   version: '1.0.0',

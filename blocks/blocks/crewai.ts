@@ -12,7 +12,7 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
     category: 'tools'
   },
   tools: {
-    access: ['crewai.vision']
+    access: ['crewai_vision']
   },
   workflow: {
     inputs: {

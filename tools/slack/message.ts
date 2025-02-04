@@ -14,7 +14,7 @@ export interface SlackMessageResponse extends ToolResponse {
 }
 
 export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageResponse> = {
-  id: 'slack.message',
+  id: 'slack_message',
   name: 'Slack Message',
   description: 'Send a message to a Slack channel',
   version: '1.0.0',

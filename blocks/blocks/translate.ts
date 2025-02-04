@@ -22,7 +22,7 @@ export const TranslateBlock: BlockConfig<ChatResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['openai.chat', 'anthropic.chat', 'google.chat'],
+    access: ['openai_chat', 'anthropic_chat', 'google_chat'],
     config: {
       tool: (params: Record<string, any>) => {
         const model = params.model || 'gpt-4o'

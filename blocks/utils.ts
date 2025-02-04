@@ -1,26 +1,10 @@
 import { BlockState, SubBlockState } from '@/stores/workflow/types'
-import { BlockOutput, OutputConfig, PrimitiveValueType } from '@/blocks/types'
-import { ToolResponse } from '@/tools/types'
+import { BlockOutput, OutputConfig } from '@/blocks/types'
 
 interface CodeLine {
   id: string
   content: string
 }
-
-// Tool output type utilities
-export type ExtractToolOutput<T> = T extends ToolResponse 
-  ? T['output']
-  : never
-
-export type ToolOutputToValueType<T> = T extends Record<string, any>
-  ? {
-      [K in keyof T]: T[K] extends string ? 'string'
-        : T[K] extends number ? 'number'
-        : T[K] extends boolean ? 'boolean'
-        : T[K] extends object ? 'json'
-        : 'any'
-    }
-  : never
 
 function isEmptyValue(value: SubBlockState['value']): boolean {
   if (value === null || value === undefined) return true

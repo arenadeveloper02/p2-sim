@@ -1,10 +1,44 @@
 import { NextResponse } from 'next/server'
 import { getTool } from '@/tools'
+import { anthropicProvider } from '@/providers/anthropic'
+import { openaiProvider } from '@/providers/openai'
+import { ProviderConfig } from '@/providers/types'
+
+const providers: Record<string, ProviderConfig> = {
+  'anthropic/chat': anthropicProvider,
+  'openai/chat': openaiProvider
+}
 
 export async function POST(request: Request) {
   try {
     const { toolId, params } = await request.json()
 
+    // Check if this is a provider chat request
+    const provider = providers[toolId]
+    if (provider) {
+      const { apiKey, ...restParams } = params
+      if (!apiKey) {
+        throw new Error('API key is required')
+      }
+
+      const response = await fetch(provider.baseUrl, {
+        method: 'POST',
+        headers: provider.headers(apiKey),
+        body: JSON.stringify(restParams)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error?.message || `${toolId} API error`)
+      }
+
+      return NextResponse.json({
+        success: true,
+        output: await response.json()
+      })
+    }
+
+    // Handle regular tool requests
     const tool = getTool(toolId)
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`)

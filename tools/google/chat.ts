@@ -21,7 +21,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'google.chat',
+  id: 'google_chat',
   name: 'Google Chat',
   description: 'Chat with Google Gemini models',
   version: '1.0.0',

@@ -12,7 +12,7 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['jina.readurl']
+    access: ['jina_readurl']
   },
   workflow: {
     inputs: {

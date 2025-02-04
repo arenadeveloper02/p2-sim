@@ -24,7 +24,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'openai.chat',
+  id: 'openai_chat',
   name: 'OpenAI Chat',
   description: 'Chat with OpenAI models',
   version: '1.0.0',

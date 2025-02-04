@@ -12,7 +12,7 @@ export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['github.repoinfo']
+    access: ['github_repoinfo']
   },
   workflow: {
     inputs: {

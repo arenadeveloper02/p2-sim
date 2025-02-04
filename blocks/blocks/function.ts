@@ -12,7 +12,7 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
     category: 'blocks',
   },
   tools: {
-    access: ['function.execute']
+    access: ['function_execute']
   },
   workflow: {
     inputs: {

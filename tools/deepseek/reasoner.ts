@@ -22,7 +22,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'deepseek.reasoner',
+  id: 'deepseek_reasoner',
   name: 'DeepSeek Reasoner',
   description: 'Chat with DeepSeek-R1 reasoning model',
   version: '1.0.0',

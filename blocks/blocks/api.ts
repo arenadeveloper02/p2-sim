@@ -12,7 +12,7 @@ export const ApiBlock: BlockConfig<RequestResponse> = {
     category: 'blocks',
   },
   tools: {
-    access: ['http.request']
+    access: ['http_request']
   },
   workflow: {
     inputs: {

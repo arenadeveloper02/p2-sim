@@ -32,7 +32,7 @@ export interface ScrapeResponse extends ToolResponse {
 }
 
 export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
-  id: 'firecrawl.scrape',
+  id: 'firecrawl_scrape',
   name: 'Firecrawl Website Scraper',
   description: 'Extract clean content from any webpage in markdown format',
   version: '1.0.0',

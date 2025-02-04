@@ -12,7 +12,7 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
     category: 'tools'
   },
   tools: {
-    access: ['slack.message']
+    access: ['slack_message']
   },
   workflow: {
     inputs: {

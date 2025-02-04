@@ -1,17 +1,30 @@
 import type { SVGProps } from 'react'
 import type { JSX } from 'react'
 import { ToolResponse } from '@/tools/types'
-import { ExtractToolOutput, ToolOutputToValueType } from './utils'
+
+// Tool output type utilities
+export type ExtractToolOutput<T> = T extends ToolResponse 
+  ? T['output']
+  : never
+
+export type ToolOutputToValueType<T> = T extends Record<string, any>
+  ? {
+      [K in keyof T]: T[K] extends string ? 'string'
+        : T[K] extends number ? 'number'
+        : T[K] extends boolean ? 'boolean'
+        : T[K] extends object ? 'json'
+        : 'any'
+    }
+  : never
 
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
 export type BlockCategory = 'blocks' | 'tools'
 
-export type PrimitiveValueType = 'string' | 'number' | 'json' | 'boolean' | 'any'
-export type ValueType = PrimitiveValueType | Record<string, PrimitiveValueType>
+export type PrimitiveValueType = 'string' | 'number' | 'boolean' | 'json' | 'any'
 
 export type BlockOutput = 
-  | PrimitiveValueType        
-  | { [key: string]: BlockOutput }
+  | PrimitiveValueType 
+  | { [key: string]: PrimitiveValueType | Record<string, any> }
 
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 
@@ -61,6 +74,17 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
       response: {
         type: ToolOutputToValueType<ExtractToolOutput<T>>
       }
+    }
+  }
+}
+
+export interface OutputConfig {
+  type: BlockOutput
+  dependsOn?: {
+    subBlockId: string
+    condition: {
+      whenEmpty: BlockOutput
+      whenFilled: BlockOutput
     }
   }
 }

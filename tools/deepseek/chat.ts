@@ -23,7 +23,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'deepseek.chat',
+  id: 'deepseek_chat',
   name: 'DeepSeek Chat',
   description: 'Chat with DeepSeek-v3 model',
   version: '1.0.0',

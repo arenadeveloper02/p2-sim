@@ -20,7 +20,7 @@ export interface ChatResponse extends ToolResponse {
 }
 
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
-  id: 'anthropic.chat',
+  id: 'anthropic_chat',
   name: 'Anthropic Chat',
   description: 'Chat with Anthropic Claude models',
   version: '1.0.0',

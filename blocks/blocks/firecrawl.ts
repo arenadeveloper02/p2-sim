@@ -12,7 +12,7 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
     category: 'tools'
   },
   tools: {
-    access: ['firecrawl.scrape']
+    access: ['firecrawl_scrape']
   },
   workflow: {
     inputs: {

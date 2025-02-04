@@ -18,29 +18,29 @@ import { repoInfoTool } from './github/repo'
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   // AI Models
-  'openai.chat': openAIChat,
-  'anthropic.chat': anthropicChat,
-  'google.chat': googleChat,
-  'xai.chat': xaiChat,
-  'deepseek.chat': deepseekChat,
-  'deepseek.reasoner': deepseekReasoner,
+  'openai_chat': openAIChat,
+  'anthropic_chat': anthropicChat,
+  'google_chat': googleChat,
+  'xai_chat': xaiChat,
+  'deepseek_chat': deepseekChat,
+  'deepseek_reasoner': deepseekReasoner,
   // HTTP
-  'http.request': httpRequest,
+  'http_request': httpRequest,
   // CRM Tools
-  'hubspot.contacts': hubspotContacts,
-  'salesforce.opportunities': salesforceOpportunities,
+  'hubspot_contacts': hubspotContacts,
+  'salesforce_opportunities': salesforceOpportunities,
   // Function Tools
-  'function.execute': functionExecute,
+  'function_execute': functionExecute,
   // CrewAI Tools
-  'crewai.vision': crewAIVision,
+  'crewai_vision': crewAIVision,
   // Firecrawl Tools
-  'firecrawl.scrape': scrapeTool,
+  'firecrawl_scrape': scrapeTool,
   // Jina Tools
-  'jina.readurl': readUrlTool,
+  'jina_readurl': readUrlTool,
   // Slack Tools
-  'slack.message': slackMessageTool,
+  'slack_message': slackMessageTool,
   // GitHub Tools
-  'github.repoinfo': repoInfoTool
+  'github_repoinfo': repoInfoTool
 } 
 
 // Get a tool by its ID

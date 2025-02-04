@@ -17,7 +17,10 @@ import {
   ExecutionResult,
   BlockLog
 } from './types'
-import { tools, executeTool } from '@/tools'
+import { tools, executeTool, getTool } from '@/tools'
+import { executeProviderRequest } from '@/providers/service'
+import { getAllBlocks } from '@/blocks'
+import { BlockConfig } from '@/blocks/types'
 
 export class Executor {
   constructor(
@@ -209,7 +212,93 @@ export class Executor {
     block: SerializedBlock,
     inputs: Record<string, any>,
     context: ExecutionContext
-  ): Promise<BlockOutput> {
+  ): Promise<{ response: Record<string, any> }> {
+    // Special handling for agent blocks that use providers
+    if (block.metadata?.type === 'agent') {
+      const model = inputs.model || 'gpt-4o'
+      const providerId = model.startsWith('gpt') || model.startsWith('o1') 
+        ? 'openai'
+        : model.startsWith('claude') 
+          ? 'anthropic'
+          : model.startsWith('gemini')
+            ? 'google'
+            : model.startsWith('grok')
+              ? 'xai'
+              : 'deepseek'
+
+      // Format tools if they exist
+      const tools = Array.isArray(inputs.tools) ? inputs.tools.map((tool: any) => {
+        // Get the tool ID from the block type
+        const block = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
+        const toolId = block?.tools.access[0]
+        if (!toolId) return null
+
+        // Get the tool configuration
+        const toolConfig = getTool(toolId)
+        if (!toolConfig) return null
+
+        // Return the tool configuration with parameters
+        return {
+          id: toolConfig.id,
+          name: toolConfig.name,
+          description: toolConfig.description,
+          // Store the actual parameters from the tool input
+          params: tool.params || {},
+          parameters: {
+            type: 'object',
+            properties: Object.entries(toolConfig.params).reduce((acc, [key, config]) => ({
+              ...acc,
+              [key]: {
+                type: config.type === 'json' ? 'object' : config.type,
+                description: config.description || '',
+                ...(key in (tool.params || {}) && { default: tool.params[key] })
+              }
+            }), {}),
+            required: Object.entries(toolConfig.params)
+              .filter(([_, config]) => config.required)
+              .map(([key]) => key)
+          }
+        }
+      }).filter((t): t is NonNullable<typeof t> => t !== null) : []
+
+      const requestPayload = {
+        model,
+        systemPrompt: inputs.systemPrompt,
+        context: inputs.context,
+        tools: tools.length > 0 ? tools : undefined,
+        temperature: inputs.temperature,
+        maxTokens: inputs.maxTokens,
+        apiKey: inputs.apiKey
+      }
+
+      // Log the request payload for debugging
+      console.log('Provider Request:', {
+        providerId,
+        model,
+        tools: requestPayload.tools,
+      })
+
+      const response = await executeProviderRequest(providerId, requestPayload)
+
+      // Return the actual response values
+      return {
+        response: {
+          content: response.content,
+          model: response.model,
+          tokens: response.tokens || {
+            prompt: 0,
+            completion: 0,
+            total: 0
+          },
+          toolCalls: {
+            list: response.toolCalls || [],
+            count: response.toolCalls?.length || 0
+          }
+        }
+      }
+    }
+
+    // Regular tool execution for non-agent blocks
     const toolId = block.config.tool
     if (!toolId) {
       throw new Error(`Block "${block.id}" does not specify a tool`)

@@ -18,7 +18,7 @@ export interface RepoInfoResponse extends ToolResponse {
 }
 
 export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
-  id: 'github.repoinfo',
+  id: 'github_repoinfo',
   name: 'GitHub Repository Info',
   description: 'Fetch detailed information about a GitHub repository',
   version: '1.0.0',
