@@ -4,7 +4,7 @@ import { ToolResponse } from '@/tools/types'
 import { ExtractToolOutput, ToolOutputToValueType } from './utils'
 
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
-export type BlockCategory = 'basic' | 'advanced'
+export type BlockCategory = 'blocks' | 'tools'
 
 export type PrimitiveValueType = 'string' | 'number' | 'json' | 'boolean' | 'any'
 export type ValueType = PrimitiveValueType | Record<string, PrimitiveValueType>

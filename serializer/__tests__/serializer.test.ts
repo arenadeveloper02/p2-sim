@@ -55,7 +55,7 @@ describe('Serializer', () => {
           toolbar: {
             title: 'Agent Block',
             description: 'Use any LLM',
-            category: 'basic',
+            category: 'blocks',
             bgColor: '#7F2FFF'
           }
         }
@@ -87,7 +87,7 @@ describe('Serializer', () => {
           toolbar: {
             title: 'API Block',
             description: 'Make HTTP requests',
-            category: 'basic',
+            category: '',
             bgColor: '#00FF00'
           }
         }
@@ -359,7 +359,7 @@ describe('Serializer', () => {
             metadata: {
               title: 'Agent Block',
               description: 'Use any LLM',
-              category: 'basic',
+              category: 'blocks',
               color: '#7F2FFF',
               type: 'agent'
             },

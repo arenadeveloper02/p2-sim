@@ -50,7 +50,7 @@ export const getBlock = (type: string): BlockConfig | undefined =>
   blocks[type]
 
 
-export const getBlocksByCategory = (category: 'basic' | 'advanced'): BlockConfig[] =>
+export const getBlocksByCategory = (category: 'blocks' | 'tools'): BlockConfig[] =>
   Object.values(blocks).filter(block => block.toolbar.category === category)
 
 export const getAllBlockTypes = (): string[] =>

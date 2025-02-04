@@ -9,7 +9,7 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
     description: 'Send a message to Slack',
     bgColor: '#611f69',
     icon: SlackIcon,
-    category: 'advanced'
+    category: 'tools'
   },
   tools: {
     access: ['slack.message']

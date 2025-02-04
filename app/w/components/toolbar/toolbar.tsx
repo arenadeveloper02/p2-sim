@@ -15,7 +15,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 
 export function Toolbar() {
-  const [activeTab, setActiveTab] = useState<BlockCategory>('basic')
+  const [activeTab, setActiveTab] = useState<BlockCategory>('blocks')
   const [searchQuery, setSearchQuery] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
 

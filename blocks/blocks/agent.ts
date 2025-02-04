@@ -10,7 +10,7 @@ export const AgentBlock: BlockConfig<ChatResponse> = {
     description: 'Use any LLM',
     bgColor: '#7F2FFF',
     icon: AgentIcon,
-    category: 'basic',
+    category: 'blocks',
   },
   tools: {
     access: ['openai.chat', 'anthropic.chat', 'google.chat', 'xai.chat', 'deepseek.chat', 'deepseek.reasoner'],

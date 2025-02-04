@@ -9,7 +9,7 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
     description: 'Convert website content into text',
     bgColor: '#333333',
     icon: JinaAIIcon,
-    category: 'advanced',
+    category: 'tools',
   },
   tools: {
     access: ['jina.readurl']

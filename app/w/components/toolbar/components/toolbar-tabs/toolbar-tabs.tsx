@@ -1,29 +1,55 @@
 'use client'
 
+import { useRef, useEffect, useState } from 'react'
+
 interface ToolbarTabsProps {
-  activeTab: 'basic' | 'advanced'
-  onTabChange: (tab: 'basic' | 'advanced') => void
+  activeTab: 'blocks' | 'tools'
+  onTabChange: (tab: 'blocks' | 'tools') => void
 }
 
 export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
+  const blocksRef = useRef<HTMLButtonElement>(null)
+  const toolsRef = useRef<HTMLButtonElement>(null)
+  const [underlineStyle, setUnderlineStyle] = useState({
+    width: 0,
+    transform: '',
+  })
+
+  useEffect(() => {
+    const activeRef = activeTab === 'blocks' ? blocksRef : toolsRef
+    if (activeRef.current) {
+      const rect = activeRef.current.getBoundingClientRect()
+      const parentRect =
+        activeRef.current.parentElement?.getBoundingClientRect()
+      const offsetLeft = parentRect ? rect.left - parentRect.left : 0
+
+      setUnderlineStyle({
+        width: rect.width,
+        transform: `translateX(${offsetLeft}px)`,
+      })
+    }
+  }, [activeTab])
+
   return (
     <div className="relative pt-5">
       <div className="flex gap-8 px-6">
         <button
-          onClick={() => onTabChange('basic')}
+          ref={blocksRef}
+          onClick={() => onTabChange('blocks')}
           className={`text-sm font-medium transition-colors hover:text-black ${
-            activeTab === 'basic' ? 'text-black' : 'text-muted-foreground'
+            activeTab === 'blocks' ? 'text-black' : 'text-muted-foreground'
           }`}
         >
-          Basic
+          Blocks
         </button>
         <button
-          onClick={() => onTabChange('advanced')}
+          ref={toolsRef}
+          onClick={() => onTabChange('tools')}
           className={`text-sm font-medium transition-colors hover:text-black ${
-            activeTab === 'advanced' ? 'text-black' : 'text-muted-foreground'
+            activeTab === 'tools' ? 'text-black' : 'text-muted-foreground'
           }`}
         >
-          Advanced
+          Tools
         </button>
       </div>
 
@@ -32,10 +58,8 @@ export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
         <div
           className="absolute bottom-0 h-[1.5px] bg-black transition-transform duration-200"
           style={{
-            width: activeTab === 'advanced' ? '68px' : '38px',
-            transform: `translateX(${
-              activeTab === 'advanced' ? '91px' : '23.75px'
-            })`,
+            width: `${underlineStyle.width}px`,
+            transform: underlineStyle.transform,
           }}
         />
       </div>

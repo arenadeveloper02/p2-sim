@@ -9,7 +9,7 @@ export const ApiBlock: BlockConfig<RequestResponse> = {
     description: 'Use any API',
     bgColor: '#2F55FF',
     icon: ApiIcon,
-    category: 'basic',
+    category: 'blocks',
   },
   tools: {
     access: ['http.request']

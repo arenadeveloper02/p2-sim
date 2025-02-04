@@ -9,7 +9,7 @@ export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
     description: 'Fetch GitHub repository information and metadata',
     bgColor: '#ffffff',
     icon: GithubIcon,
-    category: 'advanced',
+    category: 'tools',
   },
   tools: {
     access: ['github.repoinfo']

@@ -9,7 +9,7 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
     description: 'Add custom logic',
     bgColor: '#FF8D2F',
     icon: CodeIcon,
-    category: 'advanced',
+    category: 'blocks',
   },
   tools: {
     access: ['function.execute']

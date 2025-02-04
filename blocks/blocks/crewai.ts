@@ -9,7 +9,7 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
     description: 'Analyze images with vision models',
     bgColor: '#FF5A50',
     icon: CrewAIIcon,
-    category: 'advanced'
+    category: 'tools'
   },
   tools: {
     access: ['crewai.vision']

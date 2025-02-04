@@ -9,7 +9,7 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
     description: 'Scrape website content',
     bgColor: '#FF613A',
     icon: FirecrawlIcon,
-    category: 'advanced'
+    category: 'tools'
   },
   tools: {
     access: ['firecrawl.scrape']
