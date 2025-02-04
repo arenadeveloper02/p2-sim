@@ -50,20 +50,20 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
         ]
       },
       {
+        id: 'prompt',
+        title: 'Prompt',
+        type: 'long-input',
+        layout: 'full',
+        placeholder: 'Enter prompt for image analysis (optional)'
+      },
+      {
         id: 'apiKey',
         title: 'API Key',
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your API key',
         password: true
-  },
-      {
-        id: 'prompt',
-        title: 'Custom Prompt',
-        type: 'long-input',
-        layout: 'full',
-        placeholder: 'Enter custom prompt for image analysis (optional)'
-      }
+      },
     ]
   }
 } 

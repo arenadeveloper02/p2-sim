@@ -38,28 +38,16 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         placeholder: 'Enter URL to read',
       },
       {
-        id: 'useReaderLMv2',
-        title: 'Use ReaderLM v2',
-        type: 'switch',
+        id: 'options',
+        title: 'Options',
+        type: 'checkbox-list',
         layout: 'half',
-      },
-      {
-        id: 'removeImages',
-        title: 'Remove Images',
-        type: 'switch',
-        layout: 'half',
-      },
-      {
-        id: 'gatherLinks',
-        title: 'Gather Links',
-        type: 'switch',
-        layout: 'half',
-      },
-      {
-        id: 'jsonResponse',
-        title: 'JSON Response',
-        type: 'switch',
-        layout: 'half',
+        options: [
+          { label: 'Use ReaderLM v2', id: 'useReaderLMv2' },
+          { label: 'Remove Images', id: 'removeImages' },
+          { label: 'Gather Links', id: 'gatherLinks' },
+          { label: 'JSON Response', id: 'jsonResponse' }
+        ]
       },
       {
         id: 'apiKey',

@@ -31,6 +31,19 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
     },
     subBlocks: [
       {
+        id: 'url',
+        title: 'Website URL',
+        type: 'short-input',
+        layout: 'full',
+        placeholder: 'Enter the webpage URL to scrape'
+      },
+      {
+        id: 'onlyMainContent',
+        title: 'Only Main Content',
+        type: 'switch',
+        layout: 'half'
+      },
+      {
         id: 'apiKey',
         title: 'API Key',
         type: 'short-input',
@@ -38,19 +51,6 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
         placeholder: 'Enter your Firecrawl API key',
         password: true
       },
-      {
-        id: 'url',
-        title: 'Website URL',
-        type: 'short-input',
-        layout: 'full',
-        placeholder: 'Enter the webpage URL to scrape'
-  },
-      {
-        id: 'onlyMainContent',
-        title: 'Only Main Content',
-        type: 'switch',
-        layout: 'half'
-      }
     ]
   }
 } 

@@ -8,6 +8,7 @@ import { Table } from './components/table'
 import { Code } from './components/code'
 import { Switch } from './components/switch'
 import { ToolInput } from './components/tool-input'
+import { CheckboxList } from './components/checkbox-list'
 
 interface SubBlockProps {
   blockId: string
@@ -53,7 +54,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             <Dropdown
               blockId={blockId}
               subBlockId={config.id}
-              options={config.options ?? []}
+              options={config.options as string[]}
             />
           </div>
         )
@@ -95,6 +96,16 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
         )
       case 'tool-input':
         return <ToolInput blockId={blockId} subBlockId={config.id} />
+      case 'checkbox-list':
+        return (
+          <CheckboxList
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title}
+            options={config.options as { label: string; id: string }[]}
+            layout={config.layout}
+          />
+        )
       default:
         return null
     }

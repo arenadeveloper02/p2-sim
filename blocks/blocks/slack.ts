@@ -30,15 +30,6 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
     },
     subBlocks: [
       {
-        id: 'apiKey',
-        title: 'OAuth Token',
-        type: 'short-input',
-        layout: 'full',
-        placeholder: 'Enter your Slack OAuth token',
-        password: true,
-        connectionDroppable: false
-      },
-      {
         id: 'channel',
         title: 'Channel',
         type: 'short-input',
@@ -51,6 +42,15 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
         type: 'long-input',
         layout: 'full',
         placeholder: 'Enter your alert message'
+      },
+      {
+        id: 'apiKey',
+        title: 'OAuth Token',
+        type: 'short-input',
+        layout: 'full',
+        placeholder: 'Enter your Slack OAuth token',
+        password: true,
+        connectionDroppable: false
       }
     ]
   }
