@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { ZoomPrevention } from './zoom-prevention'
 
 export const metadata: Metadata = {
   title: 'Sim Studio',
@@ -14,7 +15,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+        />
+      </head>
+      <body>
+        <ZoomPrevention />
+        {children}
+      </body>
     </html>
   )
 }
