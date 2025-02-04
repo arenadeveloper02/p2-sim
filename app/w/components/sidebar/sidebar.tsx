@@ -29,13 +29,23 @@ export function Sidebar() {
 
   const handleCreateWorkflow = () => {
     const id = crypto.randomUUID()
-    const colorIndex = Object.keys(workflows).length % WORKFLOW_COLORS.length
+    const workflowArray = Object.values(workflows)
+    const lastWorkflow = workflowArray[workflowArray.length - 1]
+
+    // Find the index of the last used color, defaulting to first color if undefined
+    const lastColorIndex = lastWorkflow?.color
+      ? WORKFLOW_COLORS.indexOf(lastWorkflow.color)
+      : -1
+
+    // Get next color index, wrapping around to 0 if we reach the end
+    const nextColorIndex = (lastColorIndex + 1) % WORKFLOW_COLORS.length
+
     const newWorkflow = {
       id,
-      name: `Workflow ${Object.keys(workflows).length + 1}`,
+      name: `Workflow ${workflowArray.length + 1}`,
       lastModified: new Date(),
       description: 'New workflow',
-      color: WORKFLOW_COLORS[colorIndex],
+      color: WORKFLOW_COLORS[nextColorIndex],
     }
 
     addWorkflow(newWorkflow)
