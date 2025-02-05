@@ -36,18 +36,18 @@ export {
 const blocks: Record<string, BlockConfig> = {
   agent: AgentBlock,
   api: ApiBlock,
+  condition: ConditionBlock,
   function: FunctionBlock,
+  router: RouterBlock,
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,
   translate: TranslateBlock,
   slack_message: SlackMessageBlock,
   github_repo_info: GitHubBlock,
-  condition: ConditionBlock,
   serper_search: SerperBlock,
   tavily_search: TavilySearchBlock,
   tavily_extract: TavilyExtractBlock,
-  router: RouterBlock,
 }
 
 // Build a reverse mapping of tools to block types
