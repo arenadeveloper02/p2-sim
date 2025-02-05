@@ -40,6 +40,7 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
     },
     apiKey: {
       type: 'string',
+      requiredForToolCall: true,
       description: 'Your Jina AI API key',
     },
   },

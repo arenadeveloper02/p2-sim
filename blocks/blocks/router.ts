@@ -1,11 +1,37 @@
 import { ConnectIcon } from '@/components/icons'
-import { CodeExecutionOutput } from '@/tools/function/execute'
-import { BlockConfig } from '../types'
+import { ToolResponse } from '@/tools/types'
 import { MODEL_TOOLS, ModelType } from '../consts'
+import { BlockConfig } from '../types'
 
-const routerPrompt = (
-  prompt: string
-) => `You are an intelligent routing agent responsible for directing workflow requests to the most appropriate block. Your task is to analyze the input and determine the single most suitable destination based on the request.
+interface RouterResponse extends ToolResponse {
+  output: {
+    content: string
+    model: string
+    tokens?: {
+      prompt?: number
+      completion?: number
+      total?: number
+    }
+    selectedPath: {
+      blockId: string
+      blockType: string
+      blockTitle: string
+    }
+  }
+}
+
+interface TargetBlock {
+  id: string
+  type?: string
+  title?: string
+  description?: string
+  category?: string
+  subBlocks?: Record<string, any>
+  currentState?: any
+}
+
+export const generateRouterPrompt = (prompt: string, targetBlocks?: TargetBlock[]): string => {
+  const basePrompt = `You are an intelligent routing agent responsible for directing workflow requests to the most appropriate block. Your task is to analyze the input and determine the single most suitable destination based on the request.
 
 Key Instructions:
 1. You MUST choose exactly ONE destination from the IDs of the blocks in the workflow. The destination must be a valid block id.
@@ -13,15 +39,53 @@ Key Instructions:
 2. Analysis Framework:
    - Carefully evaluate the intent and requirements of the request
    - Consider the primary action needed
-   - Match the core functionality with the most appropriate destination
+   - Match the core functionality with the most appropriate destination`
+
+  // If we have target blocks, add their information to the prompt
+  const targetBlocksInfo = targetBlocks
+    ? `
+
+Available Target Blocks:
+${targetBlocks
+  .map(
+    (block) => `
+ID: ${block.id}
+Type: ${block.type}
+Title: ${block.title}
+Description: ${block.description}
+Category: ${block.category}
+Configuration: ${JSON.stringify(block.subBlocks, null, 2)}
+${block.currentState ? `Current State: ${JSON.stringify(block.currentState, null, 2)}` : ''}
+---`
+  )
+  .join('\n')}
+
+Routing Instructions:
+1. Analyze the input request carefully against each block's:
+   - Primary purpose (from description)
+   - Configuration settings
+   - Current state (if available)
+   - Processing capabilities
+
+2. Selection Criteria:
+   - Choose the block that best matches the input's requirements
+   - Consider the block's specific functionality and constraints
+   - Factor in any relevant current state or configuration
+   - Prioritize blocks that can handle the input most effectively`
+    : ''
+
+  return `${basePrompt}${targetBlocksInfo}
 
 Routing Request: ${prompt}
 
 Response Format:
 Return ONLY the destination id as a single word, lowercase, no punctuation or explanation.
-Example: "2acd9007-27e8-4510-a487-73d3b825e7c1"`
+Example: "2acd9007-27e8-4510-a487-73d3b825e7c1"
 
-export const RouterBlock: BlockConfig<CodeExecutionOutput> = {
+Remember: Your response must be ONLY the block ID - no additional text, formatting, or explanation.`
+}
+
+export const RouterBlock: BlockConfig<RouterResponse> = {
   type: 'router',
   toolbar: {
     title: 'Router',
@@ -55,13 +119,17 @@ export const RouterBlock: BlockConfig<CodeExecutionOutput> = {
   },
   workflow: {
     inputs: {
-      code: { type: 'string', required: true },
+      prompt: { type: 'string', required: true },
+      model: { type: 'string', required: true },
+      apiKey: { type: 'string', required: true },
     },
     outputs: {
       response: {
         type: {
-          result: 'any',
-          stdout: 'string',
+          content: 'string',
+          model: 'string',
+          tokens: 'any',
+          selectedPath: 'json',
         },
       },
     },
@@ -77,7 +145,7 @@ export const RouterBlock: BlockConfig<CodeExecutionOutput> = {
         id: 'model',
         title: 'Model',
         type: 'dropdown',
-        layout: 'full',
+        layout: 'half',
         options: Object.keys(MODEL_TOOLS),
       },
       {
@@ -96,7 +164,7 @@ export const RouterBlock: BlockConfig<CodeExecutionOutput> = {
         layout: 'full',
         hidden: true,
         value: (params: Record<string, any>) => {
-          return routerPrompt(params.prompt || '')
+          return generateRouterPrompt(params.prompt || '')
         },
       },
     ],
