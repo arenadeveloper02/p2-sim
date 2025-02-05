@@ -5,8 +5,8 @@ import { BlockConfig } from '../types'
 export const SerperBlock: BlockConfig<SearchResponse> = {
   type: 'serper_search',
   toolbar: {
-    title: 'Web Search',
-    description: 'Search the web',
+    title: 'Serper Search',
+    description: 'Search the web using Serper',
     bgColor: '#2B3543',
     icon: SerperIcon,
     category: 'tools',
