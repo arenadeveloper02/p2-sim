@@ -7,7 +7,7 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
   toolbar: {
     title: 'Firecrawl Scraper',
     description: 'Scrape website content',
-    bgColor: '#000000',
+    bgColor: '#181C1E',
     icon: FirecrawlIcon,
     category: 'tools'
   },
