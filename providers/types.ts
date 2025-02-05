@@ -68,7 +68,7 @@ export interface ProviderToolConfig {
 }
 
 export interface Message {
-  role: 'system' | 'user' | 'assistant' | 'function'
+  role: 'system' | 'user' | 'assistant' | 'function' | 'tool'
   content: string | null
   name?: string
   function_call?: {

@@ -3,12 +3,14 @@ import { openaiProvider } from './openai'
 import { anthropicProvider } from './anthropic'
 import { googleProvider } from './google'
 import { getTool, executeTool } from '@/tools'
+import { deepseekProvider } from './deepseek'
 
 // Register providers
 const providers: Record<string, ProviderConfig> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
-  google: googleProvider
+  google: googleProvider,
+  deepseek: deepseekProvider
 }
 
 export async function executeProviderRequest(
