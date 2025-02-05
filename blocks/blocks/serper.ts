@@ -7,7 +7,7 @@ export const SerperBlock: BlockConfig<SearchResponse> = {
   toolbar: {
     title: 'Web Search',
     description: 'Search the web',
-    bgColor: '#4285F4', // Google blue
+    bgColor: '#2B3543',
     icon: SerperIcon,
     category: 'tools',
   },
