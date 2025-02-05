@@ -39,36 +39,40 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
   const [subBlockPositions, setSubBlockPositions] = useState<SubBlockPosition[]>([])
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Calculate subblock positions when the component mounts or updates
+  // Add a small delay to ensure DOM is ready
   useEffect(() => {
     const calculatePositions = () => {
       if (!blockRef.current) return
 
-      const positions: SubBlockPosition[] = []
-      const blockRect = blockRef.current.getBoundingClientRect()
+      // Add setTimeout to ensure styles are applied
+      setTimeout(() => {
+        const positions: SubBlockPosition[] = []
+        const blockRect = blockRef.current?.getBoundingClientRect()
+        
+        if (!blockRect) return
 
-      workflow.subBlocks
-        .filter((block) => block.outputHandle)
-        .forEach((block) => {
-          const subBlockElement = blockRef.current?.querySelector(
-            `[data-subblock-id="${block.id}"]`
-          )
-          if (subBlockElement) {
-            const subBlockRect = subBlockElement.getBoundingClientRect()
-            positions.push({
-              id: block.id,
-              // Move handle 25px up from the bottom
-              top: subBlockRect.bottom - blockRect.top,
-            })
-          }
-        })
+        workflow.subBlocks
+          .filter((block) => block.outputHandle)
+          .forEach((block) => {
+            const subBlockElement = blockRef.current?.querySelector(
+              `[data-subblock-id="${block.id}"]`
+            )
+            if (subBlockElement) {
+              const subBlockRect = subBlockElement.getBoundingClientRect()
+              positions.push({
+                id: block.id,
+                top: subBlockRect.bottom - blockRect.top - 25,
+              })
+            }
+          })
 
-      setSubBlockPositions(positions)
-      updateNodeInternals(id)
+        setSubBlockPositions(positions)
+        updateNodeInternals(id)
+      }, 0)
     }
 
-    // Calculate initial positions
-    calculatePositions()
+    // Calculate initial positions with a slight delay
+    const initialTimer = setTimeout(calculatePositions, 50)
 
     // Use ResizeObserver to detect size changes and recalculate
     const resizeObserver = new ResizeObserver(() => {
@@ -83,6 +87,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
     window.addEventListener('resize', calculatePositions)
 
     return () => {
+      clearTimeout(initialTimer)
       resizeObserver.disconnect()
       window.removeEventListener('resize', calculatePositions)
     }
