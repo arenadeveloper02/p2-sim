@@ -11,6 +11,7 @@ import { TranslateBlock } from './blocks/translate'
 import { SlackMessageBlock } from './blocks/slack'
 import { GitHubBlock } from './blocks/github'
 import { ConditionBlock } from './blocks/condition'
+import { SerperBlock } from './blocks/serper'
 
 // Export blocks for ease of use
 export { 
@@ -23,7 +24,8 @@ export {
   TranslateBlock,
   SlackMessageBlock,
   GitHubBlock,
-  ConditionBlock
+  ConditionBlock,
+  SerperBlock
 }
 
 // Registry of all block configurations
@@ -37,7 +39,8 @@ const blocks: Record<string, BlockConfig> = {
   translate: TranslateBlock,
   slack_message: SlackMessageBlock,
   github_repo_info: GitHubBlock,
-  condition: ConditionBlock
+  condition: ConditionBlock,
+  serper_search: SerperBlock
 }
 
 // Build a reverse mapping of tools to block types

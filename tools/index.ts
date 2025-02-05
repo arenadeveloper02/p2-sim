@@ -14,6 +14,7 @@ import { scrapeTool } from './firecrawl/scrape'
 import { readUrlTool } from './jina/reader'
 import { slackMessageTool } from './slack/message'
 import { repoInfoTool } from './github/repo'
+import { searchTool as serperSearch } from './serper/search'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -40,7 +41,9 @@ export const tools: Record<string, ToolConfig> = {
   // Slack Tools
   'slack_message': slackMessageTool,
   // GitHub Tools
-  'github_repoinfo': repoInfoTool
+  'github_repoinfo': repoInfoTool,
+  // Search Tools
+  'serper_search': serperSearch
 } 
 
 // Get a tool by its ID
