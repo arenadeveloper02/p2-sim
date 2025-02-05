@@ -91,7 +91,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
           <Switch
             blockId={blockId}
             subBlockId={config.id}
-            title={config.title}
+            title={config.title ?? ''}
           />
         )
       case 'tool-input':
@@ -101,7 +101,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
           <CheckboxList
             blockId={blockId}
             subBlockId={config.id}
-            title={config.title}
+            title={config.title ?? ''}
             options={config.options as { label: string; id: string }[]}
             layout={config.layout}
           />

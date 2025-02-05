@@ -1,14 +1,14 @@
-import { CodeIcon } from '@/components/icons'
+import { ConditionalIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 import { CodeExecutionOutput } from '@/tools/function/execute'
 
-export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
-  type: 'function',
+export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
+  type: 'condition',
   toolbar: {
-    title: 'Function',
-    description: 'Add custom logic',
-    bgColor: '#FF402F',
-    icon: CodeIcon,
+    title: 'Condition',
+    description: 'Add a condition',
+    bgColor: '#FF972F',
+    icon: ConditionalIcon,
     category: 'blocks',
   },
   tools: {
@@ -28,9 +28,18 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
     },
     subBlocks: [
       {
-        id: 'code',
+        id: 'if',
+        title: 'if',
         type: 'code',
         layout: 'full',
+        outputHandle: true
+      },
+      {
+        id: 'elseIf',
+        title: 'else if',
+        type: 'code',
+        layout: 'full',
+        outputHandle: true
       }
     ],
   },

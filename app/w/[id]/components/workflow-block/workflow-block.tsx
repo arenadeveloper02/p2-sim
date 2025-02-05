@@ -5,9 +5,10 @@ import { Handle, Position } from 'reactflow'
 import { cn } from '@/lib/utils'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useWorkflowStore } from '@/stores/workflow/store'
 import { Badge } from '@/components/ui/badge'
+import { useUpdateNodeInternals } from 'reactflow'
 
 interface WorkflowBlockProps {
   id: string
@@ -16,6 +17,11 @@ interface WorkflowBlockProps {
   config: BlockConfig
   name: string
   selected?: boolean
+}
+
+interface SubBlockPosition {
+  id: string
+  top: number
 }
 
 export function WorkflowBlock({
@@ -37,6 +43,60 @@ export function WorkflowBlock({
   const [isEditing, setIsEditing] = useState(false)
   const [editedName, setEditedName] = useState('')
   const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
+  const blockRef = useRef<HTMLDivElement>(null)
+  const [subBlockPositions, setSubBlockPositions] = useState<
+    SubBlockPosition[]
+  >([])
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  // Calculate subblock positions when the component mounts or updates
+  useEffect(() => {
+    const calculatePositions = () => {
+      if (!blockRef.current) return
+
+      const positions: SubBlockPosition[] = []
+      const blockRect = blockRef.current.getBoundingClientRect()
+
+      workflow.subBlocks
+        .filter((block) => block.outputHandle)
+        .forEach((block) => {
+          const subBlockElement = blockRef.current?.querySelector(
+            `[data-subblock-id="${block.id}"]`
+          )
+          if (subBlockElement) {
+            const subBlockRect = subBlockElement.getBoundingClientRect()
+            positions.push({
+              id: block.id,
+              // Move handle 25px up from the bottom
+              top: subBlockRect.bottom - blockRect.top - 25,
+            })
+          }
+        })
+
+      setSubBlockPositions(positions)
+      updateNodeInternals(id)
+    }
+
+    // Calculate initial positions
+    calculatePositions()
+
+    // Use ResizeObserver to detect size changes and recalculate
+    const resizeObserver = new ResizeObserver(() => {
+      calculatePositions()
+    })
+
+    if (blockRef.current) {
+      resizeObserver.observe(blockRef.current)
+    }
+
+    // Recalculate on window resize
+    window.addEventListener('resize', calculatePositions)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', calculatePositions)
+    }
+  }, [workflow.subBlocks, id, updateNodeInternals])
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     const rows: SubBlockConfig[][] = []
@@ -87,6 +147,7 @@ export function WorkflowBlock({
 
   return (
     <Card
+      ref={blockRef}
       className={cn(
         'w-[320px] shadow-md select-none group relative cursor-default',
         !isEnabled && 'shadow-sm'
@@ -155,6 +216,7 @@ export function WorkflowBlock({
                 className={`space-y-1 ${
                   subBlock.layout === 'half' ? 'flex-1' : 'w-full'
                 }`}
+                data-subblock-id={subBlock.id}
               >
                 <SubBlock
                   blockId={id}
@@ -167,18 +229,40 @@ export function WorkflowBlock({
         ))}
       </div>
 
-      <Handle
-        type="source"
-        position={horizontalHandles ? Position.Right : Position.Bottom}
-        className={cn(
-          '!w-3.5 !h-3.5',
-          '!bg-white !rounded-full !border !border-gray-200',
-          '!opacity-0 group-hover:!opacity-100',
-          '!transition-opacity !duration-200 !cursor-crosshair',
-          'hover:!border-blue-500',
-          horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
-        )}
-      />
+      {/* Main output handle */}
+      {subBlockPositions.length === 0 && (
+        <Handle
+          type="source"
+          position={horizontalHandles ? Position.Right : Position.Bottom}
+          className={cn(
+            '!w-3.5 !h-3.5',
+            '!bg-white !rounded-full !border !border-gray-200',
+            '!opacity-0 group-hover:!opacity-100',
+            '!transition-opacity !duration-200 !cursor-crosshair',
+            'hover:!border-blue-500',
+            horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
+          )}
+        />
+      )}
+
+      {/* Subblock output handles */}
+      {subBlockPositions.map((position) => (
+        <Handle
+          key={position.id}
+          type="source"
+          position={Position.Right}
+          id={`output-${position.id}`}
+          style={{ top: position.top }}
+          className={cn(
+            '!w-3.5 !h-3.5',
+            '!bg-white !rounded-full !border !border-gray-200',
+            '!opacity-0 group-hover:!opacity-100',
+            '!transition-opacity !duration-200 !cursor-crosshair',
+            'hover:!border-blue-500',
+            '!right-[-7px]'
+          )}
+        />
+      ))}
     </Card>
   )
 }

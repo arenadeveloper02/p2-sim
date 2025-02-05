@@ -38,7 +38,7 @@ export interface ParamConfig {
 
 export interface SubBlockConfig {
   id: string
-  title: string
+  title?: string
   type: SubBlockType
   layout?: SubBlockLayout
   options?: string[] | { label: string; id: string }[]
@@ -48,6 +48,7 @@ export interface SubBlockConfig {
   placeholder?: string
   password?: boolean
   connectionDroppable?: boolean
+  outputHandle?: boolean
   hidden?: boolean
   value?: (params: Record<string, any>) => string
 }

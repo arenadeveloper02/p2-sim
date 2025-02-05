@@ -10,6 +10,7 @@ import { JinaBlock } from './blocks/jina'
 import { TranslateBlock } from './blocks/translate'
 import { SlackMessageBlock } from './blocks/slack'
 import { GitHubBlock } from './blocks/github'
+import { ConditionBlock } from './blocks/condition'
 
 // Export blocks for ease of use
 export { 
@@ -21,7 +22,8 @@ export {
   JinaBlock,
   TranslateBlock,
   SlackMessageBlock,
-  GitHubBlock
+  GitHubBlock,
+  ConditionBlock
 }
 
 // Registry of all block configurations
@@ -34,7 +36,8 @@ const blocks: Record<string, BlockConfig> = {
   jina_reader: JinaBlock,
   translate: TranslateBlock,
   slack_message: SlackMessageBlock,
-  github_repo_info: GitHubBlock
+  github_repo_info: GitHubBlock,
+  condition: ConditionBlock
 }
 
 // Build a reverse mapping of tools to block types
