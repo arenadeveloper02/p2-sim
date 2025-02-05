@@ -24,6 +24,9 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   )
   const editorRef = useRef<HTMLDivElement>(null)
 
+  // Add new state for tracking visual line heights
+  const [visualLineHeights, setVisualLineHeights] = useState<number[]>([])
+
   // Sync code with store value on initial load and when store value changes
   useEffect(() => {
     if (storeValue !== null) {
@@ -31,11 +34,77 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
     }
   }, [storeValue])
 
-  // Update line count when code changes
+  // Update the line counting logic to account for wrapped lines
   useEffect(() => {
-    const lines = code.split('\n').length
-    setLineCount(lines)
+    if (!editorRef.current) return
+
+    const calculateVisualLines = () => {
+      const preElement = editorRef.current?.querySelector('pre')
+      if (!preElement) return
+
+      const lines = code.split('\n')
+      const newVisualLineHeights: number[] = []
+
+      // Create a temporary span to measure text
+      const measureSpan = document.createElement('span')
+      measureSpan.style.visibility = 'hidden'
+      measureSpan.style.position = 'absolute'
+      measureSpan.style.whiteSpace = 'pre-wrap'
+      measureSpan.style.width = `${preElement.clientWidth - 24}px` // Subtract padding
+      measureSpan.style.font = window.getComputedStyle(preElement).font
+      document.body.appendChild(measureSpan)
+
+      lines.forEach((line) => {
+        measureSpan.textContent = line || ' '
+        const height = Math.ceil(measureSpan.offsetHeight / 21) // 21px is our line height
+        newVisualLineHeights.push(height)
+      })
+
+      document.body.removeChild(measureSpan)
+      setVisualLineHeights(newVisualLineHeights)
+
+      // Calculate total visual lines for line numbers
+      const totalVisualLines = newVisualLineHeights.reduce(
+        (sum, height) => sum + height,
+        0
+      )
+      setLineCount(totalVisualLines)
+    }
+
+    calculateVisualLines()
+
+    // Recalculate on window resize
+    const resizeObserver = new ResizeObserver(calculateVisualLines)
+    resizeObserver.observe(editorRef.current)
+
+    return () => resizeObserver.disconnect()
   }, [code])
+
+  // Modify the line numbers rendering to account for wrapped lines
+  const renderLineNumbers = () => {
+    const numbers: JSX.Element[] = []
+    let lineNumber = 1
+
+    visualLineHeights.forEach((height) => {
+      for (let i = 0; i < height; i++) {
+        numbers.push(
+          <div
+            key={`${lineNumber}-${i}`}
+            className={cn(
+              'text-xs text-muted-foreground leading-[21px]',
+              // Only show number on first line of wrapped content
+              i > 0 && 'invisible'
+            )}
+          >
+            {lineNumber}
+          </div>
+        )
+      }
+      lineNumber++
+    })
+
+    return numbers
+  }
 
   // Handle drops from connection blocks
   const handleDrop = (e: React.DragEvent) => {
@@ -92,19 +161,12 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      {/* Line numbers */}
+      {/* Updated line numbers */}
       <div
         className="absolute left-0 top-0 bottom-0 w-[30px] bg-muted/30 flex flex-col items-end pr-3 pt-3 select-none"
         aria-hidden="true"
       >
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div
-            key={i + 1}
-            className="text-xs text-muted-foreground leading-[21px]"
-          >
-            {i + 1}
-          </div>
-        ))}
+        {renderLineNumbers()}
       </div>
 
       <div ref={editorRef} className="pl-[30px] pt-0 mt-0 relative">
