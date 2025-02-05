@@ -4,9 +4,9 @@ import { ToolConfig } from '@/tools/types'
 export const openaiProvider: ProviderConfig = {
   id: 'openai',
   name: 'OpenAI',
-  description: 'OpenAI\'s GPT models',
+  description: "OpenAI's GPT models",
   version: '1.0.0',
-  models: ['gpt-4o', 'o1', 'o1-mini'],
+  models: ['gpt-4o', 'o1', 'o3-mini'],
   defaultModel: 'gpt-4o',
   
   baseUrl: 'https://api.openai.com/v1/chat/completions',
@@ -46,34 +46,94 @@ export const openaiProvider: ProviderConfig = {
   },
 
   transformRequest: (request: ProviderRequest, functions?: any) => {
-    return {
-      model: request.model || 'gpt-4o',
-      messages: [
-        { role: 'system', content: request.systemPrompt },
-        ...(request.context ? [{ role: 'user', content: request.context }] : []),
-        ...(request.messages || [])
-      ],
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
-      ...(functions && { 
-        functions,
-        function_call: 'auto'
+    console.log('OpenAI transformRequest - Input:', JSON.stringify(request, null, 2))
+    
+    const isO1Model = request.model?.startsWith('o1')
+    const isO1Mini = request.model === 'o1-mini'
+
+    // Helper function to transform message role
+    const transformMessageRole = (message: any) => {
+      if (isO1Mini && message.role === 'system') {
+        return { ...message, role: 'user' }
+      }
+      return message
+    }
+
+    // Start with an empty array for all messages
+    const allMessages = []
+
+    // Add system prompt if present
+    if (request.systemPrompt) {
+      allMessages.push(transformMessageRole({
+        role: 'system',
+        content: request.systemPrompt
+      }))
+    }
+
+    // Add context if present
+    if (request.context) {
+      allMessages.push({
+        role: 'user',
+        content: request.context
       })
     }
+
+    // Add remaining messages, transforming roles as needed
+    if (request.messages) {
+      allMessages.push(...request.messages.map(transformMessageRole))
+    }
+
+    // Build the request payload
+    const payload: any = {
+      model: request.model || 'gpt-4o',
+      messages: allMessages
+    }
+
+    // Only add parameters supported by the model type
+    if (!isO1Model) {
+      // gpt-4o supports standard parameters
+      if (request.temperature !== undefined) payload.temperature = request.temperature
+      if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    } else {
+      // o1 models use max_completion_tokens
+      if (request.maxTokens !== undefined) {
+        payload.max_completion_tokens = request.maxTokens
+      }
+    }
+
+    // Add function calling support (supported by all models)
+    if (functions) {
+      payload.functions = functions
+      payload.function_call = 'auto'
+    }
+
+    console.log('OpenAI transformRequest - Output:', JSON.stringify(payload, null, 2))
+    return payload
   },
 
   transformResponse: (response: any) => {
-    return {
+    const output = {
       content: response.choices?.[0]?.message?.content || '',
-      tokens: response.usage && {
+      tokens: undefined as any
+    }
+
+    if (response.usage) {
+      output.tokens = {
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,
         total: response.usage.total_tokens
       }
+
+      // Add reasoning_tokens for o1 models if available
+      if (response.usage.completion_tokens_details?.reasoning_tokens) {
+        output.tokens.reasoning = response.usage.completion_tokens_details.reasoning_tokens
+      }
     }
+
+    return output
   },
 
   hasFunctionCall: (response: any) => {
     return !!response.choices?.[0]?.message?.function_call
   }
-} 
+}
