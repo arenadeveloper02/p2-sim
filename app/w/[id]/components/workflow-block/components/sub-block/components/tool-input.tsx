@@ -28,24 +28,6 @@ interface StoredTool {
   params: Record<string, string>
 }
 
-// UI interface - includes display properties
-interface ToolDisplay {
-  type: string
-  icon: any
-  title: string
-  bgColor: string
-  requiredParams: ToolParam[]
-}
-
-interface SelectedTool {
-  type: string
-  icon: any
-  title: string
-  bgColor: string
-  requiredParams?: ToolParam[]
-  params?: Record<string, string>
-}
-
 interface ToolParam {
   id: string
   type: string

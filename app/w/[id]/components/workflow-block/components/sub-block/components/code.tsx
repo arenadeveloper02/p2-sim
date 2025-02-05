@@ -192,6 +192,11 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
       </div>
 
       <div ref={editorRef} className="pl-[30px] pt-0 mt-0 relative">
+        {code.length === 0 && (
+          <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
+            Write JavaScript...
+          </div>
+        )}
         <Editor
           value={code}
           onValueChange={(newCode) => {
