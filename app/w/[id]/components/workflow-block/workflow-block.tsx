@@ -89,11 +89,14 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
   }, [workflow.subBlocks, id, updateNodeInternals])
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
+    // Filter out hidden subblocks
+    const visibleSubBlocks = subBlocks.filter(block => !block.hidden)
+    
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
     let currentRowWidth = 0
 
-    subBlocks.forEach((block) => {
+    visibleSubBlocks.forEach((block) => {
       const blockWidth = block.layout === 'half' ? 0.5 : 1
       if (currentRowWidth + blockWidth > 1) {
         rows.push([...currentRow])

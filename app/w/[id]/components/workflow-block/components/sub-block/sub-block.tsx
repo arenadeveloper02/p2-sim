@@ -17,10 +17,6 @@ interface SubBlockProps {
 }
 
 export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
-  if (config.hidden) {
-    return null
-  }
-
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
   }
