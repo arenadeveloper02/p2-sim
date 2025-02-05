@@ -1,6 +1,6 @@
 import { JinaAIIcon } from '@/components/icons'
-import { BlockConfig } from '../types'
 import { ReadUrlResponse } from '@/tools/jina/reader'
+import { BlockConfig } from '../types'
 
 export const JinaBlock: BlockConfig<ReadUrlResponse> = {
   type: 'jina_reader',
@@ -9,10 +9,10 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
     description: 'Convert website content into text',
     bgColor: '#333333',
     icon: JinaAIIcon,
-    category: 'tools'
+    category: 'tools',
   },
   tools: {
-    access: ['jina_readurl']
+    access: ['jina_readurl'],
   },
   workflow: {
     inputs: {
@@ -20,14 +20,14 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
       useReaderLMv2: { type: 'boolean', required: false },
       gatherLinks: { type: 'boolean', required: false },
       jsonResponse: { type: 'boolean', required: false },
-      apiKey: { type: 'string', required: true }
+      apiKey: { type: 'string', required: true },
     },
     outputs: {
       response: {
         type: {
-          content: 'string'
-        }
-      }
+          content: 'string',
+        },
+      },
     },
     subBlocks: [
       {
@@ -35,7 +35,7 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         title: 'URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter URL to extract content from'
+        placeholder: 'Enter URL to extract content from',
       },
       {
         id: 'options',
@@ -45,8 +45,8 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         options: [
           { id: 'useReaderLMv2', label: 'Use Reader LM v2' },
           { id: 'gatherLinks', label: 'Gather Links' },
-          { id: 'jsonResponse', label: 'JSON Response' }
-        ]
+          { id: 'jsonResponse', label: 'JSON Response' },
+        ],
       },
       {
         id: 'apiKey',
@@ -54,8 +54,8 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your Jina API key',
-        password: true
-      }
-    ]
-  }
-} 
+        password: true,
+      },
+    ],
+  },
+}

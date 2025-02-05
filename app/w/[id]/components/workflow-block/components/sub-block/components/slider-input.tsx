@@ -32,9 +32,7 @@ export function SliderInput({
       <div
         className="absolute text-sm text-muted-foreground"
         style={{
-          left: `clamp(0%, ${
-            ((Number(sliderValue) - min) / (max - min)) * 100
-          }%, 100%)`,
+          left: `clamp(0%, ${((Number(sliderValue) - min) / (max - min)) * 100}%, 100%)`,
           transform: `translateX(-${(() => {
             const percentage = ((Number(sliderValue) - min) / (max - min)) * 100
             const bias = -25 * Math.sin((percentage * Math.PI) / 50)

@@ -1,6 +1,6 @@
-import { BlockConfig } from '../types'
 import { FirecrawlIcon } from '@/components/icons'
 import { ScrapeResponse } from '@/tools/firecrawl/scrape'
+import { BlockConfig } from '../types'
 
 export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
   type: 'firecrawl_scrape',
@@ -9,25 +9,25 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
     description: 'Scrape website content',
     bgColor: '#181C1E',
     icon: FirecrawlIcon,
-    category: 'tools'
+    category: 'tools',
   },
   tools: {
-    access: ['firecrawl_scrape']
+    access: ['firecrawl_scrape'],
   },
   workflow: {
     inputs: {
       apiKey: { type: 'string', required: true },
       url: { type: 'string', required: true },
-      scrapeOptions: { type: 'json', required: false }
+      scrapeOptions: { type: 'json', required: false },
     },
     outputs: {
       response: {
         type: {
           markdown: 'string',
           html: 'any',
-          metadata: 'json'
-        }
-      }
+          metadata: 'json',
+        },
+      },
     },
     subBlocks: [
       {
@@ -35,13 +35,13 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
         title: 'Website URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter the webpage URL to scrape'
+        placeholder: 'Enter the webpage URL to scrape',
       },
       {
         id: 'onlyMainContent',
         title: 'Only Main Content',
         type: 'switch',
-        layout: 'half'
+        layout: 'half',
       },
       {
         id: 'apiKey',
@@ -49,8 +49,8 @@ export const FirecrawlScrapeBlock: BlockConfig<ScrapeResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your Firecrawl API key',
-        password: true
+        password: true,
       },
-    ]
-  }
-} 
+    ],
+  },
+}

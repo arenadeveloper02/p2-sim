@@ -1,14 +1,11 @@
+import { useEffect, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Terminal, AlertCircle } from 'lucide-react'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import {
-  NotificationType,
-  NotificationStore,
-} from '@/stores/notifications/types'
-import { useNotificationStore } from '@/stores/notifications/store'
-import { cn } from '@/lib/utils'
+import { AlertCircle, Terminal } from 'lucide-react'
 import { ErrorIcon } from '@/components/icons'
-import { useState, useEffect } from 'react'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { useNotificationStore } from '@/stores/notifications/store'
+import { NotificationStore, NotificationType } from '@/stores/notifications/types'
 
 interface NotificationDropdownItemProps {
   id: string
@@ -46,8 +43,7 @@ export function NotificationDropdownItem({
   const timeAgo = formatDistanceToNow(timestamp, { addSuffix: true })
 
   // Truncate message if it's too long
-  const truncatedMessage =
-    message.length > 50 ? `${message.slice(0, 50)}...` : message
+  const truncatedMessage = message.length > 50 ? `${message.slice(0, 50)}...` : message
 
   return (
     <DropdownMenuItem
@@ -57,9 +53,7 @@ export function NotificationDropdownItem({
       <Icon className={cn('h-4 w-4', NotificationColors[type])} />
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium">
-            {type === 'error' ? 'Error' : 'Console'}
-          </span>
+          <span className="text-xs font-medium">{type === 'error' ? 'Error' : 'Console'}</span>
           <span className="text-xs text-muted-foreground">{timeAgo}</span>
         </div>
         <p className="text-sm text-foreground">{truncatedMessage}</p>

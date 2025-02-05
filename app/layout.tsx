@@ -4,15 +4,10 @@ import { ZoomPrevention } from './zoom-prevention'
 
 export const metadata: Metadata = {
   title: 'Sim Studio',
-  description:
-    'Drag and drop agents to create workflows. Powered by Simplicity',
+  description: 'Drag and drop agents to create workflows. Powered by Simplicity',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>

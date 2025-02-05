@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useWorkflowStore } from '@/stores/workflow/store'
 
@@ -62,9 +62,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const blockName = sourceBlock.name || sourceBlock.type
 
       return {
-        tags: outputPaths.map(
-          (path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`
-        ),
+        tags: outputPaths.map((path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`),
       }
     }
 
@@ -92,9 +90,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const outputPaths = getOutputPaths(sourceBlock.outputs)
       const blockName = sourceBlock.name || sourceBlock.type
 
-      return outputPaths.map(
-        (path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`
-      )
+      return outputPaths.map((path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`)
     })
 
     return { tags: sourceTags }
@@ -120,12 +116,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
     if (lastOpenBracket === -1) return
 
-    const newValue =
-      textBeforeCursor.slice(0, lastOpenBracket) +
-      '<' +
-      tag +
-      '>' +
-      textAfterCursor
+    const newValue = textBeforeCursor.slice(0, lastOpenBracket) + '<' + tag + '>' + textAfterCursor
 
     onSelect(newValue)
     onClose?.()
@@ -138,9 +129,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setSelectedIndex((prev) =>
-          prev < filteredTags.length - 1 ? prev + 1 : prev
-        )
+        setSelectedIndex((prev) => (prev < filteredTags.length - 1 ? prev + 1 : prev))
         break
       case 'ArrowUp':
         e.preventDefault()
@@ -177,9 +166,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     >
       <div className="py-1">
         {filteredTags.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-muted-foreground">
-            No matching tags found
-          </div>
+          <div className="px-3 py-2 text-sm text-muted-foreground">No matching tags found</div>
         ) : (
           filteredTags.map((tag, index) => (
             <button
@@ -206,20 +193,14 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 }
 
 // Helper function to check for '<' trigger
-export const checkTagTrigger = (
-  text: string,
-  cursorPosition: number
-): { show: boolean } => {
+export const checkTagTrigger = (text: string, cursorPosition: number): { show: boolean } => {
   if (cursorPosition >= 1) {
     const textBeforeCursor = text.slice(0, cursorPosition)
     const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
     const lastCloseBracket = textBeforeCursor.lastIndexOf('>')
 
     // Show if we have an unclosed '<' that's not part of a completed tag
-    if (
-      lastOpenBracket !== -1 &&
-      (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
-    ) {
+    if (lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)) {
       return { show: true }
     }
   }

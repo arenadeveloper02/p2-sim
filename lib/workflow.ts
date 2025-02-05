@@ -1,7 +1,7 @@
-import { BlockState } from '@/stores/workflow/types'
 import { Edge } from 'reactflow'
-import { Serializer } from '@/serializer'
+import { BlockState } from '@/stores/workflow/types'
 import { Executor } from '@/executor'
+import { Serializer } from '@/serializer'
 
 export interface WorkflowExecutionResult {
   success: boolean
@@ -35,20 +35,20 @@ export async function executeWorkflow(
       console.log('Workflow executed successfully:', result.output)
       return {
         success: true,
-        output: result.output
+        output: result.output,
       }
     } else {
       console.error('Workflow execution failed:', result.error)
       return {
         success: false,
-        error: result.error
+        error: result.error,
       }
     }
   } catch (error: any) {
     console.error('Error executing workflow:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     }
   }
-} 
+}

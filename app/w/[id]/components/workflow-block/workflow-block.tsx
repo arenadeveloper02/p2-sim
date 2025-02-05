@@ -1,14 +1,14 @@
-import { Card } from '@/components/ui/card'
-import { BlockConfig, SubBlockConfig } from '../../../../../blocks/types'
-import { SubBlock } from './components/sub-block/sub-block'
+import { useEffect, useRef, useState } from 'react'
 import { Handle, Position } from 'reactflow'
+import { useUpdateNodeInternals } from 'reactflow'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useWorkflowStore } from '@/stores/workflow/store'
+import { BlockConfig, SubBlockConfig } from '../../../../../blocks/types'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
-import { useState, useEffect, useRef } from 'react'
-import { useWorkflowStore } from '@/stores/workflow/store'
-import { Badge } from '@/components/ui/badge'
-import { useUpdateNodeInternals } from 'reactflow'
+import { SubBlock } from './components/sub-block/sub-block'
 
 interface WorkflowBlockProps {
   id: string
@@ -24,19 +24,11 @@ interface SubBlockPosition {
   top: number
 }
 
-export function WorkflowBlock({
-  id,
-  type,
-  config,
-  name,
-  selected,
-}: WorkflowBlockProps) {
+export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBlockProps) {
   const { toolbar, workflow } = config
   // Dragging connection state
   const [isConnecting, setIsConnecting] = useState(false)
-  const isEnabled = useWorkflowStore(
-    (state) => state.blocks[id]?.enabled ?? true
-  )
+  const isEnabled = useWorkflowStore((state) => state.blocks[id]?.enabled ?? true)
   const horizontalHandles = useWorkflowStore(
     (state) => state.blocks[id]?.horizontalHandles ?? false
   )
@@ -44,9 +36,7 @@ export function WorkflowBlock({
   const [editedName, setEditedName] = useState('')
   const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
   const blockRef = useRef<HTMLDivElement>(null)
-  const [subBlockPositions, setSubBlockPositions] = useState<
-    SubBlockPosition[]
-  >([])
+  const [subBlockPositions, setSubBlockPositions] = useState<SubBlockPosition[]>([])
   const updateNodeInternals = useUpdateNodeInternals()
 
   // Calculate subblock positions when the component mounts or updates
@@ -198,10 +188,7 @@ export function WorkflowBlock({
           )}
         </div>
         {!isEnabled && (
-          <Badge
-            variant="secondary"
-            className="bg-gray-100 text-gray-500 hover:bg-gray-100"
-          >
+          <Badge variant="secondary" className="bg-gray-100 text-gray-500 hover:bg-gray-100">
             Disabled
           </Badge>
         )}
@@ -213,16 +200,10 @@ export function WorkflowBlock({
             {row.map((subBlock, blockIndex) => (
               <div
                 key={`${id}-${rowIndex}-${blockIndex}`}
-                className={`space-y-1 ${
-                  subBlock.layout === 'half' ? 'flex-1' : 'w-full'
-                }`}
+                className={`space-y-1 ${subBlock.layout === 'half' ? 'flex-1' : 'w-full'}`}
                 data-subblock-id={subBlock.id}
               >
-                <SubBlock
-                  blockId={id}
-                  config={subBlock}
-                  isConnecting={isConnecting}
-                />
+                <SubBlock blockId={id} config={subBlock} isConnecting={isConnecting} />
               </div>
             ))}
           </div>

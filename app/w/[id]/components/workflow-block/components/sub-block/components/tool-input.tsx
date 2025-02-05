@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { PlusIcon, XIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   Command,
   CommandEmpty,
@@ -9,15 +9,11 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { useSubBlockValue } from '../hooks/use-sub-block-value'
-import { getAllBlocks } from '@/blocks'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { getAllBlocks } from '@/blocks'
 import { getTool } from '@/tools'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { ShortInput } from './short-input'
 
 interface ToolInputProps {
@@ -82,9 +78,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
   const [open, setOpen] = useState(false)
 
-  const toolBlocks = getAllBlocks().filter(
-    (block) => block.toolbar.category === 'tools'
-  )
+  const toolBlocks = getAllBlocks().filter((block) => block.toolbar.category === 'tools')
 
   const selectedTools: StoredTool[] =
     Array.isArray(value) && value.length > 0 && typeof value[0] === 'object'
@@ -112,11 +106,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
     setValue(selectedTools.filter((tool) => tool.type !== toolType))
   }
 
-  const handleParamChange = (
-    toolType: string,
-    paramId: string,
-    paramValue: string
-  ) => {
+  const handleParamChange = (toolType: string, paramId: string, paramValue: string) => {
     setValue(
       selectedTools.map((tool) =>
         tool.type === toolType
@@ -132,13 +122,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
     )
   }
 
-  const IconComponent = ({
-    icon: Icon,
-    className,
-  }: {
-    icon: any
-    className?: string
-  }) => {
+  const IconComponent = ({ icon: Icon, className }: { icon: any; className?: string }) => {
     if (!Icon) return null
     return <Icon className={className} />
   }
@@ -177,10 +161,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                         className="flex items-center justify-center w-6 h-6 rounded"
                         style={{ backgroundColor: block.toolbar.bgColor }}
                       >
-                        <IconComponent
-                          icon={block.toolbar.icon}
-                          className="w-4 h-4 text-white"
-                        />
+                        <IconComponent icon={block.toolbar.icon} className="w-4 h-4 text-white" />
                       </div>
                       <span>{block.toolbar.title}</span>
                     </CommandItem>
@@ -193,9 +174,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       ) : (
         <div className="flex flex-wrap gap-2 min-h-[2.5rem] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background">
           {selectedTools.map((tool) => {
-            const toolBlock = toolBlocks.find(
-              (block) => block.type === tool.type
-            )
+            const toolBlock = toolBlocks.find((block) => block.type === tool.type)
             const toolId = getToolIdFromBlock(tool.type)
             const requiredParams = toolId ? getRequiredToolParams(toolId) : []
 
@@ -235,10 +214,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                               blockId={blockId}
                               subBlockId={`${subBlockId}-param`}
                               placeholder={param.description}
-                              password={
-                                param.id.toLowerCase().replace(/\s+/g, '') ===
-                                'apikey'
-                              }
+                              password={param.id.toLowerCase().replace(/\s+/g, '') === 'apikey'}
                               isConnecting={false}
                               config={{
                                 id: `${subBlockId}-param`,
@@ -246,9 +222,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                                 title: param.id,
                               }}
                               value={tool.params[param.id] || ''}
-                              onChange={(value) =>
-                                handleParamChange(tool.type, param.id, value)
-                              }
+                              onChange={(value) => handleParamChange(tool.type, param.id, value)}
                             />
                           </div>
                         </div>
@@ -286,10 +260,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                           className="flex items-center justify-center w-6 h-6 rounded"
                           style={{ backgroundColor: block.toolbar.bgColor }}
                         >
-                          <IconComponent
-                            icon={block.toolbar.icon}
-                            className="w-4 h-4 text-white"
-                          />
+                          <IconComponent icon={block.toolbar.icon} className="w-4 h-4 text-white" />
                         </div>
                         <span>{block.toolbar.title}</span>
                       </CommandItem>

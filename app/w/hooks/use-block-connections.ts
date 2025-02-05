@@ -1,5 +1,5 @@
-import { useWorkflowStore } from '@/stores/workflow/store'
 import { shallow } from 'zustand/shallow'
+import { useWorkflowStore } from '@/stores/workflow/store'
 
 export interface ConnectedBlock {
   id: string
@@ -12,14 +12,14 @@ export function useBlockConnections(blockId: string) {
   const { edges, blocks } = useWorkflowStore(
     (state) => ({
       edges: state.edges,
-      blocks: state.blocks
+      blocks: state.blocks,
     }),
     shallow
   )
 
   const incomingConnections = edges
-    .filter(edge => edge.target === blockId)
-    .map(edge => {
+    .filter((edge) => edge.target === blockId)
+    .map((edge) => {
       const sourceBlock = blocks[edge.source]
       return {
         id: sourceBlock.id,
@@ -31,6 +31,6 @@ export function useBlockConnections(blockId: string) {
 
   return {
     incomingConnections,
-    hasIncomingConnections: incomingConnections.length > 0
+    hasIncomingConnections: incomingConnections.length > 0,
   }
 }

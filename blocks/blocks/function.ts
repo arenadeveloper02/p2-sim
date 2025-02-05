@@ -1,6 +1,6 @@
 import { CodeIcon } from '@/components/icons'
-import { BlockConfig } from '../types'
 import { CodeExecutionOutput } from '@/tools/function/execute'
+import { BlockConfig } from '../types'
 
 export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
   type: 'function',
@@ -12,26 +12,26 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
     category: 'blocks',
   },
   tools: {
-    access: ['function_execute']
+    access: ['function_execute'],
   },
   workflow: {
     inputs: {
-      code: { type: 'string', required: true }
+      code: { type: 'string', required: true },
     },
     outputs: {
       response: {
         type: {
           result: 'any',
-          stdout: 'string'
-        }
-      }
+          stdout: 'string',
+        },
+      },
     },
     subBlocks: [
       {
         id: 'code',
         type: 'code',
         layout: 'full',
-      }
+      },
     ],
   },
 }

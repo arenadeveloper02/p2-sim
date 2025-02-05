@@ -1,9 +1,9 @@
+import { useEffect, useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
-import { useRef, useEffect } from 'react'
 
 interface TableProps {
   columns: string[]
@@ -18,9 +18,7 @@ interface TableRow {
 
 export function Table({ columns, blockId, subBlockId }: TableProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
-  const activePositionRef = useRef<{ rowIndex: number; column: string } | null>(
-    null
-  )
+  const activePositionRef = useRef<{ rowIndex: number; column: string } | null>(null)
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
 
   useEffect(() => {
@@ -57,11 +55,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
     },
   ]
 
-  const handleCellChange = (
-    rowIndex: number,
-    column: string,
-    value: string
-  ) => {
+  const handleCellChange = (rowIndex: number, column: string, value: string) => {
     const updatedRows = rows.map((row, idx) =>
       idx === rowIndex
         ? {
@@ -111,10 +105,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
               {columns.map((column, cellIndex) => (
                 <td
                   key={`${row.id}-${column}`}
-                  className={cn(
-                    'p-1',
-                    cellIndex < columns.length - 1 && 'border-r'
-                  )}
+                  className={cn('p-1', cellIndex < columns.length - 1 && 'border-r')}
                 >
                   <Input
                     ref={(el) => {
@@ -128,9 +119,7 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
                     data-column={column}
                     value={row.cells[column] || ''}
                     placeholder={column}
-                    onChange={(e) =>
-                      handleCellChange(rowIndex, column, e.target.value)
-                    }
+                    onChange={(e) => handleCellChange(rowIndex, column, e.target.value)}
                     onFocus={() => {
                       activePositionRef.current = { rowIndex, column }
                     }}

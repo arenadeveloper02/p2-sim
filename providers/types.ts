@@ -18,19 +18,22 @@ export interface ProviderConfig {
   version: string
   models: string[]
   defaultModel: string
-  
+
   // Provider-specific configuration
   baseUrl: string
   headers: (apiKey: string) => Record<string, string>
-  
+
   // Tool calling support
   transformToolsToFunctions: (tools: ProviderToolConfig[]) => any
-  transformFunctionCallResponse: (response: any, tools?: ProviderToolConfig[]) => FunctionCallResponse
-  
+  transformFunctionCallResponse: (
+    response: any,
+    tools?: ProviderToolConfig[]
+  ) => FunctionCallResponse
+
   // Provider-specific request/response transformations
   transformRequest: (request: ProviderRequest, functions?: any) => any
   transformResponse: (response: any) => TransformedResponse
-  
+
   // Function to check if response contains a function call
   hasFunctionCall: (response: any) => boolean
 
@@ -89,4 +92,4 @@ export interface ProviderRequest {
 }
 
 // Map of provider IDs to their configurations
-export const providers: Record<string, ProviderConfig> = {} 
+export const providers: Record<string, ProviderConfig> = {}

@@ -1,15 +1,12 @@
-import { Textarea } from '@/components/ui/textarea'
-import { useSubBlockValue } from '../hooks/use-sub-block-value'
-import { cn } from '@/lib/utils'
-import { useState, useRef } from 'react'
-import { SubBlockConfig } from '@/blocks/types'
+import { useRef, useState } from 'react'
+import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
 import { formatDisplayText } from '@/components/ui/formatted-text'
-import {
-  EnvVarDropdown,
-  checkEnvVarTrigger,
-} from '@/components/ui/env-var-dropdown'
 import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { useWorkflowStore } from '@/stores/workflow/store'
+import { SubBlockConfig } from '@/blocks/types'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface LongInputProps {
   placeholder?: string
@@ -33,9 +30,7 @@ export function LongInput({
   const [cursorPosition, setCursorPosition] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(
-    null
-  )
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
 
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -77,15 +72,11 @@ export function LongInput({
       if (data.type !== 'connectionBlock') return
 
       // Get current cursor position or append to end
-      const dropPosition =
-        textareaRef.current?.selectionStart ?? value?.toString().length ?? 0
+      const dropPosition = textareaRef.current?.selectionStart ?? value?.toString().length ?? 0
 
       // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const newValue =
-        currentValue.slice(0, dropPosition) +
-        '<' +
-        currentValue.slice(dropPosition)
+      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
 
       // Focus the textarea first
       textareaRef.current?.focus()

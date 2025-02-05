@@ -1,15 +1,15 @@
-import { ToolConfig, HttpMethod, ToolResponse } from '../types' 
+import { HttpMethod, ToolConfig, ToolResponse } from '../types'
 
 export interface RequestParams {
-  url: string 
-  method?: HttpMethod 
-  headers?: Record<string, string> 
-  body?: any 
-  queryParams?: Record<string, string> 
-  pathParams?: Record<string, string> 
-  formData?: Record<string, string | Blob> 
-  timeout?: number 
-  validateStatus?: (status: number) => boolean 
+  url: string
+  method?: HttpMethod
+  headers?: Record<string, string>
+  body?: any
+  queryParams?: Record<string, string>
+  pathParams?: Record<string, string>
+  formData?: Record<string, string | Blob>
+  timeout?: number
+  validateStatus?: (status: number) => boolean
 }
 
 export interface RequestResponse extends ToolResponse {
@@ -30,126 +30,124 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
     url: {
       type: 'string',
       required: true,
-      description: 'The URL to send the request to'
+      description: 'The URL to send the request to',
     },
     method: {
       type: 'string',
       default: 'GET',
-      description: 'HTTP method (GET, POST, PUT, PATCH, DELETE)'
+      description: 'HTTP method (GET, POST, PUT, PATCH, DELETE)',
     },
     headers: {
       type: 'object',
-      description: 'HTTP headers to include'
+      description: 'HTTP headers to include',
     },
     body: {
       type: 'object',
-      description: 'Request body (for POST, PUT, PATCH)'
+      description: 'Request body (for POST, PUT, PATCH)',
     },
     queryParams: {
       type: 'object',
-      description: 'URL query parameters to append'
+      description: 'URL query parameters to append',
     },
     pathParams: {
       type: 'object',
-      description: 'URL path parameters to replace (e.g., :id in /users/:id)'
+      description: 'URL path parameters to replace (e.g., :id in /users/:id)',
     },
     formData: {
       type: 'object',
-      description: 'Form data to send (will set appropriate Content-Type)'
+      description: 'Form data to send (will set appropriate Content-Type)',
     },
     timeout: {
       type: 'number',
       default: 10000,
-      description: 'Request timeout in milliseconds'
+      description: 'Request timeout in milliseconds',
     },
     validateStatus: {
       type: 'object',
-      description: 'Custom status validation function'
-    }
+      description: 'Custom status validation function',
+    },
   },
 
   request: {
     url: (params: RequestParams) => {
-      let url = params.url 
-      
+      let url = params.url
+
       // Replace path parameters
       if (params.pathParams) {
         Object.entries(params.pathParams).forEach(([key, value]) => {
-          url = url.replace(`:${key}`, encodeURIComponent(value)) 
-        }) 
+          url = url.replace(`:${key}`, encodeURIComponent(value))
+        })
       }
 
       // Append query parameters
       if (params.queryParams) {
         const queryString = Object.entries(params.queryParams)
           .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-          .join('&') 
-        url += (url.includes('?') ? '&' : '?') + queryString 
+          .join('&')
+        url += (url.includes('?') ? '&' : '?') + queryString
       }
 
-      return url 
+      return url
     },
     method: 'POST' as HttpMethod,
     headers: (params: RequestParams) => {
       const headers: Record<string, string> = {
-        ...params.headers
-      } 
+        ...params.headers,
+      }
 
       // Set appropriate Content-Type
       if (params.formData) {
         // Don't set Content-Type for FormData, browser will set it with boundary
-        return headers 
+        return headers
       } else if (params.body) {
-        headers['Content-Type'] = 'application/json' 
+        headers['Content-Type'] = 'application/json'
       }
 
-      return headers 
+      return headers
     },
     body: (params: RequestParams) => {
       if (params.formData) {
-        const formData = new FormData() 
+        const formData = new FormData()
         Object.entries(params.formData).forEach(([key, value]) => {
-          formData.append(key, value) 
-        }) 
-        return formData 
+          formData.append(key, value)
+        })
+        return formData
       }
 
       if (params.body) {
-        return params.body 
+        return params.body
       }
 
-      return undefined 
-    }
+      return undefined
+    },
   },
 
   transformResponse: async (response: Response) => {
     // Convert Headers to a plain object
-    const headers: Record<string, string> = {} 
+    const headers: Record<string, string> = {}
     response.headers.forEach((value, key) => {
-      headers[key] = value 
-    }) 
+      headers[key] = value
+    })
 
     // Parse response based on content type
     const data = await (response.headers.get('content-type')?.includes('application/json')
       ? response.json()
-      : response.text()) 
+      : response.text())
 
     return {
       success: response.ok,
       output: {
         data,
         status: response.status,
-        headers
-      }
-    } 
+        headers,
+      },
+    }
   },
 
   transformError: (error) => {
-    const message = error.message || error.error?.message 
-    const code = error.status || error.error?.status 
-    const details = error.response?.data 
-      ? `\nDetails: ${JSON.stringify(error.response.data)}`
-      : '' 
-    return `${message} (${code})${details}` 
-  }
-} 
+    const message = error.message || error.error?.message
+    const code = error.status || error.error?.status
+    const details = error.response?.data ? `\nDetails: ${JSON.stringify(error.response.data)}` : ''
+    return `${message} (${code})${details}`
+  },
+}

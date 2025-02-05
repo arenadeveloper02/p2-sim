@@ -24,18 +24,18 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       type: 'string',
       required: true,
       requiredForToolCall: true,
-      description: 'Your Slack API token'
+      description: 'Your Slack API token',
     },
     channel: {
       type: 'string',
       required: true,
-      description: 'Target Slack channel (e.g., #general)'
+      description: 'Target Slack channel (e.g., #general)',
     },
     text: {
       type: 'string',
       required: true,
-      description: 'Message text to send'
-    }
+      description: 'Message text to send',
+    },
   },
 
   request: {
@@ -43,12 +43,12 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     method: 'POST',
     headers: (params: SlackMessageParams) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params: SlackMessageParams) => ({
       channel: params.channel,
-      text: params.text
-    })
+      text: params.text,
+    }),
   },
 
   transformResponse: async (response: Response) => {
@@ -60,13 +60,13 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       success: true,
       output: {
         ts: data.ts,
-        channel: data.channel
-      }
+        channel: data.channel,
+      },
     }
   },
 
   transformError: (error: any) => {
     const message = error.message || 'Slack message failed'
     return message
-  }
+  },
 }

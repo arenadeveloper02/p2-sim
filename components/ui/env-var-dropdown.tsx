@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { useEnvironmentStore } from '@/stores/environment/store'
+import React, { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useEnvironmentStore } from '@/stores/environment/store'
 
 interface EnvVarDropdownProps {
   visible: boolean
@@ -12,20 +12,20 @@ interface EnvVarDropdownProps {
   onClose?: () => void
 }
 
-export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({ 
-  visible, 
+export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
+  visible,
   onSelect,
   searchTerm = '',
   className,
   inputValue,
   cursorPosition,
-  onClose
+  onClose,
 }) => {
   const envVars = useEnvironmentStore((state) => Object.keys(state.variables))
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   // Filter env vars based on search term
-  const filteredEnvVars = envVars.filter(envVar => 
+  const filteredEnvVars = envVars.filter((envVar) =>
     envVar.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
@@ -38,15 +38,14 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
   const handleEnvVarSelect = (envVar: string) => {
     const textBeforeCursor = inputValue.slice(0, cursorPosition)
     const textAfterCursor = inputValue.slice(cursorPosition)
-    
+
     // Find the position of the last '{{' before cursor
     const lastOpenBraces = textBeforeCursor.lastIndexOf('{{')
     if (lastOpenBraces === -1) return
-    
-    const newValue = textBeforeCursor.slice(0, lastOpenBraces) + 
-                    '{{' + envVar + '}}' + 
-                    textAfterCursor
-    
+
+    const newValue =
+      textBeforeCursor.slice(0, lastOpenBraces) + '{{' + envVar + '}}' + textAfterCursor
+
     onSelect(newValue)
     onClose?.()
   }
@@ -58,13 +57,11 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setSelectedIndex(prev => 
-          prev < filteredEnvVars.length - 1 ? prev + 1 : prev
-        )
+        setSelectedIndex((prev) => (prev < filteredEnvVars.length - 1 ? prev + 1 : prev))
         break
       case 'ArrowUp':
         e.preventDefault()
-        setSelectedIndex(prev => prev > 0 ? prev - 1 : prev)
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
         break
       case 'Enter':
         e.preventDefault()
@@ -90,7 +87,7 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
   return (
     <div
       className={cn(
-        "absolute z-[9999] w-full mt-1 overflow-hidden bg-popover rounded-md border shadow-md",
+        'absolute z-[9999] w-full mt-1 overflow-hidden bg-popover rounded-md border shadow-md',
         className
       )}
     >
@@ -104,10 +101,10 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
             <button
               key={envVar}
               className={cn(
-                "w-full px-3 py-1.5 text-sm text-left",
-                "hover:bg-accent hover:text-accent-foreground",
-                "focus:bg-accent focus:text-accent-foreground focus:outline-none",
-                index === selectedIndex && "bg-accent text-accent-foreground"
+                'w-full px-3 py-1.5 text-sm text-left',
+                'hover:bg-accent hover:text-accent-foreground',
+                'focus:bg-accent focus:text-accent-foreground focus:outline-none',
+                index === selectedIndex && 'bg-accent text-accent-foreground'
               )}
               onMouseEnter={() => setSelectedIndex(index)}
               onMouseDown={(e) => {
@@ -125,7 +122,10 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
 }
 
 // Helper function to check for '{{' trigger and get search term
-export const checkEnvVarTrigger = (text: string, cursorPosition: number): { show: boolean; searchTerm: string } => {
+export const checkEnvVarTrigger = (
+  text: string,
+  cursorPosition: number
+): { show: boolean; searchTerm: string } => {
   if (cursorPosition >= 2) {
     const textBeforeCursor = text.slice(0, cursorPosition)
     const match = textBeforeCursor.match(/\{\{(\w*)$/)

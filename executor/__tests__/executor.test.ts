@@ -1,8 +1,8 @@
-import { Executor } from '../index' 
-import { SerializedWorkflow } from '@/serializer/types' 
-import { Tool } from '../types' 
-import { tools } from '@/tools'
 import { BlockOutput, ValueType } from '@/blocks/types'
+import { SerializedWorkflow } from '@/serializer/types'
+import { tools } from '@/tools'
+import { Executor } from '../index'
+import { Tool } from '../types'
 
 // Mock tools
 const createMockTool = (
@@ -20,37 +20,37 @@ const createMockTool = (
     input: {
       type: 'string',
       required: true,
-      description: 'Input to process'
+      description: 'Input to process',
     },
     apiKey: {
       type: 'string',
       required: false,
       description: 'API key for authentication',
-      default: 'test-key'
+      default: 'test-key',
     },
-    ...params
+    ...params,
   },
   request: {
     url: 'https://api.test.com/endpoint',
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': params.apiKey || 'test-key'
+      Authorization: params.apiKey || 'test-key',
     }),
     body: (params) => ({
       input: params.input,
-      ...(params.optionalParam !== undefined ? { optionalParam: params.optionalParam } : {})
-    })
+      ...(params.optionalParam !== undefined ? { optionalParam: params.optionalParam } : {}),
+    }),
   },
   transformResponse: async () => ({
     success: true,
     output: {
       text: mockResponse.result,
-      ...mockResponse.data
-    }
+      ...mockResponse.data,
+    },
   }),
-  transformError: () => mockError || 'Mock error'
-}) 
+  transformError: () => mockError || 'Mock error',
+})
 
 jest.mock('@/tools', () => {
   const toolsStore: Record<string, Tool> = {}
@@ -59,7 +59,7 @@ jest.mock('@/tools', () => {
       return toolsStore
     },
     set tools(value) {
-      Object.keys(toolsStore).forEach(key => delete toolsStore[key])
+      Object.keys(toolsStore).forEach((key) => delete toolsStore[key])
       Object.assign(toolsStore, value)
     },
     executeTool: async (toolId: string, params: Record<string, any>) => {
@@ -70,26 +70,33 @@ jest.mock('@/tools', () => {
 
       try {
         // Mock the fetch call for test assertions
-        const url = typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
+        const url =
+          typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
         const method = tool.request.method || 'POST'
-        const headers = typeof tool.request.headers === 'function' ? tool.request.headers(params) : tool.request.headers || {}
-        const body = typeof tool.request.body === 'function' ? tool.request.body(params) : tool.request.body
+        const headers =
+          typeof tool.request.headers === 'function'
+            ? tool.request.headers(params)
+            : tool.request.headers || {}
+        const body =
+          typeof tool.request.body === 'function' ? tool.request.body(params) : tool.request.body
 
         const fetchResponse = await global.fetch(url as string, {
           method,
           headers,
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
         })
 
         // Get the fetch response
-        const fetchResult = fetchResponse.ok ? await fetchResponse.json() : { success: false, error: 'API Error' }
+        const fetchResult = fetchResponse.ok
+          ? await fetchResponse.json()
+          : { success: false, error: 'API Error' }
 
         // If fetch failed, return error
         if (!fetchResponse.ok || !fetchResult.success) {
           return {
             success: false,
             error: tool.transformError ? tool.transformError(fetchResult) : 'API Error',
-            output: {}
+            output: {},
           }
         }
 
@@ -97,99 +104,101 @@ jest.mock('@/tools', () => {
         const response = await tool.transformResponse({
           status: fetchResponse.status,
           headers: fetchResponse.headers,
-          data: fetchResult.output || { result: params.input + ' processed', status: 200 }
+          data: fetchResult.output || { result: params.input + ' processed', status: 200 },
         })
 
         return {
           success: true,
-          output: response.output
+          output: response.output,
         }
       } catch (error) {
         return {
           success: false,
           error: tool.transformError ? tool.transformError(error) : 'Invalid type for input',
-          output: {}
+          output: {},
         }
       }
-    }
+    },
   }
-}) 
+})
 
 describe('Executor', () => {
   beforeEach(() => {
     // Reset tools mock and fetch mock
-    (tools as any) = {}
+    ;(tools as any) = {}
     global.fetch = jest.fn()
-  }) 
+  })
 
   describe('Tool Execution', () => {
     it('should execute a simple workflow with one tool', async () => {
-      const mockTool = createMockTool(
-        'test-tool',
-        'Test Tool',
-        { result: 'test processed', data: { status: 200 } }
-      );
-      (tools as any)['test-tool'] = mockTool 
+      const mockTool = createMockTool('test-tool', 'Test Tool', {
+        result: 'test processed',
+        data: { status: 200 },
+      })
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       // Mock fetch
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            success: true,
-            output: {
-              text: 'test processed',
-              status: 200
-            }
-          })
+          json: () =>
+            Promise.resolve({
+              success: true,
+              output: {
+                text: 'test processed',
+                status: 200,
+              },
+            }),
         })
-      ) 
+      )
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(true) 
+      expect(result.success).toBe(true)
       expect(result.output).toEqual({
         response: {
           text: 'test processed',
-          status: 200
-        }
-      }) 
+          status: 200,
+        },
+      })
       expect(global.fetch).toHaveBeenCalledWith(
         'https://api.test.com/endpoint',
         expect.objectContaining({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'test-key'
+            Authorization: 'test-key',
           },
-          body: JSON.stringify({ input: 'test' })
+          body: JSON.stringify({ input: 'test' }),
         })
-      ) 
-    }) 
+      )
+    })
 
     it('should use default parameter values when not provided', async () => {
       const mockTool = createMockTool(
@@ -201,45 +210,48 @@ describe('Executor', () => {
           optionalParam: {
             type: 'string',
             required: false,
-            default: 'default-value'
-          }
+            default: 'default-value',
+          },
         }
-      );
-      (tools as any)['test-tool'] = mockTool
+      )
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            success: true,
-            output: {
-              text: 'test processed',
-              status: 200
-            }
-          })
+          json: () =>
+            Promise.resolve({
+              success: true,
+              output: {
+                text: 'test processed',
+                status: 200,
+              },
+            }),
         })
       )
 
@@ -253,91 +265,89 @@ describe('Executor', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'test-key'
+            Authorization: 'test-key',
           },
           body: JSON.stringify({
             input: 'test',
-            optionalParam: 'default-value'
-          })
+            optionalParam: 'default-value',
+          }),
         })
       )
     })
 
     it('should validate required parameters', async () => {
-      const mockTool = createMockTool(
-        'test-tool',
-        'Test Tool',
-        { result: 'test processed', data: { status: 200 } }
-      );
-      (tools as any)['test-tool'] = mockTool 
+      const mockTool = createMockTool('test-tool', 'Test Tool', {
+        result: 'test processed',
+        data: { status: 200 },
+      })
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: {} // Missing required 'input' parameter
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: {}, // Missing required 'input' parameter
+            },
+            inputs: {},
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: {},
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(false) 
-      expect(result.error).toContain('Missing required parameter') 
-    }) 
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Missing required parameter')
+    })
 
     it('should handle tool execution errors', async () => {
-      const mockTool = createMockTool(
-        'test-tool',
-        'Test Tool',
-        {},
-        'API Error'
-      );
-      (tools as any)['test-tool'] = mockTool
+      const mockTool = createMockTool('test-tool', 'Test Tool', {}, 'API Error')
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       // Mock fetch to fail
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: false,
-          json: () => Promise.resolve({ error: 'API Error' })
+          json: () => Promise.resolve({ error: 'API Error' }),
         })
       )
 
@@ -345,7 +355,7 @@ describe('Executor', () => {
       const result = await executor.execute('workflow-1')
 
       expect(result.success).toBe(false)
-      expect(result.error).toContain('API Error') 
+      expect(result.error).toContain('API Error')
     })
   })
 
@@ -356,30 +366,32 @@ describe('Executor', () => {
         'Test Tool',
         { result: 123, data: { status: 200 } },
         'Invalid type for input'
-      );
-      (tools as any)['test-tool'] = mockTool
+      )
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 42 } // Wrong type for input
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 42 }, // Wrong type for input
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'number',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'number',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       const executor = new Executor(workflow)
@@ -395,37 +407,39 @@ describe('Executor', () => {
         'Test Tool',
         { wrongField: 'wrong type' },
         'Tool output missing required field'
-      );
-      (tools as any)['test-tool'] = mockTool
+      )
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       // Mock fetch to return invalid output
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: false,
-          json: () => Promise.resolve({ wrongField: 'wrong type' })
+          json: () => Promise.resolve({ wrongField: 'wrong type' }),
         })
       )
 
@@ -435,22 +449,20 @@ describe('Executor', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('Tool output missing required field')
     })
-  }) 
+  })
 
   describe('Complex Workflows', () => {
     it('should execute blocks in correct order and pass data between them', async () => {
-      const mockTool1 = createMockTool(
-        'test-tool-1',
-        'Test Tool 1',
-        { result: 'test data', data: { status: 200 } }
-      );
-      const mockTool2 = createMockTool(
-        'test-tool-2',
-        'Test Tool 2',
-        { result: 'processed data', data: { status: 201 } }
-      );
-      (tools as any)['test-tool-1'] = mockTool1;
-      (tools as any)['test-tool-2'] = mockTool2;
+      const mockTool1 = createMockTool('test-tool-1', 'Test Tool 1', {
+        result: 'test data',
+        data: { status: 200 },
+      })
+      const mockTool2 = createMockTool('test-tool-2', 'Test Tool 2', {
+        result: 'processed data',
+        data: { status: 201 },
+      })
+      ;(tools as any)['test-tool-1'] = mockTool1
+      ;(tools as any)['test-tool-2'] = mockTool2
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -460,87 +472,90 @@ describe('Executor', () => {
             position: { x: 0, y: 0 },
             config: {
               tool: 'test-tool-1',
-              params: { input: 'initial' }
+              params: { input: 'initial' },
             },
             inputs: {},
             outputs: {
               output: {
                 response: {
                   text: 'string',
-                  status: 'number'
-                } as ValueType
-              } as BlockOutput
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
+            enabled: true,
           },
           {
             id: 'block2',
             position: { x: 200, y: 0 },
             config: {
               tool: 'test-tool-2',
-              params: { input: 'test data' }
+              params: { input: 'test data' },
             },
             inputs: { input: 'string' },
             outputs: {
               output: {
                 response: {
                   text: 'string',
-                  status: 'number'
-                } as ValueType
-              } as BlockOutput
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
-          }
+            enabled: true,
+          },
         ],
         connections: [
           {
             source: 'block1',
             target: 'block2',
             sourceHandle: 'output.response.text',
-            targetHandle: 'input'
-          }
-        ]
-      };
+            targetHandle: 'input',
+          },
+        ],
+      }
 
       // Mock fetch for both tools
-      global.fetch = jest.fn()
+      global.fetch = jest
+        .fn()
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                text: 'test data',
-                status: 200
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  text: 'test data',
+                  status: 200,
+                },
+              }),
           })
         )
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                text: 'processed data',
-                status: 201
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  text: 'processed data',
+                  status: 201,
+                },
+              }),
           })
-        );
+        )
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('workflow-1');
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(true)
       expect(result.output).toEqual({
         response: {
           text: 'processed data',
-          status: 201
-        }
-      });
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-    });
+          status: 201,
+        },
+      })
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+    })
 
     it('should handle cycles in workflow', async () => {
       const workflow: SerializedWorkflow = {
@@ -551,58 +566,58 @@ describe('Executor', () => {
             position: { x: 0, y: 0 },
             config: {
               tool: 'test-tool',
-              params: {}
+              params: {},
             },
             inputs: {},
             outputs: {
               output: {
                 response: {
-                  text: 'string'
-                } as ValueType
-              } as BlockOutput
+                  text: 'string',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
+            enabled: true,
           },
           {
             id: 'block-2',
             position: { x: 200, y: 0 },
             config: {
               tool: 'test-tool',
-              params: {}
+              params: {},
             },
             inputs: {},
             outputs: {
               output: {
                 response: {
-                  text: 'string'
-                } as ValueType
-              } as BlockOutput
+                  text: 'string',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
-          }
+            enabled: true,
+          },
         ],
         connections: [
           {
             source: 'block-1',
             target: 'block-2',
             sourceHandle: 'output.response.text',
-            targetHandle: 'input'
+            targetHandle: 'input',
           },
           {
             source: 'block-2',
             target: 'block-1',
             sourceHandle: 'output.response.text',
-            targetHandle: 'input'
-          }
-        ]
-      } 
+            targetHandle: 'input',
+          },
+        ],
+      }
 
-      const executor = new Executor(workflow) 
-      const result = await executor.execute('workflow-1') 
+      const executor = new Executor(workflow)
+      const result = await executor.execute('workflow-1')
 
-      expect(result.success).toBe(false) 
-      expect(result.error).toContain('Workflow contains cycles') 
-    }) 
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Workflow contains cycles')
+    })
 
     it('should execute a chain of API tools', async () => {
       // Mock the HTTP request tools
@@ -615,29 +630,29 @@ describe('Executor', () => {
           url: {
             type: 'string',
             required: true,
-            description: 'URL to request'
+            description: 'URL to request',
           },
           method: {
             type: 'string',
             required: true,
-            description: 'HTTP method'
-          }
+            description: 'HTTP method',
+          },
         },
         request: {
           url: (params) => params.url,
           method: 'GET',
           headers: () => ({ 'Content-Type': 'application/json' }),
-          body: undefined
+          body: undefined,
         },
         transformResponse: async () => ({
           success: true,
           output: {
             url: 'https://api.example.com/data',
-            method: 'GET'
-          }
+            method: 'GET',
+          },
         }),
-        transformError: () => 'HTTP request error'
-      };
+        transformError: () => 'HTTP request error',
+      }
 
       const httpTool2: Tool = {
         id: 'http.request2',
@@ -648,32 +663,32 @@ describe('Executor', () => {
           url: {
             type: 'string',
             required: true,
-            description: 'URL to request'
+            description: 'URL to request',
           },
           method: {
             type: 'string',
             required: true,
-            description: 'HTTP method'
-          }
+            description: 'HTTP method',
+          },
         },
         request: {
           url: (params) => params.url,
           method: 'GET',
           headers: () => ({ 'Content-Type': 'application/json' }),
-          body: undefined
+          body: undefined,
         },
         transformResponse: async () => ({
           success: true,
           output: {
             message: 'Success!',
-            status: 200
-          }
+            status: 200,
+          },
         }),
-        transformError: () => 'HTTP request error'
-      };
+        transformError: () => 'HTTP request error',
+      }
 
-      (tools as any)['http.request1'] = httpTool1;
-      (tools as any)['http.request2'] = httpTool2;
+      ;(tools as any)['http.request1'] = httpTool1
+      ;(tools as any)['http.request2'] = httpTool2
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -685,22 +700,22 @@ describe('Executor', () => {
               tool: 'http.request1',
               params: {
                 url: 'https://api.example.com',
-                method: 'GET'
-              }
+                method: 'GET',
+              },
             },
             inputs: {
               url: 'string',
-              method: 'string'
+              method: 'string',
             },
             outputs: {
               output: {
                 response: {
                   url: 'string',
-                  method: 'string'
-                } as ValueType
-              } as BlockOutput
+                  method: 'string',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
+            enabled: true,
           },
           {
             id: 'api2',
@@ -709,77 +724,80 @@ describe('Executor', () => {
               tool: 'http.request2',
               params: {
                 url: 'https://api.example.com/data',
-                method: 'GET'
-              }
+                method: 'GET',
+              },
             },
             inputs: {
               url: 'string',
-              method: 'string'
+              method: 'string',
             },
             outputs: {
               output: {
                 response: {
                   message: 'string',
-                  status: 'number'
-                } as ValueType
-              } as BlockOutput
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
-          }
+            enabled: true,
+          },
         ],
         connections: [
           {
             source: 'api1',
             target: 'api2',
             sourceHandle: 'output.response.url',
-            targetHandle: 'url'
-          }
-        ]
-      };
+            targetHandle: 'url',
+          },
+        ],
+      }
 
       // Mock fetch responses with sequential data flow
-      global.fetch = jest.fn()
+      global.fetch = jest
+        .fn()
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                url: 'https://api.example.com/data',
-                method: 'GET'
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  url: 'https://api.example.com/data',
+                  method: 'GET',
+                },
+              }),
           })
         )
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                message: 'Success!',
-                status: 200
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  message: 'Success!',
+                  status: 200,
+                },
+              }),
           })
-        );
+        )
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('test-workflow');
+      const executor = new Executor(workflow)
+      const result = await executor.execute('test-workflow')
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(true)
       expect(result.output).toEqual({
         response: {
           message: 'Success!',
-          status: 200
-        }
-      });
+          status: 200,
+        },
+      })
 
       // Verify the execution order and data flow
-      const fetchCalls = (global.fetch as jest.Mock).mock.calls;
-      expect(fetchCalls).toHaveLength(2);
-    });
-  }) 
+      const fetchCalls = (global.fetch as jest.Mock).mock.calls
+      expect(fetchCalls).toHaveLength(2)
+    })
+  })
 
   describe('Connection Tests', () => {
     it('should execute a chain of API tools', async () => {
@@ -793,29 +811,29 @@ describe('Executor', () => {
           url: {
             type: 'string',
             required: true,
-            description: 'URL to request'
+            description: 'URL to request',
           },
           method: {
             type: 'string',
             required: true,
-            description: 'HTTP method'
-          }
+            description: 'HTTP method',
+          },
         },
         request: {
           url: (params) => params.url,
           method: 'GET',
           headers: () => ({ 'Content-Type': 'application/json' }),
-          body: undefined
+          body: undefined,
         },
         transformResponse: async () => ({
           success: true,
           output: {
             url: 'https://api.example.com/data',
-            method: 'GET'
-          }
+            method: 'GET',
+          },
         }),
-        transformError: () => 'HTTP request error'
-      };
+        transformError: () => 'HTTP request error',
+      }
 
       const httpTool2: Tool = {
         id: 'http.request2',
@@ -826,32 +844,32 @@ describe('Executor', () => {
           url: {
             type: 'string',
             required: true,
-            description: 'URL to request'
+            description: 'URL to request',
           },
           method: {
             type: 'string',
             required: true,
-            description: 'HTTP method'
-          }
+            description: 'HTTP method',
+          },
         },
         request: {
           url: (params) => params.url,
           method: 'GET',
           headers: () => ({ 'Content-Type': 'application/json' }),
-          body: undefined
+          body: undefined,
         },
         transformResponse: async () => ({
           success: true,
           output: {
             message: 'Success!',
-            status: 200
-          }
+            status: 200,
+          },
         }),
-        transformError: () => 'HTTP request error'
-      };
+        transformError: () => 'HTTP request error',
+      }
 
-      (tools as any)['http.request1'] = httpTool1;
-      (tools as any)['http.request2'] = httpTool2;
+      ;(tools as any)['http.request1'] = httpTool1
+      ;(tools as any)['http.request2'] = httpTool2
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
@@ -863,22 +881,22 @@ describe('Executor', () => {
               tool: 'http.request1',
               params: {
                 url: 'https://api.example.com',
-                method: 'GET'
-              }
+                method: 'GET',
+              },
             },
             inputs: {
               url: 'string',
-              method: 'string'
+              method: 'string',
             },
             outputs: {
               output: {
                 response: {
                   url: 'string',
-                  method: 'string'
-                } as ValueType
-              } as BlockOutput
+                  method: 'string',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
+            enabled: true,
           },
           {
             id: 'api2',
@@ -887,77 +905,80 @@ describe('Executor', () => {
               tool: 'http.request2',
               params: {
                 url: 'https://api.example.com/data',
-                method: 'GET'
-              }
+                method: 'GET',
+              },
             },
             inputs: {
               url: 'string',
-              method: 'string'
+              method: 'string',
             },
             outputs: {
               output: {
                 response: {
                   message: 'string',
-                  status: 'number'
-                } as ValueType
-              } as BlockOutput
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
             },
-            enabled: true
-          }
+            enabled: true,
+          },
         ],
         connections: [
           {
             source: 'api1',
             target: 'api2',
             sourceHandle: 'output.response.url',
-            targetHandle: 'url'
-          }
-        ]
-      };
+            targetHandle: 'url',
+          },
+        ],
+      }
 
       // Mock fetch responses with sequential data flow
-      global.fetch = jest.fn()
+      global.fetch = jest
+        .fn()
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                url: 'https://api.example.com/data',
-                method: 'GET'
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  url: 'https://api.example.com/data',
+                  method: 'GET',
+                },
+              }),
           })
         )
         .mockImplementationOnce(() =>
           Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              output: {
-                message: 'Success!',
-                status: 200
-              }
-            })
+            json: () =>
+              Promise.resolve({
+                success: true,
+                output: {
+                  message: 'Success!',
+                  status: 200,
+                },
+              }),
           })
-        );
+        )
 
-      const executor = new Executor(workflow);
-      const result = await executor.execute('test-workflow');
+      const executor = new Executor(workflow)
+      const result = await executor.execute('test-workflow')
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(true)
       expect(result.output).toEqual({
         response: {
           message: 'Success!',
-          status: 200
-        }
-      });
+          status: 200,
+        },
+      })
 
       // Verify the execution order and data flow
-      const fetchCalls = (global.fetch as jest.Mock).mock.calls;
-      expect(fetchCalls).toHaveLength(2);
-    });
-  });
+      const fetchCalls = (global.fetch as jest.Mock).mock.calls
+      expect(fetchCalls).toHaveLength(2)
+    })
+  })
 
   describe('Environment Variables', () => {
     beforeEach(() => {
@@ -966,47 +987,49 @@ describe('Executor', () => {
     })
 
     it('should resolve environment variables with double curly braces', async () => {
-      const mockTool = createMockTool(
-        'test-tool',
-        'Test Tool',
-        { result: 'test processed', data: { status: 200 } }
-      );
-      (tools as any)['test-tool'] = mockTool
+      const mockTool = createMockTool('test-tool', 'Test Tool', {
+        result: 'test processed',
+        data: { status: 200 },
+      })
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test {{ENV_VAR}}' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test {{ENV_VAR}}' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       // Mock fetch response
       global.fetch = jest.fn().mockImplementation(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            success: true,
-            output: {
-              text: 'test processed',
-              status: 200
-            }
-          })
+          json: () =>
+            Promise.resolve({
+              success: true,
+              output: {
+                text: 'test processed',
+                status: 200,
+              },
+            }),
         })
       )
 
@@ -1019,40 +1042,41 @@ describe('Executor', () => {
         'https://api.test.com/endpoint',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ input: 'test value' })
+          body: JSON.stringify({ input: 'test value' }),
         })
       )
     })
 
     it('should throw error for undefined environment variables', async () => {
-      const mockTool = createMockTool(
-        'test-tool',
-        'Test Tool',
-        { result: 'test processed', data: { status: 200 } }
-      );
-      (tools as any)['test-tool'] = mockTool
+      const mockTool = createMockTool('test-tool', 'Test Tool', {
+        result: 'test processed',
+        data: { status: 200 },
+      })
+      ;(tools as any)['test-tool'] = mockTool
 
       const workflow: SerializedWorkflow = {
         version: '1.0',
-        blocks: [{
-          id: 'block-1',
-          position: { x: 0, y: 0 },
-          config: {
-            tool: 'test-tool',
-            params: { input: 'test {{UNDEFINED_VAR}}' }
+        blocks: [
+          {
+            id: 'block-1',
+            position: { x: 0, y: 0 },
+            config: {
+              tool: 'test-tool',
+              params: { input: 'test {{UNDEFINED_VAR}}' },
+            },
+            inputs: { input: 'string' },
+            outputs: {
+              output: {
+                response: {
+                  text: 'string',
+                  status: 'number',
+                } as ValueType,
+              } as BlockOutput,
+            },
+            enabled: true,
           },
-          inputs: { input: 'string' },
-          outputs: {
-            output: {
-              response: {
-                text: 'string',
-                status: 'number'
-              } as ValueType
-            } as BlockOutput
-          },
-          enabled: true
-        }],
-        connections: []
+        ],
+        connections: [],
       }
 
       const executor = new Executor(workflow)
@@ -1062,4 +1086,4 @@ describe('Executor', () => {
       expect(result.error).toContain('Environment variable "UNDEFINED_VAR" was not found')
     })
   })
-}) 
+})

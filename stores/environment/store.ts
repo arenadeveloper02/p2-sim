@@ -11,8 +11,8 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
         set((state: EnvironmentStore) => ({
           variables: {
             ...state.variables,
-            [key]: { key, value }
-          }
+            [key]: { key, value },
+          },
         }))
       },
 
@@ -33,10 +33,10 @@ export const useEnvironmentStore = create<EnvironmentStore>()(
 
       getAllVariables: () => {
         return get().variables
-      }
+      },
     }),
     {
-      name: 'environment-store'
+      name: 'environment-store',
     }
   )
-) 
+)

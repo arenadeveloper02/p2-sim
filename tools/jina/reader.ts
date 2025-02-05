@@ -24,24 +24,24 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
     url: {
       type: 'string',
       required: true,
-      description: 'The URL to read and convert to markdown'
+      description: 'The URL to read and convert to markdown',
     },
     useReaderLMv2: {
       type: 'boolean',
-      description: 'Whether to use ReaderLM-v2 for better quality'
+      description: 'Whether to use ReaderLM-v2 for better quality',
     },
     gatherLinks: {
       type: 'boolean',
-      description: 'Whether to gather all links at the end'
+      description: 'Whether to gather all links at the end',
     },
     jsonResponse: {
       type: 'boolean',
-      description: 'Whether to return response in JSON format'
+      description: 'Whether to return response in JSON format',
     },
     apiKey: {
       type: 'string',
-      description: 'Your Jina AI API key'
-    }
+      description: 'Your Jina AI API key',
+    },
   },
 
   request: {
@@ -52,8 +52,8 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
     headers: (params: ReadUrlParams) => {
       // Start with base headers
       const headers: Record<string, string> = {
-        'Accept': params.jsonResponse ? 'application/json' : 'text/plain',
-        'Authorization': `Bearer ${params.apiKey}`
+        Accept: params.jsonResponse ? 'application/json' : 'text/plain',
+        Authorization: `Bearer ${params.apiKey}`,
       }
 
       // Add conditional headers based on boolean values
@@ -65,7 +65,7 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
       }
 
       return headers
-    }
+    },
   },
 
   transformResponse: async (response: Response) => {
@@ -73,12 +73,12 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
     return {
       success: response.ok,
       output: {
-        content
-      }
+        content,
+      },
     }
   },
 
   transformError: (error) => {
     return error instanceof Error ? error.message : 'Failed to read URL'
-  }
-} 
+  },
+}

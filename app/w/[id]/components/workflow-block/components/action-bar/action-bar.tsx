@@ -1,20 +1,8 @@
+import { ArrowLeftRight, ArrowUpDown, Circle, CircleOff, Copy, Play, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Trash2,
-  Play,
-  Circle,
-  CircleOff,
-  Copy,
-  ArrowLeftRight,
-  ArrowUpDown,
-} from 'lucide-react'
-import { useWorkflowStore } from '@/stores/workflow/store'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useWorkflowStore } from '@/stores/workflow/store'
 
 interface ActionBarProps {
   blockId: string
@@ -22,16 +10,10 @@ interface ActionBarProps {
 
 export function ActionBar({ blockId }: ActionBarProps) {
   const removeBlock = useWorkflowStore((state) => state.removeBlock)
-  const toggleBlockEnabled = useWorkflowStore(
-    (state) => state.toggleBlockEnabled
-  )
-  const toggleBlockHandles = useWorkflowStore(
-    (state) => state.toggleBlockHandles
-  )
+  const toggleBlockEnabled = useWorkflowStore((state) => state.toggleBlockEnabled)
+  const toggleBlockHandles = useWorkflowStore((state) => state.toggleBlockHandles)
   const duplicateBlock = useWorkflowStore((state) => state.duplicateBlock)
-  const isEnabled = useWorkflowStore(
-    (state) => state.blocks[blockId]?.enabled ?? true
-  )
+  const isEnabled = useWorkflowStore((state) => state.blocks[blockId]?.enabled ?? true)
   const horizontalHandles = useWorkflowStore(
     (state) => state.blocks[blockId]?.horizontalHandles ?? false
   )
@@ -63,16 +45,10 @@ export function ActionBar({ blockId }: ActionBarProps) {
             onClick={() => toggleBlockEnabled(blockId)}
             className="text-gray-500"
           >
-            {isEnabled ? (
-              <Circle className="h-4 w-4" />
-            ) : (
-              <CircleOff className="h-4 w-4" />
-            )}
+            {isEnabled ? <Circle className="h-4 w-4" /> : <CircleOff className="h-4 w-4" />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="right">
-          {isEnabled ? 'Disable Block' : 'Enable Block'}
-        </TooltipContent>
+        <TooltipContent side="right">{isEnabled ? 'Disable Block' : 'Enable Block'}</TooltipContent>
       </Tooltip>
 
       <Tooltip>

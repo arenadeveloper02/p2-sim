@@ -1,6 +1,6 @@
-import { BlockConfig } from '../types'
 import { CrewAIIcon } from '@/components/icons'
 import { VisionResponse } from '@/tools/crewai/vision'
+import { BlockConfig } from '../types'
 
 export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
   type: 'crewai_vision',
@@ -9,26 +9,26 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
     description: 'Analyze images with vision models',
     bgColor: '#FF5A50',
     icon: CrewAIIcon,
-    category: 'tools'
+    category: 'tools',
   },
   tools: {
-    access: ['crewai_vision']
+    access: ['crewai_vision'],
   },
   workflow: {
     inputs: {
       apiKey: { type: 'string', required: true },
       imageUrl: { type: 'string', required: true },
       model: { type: 'string', required: false },
-      prompt: { type: 'string', required: false }
+      prompt: { type: 'string', required: false },
     },
     outputs: {
       response: {
         type: {
           content: 'string',
           model: 'any',
-          tokens: 'any'
-        }
-      }
+          tokens: 'any',
+        },
+      },
     },
     subBlocks: [
       {
@@ -36,25 +36,21 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
         title: 'Image URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter publicly accessible image URL'
+        placeholder: 'Enter publicly accessible image URL',
       },
       {
         id: 'model',
         title: 'Vision Model',
         type: 'dropdown',
         layout: 'half',
-        options: [
-          'gpt-4o',
-          'claude-3-opus-20240229',
-          'claude-3-sonnet-20240229'
-        ]
+        options: ['gpt-4o', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229'],
       },
       {
         id: 'prompt',
         title: 'Prompt',
         type: 'long-input',
         layout: 'full',
-        placeholder: 'Enter prompt for image analysis (optional)'
+        placeholder: 'Enter prompt for image analysis (optional)',
       },
       {
         id: 'apiKey',
@@ -62,8 +58,8 @@ export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your API key',
-        password: true
+        password: true,
       },
-    ]
-  }
-} 
+    ],
+  },
+}

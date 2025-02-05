@@ -1,14 +1,10 @@
-import Providers from './providers'
-import { Toolbar } from './components/toolbar/toolbar'
+import { Console } from './components/console/console'
 import { ControlBar } from './components/control-bar/control-bar'
 import { Sidebar } from './components/sidebar/sidebar'
-import { Console } from './components/console/console'
+import { Toolbar } from './components/toolbar/toolbar'
+import Providers from './providers'
 
-export default function WorkspaceLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
     <Providers>
       <div className="flex min-h-screen w-full">

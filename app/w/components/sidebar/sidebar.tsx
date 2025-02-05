@@ -1,28 +1,18 @@
 'use client'
 
-import Link from 'next/link'
-import { NavItem } from './components/nav-item/nav-item'
-import { Settings, Plus } from 'lucide-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { AgentIcon } from '@/components/icons'
-import { useWorkflowRegistry } from '@/stores/workflow/registry'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
 import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Plus, Settings } from 'lucide-react'
+import { AgentIcon } from '@/components/icons'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
+import { NavItem } from './components/nav-item/nav-item'
 import { SettingsModal } from './components/settings-modal/settings-modal'
 
 export function Sidebar() {
-  const WORKFLOW_COLORS = [
-    '#3972F6',
-    '#F639DD',
-    '#F6B539',
-    '#8139F6',
-    '#F64439',
-  ]
+  const WORKFLOW_COLORS = ['#3972F6', '#F639DD', '#F6B539', '#8139F6', '#F64439']
   const { workflows, addWorkflow } = useWorkflowRegistry()
   const router = useRouter()
   const [showSettings, setShowSettings] = useState(false)
@@ -33,9 +23,7 @@ export function Sidebar() {
     const lastWorkflow = workflowArray[workflowArray.length - 1]
 
     // Find the index of the last used color, defaulting to first color if undefined
-    const lastColorIndex = lastWorkflow?.color
-      ? WORKFLOW_COLORS.indexOf(lastWorkflow.color)
-      : -1
+    const lastColorIndex = lastWorkflow?.color ? WORKFLOW_COLORS.indexOf(lastWorkflow.color) : -1
 
     // Get next color index, wrapping around to 0 if we reach the end
     const nextColorIndex = (lastColorIndex + 1) % WORKFLOW_COLORS.length
@@ -83,11 +71,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         <div className="flex flex-col items-center gap-4">
           {Object.values(workflows).map((workflow) => (
-            <NavItem
-              key={workflow.id}
-              href={`/w/${workflow.id}`}
-              label={workflow.name}
-            >
+            <NavItem key={workflow.id} href={`/w/${workflow.id}`} label={workflow.name}>
               <div
                 className="h-4 w-4 rounded-full"
                 style={{ backgroundColor: workflow.color || '#3972F6' }}

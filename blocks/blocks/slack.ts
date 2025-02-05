@@ -1,6 +1,6 @@
-import { SlackIcon } from '@/components/icons' 
-import { BlockConfig } from '../types'
+import { SlackIcon } from '@/components/icons'
 import { SlackMessageResponse } from '@/tools/slack/message'
+import { BlockConfig } from '../types'
 
 export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
   type: 'slack_message',
@@ -9,24 +9,24 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
     description: 'Send a message to Slack',
     bgColor: '#611f69',
     icon: SlackIcon,
-    category: 'tools'
+    category: 'tools',
   },
   tools: {
-    access: ['slack_message']
+    access: ['slack_message'],
   },
   workflow: {
     inputs: {
       apiKey: { type: 'string', required: true },
       channel: { type: 'string', required: true },
-      text: { type: 'string', required: true }
+      text: { type: 'string', required: true },
     },
     outputs: {
       response: {
         type: {
           ts: 'string',
-          channel: 'string'
-        }
-      }
+          channel: 'string',
+        },
+      },
     },
     subBlocks: [
       {
@@ -34,14 +34,14 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
         title: 'Channel',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter Slack channel (e.g., #general)'
+        placeholder: 'Enter Slack channel (e.g., #general)',
       },
       {
         id: 'text',
         title: 'Message',
         type: 'long-input',
         layout: 'full',
-        placeholder: 'Enter your alert message'
+        placeholder: 'Enter your alert message',
       },
       {
         id: 'apiKey',
@@ -50,8 +50,8 @@ export const SlackMessageBlock: BlockConfig<SlackMessageResponse> = {
         layout: 'full',
         placeholder: 'Enter your Slack OAuth token',
         password: true,
-        connectionDroppable: false
-      }
-    ]
-  }
-} 
+        connectionDroppable: false,
+      },
+    ],
+  },
+}

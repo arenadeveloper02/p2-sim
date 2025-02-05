@@ -1,6 +1,6 @@
 import { NodeProps } from 'reactflow'
-import { WorkflowBlock } from '../workflow-block/workflow-block'
 import { BlockConfig } from '../../../../../blocks/types'
+import { WorkflowBlock } from '../workflow-block/workflow-block'
 
 interface WorkflowNodeData {
   type: string
@@ -8,13 +8,7 @@ interface WorkflowNodeData {
   name: string
 }
 
-export const WorkflowNode = ({
-  data,
-  id,
-  xPos,
-  yPos,
-  selected,
-}: NodeProps<WorkflowNodeData>) => (
+export const WorkflowNode = ({ data, id, xPos, yPos, selected }: NodeProps<WorkflowNodeData>) => (
   <WorkflowBlock
     id={id}
     type={data.type}

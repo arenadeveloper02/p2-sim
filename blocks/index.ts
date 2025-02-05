@@ -1,25 +1,24 @@
-import { BlockConfig } from './types'
-
 // Import blocks
 import { AgentBlock } from './blocks/agent'
 import { ApiBlock } from './blocks/api'
-import { FunctionBlock } from './blocks/function'
+import { ConditionBlock } from './blocks/condition'
 import { CrewAIVisionBlock } from './blocks/crewai'
 import { FirecrawlScrapeBlock } from './blocks/firecrawl'
-import { JinaBlock } from './blocks/jina'
-import { TranslateBlock } from './blocks/translate'
-import { SlackMessageBlock } from './blocks/slack'
+import { FunctionBlock } from './blocks/function'
 import { GitHubBlock } from './blocks/github'
-import { ConditionBlock } from './blocks/condition'
+import { JinaBlock } from './blocks/jina'
 import { SerperBlock } from './blocks/serper'
-import { TavilySearchBlock, TavilyExtractBlock } from './blocks/tavily'
+import { SlackMessageBlock } from './blocks/slack'
+import { TavilyExtractBlock, TavilySearchBlock } from './blocks/tavily'
+import { TranslateBlock } from './blocks/translate'
+import { BlockConfig } from './types'
 
 // Export blocks for ease of use
-export { 
-  AgentBlock, 
-  ApiBlock, 
-  FunctionBlock, 
-  CrewAIVisionBlock, 
+export {
+  AgentBlock,
+  ApiBlock,
+  FunctionBlock,
+  CrewAIVisionBlock,
   FirecrawlScrapeBlock,
   JinaBlock,
   TranslateBlock,
@@ -28,7 +27,7 @@ export {
   ConditionBlock,
   SerperBlock,
   TavilySearchBlock,
-  TavilyExtractBlock
+  TavilyExtractBlock,
 }
 
 // Registry of all block configurations
@@ -45,29 +44,28 @@ const blocks: Record<string, BlockConfig> = {
   condition: ConditionBlock,
   serper_search: SerperBlock,
   tavily_search: TavilySearchBlock,
-  tavily_extract: TavilyExtractBlock
+  tavily_extract: TavilyExtractBlock,
 }
 
 // Build a reverse mapping of tools to block types
-const toolToBlockType = Object.entries(blocks).reduce((acc, [blockType, config]) => {
-  config.tools.access.forEach(toolId => {
-    acc[toolId] = blockType
-  })
-  return acc
-}, {} as Record<string, string>)
+const toolToBlockType = Object.entries(blocks).reduce(
+  (acc, [blockType, config]) => {
+    config.tools.access.forEach((toolId) => {
+      acc[toolId] = blockType
+    })
+    return acc
+  },
+  {} as Record<string, string>
+)
 
 // Helper functions
-export const getBlock = (type: string): BlockConfig | undefined =>
-  blocks[type]
+export const getBlock = (type: string): BlockConfig | undefined => blocks[type]
 
 export const getBlocksByCategory = (category: 'blocks' | 'tools'): BlockConfig[] =>
-  Object.values(blocks).filter(block => block.toolbar.category === category)
+  Object.values(blocks).filter((block) => block.toolbar.category === category)
 
-export const getAllBlockTypes = (): string[] =>
-  Object.keys(blocks)
+export const getAllBlockTypes = (): string[] => Object.keys(blocks)
 
-export const isValidBlockType = (type: string): type is string =>
-  type in blocks
+export const isValidBlockType = (type: string): type is string => type in blocks
 
-export const getAllBlocks = (): BlockConfig[] =>
-  Object.values(blocks)
+export const getAllBlocks = (): BlockConfig[] => Object.values(blocks)

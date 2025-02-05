@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react'
-import { useWorkflowStore } from '@/stores/workflow/store'
-import { Serializer } from '@/serializer'
-import { Executor } from '@/executor'
-import { ExecutionResult } from '@/executor/types'
-import { useNotificationStore } from '@/stores/notifications/store'
-import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useConsoleStore } from '@/stores/console/store'
 import { useEnvironmentStore } from '@/stores/environment/store'
+import { useNotificationStore } from '@/stores/notifications/store'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
+import { useWorkflowStore } from '@/stores/workflow/store'
+import { Executor } from '@/executor'
+import { ExecutionResult } from '@/executor/types'
+import { Serializer } from '@/serializer'
 
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)
@@ -28,25 +28,31 @@ export function useWorkflowExecution() {
 
     try {
       // Extract existing block states
-      const currentBlockStates = Object.entries(blocks).reduce((acc, [id, block]) => {
-        const responseValue = block.subBlocks?.response?.value
-        if (responseValue !== undefined) {
-          acc[id] = { response: responseValue }
-        }
-        return acc
-      }, {} as Record<string, any>)
+      const currentBlockStates = Object.entries(blocks).reduce(
+        (acc, [id, block]) => {
+          const responseValue = block.subBlocks?.response?.value
+          if (responseValue !== undefined) {
+            acc[id] = { response: responseValue }
+          }
+          return acc
+        },
+        {} as Record<string, any>
+      )
 
       // Get environment variables
       const envVars = getAllVariables()
-      const envVarValues = Object.entries(envVars).reduce((acc, [key, variable]) => {
-        acc[key] = variable.value
-        return acc
-      }, {} as Record<string, string>)
+      const envVarValues = Object.entries(envVars).reduce(
+        (acc, [key, variable]) => {
+          acc[key] = variable.value
+          return acc
+        },
+        {} as Record<string, string>
+      )
 
       // Execute workflow
       const workflow = new Serializer().serializeWorkflow(blocks, edges)
       const executor = new Executor(workflow, currentBlockStates, envVarValues)
-      
+
       const result = await executor.execute('my-run-id')
       setExecutionResult(result)
 
@@ -62,7 +68,7 @@ export function useWorkflowExecution() {
             workflowId: activeWorkflowId,
             timestamp: log.startedAt,
             blockName: log.blockTitle,
-            blockType: log.blockType
+            blockType: log.blockType,
           })
         })
       }
@@ -75,7 +81,7 @@ export function useWorkflowExecution() {
             error: log.error,
             durationMs: log.durationMs,
             startedAt: log.startedAt,
-            endedAt: log.endedAt
+            endedAt: log.endedAt,
           })
         })
         console.groupEnd()
@@ -84,7 +90,7 @@ export function useWorkflowExecution() {
       // Show execution result with workflowId
       addNotification(
         result.success ? 'console' : 'error',
-        result.success 
+        result.success
           ? 'Workflow completed successfully'
           : `Workflow execution failed: ${result.error}`,
         activeWorkflowId
@@ -95,7 +101,7 @@ export function useWorkflowExecution() {
         success: false,
         output: { response: {} },
         error: errorMessage,
-        logs: []
+        logs: [],
       })
 
       // Add error entry to console
@@ -107,14 +113,23 @@ export function useWorkflowExecution() {
         endedAt: new Date().toISOString(),
         workflowId: activeWorkflowId,
         timestamp: new Date().toISOString(),
-        blockName: 'Error'
+        blockName: 'Error',
       })
 
       addNotification('error', `Workflow execution failed: ${errorMessage}`, activeWorkflowId)
     } finally {
       setIsExecuting(false)
     }
-  }, [activeWorkflowId, blocks, edges, addNotification, addConsole, isOpen, toggleConsole, getAllVariables])
+  }, [
+    activeWorkflowId,
+    blocks,
+    edges,
+    addNotification,
+    addConsole,
+    isOpen,
+    toggleConsole,
+    getAllVariables,
+  ])
 
   return { isExecuting, executionResult, handleRunWorkflow }
-} 
+}

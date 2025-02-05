@@ -1,6 +1,6 @@
+import { RepoInfoResponse } from '@/tools/github/repo'
 import { GithubIcon } from '../../components/icons'
 import { BlockConfig } from '../types'
-import { RepoInfoResponse } from '@/tools/github/repo'
 
 export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
   type: 'github_repo_info',
@@ -12,12 +12,12 @@ export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['github_repoinfo']
+    access: ['github_repoinfo'],
   },
   workflow: {
     inputs: {
       owner: { type: 'string', required: true },
-      repo: { type: 'string', required: true }
+      repo: { type: 'string', required: true },
     },
     outputs: {
       response: {
@@ -27,9 +27,9 @@ export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
           stars: 'number',
           forks: 'number',
           openIssues: 'number',
-          language: 'string'
-        }
-      }
+          language: 'string',
+        },
+      },
     },
     subBlocks: [
       {
@@ -52,8 +52,8 @@ export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter GitHub Token',
-        password: true
-      }
+        password: true,
+      },
     ],
   },
-} 
+}

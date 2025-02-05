@@ -1,26 +1,26 @@
-import { BlockState, SubBlockState } from '@/stores/workflow/types' 
-import { Edge } from 'reactflow' 
-import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types' 
-import { getBlock } from '@/blocks' 
+import { Edge } from 'reactflow'
+import { BlockState, SubBlockState } from '@/stores/workflow/types'
+import { getBlock } from '@/blocks'
+import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types'
 
 export class Serializer {
   serializeWorkflow(blocks: Record<string, BlockState>, edges: Edge[]): SerializedWorkflow {
     return {
       version: '1.0',
-      blocks: Object.values(blocks).map(block => this.serializeBlock(block)),
-      connections: edges.map(edge => ({
+      blocks: Object.values(blocks).map((block) => this.serializeBlock(block)),
+      connections: edges.map((edge) => ({
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle || undefined,
-        targetHandle: edge.targetHandle || undefined
-      }))
-    } 
+        targetHandle: edge.targetHandle || undefined,
+      })),
+    }
   }
 
   private serializeBlock(block: BlockState): SerializedBlock {
-    const blockConfig = getBlock(block.type) 
+    const blockConfig = getBlock(block.type)
     if (!blockConfig) {
-      throw new Error(`Invalid block type: ${block.type}`) 
+      throw new Error(`Invalid block type: ${block.type}`)
     }
 
     // Get tool ID from block config
@@ -44,7 +44,7 @@ export class Serializer {
       position: block.position,
       config: {
         tool: toolId,
-        params
+        params,
       },
       inputs,
       outputs: block.outputs,
@@ -53,10 +53,10 @@ export class Serializer {
         description: blockConfig.toolbar.description,
         category: blockConfig.toolbar.category,
         color: blockConfig.toolbar.bgColor,
-        type: block.type
+        type: block.type,
       },
-      enabled: block.enabled
-    } 
+      enabled: block.enabled,
+    }
   }
 
   private extractParams(block: BlockState): Record<string, any> {
@@ -66,14 +66,14 @@ export class Serializer {
     }
 
     const params: Record<string, any> = {}
-    
+
     // First collect all current values from subBlocks
     Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
       params[id] = subBlock.value
     })
 
     // Then check for any subBlocks with default values
-    blockConfig.workflow.subBlocks.forEach(subBlockConfig => {
+    blockConfig.workflow.subBlocks.forEach((subBlockConfig) => {
       const id = subBlockConfig.id
       if (params[id] === null && subBlockConfig.value) {
         // If the value is null and there's a default value function, use it
@@ -84,24 +84,27 @@ export class Serializer {
     return params
   }
 
-  deserializeWorkflow(workflow: SerializedWorkflow): { blocks: Record<string, BlockState>, edges: Edge[] } {
+  deserializeWorkflow(workflow: SerializedWorkflow): {
+    blocks: Record<string, BlockState>
+    edges: Edge[]
+  } {
     const blocks: Record<string, BlockState> = {}
     const edges: Edge[] = []
 
     // Deserialize blocks
-    workflow.blocks.forEach(serializedBlock => {
+    workflow.blocks.forEach((serializedBlock) => {
       const block = this.deserializeBlock(serializedBlock)
       blocks[block.id] = block
     })
 
     // Deserialize connections
-    workflow.connections.forEach(connection => {
+    workflow.connections.forEach((connection) => {
       edges.push({
         id: crypto.randomUUID(),
         source: connection.source,
         target: connection.target,
         sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle
+        targetHandle: connection.targetHandle,
       })
     })
 
@@ -120,11 +123,11 @@ export class Serializer {
     }
 
     const subBlocks: Record<string, any> = {}
-    blockConfig.workflow.subBlocks.forEach(subBlock => {
+    blockConfig.workflow.subBlocks.forEach((subBlock) => {
       subBlocks[subBlock.id] = {
         id: subBlock.id,
         type: subBlock.type,
-        value: serializedBlock.config.params[subBlock.id] ?? null
+        value: serializedBlock.config.params[subBlock.id] ?? null,
       }
     })
 
@@ -135,7 +138,7 @@ export class Serializer {
       position: serializedBlock.position,
       subBlocks,
       outputs: serializedBlock.outputs,
-      enabled: true
+      enabled: true,
     }
   }
 }

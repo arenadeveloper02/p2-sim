@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface ToolbarTabsProps {
   activeTab: 'blocks' | 'tools'
@@ -19,8 +19,7 @@ export function ToolbarTabs({ activeTab, onTabChange }: ToolbarTabsProps) {
     const activeRef = activeTab === 'blocks' ? blocksRef : toolsRef
     if (activeRef.current) {
       const rect = activeRef.current.getBoundingClientRect()
-      const parentRect =
-        activeRef.current.parentElement?.getBoundingClientRect()
+      const parentRect = activeRef.current.parentElement?.getBoundingClientRect()
       const offsetLeft = parentRect ? rect.left - parentRect.left : 0
 
       setUnderlineStyle({

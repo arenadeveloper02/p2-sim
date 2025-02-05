@@ -1,14 +1,14 @@
-import { ToolConfig, ToolResponse } from '../types' 
+import { ToolConfig, ToolResponse } from '../types'
 
 export interface ChatParams {
-  apiKey: string 
-  systemPrompt: string 
-  context?: string 
-  model?: string 
-  temperature?: number 
-  maxTokens?: number 
-  topP?: number 
-  topK?: number 
+  apiKey: string
+  systemPrompt: string
+  context?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  topK?: number
 }
 
 export interface ChatResponse extends ToolResponse {
@@ -30,27 +30,27 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     apiKey: {
       type: 'string',
       required: true,
-      description: 'Google API key'
+      description: 'Google API key',
     },
     systemPrompt: {
       type: 'string',
       required: true,
-      description: 'System prompt to send to the model'
+      description: 'System prompt to send to the model',
     },
     context: {
       type: 'string',
-      description: 'User message/context to send to the model'
+      description: 'User message/context to send to the model',
     },
     model: {
       type: 'string',
       default: 'gemini-pro',
-      description: 'Model to use'
+      description: 'Model to use',
     },
     temperature: {
       type: 'number',
       default: 0.7,
-      description: 'Controls randomness in the response'
-    }
+      description: 'Controls randomness in the response',
+    },
   },
 
   request: {
@@ -58,21 +58,21 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-goog-api-key': params.apiKey
+      'x-goog-api-key': params.apiKey,
     }),
     body: (params) => {
       const contents = [
         {
           role: 'model',
-          parts: [{ text: params.systemPrompt }]
-        }
-      ] 
+          parts: [{ text: params.systemPrompt }],
+        },
+      ]
 
       if (params.context) {
         contents.push({
           role: 'user',
-          parts: [{ text: params.context }]
-        }) 
+          parts: [{ text: params.context }],
+        })
       }
 
       const body = {
@@ -81,29 +81,29 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
           temperature: params.temperature,
           maxOutputTokens: params.maxTokens,
           topP: params.topP,
-          topK: params.topK
-        }
-      } 
-      return body 
-    }
+          topK: params.topK,
+        },
+      }
+      return body
+    },
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json() 
+    const data = await response.json()
     return {
       success: true,
       output: {
         content: data.candidates[0].content.parts[0].text,
         model: data.model,
         tokens: data.usage?.totalTokens,
-        safetyRatings: data.candidates[0].safetyRatings
-      }
-    } 
+        safetyRatings: data.candidates[0].safetyRatings,
+      },
+    }
   },
 
   transformError: (error) => {
-    const message = error.error?.message || error.message 
-    const code = error.error?.status || error.code 
-    return `${message} (${code})` 
-  }
-}  
+    const message = error.error?.message || error.message
+    const code = error.error?.status || error.code
+    return `${message} (${code})`
+  },
+}

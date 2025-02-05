@@ -31,10 +31,7 @@ export function HistoryDropdownItem({
       onClick={onClick}
     >
       <Clock
-        className={cn(
-          'h-4 w-4',
-          isFuture ? 'text-muted-foreground/50' : 'text-muted-foreground'
-        )}
+        className={cn('h-4 w-4', isFuture ? 'text-muted-foreground/50' : 'text-muted-foreground')}
       />
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
@@ -58,12 +55,7 @@ export function HistoryDropdownItem({
             </span>
           )}
         </div>
-        <p
-          className={cn(
-            'text-sm',
-            isFuture ? 'text-muted-foreground/50' : 'text-foreground'
-          )}
-        >
+        <p className={cn('text-sm', isFuture ? 'text-muted-foreground/50' : 'text-foreground')}>
           {action}
         </p>
       </div>

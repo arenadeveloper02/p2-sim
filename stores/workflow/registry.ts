@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { WorkflowRegistry, WorkflowMetadata } from './registry-types'
+import { WorkflowMetadata, WorkflowRegistry } from './registry-types'
 import { useWorkflowStore } from './store'
 
 export const useWorkflowRegistry = create<WorkflowRegistry>()(
@@ -22,29 +22,32 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         const currentId = get().activeWorkflowId
         if (currentId) {
           const currentState = useWorkflowStore.getState()
-          localStorage.setItem(`workflow-${currentId}`, JSON.stringify({
-            blocks: currentState.blocks,
-            edges: currentState.edges,
-            history: currentState.history // Save history state
-          }))
+          localStorage.setItem(
+            `workflow-${currentId}`,
+            JSON.stringify({
+              blocks: currentState.blocks,
+              edges: currentState.edges,
+              history: currentState.history, // Save history state
+            })
+          )
         }
 
         // Load new workflow state
         const savedState = localStorage.getItem(`workflow-${id}`)
         if (savedState) {
           const { blocks, edges, history } = JSON.parse(savedState)
-          useWorkflowStore.setState({ 
-            blocks, 
+          useWorkflowStore.setState({
+            blocks,
             edges,
             history: history || {
               past: [],
               present: {
                 state: { blocks, edges },
                 timestamp: Date.now(),
-                action: 'Initial state'
+                action: 'Initial state',
               },
-              future: []
-            }
+              future: [],
+            },
           })
         } else {
           useWorkflowStore.setState({
@@ -55,11 +58,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               present: {
                 state: { blocks: {}, edges: [] },
                 timestamp: Date.now(),
-                action: 'Initial state'
+                action: 'Initial state',
               },
-              future: []
+              future: [],
             },
-            lastSaved: Date.now()
+            lastSaved: Date.now(),
           })
         }
 
@@ -69,13 +72,13 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
       addWorkflow: (metadata: WorkflowMetadata) => {
         const uniqueName = generateUniqueName(get().workflows)
         const updatedMetadata = { ...metadata, name: uniqueName }
-        
+
         set((state) => ({
           workflows: {
             ...state.workflows,
-            [metadata.id]: updatedMetadata
+            [metadata.id]: updatedMetadata,
           },
-          error: null
+          error: null,
         }))
 
         // Save workflow list to localStorage
@@ -90,7 +93,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 
           // Remove workflow state from localStorage
           localStorage.removeItem(`workflow-${id}`)
-          
+
           // Update registry in localStorage
           localStorage.setItem('workflow-registry', JSON.stringify(newWorkflows))
 
@@ -103,18 +106,18 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             const savedState = localStorage.getItem(`workflow-${newActiveWorkflowId}`)
             if (savedState) {
               const { blocks, edges, history } = JSON.parse(savedState)
-              useWorkflowStore.setState({ 
-                blocks, 
+              useWorkflowStore.setState({
+                blocks,
                 edges,
                 history: history || {
                   past: [],
                   present: {
                     state: { blocks, edges },
                     timestamp: Date.now(),
-                    action: 'Initial state'
+                    action: 'Initial state',
                   },
-                  future: []
-                }
+                  future: [],
+                },
               })
             } else {
               useWorkflowStore.setState({
@@ -125,11 +128,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
                   present: {
                     state: { blocks: {}, edges: [] },
                     timestamp: Date.now(),
-                    action: 'Initial state'
+                    action: 'Initial state',
                   },
-                  future: []
+                  future: [],
                 },
-                lastSaved: Date.now()
+                lastSaved: Date.now(),
               })
             }
           }
@@ -137,7 +140,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           return {
             workflows: newWorkflows,
             activeWorkflowId: newActiveWorkflowId,
-            error: null
+            error: null,
           }
         })
       },
@@ -152,8 +155,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             [id]: {
               ...workflow,
               ...metadata,
-              lastModified: new Date()
-            }
+              lastModified: new Date(),
+            },
           }
 
           // Update registry in localStorage
@@ -161,10 +164,10 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 
           return {
             workflows: updatedWorkflows,
-            error: null
+            error: null,
           }
         })
-      }
+      },
     }),
     { name: 'workflow-registry' }
   )
@@ -173,11 +176,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 const generateUniqueName = (existingWorkflows: Record<string, WorkflowMetadata>): string => {
   // Extract numbers from existing workflow names using regex
   const numbers = Object.values(existingWorkflows)
-    .map(w => {
+    .map((w) => {
       const match = w.name.match(/Workflow (\d+)/)
       return match ? parseInt(match[1]) : 0
     })
-    .filter(n => n > 0)
+    .filter((n) => n > 0)
 
   if (numbers.length === 0) {
     return 'Workflow 1'
@@ -202,11 +205,14 @@ const initializeRegistry = () => {
     const currentId = useWorkflowRegistry.getState().activeWorkflowId
     if (currentId) {
       const currentState = useWorkflowStore.getState()
-      localStorage.setItem(`workflow-${currentId}`, JSON.stringify({
-        blocks: currentState.blocks,
-        edges: currentState.edges,
-        history: currentState.history
-      }))
+      localStorage.setItem(
+        `workflow-${currentId}`,
+        JSON.stringify({
+          blocks: currentState.blocks,
+          edges: currentState.edges,
+          history: currentState.history,
+        })
+      )
     }
   })
 }

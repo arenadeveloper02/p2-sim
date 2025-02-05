@@ -1,7 +1,7 @@
-import { BlockConfig } from '../types'
 import { AgentIcon } from '@/components/icons'
-import { MODEL_TOOLS, ModelType } from '../consts'
 import { ToolResponse } from '@/tools/types'
+import { MODEL_TOOLS, ModelType } from '../consts'
+import { BlockConfig } from '../types'
 
 interface AgentResponse extends ToolResponse {
   output: {
@@ -32,7 +32,14 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
     category: 'blocks',
   },
   tools: {
-    access: ['openai_chat', 'anthropic_chat', 'google_chat', 'xai_chat', 'deepseek_chat', 'deepseek_reasoner'],
+    access: [
+      'openai_chat',
+      'anthropic_chat',
+      'google_chat',
+      'xai_chat',
+      'deepseek_chat',
+      'deepseek_reasoner',
+    ],
     config: {
       tool: (params: Record<string, any>) => {
         const model = params.model || 'gpt-4o'
@@ -44,8 +51,8 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
           throw new Error(`Invalid model selected: ${model}`)
         }
         return tool
-      }
-    }
+      },
+    },
   },
   workflow: {
     inputs: {
@@ -55,7 +62,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       apiKey: { type: 'string', required: true },
       responseFormat: { type: 'json', required: false },
       temperature: { type: 'number', required: false },
-      tools: { type: 'json', required: false }
+      tools: { type: 'json', required: false },
     },
     outputs: {
       response: {
@@ -63,9 +70,9 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
           content: 'string',
           model: 'string',
           tokens: 'any',
-          toolCalls: 'any'
-        }
-      }
+          toolCalls: 'any',
+        },
+      },
     },
     subBlocks: [
       {
@@ -73,21 +80,21 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
         title: 'System Prompt',
         type: 'long-input',
         layout: 'full',
-        placeholder: 'Enter system prompt...'
+        placeholder: 'Enter system prompt...',
       },
       {
         id: 'context',
         title: 'Context',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter context or user message...'
+        placeholder: 'Enter context or user message...',
       },
       {
         id: 'model',
         title: 'Model',
         type: 'dropdown',
         layout: 'half',
-        options: Object.keys(MODEL_TOOLS)
+        options: Object.keys(MODEL_TOOLS),
       },
       {
         id: 'temperature',
@@ -99,25 +106,25 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       },
       {
         id: 'apiKey',
-        title: "API Key",
-        type: "short-input",
-        layout: "full",
-        placeholder: "Enter your API key",
+        title: 'API Key',
+        type: 'short-input',
+        layout: 'full',
+        placeholder: 'Enter your API key',
         password: true,
-        connectionDroppable: false
+        connectionDroppable: false,
       },
       {
         id: 'tools',
         title: 'Tools',
         type: 'tool-input',
-        layout: 'full'
+        layout: 'full',
       },
       {
         id: 'responseFormat',
         title: 'Response Format',
         type: 'code',
-        layout: 'full'
+        layout: 'full',
       },
-    ]
-  }
+    ],
+  },
 }

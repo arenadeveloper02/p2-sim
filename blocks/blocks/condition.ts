@@ -1,6 +1,6 @@
 import { ConditionalIcon } from '@/components/icons'
-import { BlockConfig } from '../types'
 import { CodeExecutionOutput } from '@/tools/function/execute'
+import { BlockConfig } from '../types'
 
 export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
   type: 'condition',
@@ -12,19 +12,19 @@ export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
     category: 'blocks',
   },
   tools: {
-    access: ['function_execute']
+    access: ['function_execute'],
   },
   workflow: {
     inputs: {
-      code: { type: 'string', required: true }
+      code: { type: 'string', required: true },
     },
     outputs: {
       response: {
         type: {
           result: 'any',
-          stdout: 'string'
-        }
-      }
+          stdout: 'string',
+        },
+      },
     },
     subBlocks: [
       {
@@ -32,15 +32,15 @@ export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
         title: 'if',
         type: 'code',
         layout: 'full',
-        outputHandle: true
+        outputHandle: true,
       },
       {
         id: 'elseIf',
         title: 'else if',
         type: 'code',
         layout: 'full',
-        outputHandle: true
-      }
+        outputHandle: true,
+      },
     ],
   },
 }

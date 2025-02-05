@@ -1,27 +1,9 @@
 'use client'
 
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { History, Bell, Play, Trash2, MessageSquare } from 'lucide-react'
-import { useNotificationStore } from '@/stores/notifications/store'
-import { NotificationDropdownItem } from './components/notification-dropdown-item'
-import { useWorkflowStore } from '@/stores/workflow/store'
-import { HistoryDropdownItem } from './components/history-dropdown-item'
-import { formatDistanceToNow } from 'date-fns'
 import { useEffect, useState } from 'react'
-import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
-import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { useRouter } from 'next/navigation'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { formatDistanceToNow } from 'date-fns'
+import { Bell, History, MessageSquare, Play, Trash2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,14 +15,27 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useNotificationStore } from '@/stores/notifications/store'
+import { useWorkflowRegistry } from '@/stores/workflow/registry'
+import { useWorkflowStore } from '@/stores/workflow/store'
+import { useWorkflowExecution } from '../../hooks/use-workflow-execution'
+import { HistoryDropdownItem } from './components/history-dropdown-item'
+import { NotificationDropdownItem } from './components/notification-dropdown-item'
 
 export function ControlBar() {
   const { notifications, getWorkflowNotifications } = useNotificationStore()
   const { history, undo, redo, revertToHistoryState } = useWorkflowStore()
   const [isEditing, setIsEditing] = useState(false)
   const [editedName, setEditedName] = useState('')
-  const { workflows, updateWorkflow, activeWorkflowId, removeWorkflow } =
-    useWorkflowRegistry()
+  const { workflows, updateWorkflow, activeWorkflowId, removeWorkflow } = useWorkflowRegistry()
   const [, forceUpdate] = useState({})
   const { isExecuting, handleRunWorkflow } = useWorkflowExecution()
   const router = useRouter()
@@ -167,8 +162,7 @@ export function ControlBar() {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Workflow</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete this workflow? This action
-                cannot be undone.
+                Are you sure you want to delete this workflow? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -198,10 +192,7 @@ export function ControlBar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           ) : (
-            <DropdownMenuContent
-              align="end"
-              className="w-60 max-h-[300px] overflow-y-auto"
-            >
+            <DropdownMenuContent align="end" className="w-60 max-h-[300px] overflow-y-auto">
               <>
                 {[...history.future].reverse().map((entry, index) => (
                   <HistoryDropdownItem
@@ -210,9 +201,7 @@ export function ControlBar() {
                     timestamp={entry.timestamp}
                     onClick={() =>
                       revertToHistoryState(
-                        history.past.length +
-                          1 +
-                          (history.future.length - 1 - index)
+                        history.past.length + 1 + (history.future.length - 1 - index)
                       )
                     }
                     isFuture={true}
@@ -230,9 +219,7 @@ export function ControlBar() {
                     key={`past-${entry.timestamp}-${index}`}
                     action={entry.action}
                     timestamp={entry.timestamp}
-                    onClick={() =>
-                      revertToHistoryState(history.past.length - 1 - index)
-                    }
+                    onClick={() => revertToHistoryState(history.past.length - 1 - index)}
                   />
                 ))}
               </>
@@ -255,17 +242,11 @@ export function ControlBar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           ) : (
-            <DropdownMenuContent
-              align="end"
-              className="w-60 max-h-[300px] overflow-y-auto"
-            >
+            <DropdownMenuContent align="end" className="w-60 max-h-[300px] overflow-y-auto">
               {[...workflowNotifications]
                 .sort((a, b) => b.timestamp - a.timestamp)
                 .map((notification) => (
-                  <NotificationDropdownItem
-                    key={notification.id}
-                    {...notification}
-                  />
+                  <NotificationDropdownItem key={notification.id} {...notification} />
                 ))}
             </DropdownMenuContent>
           )}

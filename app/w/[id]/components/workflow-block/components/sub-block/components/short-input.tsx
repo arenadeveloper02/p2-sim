@@ -1,14 +1,11 @@
+import { useEffect, useRef, useState } from 'react'
+import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
+import { formatDisplayText } from '@/components/ui/formatted-text'
 import { Input } from '@/components/ui/input'
-import { useState, useRef, useEffect } from 'react'
-import { useSubBlockValue } from '../hooks/use-sub-block-value'
+import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 import { cn } from '@/lib/utils'
 import { SubBlockConfig } from '@/blocks/types'
-import { formatDisplayText } from '@/components/ui/formatted-text'
-import {
-  EnvVarDropdown,
-  checkEnvVarTrigger,
-} from '@/components/ui/env-var-dropdown'
-import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface ShortInputProps {
   placeholder?: string
@@ -39,9 +36,7 @@ export function ShortInput({
   const [cursorPosition, setCursorPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(
-    null
-  )
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
 
   // Use either controlled or uncontrolled value
   const value = propValue !== undefined ? propValue : storeValue
@@ -104,15 +99,11 @@ export function ShortInput({
       if (data.type !== 'connectionBlock') return
 
       // Get current cursor position or append to end
-      const dropPosition =
-        inputRef.current?.selectionStart ?? value?.toString().length ?? 0
+      const dropPosition = inputRef.current?.selectionStart ?? value?.toString().length ?? 0
 
       // Insert '<' at drop position to trigger the dropdown
       const currentValue = value?.toString() ?? ''
-      const newValue =
-        currentValue.slice(0, dropPosition) +
-        '<' +
-        currentValue.slice(dropPosition)
+      const newValue = currentValue.slice(0, dropPosition) + '<' + currentValue.slice(dropPosition)
 
       // Focus the input first
       inputRef.current?.focus()
@@ -151,9 +142,7 @@ export function ShortInput({
 
   // Value display logic
   const displayValue =
-    password && !isFocused
-      ? '•'.repeat(value?.toString().length ?? 0)
-      : value?.toString() ?? ''
+    password && !isFocused ? '•'.repeat(value?.toString().length ?? 0) : (value?.toString() ?? '')
 
   // Modify the EnvVarDropdown to use the correct setter
   const handleEnvVarSelect = (newValue: string) => {

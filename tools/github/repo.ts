@@ -27,29 +27,28 @@ export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
     owner: {
       type: 'string',
       required: true,
-      description: 'Repository owner (user or organization)'
+      description: 'Repository owner (user or organization)',
     },
     repo: {
       type: 'string',
       required: true,
-      description: 'Repository name'
+      description: 'Repository name',
     },
     apiKey: {
       type: 'string',
       requiredForToolCall: true,
-      description: 'GitHub Personal Access Token'
-    }
+      description: 'GitHub Personal Access Token',
+    },
   },
 
   request: {
-    url: (params: RepoInfoParams) => 
-      `https://api.github.com/repos/${params.owner}/${params.repo}`,
+    url: (params: RepoInfoParams) => `https://api.github.com/repos/${params.owner}/${params.repo}`,
     method: 'GET',
     headers: (params: RepoInfoParams) => ({
-      'Accept': 'application/vnd.github+json',
-      'Authorization': params.apiKey ? `Bearer ${params.apiKey}` : '',
-      'X-GitHub-Api-Version': '2022-11-28'
-    })
+      Accept: 'application/vnd.github+json',
+      Authorization: params.apiKey ? `Bearer ${params.apiKey}` : '',
+      'X-GitHub-Api-Version': '2022-11-28',
+    }),
   },
 
   transformResponse: async (response: Response) => {
@@ -58,7 +57,7 @@ export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
     }
 
     const data = await response.json()
-    
+
     return {
       success: true,
       output: {
@@ -67,8 +66,8 @@ export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
         stars: data.stargazers_count,
         forks: data.forks_count,
         openIssues: data.open_issues_count,
-        language: data.language || 'Not specified'
-      }
+        language: data.language || 'Not specified',
+      },
     }
   },
 
@@ -83,5 +82,5 @@ export const repoInfoTool: ToolConfig<RepoInfoParams, RepoInfoResponse> = {
       return error.message
     }
     return 'Failed to fetch repository information'
-  }
-} 
+  },
+}

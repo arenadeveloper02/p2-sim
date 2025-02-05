@@ -1,15 +1,11 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PanelLeftClose, Terminal } from 'lucide-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { useConsoleStore } from '@/stores/console/store'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useConsoleStore } from '@/stores/console/store'
 import { useWorkflowRegistry } from '@/stores/workflow/registry'
 import { ConsoleEntry } from './components/console-entry/console-entry'
 

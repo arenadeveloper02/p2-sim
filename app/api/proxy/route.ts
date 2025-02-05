@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
-import { getTool } from '@/tools'
 import { anthropicProvider } from '@/providers/anthropic'
+import { googleProvider } from '@/providers/google'
 import { openaiProvider } from '@/providers/openai'
 import { ProviderConfig } from '@/providers/types'
-import { googleProvider } from '@/providers/google'
+import { getTool } from '@/tools'
 
 const providers: Record<string, ProviderConfig> = {
   'anthropic/chat': anthropicProvider,
   'openai/chat': openaiProvider,
-  'google/chat': googleProvider
+  'google/chat': googleProvider,
 }
 
 export async function POST(request: Request) {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       const response = await fetch(provider.baseUrl, {
         method: 'POST',
         headers: provider.headers(apiKey),
-        body: JSON.stringify(restParams)
+        body: JSON.stringify(restParams),
       })
 
       if (!response.ok) {
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        output: await response.json()
+        output: await response.json(),
       })
     }
 
@@ -62,10 +62,10 @@ export async function POST(request: Request) {
       const externalResponse = await fetch(url, { method, headers, body })
 
       if (!externalResponse.ok) {
-        const errorContent = await externalResponse.json().catch(() => ({ 
-          message: externalResponse.statusText 
+        const errorContent = await externalResponse.json().catch(() => ({
+          message: externalResponse.statusText,
         }))
-        
+
         // Use the tool's error transformer or a default message
         const error = tool.transformError
           ? tool.transformError(errorContent)
@@ -84,9 +84,7 @@ export async function POST(request: Request) {
 
       if (!result.success) {
         throw new Error(
-          tool.transformError
-            ? tool.transformError(result)
-            : 'Tool returned an error'
+          tool.transformError ? tool.transformError(result) : 'Tool returned an error'
         )
       }
 
@@ -97,7 +95,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message || 'Unknown error'
+      error: error.message || 'Unknown error',
     })
   }
-} 
+}

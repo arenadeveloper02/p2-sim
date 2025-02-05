@@ -26,23 +26,23 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
       type: 'string',
       required: true,
       requiredForToolCall: true,
-      description: 'API key for the selected model provider'
+      description: 'API key for the selected model provider',
     },
     imageUrl: {
       type: 'string',
       required: true,
-      description: 'Publicly accessible image URL'
+      description: 'Publicly accessible image URL',
     },
     model: {
       type: 'string',
       required: false,
-      description: 'Vision model to use (gpt-4o, claude-3-opus-20240229, etc)'
+      description: 'Vision model to use (gpt-4o, claude-3-opus-20240229, etc)',
     },
     prompt: {
       type: 'string',
       required: false,
-      description: 'Custom prompt for image analysis'
-    }
+      description: 'Custom prompt for image analysis',
+    },
   },
 
   request: {
@@ -62,52 +62,56 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
         ? {
             ...headers,
             'x-api-key': params.apiKey,
-            'anthropic-version': '2023-06-01'
+            'anthropic-version': '2023-06-01',
           }
         : {
             ...headers,
-            'Authorization': `Bearer ${params.apiKey}`
+            Authorization: `Bearer ${params.apiKey}`,
           }
     },
     body: (params) => {
-      const defaultPrompt = "Please analyze this image and describe what you see in detail."
+      const defaultPrompt = 'Please analyze this image and describe what you see in detail.'
       const prompt = params.prompt || defaultPrompt
 
       if (params.model?.startsWith('claude-3')) {
         return {
           model: params.model,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              { type: "image", source: { type: "url", url: params.imageUrl } }
-            ]
-          }]
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image', source: { type: 'url', url: params.imageUrl } },
+              ],
+            },
+          ],
         }
       }
 
       return {
         model: 'gpt-4o',
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { 
-              type: "image_url", 
-              image_url: {
-                url: params.imageUrl
-              }
-            }
-          ]
-        }],
-        max_tokens: 1000
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: params.imageUrl,
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1000,
       }
-    }
+    },
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    
+
     if (data.error) {
       throw new Error(data.error.message || 'Unknown error occurred')
     }
@@ -122,10 +126,10 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
       output: {
         content: result,
         model: data.model,
-        tokens: data.content 
-          ? (data.usage?.input_tokens + data.usage?.output_tokens)
-          : data.usage?.total_tokens
-      }
+        tokens: data.content
+          ? data.usage?.input_tokens + data.usage?.output_tokens
+          : data.usage?.total_tokens,
+      },
     }
   },
 
@@ -133,5 +137,5 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
     const message = error.error?.message || error.message
     const code = error.error?.type || error.code
     return `${message} (${code})`
-  }
-} 
+  },
+}

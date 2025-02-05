@@ -84,4 +84,4 @@ export interface Tool<P = any, O = Record<string, any>> {
  */
 export interface ToolRegistry {
   [key: string]: Tool
-} 
+}

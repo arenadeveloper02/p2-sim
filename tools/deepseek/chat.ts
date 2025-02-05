@@ -32,34 +32,34 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     apiKey: {
       type: 'string',
       required: true,
-      description: 'DeepSeek API key'
+      description: 'DeepSeek API key',
     },
     systemPrompt: {
       type: 'string',
       required: false,
-      description: 'System prompt to guide the model'
+      description: 'System prompt to guide the model',
     },
     context: {
       type: 'string',
       required: false,
-      description: 'User input context'
+      description: 'User input context',
     },
     model: {
       type: 'string',
       default: 'deepseek-chat',
-      description: 'Model to use'
+      description: 'Model to use',
     },
     temperature: {
       type: 'number',
       required: false,
       default: 0.7,
-      description: 'Sampling temperature'
+      description: 'Sampling temperature',
     },
     responseFormat: {
       type: 'string',
       required: false,
-      description: 'Response format specification'
-    }
+      description: 'Response format specification',
+    },
   },
 
   request: {
@@ -67,7 +67,7 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const messages: Message[] = []
@@ -75,21 +75,21 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       if (params.systemPrompt) {
         messages.push({
           role: 'system',
-          content: params.systemPrompt
+          content: params.systemPrompt,
         })
       }
 
       if (params.context) {
         messages.push({
           role: 'user',
-          content: params.context
+          content: params.context,
         })
       }
 
       const body: any = {
         model: 'deepseek-chat',
         messages,
-        temperature: params.temperature
+        temperature: params.temperature,
       }
 
       if (params.responseFormat === 'json') {
@@ -97,7 +97,7 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       }
 
       return body
-    }
+    },
   },
 
   async transformResponse(response: Response): Promise<ChatResponse> {
@@ -112,8 +112,8 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       output: {
         content: data.choices[0].message.content,
         model: data.model,
-        tokens: data.usage?.total_tokens
-      }
+        tokens: data.usage?.total_tokens,
+      },
     }
   },
 
@@ -121,5 +121,5 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     const message = error.error?.message || error.message
     const code = error.error?.type || error.code
     return `${message} (${code})`
-  }
+  },
 }

@@ -33,4 +33,4 @@ export function formatDisplayText(text: string): ReactNode[] {
 
     return <span key={index}>{part}</span>
   })
-} 
+}

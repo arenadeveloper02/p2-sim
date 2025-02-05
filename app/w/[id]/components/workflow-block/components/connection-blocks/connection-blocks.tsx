@@ -1,17 +1,13 @@
-import { useBlockConnections } from '@/app/w/hooks/use-block-connections'
 import { Card } from '@/components/ui/card'
+import { useBlockConnections } from '@/app/w/hooks/use-block-connections'
 
 interface ConnectionBlocksProps {
   blockId: string
   setIsConnecting: (isConnecting: boolean) => void
 }
 
-export function ConnectionBlocks({
-  blockId,
-  setIsConnecting,
-}: ConnectionBlocksProps) {
-  const { incomingConnections, hasIncomingConnections } =
-    useBlockConnections(blockId)
+export function ConnectionBlocks({ blockId, setIsConnecting }: ConnectionBlocksProps) {
+  const { incomingConnections, hasIncomingConnections } = useBlockConnections(blockId)
 
   if (!hasIncomingConnections) return null
 
@@ -51,9 +47,7 @@ export function ConnectionBlocks({
             <span className="font-medium leading-none">
               {connection.name.replace(/\s+/g, '').toLowerCase()}
             </span>
-            <span className="text-muted-foreground">
-              .{connection.outputType}
-            </span>
+            <span className="text-muted-foreground">.{connection.outputType}</span>
           </div>
         </Card>
       ))}

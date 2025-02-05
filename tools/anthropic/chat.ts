@@ -1,14 +1,14 @@
-import { ToolConfig, ToolResponse } from '../types' 
+import { ToolConfig, ToolResponse } from '../types'
 
 export interface ChatParams {
-  apiKey: string 
-  systemPrompt: string 
-  context?: string 
-  model?: string 
-  temperature?: number 
-  maxTokens?: number 
-  topP?: number 
-  stream?: boolean 
+  apiKey: string
+  systemPrompt: string
+  context?: string
+  model?: string
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  stream?: boolean
 }
 
 export interface ChatResponse extends ToolResponse {
@@ -29,32 +29,32 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     apiKey: {
       type: 'string',
       required: true,
-      description: 'Anthropic API key'
+      description: 'Anthropic API key',
     },
     systemPrompt: {
       type: 'string',
       required: true,
-      description: 'System prompt to send to the model'
+      description: 'System prompt to send to the model',
     },
     context: {
       type: 'string',
-      description: 'User message/context to send to the model'
+      description: 'User message/context to send to the model',
     },
     model: {
       type: 'string',
       default: 'claude-3-5-sonnet-20241022',
-      description: 'Model to use'
+      description: 'Model to use',
     },
     temperature: {
       type: 'number',
       default: 0.7,
-      description: 'Controls randomness in the response'
+      description: 'Controls randomness in the response',
     },
     maxTokens: {
       type: 'number',
       default: 4096,
-      description: 'Maximum number of tokens to generate'
-    }
+      description: 'Maximum number of tokens to generate',
+    },
   },
 
   request: {
@@ -63,16 +63,16 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     headers: (params) => ({
       'Content-Type': 'application/json',
       'x-api-key': params.apiKey,
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
     }),
     body: (params) => {
       const messages = []
-      
+
       // Add user message if context is provided
       if (params.context) {
         messages.push({
           role: 'user',
-          content: params.context
+          content: params.context,
         })
       }
 
@@ -81,14 +81,14 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
         messages,
         system: params.systemPrompt,
         temperature: params.temperature || 0.7,
-        max_tokens: params.maxTokens || 4096
+        max_tokens: params.maxTokens || 4096,
       }
-    }
+    },
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    
+
     if (!data.content) {
       throw new Error('Unable to extract content from Anthropic API response')
     }
@@ -98,8 +98,8 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
       output: {
         content: data.content[0].text,
         model: data.model,
-        tokens: data.usage?.input_tokens + data.usage?.output_tokens
-      }
+        tokens: data.usage?.input_tokens + data.usage?.output_tokens,
+      },
     }
   },
 
@@ -107,5 +107,5 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     const message = error.error?.message || error.message
     const code = error.error?.type || error.code
     return `${message} (${code})`
-  }
-}  
+  },
+}

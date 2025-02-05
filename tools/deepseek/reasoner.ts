@@ -31,28 +31,28 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
     apiKey: {
       type: 'string',
       required: true,
-      description: 'DeepSeek API key'
+      description: 'DeepSeek API key',
     },
     systemPrompt: {
       type: 'string',
       required: false,
-      description: 'System prompt to guide the model'
+      description: 'System prompt to guide the model',
     },
     context: {
       type: 'string',
       required: false,
-      description: 'User input context'
+      description: 'User input context',
     },
     model: {
       type: 'string',
       default: 'deepseek-reasoner',
-      description: 'Model to use'
+      description: 'Model to use',
     },
     temperature: {
       type: 'number',
       required: false,
-      description: 'Temperature (has no effect on reasoner)'
-    }
+      description: 'Temperature (has no effect on reasoner)',
+    },
   },
 
   request: {
@@ -60,7 +60,7 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const messages: Message[] = []
@@ -68,7 +68,7 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
       if (params.systemPrompt) {
         messages.push({
           role: 'system',
-          content: params.systemPrompt
+          content: params.systemPrompt,
         })
       }
 
@@ -76,21 +76,21 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
       if (params.context) {
         messages.push({
           role: 'user',
-          content: params.context
+          content: params.context,
         })
       } else if (params.systemPrompt) {
         // If we have a system prompt but no context, add an empty user message
         messages.push({
           role: 'user',
-          content: 'Please respond.'
+          content: 'Please respond.',
         })
       }
 
       return {
         model: 'deepseek-reasoner',
-        messages
+        messages,
       }
-    }
+    },
   },
 
   async transformResponse(response: Response): Promise<ChatResponse> {
@@ -105,8 +105,8 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
       output: {
         content: data.choices[0].message.content,
         model: data.model,
-        tokens: data.usage?.total_tokens
-      }
+        tokens: data.usage?.total_tokens,
+      },
     }
   },
 
@@ -114,5 +114,5 @@ export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
     const message = error.error?.message || error.message
     const code = error.error?.type || error.code
     return `${message} (${code})`
-  }
-} 
+  },
+}

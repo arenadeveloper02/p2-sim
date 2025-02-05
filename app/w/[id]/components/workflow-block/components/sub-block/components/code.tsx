@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
-import Editor from 'react-simple-code-editor'
+import { useEffect, useRef, useState } from 'react'
 import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/themes/prism.css'
+import Editor from 'react-simple-code-editor'
+import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
-import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 
 interface CodeProps {
   blockId: string
@@ -19,9 +19,7 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   const [lineCount, setLineCount] = useState(1)
   const [showTags, setShowTags] = useState(false)
   const [cursorPosition, setCursorPosition] = useState(0)
-  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(
-    null
-  )
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
 
   // Add new state for tracking visual line heights
@@ -93,10 +91,7 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
       document.body.removeChild(container)
       setVisualLineHeights(newVisualLineHeights)
 
-      const totalVisualLines = newVisualLineHeights.reduce(
-        (sum, height) => sum + height,
-        0
-      )
+      const totalVisualLines = newVisualLineHeights.reduce((sum, height) => sum + height, 0)
       setLineCount(totalVisualLines)
     }
 
@@ -146,8 +141,7 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
       const dropPosition = textarea?.selectionStart ?? code.length
 
       // Insert '<' at drop position to trigger the dropdown
-      const newValue =
-        code.slice(0, dropPosition) + '<' + code.slice(dropPosition)
+      const newValue = code.slice(0, dropPosition) + '<' + code.slice(dropPosition)
 
       setCode(newValue)
       setStoreValue(newValue)
@@ -216,9 +210,7 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
               }
             }
           }}
-          highlight={(code) =>
-            highlight(code, languages.javascript, 'javascript')
-          }
+          highlight={(code) => highlight(code, languages.javascript, 'javascript')}
           padding={12}
           style={{
             fontFamily: 'inherit',

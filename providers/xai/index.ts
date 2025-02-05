@@ -1,4 +1,4 @@
-import { ProviderConfig, FunctionCallResponse, ProviderToolConfig, ProviderRequest } from '../types'
+import { FunctionCallResponse, ProviderConfig, ProviderRequest, ProviderToolConfig } from '../types'
 
 export const xAIProvider: ProviderConfig = {
   id: 'xai',
@@ -7,11 +7,11 @@ export const xAIProvider: ProviderConfig = {
   version: '1.0.0',
   models: ['grok-2-latest'],
   defaultModel: 'grok-2-latest',
-  
+
   baseUrl: 'https://api.x.ai/v1/chat/completions',
   headers: (apiKey: string) => ({
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`
+    Authorization: `Bearer ${apiKey}`,
   }),
 
   transformToolsToFunctions: (tools: ProviderToolConfig[]) => {
@@ -19,24 +19,27 @@ export const xAIProvider: ProviderConfig = {
       return undefined
     }
 
-    return tools.map(tool => ({
+    return tools.map((tool) => ({
       type: 'function',
       function: {
         name: tool.id,
         description: tool.description,
-        parameters: tool.parameters
-      }
+        parameters: tool.parameters,
+      },
     }))
   },
 
-  transformFunctionCallResponse: (response: any, tools?: ProviderToolConfig[]): FunctionCallResponse => {
+  transformFunctionCallResponse: (
+    response: any,
+    tools?: ProviderToolConfig[]
+  ): FunctionCallResponse => {
     // xAI returns tool_calls array like OpenAI
     const toolCall = response.choices?.[0]?.message?.tool_calls?.[0]
     if (!toolCall || !toolCall.function) {
       throw new Error('No valid tool call found in response')
     }
 
-    const tool = tools?.find(t => t.id === toolCall.function.name)
+    const tool = tools?.find((t) => t.id === toolCall.function.name)
     if (!tool) {
       throw new Error(`Tool not found: ${toolCall.function.name}`)
     }
@@ -55,19 +58,19 @@ export const xAIProvider: ProviderConfig = {
       name: toolCall.function.name,
       arguments: {
         ...tool.params,
-        ...args
-      }
+        ...args,
+      },
     }
   },
 
   transformRequest: (request: ProviderRequest, functions?: any) => {
     // Convert function messages to tool messages
-    const messages = (request.messages || []).map(msg => {
+    const messages = (request.messages || []).map((msg) => {
       if (msg.role === 'function') {
         return {
           role: 'tool',
           content: msg.content,
-          tool_call_id: msg.name  // xAI expects tool_call_id for tool results
+          tool_call_id: msg.name, // xAI expects tool_call_id for tool results
         }
       }
 
@@ -75,14 +78,16 @@ export const xAIProvider: ProviderConfig = {
         return {
           role: 'assistant',
           content: null,
-          tool_calls: [{
-            id: msg.function_call.name,
-            type: 'function',
-            function: {
-              name: msg.function_call.name,
-              arguments: msg.function_call.arguments
-            }
-          }]
+          tool_calls: [
+            {
+              id: msg.function_call.name,
+              type: 'function',
+              function: {
+                name: msg.function_call.name,
+                arguments: msg.function_call.arguments,
+              },
+            },
+          ],
         }
       }
 
@@ -94,14 +99,14 @@ export const xAIProvider: ProviderConfig = {
       messages: [
         { role: 'system', content: request.systemPrompt },
         ...(request.context ? [{ role: 'user', content: request.context }] : []),
-        ...messages
+        ...messages,
       ],
       temperature: request.temperature || 0.7,
       max_tokens: request.maxTokens || 1024,
-      ...(functions && { 
+      ...(functions && {
         tools: functions,
-        tool_choice: 'auto'  // xAI specific parameter
-      })
+        tool_choice: 'auto', // xAI specific parameter
+      }),
     }
 
     return payload
@@ -118,13 +123,13 @@ export const xAIProvider: ProviderConfig = {
       tokens: response.usage && {
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,
-        total: response.usage.total_tokens
-      }
+        total: response.usage.total_tokens,
+      },
     }
   },
 
   hasFunctionCall: (response: any) => {
     if (!response) return false
     return !!response.choices?.[0]?.message?.tool_calls?.[0]
-  }
+  },
 }

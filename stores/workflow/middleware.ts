@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand'
+import { HistoryActions, HistoryEntry, WorkflowHistory } from './history-types'
 import { WorkflowState, WorkflowStore } from './types'
-import { HistoryEntry, WorkflowHistory, HistoryActions } from './history-types'
 
 const MAX_HISTORY_LENGTH = 20
 
@@ -78,10 +78,10 @@ export const withHistory = (
             present: {
               state: { blocks: {}, edges: [] },
               timestamp: Date.now(),
-              action: 'Clear workflow'
+              action: 'Clear workflow',
             },
-            future: []
-          }
+            future: [],
+          },
         }
         set(newState)
         return newState
@@ -91,7 +91,7 @@ export const withHistory = (
         const { history, ...state } = get()
         const allStates = [...history.past, history.present, ...history.future]
         const targetState = allStates[index]
-        
+
         if (!targetState) return
 
         const newPast = allStates.slice(0, index)
@@ -111,13 +111,10 @@ export const withHistory = (
   }
 }
 
-export const createHistoryEntry = (
-  state: WorkflowState,
-  action: string
-): HistoryEntry => ({
+export const createHistoryEntry = (state: WorkflowState, action: string): HistoryEntry => ({
   state: {
     blocks: { ...state.blocks },
-    edges: [...state.edges ],
+    edges: [...state.edges],
   },
   timestamp: Date.now(),
   action,
@@ -127,9 +124,7 @@ export const pushHistory = (
   set: (
     partial:
       | Partial<WorkflowStoreWithHistory>
-      | ((
-          state: WorkflowStoreWithHistory
-        ) => Partial<WorkflowStoreWithHistory>),
+      | ((state: WorkflowStoreWithHistory) => Partial<WorkflowStoreWithHistory>),
     replace?: boolean
   ) => void,
   get: () => WorkflowStoreWithHistory,
@@ -146,4 +141,4 @@ export const pushHistory = (
       future: [],
     },
   })
-} 
+}

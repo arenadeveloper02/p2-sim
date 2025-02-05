@@ -42,18 +42,18 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       type: 'string',
       required: true,
       requiredForToolCall: true,
-      description: 'Firecrawl API key'
+      description: 'Firecrawl API key',
     },
     url: {
       type: 'string',
       required: true,
-      description: 'The URL to scrape content from'
+      description: 'The URL to scrape content from',
     },
     scrapeOptions: {
       type: 'json',
       required: false,
-      description: 'Options for content scraping'
-    }
+      description: 'Options for content scraping',
+    },
   },
 
   request: {
@@ -61,17 +61,17 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     url: 'https://api.firecrawl.dev/v1/scrape',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => ({
       url: params.url,
-      formats: params.scrapeOptions?.formats || ["markdown"]
-    })
+      formats: params.scrapeOptions?.formats || ['markdown'],
+    }),
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    
+
     if (!data.success) {
       throw new Error(data.error?.message || 'Unknown error occurred')
     }
@@ -81,8 +81,8 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       output: {
         markdown: data.data.markdown,
         html: data.data.html,
-        metadata: data.data.metadata
-      }
+        metadata: data.data.metadata,
+      },
     }
   },
 
@@ -90,5 +90,5 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     const message = error.error?.message || error.message
     const code = error.error?.type || error.code
     return `${message} (${code})`
-  }
-} 
+  },
+}

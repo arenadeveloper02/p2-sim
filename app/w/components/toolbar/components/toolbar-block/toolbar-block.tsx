@@ -6,10 +6,7 @@ export type ToolbarBlockProps = {
 
 export function ToolbarBlock({ config }: ToolbarBlockProps) {
   const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData(
-      'application/json',
-      JSON.stringify({ type: config.type })
-    )
+    e.dataTransfer.setData('application/json', JSON.stringify({ type: config.type }))
     e.dataTransfer.effectAllowed = 'move'
   }
 
@@ -31,9 +28,7 @@ export function ToolbarBlock({ config }: ToolbarBlockProps) {
       </div>
       <div className="flex flex-col gap-1">
         <h3 className="font-medium leading-none">{config.toolbar.title}</h3>
-        <p className="text-sm text-muted-foreground">
-          {config.toolbar.description}
-        </p>
+        <p className="text-sm text-muted-foreground">{config.toolbar.description}</p>
       </div>
     </div>
   )

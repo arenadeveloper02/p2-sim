@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   Select,
   SelectContent,
@@ -6,7 +7,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
-import { useEffect } from 'react'
 
 interface DropdownProps {
   options: string[]
@@ -15,12 +15,7 @@ interface DropdownProps {
   subBlockId: string
 }
 
-export function Dropdown({
-  options,
-  defaultValue,
-  blockId,
-  subBlockId,
-}: DropdownProps) {
+export function Dropdown({ options, defaultValue, blockId, subBlockId }: DropdownProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
 
   // Set the value to the first option if it's not set

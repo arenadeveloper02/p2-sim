@@ -1,7 +1,7 @@
-import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { useSubBlockValue } from '../hooks/use-sub-block-value'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface CheckboxListProps {
   blockId: string
@@ -11,21 +11,9 @@ interface CheckboxListProps {
   layout?: 'full' | 'half'
 }
 
-export function CheckboxList({
-  blockId,
-  subBlockId,
-  title,
-  options,
-  layout,
-}: CheckboxListProps) {
+export function CheckboxList({ blockId, subBlockId, title, options, layout }: CheckboxListProps) {
   return (
-    <div
-      className={cn(
-        'grid gap-4',
-        layout === 'half' ? 'grid-cols-2' : 'grid-cols-1',
-        'pt-1'
-      )}
-    >
+    <div className={cn('grid gap-4', layout === 'half' ? 'grid-cols-2' : 'grid-cols-1', 'pt-1')}>
       {options.map((option) => {
         const [value, setValue] = useSubBlockValue(blockId, option.id)
         return (

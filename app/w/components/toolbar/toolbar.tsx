@@ -1,18 +1,14 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { PanelRight, PanelRightClose, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Search, PanelRightClose, PanelRight } from 'lucide-react'
-import { ToolbarTabs } from './components/toolbar-tabs/toolbar-tabs'
-import { ToolbarBlock } from './components/toolbar-block/toolbar-block'
-import { getBlocksByCategory, getAllBlocks } from '../../../../blocks'
-import { BlockCategory, BlockConfig } from '../../../../blocks/types'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { getAllBlocks, getBlocksByCategory } from '../../../../blocks'
+import { BlockCategory, BlockConfig } from '../../../../blocks/types'
+import { ToolbarBlock } from './components/toolbar-block/toolbar-block'
+import { ToolbarTabs } from './components/toolbar-tabs/toolbar-tabs'
 
 export function Toolbar() {
   const [activeTab, setActiveTab] = useState<BlockCategory>('blocks')

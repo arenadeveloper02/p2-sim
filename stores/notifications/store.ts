@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { NotificationType, Notification, NotificationStore } from './types'
+import { Notification, NotificationStore, NotificationType } from './types'
 
 const STORAGE_KEY = 'workflow-notifications'
 
@@ -21,7 +21,7 @@ export const useNotificationStore = create<NotificationStore>()(
   devtools(
     (set, get) => ({
       notifications: loadPersistedNotifications(),
-      
+
       addNotification: (type, message, workflowId) => {
         // Only create notifications on the client side
         if (typeof window === 'undefined') return
@@ -32,9 +32,9 @@ export const useNotificationStore = create<NotificationStore>()(
           message,
           timestamp: Date.now(), // Simplified timestamp handling
           isVisible: true,
-          workflowId
+          workflowId,
         }
-        
+
         set((state) => {
           const newNotifications = [...state.notifications, notification]
           persistNotifications(newNotifications)
@@ -73,8 +73,8 @@ export const useNotificationStore = create<NotificationStore>()(
       },
 
       getWorkflowNotifications: (workflowId) => {
-        return get().notifications.filter(n => n.workflowId === workflowId)
-      }
+        return get().notifications.filter((n) => n.workflowId === workflowId)
+      },
     }),
     { name: 'notification-store' }
   )

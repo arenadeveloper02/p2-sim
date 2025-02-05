@@ -1,11 +1,6 @@
 'use client'
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,10 +11,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useState, useRef, useEffect, useMemo } from 'react'
 import { useEnvironmentStore } from '@/stores/environment/store'
 import { EnvironmentVariable as StoreEnvironmentVariable } from '@/stores/environment/types'
 
@@ -39,9 +34,7 @@ const INITIAL_ENV_VAR: UIEnvironmentVariable = { key: '', value: '' }
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const { variables, setVariable, removeVariable } = useEnvironmentStore()
   const [envVars, setEnvVars] = useState<UIEnvironmentVariable[]>([])
-  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(
-    null
-  )
+  const [focusedValueIndex, setFocusedValueIndex] = useState<number | null>(null)
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const pendingClose = useRef(false)
@@ -111,15 +104,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   useEffect(() => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop =
-        scrollContainerRef.current.scrollHeight
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
   }, [envVars])
 
-  const handleValueFocus = (
-    index: number,
-    e: React.FocusEvent<HTMLInputElement>
-  ) => {
+  const handleValueFocus = (index: number, e: React.FocusEvent<HTMLInputElement>) => {
     setFocusedValueIndex(index)
     // Always scroll to the start of the input
     e.target.scrollLeft = 0
@@ -137,10 +126,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }
 
-  const handlePaste = (
-    e: React.ClipboardEvent<HTMLInputElement>,
-    index: number
-  ) => {
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, index: number) => {
     const text = e.clipboardData.getData('text').trim()
     if (!text) return
 
@@ -149,9 +135,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
     e.preventDefault()
 
-    const inputType = (e.target as HTMLInputElement).getAttribute(
-      'data-input-type'
-    ) as 'key' | 'value'
+    const inputType = (e.target as HTMLInputElement).getAttribute('data-input-type') as
+      | 'key'
+      | 'value'
     const containsKeyValuePair = text.includes('=')
 
     // Handle single value paste into specific field
@@ -164,11 +150,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     handleKeyValuePaste(lines)
   }
 
-  const handleSingleValuePaste = (
-    text: string,
-    index: number,
-    inputType: 'key' | 'value'
-  ) => {
+  const handleSingleValuePaste = (text: string, index: number, inputType: 'key' | 'value') => {
     const newEnvVars = [...envVars]
     newEnvVars[index][inputType] = text
     setEnvVars(newEnvVars)
@@ -182,14 +164,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         return {
           key: key.trim(),
           value,
-          id: Date.now() + Math.random()
+          id: Date.now() + Math.random(),
         }
       })
       .filter(({ key, value }) => key && value)
 
     if (parsedVars.length > 0) {
       // Merge existing vars with new ones, removing any empty rows at the end
-      const existingVars = envVars.filter(v => v.key || v.value)
+      const existingVars = envVars.filter((v) => v.key || v.value)
       setEnvVars([...existingVars, ...parsedVars])
     }
   }
@@ -200,11 +182,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     setEnvVars([...envVars, newVar])
   }
 
-  const updateEnvVar = (
-    index: number,
-    field: 'key' | 'value',
-    value: string
-  ) => {
+  const updateEnvVar = (index: number, field: 'key' | 'value', value: string) => {
     const newEnvVars = [...envVars]
     newEnvVars[index][field] = value
     setEnvVars(newEnvVars)
@@ -254,12 +232,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         placeholder="Enter value"
         className="allow-scroll"
       />
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => removeEnvVar(index)}
-        className="h-10 w-10"
-      >
+      <Button variant="ghost" size="icon" onClick={() => removeEnvVar(index)} className="h-10 w-10">
         ×
       </Button>
     </div>
@@ -309,10 +282,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={showUnsavedChanges}
-        onOpenChange={setShowUnsavedChanges}
-      >
+      <AlertDialog open={showUnsavedChanges} onOpenChange={setShowUnsavedChanges}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
@@ -321,12 +291,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancel}>
-              Discard Changes
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleSave}>
-              Save Changes
-            </AlertDialogAction>
+            <AlertDialogCancel onClick={handleCancel}>Discard Changes</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSave}>Save Changes</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

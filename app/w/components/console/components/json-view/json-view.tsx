@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface JSONViewProps {
@@ -40,11 +40,7 @@ const copyToClipboard = (data: any) => {
   navigator.clipboard.writeText(stringified)
 }
 
-export const JSONView = ({
-  data,
-  level = 0,
-  initiallyExpanded = false,
-}: JSONViewProps) => {
+export const JSONView = ({ data, level = 0, initiallyExpanded = false }: JSONViewProps) => {
   const [isCollapsed, setIsCollapsed] = useState(!initiallyExpanded)
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number
@@ -74,15 +70,9 @@ export const JSONView = ({
     return (
       <span
         onContextMenu={handleContextMenu}
-        className={`${
-          typeof data === 'string' ? 'text-success' : 'text-info'
-        } break-all relative`}
+        className={`${typeof data === 'string' ? 'text-success' : 'text-info'} break-all relative`}
       >
-        {typeof data === 'string' ? (
-          <TruncatedValue value={stringValue} />
-        ) : (
-          stringValue
-        )}
+        {typeof data === 'string' ? <TruncatedValue value={stringValue} /> : stringValue}
         {contextMenuPosition && (
           <div
             className="fixed z-50 bg-popover border rounded-md shadow-md py-1 min-w-[160px]"
@@ -105,9 +95,7 @@ export const JSONView = ({
   const isEmpty = items.length === 0
 
   if (isEmpty) {
-    return (
-      <span className="text-muted-foreground">{isArray ? '[]' : '{}'}</span>
-    )
+    return <span className="text-muted-foreground">{isArray ? '[]' : '{}'}</span>
   }
 
   return (
@@ -119,9 +107,7 @@ export const JSONView = ({
           setIsCollapsed(!isCollapsed)
         }}
       >
-        <span className="text-xs leading-none mr-1">
-          {isCollapsed ? '▶' : '▼'}
-        </span>
+        <span className="text-xs leading-none mr-1">{isCollapsed ? '▶' : '▼'}</span>
         <span>{isArray ? '[' : '{'}</span>
         {isCollapsed ? '...' : ''}
       </span>

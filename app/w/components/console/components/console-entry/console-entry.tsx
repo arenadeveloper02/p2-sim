@@ -1,16 +1,9 @@
-import { useState, useMemo } from 'react'
-import { formatDistanceToNow, format } from 'date-fns'
-import {
-  Terminal,
-  Clock,
-  Calendar,
-  CheckCircle2,
-  AlertCircle,
-  AlertTriangle,
-} from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { format, formatDistanceToNow } from 'date-fns'
+import { AlertCircle, AlertTriangle, Calendar, CheckCircle2, Clock, Terminal } from 'lucide-react'
 import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
-import { JSONView } from '../json-view/json-view'
 import { getBlock } from '@/blocks'
+import { JSONView } from '../json-view/json-view'
 
 interface ConsoleEntryProps {
   entry: ConsoleEntryType
@@ -46,20 +39,14 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   return (
     <div
       className={`border-b border-border transition-colors ${
-        !entry.error && !entry.warning
-          ? 'hover:bg-accent/50 cursor-pointer'
-          : ''
+        !entry.error && !entry.warning ? 'hover:bg-accent/50 cursor-pointer' : ''
       }`}
-      onClick={() =>
-        !entry.error && !entry.warning && setIsExpanded(!isExpanded)
-      }
+      onClick={() => !entry.error && !entry.warning && setIsExpanded(!isExpanded)}
     >
       <div className="p-4 space-y-4">
         <div
           className={`${
-            consoleWidth >= 400
-              ? 'flex items-center justify-between'
-              : 'grid gap-4 grid-cols-1'
+            consoleWidth >= 400 ? 'flex items-center justify-between' : 'grid gap-4 grid-cols-1'
           }`}
         >
           {entry.blockName && (
@@ -113,9 +100,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
               <AlertTriangle className="h-4 w-4 text-yellow-500 mt-1" />
               <div className="flex-1 break-all">
                 <div className="font-medium">Warning</div>
-                <pre className="text-sm whitespace-pre-wrap">
-                  {entry.warning}
-                </pre>
+                <pre className="text-sm whitespace-pre-wrap">{entry.warning}</pre>
               </div>
             </div>
           )}

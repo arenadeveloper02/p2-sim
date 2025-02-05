@@ -1,9 +1,9 @@
-import { ProviderConfig, ProviderRequest, ProviderResponse, TokenInfo } from './types'
-import { openaiProvider } from './openai'
+import { executeTool, getTool } from '@/tools'
 import { anthropicProvider } from './anthropic'
-import { googleProvider } from './google'
-import { getTool, executeTool } from '@/tools'
 import { deepseekProvider } from './deepseek'
+import { googleProvider } from './google'
+import { openaiProvider } from './openai'
+import { ProviderConfig, ProviderRequest, ProviderResponse, TokenInfo } from './types'
 import { xAIProvider } from './xai'
 
 // Register providers
@@ -12,7 +12,7 @@ const providers: Record<string, ProviderConfig> = {
   anthropic: anthropicProvider,
   google: googleProvider,
   deepseek: deepseekProvider,
-  xai: xAIProvider
+  xai: xAIProvider,
 }
 
 export async function executeProviderRequest(
@@ -25,9 +25,10 @@ export async function executeProviderRequest(
   }
 
   // Transform tools to provider-specific function format
-  const functions = request.tools && request.tools.length > 0
-    ? provider.transformToolsToFunctions(request.tools)
-    : undefined
+  const functions =
+    request.tools && request.tools.length > 0
+      ? provider.transformToolsToFunctions(request.tools)
+      : undefined
 
   // Transform the request using provider-specific logic
   const payload = provider.transformRequest(request, functions)
@@ -45,17 +46,17 @@ export async function executeProviderRequest(
   try {
     while (iterationCount < MAX_ITERATIONS) {
       console.log(`Processing iteration ${iterationCount + 1}`)
-      
+
       // Transform the response using provider-specific logic
       const transformedResponse = provider.transformResponse(currentResponse)
       content = transformedResponse.content
-      
+
       // Update tokens
       if (transformedResponse.tokens) {
         const newTokens: TokenInfo = {
           prompt: (tokens?.prompt ?? 0) + (transformedResponse.tokens?.prompt ?? 0),
           completion: (tokens?.completion ?? 0) + (transformedResponse.tokens?.completion ?? 0),
-          total: (tokens?.total ?? 0) + (transformedResponse.tokens?.total ?? 0)
+          total: (tokens?.total ?? 0) + (transformedResponse.tokens?.total ?? 0),
         }
         tokens = newTokens
       }
@@ -63,7 +64,7 @@ export async function executeProviderRequest(
       // Check for function calls using provider-specific logic
       const hasFunctionCall = provider.hasFunctionCall(currentResponse)
       console.log('Has function call:', hasFunctionCall)
-      
+
       if (!hasFunctionCall) {
         console.log('No function call detected, breaking loop')
         break
@@ -94,7 +95,7 @@ export async function executeProviderRequest(
 
       const result = await executeTool(functionCall.name, functionCall.arguments)
       console.log('Tool execution result:', result.success)
-      
+
       if (!result.success) {
         console.log('Tool execution failed')
         break
@@ -109,20 +110,23 @@ export async function executeProviderRequest(
         content: null,
         function_call: {
           name: functionCall.name,
-          arguments: JSON.stringify(functionCall.arguments)
-        }
+          arguments: JSON.stringify(functionCall.arguments),
+        },
       })
       currentMessages.push({
         role: 'function',
         name: functionCall.name,
-        content: JSON.stringify(result.output)
+        content: JSON.stringify(result.output),
       })
 
       // Prepare the next request
-      const nextPayload = provider.transformRequest({
-        ...request,
-        messages: currentMessages
-      }, functions)
+      const nextPayload = provider.transformRequest(
+        {
+          ...request,
+          messages: currentMessages,
+        },
+        functions
+      )
 
       // Make the next request
       currentResponse = await makeProxyRequest(providerId, nextPayload, request.apiKey)
@@ -142,25 +146,25 @@ export async function executeProviderRequest(
     model: currentResponse.model,
     tokens,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    toolResults: toolResults.length > 0 ? toolResults : undefined
+    toolResults: toolResults.length > 0 ? toolResults : undefined,
   }
 }
 
 async function makeProxyRequest(providerId: string, payload: any, apiKey: string) {
   console.log('Making proxy request for provider:', providerId)
-  
+
   const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       toolId: `${providerId}/chat`,
       params: {
         ...payload,
-        apiKey
-      }
-    })
+        apiKey,
+      },
+    }),
   })
 
   if (!response.ok) {
@@ -171,5 +175,4 @@ async function makeProxyRequest(providerId: string, payload: any, apiKey: string
   const { output } = await response.json()
   console.log('Proxy request completed')
   return output
-} 
-
+}

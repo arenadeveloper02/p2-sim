@@ -11,7 +11,7 @@ export function initializeStateLogger() {
         past: state.history.past,
         present: state.history.present,
         future: state.history.future,
-      }
+      },
     })
   })
-} 
+}

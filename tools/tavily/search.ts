@@ -31,43 +31,43 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     query: {
       type: 'string',
       required: true,
-      description: 'The search query to execute'
+      description: 'The search query to execute',
     },
     max_results: {
       type: 'number',
       required: false,
-      description: 'Maximum number of results (1-20)'
+      description: 'Maximum number of results (1-20)',
     },
     apiKey: {
       type: 'string',
       required: true,
       requiredForToolCall: true,
-      description: 'Tavily API Key'
-    }
+      description: 'Tavily API Key',
+    },
   },
 
   request: {
     url: 'https://api.tavily.com/search',
     method: 'POST',
     headers: (params) => ({
-      'Authorization': `Bearer ${params.apiKey}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${params.apiKey}`,
+      'Content-Type': 'application/json',
     }),
     body: (params) => {
       const body: Record<string, any> = {
-        query: params.query
+        query: params.query,
       }
-      
+
       // Only include optional parameters if explicitly set
       if (params.max_results) body.max_results = params.max_results
-      
+
       return body
-    }
+    },
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    
+
     if (!response.ok) {
       throw new Error(data.message || 'Failed to perform search')
     }
@@ -80,16 +80,14 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
           title: result.title,
           url: result.url,
           snippet: result.snippet,
-          ...(result.raw_content && { raw_content: result.raw_content })
+          ...(result.raw_content && { raw_content: result.raw_content }),
         })),
-        response_time: data.response_time
-      }
+        response_time: data.response_time,
+      },
     }
   },
 
   transformError: (error) => {
-    return error instanceof Error 
-      ? error.message 
-      : 'An error occurred while performing the search'
-  }
-} 
+    return error instanceof Error ? error.message : 'An error occurred while performing the search'
+  },
+}

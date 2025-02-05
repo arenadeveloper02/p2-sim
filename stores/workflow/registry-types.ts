@@ -20,4 +20,4 @@ export interface WorkflowRegistryActions {
   updateWorkflow: (id: string, metadata: Partial<WorkflowMetadata>) => void
 }
 
-export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions 
+export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions

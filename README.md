@@ -29,6 +29,7 @@ All icons are available as React components and can be imported from `components
 import { ApiIcon, CodeIcon, ErrorIcon } from '@/components/icons'
 
 // Usage
+
 ;<ApiIcon className="w-6 h-6" />
 ```
 

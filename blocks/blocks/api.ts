@@ -1,6 +1,6 @@
 import { ApiIcon } from '@/components/icons'
-import { BlockConfig } from '../types'
 import { RequestResponse } from '@/tools/http/request'
+import { BlockConfig } from '../types'
 
 export const ApiBlock: BlockConfig<RequestResponse> = {
   type: 'api',
@@ -12,23 +12,23 @@ export const ApiBlock: BlockConfig<RequestResponse> = {
     category: 'blocks',
   },
   tools: {
-    access: ['http_request']
+    access: ['http_request'],
   },
   workflow: {
     inputs: {
       url: { type: 'string', required: true },
       method: { type: 'string', required: true },
       headers: { type: 'json', required: false },
-      body: { type: 'json', required: false }
+      body: { type: 'json', required: false },
     },
     outputs: {
       response: {
         type: {
           data: 'any',
           status: 'number',
-          headers: 'json'
-        }
-      }
+          headers: 'json',
+        },
+      },
     },
     subBlocks: [
       {

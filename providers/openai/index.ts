@@ -1,5 +1,5 @@
-import { ProviderConfig, FunctionCallResponse, ProviderToolConfig, ProviderRequest } from '../types'
 import { ToolConfig } from '@/tools/types'
+import { FunctionCallResponse, ProviderConfig, ProviderRequest, ProviderToolConfig } from '../types'
 
 export const openaiProvider: ProviderConfig = {
   id: 'openai',
@@ -8,11 +8,11 @@ export const openaiProvider: ProviderConfig = {
   version: '1.0.0',
   models: ['gpt-4o', 'o1', 'o3-mini'],
   defaultModel: 'gpt-4o',
-  
+
   baseUrl: 'https://api.openai.com/v1/chat/completions',
   headers: (apiKey: string) => ({
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`
+    Authorization: `Bearer ${apiKey}`,
   }),
 
   transformToolsToFunctions: (tools: ProviderToolConfig[]) => {
@@ -20,34 +20,37 @@ export const openaiProvider: ProviderConfig = {
       return undefined
     }
 
-    return tools.map(tool => ({
+    return tools.map((tool) => ({
       name: tool.id,
       description: tool.description,
-      parameters: tool.parameters
+      parameters: tool.parameters,
     }))
   },
 
-  transformFunctionCallResponse: (response: any, tools?: ProviderToolConfig[]): FunctionCallResponse => {
+  transformFunctionCallResponse: (
+    response: any,
+    tools?: ProviderToolConfig[]
+  ): FunctionCallResponse => {
     const functionCall = response.choices?.[0]?.message?.function_call
     if (!functionCall) {
       throw new Error('No function call found in response')
     }
 
-    const tool = tools?.find(t => t.id === functionCall.name)
+    const tool = tools?.find((t) => t.id === functionCall.name)
     const toolParams = tool?.params || {}
 
     return {
       name: functionCall.name,
       arguments: {
         ...toolParams,
-        ...JSON.parse(functionCall.arguments)
-      }
+        ...JSON.parse(functionCall.arguments),
+      },
     }
   },
 
   transformRequest: (request: ProviderRequest, functions?: any) => {
     console.log('OpenAI transformRequest - Input:', JSON.stringify(request, null, 2))
-    
+
     const isO1Model = request.model?.startsWith('o1')
     const isO1Mini = request.model === 'o1-mini'
 
@@ -64,17 +67,19 @@ export const openaiProvider: ProviderConfig = {
 
     // Add system prompt if present
     if (request.systemPrompt) {
-      allMessages.push(transformMessageRole({
-        role: 'system',
-        content: request.systemPrompt
-      }))
+      allMessages.push(
+        transformMessageRole({
+          role: 'system',
+          content: request.systemPrompt,
+        })
+      )
     }
 
     // Add context if present
     if (request.context) {
       allMessages.push({
         role: 'user',
-        content: request.context
+        content: request.context,
       })
     }
 
@@ -86,7 +91,7 @@ export const openaiProvider: ProviderConfig = {
     // Build the request payload
     const payload: any = {
       model: request.model || 'gpt-4o',
-      messages: allMessages
+      messages: allMessages,
     }
 
     // Only add parameters supported by the model type
@@ -114,14 +119,14 @@ export const openaiProvider: ProviderConfig = {
   transformResponse: (response: any) => {
     const output = {
       content: response.choices?.[0]?.message?.content || '',
-      tokens: undefined as any
+      tokens: undefined as any,
     }
 
     if (response.usage) {
       output.tokens = {
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,
-        total: response.usage.total_tokens
+        total: response.usage.total_tokens,
       }
 
       // Add reasoning_tokens for o1 models if available
@@ -135,5 +140,5 @@ export const openaiProvider: ProviderConfig = {
 
   hasFunctionCall: (response: any) => {
     return !!response.choices?.[0]?.message?.function_call
-  }
+  },
 }

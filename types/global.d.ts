@@ -1,3 +1,3 @@
 interface Window {
-  INITIAL_TIMESTAMP?: number;
-} 
+  INITIAL_TIMESTAMP?: number
+}

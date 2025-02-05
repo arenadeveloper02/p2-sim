@@ -1,4 +1,4 @@
-import { Node, Edge } from 'reactflow'
+import { Edge, Node } from 'reactflow'
 import { BlockOutput, SubBlockType } from '@/blocks/types'
 import { WorkflowHistory } from './history-types'
 
@@ -31,12 +31,7 @@ export interface WorkflowState {
 }
 
 export interface WorkflowActions {
-  addBlock: (
-    id: string,
-    type: string,
-    name: string,
-    position: Position
-  ) => void
+  addBlock: (id: string, type: string, name: string, position: Position) => void
   updateBlockPosition: (id: string, position: Position) => void
   updateSubBlock: (blockId: string, subBlockId: string, subBlock: SubBlockState) => void
   removeBlock: (id: string) => void
@@ -50,4 +45,4 @@ export interface WorkflowActions {
   updateBlockName: (id: string, name: string) => void
 }
 
-export type WorkflowStore = WorkflowState & WorkflowActions 
+export type WorkflowStore = WorkflowState & WorkflowActions

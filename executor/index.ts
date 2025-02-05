@@ -1,6 +1,6 @@
 /**
  * "Executor" for running agentic workflows in parallel.
- * 
+ *
  * Notes & Features:
  * • Uses a layered topological sort to allow parallel block execution for blocks with no remaining dependencies.
  * • Each block's inputs are resolved through a template mechanism (e.g., <blockId.property>).
@@ -8,19 +8,13 @@
  * • Maintains robust error handling (if a block fails, throws an error for the entire workflow).
  * • Returns per-block logs that can be displayed in the UI for better trace/debug.
  */
-
-import { SerializedWorkflow, SerializedBlock } from '@/serializer/types'
-import { BlockOutput } from '@/blocks/types'
-import {
-  Tool,
-  ExecutionContext,
-  ExecutionResult,
-  BlockLog
-} from './types'
-import { tools, executeTool, getTool } from '@/tools'
-import { executeProviderRequest } from '@/providers/service'
 import { getAllBlocks } from '@/blocks'
+import { BlockOutput } from '@/blocks/types'
 import { BlockConfig } from '@/blocks/types'
+import { executeProviderRequest } from '@/providers/service'
+import { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
+import { executeTool, getTool, tools } from '@/tools'
+import { BlockLog, ExecutionContext, ExecutionResult, Tool } from './types'
 
 export class Executor {
   constructor(
@@ -42,9 +36,9 @@ export class Executor {
       blockStates: new Map<string, BlockOutput>(),
       blockLogs: [],
       metadata: {
-        startTime: startTime.toISOString()
+        startTime: startTime.toISOString(),
       },
-      environmentVariables: this.environmentVariables
+      environmentVariables: this.environmentVariables,
     }
 
     // Pre-populate block states if initialBlockStates exist
@@ -105,9 +99,7 @@ export class Executor {
     }
 
     // Start with all blocks that have inDegree = 0
-    let layer = blocks
-      .filter((b) => (inDegree.get(b.id) || 0) === 0)
-      .map((b) => b.id)
+    let layer = blocks.filter((b) => (inDegree.get(b.id) || 0) === 0).map((b) => b.id)
 
     // Track the final output from the "last" block or set of blocks
     let lastOutput: BlockOutput = { response: {} }
@@ -156,7 +148,7 @@ export class Executor {
             // Compute the end time and duration
             const end = new Date()
             blockLog.endedAt = end.toISOString()
-            
+
             if (blockLog.startedAt) {
               const started = new Date(blockLog.startedAt).getTime()
               blockLog.durationMs = end.getTime() - started
@@ -216,76 +208,87 @@ export class Executor {
     // Special handling for agent blocks that use providers
     if (block.metadata?.type === 'agent') {
       const model = inputs.model || 'gpt-4o'
-      const providerId = model.startsWith('gpt') || model.startsWith('o1') 
-        ? 'openai'
-        : model.startsWith('claude') 
-          ? 'anthropic'
-          : model.startsWith('gemini')
-            ? 'google'
-            : model.startsWith('grok')
-              ? 'xai'
-              : 'deepseek'
+      const providerId =
+        model.startsWith('gpt') || model.startsWith('o1')
+          ? 'openai'
+          : model.startsWith('claude')
+            ? 'anthropic'
+            : model.startsWith('gemini')
+              ? 'google'
+              : model.startsWith('grok')
+                ? 'xai'
+                : 'deepseek'
 
       // Format tools if they exist
-      const tools = Array.isArray(inputs.tools) ? inputs.tools.map((tool: any) => {
-        // Get the tool ID from the block type
-        const block = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
-        const toolId = block?.tools.access[0]
-        if (!toolId) return null
+      const tools = Array.isArray(inputs.tools)
+        ? inputs.tools
+            .map((tool: any) => {
+              // Get the tool ID from the block type
+              const block = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
+              const toolId = block?.tools.access[0]
+              if (!toolId) return null
 
-        // Get the tool configuration
-        const toolConfig = getTool(toolId)
-        if (!toolConfig) return null
+              // Get the tool configuration
+              const toolConfig = getTool(toolId)
+              if (!toolConfig) return null
 
-        // Resolve environment variables in tool parameters
-        const resolvedParams = Object.entries(tool.params || {}).reduce((acc, [key, value]) => {
-          if (typeof value === 'string') {
-            // Handle environment variables with {{}} syntax
-            const envMatches = value.match(/\{\{([^}]+)\}\}/g)
-            if (envMatches) {
-              let resolvedValue = value
-              for (const match of envMatches) {
-                const envKey = match.slice(2, -2) // remove {{ and }}
-                const envValue = context.environmentVariables?.[envKey]
-                
-                if (envValue === undefined) {
-                  throw new Error(`Environment variable "${envKey}" was not found.`)
-                }
+              // Resolve environment variables in tool parameters
+              const resolvedParams = Object.entries(tool.params || {}).reduce(
+                (acc, [key, value]) => {
+                  if (typeof value === 'string') {
+                    // Handle environment variables with {{}} syntax
+                    const envMatches = value.match(/\{\{([^}]+)\}\}/g)
+                    if (envMatches) {
+                      let resolvedValue = value
+                      for (const match of envMatches) {
+                        const envKey = match.slice(2, -2) // remove {{ and }}
+                        const envValue = context.environmentVariables?.[envKey]
 
-                resolvedValue = resolvedValue.replace(match, envValue)
+                        if (envValue === undefined) {
+                          throw new Error(`Environment variable "${envKey}" was not found.`)
+                        }
+
+                        resolvedValue = resolvedValue.replace(match, envValue)
+                      }
+                      acc[key] = resolvedValue
+                    } else {
+                      acc[key] = value
+                    }
+                  } else {
+                    acc[key] = value
+                  }
+                  return acc
+                },
+                {} as Record<string, any>
+              )
+
+              // Return the tool configuration with resolved parameters
+              return {
+                id: toolConfig.id,
+                name: toolConfig.name,
+                description: toolConfig.description,
+                params: resolvedParams,
+                parameters: {
+                  type: 'object',
+                  properties: Object.entries(toolConfig.params).reduce(
+                    (acc, [key, config]) => ({
+                      ...acc,
+                      [key]: {
+                        type: config.type === 'json' ? 'object' : config.type,
+                        description: config.description || '',
+                        ...(key in resolvedParams && { default: resolvedParams[key] }),
+                      },
+                    }),
+                    {}
+                  ),
+                  required: Object.entries(toolConfig.params)
+                    .filter(([_, config]) => config.required)
+                    .map(([key]) => key),
+                },
               }
-              acc[key] = resolvedValue
-            } else {
-              acc[key] = value
-            }
-          } else {
-            acc[key] = value
-          }
-          return acc
-        }, {} as Record<string, any>)
-
-        // Return the tool configuration with resolved parameters
-        return {
-          id: toolConfig.id,
-          name: toolConfig.name,
-          description: toolConfig.description,
-          params: resolvedParams,
-          parameters: {
-            type: 'object',
-            properties: Object.entries(toolConfig.params).reduce((acc, [key, config]) => ({
-              ...acc,
-              [key]: {
-                type: config.type === 'json' ? 'object' : config.type,
-                description: config.description || '',
-                ...(key in resolvedParams && { default: resolvedParams[key] })
-              }
-            }), {}),
-            required: Object.entries(toolConfig.params)
-              .filter(([_, config]) => config.required)
-              .map(([key]) => key)
-          }
-        }
-      }).filter((t): t is NonNullable<typeof t> => t !== null) : []
+            })
+            .filter((t): t is NonNullable<typeof t> => t !== null)
+        : []
 
       const requestPayload = {
         model,
@@ -294,7 +297,7 @@ export class Executor {
         tools: tools.length > 0 ? tools : undefined,
         temperature: inputs.temperature,
         maxTokens: inputs.maxTokens,
-        apiKey: inputs.apiKey
+        apiKey: inputs.apiKey,
       }
 
       // Log the request payload for debugging
@@ -314,13 +317,13 @@ export class Executor {
           tokens: response.tokens || {
             prompt: 0,
             completion: 0,
-            total: 0
+            total: 0,
           },
           toolCalls: {
             list: response.toolCalls || [],
-            count: response.toolCalls?.length || 0
-          }
-        }
+            count: response.toolCalls?.length || 0,
+          },
+        },
       }
     }
 
@@ -342,7 +345,7 @@ export class Executor {
 
     try {
       const result = await executeTool(toolId, validatedParams)
-      
+
       if (!result.success) {
         // Ensure we have a meaningful error message
         const errorMessage = result.error || `Tool ${toolId} failed with no error message`
@@ -360,9 +363,9 @@ export class Executor {
         error: error.message || `Tool ${toolId} failed`,
         startedAt: new Date().toISOString(),
         endedAt: new Date().toISOString(),
-        durationMs: 0
+        durationMs: 0,
       }
-      
+
       // Add the log entry
       context.blockLogs.push(blockLog as BlockLog)
 
@@ -375,26 +378,26 @@ export class Executor {
    * Validates required parameters for a Tool, or uses defaults if present.
    */
   private validateToolParams(tool: Tool, params: Record<string, any>): Record<string, any> {
-    return Object.entries(tool.params).reduce((acc, [name, config]) => {
-      if (name in params) {
-        acc[name] = params[name]
-      } else if ('default' in config) {
-        acc[name] = config.default
-      } else if (config.required) {
-        throw new Error(`Missing required parameter '${name}'`)
-      }
-      return acc
-    }, {} as Record<string, any>)
+    return Object.entries(tool.params).reduce(
+      (acc, [name, config]) => {
+        if (name in params) {
+          acc[name] = params[name]
+        } else if ('default' in config) {
+          acc[name] = config.default
+        } else if (config.required) {
+          throw new Error(`Missing required parameter '${name}'`)
+        }
+        return acc
+      },
+      {} as Record<string, any>
+    )
   }
 
   /**
    * Resolves any template references in a block's config params (e.g., "<someBlockId.response>"),
    * pulling from context.blockStates. This is how outputs from one block get wired as inputs to another.
    */
-  private resolveInputs(
-    block: SerializedBlock,
-    context: ExecutionContext
-  ): Record<string, any> {
+  private resolveInputs(block: SerializedBlock, context: ExecutionContext): Record<string, any> {
     const inputs = { ...block.config.params }
 
     // Create quick-lookup for blocks by ID and by normalized name
@@ -402,7 +405,7 @@ export class Executor {
     const blockByName = new Map(
       this.workflow.blocks.map((b) => [
         b.metadata?.title?.toLowerCase().replace(/\s+/g, '') || '',
-        b
+        b,
       ])
     )
 
@@ -432,19 +435,25 @@ export class Executor {
 
               // Check if the referenced block is disabled.
               if (sourceBlock.enabled === false) {
-                throw new Error(`Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`)
+                throw new Error(
+                  `Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`
+                )
               }
 
               const sourceState = context.blockStates.get(sourceBlock.id)
               if (!sourceState) {
-                throw new Error(`No state found for block "${sourceBlock.metadata?.title}" (ID: ${sourceBlock.id}).`)
+                throw new Error(
+                  `No state found for block "${sourceBlock.metadata?.title}" (ID: ${sourceBlock.id}).`
+                )
               }
 
               // Drill into the path
               let replacementValue: any = sourceState
               for (const part of pathParts) {
                 if (!replacementValue || typeof replacementValue !== 'object') {
-                  throw new Error(`Invalid path part "${part}" in "${path}" for block "${block.metadata?.title}".`)
+                  throw new Error(
+                    `Invalid path part "${part}" in "${path}" for block "${block.metadata?.title}".`
+                  )
                 }
                 replacementValue = replacementValue[part]
               }
@@ -459,7 +468,9 @@ export class Executor {
                     : String(replacementValue)
                 )
               } else {
-                throw new Error(`No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`)
+                throw new Error(
+                  `No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`
+                )
               }
             }
           }
@@ -470,7 +481,7 @@ export class Executor {
             for (const match of envMatches) {
               const envKey = match.slice(2, -2) // remove {{ and }}
               const envValue = this.environmentVariables?.[envKey]
-              
+
               if (envValue === undefined) {
                 throw new Error(`Environment variable "${envKey}" was not found.`)
               }

@@ -1,10 +1,10 @@
+import { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { Edge } from 'reactflow'
-import { Position, SubBlockState, WorkflowStore } from './types'
 import { getBlock } from '@/blocks'
-import { withHistory, WorkflowStoreWithHistory, pushHistory } from './middleware'
 import { resolveOutputType } from '@/blocks/utils'
+import { WorkflowStoreWithHistory, pushHistory, withHistory } from './middleware'
+import { Position, SubBlockState, WorkflowStore } from './types'
 
 const initialState = {
   blocks: {},
@@ -35,7 +35,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         set((state) => {
           const block = state.blocks[blockId]
           if (!block) return state
-          
+
           const blockConfig = getBlock(block.type)
           if (!blockConfig) return state
 
@@ -44,15 +44,12 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             ...block.subBlocks,
             [subBlockId]: {
               ...block.subBlocks[subBlockId],
-              value
+              value,
             },
           }
 
           // Resolve new outputs
-          const newOutputs = resolveOutputType(
-            blockConfig.workflow.outputs,
-            newSubBlocks
-          )
+          const newOutputs = resolveOutputType(blockConfig.workflow.outputs, newSubBlocks)
 
           return {
             blocks: {
@@ -121,12 +118,10 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       removeBlock: (id: string) => {
         const newState = {
           blocks: { ...get().blocks },
-          edges: [...get().edges].filter(
-            (edge) => edge.source !== id && edge.target !== id
-          ),
+          edges: [...get().edges].filter((edge) => edge.source !== id && edge.target !== id),
         }
         delete newState.blocks[id]
-        
+
         set(newState)
         pushHistory(set, get, newState, 'Remove block')
         get().updateLastSaved()
@@ -142,11 +137,11 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               source: edge.source,
               target: edge.target,
               sourceHandle: edge.sourceHandle,
-              targetHandle: edge.targetHandle
+              targetHandle: edge.targetHandle,
             },
           ],
         }
-        
+
         set(newState)
         pushHistory(set, get, newState, 'Add connection')
         get().updateLastSaved()
@@ -157,7 +152,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           blocks: { ...get().blocks },
           edges: get().edges.filter((edge) => edge.id !== edgeId),
         }
-        
+
         set(newState)
         pushHistory(set, get, newState, 'Remove connection')
         get().updateLastSaved()
@@ -172,9 +167,9 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             present: {
               state: { blocks: {}, edges: [] },
               timestamp: Date.now(),
-              action: 'Initial state'
+              action: 'Initial state',
             },
-            future: []
+            future: [],
           },
           lastSaved: Date.now(),
         }
@@ -197,7 +192,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...get().edges],
         }
-        
+
         set(newState)
         get().updateLastSaved()
       },
@@ -214,9 +209,8 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
 
         // More efficient name handling
         const match = block.name.match(/(.*?)(\d+)?$/)
-        const newName = match && match[2] 
-          ? `${match[1]}${parseInt(match[2]) + 1}`
-          : `${block.name} 1`
+        const newName =
+          match && match[2] ? `${match[1]}${parseInt(match[2]) + 1}` : `${block.name} 1`
 
         const newSubBlocks = Object.entries(block.subBlocks).reduce(
           (acc, [subId, subBlock]) => ({
@@ -259,7 +253,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...get().edges],
         }
-        
+
         set(newState)
         get().updateLastSaved()
       },
@@ -275,7 +269,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...get().edges],
         }
-        
+
         set(newState)
         pushHistory(set, get, newState, `${name} block name updated`)
         get().updateLastSaved()
@@ -283,4 +277,4 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
     })),
     { name: 'workflow-store' }
   )
-) 
+)

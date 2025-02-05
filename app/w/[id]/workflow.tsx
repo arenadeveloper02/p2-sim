@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { ReactFlowProvider } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { useWorkflowRegistry } from '@/stores/workflow/registry'
-import { useParams, useRouter } from 'next/navigation'
 import { WorkflowCanvas } from './components/workflow-canvas/workflow-canvas'
 
 export default function Workflow() {
@@ -66,14 +66,7 @@ export default function Workflow() {
     }
 
     validateAndNavigate()
-  }, [
-    params.id,
-    workflows,
-    setActiveWorkflow,
-    addWorkflow,
-    router,
-    isInitialized,
-  ])
+  }, [params.id, workflows, setActiveWorkflow, addWorkflow, router, isInitialized])
 
   // Don't render until initial data is loaded
   if (!isInitialized) {

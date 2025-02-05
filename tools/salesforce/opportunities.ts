@@ -1,19 +1,19 @@
-import { ToolConfig, ToolResponse } from '../types' 
+import { ToolConfig, ToolResponse } from '../types'
 
 export interface OpportunityParams {
-  apiKey: string 
-  action: 'create' | 'update' | 'search' | 'delete' 
-  id?: string 
-  name?: string 
-  accountId?: string 
-  stage?: string 
-  amount?: number 
-  closeDate?: string 
-  probability?: number 
-  properties?: Record<string, any> 
-  limit?: number 
-  offset?: number 
-  data: Record<string, any> 
+  apiKey: string
+  action: 'create' | 'update' | 'search' | 'delete'
+  id?: string
+  name?: string
+  accountId?: string
+  stage?: string
+  amount?: number
+  closeDate?: string
+  probability?: number
+  properties?: Record<string, any>
+  limit?: number
+  offset?: number
+  data: Record<string, any>
 }
 
 export interface OpportunityResponse extends ToolResponse {
@@ -38,72 +38,72 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
       type: 'string',
       required: true,
       requiredForToolCall: true,
-      description: 'Salesforce API key'
+      description: 'Salesforce API key',
     },
     action: {
       type: 'string',
       required: true,
-      description: 'Action to perform (create, update, search, delete)'
+      description: 'Action to perform (create, update, search, delete)',
     },
     id: {
       type: 'string',
-      description: 'Opportunity ID (required for updates)'
+      description: 'Opportunity ID (required for updates)',
     },
     name: {
       type: 'string',
-      description: 'Opportunity name'
+      description: 'Opportunity name',
     },
     accountId: {
       type: 'string',
-      description: 'Associated account ID'
+      description: 'Associated account ID',
     },
     stage: {
       type: 'string',
-      description: 'Opportunity stage'
+      description: 'Opportunity stage',
     },
     amount: {
       type: 'number',
-      description: 'Opportunity amount'
+      description: 'Opportunity amount',
     },
     closeDate: {
       type: 'string',
-      description: 'Expected close date (YYYY-MM-DD)'
+      description: 'Expected close date (YYYY-MM-DD)',
     },
     probability: {
       type: 'number',
-      description: 'Probability of closing (%)'
+      description: 'Probability of closing (%)',
     },
     properties: {
       type: 'object',
-      description: 'Additional opportunity fields'
+      description: 'Additional opportunity fields',
     },
     limit: {
       type: 'number',
       default: 100,
-      description: 'Maximum number of records to return'
+      description: 'Maximum number of records to return',
     },
     offset: {
       type: 'number',
-      description: 'Offset for pagination'
+      description: 'Offset for pagination',
     },
     data: {
       type: 'object',
-      description: 'Data for the action'
-    }
+      description: 'Data for the action',
+    },
   },
 
   request: {
     url: (params) => {
-      const baseUrl = `${params.apiKey}@salesforce.com/services/data/v58.0/sobjects/Opportunity` 
+      const baseUrl = `${params.apiKey}@salesforce.com/services/data/v58.0/sobjects/Opportunity`
       if (params.id) {
-        return `${baseUrl}/${params.id}` 
+        return `${baseUrl}/${params.id}`
       }
-      return baseUrl 
+      return baseUrl
     },
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const fields = {
@@ -113,15 +113,15 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
         ...(params.amount && { Amount: params.amount }),
         ...(params.closeDate && { CloseDate: params.closeDate }),
         ...(params.probability && { Probability: params.probability }),
-        ...params.properties
-      } 
+        ...params.properties,
+      }
 
-      return fields 
-    }
+      return fields
+    },
   },
 
   transformResponse: async (response: Response) => {
-    const data = await response.json() 
+    const data = await response.json()
     return {
       success: true,
       output: {
@@ -129,15 +129,15 @@ export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityRespons
         totalResults: data.totalSize,
         pagination: {
           hasMore: !data.done,
-          offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0
-        }
-      }
-    } 
+          offset: data.nextRecordsUrl ? parseInt(data.nextRecordsUrl.split('-')[1]) : 0,
+        },
+      },
+    }
   },
 
   transformError: (error) => {
-    const message = error.message || error.error?.message 
-    const code = error.errorCode || error.error?.errorCode 
-    return `${message} (${code})` 
-  }
-}  
+    const message = error.message || error.error?.message
+    const code = error.errorCode || error.error?.errorCode
+    return `${message} (${code})`
+  },
+}

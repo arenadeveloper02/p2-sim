@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Terminal } from 'lucide-react'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { useNotificationStore } from '@/stores/notifications/store'
-import { cn } from '@/lib/utils'
 import { ErrorIcon } from '@/components/icons'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { cn } from '@/lib/utils'
+import { useNotificationStore } from '@/stores/notifications/store'
 
 const NOTIFICATION_TIMEOUT = 4000
 const FADE_DURATION = 300
@@ -22,9 +22,7 @@ const NotificationColors = {
 
 export function NotificationList() {
   const { notifications, hideNotification } = useNotificationStore()
-  const [fadingNotifications, setFadingNotifications] = useState<Set<string>>(
-    new Set()
-  )
+  const [fadingNotifications, setFadingNotifications] = useState<Set<string>>(new Set())
 
   // Only show visible notifications in the display
   const visibleNotifications = notifications.filter((n) => n.isVisible)
@@ -74,9 +72,7 @@ export function NotificationList() {
             key={notification.id}
             className={cn(
               'transition-all duration-300 ease-in-out opacity-0 translate-y-[-100%]',
-              isFading
-                ? 'animate-notification-fade-out'
-                : 'animate-notification-slide',
+              isFading ? 'animate-notification-fade-out' : 'animate-notification-slide',
               NotificationColors[notification.type]
             )}
           >
@@ -89,9 +85,7 @@ export function NotificationList() {
             <AlertTitle className="ml-2">
               {notification.type === 'error' ? 'Error' : 'Console'}
             </AlertTitle>
-            <AlertDescription className="ml-2">
-              {notification.message}
-            </AlertDescription>
+            <AlertDescription className="ml-2">{notification.message}</AlertDescription>
           </Alert>
         )
       })}

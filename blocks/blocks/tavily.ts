@@ -1,7 +1,7 @@
-import { BlockConfig } from '../types'
 import { TavilyIcon } from '@/components/icons'
-import { SearchResponse } from '@/tools/tavily/search'
 import { ExtractResponse } from '@/tools/tavily/extract'
+import { SearchResponse } from '@/tools/tavily/search'
+import { BlockConfig } from '../types'
 
 export const TavilySearchBlock: BlockConfig<SearchResponse> = {
   type: 'tavily_search',
@@ -13,22 +13,22 @@ export const TavilySearchBlock: BlockConfig<SearchResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['tavily_search']
+    access: ['tavily_search'],
   },
   workflow: {
     inputs: {
       query: { type: 'string', required: true },
       apiKey: { type: 'string', required: true },
-      max_results: { type: 'number', required: false }
+      max_results: { type: 'number', required: false },
     },
     outputs: {
       response: {
         type: {
           query: 'string',
           results: 'json',
-          response_time: 'number'
-        }
-      }
+          response_time: 'number',
+        },
+      },
     },
     subBlocks: [
       {
@@ -36,14 +36,14 @@ export const TavilySearchBlock: BlockConfig<SearchResponse> = {
         title: 'Search Query',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter your search query...'
+        placeholder: 'Enter your search query...',
       },
       {
         id: 'max_results',
         title: 'Max Results',
         type: 'dropdown',
         layout: 'half',
-        options: ['5', '10', '15', '20']
+        options: ['5', '10', '15', '20'],
       },
       {
         id: 'apiKey',
@@ -51,10 +51,10 @@ export const TavilySearchBlock: BlockConfig<SearchResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your Tavily API key',
-        password: true
-      }
-    ]
-  }
+        password: true,
+      },
+    ],
+  },
 }
 
 export const TavilyExtractBlock: BlockConfig<ExtractResponse> = {
@@ -67,22 +67,22 @@ export const TavilyExtractBlock: BlockConfig<ExtractResponse> = {
     category: 'tools',
   },
   tools: {
-    access: ['tavily_extract']
+    access: ['tavily_extract'],
   },
   workflow: {
     inputs: {
       urls: { type: 'string', required: true },
       apiKey: { type: 'string', required: true },
-      extract_depth: { type: 'string', required: false }
+      extract_depth: { type: 'string', required: false },
     },
     outputs: {
       response: {
         type: {
           results: 'json',
           failed_results: 'any',
-          response_time: 'number'
-        }
-      }
+          response_time: 'number',
+        },
+      },
     },
     subBlocks: [
       {
@@ -90,14 +90,14 @@ export const TavilyExtractBlock: BlockConfig<ExtractResponse> = {
         title: 'URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter URL to extract content from...'
+        placeholder: 'Enter URL to extract content from...',
       },
       {
         id: 'extract_depth',
         title: 'Extract Depth',
         type: 'dropdown',
         layout: 'half',
-        options: ['basic', 'advanced']
+        options: ['basic', 'advanced'],
       },
       {
         id: 'apiKey',
@@ -105,8 +105,8 @@ export const TavilyExtractBlock: BlockConfig<ExtractResponse> = {
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter your Tavily API key',
-        password: true
-      }
-    ]
-  }
-} 
+        password: true,
+      },
+    ],
+  },
+}

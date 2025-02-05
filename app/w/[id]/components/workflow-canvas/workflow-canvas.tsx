@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import ReactFlow, {
   Background,
-  NodeTypes,
-  EdgeTypes,
-  useReactFlow,
   ConnectionLineType,
+  EdgeTypes,
+  NodeTypes,
+  useReactFlow,
 } from 'reactflow'
-import { getBlock } from '../../../../../blocks'
-import { useWorkflowStore } from '@/stores/workflow/store'
 import { useNotificationStore } from '@/stores/notifications/store'
-import { useWorkflowExecution } from '../../../hooks/use-workflow-execution'
-import { NotificationList } from '@/app/w/components/notifications/notifications'
-import { WorkflowNode } from '../workflow-node/workflow-node'
-import { CustomEdge } from '../custom-edge/custom-edge'
 import { initializeStateLogger } from '@/stores/workflow/logger'
+import { useWorkflowStore } from '@/stores/workflow/store'
+import { NotificationList } from '@/app/w/components/notifications/notifications'
+import { getBlock } from '../../../../../blocks'
+import { useWorkflowExecution } from '../../../hooks/use-workflow-execution'
+import { CustomEdge } from '../custom-edge/custom-edge'
+import { WorkflowNode } from '../workflow-node/workflow-node'
 
 // Define custom node and edge types for ReactFlow
 const nodeTypes: NodeTypes = {
@@ -29,8 +29,7 @@ export function WorkflowCanvas() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
 
   // Store references and state management hooks
-  const { isExecuting, executionResult, handleRunWorkflow } =
-    useWorkflowExecution()
+  const { isExecuting, executionResult, handleRunWorkflow } = useWorkflowExecution()
   const {
     blocks,
     edges,
@@ -152,10 +151,7 @@ export function WorkflowCanvas() {
   // Handle keyboard shortcuts for edge deletion
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        (event.key === 'Delete' || event.key === 'Backspace') &&
-        selectedEdgeId
-      ) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedEdgeId) {
         removeEdge(selectedEdgeId)
         setSelectedEdgeId(null)
       }
