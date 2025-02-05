@@ -23,7 +23,7 @@ export interface ExtractResponse extends ToolResponse {
 }
 
 export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
-  id: 'tavily.extract',
+  id: 'tavily_extract',
   name: 'Tavily Extract',
   description: 'Extract web page content from URLs using Tavily Extract',
   version: '1.0.0',

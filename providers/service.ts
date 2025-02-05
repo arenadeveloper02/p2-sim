@@ -1,25 +1,12 @@
 import { executeTool, getTool } from '@/tools'
-import { anthropicProvider } from './anthropic'
-import { deepseekProvider } from './deepseek'
-import { googleProvider } from './google'
-import { openaiProvider } from './openai'
-import { ProviderConfig, ProviderRequest, ProviderResponse, TokenInfo } from './types'
-import { xAIProvider } from './xai'
-
-// Register providers
-const providers: Record<string, ProviderConfig> = {
-  openai: openaiProvider,
-  anthropic: anthropicProvider,
-  google: googleProvider,
-  deepseek: deepseekProvider,
-  xai: xAIProvider,
-}
+import { getProvider } from './registry'
+import { ProviderRequest, ProviderResponse, TokenInfo } from './types'
 
 export async function executeProviderRequest(
   providerId: string,
   request: ProviderRequest
 ): Promise<ProviderResponse> {
-  const provider = providers[providerId]
+  const provider = getProvider(providerId)
   if (!provider) {
     throw new Error(`Provider not found: ${providerId}`)
   }
@@ -65,15 +52,30 @@ export async function executeProviderRequest(
       const hasFunctionCall = provider.hasFunctionCall(currentResponse)
       console.log('Has function call:', hasFunctionCall)
 
+      // Break if we have content and no function call
       if (!hasFunctionCall) {
         console.log('No function call detected, breaking loop')
         break
       }
 
-      // Transform function call using provider-specific logic
+      // Safety check: if we have the same function call multiple times in a row
+      // with the same arguments, break to prevent infinite loops
       let functionCall
       try {
         functionCall = provider.transformFunctionCallResponse(currentResponse, request.tools)
+
+        // Check if this is a duplicate call
+        const lastCall = toolCalls[toolCalls.length - 1]
+        if (
+          lastCall &&
+          lastCall.name === functionCall.name &&
+          JSON.stringify(lastCall.arguments) === JSON.stringify(functionCall.arguments)
+        ) {
+          console.log(
+            'Detected duplicate function call, breaking loop to prevent infinite recursion'
+          )
+          break
+        }
       } catch (error) {
         console.log('Error transforming function call:', error)
         break
@@ -167,12 +169,12 @@ async function makeProxyRequest(providerId: string, payload: any, apiKey: string
     }),
   })
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Provider API error')
+  const data = await response.json()
+
+  if (!data.success) {
+    throw new Error(data.error || 'Provider API error')
   }
 
-  const { output } = await response.json()
   console.log('Proxy request completed')
-  return output
+  return data.output
 }

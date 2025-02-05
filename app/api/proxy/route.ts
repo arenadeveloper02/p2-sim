@@ -1,22 +1,13 @@
 import { NextResponse } from 'next/server'
-import { anthropicProvider } from '@/providers/anthropic'
-import { googleProvider } from '@/providers/google'
-import { openaiProvider } from '@/providers/openai'
-import { ProviderConfig } from '@/providers/types'
+import { getProvider } from '@/providers/registry'
 import { getTool } from '@/tools'
-
-const providers: Record<string, ProviderConfig> = {
-  'anthropic/chat': anthropicProvider,
-  'openai/chat': openaiProvider,
-  'google/chat': googleProvider,
-}
 
 export async function POST(request: Request) {
   try {
     const { toolId, params } = await request.json()
 
     // Check if this is a provider chat request
-    const provider = providers[toolId]
+    const provider = getProvider(toolId)
     if (provider) {
       const { apiKey, ...restParams } = params
       if (!apiKey) {
