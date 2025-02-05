@@ -237,13 +237,39 @@ export class Executor {
         const toolConfig = getTool(toolId)
         if (!toolConfig) return null
 
-        // Return the tool configuration with parameters
+        // Resolve environment variables in tool parameters
+        const resolvedParams = Object.entries(tool.params || {}).reduce((acc, [key, value]) => {
+          if (typeof value === 'string') {
+            // Handle environment variables with {{}} syntax
+            const envMatches = value.match(/\{\{([^}]+)\}\}/g)
+            if (envMatches) {
+              let resolvedValue = value
+              for (const match of envMatches) {
+                const envKey = match.slice(2, -2) // remove {{ and }}
+                const envValue = context.environmentVariables?.[envKey]
+                
+                if (envValue === undefined) {
+                  throw new Error(`Environment variable "${envKey}" was not found.`)
+                }
+
+                resolvedValue = resolvedValue.replace(match, envValue)
+              }
+              acc[key] = resolvedValue
+            } else {
+              acc[key] = value
+            }
+          } else {
+            acc[key] = value
+          }
+          return acc
+        }, {} as Record<string, any>)
+
+        // Return the tool configuration with resolved parameters
         return {
           id: toolConfig.id,
           name: toolConfig.name,
           description: toolConfig.description,
-          // Store the actual parameters from the tool input
-          params: tool.params || {},
+          params: resolvedParams,
           parameters: {
             type: 'object',
             properties: Object.entries(toolConfig.params).reduce((acc, [key, config]) => ({
@@ -251,7 +277,7 @@ export class Executor {
               [key]: {
                 type: config.type === 'json' ? 'object' : config.type,
                 description: config.description || '',
-                ...(key in (tool.params || {}) && { default: tool.params[key] })
+                ...(key in resolvedParams && { default: resolvedParams[key] })
               }
             }), {}),
             required: Object.entries(toolConfig.params)
