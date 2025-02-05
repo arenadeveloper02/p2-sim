@@ -1,5 +1,5 @@
 import { BlockConfig } from '../types'
-import { SearchIcon } from '@/components/icons'
+import { SerperIcon } from '@/components/icons'
 import { SearchResponse } from '@/tools/serper/search'
 
 export const SerperBlock: BlockConfig<SearchResponse> = {
@@ -8,7 +8,7 @@ export const SerperBlock: BlockConfig<SearchResponse> = {
     title: 'Web Search',
     description: 'Search the web',
     bgColor: '#4285F4', // Google blue
-    icon: SearchIcon,
+    icon: SerperIcon,
     category: 'tools',
   },
   tools: {

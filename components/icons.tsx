@@ -1016,3 +1016,17 @@ export const GithubIcon = (props: SVGProps<SVGSVGElement>) => (
     />
   </svg>
 )
+
+export const SerperIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12zm0-22.5c5.802 0 10.5 4.698 10.5 10.5s-4.698 10.5-10.5 10.5S1.5 17.802 1.5 12 6.198 1.5 12 1.5z" fill="currentColor" />
+    <path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12zm0-22.5c5.802 0 10.5 4.698 10.5 10.5s-4.698 10.5-10.5 10.5S1.5 17.802 1.5 12 6.198 1.5 12 1.5z" fill="currentColor" />
+  </svg>
+)
+
+export const TavilyIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12zm0-22.5c5.802 0 10.5 4.698 10.5 10.5s-4.698 10.5-10.5 10.5S1.5 17.802 1.5 12 6.198 1.5 12 1.5z" fill="currentColor" />
+    <path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12zm0-22.5c5.802 0 10.5 4.698 10.5 10.5s-4.698 10.5-10.5 10.5S1.5 17.802 1.5 12 6.198 1.5 12 1.5z" fill="currentColor" />
+  </svg>
+) 

@@ -15,6 +15,8 @@ import { readUrlTool } from './jina/reader'
 import { slackMessageTool } from './slack/message'
 import { repoInfoTool } from './github/repo'
 import { searchTool as serperSearch } from './serper/search'
+import { searchTool as tavilySearch } from './tavily/search'
+import { extractTool as tavilyExtract } from './tavily/extract'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -43,7 +45,9 @@ export const tools: Record<string, ToolConfig> = {
   // GitHub Tools
   'github_repoinfo': repoInfoTool,
   // Search Tools
-  'serper_search': serperSearch
+  'serper_search': serperSearch,
+  'tavily_search': tavilySearch,
+  'tavily_extract': tavilyExtract
 } 
 
 // Get a tool by its ID

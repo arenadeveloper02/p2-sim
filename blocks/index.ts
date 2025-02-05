@@ -12,6 +12,7 @@ import { SlackMessageBlock } from './blocks/slack'
 import { GitHubBlock } from './blocks/github'
 import { ConditionBlock } from './blocks/condition'
 import { SerperBlock } from './blocks/serper'
+import { TavilySearchBlock, TavilyExtractBlock } from './blocks/tavily'
 
 // Export blocks for ease of use
 export { 
@@ -25,7 +26,9 @@ export {
   SlackMessageBlock,
   GitHubBlock,
   ConditionBlock,
-  SerperBlock
+  SerperBlock,
+  TavilySearchBlock,
+  TavilyExtractBlock
 }
 
 // Registry of all block configurations
@@ -40,7 +43,9 @@ const blocks: Record<string, BlockConfig> = {
   slack_message: SlackMessageBlock,
   github_repo_info: GitHubBlock,
   condition: ConditionBlock,
-  serper_search: SerperBlock
+  serper_search: SerperBlock,
+  tavily_search: TavilySearchBlock,
+  tavily_extract: TavilyExtractBlock
 }
 
 // Build a reverse mapping of tools to block types
