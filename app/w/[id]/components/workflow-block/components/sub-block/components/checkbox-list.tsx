@@ -2,7 +2,6 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 import { cn } from '@/lib/utils'
-import { useEffect } from 'react'
 
 interface CheckboxListProps {
   blockId: string
@@ -19,38 +18,6 @@ export function CheckboxList({
   options,
   layout,
 }: CheckboxListProps) {
-  const [value, setValue] = useSubBlockValue(blockId, subBlockId)
-
-  // Initialize values with all options set to false by default
-  const values = (() => {
-    const defaultValues = options.reduce(
-      (acc, option) => ({
-        ...acc,
-        [option.id]: false,
-      }),
-      {}
-    )
-
-    return {
-      ...defaultValues,
-      ...(typeof value === 'object' && value !== null ? value : {}),
-    }
-  })() as Record<string, boolean>
-
-  // Move initialization to useEffect
-  useEffect(() => {
-    if (value === null) {
-      setValue(values)
-    }
-  }, [value, setValue, values])
-
-  const handleCheckedChange = (id: string, checked: boolean) => {
-    setValue({
-      ...values,
-      [id]: checked,
-    })
-  }
-
   return (
     <div
       className={cn(
@@ -59,23 +26,24 @@ export function CheckboxList({
         'pt-1'
       )}
     >
-      {options.map((option) => (
-        <div key={option.id} className="flex items-center space-x-2">
-          <Checkbox
-            id={`${blockId}-${subBlockId}-${option.id}`}
-            checked={Boolean(values[option.id])}
-            onCheckedChange={(checked) =>
-              handleCheckedChange(option.id, checked as boolean)
-            }
-          />
-          <Label
-            htmlFor={`${blockId}-${subBlockId}-${option.id}`}
-            className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-          >
-            {option.label}
-          </Label>
-        </div>
-      ))}
+      {options.map((option) => {
+        const [value, setValue] = useSubBlockValue(blockId, option.id)
+        return (
+          <div key={option.id} className="flex items-center space-x-2">
+            <Checkbox
+              id={`${blockId}-${option.id}`}
+              checked={Boolean(value)}
+              onCheckedChange={(checked) => setValue(checked as boolean)}
+            />
+            <Label
+              htmlFor={`${blockId}-${option.id}`}
+              className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+            >
+              {option.label}
+            </Label>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -3,7 +3,6 @@ import { ToolConfig, ToolResponse } from '../types'
 export interface ReadUrlParams {
   url: string
   useReaderLMv2?: boolean
-  removeImages?: boolean
   gatherLinks?: boolean
   jsonResponse?: boolean
   apiKey?: string
@@ -31,10 +30,6 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
       type: 'boolean',
       description: 'Whether to use ReaderLM-v2 for better quality'
     },
-    removeImages: {
-      type: 'boolean',
-      description: 'Whether to remove all images from the response'
-    },
     gatherLinks: {
       type: 'boolean',
       description: 'Whether to gather all links at the end'
@@ -51,21 +46,26 @@ export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
 
   request: {
     url: (params: ReadUrlParams) => {
-      const baseUrl = `https://r.jina.ai/https://${params.url.replace(/^https?:\/\//, '')}`
-      const queryParams = new URLSearchParams()
-      
-      if (params.useReaderLMv2) queryParams.append('use_readerlm_v2', 'true')
-      if (params.removeImages) queryParams.append('remove_images', 'true')
-      if (params.gatherLinks) queryParams.append('gather_links', 'true')
-      if (params.jsonResponse) queryParams.append('json_response', 'true')
-
-      return `${baseUrl}${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      return `https://r.jina.ai/https://${params.url.replace(/^https?:\/\//, '')}`
     },
     method: 'GET',
-    headers: (params: ReadUrlParams) => ({
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${params.apiKey}`
-    })
+    headers: (params: ReadUrlParams) => {
+      // Start with base headers
+      const headers: Record<string, string> = {
+        'Accept': params.jsonResponse ? 'application/json' : 'text/plain',
+        'Authorization': `Bearer ${params.apiKey}`
+      }
+
+      // Add conditional headers based on boolean values
+      if (params.useReaderLMv2 === true) {
+        headers['X-Respond-With'] = 'readerlm-v2'
+      }
+      if (params.gatherLinks === true) {
+        headers['X-With-Links-Summary'] = 'true'
+      }
+
+      return headers
+    }
   },
 
   transformResponse: async (response: Response) => {

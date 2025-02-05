@@ -9,7 +9,7 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
     description: 'Convert website content into text',
     bgColor: '#333333',
     icon: JinaAIIcon,
-    category: 'tools',
+    category: 'tools'
   },
   tools: {
     access: ['jina_readurl']
@@ -18,9 +18,9 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
     inputs: {
       url: { type: 'string', required: true },
       useReaderLMv2: { type: 'boolean', required: false },
-      removeImages: { type: 'boolean', required: false },
       gatherLinks: { type: 'boolean', required: false },
-      jsonResponse: { type: 'boolean', required: false }
+      jsonResponse: { type: 'boolean', required: false },
+      apiKey: { type: 'string', required: true }
     },
     outputs: {
       response: {
@@ -35,18 +35,17 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         title: 'URL',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter URL to read',
+        placeholder: 'Enter URL to extract content from'
       },
       {
         id: 'options',
         title: 'Options',
         type: 'checkbox-list',
-        layout: 'half',
+        layout: 'full',
         options: [
-          { label: 'Use ReaderLM v2', id: 'useReaderLMv2' },
-          { label: 'Remove Images', id: 'removeImages' },
-          { label: 'Gather Links', id: 'gatherLinks' },
-          { label: 'JSON Response', id: 'jsonResponse' }
+          { id: 'useReaderLMv2', label: 'Use Reader LM v2' },
+          { id: 'gatherLinks', label: 'Gather Links' },
+          { id: 'jsonResponse', label: 'JSON Response' }
         ]
       },
       {
@@ -54,9 +53,9 @@ export const JinaBlock: BlockConfig<ReadUrlResponse> = {
         title: 'API Key',
         type: 'short-input',
         layout: 'full',
-        placeholder: 'Enter API Key (optional)',
+        placeholder: 'Enter your Jina API key',
         password: true
       }
-    ],
-  },
+    ]
+  }
 } 
