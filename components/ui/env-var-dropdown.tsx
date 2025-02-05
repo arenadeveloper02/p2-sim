@@ -39,12 +39,19 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
     const textBeforeCursor = inputValue.slice(0, cursorPosition)
     const textAfterCursor = inputValue.slice(cursorPosition)
 
-    // Find the position of the last '{{' before cursor
+    // Find the start of the env var syntax (last '{{' before cursor)
     const lastOpenBraces = textBeforeCursor.lastIndexOf('{{')
-    if (lastOpenBraces === -1) return
 
-    const newValue =
-      textBeforeCursor.slice(0, lastOpenBraces) + '{{' + envVar + '}}' + textAfterCursor
+    // Get the text before the env var syntax
+    const startText =
+      lastOpenBraces !== -1 ? textBeforeCursor.slice(0, lastOpenBraces) : textBeforeCursor
+
+    // Find the end of any existing env var syntax after cursor
+    const closeIndex = textAfterCursor.indexOf('}}')
+    const endText = closeIndex !== -1 ? textAfterCursor.slice(closeIndex + 2) : textAfterCursor
+
+    // Construct the new value with proper env var syntax
+    const newValue = startText + '{{' + envVar + '}}' + endText
 
     onSelect(newValue)
     onClose?.()
