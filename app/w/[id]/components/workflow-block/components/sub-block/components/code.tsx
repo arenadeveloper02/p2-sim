@@ -39,31 +39,60 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
     if (!editorRef.current) return
 
     const calculateVisualLines = () => {
+      // Get the actual rendered pre element from the editor
       const preElement = editorRef.current?.querySelector('pre')
       if (!preElement) return
 
       const lines = code.split('\n')
       const newVisualLineHeights: number[] = []
 
-      // Create a temporary span to measure text
-      const measureSpan = document.createElement('span')
-      measureSpan.style.visibility = 'hidden'
-      measureSpan.style.position = 'absolute'
-      measureSpan.style.whiteSpace = 'pre-wrap'
-      measureSpan.style.width = `${preElement.clientWidth - 24}px` // Subtract padding
-      measureSpan.style.font = window.getComputedStyle(preElement).font
-      document.body.appendChild(measureSpan)
+      // Create a hidden container with the same width as the editor
+      const container = document.createElement('div')
+      container.style.cssText = `
+        position: absolute;
+        visibility: hidden;
+        width: ${preElement.clientWidth}px;
+        font-family: ${window.getComputedStyle(preElement).fontFamily};
+        font-size: ${window.getComputedStyle(preElement).fontSize};
+        padding: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      `
+      document.body.appendChild(container)
 
+      // Process each line
       lines.forEach((line) => {
-        measureSpan.textContent = line || ' '
-        const height = Math.ceil(measureSpan.offsetHeight / 21) // 21px is our line height
-        newVisualLineHeights.push(height)
+        // Create a div for each line
+        const lineDiv = document.createElement('div')
+
+        if (line.includes('<') && line.includes('>')) {
+          // Special handling for lines with angle brackets
+          const parts = line.split(/(<[^>]+>)/g)
+          parts.forEach((part) => {
+            const span = document.createElement('span')
+            span.textContent = part
+            if (part.startsWith('<') && part.endsWith('>')) {
+              span.style.color = 'rgb(153, 0, 85)' // Match Prism.js token color
+            }
+            lineDiv.appendChild(span)
+          })
+        } else {
+          lineDiv.textContent = line || ' '
+        }
+
+        container.appendChild(lineDiv)
+
+        // Calculate height in terms of line units (21px per line)
+        const actualHeight = lineDiv.getBoundingClientRect().height
+        const lineUnits = Math.ceil(actualHeight / 21)
+        newVisualLineHeights.push(lineUnits)
+
+        container.removeChild(lineDiv)
       })
 
-      document.body.removeChild(measureSpan)
+      document.body.removeChild(container)
       setVisualLineHeights(newVisualLineHeights)
 
-      // Calculate total visual lines for line numbers
       const totalVisualLines = newVisualLineHeights.reduce(
         (sum, height) => sum + height,
         0
@@ -73,7 +102,6 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
 
     calculateVisualLines()
 
-    // Recalculate on window resize
     const resizeObserver = new ResizeObserver(calculateVisualLines)
     resizeObserver.observe(editorRef.current)
 
