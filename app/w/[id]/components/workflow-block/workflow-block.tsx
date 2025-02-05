@@ -68,7 +68,7 @@ export function WorkflowBlock({
             positions.push({
               id: block.id,
               // Move handle 25px up from the bottom
-              top: subBlockRect.bottom - blockRect.top - 25,
+              top: subBlockRect.bottom - blockRect.top,
             })
           }
         })
