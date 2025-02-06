@@ -13,6 +13,7 @@ import { generateRouterPrompt } from '@/blocks/blocks/router'
 import { BlockOutput } from '@/blocks/types'
 import { BlockConfig } from '@/blocks/types'
 import { executeProviderRequest } from '@/providers/service'
+import { getProviderFromModel } from '@/providers/utils'
 import { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import { executeTool, getTool, tools } from '@/tools'
 import { BlockLog, ExecutionContext, ExecutionResult, Tool } from './types'
@@ -262,16 +263,7 @@ export class Executor {
         // });
 
         const model = inputs.model || 'gpt-4o'
-        const providerId =
-          model.startsWith('gpt') || model.startsWith('o1')
-            ? 'openai'
-            : model.startsWith('claude')
-              ? 'anthropic'
-              : model.startsWith('gemini')
-                ? 'google'
-                : model.startsWith('grok')
-                  ? 'xai'
-                  : 'deepseek'
+        const providerId = getProviderFromModel(model)
 
         // Format tools if they exist
         const tools = Array.isArray(inputs.tools)
@@ -629,18 +621,8 @@ export class Executor {
       temperature: resolvedInputs.temperature || 0,
     }
 
-    // Determine provider based on model
     const model = routerConfig.model || 'gpt-4o'
-    const providerId =
-      model.startsWith('gpt') || model.startsWith('o1')
-        ? 'openai'
-        : model.startsWith('claude')
-          ? 'anthropic'
-          : model.startsWith('gemini')
-            ? 'google'
-            : model.startsWith('grok')
-              ? 'xai'
-              : 'deepseek'
+    const providerId = getProviderFromModel(model)
 
     const response = await executeProviderRequest(providerId, {
       model: routerConfig.model,
