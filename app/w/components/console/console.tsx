@@ -63,7 +63,7 @@ export function Console() {
             <span className="sr-only">Open Console</span>
           </button>
         </TooltipTrigger>
-        <TooltipContent side="left">Open Console</TooltipContent>
+        <TooltipContent side="top">Open Console</TooltipContent>
       </Tooltip>
     )
   }

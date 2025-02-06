@@ -1,3 +1,4 @@
+import { Chat } from './components/chat/chat'
 import { Console } from './components/console/console'
 import { ControlBar } from './components/control-bar/control-bar'
 import { Sidebar } from './components/sidebar/sidebar'
@@ -15,6 +16,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           <ControlBar />
           <div className="h-16">
             <Toolbar />
+            <Chat />
             <Console />
             <main className="grid items-start gap-2 bg-muted/40 h-[calc(100vh-4rem)]">
               {children}
