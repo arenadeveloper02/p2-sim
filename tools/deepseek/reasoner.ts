@@ -24,7 +24,8 @@ export interface ChatResponse extends ToolResponse {
 export const reasonerTool: ToolConfig<ChatParams, ChatResponse> = {
   id: 'deepseek_reasoner',
   name: 'DeepSeek Reasoner',
-  description: 'Chat with DeepSeek-R1 reasoning model',
+  description:
+    "Leverage DeepSeek's specialized reasoning model for complex problem-solving, logical analysis, and step-by-step deduction. Optimized for tasks requiring structured thinking and detailed explanations.",
   version: '1.0.0',
 
   params: {

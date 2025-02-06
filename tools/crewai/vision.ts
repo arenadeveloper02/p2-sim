@@ -18,7 +18,8 @@ export interface VisionResponse extends ToolResponse {
 export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
   id: 'crewai_vision',
   name: 'Vision Analysis',
-  description: 'Analyze images using vision models',
+  description:
+    'Process and analyze images using advanced vision models. Capable of understanding image content, extracting text, identifying objects, and providing detailed visual descriptions.',
   version: '1.0.0',
 
   params: {

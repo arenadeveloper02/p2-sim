@@ -24,7 +24,8 @@ export interface ChatResponse extends ToolResponse {
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   id: 'xai_chat',
   name: 'xAI Chat',
-  description: 'Chat with xAI models',
+  description:
+    "Interact with xAI's Grok models featuring advanced reasoning capabilities. Supports system prompts, context management, and provides detailed reasoning paths alongside responses.",
   version: '1.0.0',
 
   params: {

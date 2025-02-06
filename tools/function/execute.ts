@@ -15,7 +15,8 @@ export interface CodeExecutionOutput extends ToolResponse {
 export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOutput> = {
   id: 'function_execute',
   name: 'Function Execute',
-  description: 'Execute code in a sandboxed environment',
+  description:
+    'Execute code snippets in a secure, sandboxed environment with support for multiple languages. Captures both function output and stdout with proper error handling.',
   version: '1.0.0',
 
   params: {

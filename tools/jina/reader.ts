@@ -17,7 +17,8 @@ export interface ReadUrlResponse extends ToolResponse {
 export const readUrlTool: ToolConfig<ReadUrlParams, ReadUrlResponse> = {
   id: 'jina_readurl',
   name: 'Jina Reader',
-  description: 'Convert any URL to LLM-friendly text using Jina AI Reader',
+  description:
+    'Extract and process web content into clean, LLM-friendly text using Jina AI Reader. Supports advanced content parsing, link gathering, and multiple output formats with configurable processing options.',
   version: '1.0.0',
 
   params: {

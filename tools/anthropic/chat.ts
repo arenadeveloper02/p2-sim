@@ -22,7 +22,8 @@ export interface ChatResponse extends ToolResponse {
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   id: 'anthropic_chat',
   name: 'Anthropic Chat',
-  description: 'Chat with Anthropic Claude models',
+  description:
+    "Interact with Anthropic's Claude models for advanced language understanding, reasoning, and generation tasks. Supports system prompts, context management, and configurable parameters for response generation.",
   version: '1.0.0',
 
   params: {

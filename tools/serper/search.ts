@@ -30,7 +30,8 @@ export interface SearchResponse extends ToolResponse {
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   id: 'serper_search',
   name: 'Web Search',
-  description: 'Search the web using Serper.dev API',
+  description:
+    'A powerful web search tool that provides access to Google search results through Serper.dev API. Supports different types of searches including regular web search, news, places, and images, with each result containing relevant metadata like titles, URLs, snippets, and type-specific information.',
   version: '1.0.0',
 
   params: {

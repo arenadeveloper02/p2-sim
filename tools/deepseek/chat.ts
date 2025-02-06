@@ -25,7 +25,8 @@ export interface ChatResponse extends ToolResponse {
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   id: 'deepseek_chat',
   name: 'DeepSeek Chat',
-  description: 'Chat with DeepSeek-v3 model',
+  description:
+    "Interact with DeepSeek's advanced language models optimized for code understanding and generation. Supports system prompts, context-aware responses, and configurable output formats.",
   version: '1.0.0',
 
   params: {

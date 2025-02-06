@@ -24,7 +24,8 @@ export interface SearchResponse extends ToolResponse {
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   id: 'tavily_search',
   name: 'Tavily Search',
-  description: 'Search the web using Tavily AI Search API',
+  description:
+    "Perform AI-powered web searches using Tavily's search API. Returns structured results with titles, URLs, snippets, and optional raw content, optimized for relevance and accuracy.",
   version: '1.0.0',
 
   params: {

@@ -23,7 +23,8 @@ export interface RequestResponse extends ToolResponse {
 export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
   id: 'http_request',
   name: 'HTTP Request',
-  description: 'Make HTTP requests to any endpoint with support for CRUD operations',
+  description:
+    'Make HTTP requests with comprehensive support for methods, headers, query parameters, path parameters, and form data. Features configurable timeout and status validation for robust API interactions.',
   version: '1.0.0',
 
   params: {

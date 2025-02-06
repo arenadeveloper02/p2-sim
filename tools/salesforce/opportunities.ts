@@ -30,7 +30,8 @@ export interface OpportunityResponse extends ToolResponse {
 export const opportunitiesTool: ToolConfig<OpportunityParams, OpportunityResponse> = {
   id: 'salesforce_opportunities',
   name: 'Salesforce Opportunities',
-  description: 'Manage Salesforce opportunities - create, query, and update opportunity records',
+  description:
+    'Manage Salesforce sales opportunities with comprehensive CRUD operations. Track stages, amounts, probabilities, and related account data with support for custom fields and paginated results.',
   version: '1.0.0',
 
   params: {

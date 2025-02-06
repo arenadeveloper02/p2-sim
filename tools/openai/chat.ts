@@ -26,7 +26,8 @@ export interface ChatResponse extends ToolResponse {
 export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   id: 'openai_chat',
   name: 'OpenAI Chat',
-  description: 'Chat with OpenAI models',
+  description:
+    "Interact with OpenAI's GPT models for natural language processing and generation. Supports system prompts, context management, and fine-tuned response parameters including temperature and token control.",
   version: '1.0.0',
 
   params: {

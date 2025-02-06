@@ -25,7 +25,8 @@ export interface ExtractResponse extends ToolResponse {
 export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
   id: 'tavily_extract',
   name: 'Tavily Extract',
-  description: 'Extract web page content from URLs using Tavily Extract',
+  description:
+    "Extract raw content from multiple web pages simultaneously using Tavily's extraction API. Supports basic and advanced extraction depths with detailed error reporting for failed URLs.",
   version: '1.0.0',
 
   params: {
