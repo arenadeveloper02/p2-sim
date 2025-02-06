@@ -29,6 +29,21 @@ export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
     subBlocks: [
       {
         id: 'if',
+        title: 'if',
+        type: 'code',
+        layout: 'full',
+        outputHandle: true,
+      },
+      {
+        id: 'else-if',
+        title: 'else if',
+        type: 'code',
+        layout: 'full',
+        outputHandle: true,
+      },
+      {
+        id: 'else',
+        title: 'else',
         type: 'code',
         layout: 'full',
         outputHandle: true,
