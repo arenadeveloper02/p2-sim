@@ -2,6 +2,26 @@ import type { SVGProps } from 'react'
 import type { JSX } from 'react'
 import { ToolResponse } from '@/tools/types'
 
+// Basic type definitions for block components
+export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
+export type BlockCategory = 'blocks' | 'tools'
+export type ParamType = 'string' | 'number' | 'boolean' | 'json'
+export type PrimitiveValueType = 'string' | 'number' | 'boolean' | 'json' | 'any'
+
+// Sub-block configuration types
+export type SubBlockType =
+  | 'short-input'
+  | 'long-input'
+  | 'dropdown'
+  | 'slider'
+  | 'table'
+  | 'code'
+  | 'switch'
+  | 'tool-input'
+  | 'checkbox-list'
+
+export type SubBlockLayout = 'full' | 'half'
+
 // Tool output type utilities
 export type ExtractToolOutput<T> = T extends ToolResponse ? T['output'] : never
 
@@ -20,28 +40,10 @@ export type ToolOutputToValueType<T> =
       }
     : never
 
-export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
-export type BlockCategory = 'blocks' | 'tools'
-
-export type PrimitiveValueType = 'string' | 'number' | 'boolean' | 'json' | 'any'
-
+// Block configuration interfaces and types
 export type BlockOutput =
   | PrimitiveValueType
   | { [key: string]: PrimitiveValueType | Record<string, any> }
-
-export type ParamType = 'string' | 'number' | 'boolean' | 'json'
-
-export type SubBlockType =
-  | 'short-input'
-  | 'long-input'
-  | 'dropdown'
-  | 'slider'
-  | 'table'
-  | 'code'
-  | 'switch'
-  | 'tool-input'
-  | 'checkbox-list'
-export type SubBlockLayout = 'full' | 'half'
 
 export interface ParamConfig {
   type: ParamType
