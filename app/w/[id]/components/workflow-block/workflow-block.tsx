@@ -48,7 +48,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
       setTimeout(() => {
         const positions: SubBlockPosition[] = []
         const blockRect = blockRef.current?.getBoundingClientRect()
-        
+
         if (!blockRect) return
 
         workflow.subBlocks
@@ -95,8 +95,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     // Filter out hidden subblocks
-    const visibleSubBlocks = subBlocks.filter(block => !block.hidden)
-    
+    const visibleSubBlocks = subBlocks.filter((block) => !block.hidden)
+
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
     let currentRowWidth = 0
@@ -237,7 +237,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
       {/* Subblock output handles */}
       {subBlockPositions.map((position) => (
         <Handle
-          key={position.id}
+          key={`${id}-${position.id}`}
           type="source"
           position={Position.Right}
           id={`output-${position.id}`}
