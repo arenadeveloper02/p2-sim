@@ -3,6 +3,7 @@ import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/themes/prism.css'
 import Editor from 'react-simple-code-editor'
+import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
 import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
@@ -18,6 +19,8 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   const [code, setCode] = useState('')
   const [lineCount, setLineCount] = useState(1)
   const [showTags, setShowTags] = useState(false)
+  const [showEnvVars, setShowEnvVars] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
   const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
@@ -173,6 +176,13 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
     setActiveSourceBlockId(null)
   }
 
+  // Handle environment variable selection
+  const handleEnvVarSelect = (newValue: string) => {
+    setCode(newValue)
+    setStoreValue(newValue)
+    setShowEnvVars(false)
+  }
+
   return (
     <div
       className={cn(
@@ -203,16 +213,29 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
             setCode(newCode)
             setStoreValue(newCode)
 
-            // Check for tag trigger
+            // Check for tag trigger and environment variable trigger
             const textarea = editorRef.current?.querySelector('textarea')
             if (textarea) {
               const pos = textarea.selectionStart
               setCursorPosition(pos)
-              const trigger = checkTagTrigger(newCode, pos)
-              setShowTags(trigger.show)
-              if (!trigger.show) {
+
+              // Tag trigger check
+              const tagTrigger = checkTagTrigger(newCode, pos)
+              setShowTags(tagTrigger.show)
+              if (!tagTrigger.show) {
                 setActiveSourceBlockId(null)
               }
+
+              // Environment variable trigger check
+              const envVarTrigger = checkEnvVarTrigger(newCode, pos)
+              setShowEnvVars(envVarTrigger.show)
+              setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setShowTags(false)
+              setShowEnvVars(false)
             }
           }}
           highlight={(code) => highlight(code, languages.javascript, 'javascript')}
@@ -225,6 +248,20 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
           className="focus:outline-none"
           textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
         />
+
+        {showEnvVars && (
+          <EnvVarDropdown
+            visible={showEnvVars}
+            onSelect={handleEnvVarSelect}
+            searchTerm={searchTerm}
+            inputValue={code}
+            cursorPosition={cursorPosition}
+            onClose={() => {
+              setShowEnvVars(false)
+              setSearchTerm('')
+            }}
+          />
+        )}
 
         {showTags && (
           <TagDropdown
