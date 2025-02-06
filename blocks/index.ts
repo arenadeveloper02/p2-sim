@@ -12,6 +12,7 @@ import { SerperBlock } from './blocks/serper'
 import { SlackMessageBlock } from './blocks/slack'
 import { TavilyExtractBlock, TavilySearchBlock } from './blocks/tavily'
 import { TranslateBlock } from './blocks/translate'
+import { YouTubeSearchBlock } from './blocks/youtube'
 import { BlockConfig } from './types'
 
 // Export blocks for ease of use
@@ -30,6 +31,7 @@ export {
   TavilySearchBlock,
   TavilyExtractBlock,
   RouterBlock,
+  YouTubeSearchBlock,
 }
 
 // Registry of all block configurations
@@ -48,6 +50,7 @@ const blocks: Record<string, BlockConfig> = {
   serper_search: SerperBlock,
   tavily_search: TavilySearchBlock,
   tavily_extract: TavilyExtractBlock,
+  youtube_search: YouTubeSearchBlock,
 }
 
 // Build a reverse mapping of tools to block types

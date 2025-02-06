@@ -17,36 +17,9 @@ import { extractTool as tavilyExtract } from './tavily/extract'
 import { searchTool as tavilySearch } from './tavily/search'
 import { ToolConfig, ToolResponse } from './types'
 import { chatTool as xaiChat } from './xai/chat'
+import { youtubeSearchTool } from './youtube/search'
 
-/**
- * Registry of all available tools. Each tool is designed for specific use cases:
- *
- * AI Model Tools:
- * - openai_chat: Advanced language model for general conversation, reasoning, and task completion
- * - anthropic_chat: Claude model specialized in detailed analysis and complex reasoning
- * - google_chat: PaLM model for general conversation and task assistance
- * - xai_chat: Specialized AI model for explainable AI interactions
- * - deepseek_chat: Code-specialized language model for programming tasks
- * - deepseek_reasoner: Advanced reasoning model for complex problem-solving
- *
- * Web & Data Tools:
- * - http_request: Make HTTP requests to any API endpoint with custom headers and body
- * - firecrawl_scrape: Extract structured data from web pages with advanced scraping
- * - jina_readurl: Efficiently read and parse content from web URLs
- * - serper_search: Perform web searches with high-quality, structured results
- * - tavily_search: AI-powered web search with comprehensive results
- * - tavily_extract: Extract specific information from web content
- *
- * Business Integration Tools:
- * - hubspot_contacts: Manage and query HubSpot CRM contacts
- * - salesforce_opportunities: Handle Salesforce sales opportunities
- * - slack_message: Send messages to Slack channels or users
- * - github_repoinfo: Fetch detailed information about GitHub repositories
- *
- * Utility Tools:
- * - function_execute: Execute custom JavaScript functions with provided parameters
- * - crewai_vision: Process and analyze images with AI capabilities
- */
+// Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   // AI Models
   openai_chat: openAIChat,
@@ -76,6 +49,7 @@ export const tools: Record<string, ToolConfig> = {
   serper_search: serperSearch,
   tavily_search: tavilySearch,
   tavily_extract: tavilyExtract,
+  youtube_search: youtubeSearchTool,
 }
 
 // Get a tool by its ID
