@@ -41,7 +41,6 @@ export type SubBlockType =
   | 'switch'
   | 'tool-input'
   | 'checkbox-list'
-  | 'condition-input'
 export type SubBlockLayout = 'full' | 'half'
 
 export interface ParamConfig {
