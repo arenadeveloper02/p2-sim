@@ -28,16 +28,8 @@ export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
     },
     subBlocks: [
       {
-        id: 'if',
-        title: 'if',
-        type: 'code',
-        layout: 'full',
-        outputHandle: true,
-      },
-      {
-        id: 'elseIf',
-        title: 'else if',
-        type: 'code',
+        id: 'conditions',
+        type: 'condition-input',
         layout: 'full',
         outputHandle: true,
       },
