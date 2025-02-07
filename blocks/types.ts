@@ -101,6 +101,13 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
     outputs: {
       response: {
         type: ToolOutputToValueType<ExtractToolOutput<T>>
+        dependsOn?: {
+          subBlockId: string
+          condition: {
+            whenEmpty: ToolOutputToValueType<ExtractToolOutput<T>>
+            whenFilled: 'json'
+          }
+        }
       }
     }
   }

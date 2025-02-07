@@ -205,6 +205,7 @@ export class Executor {
   ): Promise<BlockOutput> {
     // Start timing
     const startTime = new Date()
+
     const blockLog: BlockLog = {
       blockId: block.id,
       blockTitle: block.metadata?.title,
@@ -216,17 +217,12 @@ export class Executor {
     }
 
     try {
+      let output: BlockOutput
+
       // Handle router blocks differently
       if (block.metadata?.type === 'router') {
         const routerOutput = await this.executeRouterBlock(block, context)
-        // console.log('Router output:', routerOutput);
-
-        // Filter workflow to only include blocks in the chosen path
-        this.workflow.blocks = this.workflow.blocks.filter((b) =>
-          this.isInChosenPath(b.id, routerOutput.selectedPath.blockId, block.id)
-        )
-
-        const output = {
+        output = {
           response: {
             content: routerOutput.content,
             model: routerOutput.model,
@@ -234,26 +230,8 @@ export class Executor {
             selectedPath: routerOutput.selectedPath,
           },
         }
-
-        blockLog.success = true
-        blockLog.output = output
-
-        // Compute timing
-        const endTime = new Date()
-        blockLog.endedAt = endTime.toISOString()
-        blockLog.durationMs = endTime.getTime() - startTime.getTime()
-
-        // Add log entry
-        context.blockLogs.push(blockLog)
-
-        return output
-      }
-
-      // Special handling for agent blocks that use providers
-      if (block.metadata?.type === 'agent') {
-        console.log('Executing agent block with inputs:', inputs)
-
-        // Get response format from inputs if provided
+      } else if (block.metadata?.type === 'agent') {
+        // Special handling for agent blocks that use providers
         let responseFormat = undefined
         if (inputs.responseFormat) {
           try {
@@ -264,7 +242,6 @@ export class Executor {
               // If it's somehow already an object, use it directly
               responseFormat = inputs.responseFormat
             }
-            console.log('Parsed responseFormat:', responseFormat)
           } catch (error: any) {
             console.error('Error parsing responseFormat:', error)
             throw new Error('Invalid response format: ' + error.message)
@@ -327,11 +304,9 @@ export class Executor {
           responseFormat,
         })
 
-        // If responseFormat was specified, return the content directly as the response
-        // with metadata as additional fields
-        const output = responseFormat
+        output = responseFormat
           ? {
-              ...JSON.parse(response.content), // The formatted response as the root
+              ...JSON.parse(response.content),
               tokens: response.tokens || {
                 prompt: 0,
                 completion: 0,
@@ -345,7 +320,6 @@ export class Executor {
                 : undefined,
             }
           : {
-              // Default format when no responseFormat specified
               response: {
                 content: response.content,
                 model: response.model,
@@ -360,35 +334,21 @@ export class Executor {
                 },
               },
             }
+      } else {
+        // Regular tool execution
+        const tool = getTool(block.config.tool)
+        if (!tool) {
+          throw new Error(`Tool ${block.config.tool} not found`)
+        }
 
-        blockLog.success = true
-        blockLog.output = output
+        const result = await executeTool(block.config.tool, inputs)
+        if (!result.success) {
+          console.error('Tool execution failed:', result.error)
+          throw new Error(result.error || `Tool ${block.config.tool} failed with no error message`)
+        }
 
-        // Compute timing
-        const endTime = new Date()
-        blockLog.endedAt = endTime.toISOString()
-        blockLog.durationMs = endTime.getTime() - startTime.getTime()
-
-        // Add log entry
-        context.blockLogs.push(blockLog)
-
-        return output
+        output = { response: result.output }
       }
-
-      // Regular tool execution
-      const tool = getTool(block.config.tool)
-      if (!tool) {
-        throw new Error(`Tool ${block.config.tool} not found`)
-      }
-
-      const result = await executeTool(block.config.tool, inputs)
-
-      if (!result.success) {
-        console.error('Tool execution failed:', result.error)
-        throw new Error(result.error || `Tool ${block.config.tool} failed with no error message`)
-      }
-
-      const output = { response: result.output }
 
       blockLog.success = true
       blockLog.output = output
@@ -403,12 +363,6 @@ export class Executor {
 
       return output
     } catch (error: any) {
-      console.error('Block execution failed:', {
-        blockId: block.id,
-        blockTitle: block.metadata?.title,
-        error: error.message,
-      })
-
       // Update block log with error
       blockLog.success = false
       blockLog.error = error.message || `Block execution failed`
@@ -538,6 +492,21 @@ export class Executor {
                     `Invalid path part "${part}" in "${path}" for block "${block.metadata?.title}".`
                   )
                 }
+
+                // Check if we have a response format and this is a field from it
+                const responseFormat = sourceBlock.config.params?.responseFormat
+                if (responseFormat && typeof responseFormat === 'string') {
+                  try {
+                    const parsedFormat = JSON.parse(responseFormat)
+                    if (parsedFormat?.fields?.some((f: any) => f.name === part)) {
+                      replacementValue = replacementValue[part]
+                      continue
+                    }
+                  } catch (e) {
+                    console.error('Error parsing response format:', e)
+                  }
+                }
+
                 replacementValue = replacementValue[part]
               }
 

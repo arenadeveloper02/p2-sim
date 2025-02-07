@@ -47,7 +47,15 @@ export class Serializer {
         params,
       },
       inputs,
-      outputs: block.outputs,
+      outputs: {
+        ...block.outputs,
+        // Include response format fields if available
+        ...(params.responseFormat
+          ? {
+              responseFormat: JSON.parse(params.responseFormat),
+            }
+          : {}),
+      },
       metadata: {
         title: block.name,
         description: blockConfig.toolbar.description,

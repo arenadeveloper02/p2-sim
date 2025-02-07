@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useWorkflowStore } from '@/stores/workflow/store'
 
+interface Field {
+  name: string
+  type: string
+  description?: string
+}
+
 interface TagDropdownProps {
   visible: boolean
   onSelect: (newValue: string) => void
@@ -38,31 +44,52 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
   // Get source block and compute tags
   const { tags } = useMemo(() => {
+    // Helper function to get output paths
+    const getOutputPaths = (obj: any, prefix = ''): string[] => {
+      if (typeof obj !== 'object' || obj === null) {
+        return prefix ? [prefix] : []
+      }
+
+      if ('type' in obj && typeof obj.type === 'string') {
+        return [prefix]
+      }
+
+      return Object.entries(obj).flatMap(([key, value]) => {
+        const newPrefix = prefix ? `${prefix}.${key}` : key
+        return getOutputPaths(value, newPrefix)
+      })
+    }
+
     // If we have an active source block ID from a drop, use that specific block only
     if (activeSourceBlockId) {
       const sourceBlock = blocks[activeSourceBlockId]
       if (!sourceBlock) return { tags: [] }
 
-      const getOutputPaths = (obj: any, prefix = ''): string[] => {
-        if (typeof obj !== 'object' || obj === null) {
-          return prefix ? [prefix] : []
-        }
+      const blockName = sourceBlock.name || sourceBlock.type
+      const normalizedBlockName = blockName.replace(/\s+/g, '').toLowerCase()
 
-        if ('type' in obj) {
-          return getOutputPaths(obj.type, prefix)
+      // Check for response format first
+      try {
+        const responseFormatValue = sourceBlock.subBlocks?.responseFormat?.value
+        if (typeof responseFormatValue === 'string' && responseFormatValue) {
+          const responseFormat = JSON.parse(responseFormatValue)
+          if (responseFormat?.fields) {
+            return {
+              tags: responseFormat.fields.map(
+                (field: Field) => `${normalizedBlockName}.${field.name}`
+              ),
+            }
+          }
         }
-
-        return Object.entries(obj).flatMap(([key, value]) => {
-          const newPrefix = prefix ? `${prefix}.${key}` : key
-          return getOutputPaths(value, newPrefix)
-        })
+      } catch (e) {
+        console.error('Error parsing response format:', e)
       }
 
+      // Fall back to default outputs if no response format
       const outputPaths = getOutputPaths(sourceBlock.outputs)
-      const blockName = sourceBlock.name || sourceBlock.type
 
       return {
-        tags: outputPaths.map((path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`),
+        tags: outputPaths.map((path) => `${normalizedBlockName}.${path}`),
       }
     }
 
@@ -72,25 +99,27 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const sourceBlock = blocks[edge.source]
       if (!sourceBlock) return []
 
-      const getOutputPaths = (obj: any, prefix = ''): string[] => {
-        if (typeof obj !== 'object' || obj === null) {
-          return prefix ? [prefix] : []
-        }
+      const blockName = sourceBlock.name || sourceBlock.type
+      const normalizedBlockName = blockName.replace(/\s+/g, '').toLowerCase()
 
-        if ('type' in obj) {
-          return getOutputPaths(obj.type, prefix)
+      // Check for response format first
+      try {
+        const responseFormatValue = sourceBlock.subBlocks?.responseFormat?.value
+        if (typeof responseFormatValue === 'string' && responseFormatValue) {
+          const responseFormat = JSON.parse(responseFormatValue)
+          if (responseFormat?.fields) {
+            return responseFormat.fields.map(
+              (field: Field) => `${normalizedBlockName}.${field.name}`
+            )
+          }
         }
-
-        return Object.entries(obj).flatMap(([key, value]) => {
-          const newPrefix = prefix ? `${prefix}.${key}` : key
-          return getOutputPaths(value, newPrefix)
-        })
+      } catch (e) {
+        console.error('Error parsing response format:', e)
       }
 
+      // Fall back to default outputs if no response format
       const outputPaths = getOutputPaths(sourceBlock.outputs)
-      const blockName = sourceBlock.name || sourceBlock.type
-
-      return outputPaths.map((path) => `${blockName.replace(/\s+/g, '').toLowerCase()}.${path}`)
+      return outputPaths.map((path) => `${normalizedBlockName}.${path}`)
     })
 
     return { tags: sourceTags }
@@ -99,7 +128,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
   // Filter tags based on search term
   const filteredTags = useMemo(() => {
     if (!searchTerm) return tags
-    return tags.filter((tag) => tag.toLowerCase().includes(searchTerm))
+    return tags.filter((tag: string) => tag.toLowerCase().includes(searchTerm))
   }, [tags, searchTerm])
 
   // Reset selection when filtered results change
@@ -168,7 +197,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         {filteredTags.length === 0 ? (
           <div className="px-3 py-2 text-sm text-muted-foreground">No matching tags found</div>
         ) : (
-          filteredTags.map((tag, index) => (
+          filteredTags.map((tag: string, index: number) => (
             <button
               key={tag}
               className={cn(

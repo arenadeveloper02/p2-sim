@@ -1,9 +1,15 @@
 import { Card } from '@/components/ui/card'
-import { useBlockConnections } from '@/app/w/hooks/use-block-connections'
+import { ConnectedBlock, useBlockConnections } from '@/app/w/hooks/use-block-connections'
 
 interface ConnectionBlocksProps {
   blockId: string
   setIsConnecting: (isConnecting: boolean) => void
+}
+
+interface ResponseField {
+  name: string
+  type: string
+  description?: string
 }
 
 export function ConnectionBlocks({ blockId, setIsConnecting }: ConnectionBlocksProps) {
@@ -11,7 +17,11 @@ export function ConnectionBlocks({ blockId, setIsConnecting }: ConnectionBlocksP
 
   if (!hasIncomingConnections) return null
 
-  const handleDragStart = (e: React.DragEvent, connection: any) => {
+  const handleDragStart = (
+    e: React.DragEvent<HTMLDivElement>,
+    connection: ConnectedBlock,
+    field?: ResponseField
+  ) => {
     e.stopPropagation() // Prevent parent drag handlers from firing
     setIsConnecting(true)
     e.dataTransfer.setData(
@@ -21,35 +31,64 @@ export function ConnectionBlocks({ blockId, setIsConnecting }: ConnectionBlocksP
         connectionData: {
           id: connection.id,
           name: connection.name,
-          outputType: connection.outputType,
+          outputType: field ? field.name : connection.outputType,
           sourceBlockId: connection.id,
+          fieldType: field?.type,
         },
       })
     )
     e.dataTransfer.effectAllowed = 'copy'
   }
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
     setIsConnecting(false)
   }
 
   return (
     <div className="absolute -left-[180px] top-0 space-y-2 flex flex-col items-end w-[160px]">
       {incomingConnections.map((connection) => (
-        <Card
-          key={connection.id}
-          draggable
-          onDragStart={(e) => handleDragStart(e, connection)}
-          onDragEnd={handleDragEnd}
-          className="group flex items-center rounded-lg border bg-card p-2 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing w-fit"
-        >
-          <div className="text-sm">
-            <span className="font-medium leading-none">
-              {connection.name.replace(/\s+/g, '').toLowerCase()}
-            </span>
-            <span className="text-muted-foreground">.{connection.outputType}</span>
-          </div>
-        </Card>
+        <div key={connection.id} className="space-y-2">
+          {Array.isArray(connection.outputType) ? (
+            connection.outputType.map((fieldName) => {
+              const field = connection.responseFormat?.fields.find(
+                (f: ResponseField) => f.name === fieldName
+              ) || {
+                name: fieldName,
+                type: 'string',
+              }
+              return (
+                <Card
+                  key={field.name}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, connection, field)}
+                  onDragEnd={handleDragEnd}
+                  className="group flex items-center rounded-lg border bg-card p-2 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing w-fit"
+                >
+                  <div className="text-sm">
+                    <span className="font-medium leading-none">
+                      {connection.name.replace(/\s+/g, '').toLowerCase()}
+                    </span>
+                    <span className="text-muted-foreground">.{field.name}</span>
+                  </div>
+                </Card>
+              )
+            })
+          ) : (
+            <Card
+              draggable
+              onDragStart={(e) => handleDragStart(e, connection)}
+              onDragEnd={handleDragEnd}
+              className="group flex items-center rounded-lg border bg-card p-2 shadow-sm transition-colors hover:bg-accent/50 cursor-grab active:cursor-grabbing w-fit"
+            >
+              <div className="text-sm">
+                <span className="font-medium leading-none">
+                  {connection.name.replace(/\s+/g, '').toLowerCase()}
+                </span>
+                <span className="text-muted-foreground">.{connection.outputType}</span>
+              </div>
+            </Card>
+          )}
+        </div>
       ))}
     </div>
   )
