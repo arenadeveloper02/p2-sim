@@ -5,16 +5,19 @@ import { MessageCircle, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useAIChatStore } from '@/stores/chat/store'
 
 export function Chat() {
+  const { messages, isProcessing, error, sendMessage } = useAIChatStore()
   const [isOpen, setIsOpen] = useState(false)
   const [message, setMessage] = useState('')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Handle message submission here
+    if (!message.trim()) return
+
+    await sendMessage(message)
     setMessage('')
-    setIsOpen(false) // Close the chat after sending
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -42,7 +45,7 @@ export function Chat() {
   }
 
   return (
-    <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 w-[500px] bg-background rounded-2xl border shadow-lg">
+    <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 w-[50%] max-w-[500px] min-w-[280px] bg-background rounded-2xl border shadow-lg">
       <form onSubmit={handleSubmit} className="flex items-center gap-2 p-2">
         <Button
           variant="ghost"

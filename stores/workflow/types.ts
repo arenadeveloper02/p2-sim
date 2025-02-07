@@ -1,6 +1,5 @@
-import { Edge, Node } from 'reactflow'
+import { Edge } from 'reactflow'
 import { BlockOutput, SubBlockType } from '@/blocks/types'
-import { WorkflowHistory } from './history-types'
 
 export interface Position {
   x: number

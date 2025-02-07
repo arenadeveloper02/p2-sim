@@ -4,7 +4,7 @@ import { devtools } from 'zustand/middleware'
 import { getBlock } from '@/blocks'
 import { resolveOutputType } from '@/blocks/utils'
 import { WorkflowStoreWithHistory, pushHistory, withHistory } from './middleware'
-import { Position, SubBlockState, WorkflowStore } from './types'
+import { Position, SubBlockState } from './types'
 
 const initialState = {
   blocks: {},
