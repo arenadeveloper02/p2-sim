@@ -160,9 +160,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
         className={cn(
           '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
-          '!opacity-0 group-hover:!opacity-100',
-          '!transition-opacity !duration-200 !cursor-crosshair',
-          'hover:!border-blue-500',
+          'group-hover:!border-blue-500',
+          '!transition-border !duration-150 !cursor-crosshair',
           horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
         )}
       />
@@ -226,9 +225,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
           className={cn(
             '!w-3.5 !h-3.5',
             '!bg-white !rounded-full !border !border-gray-200',
-            '!opacity-0 group-hover:!opacity-100',
-            '!transition-opacity !duration-200 !cursor-crosshair',
-            'hover:!border-blue-500',
+            'group-hover:!border-blue-500',
+            '!transition-border !duration-150 !cursor-crosshair',
             horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
           )}
         />
