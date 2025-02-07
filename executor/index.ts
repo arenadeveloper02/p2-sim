@@ -203,11 +203,6 @@ export class Executor {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<BlockOutput> {
-    // console.log(`Executing block ${block.metadata?.title} (${block.id})`, {
-    //   type: block.metadata?.type,
-    //   inputs
-    // });
-
     // Start timing
     const startTime = new Date()
     const blockLog: BlockLog = {
@@ -256,11 +251,25 @@ export class Executor {
 
       // Special handling for agent blocks that use providers
       if (block.metadata?.type === 'agent') {
-        // console.log('Agent inputs:', {
-        //   systemPrompt: inputs.systemPrompt,
-        //   context: inputs.context,
-        //   tools: inputs.tools
-        // });
+        console.log('Executing agent block with inputs:', inputs)
+
+        // Get response format from inputs if provided
+        let responseFormat = undefined
+        if (inputs.responseFormat) {
+          try {
+            // If it's already a string, parse it once
+            if (typeof inputs.responseFormat === 'string') {
+              responseFormat = JSON.parse(inputs.responseFormat)
+            } else {
+              // If it's somehow already an object, use it directly
+              responseFormat = inputs.responseFormat
+            }
+            console.log('Parsed responseFormat:', responseFormat)
+          } catch (error: any) {
+            console.error('Error parsing responseFormat:', error)
+            throw new Error('Invalid response format: ' + error.message)
+          }
+        }
 
         const model = inputs.model || 'gpt-4o'
         const providerId = getProviderFromModel(model)
@@ -269,24 +278,18 @@ export class Executor {
         const tools = Array.isArray(inputs.tools)
           ? inputs.tools
               .map((tool: any) => {
-                // console.log('Processing tool:', tool);
-                // Get the tool ID from the block type
                 const block = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
                 const toolId = block?.tools.access[0]
                 if (!toolId) {
-                  // console.log('No tool ID found for type:', tool.type);
                   return null
                 }
 
-                // Get the tool configuration
                 const toolConfig = getTool(toolId)
                 if (!toolConfig) {
-                  // console.log('No tool config found for ID:', toolId);
                   return null
                 }
 
-                // Return the tool configuration with resolved parameters
-                const toolSetup = {
+                return {
                   id: toolConfig.id,
                   name: toolConfig.name,
                   description: toolConfig.description,
@@ -309,13 +312,9 @@ export class Executor {
                       .map(([key]) => key),
                   },
                 }
-                // console.log('Tool setup:', toolSetup);
-                return toolSetup
               })
               .filter((t): t is NonNullable<typeof t> => t !== null)
           : []
-
-        // console.log('Formatted tools:', tools);
 
         const response = await executeProviderRequest(providerId, {
           model,
@@ -325,28 +324,42 @@ export class Executor {
           temperature: inputs.temperature,
           maxTokens: inputs.maxTokens,
           apiKey: inputs.apiKey,
+          responseFormat,
         })
 
-        // console.log('Provider response:', {
-        //   content: response.content,
-        //   toolCalls: response.toolCalls
-        // });
-
-        const output = {
-          response: {
-            content: response.content,
-            model: response.model,
-            tokens: response.tokens || {
-              prompt: 0,
-              completion: 0,
-              total: 0,
-            },
-            toolCalls: {
-              list: response.toolCalls || [],
-              count: response.toolCalls?.length || 0,
-            },
-          },
-        }
+        // If responseFormat was specified, return the content directly as the response
+        // with metadata as additional fields
+        const output = responseFormat
+          ? {
+              ...JSON.parse(response.content), // The formatted response as the root
+              tokens: response.tokens || {
+                prompt: 0,
+                completion: 0,
+                total: 0,
+              },
+              toolCalls: response.toolCalls
+                ? {
+                    list: response.toolCalls,
+                    count: response.toolCalls.length,
+                  }
+                : undefined,
+            }
+          : {
+              // Default format when no responseFormat specified
+              response: {
+                content: response.content,
+                model: response.model,
+                tokens: response.tokens || {
+                  prompt: 0,
+                  completion: 0,
+                  total: 0,
+                },
+                toolCalls: {
+                  list: response.toolCalls || [],
+                  count: response.toolCalls?.length || 0,
+                },
+              },
+            }
 
         blockLog.success = true
         blockLog.output = output
@@ -367,11 +380,6 @@ export class Executor {
       if (!tool) {
         throw new Error(`Tool ${block.config.tool} not found`)
       }
-
-      // console.log('Executing tool:', {
-      //   tool: block.config.tool,
-      //   inputs
-      // });
 
       const result = await executeTool(block.config.tool, inputs)
 

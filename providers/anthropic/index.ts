@@ -120,7 +120,15 @@ export const anthropicProvider: ProviderConfig = {
       })
     }
 
-    // Build the request payload exactly as Anthropic expects
+    // Ensure there's at least one message by adding the system prompt as a user message if no messages exist
+    if (messages.length === 0) {
+      messages.push({
+        role: 'user',
+        content: [{ type: 'text', text: request.systemPrompt || '' }],
+      })
+    }
+
+    // Build the request payload
     const payload = {
       model: request.model || 'claude-3-5-sonnet-20241022',
       messages,
@@ -128,6 +136,23 @@ export const anthropicProvider: ProviderConfig = {
       max_tokens: parseInt(String(request.maxTokens)) || 1024,
       temperature: parseFloat(String(request.temperature ?? 0.7)),
       ...(functions && { tools: functions }),
+    }
+
+    // If response format is specified, add strict formatting instructions
+    if (request.responseFormat) {
+      payload.system = `${payload.system}\n\nIMPORTANT RESPONSE FORMAT INSTRUCTIONS:
+1. Your response must be EXACTLY in this format, with no additional fields:
+{
+${request.responseFormat.fields.map((field) => `  "${field.name}": ${field.type === 'string' ? '"value"' : field.type === 'array' ? '[]' : field.type === 'object' ? '{}' : field.type === 'number' ? '0' : 'true/false'}`).join(',\n')}
+}
+
+Field descriptions:
+${request.responseFormat.fields.map((field) => `${field.name} (${field.type})${field.description ? `: ${field.description}` : ''}`).join('\n')}
+
+2. DO NOT include any explanatory text before or after the JSON
+3. DO NOT wrap the response in an array
+4. DO NOT add any fields not specified in the schema
+5. Your response MUST be valid JSON and include all the specified fields with their correct types`
     }
 
     return payload
@@ -156,19 +181,27 @@ export const anthropicProvider: ProviderConfig = {
         content = messageContent
       }
 
-      const result = {
-        content,
-        model: rawResponse?.model || response?.model || 'claude-3-5-sonnet-20241022',
-        ...(rawResponse?.usage && {
-          tokens: {
-            prompt: rawResponse.usage.input_tokens,
-            completion: rawResponse.usage.output_tokens,
-            total: rawResponse.usage.input_tokens + rawResponse.usage.output_tokens,
-          },
-        }),
+      // If the content looks like it contains JSON, extract just the JSON part
+      if (content.includes('{') && content.includes('}')) {
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/m)
+          if (jsonMatch) {
+            content = jsonMatch[0]
+          }
+        } catch (e) {
+          console.error('Error extracting JSON from response:', e)
+        }
       }
 
-      return result
+      return {
+        content,
+        model: rawResponse?.model || response?.model || 'claude-3-5-sonnet-20241022',
+        tokens: rawResponse?.usage && {
+          prompt: rawResponse.usage.input_tokens,
+          completion: rawResponse.usage.output_tokens,
+          total: rawResponse.usage.input_tokens + rawResponse.usage.output_tokens,
+        },
+      }
     } catch (error) {
       console.error('Error in transformResponse:', error)
       return { content: '' }

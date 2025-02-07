@@ -48,6 +48,19 @@ export type BlockOutput =
 export interface ParamConfig {
   type: ParamType
   required: boolean
+  description?: string
+  schema?: {
+    type: string
+    properties: Record<string, any>
+    required?: string[]
+    additionalProperties?: boolean
+    items?: {
+      type: string
+      properties?: Record<string, any>
+      required?: string[]
+      additionalProperties?: boolean
+    }
+  }
 }
 
 export interface SubBlockConfig {

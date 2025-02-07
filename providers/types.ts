@@ -89,6 +89,13 @@ export interface ProviderRequest {
   maxTokens?: number
   apiKey: string
   messages?: Message[]
+  responseFormat?: {
+    fields: Array<{
+      name: string
+      type: 'string' | 'number' | 'boolean' | 'array' | 'object'
+      description?: string
+    }>
+  }
 }
 
 // Map of provider IDs to their configurations

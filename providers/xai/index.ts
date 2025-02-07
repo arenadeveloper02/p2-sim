@@ -94,10 +94,53 @@ export const xAIProvider: ProviderConfig = {
       return msg
     })
 
+    // Add response format for structured output if specified
+    let systemPrompt = request.systemPrompt
+    if (request.responseFormat) {
+      systemPrompt += `\n\nYou MUST respond with a valid JSON object. DO NOT include any other text, explanations, or markdown formatting in your response - ONLY the JSON object.\n\nThe response MUST match this schema:\n${JSON.stringify(
+        {
+          type: 'object',
+          properties: request.responseFormat.fields.reduce(
+            (acc, field) => ({
+              ...acc,
+              [field.name]: {
+                type:
+                  field.type === 'array'
+                    ? 'array'
+                    : field.type === 'object'
+                      ? 'object'
+                      : field.type,
+                description: field.description,
+              },
+            }),
+            {}
+          ),
+          required: request.responseFormat.fields.map((f) => f.name),
+        },
+        null,
+        2
+      )}\n\nExample response format:\n{\n${request.responseFormat.fields
+        .map(
+          (f) =>
+            `  "${f.name}": ${
+              f.type === 'string'
+                ? '"value"'
+                : f.type === 'number'
+                  ? '0'
+                  : f.type === 'boolean'
+                    ? 'true'
+                    : f.type === 'array'
+                      ? '[]'
+                      : '{}'
+            }`
+        )
+        .join(',\n')}\n}`
+    }
+
     const payload = {
       model: request.model || 'grok-2-latest',
       messages: [
-        { role: 'system', content: request.systemPrompt },
+        { role: 'system', content: systemPrompt },
         ...(request.context ? [{ role: 'user', content: request.context }] : []),
         ...messages,
       ],
@@ -106,6 +149,45 @@ export const xAIProvider: ProviderConfig = {
       ...(functions && {
         tools: functions,
         tool_choice: 'auto', // xAI specific parameter
+      }),
+      ...(request.responseFormat && {
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'structured_response',
+            schema: {
+              type: 'object',
+              properties: request.responseFormat.fields.reduce(
+                (acc, field) => ({
+                  ...acc,
+                  [field.name]: {
+                    type:
+                      field.type === 'array'
+                        ? 'array'
+                        : field.type === 'object'
+                          ? 'object'
+                          : field.type === 'number'
+                            ? 'number'
+                            : field.type === 'boolean'
+                              ? 'boolean'
+                              : 'string',
+                    description: field.description || '',
+                    ...(field.type === 'array' && {
+                      items: { type: 'string' },
+                    }),
+                    ...(field.type === 'object' && {
+                      additionalProperties: true,
+                    }),
+                  },
+                }),
+                {}
+              ),
+              required: request.responseFormat.fields.map((f) => f.name),
+              additionalProperties: false,
+            },
+            strict: true,
+          },
+        },
       }),
     }
 

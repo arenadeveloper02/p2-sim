@@ -39,12 +39,52 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           const blockConfig = getBlock(block.type)
           if (!blockConfig) return state
 
-          // Create new subBlocks state
+          // Validate responseFormat if it's the agent block's responseFormat input
+          if (blockConfig.type === 'agent' && subBlockId === 'responseFormat' && value) {
+            console.log('Validating responseFormat input:', {
+              type: typeof value,
+              rawValue: value,
+            })
+
+            try {
+              // Parse the input string to validate JSON but keep original string value
+              const parsed = JSON.parse(value)
+              console.log('Parsed responseFormat:', parsed)
+
+              // Simple validation of required schema structure
+              if (!parsed.fields || !Array.isArray(parsed.fields)) {
+                console.error('Validation failed: missing fields array')
+                throw new Error('Response format must have a fields array')
+              }
+
+              for (const field of parsed.fields) {
+                console.log('Validating field:', field)
+                if (!field.name || !field.type) {
+                  console.error('Validation failed: field missing name or type', field)
+                  throw new Error('Each field must have a name and type')
+                }
+                if (!['string', 'number', 'boolean', 'array', 'object'].includes(field.type)) {
+                  console.error('Validation failed: invalid field type', field)
+                  throw new Error(
+                    `Invalid type "${field.type}" - must be one of: string, number, boolean, array, object`
+                  )
+                }
+              }
+
+              console.log('responseFormat validation successful')
+              // Don't modify the value, keep it as the original string
+            } catch (error: any) {
+              console.error('responseFormat validation error:', error)
+              throw new Error(`Invalid JSON schema: ${error.message}`)
+            }
+          }
+
+          // Create new subBlocks state with the original value
           const newSubBlocks = {
             ...block.subBlocks,
             [subBlockId]: {
               ...block.subBlocks[subBlockId],
-              value,
+              value: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
             },
           }
 

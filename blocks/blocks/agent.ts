@@ -60,7 +60,41 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       context: { type: 'string', required: false },
       model: { type: 'string', required: true },
       apiKey: { type: 'string', required: true },
-      responseFormat: { type: 'json', required: false },
+      responseFormat: {
+        type: 'json',
+        required: false,
+        description:
+          'Define the expected response format. If not provided, returns plain text content.',
+        schema: {
+          type: 'object',
+          properties: {
+            fields: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  type: {
+                    type: 'string',
+                    enum: ['string', 'number', 'boolean', 'array', 'object'],
+                  },
+                  description: {
+                    type: 'string',
+                  },
+                },
+                required: ['name', 'type'],
+                additionalProperties: false,
+              },
+              minItems: 1,
+            },
+          },
+          required: ['fields'],
+          additionalProperties: false,
+        },
+      },
       temperature: { type: 'number', required: false },
       tools: { type: 'json', required: false },
     },
@@ -124,6 +158,20 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
         title: 'Response Format',
         type: 'code',
         layout: 'full',
+        placeholder: `{
+  "fields": [
+    {
+      "name": "sentiment",
+      "type": "string",
+      "description": "The sentiment of the text (positive, negative, neutral)"
+    },
+    {
+      "name": "score",
+      "type": "number",
+      "description": "Confidence score between 0 and 1"
+    }
+  ]
+}`,
       },
     ],
   },

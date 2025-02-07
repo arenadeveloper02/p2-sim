@@ -2,6 +2,28 @@ import { executeTool, getTool } from '@/tools'
 import { getProvider } from './registry'
 import { ProviderRequest, ProviderResponse, TokenInfo } from './types'
 
+// Helper function to generate provider-specific structured output instructions
+function generateStructuredOutputInstructions(responseFormat: any): string {
+  if (!responseFormat?.fields) return ''
+
+  const fields = responseFormat.fields
+    .map((field: any) => {
+      return `${field.name} (${field.type})${field.description ? `: ${field.description}` : ''}`
+    })
+    .join('\n')
+
+  return `
+Please provide your response in the following JSON format:
+{
+  ${responseFormat.fields.map((field: any) => `"${field.name}": "${field.type === 'string' ? 'value' : field.type === 'number' ? '0' : field.type === 'boolean' ? 'true/false' : '[]'}"`).join(',\n  ')}
+}
+
+Field descriptions:
+${fields}
+
+Your response MUST be valid JSON and include all the specified fields with their correct types.`
+}
+
 export async function executeProviderRequest(
   providerId: string,
   request: ProviderRequest
@@ -9,6 +31,14 @@ export async function executeProviderRequest(
   const provider = getProvider(providerId)
   if (!provider) {
     throw new Error(`Provider not found: ${providerId}`)
+  }
+
+  // If responseFormat is provided, modify the system prompt to enforce structured output
+  if (request.responseFormat) {
+    const structuredOutputInstructions = generateStructuredOutputInstructions(
+      request.responseFormat
+    )
+    request.systemPrompt = `${request.systemPrompt}\n\n${structuredOutputInstructions}`
   }
 
   // Transform tools to provider-specific function format
@@ -37,6 +67,51 @@ export async function executeProviderRequest(
       // Transform the response using provider-specific logic
       const transformedResponse = provider.transformResponse(currentResponse)
       content = transformedResponse.content
+
+      // If responseFormat is specified and we have content (not a function call), validate and parse the response
+      if (request.responseFormat && content && !provider.hasFunctionCall(currentResponse)) {
+        try {
+          // Try to parse the content as JSON
+          const parsedContent = JSON.parse(content)
+
+          // Validate that all required fields are present and have correct types
+          const validationErrors = request.responseFormat.fields
+            .map((field: any) => {
+              if (!(field.name in parsedContent)) {
+                return `Missing field: ${field.name}`
+              }
+              const value = parsedContent[field.name]
+              const type = typeof value
+              if (field.type === 'string' && type !== 'string') {
+                return `Invalid type for ${field.name}: expected string, got ${type}`
+              }
+              if (field.type === 'number' && type !== 'number') {
+                return `Invalid type for ${field.name}: expected number, got ${type}`
+              }
+              if (field.type === 'boolean' && type !== 'boolean') {
+                return `Invalid type for ${field.name}: expected boolean, got ${type}`
+              }
+              if (field.type === 'array' && !Array.isArray(value)) {
+                return `Invalid type for ${field.name}: expected array, got ${type}`
+              }
+              if (field.type === 'object' && (type !== 'object' || Array.isArray(value))) {
+                return `Invalid type for ${field.name}: expected object, got ${type}`
+              }
+              return null
+            })
+            .filter(Boolean)
+
+          if (validationErrors.length > 0) {
+            throw new Error(`Response format validation failed:\n${validationErrors.join('\n')}`)
+          }
+
+          // Store the validated JSON response
+          content = JSON.stringify(parsedContent)
+        } catch (error: any) {
+          console.error('Error parsing structured response:', error)
+          throw new Error(`Failed to parse response as structured output: ${error.message}`)
+        }
+      }
 
       // Update tokens
       if (transformedResponse.tokens) {
@@ -138,7 +213,7 @@ export async function executeProviderRequest(
     if (iterationCount >= MAX_ITERATIONS) {
       console.log('Max iterations reached, breaking loop')
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error executing tool:', error)
     throw error
   }

@@ -116,8 +116,17 @@ export const deepseekProvider: ProviderConfig = {
 
     const output = response.choices?.[0]?.message
 
+    // Try to clean up the response content if it exists
+    let content = output?.content || ''
+    if (content) {
+      // Remove any markdown code block markers
+      content = content.replace(/```json\n?|\n?```/g, '')
+      // Trim any whitespace
+      content = content.trim()
+    }
+
     return {
-      content: output?.content || '',
+      content,
       tokens: response.usage && {
         prompt: response.usage.prompt_tokens,
         completion: response.usage.completion_tokens,

@@ -99,6 +99,34 @@ export const openaiProvider: ProviderConfig = {
       // gpt-4o supports standard parameters
       if (request.temperature !== undefined) payload.temperature = request.temperature
       if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+
+      // Add response format for structured output if specified
+      if (request.responseFormat) {
+        // Use OpenAI's simpler response format
+        payload.response_format = { type: 'json_object' }
+
+        // If we have both function calls and response format, we need to guide the model
+        if (functions) {
+          payload.messages[0].content = `${payload.messages[0].content}\n\nProcess:\n1. First, use the provided functions to gather the necessary data\n2. Then, format your final response as a SINGLE JSON object with these exact fields and types:\n${request.responseFormat.fields
+            .map(
+              (field) =>
+                `- "${field.name}" (${field.type})${field.description ? `: ${field.description}` : ''}`
+            )
+            .join(
+              '\n'
+            )}\n\nYour final response after function calls must be a SINGLE valid JSON object with all required fields and correct types. Do not return multiple objects or include any text outside the JSON.`
+        } else {
+          // If no functions, just format as JSON directly
+          payload.messages[0].content = `${payload.messages[0].content}\n\nYou MUST return a SINGLE JSON object with exactly these fields and types:\n${request.responseFormat.fields
+            .map(
+              (field) =>
+                `- "${field.name}" (${field.type})${field.description ? `: ${field.description}` : ''}`
+            )
+            .join(
+              '\n'
+            )}\n\nThe response must:\n1. Be a single valid JSON object\n2. Include all the specified fields\n3. Use the correct type for each field\n4. Not include any additional fields\n5. Not include any explanatory text outside the JSON\n6. Not return multiple objects`
+        }
+      }
     } else {
       // o1 models use max_completion_tokens
       if (request.maxTokens !== undefined) {
