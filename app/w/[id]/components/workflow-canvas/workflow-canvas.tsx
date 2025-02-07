@@ -6,6 +6,7 @@ import ReactFlow, {
   ConnectionLineType,
   EdgeTypes,
   NodeTypes,
+  useOnViewportChange,
   useReactFlow,
 } from 'reactflow'
 import { useNotificationStore } from '@/stores/notifications/store'
@@ -43,7 +44,7 @@ export function WorkflowCanvas() {
     redo,
   } = useWorkflowStore()
   const { addNotification } = useNotificationStore()
-  const { project } = useReactFlow()
+  const { project, setViewport } = useReactFlow()
 
   // Transform blocks into ReactFlow node format
   const nodes = Object.values(blocks).map((block) => ({
@@ -86,11 +87,17 @@ export function WorkflowCanvas() {
   // Create new edges when nodes are connected
   const onConnect = useCallback(
     (connection: any) => {
-      addEdge({
+      // Use ReactFlow's addEdge utility
+      const newEdge = {
         ...connection,
         id: crypto.randomUUID(),
         type: 'custom',
-      })
+      }
+
+      // Validate connection before adding
+      if (newEdge.source && newEdge.target) {
+        addEdge(newEdge)
+      }
     },
     [addEdge]
   )
@@ -166,9 +173,9 @@ export function WorkflowCanvas() {
     initializeStateLogger()
   }, [])
 
-  // Add selection data to edges for visual feedback
   const edgesWithSelection = edges.map((edge) => ({
     ...edge,
+    type: edge.type || 'custom',
     data: {
       selectedEdgeId,
       onDelete: (edgeId: string) => {
@@ -177,6 +184,40 @@ export function WorkflowCanvas() {
       },
     },
   }))
+
+  // Replace useViewport with useOnViewportChange
+  useOnViewportChange({
+    onStart: ({ x, y, zoom }) => {
+      console.log('Viewport change start:', {
+        x: Math.round(x),
+        y: Math.round(y),
+        zoom: zoom.toFixed(2),
+      })
+    },
+    onEnd: ({ x, y, zoom }) => {
+      console.log('Viewport change end:', {
+        x: Math.round(x),
+        y: Math.round(y),
+        zoom: zoom.toFixed(2),
+      })
+    },
+  })
+
+  // For the random movement function, we can use setViewport from useReactFlow
+  const moveToRandomLocation = useCallback(() => {
+    const randomX = Math.random() * 1000 - 500
+    const randomY = Math.random() * 1000 - 500
+    const randomZoom = Math.random() * 0.5 + 0.5
+
+    setViewport(
+      {
+        x: randomX,
+        y: randomY,
+        zoom: randomZoom,
+      },
+      { duration: 500 }
+    )
+  }, [setViewport])
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)]">
