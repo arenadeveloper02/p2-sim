@@ -243,9 +243,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
           className={cn(
             '!w-3.5 !h-3.5',
             '!bg-white !rounded-full !border !border-gray-200',
-            '!opacity-0 group-hover:!opacity-100',
-            '!transition-opacity !duration-200 !cursor-crosshair',
-            'hover:!border-blue-500',
+            '!transition-border !duration-150 !cursor-crosshair',
+            'group-hover:!border-blue-500',
             '!right-[-7px]'
           )}
         />
