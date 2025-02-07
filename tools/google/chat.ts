@@ -44,7 +44,7 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
     },
     model: {
       type: 'string',
-      default: 'gemini-pro',
+      default: 'gemini-2.0-flash-001',
       description: 'Model to use',
     },
     temperature: {
@@ -55,7 +55,7 @@ export const chatTool: ToolConfig<ChatParams, ChatResponse> = {
   },
 
   request: {
-    url: 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent',
+    url: 'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-001:generateContent',
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',

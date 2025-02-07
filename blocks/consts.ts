@@ -5,7 +5,7 @@ export const MODEL_TOOLS = {
   'deepseek-v3': 'deepseek_chat',
   'deepseek-r1': 'deepseek_reasoner',
   'claude-3-5-sonnet-20241022': 'anthropic_chat',
-  'gemini-pro': 'google_chat',
+  'gemini-2.0-flash': 'google_chat',
   'grok-2-latest': 'xai_chat',
 } as const
 

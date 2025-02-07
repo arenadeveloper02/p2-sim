@@ -6,10 +6,11 @@ export const googleProvider: ProviderConfig = {
   name: 'Google',
   description: "Google's Gemini models",
   version: '1.0.0',
-  models: ['gemini-pro'],
-  defaultModel: 'gemini-pro',
+  models: ['gemini-2.0-flash-001'],
+  defaultModel: 'gemini-2.0-flash-001',
 
-  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+  baseUrl:
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent',
   headers: (apiKey: string) => ({
     'Content-Type': 'application/json',
     'x-goog-api-key': apiKey,
@@ -114,68 +115,7 @@ export const googleProvider: ProviderConfig = {
 
   transformRequest: (request: ProviderRequest, functions?: any) => {
     // Combine system prompt and context into a single message if both exist
-    let initialMessage = request.systemPrompt
-
-    // Add response format for structured output if specified
-    let generationConfig: any = {
-      temperature: request.temperature || 0.7,
-      maxOutputTokens: request.maxTokens || 1024,
-    }
-
-    if (request.responseFormat) {
-      // Convert our standard JSON Schema format to Google's expected format
-      const googleSchema = {
-        type: 'OBJECT',
-        properties: request.responseFormat.fields.reduce(
-          (acc, field) => ({
-            ...acc,
-            [field.name]: {
-              type:
-                field.type === 'array'
-                  ? 'ARRAY'
-                  : field.type === 'object'
-                    ? 'OBJECT'
-                    : field.type === 'number'
-                      ? 'NUMBER'
-                      : field.type === 'boolean'
-                        ? 'BOOLEAN'
-                        : 'STRING',
-              description: field.description || '',
-              ...(field.type === 'array' && {
-                items: {
-                  type: 'STRING',
-                },
-              }),
-              ...(field.type === 'object' && {
-                properties: {
-                  // Add a flexible string field to satisfy Google's validation
-                  _any: {
-                    type: 'STRING',
-                    description: 'Any additional metadata',
-                  },
-                },
-              }),
-            },
-          }),
-          {}
-        ),
-      }
-
-      // Add schema to generation config
-      generationConfig = {
-        ...generationConfig,
-        response_mime_type: 'application/json',
-        response_schema: googleSchema,
-      }
-
-      // Add clear instructions in the initial message
-      initialMessage = `${initialMessage}\n\nPlease provide your response as a valid JSON object following the specified schema. The response should only contain the JSON data without any additional text or explanations.`
-    }
-
-    // Add context if provided
-    if (request.context) {
-      initialMessage += `\n\n${request.context}`
-    }
+    const initialMessage = request.systemPrompt + (request.context ? `\n\n${request.context}` : '')
 
     const messages = [
       { role: 'user', parts: [{ text: initialMessage }] },
@@ -234,7 +174,10 @@ export const googleProvider: ProviderConfig = {
     return {
       contents: messages,
       tools: functions ? [{ functionDeclarations: functions.functionDeclarations }] : undefined,
-      generationConfig,
+      generationConfig: {
+        temperature: request.temperature || 0.7,
+        maxOutputTokens: request.maxTokens || 1024,
+      },
     }
   },
 
