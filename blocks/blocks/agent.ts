@@ -75,24 +75,52 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
                 properties: {
                   name: {
                     type: 'string',
-                    minLength: 1,
+                    description: 'Name of the field',
                   },
                   type: {
                     type: 'string',
                     enum: ['string', 'number', 'boolean', 'array', 'object'],
+                    description: 'Type of the field',
+                  },
+                  isArray: {
+                    type: 'boolean',
+                    description: 'Whether this field contains multiple values',
+                  },
+                  items: {
+                    type: 'object',
+                    description: 'Schema for array items (required when isArray is true)',
+                    properties: {
+                      type: {
+                        type: 'string',
+                        enum: ['string', 'number', 'boolean', 'object'],
+                      },
+                      properties: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            name: { type: 'string' },
+                            type: {
+                              type: 'string',
+                              enum: ['string', 'number', 'boolean'],
+                            },
+                          },
+                          required: ['name', 'type'],
+                        },
+                      },
+                    },
                   },
                   description: {
                     type: 'string',
+                    description: 'Description of what this field represents',
                   },
                 },
                 required: ['name', 'type'],
                 additionalProperties: false,
               },
-              minItems: 1,
             },
           },
           required: ['fields'],
-          additionalProperties: false,
         },
       },
       temperature: { type: 'number', required: false },

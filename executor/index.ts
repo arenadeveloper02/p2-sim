@@ -296,7 +296,9 @@ export class Executor {
         const response = await executeProviderRequest(providerId, {
           model,
           systemPrompt: inputs.systemPrompt,
-          context: inputs.context,
+          context: Array.isArray(inputs.context)
+            ? JSON.stringify(inputs.context, null, 2)
+            : inputs.context,
           tools: tools.length > 0 ? tools : undefined,
           temperature: inputs.temperature,
           maxTokens: inputs.maxTokens,
@@ -512,13 +514,22 @@ export class Executor {
 
               // If a valid leaf is found
               if (replacementValue !== undefined) {
-                // Replace the placeholder in the string
-                resolvedValue = resolvedValue.replace(
-                  match,
-                  typeof replacementValue === 'object'
-                    ? JSON.stringify(replacementValue)
-                    : String(replacementValue)
-                )
+                // Special handling for context field to ensure proper formatting
+                if (key === 'context') {
+                  // If it's not a string, stringify it for context
+                  resolvedValue =
+                    typeof replacementValue === 'string'
+                      ? replacementValue
+                      : JSON.stringify(replacementValue, null, 2)
+                } else {
+                  // For all other fields, use existing logic
+                  resolvedValue = resolvedValue.replace(
+                    match,
+                    typeof replacementValue === 'object'
+                      ? JSON.stringify(replacementValue)
+                      : String(replacementValue)
+                  )
+                }
               } else {
                 throw new Error(
                   `No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`
