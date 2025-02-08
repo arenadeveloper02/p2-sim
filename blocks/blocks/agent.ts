@@ -198,6 +198,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
         title: 'Response Format',
         type: 'code',
         layout: 'full',
+        minimizable: true,
         placeholder: `{
   "fields": [
     {

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/themes/prism.css'
 import Editor from 'react-simple-code-editor'
+import { Button } from '@/components/ui/button'
 import { EnvVarDropdown, checkEnvVarTrigger } from '@/components/ui/env-var-dropdown'
 import { TagDropdown, checkTagTrigger } from '@/components/ui/tag-dropdown'
 import { cn } from '@/lib/utils'
@@ -12,9 +14,10 @@ interface CodeProps {
   blockId: string
   subBlockId: string
   isConnecting: boolean
+  minimizable?: boolean
 }
 
-export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
+export function Code({ blockId, subBlockId, isConnecting, minimizable }: CodeProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
   const [code, setCode] = useState('')
   const [lineCount, setLineCount] = useState(1)
@@ -23,6 +26,7 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
   const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
+  const [isMinimized, setIsMinimized] = useState(false)
   const editorRef = useRef<HTMLDivElement>(null)
 
   // Add new state for tracking visual line heights
@@ -186,98 +190,132 @@ export function Code({ blockId, subBlockId, isConnecting }: CodeProps) {
   return (
     <div
       className={cn(
-        'font-mono text-sm border rounded-md overflow-visible relative',
-        'bg-background text-muted-foreground',
+        'relative min-h-[100px] rounded-md border bg-background font-mono text-sm',
         isConnecting && 'ring-2 ring-blue-500 ring-offset-2'
       )}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      {/* Updated line numbers */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-[30px] bg-muted/30 flex flex-col items-end pr-3 pt-3 select-none"
-        aria-hidden="true"
-      >
-        {renderLineNumbers()}
-      </div>
+      {minimizable && code.length > 0 && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-2 top-2 z-10 h-6 w-6 hover:bg-accent hover:text-accent-foreground"
+          onClick={() => setIsMinimized(!isMinimized)}
+        >
+          {isMinimized ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+        </Button>
+      )}
 
-      <div ref={editorRef} className="pl-[30px] pt-0 mt-0 relative">
-        {code.length === 0 && (
-          <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
-            Write JavaScript...
+      {isMinimized && minimizable && code.length > 0 ? (
+        <div className="p-3 font-mono">
+          <div className="relative overflow-hidden">
+            <Editor
+              value={code}
+              onValueChange={() => {}}
+              highlight={(code) => highlight(code, languages.javascript, 'javascript')}
+              padding={0}
+              style={{
+                fontFamily: 'inherit',
+                maxHeight: '80px',
+                lineHeight: '21px',
+              }}
+              className="focus:outline-none pointer-events-none"
+              textareaClassName="focus:outline-none focus:ring-0 bg-transparent opacity-50"
+              readOnly
+            />
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-background to-transparent" />
           </div>
-        )}
-        <Editor
-          value={code}
-          onValueChange={(newCode) => {
-            setCode(newCode)
-            setStoreValue(newCode)
+        </div>
+      ) : (
+        <>
+          {/* Line numbers */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-[30px] bg-muted/30 flex flex-col items-end pr-3 pt-3 select-none"
+            aria-hidden="true"
+          >
+            {renderLineNumbers()}
+          </div>
 
-            // Check for tag trigger and environment variable trigger
-            const textarea = editorRef.current?.querySelector('textarea')
-            if (textarea) {
-              const pos = textarea.selectionStart
-              setCursorPosition(pos)
+          <div className="pl-[30px] pt-0 mt-0 relative" ref={editorRef}>
+            {code.length === 0 && (
+              <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
+                Write JavaScript...
+              </div>
+            )}
+            <Editor
+              value={code}
+              onValueChange={(newCode) => {
+                setCode(newCode)
+                setStoreValue(newCode)
 
-              // Tag trigger check
-              const tagTrigger = checkTagTrigger(newCode, pos)
-              setShowTags(tagTrigger.show)
-              if (!tagTrigger.show) {
-                setActiveSourceBlockId(null)
-              }
+                // Check for tag trigger and environment variable trigger
+                const textarea = editorRef.current?.querySelector('textarea')
+                if (textarea) {
+                  const pos = textarea.selectionStart
+                  setCursorPosition(pos)
 
-              // Environment variable trigger check
-              const envVarTrigger = checkEnvVarTrigger(newCode, pos)
-              setShowEnvVars(envVarTrigger.show)
-              setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setShowTags(false)
-              setShowEnvVars(false)
-            }
-          }}
-          highlight={(code) => highlight(code, languages.javascript, 'javascript')}
-          padding={12}
-          style={{
-            fontFamily: 'inherit',
-            minHeight: '46px',
-            lineHeight: '21px',
-          }}
-          className="focus:outline-none"
-          textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
-        />
+                  // Tag trigger check
+                  const tagTrigger = checkTagTrigger(newCode, pos)
+                  setShowTags(tagTrigger.show)
+                  if (!tagTrigger.show) {
+                    setActiveSourceBlockId(null)
+                  }
 
-        {showEnvVars && (
-          <EnvVarDropdown
-            visible={showEnvVars}
-            onSelect={handleEnvVarSelect}
-            searchTerm={searchTerm}
-            inputValue={code}
-            cursorPosition={cursorPosition}
-            onClose={() => {
-              setShowEnvVars(false)
-              setSearchTerm('')
-            }}
-          />
-        )}
+                  // Environment variable trigger check
+                  const envVarTrigger = checkEnvVarTrigger(newCode, pos)
+                  setShowEnvVars(envVarTrigger.show)
+                  setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setShowTags(false)
+                  setShowEnvVars(false)
+                }
+              }}
+              highlight={(code) => highlight(code, languages.javascript, 'javascript')}
+              padding={12}
+              style={{
+                fontFamily: 'inherit',
+                minHeight: '46px',
+                lineHeight: '21px',
+              }}
+              className="focus:outline-none"
+              textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
+            />
 
-        {showTags && (
-          <TagDropdown
-            visible={showTags}
-            onSelect={handleTagSelect}
-            blockId={blockId}
-            activeSourceBlockId={activeSourceBlockId}
-            inputValue={code}
-            cursorPosition={cursorPosition}
-            onClose={() => {
-              setShowTags(false)
-              setActiveSourceBlockId(null)
-            }}
-          />
-        )}
-      </div>
+            {showEnvVars && (
+              <EnvVarDropdown
+                visible={showEnvVars}
+                onSelect={handleEnvVarSelect}
+                searchTerm={searchTerm}
+                inputValue={code}
+                cursorPosition={cursorPosition}
+                onClose={() => {
+                  setShowEnvVars(false)
+                  setSearchTerm('')
+                }}
+              />
+            )}
+
+            {showTags && (
+              <TagDropdown
+                visible={showTags}
+                onSelect={handleTagSelect}
+                blockId={blockId}
+                activeSourceBlockId={activeSourceBlockId}
+                inputValue={code}
+                cursorPosition={cursorPosition}
+                onClose={() => {
+                  setShowTags(false)
+                  setActiveSourceBlockId(null)
+                }}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
