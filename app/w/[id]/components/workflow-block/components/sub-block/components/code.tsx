@@ -196,11 +196,11 @@ export function Code({ blockId, subBlockId, isConnecting, minimizable }: CodePro
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      {minimizable && code.length > 0 && (
+      {minimizable && code.length > 0 && lineCount > 3 && (
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-2 top-2 z-10 h-6 w-6 hover:bg-accent hover:text-accent-foreground"
+          className="absolute right-2 top-2 z-10 h-6 w-6 text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={() => setIsMinimized(!isMinimized)}
         >
           {isMinimized ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
