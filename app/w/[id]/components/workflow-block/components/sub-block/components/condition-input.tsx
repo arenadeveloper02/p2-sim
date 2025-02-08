@@ -16,6 +16,11 @@ interface ConditionalBlock {
   id: string
   title: string
   value: string
+  showTags: boolean
+  showEnvVars: boolean
+  searchTerm: string
+  cursorPosition: number
+  activeSourceBlockId: string | null
 }
 
 interface ConditionInputProps {
@@ -36,9 +41,18 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
   const [visualLineHeights, setVisualLineHeights] = useState<{ [key: string]: number[] }>({})
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Initialize conditional blocks with empty values
+  // Initialize conditional blocks with empty values and dropdown states
   const [conditionalBlocks, setConditionalBlocks] = useState<ConditionalBlock[]>([
-    { id: crypto.randomUUID(), title: 'if', value: '' },
+    {
+      id: crypto.randomUUID(),
+      title: 'if',
+      value: '',
+      showTags: false,
+      showEnvVars: false,
+      searchTerm: '',
+      cursorPosition: 0,
+      activeSourceBlockId: null,
+    },
   ])
 
   // Sync store value with conditional blocks on initial load
@@ -51,7 +65,18 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
         }
       } catch {
         // If the store value isn't valid JSON, initialize with default block
-        setConditionalBlocks([{ id: crypto.randomUUID(), title: 'if', value: '' }])
+        setConditionalBlocks([
+          {
+            id: crypto.randomUUID(),
+            title: 'if',
+            value: '',
+            showTags: false,
+            showEnvVars: false,
+            searchTerm: '',
+            cursorPosition: 0,
+            activeSourceBlockId: null,
+          },
+        ])
       }
     }
   }, [])
@@ -62,11 +87,41 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     updateNodeInternals(`${blockId}-${subBlockId}`)
   }, [conditionalBlocks, blockId, subBlockId])
 
-  // Update block value
-  const updateBlockValue = (blockId: string, newValue: string) => {
-    setConditionalBlocks((blocks) =>
-      blocks.map((block) => (block.id === blockId ? { ...block, value: newValue } : block))
-    )
+  // Update block value with trigger checks
+  const updateBlockValue = (
+    blockId: string,
+    newValue: string,
+    textarea: HTMLTextAreaElement | null
+  ) => {
+    try {
+      setConditionalBlocks((blocks) =>
+        blocks.map((block) => {
+          if (block.id === blockId) {
+            const pos = textarea?.selectionStart ?? 0
+            const tagTrigger = checkTagTrigger(newValue, pos)
+            const envVarTrigger = checkEnvVarTrigger(newValue, pos)
+
+            // Check if the last character typed was "<"
+            const lastCharTyped = newValue.charAt(pos - 1)
+            const shouldShowTags = tagTrigger.show || lastCharTyped === '<'
+
+            return {
+              ...block,
+              value: newValue,
+              showTags: shouldShowTags,
+              showEnvVars: envVarTrigger.show,
+              searchTerm: envVarTrigger.show ? envVarTrigger.searchTerm : '',
+              cursorPosition: pos,
+              // Only set activeSourceBlockId to null if we're hiding the tags dropdown
+              activeSourceBlockId: shouldShowTags ? block.activeSourceBlockId : null,
+            }
+          }
+          return block
+        })
+      )
+    } catch (error) {
+      console.error('Error updating block value:', error, { blockId, newValue })
+    }
   }
 
   // Update the line counting logic to be block-specific
@@ -162,37 +217,34 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     return numbers
   }
 
-  // Handle drops from connection blocks
-  const handleDrop = (e: React.DragEvent) => {
+  // Handle drops from connection blocks - updated for individual blocks
+  const handleDrop = (blockId: string, e: React.DragEvent) => {
     e.preventDefault()
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'))
       if (data.type !== 'connectionBlock') return
 
-      // Get current cursor position from the textarea
-      const textarea = editorRef.current?.querySelector('textarea')
-      const dropPosition =
-        textarea?.selectionStart ?? conditionalBlocks.map((block) => block.value).join('\n').length
+      const textarea: any = editorRef.current?.querySelector(
+        `[data-block-id="${blockId}"] textarea`
+      )
+      const dropPosition = textarea?.selectionStart ?? 0
 
-      // Insert '<' at drop position to trigger the dropdown
-      const newValue =
-        conditionalBlocks
-          .map((block) => block.value)
-          .join('\n')
-          .slice(0, dropPosition) +
-        '<' +
-        conditionalBlocks
-          .map((block) => block.value)
-          .join('\n')
-          .slice(dropPosition)
-
-      updateBlockValue(data.connectionData?.sourceBlockId || '', newValue)
-      setCursorPosition(dropPosition + 1)
-      setShowTags(true)
-
-      if (data.connectionData?.sourceBlockId) {
-        setActiveSourceBlockId(data.connectionData.sourceBlockId)
-      }
+      setConditionalBlocks((blocks) =>
+        blocks.map((block) => {
+          if (block.id === blockId) {
+            const newValue =
+              block.value.slice(0, dropPosition) + '<' + block.value.slice(dropPosition)
+            return {
+              ...block,
+              value: newValue,
+              showTags: true,
+              cursorPosition: dropPosition + 1,
+              activeSourceBlockId: data.connectionData?.sourceBlockId || null,
+            }
+          }
+          return block
+        })
+      )
 
       // Set cursor position after state updates
       setTimeout(() => {
@@ -207,17 +259,36 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     }
   }
 
-  // Handle tag selection
-  const handleTagSelect = (newValue: string) => {
-    updateBlockValue(activeSourceBlockId || '', newValue)
-    setShowTags(false)
-    setActiveSourceBlockId(null)
+  // Handle tag selection - updated for individual blocks
+  const handleTagSelect = (blockId: string, newValue: string) => {
+    setConditionalBlocks((blocks) =>
+      blocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              value: newValue,
+              showTags: false,
+              activeSourceBlockId: null,
+            }
+          : block
+      )
+    )
   }
 
-  // Handle environment variable selection
-  const handleEnvVarSelect = (newValue: string) => {
-    updateBlockValue(activeSourceBlockId || '', newValue)
-    setShowEnvVars(false)
+  // Handle environment variable selection - updated for individual blocks
+  const handleEnvVarSelect = (blockId: string, newValue: string) => {
+    setConditionalBlocks((blocks) =>
+      blocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              value: newValue,
+              showEnvVars: false,
+              searchTerm: '',
+            }
+          : block
+      )
+    )
   }
 
   // Update block titles based on position
@@ -231,11 +302,30 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
   // Update these functions to use updateBlockTitles
   const addBlock = (afterId: string) => {
     const blockIndex = conditionalBlocks.findIndex((block) => block.id === afterId)
-    const newBlock = { id: crypto.randomUUID(), title: '', value: '' }
+    const newBlock: ConditionalBlock = {
+      id: crypto.randomUUID(),
+      title: '', // Will be set by updateBlockTitles
+      value: '',
+      showTags: false,
+      showEnvVars: false,
+      searchTerm: '',
+      cursorPosition: 0,
+      activeSourceBlockId: null,
+    }
 
     const newBlocks = [...conditionalBlocks]
     newBlocks.splice(blockIndex + 1, 0, newBlock)
     setConditionalBlocks(updateBlockTitles(newBlocks))
+
+    // Focus the new block's editor after a short delay to ensure the DOM is ready
+    setTimeout(() => {
+      const textarea: any = editorRef.current?.querySelector(
+        `[data-block-id="${newBlock.id}"] textarea`
+      )
+      if (textarea) {
+        textarea.focus()
+      }
+    }, 0)
   }
 
   const removeBlock = (id: string) => {
@@ -259,6 +349,24 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     ]
     setConditionalBlocks(updateBlockTitles(newBlocks))
   }
+
+  // Add useEffect to ensure editor refs are properly set up for all blocks
+  useEffect(() => {
+    conditionalBlocks.forEach((block) => {
+      const textarea = editorRef.current?.querySelector(`[data-block-id="${block.id}"] textarea`)
+      if (textarea) {
+        textarea.addEventListener('keydown', (e: Event) => {
+          if ((e as KeyboardEvent).key === 'Escape') {
+            setConditionalBlocks((blocks) =>
+              blocks.map((b) =>
+                b.id === block.id ? { ...b, showTags: false, showEnvVars: false } : b
+              )
+            )
+          }
+        })
+      }
+    })
+  }, [conditionalBlocks.length]) // Only re-run when blocks are added/removed
 
   return (
     <div className="space-y-4">
@@ -363,7 +471,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
               isConnecting && 'ring-2 ring-blue-500 ring-offset-2'
             )}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
+            onDrop={(e) => handleDrop(block.id, e)}
           >
             {/* Line numbers */}
             <div
@@ -373,7 +481,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
               {renderLineNumbers(block.id)}
             </div>
 
-            <div className="pl-[30px] pt-0 mt-0 relative" ref={editorRef}>
+            <div className="pl-[30px] pt-0 mt-0 relative" ref={editorRef} data-block-id={block.id}>
               {block.value.length === 0 && (
                 <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
                   {'<response> === true'}
@@ -382,29 +490,18 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
               <Editor
                 value={block.value}
                 onValueChange={(newCode) => {
-                  updateBlockValue(block.id, newCode)
-
-                  // Check for tag trigger and environment variable trigger
-                  const textarea = editorRef.current?.querySelector('textarea')
-                  if (textarea) {
-                    const pos = textarea.selectionStart
-                    setCursorPosition(pos)
-
-                    const tagTrigger = checkTagTrigger(newCode, pos)
-                    setShowTags(tagTrigger.show)
-                    if (!tagTrigger.show) {
-                      setActiveSourceBlockId(null)
-                    }
-
-                    const envVarTrigger = checkEnvVarTrigger(newCode, pos)
-                    setShowEnvVars(envVarTrigger.show)
-                    setSearchTerm(envVarTrigger.show ? envVarTrigger.searchTerm : '')
-                  }
+                  const textarea = editorRef.current?.querySelector(
+                    `[data-block-id="${block.id}"] textarea`
+                  )
+                  updateBlockValue(block.id, newCode, textarea as HTMLTextAreaElement | null)
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
-                    setShowTags(false)
-                    setShowEnvVars(false)
+                    setConditionalBlocks((blocks) =>
+                      blocks.map((b) =>
+                        b.id === block.id ? { ...b, showTags: false, showEnvVars: false } : b
+                      )
+                    )
                   }
                 }}
                 highlight={(code) => highlight(code, languages.javascript, 'javascript')}
@@ -418,31 +515,37 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
                 textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
               />
 
-              {showEnvVars && (
+              {block.showEnvVars && (
                 <EnvVarDropdown
-                  visible={showEnvVars}
-                  onSelect={handleEnvVarSelect}
-                  searchTerm={searchTerm}
+                  visible={block.showEnvVars}
+                  onSelect={(newValue) => handleEnvVarSelect(block.id, newValue)}
+                  searchTerm={block.searchTerm}
                   inputValue={block.value}
-                  cursorPosition={cursorPosition}
+                  cursorPosition={block.cursorPosition}
                   onClose={() => {
-                    setShowEnvVars(false)
-                    setSearchTerm('')
+                    setConditionalBlocks((blocks) =>
+                      blocks.map((b) =>
+                        b.id === block.id ? { ...b, showEnvVars: false, searchTerm: '' } : b
+                      )
+                    )
                   }}
                 />
               )}
 
-              {showTags && (
+              {block.showTags && (
                 <TagDropdown
-                  visible={showTags}
-                  onSelect={handleTagSelect}
+                  visible={block.showTags}
+                  onSelect={(newValue) => handleTagSelect(block.id, newValue)}
                   blockId={blockId}
-                  activeSourceBlockId={activeSourceBlockId}
+                  activeSourceBlockId={block.activeSourceBlockId}
                   inputValue={block.value}
-                  cursorPosition={cursorPosition}
+                  cursorPosition={block.cursorPosition}
                   onClose={() => {
-                    setShowTags(false)
-                    setActiveSourceBlockId(null)
+                    setConditionalBlocks((blocks) =>
+                      blocks.map((b) =>
+                        b.id === block.id ? { ...b, showTags: false, activeSourceBlockId: null } : b
+                      )
+                    )
                   }}
                 />
               )}
