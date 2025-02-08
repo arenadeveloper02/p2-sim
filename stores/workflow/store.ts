@@ -84,7 +84,17 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             ...block.subBlocks,
             [subBlockId]: {
               ...block.subBlocks[subBlockId],
-              value: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
+              value:
+                // Keep tools as arrays
+                subBlockId === 'tools' && Array.isArray(value)
+                  ? value
+                  : // Keep responseFormat as string
+                    subBlockId === 'responseFormat'
+                    ? value
+                    : // For all other values, use the previous logic of stringifying
+                      typeof value === 'string'
+                      ? value
+                      : JSON.stringify(value, null, 2),
             },
           }
 
