@@ -5,16 +5,16 @@ export interface ChatMessage {
   timestamp: number
 }
 
-export interface AIChatState {
+export interface ChatState {
   messages: ChatMessage[]
   isProcessing: boolean
   error: string | null
 }
 
-export interface AIChatActions {
+export interface ChatActions {
   sendMessage: (content: string) => Promise<void>
   clearChat: () => void
   setError: (error: string | null) => void
 }
 
-export type AIChatStore = AIChatState & AIChatActions
+export type ChatStore = ChatState & ChatActions

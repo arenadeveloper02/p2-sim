@@ -2,10 +2,10 @@ import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { useWorkflowStore } from '../workflow/store'
 import { useEnvironmentStore } from '../environment/store'
-import { AIChatStore, ChatMessage } from './types'
+import { ChatStore, ChatMessage } from './types'
 import { getNextBlockNumber } from './utils'
 
-export const useAIChatStore = create<AIChatStore>()(
+export const useChatStore = create<ChatStore>()(
   devtools(
     (set, get) => ({
       messages: [],

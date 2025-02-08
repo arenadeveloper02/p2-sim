@@ -5,10 +5,10 @@ import { MessageCircle, Send, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useAIChatStore } from '@/stores/chat/store'
+import { useChatStore } from '@/stores/chat/store'
 
 export function Chat() {
-  const { messages, isProcessing, error, sendMessage } = useAIChatStore()
+  const { messages, isProcessing, error, sendMessage } = useChatStore()
   const [isOpen, setIsOpen] = useState(false)
   const [message, setMessage] = useState('')
 
