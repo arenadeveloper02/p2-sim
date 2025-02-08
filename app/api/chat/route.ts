@@ -120,10 +120,10 @@ When users request changes:
 - Provide clear feedback about what actions you've taken
 
 Use the following functions to modify the workflow:
-1. Use the addBlock function to create new blocks
-2. Use the addEdge function to connect blocks
-3. Use the removeBlock function to remove blocks
-4. Use the removeEdge function to remove connections
+1. Use the addBlock function to create a new block
+2. Use the addEdge function to connect one block to another
+3. Use the removeBlock function to remove a block
+4. Use the removeEdge function to remove a connection
 
 Only use the provided functions and respond naturally to the user's requests.`
 }

@@ -158,7 +158,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       },
       {
         id: 'context',
-        title: 'Context',
+        title: 'User Prompt',
         type: 'short-input',
         layout: 'full',
         placeholder: 'Enter context or user message...',
