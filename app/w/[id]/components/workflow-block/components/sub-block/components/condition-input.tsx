@@ -87,7 +87,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     updateNodeInternals(`${blockId}-${subBlockId}`)
   }, [conditionalBlocks, blockId, subBlockId])
 
-  // Update block value with trigger checks
+  // Update block value with trigger checks - handle both tag and env var triggers consistently
   const updateBlockValue = (
     blockId: string,
     newValue: string,
@@ -101,18 +101,19 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
             const tagTrigger = checkTagTrigger(newValue, pos)
             const envVarTrigger = checkEnvVarTrigger(newValue, pos)
 
-            // Check if the last character typed was "<"
+            // Check triggers for both tags and env vars
             const lastCharTyped = newValue.charAt(pos - 1)
             const shouldShowTags = tagTrigger.show || lastCharTyped === '<'
+            const shouldShowEnvVars = envVarTrigger.show || lastCharTyped === '$'
 
             return {
               ...block,
               value: newValue,
               showTags: shouldShowTags,
-              showEnvVars: envVarTrigger.show,
-              searchTerm: envVarTrigger.show ? envVarTrigger.searchTerm : '',
+              showEnvVars: shouldShowEnvVars,
+              searchTerm: shouldShowEnvVars ? envVarTrigger.searchTerm : '',
               cursorPosition: pos,
-              // Only set activeSourceBlockId to null if we're hiding the tags dropdown
+              // Maintain activeSourceBlockId only when tags are showing
               activeSourceBlockId: shouldShowTags ? block.activeSourceBlockId : null,
             }
           }
@@ -317,7 +318,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     newBlocks.splice(blockIndex + 1, 0, newBlock)
     setConditionalBlocks(updateBlockTitles(newBlocks))
 
-    // Focus the new block's editor after a short delay to ensure the DOM is ready
+    // Focus the new block's editor after a short delay
     setTimeout(() => {
       const textarea: any = editorRef.current?.querySelector(
         `[data-block-id="${newBlock.id}"] textarea`
@@ -350,7 +351,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
     setConditionalBlocks(updateBlockTitles(newBlocks))
   }
 
-  // Add useEffect to ensure editor refs are properly set up for all blocks
+  // Add useEffect to handle keyboard events for both dropdowns
   useEffect(() => {
     conditionalBlocks.forEach((block) => {
       const textarea = editorRef.current?.querySelector(`[data-block-id="${block.id}"] textarea`)
@@ -359,14 +360,21 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
           if ((e as KeyboardEvent).key === 'Escape') {
             setConditionalBlocks((blocks) =>
               blocks.map((b) =>
-                b.id === block.id ? { ...b, showTags: false, showEnvVars: false } : b
+                b.id === block.id
+                  ? {
+                      ...b,
+                      showTags: false,
+                      showEnvVars: false,
+                      searchTerm: '',
+                    }
+                  : b
               )
             )
           }
         })
       }
     })
-  }, [conditionalBlocks.length]) // Only re-run when blocks are added/removed
+  }, [conditionalBlocks.length])
 
   return (
     <div className="space-y-4">
