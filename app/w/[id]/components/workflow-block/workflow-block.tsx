@@ -26,7 +26,6 @@ interface SubBlockPosition {
 
 export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBlockProps) {
   const { toolbar, workflow } = config
-  // Dragging connection state
   const [isConnecting, setIsConnecting] = useState(false)
   const isEnabled = useWorkflowStore((state) => state.blocks[id]?.enabled ?? true)
   const horizontalHandles = useWorkflowStore(
@@ -36,62 +35,12 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
   const [editedName, setEditedName] = useState('')
   const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
   const blockRef = useRef<HTMLDivElement>(null)
-  const [subBlockPositions, setSubBlockPositions] = useState<SubBlockPosition[]>([])
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Add a small delay to ensure DOM is ready
+  // Add effect to update node internals when handles change
   useEffect(() => {
-    const calculatePositions = () => {
-      if (!blockRef.current) return
-
-      // Add setTimeout to ensure styles are applied
-      setTimeout(() => {
-        const positions: SubBlockPosition[] = []
-        const blockRect = blockRef.current?.getBoundingClientRect()
-
-        if (!blockRect) return
-
-        workflow.subBlocks
-          .filter((block) => block.outputHandle)
-          .forEach((block) => {
-            const subBlockElement = blockRef.current?.querySelector(
-              `[data-subblock-id="${block.id}"]`
-            )
-            if (subBlockElement) {
-              const subBlockRect = subBlockElement.getBoundingClientRect()
-              positions.push({
-                id: block.id,
-                top: subBlockRect.bottom - blockRect.top - 25,
-              })
-            }
-          })
-
-        setSubBlockPositions(positions)
-        updateNodeInternals(id)
-      }, 0)
-    }
-
-    // Calculate initial positions with a slight delay
-    const initialTimer = setTimeout(calculatePositions, 50)
-
-    // Use ResizeObserver to detect size changes and recalculate
-    const resizeObserver = new ResizeObserver(() => {
-      calculatePositions()
-    })
-
-    if (blockRef.current) {
-      resizeObserver.observe(blockRef.current)
-    }
-
-    // Recalculate on window resize
-    window.addEventListener('resize', calculatePositions)
-
-    return () => {
-      clearTimeout(initialTimer)
-      resizeObserver.disconnect()
-      window.removeEventListener('resize', calculatePositions)
-    }
-  }, [workflow.subBlocks, id, updateNodeInternals])
+    updateNodeInternals(id)
+  }, [id, horizontalHandles])
 
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
     // Filter out hidden subblocks
@@ -157,6 +106,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
       <Handle
         type="target"
         position={horizontalHandles ? Position.Left : Position.Top}
+        id="target"
         className={cn(
           '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
@@ -164,6 +114,10 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
           '!transition-border !duration-150 !cursor-crosshair',
           horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
         )}
+        data-nodeid={id}
+        data-handleid="target"
+        isConnectableStart={false}
+        isConnectableEnd={true}
       />
 
       <div className="flex items-center justify-between p-3 border-b workflow-drag-handle cursor-grab [&:active]:cursor-grabbing">
@@ -208,7 +162,6 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
               <div
                 key={`${id}-${rowIndex}-${blockIndex}`}
                 className={`space-y-1 ${subBlock.layout === 'half' ? 'flex-1' : 'w-full'}`}
-                data-subblock-id={subBlock.id}
               >
                 <SubBlock blockId={id} config={subBlock} isConnecting={isConnecting} />
               </div>
@@ -217,11 +170,12 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
         ))}
       </div>
 
-      {/* Main output handle */}
-      {subBlockPositions.length === 0 && (
+      {/* Main output handle - only render if not a condition block */}
+      {type !== 'condition' && (
         <Handle
           type="source"
           position={horizontalHandles ? Position.Right : Position.Bottom}
+          id="source"
           className={cn(
             '!w-3.5 !h-3.5',
             '!bg-white !rounded-full !border !border-gray-200',
@@ -229,26 +183,12 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
             '!transition-border !duration-150 !cursor-crosshair',
             horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
           )}
+          data-nodeid={id}
+          data-handleid="source"
+          isConnectableStart={true}
+          isConnectableEnd={false}
         />
       )}
-
-      {/* Subblock output handles */}
-      {subBlockPositions.map((position) => (
-        <Handle
-          key={`${id}-${position.id}`}
-          type="source"
-          position={Position.Right}
-          id={`output-${position.id}`}
-          style={{ top: position.top }}
-          className={cn(
-            '!w-3.5 !h-3.5',
-            '!bg-white !rounded-full !border !border-gray-200',
-            '!transition-border !duration-150 !cursor-crosshair',
-            'group-hover:!border-blue-500',
-            '!right-[-7px]'
-          )}
-        />
-      ))}
     </Card>
   )
 }

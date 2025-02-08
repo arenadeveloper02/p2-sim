@@ -19,7 +19,7 @@ export type SubBlockType =
   | 'switch'
   | 'tool-input'
   | 'checkbox-list'
-
+  | 'condition-input'
 export type SubBlockLayout = 'full' | 'half'
 
 // Tool output type utilities
@@ -75,7 +75,6 @@ export interface SubBlockConfig {
   placeholder?: string
   password?: boolean
   connectionDroppable?: boolean
-  outputHandle?: boolean
   hidden?: boolean
   value?: (params: Record<string, any>) => string
   minimizable?: boolean

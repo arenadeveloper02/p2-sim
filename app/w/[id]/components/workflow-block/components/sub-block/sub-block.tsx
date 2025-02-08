@@ -2,6 +2,7 @@ import { Label } from '@/components/ui/label'
 import { SubBlockConfig } from '../../../../../../../blocks/types'
 import { CheckboxList } from './components/checkbox-list'
 import { Code } from './components/code'
+import { ConditionInput } from './components/condition-input'
 import { Dropdown } from './components/dropdown'
 import { LongInput } from './components/long-input'
 import { ShortInput } from './components/short-input'
@@ -88,6 +89,10 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
             options={config.options as { label: string; id: string }[]}
             layout={config.layout}
           />
+        )
+      case 'condition-input':
+        return (
+          <ConditionInput blockId={blockId} subBlockId={config.id} isConnecting={isConnecting} />
         )
       default:
         return null
