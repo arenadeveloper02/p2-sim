@@ -2,21 +2,26 @@ import { ToolConfig, ToolResponse } from '../types'
 
 export interface CodeExecutionInput {
   code: Array<{ content: string; id: string }> | string
-  input?: Record<string, any>
+  timeout?: number
+  memoryLimit?: number
 }
 
 export interface CodeExecutionOutput extends ToolResponse {
   output: {
     result: any
     stdout: string
+    executionTime: number
   }
 }
+
+const DEFAULT_TIMEOUT = 3000 // 3 seconds
+const DEFAULT_MEMORY_LIMIT = 512 // 512MB
 
 export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOutput> = {
   id: 'function_execute',
   name: 'Function Execute',
   description:
-    'Execute code snippets in a secure, sandboxed environment with support for multiple languages. Captures both function output and stdout with proper error handling.',
+    'Execute JavaScript code in a secure, sandboxed environment with proper isolation and resource limits.',
   version: '1.0.0',
 
   params: {
@@ -25,71 +30,54 @@ export const functionExecuteTool: ToolConfig<CodeExecutionInput, CodeExecutionOu
       required: true,
       description: 'The code to execute',
     },
-  },
-
-  request: {
-    url: 'https://emkc.org/api/v2/piston/execute',
-    method: 'POST',
-    headers: () => ({
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    }),
-    body: (params) => {
-      const codeContent = Array.isArray(params.code)
-        ? params.code.map((c) => c.content).join('\n')
-        : params.code
-
-      return {
-        language: 'js',
-        version: '*',
-        files: [
-          {
-            name: 'code.js',
-            content: codeContent,
-          },
-        ],
-        stdin: '',
-        args: [],
-        compile_timeout: 10000,
-        run_timeout: 3000,
-        compile_memory_limit: -1,
-        run_memory_limit: -1,
-      }
+    timeout: {
+      type: 'number',
+      required: false,
+      description: 'Execution timeout in milliseconds',
+      default: DEFAULT_TIMEOUT,
+    },
+    memoryLimit: {
+      type: 'number',
+      required: false,
+      description: 'Memory limit in MB',
+      default: DEFAULT_MEMORY_LIMIT,
     },
   },
 
-  transformResponse: async (response) => {
+  request: {
+    url: '/api/execute',
+    method: 'POST',
+    headers: () => ({
+      'Content-Type': 'application/json',
+    }),
+    body: (params: CodeExecutionInput) => {
+      const codeContent = Array.isArray(params.code)
+        ? params.code.map((c: { content: string }) => c.content).join('\n')
+        : params.code
+
+      return {
+        code: codeContent,
+        timeout: params.timeout || DEFAULT_TIMEOUT,
+        memoryLimit: params.memoryLimit || DEFAULT_MEMORY_LIMIT,
+      }
+    },
+    isInternalRoute: true,
+  },
+
+  transformResponse: async (response: Response): Promise<CodeExecutionOutput> => {
     const result = await response.json()
 
-    if (!response.ok) {
-      throw new Error(result.message || 'Execution failed')
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Code execution failed')
     }
 
-    if (result.run?.stderr) {
-      throw new Error(result.run.stderr)
-    }
-
-    const stdout = result.run?.stdout || ''
-
-    try {
-      // Try parsing the output as JSON
-      const parsed = JSON.parse(stdout)
-      return {
-        success: true,
-        output: {
-          result: parsed,
-          stdout,
-        },
-      }
-    } catch {
-      // If not JSON, return as string
-      return {
-        success: true,
-        output: {
-          result: stdout,
-          stdout,
-        },
-      }
+    return {
+      success: true,
+      output: {
+        result: result.output.result,
+        stdout: result.output.stdout,
+        executionTime: result.output.executionTime,
+      },
     }
   },
 

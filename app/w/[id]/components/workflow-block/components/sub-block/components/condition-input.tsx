@@ -205,7 +205,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
       for (let i = 0; i < height; i++) {
         numbers.push(
           <div
-            key={`${lineNumber}-${i}`}
+            key={`${blockId}-${lineNumber}-${i}`}
             className={cn('text-xs text-muted-foreground leading-[21px]', i > 0 && 'invisible')}
           >
             {lineNumber}

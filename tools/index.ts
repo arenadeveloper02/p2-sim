@@ -57,12 +57,33 @@ export function getTool(toolId: string): ToolConfig | undefined {
   return tools[toolId]
 }
 
-// Execute a tool by calling the reverse proxy endpoint.
+// Execute a tool by calling either the proxy for external APIs or directly for internal routes
 export async function executeTool(
   toolId: string,
   params: Record<string, any>
 ): Promise<ToolResponse> {
   try {
+    const tool = getTool(toolId)
+    if (!tool) {
+      throw new Error(`Tool not found: ${toolId}`)
+    }
+
+    // For internal routes, call the API directly
+    if (tool.request.isInternalRoute) {
+      const url =
+        typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
+
+      const response = await fetch(url, {
+        method: tool.request.method,
+        headers: tool.request.headers(params),
+        body: JSON.stringify(tool.request.body ? tool.request.body(params) : params),
+      })
+
+      const result = await tool.transformResponse(response)
+      return result
+    }
+
+    // For external APIs, use the proxy
     const response = await fetch('/api/proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

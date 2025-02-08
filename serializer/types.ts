@@ -12,6 +12,10 @@ export interface SerializedConnection {
   target: string
   sourceHandle?: string
   targetHandle?: string
+  condition?: {
+    type: 'if' | 'else' | 'else if'
+    expression?: string // JavaScript expression to evaluate
+  }
 }
 
 export interface SerializedBlock {

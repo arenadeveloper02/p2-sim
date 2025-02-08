@@ -17,12 +17,15 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
   workflow: {
     inputs: {
       code: { type: 'string', required: true },
+      timeout: { type: 'number', required: false },
+      memoryLimit: { type: 'number', required: false },
     },
     outputs: {
       response: {
         type: {
           result: 'any',
           stdout: 'string',
+          executionTime: 'number',
         },
       },
     },

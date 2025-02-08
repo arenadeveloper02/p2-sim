@@ -31,6 +31,7 @@ export interface ToolConfig<P = any, R extends ToolResponse = ToolResponse> {
     method: string
     headers: (params: P) => Record<string, string>
     body?: (params: P) => Record<string, any>
+    isInternalRoute?: boolean // Whether this is an internal API route
   }
 
   // Response handling

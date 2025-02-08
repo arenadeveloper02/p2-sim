@@ -23,6 +23,7 @@ export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
         type: {
           result: 'any',
           stdout: 'string',
+          executionTime: 'number',
         },
       },
     },
