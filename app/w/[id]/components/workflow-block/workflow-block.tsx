@@ -19,11 +19,6 @@ interface WorkflowBlockProps {
   selected?: boolean
 }
 
-interface SubBlockPosition {
-  id: string
-  top: number
-}
-
 export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBlockProps) {
   const { toolbar, workflow } = config
   const [isConnecting, setIsConnecting] = useState(false)
