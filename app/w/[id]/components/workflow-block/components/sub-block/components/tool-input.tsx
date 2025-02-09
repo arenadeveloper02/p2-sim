@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { getAllBlocks } from '@/blocks'
 import { getTool } from '@/tools'
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
@@ -26,6 +27,7 @@ interface StoredTool {
   type: string
   title: string
   params: Record<string, string>
+  isExpanded?: boolean
 }
 
 interface ToolParam {
@@ -59,6 +61,7 @@ const getRequiredToolParams = (toolId: string): ToolParam[] => {
 export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
   const [value, setValue] = useSubBlockValue(blockId, subBlockId)
   const [open, setOpen] = useState(false)
+  const isWide = useWorkflowStore((state) => state.blocks[blockId]?.isWide)
 
   const toolBlocks = getAllBlocks().filter((block) => block.toolbar.category === 'tools')
 
@@ -68,19 +71,22 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       : []
 
   const handleSelectTool = (toolBlock: (typeof toolBlocks)[0]) => {
+    // Check if tool already exists
+    if (selectedTools.some((tool) => tool.type === toolBlock.type)) {
+      setOpen(false)
+      return
+    }
+
     const toolId = getToolIdFromBlock(toolBlock.type)
 
-    // Only store essential data
     const newTool: StoredTool = {
       type: toolBlock.type,
       title: toolBlock.toolbar.title,
       params: {},
+      isExpanded: true,
     }
 
-    if (!selectedTools.some((tool) => tool.type === newTool.type)) {
-      setValue([...selectedTools, newTool])
-    }
-
+    setValue([...selectedTools.map((tool) => ({ ...tool, isExpanded: false })), newTool])
     setOpen(false)
   }
 
@@ -100,6 +106,14 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
               },
             }
           : tool
+      )
+    )
+  }
+
+  const toggleToolExpansion = (toolType: string) => {
+    setValue(
+      selectedTools.map((tool) =>
+        tool.type === toolType ? { ...tool, isExpanded: !tool.isExpanded } : tool
       )
     )
   }
@@ -161,9 +175,15 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
             const requiredParams = toolId ? getRequiredToolParams(toolId) : []
 
             return (
-              <div key={tool.type} className="group flex flex-col w-full">
+              <div
+                key={tool.type}
+                className={cn('group flex flex-col', isWide ? 'w-[calc(50%-0.25rem)]' : 'w-full')}
+              >
                 <div className="flex flex-col rounded-md border bg-card overflow-visible">
-                  <div className="flex items-center justify-between p-2 bg-accent/50">
+                  <div
+                    className="flex items-center justify-between p-2 bg-accent/50 cursor-pointer"
+                    onClick={() => toggleToolExpansion(tool.type)}
+                  >
                     <div className="flex items-center gap-2">
                       <div
                         className="flex items-center justify-center w-5 h-5 rounded"
@@ -176,16 +196,28 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                       </div>
                       <span className="text-sm font-medium">{tool.title}</span>
                     </div>
-                    <button
-                      onClick={() => handleRemoveTool(tool.type)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <XIcon className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemoveTool(tool.type)
+                        }}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <XIcon className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  {requiredParams.length > 0 && (
-                    <div className="p-3 space-y-3">
+                  {tool.isExpanded && requiredParams.length > 0 && (
+                    <div
+                      className="p-3 space-y-3"
+                      onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                          toggleToolExpansion(tool.type)
+                        }
+                      }}
+                    >
                       {requiredParams.map((param) => (
                         <div key={param.id} className="space-y-1.5 relative">
                           <div className="text-xs font-medium text-muted-foreground">
