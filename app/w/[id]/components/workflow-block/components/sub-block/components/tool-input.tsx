@@ -78,7 +78,6 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
     }
 
     const toolId = getToolIdFromBlock(toolBlock.type)
-
     const newTool: StoredTool = {
       type: toolBlock.type,
       title: toolBlock.toolbar.title,
@@ -86,7 +85,21 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       isExpanded: true,
     }
 
-    setValue([...selectedTools.map((tool) => ({ ...tool, isExpanded: false })), newTool])
+    // If isWide, keep tools in the same row expanded
+    if (isWide) {
+      setValue([
+        ...selectedTools.map((tool, index) => ({
+          ...tool,
+          // Keep expanded if it's in the same row as the new tool
+          isExpanded: Math.floor(selectedTools.length / 2) === Math.floor(index / 2),
+        })),
+        newTool,
+      ])
+    } else {
+      // Original behavior for non-wide mode
+      setValue([...selectedTools.map((tool) => ({ ...tool, isExpanded: false })), newTool])
+    }
+
     setOpen(false)
   }
 
