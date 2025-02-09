@@ -802,7 +802,7 @@ export class Executor {
     }
 
     return {
-      content: `Condition evaluated to ${conditionMet}`,
+      content: `Condition '${selectedCondition.title}' chosen`,
       condition: conditionMet,
       selectedConditionId: selectedCondition.id,
       sourceOutput,
