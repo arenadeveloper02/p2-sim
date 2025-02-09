@@ -324,6 +324,19 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         pushHistory(set, get, newState, `${name} block name updated`)
         get().updateLastSaved()
       },
+
+      toggleBlockWide: (id: string) => {
+        set((state) => ({
+          blocks: {
+            ...state.blocks,
+            [id]: {
+              ...state.blocks[id],
+              isWide: !state.blocks[id].isWide,
+            },
+          },
+          edges: [...state.edges],
+        }))
+      },
     })),
     { name: 'workflow-store' }
   )

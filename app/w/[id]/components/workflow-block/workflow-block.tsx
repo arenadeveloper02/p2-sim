@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { RectangleHorizontal, RectangleVertical } from 'lucide-react'
 import { Handle, Position } from 'reactflow'
 import { useUpdateNodeInternals } from 'reactflow'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useWorkflowStore } from '@/stores/workflow/store'
 import { BlockConfig, SubBlockConfig } from '../../../../../blocks/types'
@@ -31,6 +34,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
   const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
   const blockRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
+  const isWide = useWorkflowStore((state) => state.blocks[id]?.isWide ?? false)
+  const toggleBlockWide = useWorkflowStore((state) => state.toggleBlockWide)
 
   // Add effect to update node internals when handles change
   useEffect(() => {
@@ -91,7 +96,8 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
     <Card
       ref={blockRef}
       className={cn(
-        'w-[320px] shadow-md select-none group relative cursor-default',
+        'shadow-md select-none group relative cursor-default',
+        isWide ? 'w-[480px]' : 'w-[320px]',
         !isEnabled && 'shadow-sm'
       )}
     >
@@ -143,11 +149,30 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
             </span>
           )}
         </div>
-        {!isEnabled && (
-          <Badge variant="secondary" className="bg-gray-100 text-gray-500 hover:bg-gray-100">
-            Disabled
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {!isEnabled && (
+            <Badge variant="secondary" className="bg-gray-100 text-gray-500 hover:bg-gray-100">
+              Disabled
+            </Badge>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => toggleBlockWide(id)}
+                className="text-gray-500 p-1 h-7"
+              >
+                {isWide ? (
+                  <RectangleHorizontal className="h-5 w-5" />
+                ) : (
+                  <RectangleVertical className="h-5 w-5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{isWide ? 'Narrow Block' : 'Expand Block'}</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       <div className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
