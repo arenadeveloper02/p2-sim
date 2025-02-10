@@ -3,6 +3,7 @@ import { AgentBlock } from './blocks/agent'
 import { ApiBlock } from './blocks/api'
 import { ConditionBlock } from './blocks/condition'
 import { CrewAIVisionBlock } from './blocks/crewai'
+import { EvaluatorBlock } from './blocks/evaluator'
 import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 import { FunctionBlock } from './blocks/function'
 import { GitHubBlock } from './blocks/github'
@@ -33,6 +34,7 @@ export {
   SerperBlock,
   TavilyBlock,
   RouterBlock,
+  EvaluatorBlock,
   YouTubeSearchBlock,
   NotionBlock,
   GmailBlock,
@@ -46,6 +48,7 @@ const blocks: Record<string, BlockConfig> = {
   condition: ConditionBlock,
   function: FunctionBlock,
   router: RouterBlock,
+  evaluator: EvaluatorBlock,
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,
