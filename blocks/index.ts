@@ -14,6 +14,7 @@ import { SerperBlock } from './blocks/serper'
 import { SlackMessageBlock } from './blocks/slack'
 import { TavilyExtractBlock, TavilySearchBlock } from './blocks/tavily'
 import { TranslateBlock } from './blocks/translate'
+import { XBlock } from './blocks/x'
 import { YouTubeSearchBlock } from './blocks/youtube'
 import { BlockConfig } from './types'
 
@@ -36,6 +37,7 @@ export {
   YouTubeSearchBlock,
   NotionBlock,
   GmailBlock,
+  XBlock,
 }
 
 // Registry of all block configurations
@@ -57,6 +59,7 @@ const blocks: Record<string, BlockConfig> = {
   youtube_search: YouTubeSearchBlock,
   notion_reader: NotionBlock,
   gmail_block: GmailBlock,
+  x_block: XBlock,
 }
 
 // Build a reverse mapping of tools to block types

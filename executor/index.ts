@@ -134,14 +134,20 @@ export class Executor {
 
       // Filtering: only execute blocks that match router and conditional decisions.
       const executableBlocks = currentLayer.filter((blockId) => {
-        // Verify if block lies on the router's chosen path.
+        // First check if block is enabled
+        const block = blocks.find((b) => b.id === blockId)
+        if (!block || block.enabled === false) {
+          return false
+        }
+
+        // Verify if block lies on the router's chosen path
         for (const [routerId, chosenPath] of routerDecisions) {
           if (!this.isInChosenPath(blockId, chosenPath, routerId)) {
             return false
           }
         }
 
-        // Verify if block lies on the selected conditional path.
+        // Verify if block lies on the selected conditional path
         for (const [conditionBlockId, selectedConditionId] of activeConditionalPaths) {
           const connection = connections.find(
             (conn) =>
@@ -255,6 +261,11 @@ export class Executor {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<BlockOutput> {
+    // Check if block is disabled
+    if (block.enabled === false) {
+      throw new Error(`Cannot execute disabled block: ${block.metadata?.title || block.id}`)
+    }
+
     const startTime = new Date()
     const blockLog: BlockLog = {
       blockId: block.id,

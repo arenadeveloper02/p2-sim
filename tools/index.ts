@@ -21,6 +21,10 @@ import { slackMessageTool } from './slack/message'
 import { extractTool as tavilyExtract } from './tavily/extract'
 import { searchTool as tavilySearch } from './tavily/search'
 import { ToolConfig, ToolResponse } from './types'
+import { readTool as xRead } from './x/read'
+import { searchTool as xSearch } from './x/search'
+import { userTool as xUser } from './x/user'
+import { writeTool as xWrite } from './x/write'
 import { chatTool as xaiChat } from './xai/chat'
 import { youtubeSearchTool } from './youtube/search'
 
@@ -50,6 +54,10 @@ export const tools: Record<string, ToolConfig> = {
   gmail_send: gmailSendTool,
   gmail_read: gmailReadTool,
   gmail_search: gmailSearchTool,
+  x_write: xWrite,
+  x_read: xRead,
+  x_search: xSearch,
+  x_user: xUser,
 }
 
 // Get a tool by its ID
