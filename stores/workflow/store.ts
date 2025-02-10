@@ -141,6 +141,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               subBlocks,
               outputs,
               enabled: true,
+              horizontalHandles: true,
             },
           },
           edges: [...get().edges],
