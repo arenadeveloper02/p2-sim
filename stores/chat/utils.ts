@@ -10,3 +10,24 @@ export const getNextBlockNumber = (blocks: Record<string, any>, type: string) =>
   const maxNumber = Math.max(0, ...typeBlocks)
   return maxNumber + 1
 }
+
+// Calculate block position based on existing blocks and current action index
+export const calculateBlockPosition = (
+  existingBlocks: Record<string, any>,
+  index: number,
+  startX = 100,
+  startY = 100,
+  xSpacing = 500,
+  ySpacing = 150
+) => {
+  const blocksCount = Object.keys(existingBlocks).length
+  
+  // Calculate position based on existing blocks and current action index
+  const row = Math.floor((blocksCount + index) / 5) // 5 blocks per row
+  const col = (blocksCount + index) % 5
+  
+  return {
+    x: startX + (col * xSpacing),
+    y: startY + (row * ySpacing)
+  }
+}

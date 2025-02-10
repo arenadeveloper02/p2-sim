@@ -46,7 +46,7 @@ const workflowActions = {
     }
   },
   addEdge: {
-    description: "Create a connection between two blocks",
+    description: "Create a connection (edge) between two blocks",
     parameters: {
       type: "object",
       required: ["sourceId", "targetId"],
@@ -81,7 +81,7 @@ const workflowActions = {
     }
   },
   removeEdge: {
-    description: "Remove a connection between blocks",
+    description: "Remove a connection (edge) between blocks",
     parameters: {
       type: "object",
       required: ["id"],

@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware'
 import { useWorkflowStore } from '../workflow/store'
 import { useEnvironmentStore } from '../environment/store'
 import { ChatStore, ChatMessage } from './types'
-import { getNextBlockNumber } from './utils'
+import { getNextBlockNumber, calculateBlockPosition } from './utils'
 
 export const useChatStore = create<ChatStore>()(
   devtools(
@@ -73,25 +73,36 @@ export const useChatStore = create<ChatStore>()(
           
           // Handle any actions returned from the API
           if (data.actions) {
-            for (const action of data.actions) {
+            // Process all block additions first to properly calculate positions
+            const blockActions = data.actions.filter(
+              (action: any) => action.name === 'addBlock'
+            )
+            
+            blockActions.forEach((action: any, index: number) => {
+              const { type, name } = action.parameters
+              const id = crypto.randomUUID()
+              
+              // Calculate position based on current blocks and action index
+              const position = calculateBlockPosition(
+                workflowStore.blocks,
+                index
+              )
+              
+              // Generate name if not provided
+              const blockName = name || `${type} ${getNextBlockNumber(workflowStore.blocks, type)}`
+              
+              workflowStore.addBlock(id, type, blockName, position)
+            })
+
+            // Handle other actions (edges, removals, etc.)
+            const otherActions = data.actions.filter(
+              (action: any) => action.name !== 'addBlock'
+            )
+            
+            otherActions.forEach((action: any) => {
               switch (action.name) {
-                case 'addBlock': {
-                  const { type, name, position } = action.parameters
-                  const id = crypto.randomUUID()
-                  const defaultPosition = position || {
-                    x: Object.keys(workflowStore.blocks).length * 250,
-                    y: 100
-                  }
-                  
-                  // Generate name if not provided
-                  const blockName = name || `${type} ${getNextBlockNumber(workflowStore.blocks, type)}`
-                  
-                  workflowStore.addBlock(id, type, blockName, defaultPosition)
-                  break
-                }
                 case 'addEdge': {
                   const { sourceId, targetId, sourceHandle, targetHandle } = action.parameters
-                  
                   workflowStore.addEdge({
                     id: crypto.randomUUID(),
                     source: sourceId,
@@ -111,7 +122,7 @@ export const useChatStore = create<ChatStore>()(
                   break
                 }
               }
-            }
+            })
           }
 
           // Add assistant's response to chat
