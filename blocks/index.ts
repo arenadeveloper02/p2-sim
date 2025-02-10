@@ -12,7 +12,7 @@ import { NotionBlock } from './blocks/notion'
 import { RouterBlock } from './blocks/router'
 import { SerperBlock } from './blocks/serper'
 import { SlackMessageBlock } from './blocks/slack'
-import { TavilyExtractBlock, TavilySearchBlock } from './blocks/tavily'
+import { TavilyBlock } from './blocks/tavily'
 import { TranslateBlock } from './blocks/translate'
 import { XBlock } from './blocks/x'
 import { YouTubeSearchBlock } from './blocks/youtube'
@@ -31,8 +31,7 @@ export {
   GitHubBlock,
   ConditionBlock,
   SerperBlock,
-  TavilySearchBlock,
-  TavilyExtractBlock,
+  TavilyBlock,
   RouterBlock,
   YouTubeSearchBlock,
   NotionBlock,
@@ -54,8 +53,7 @@ const blocks: Record<string, BlockConfig> = {
   slack_message: SlackMessageBlock,
   github_repo_info: GitHubBlock,
   serper_search: SerperBlock,
-  tavily_search: TavilySearchBlock,
-  tavily_extract: TavilyExtractBlock,
+  tavily_block: TavilyBlock,
   youtube_search: YouTubeSearchBlock,
   notion_reader: NotionBlock,
   gmail_block: GmailBlock,
