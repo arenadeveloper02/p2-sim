@@ -41,11 +41,21 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
   const [visualLineHeights, setVisualLineHeights] = useState<{ [key: string]: number[] }>({})
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Initialize conditional blocks with empty values and dropdown states
+  // Initialize conditional blocks with if and else blocks
   const [conditionalBlocks, setConditionalBlocks] = useState<ConditionalBlock[]>([
     {
       id: crypto.randomUUID(),
       title: 'if',
+      value: '',
+      showTags: false,
+      showEnvVars: false,
+      searchTerm: '',
+      cursorPosition: 0,
+      activeSourceBlockId: null,
+    },
+    {
+      id: crypto.randomUUID(),
+      title: 'else',
       value: '',
       showTags: false,
       showEnvVars: false,
@@ -64,11 +74,21 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
           setConditionalBlocks(parsedValue)
         }
       } catch {
-        // If the store value isn't valid JSON, initialize with default block
+        // If the store value isn't valid JSON, initialize with default blocks
         setConditionalBlocks([
           {
             id: crypto.randomUUID(),
             title: 'if',
+            value: '',
+            showTags: false,
+            showEnvVars: false,
+            searchTerm: '',
+            cursorPosition: 0,
+            activeSourceBlockId: null,
+          },
+          {
+            id: crypto.randomUUID(),
+            title: 'else',
             value: '',
             showTags: false,
             showEnvVars: false,
@@ -383,7 +403,12 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
           key={block.id}
           className="overflow-visible rounded-lg border bg-background group relative"
         >
-          <div className="flex h-10 items-center justify-between border-b bg-card px-3">
+          <div
+            className={cn(
+              'flex h-10 items-center justify-between bg-card px-3 overflow-hidden',
+              block.title === 'else' ? 'rounded-lg border-0' : 'rounded-t-lg border-b'
+            )}
+          >
             <span className="text-sm font-medium">{block.title}</span>
             <Handle
               type="source"
@@ -473,92 +498,100 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
               </Tooltip>
             </div>
           </div>
-          <div
-            className={cn(
-              'relative min-h-[100px] rounded-md bg-background font-mono text-sm',
-              isConnecting && 'ring-2 ring-blue-500 ring-offset-2'
-            )}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleDrop(block.id, e)}
-          >
-            {/* Line numbers */}
+          {block.title !== 'else' && (
             <div
-              className="absolute left-0 top-0 bottom-0 w-[30px] bg-muted/30 flex flex-col items-end pr-3 pt-3 select-none"
-              aria-hidden="true"
+              className={cn(
+                'relative min-h-[100px] bg-background font-mono text-sm rounded-b-lg',
+                isConnecting && 'ring-2 ring-blue-500 ring-offset-2'
+              )}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDrop(block.id, e)}
             >
-              {renderLineNumbers(block.id)}
-            </div>
+              {/* Line numbers */}
+              <div
+                className="absolute left-0 top-0 bottom-0 w-[30px] bg-muted/30 flex flex-col items-end pr-3 pt-3 select-none"
+                aria-hidden="true"
+              >
+                {renderLineNumbers(block.id)}
+              </div>
 
-            <div className="pl-[30px] pt-0 mt-0 relative" ref={editorRef} data-block-id={block.id}>
-              {block.value.length === 0 && (
-                <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
-                  {'<response> === true'}
-                </div>
-              )}
-              <Editor
-                value={block.value}
-                onValueChange={(newCode) => {
-                  const textarea = editorRef.current?.querySelector(
-                    `[data-block-id="${block.id}"] textarea`
-                  )
-                  updateBlockValue(block.id, newCode, textarea as HTMLTextAreaElement | null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setConditionalBlocks((blocks) =>
-                      blocks.map((b) =>
-                        b.id === block.id ? { ...b, showTags: false, showEnvVars: false } : b
-                      )
+              <div
+                className="pl-[30px] pt-0 mt-0 relative"
+                ref={editorRef}
+                data-block-id={block.id}
+              >
+                {block.value.length === 0 && (
+                  <div className="absolute left-[42px] top-[12px] text-muted-foreground/50 select-none pointer-events-none">
+                    {'<response> === true'}
+                  </div>
+                )}
+                <Editor
+                  value={block.value}
+                  onValueChange={(newCode) => {
+                    const textarea = editorRef.current?.querySelector(
+                      `[data-block-id="${block.id}"] textarea`
                     )
-                  }
-                }}
-                highlight={(code) => highlight(code, languages.javascript, 'javascript')}
-                padding={12}
-                style={{
-                  fontFamily: 'inherit',
-                  minHeight: '46px',
-                  lineHeight: '21px',
-                }}
-                className="focus:outline-none"
-                textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
-              />
-
-              {block.showEnvVars && (
-                <EnvVarDropdown
-                  visible={block.showEnvVars}
-                  onSelect={(newValue) => handleEnvVarSelect(block.id, newValue)}
-                  searchTerm={block.searchTerm}
-                  inputValue={block.value}
-                  cursorPosition={block.cursorPosition}
-                  onClose={() => {
-                    setConditionalBlocks((blocks) =>
-                      blocks.map((b) =>
-                        b.id === block.id ? { ...b, showEnvVars: false, searchTerm: '' } : b
-                      )
-                    )
+                    updateBlockValue(block.id, newCode, textarea as HTMLTextAreaElement | null)
                   }}
-                />
-              )}
-
-              {block.showTags && (
-                <TagDropdown
-                  visible={block.showTags}
-                  onSelect={(newValue) => handleTagSelect(block.id, newValue)}
-                  blockId={blockId}
-                  activeSourceBlockId={block.activeSourceBlockId}
-                  inputValue={block.value}
-                  cursorPosition={block.cursorPosition}
-                  onClose={() => {
-                    setConditionalBlocks((blocks) =>
-                      blocks.map((b) =>
-                        b.id === block.id ? { ...b, showTags: false, activeSourceBlockId: null } : b
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setConditionalBlocks((blocks) =>
+                        blocks.map((b) =>
+                          b.id === block.id ? { ...b, showTags: false, showEnvVars: false } : b
+                        )
                       )
-                    )
+                    }
                   }}
+                  highlight={(code) => highlight(code, languages.javascript, 'javascript')}
+                  padding={12}
+                  style={{
+                    fontFamily: 'inherit',
+                    minHeight: '46px',
+                    lineHeight: '21px',
+                  }}
+                  className="focus:outline-none"
+                  textareaClassName="focus:outline-none focus:ring-0 bg-transparent"
                 />
-              )}
+
+                {block.showEnvVars && (
+                  <EnvVarDropdown
+                    visible={block.showEnvVars}
+                    onSelect={(newValue) => handleEnvVarSelect(block.id, newValue)}
+                    searchTerm={block.searchTerm}
+                    inputValue={block.value}
+                    cursorPosition={block.cursorPosition}
+                    onClose={() => {
+                      setConditionalBlocks((blocks) =>
+                        blocks.map((b) =>
+                          b.id === block.id ? { ...b, showEnvVars: false, searchTerm: '' } : b
+                        )
+                      )
+                    }}
+                  />
+                )}
+
+                {block.showTags && (
+                  <TagDropdown
+                    visible={block.showTags}
+                    onSelect={(newValue) => handleTagSelect(block.id, newValue)}
+                    blockId={blockId}
+                    activeSourceBlockId={block.activeSourceBlockId}
+                    inputValue={block.value}
+                    cursorPosition={block.cursorPosition}
+                    onClose={() => {
+                      setConditionalBlocks((blocks) =>
+                        blocks.map((b) =>
+                          b.id === block.id
+                            ? { ...b, showTags: false, activeSourceBlockId: null }
+                            : b
+                        )
+                      )
+                    }}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ))}
     </div>
