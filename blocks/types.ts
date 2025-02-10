@@ -78,6 +78,10 @@ export interface SubBlockConfig {
   hidden?: boolean
   value?: (params: Record<string, any>) => string
   minimizable?: boolean
+  condition?: {
+    field: string
+    value: string | number | boolean
+  }
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {

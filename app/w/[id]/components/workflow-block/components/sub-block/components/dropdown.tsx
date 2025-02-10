@@ -9,7 +9,7 @@ import {
 import { useSubBlockValue } from '../hooks/use-sub-block-value'
 
 interface DropdownProps {
-  options: string[]
+  options: Array<string | { label: string; id: string }>
   defaultValue?: string
   blockId: string
   subBlockId: string
@@ -21,14 +21,24 @@ export function Dropdown({ options, defaultValue, blockId, subBlockId }: Dropdow
   // Set the value to the first option if it's not set
   useEffect(() => {
     if (!value && options.length > 0) {
-      setValue(defaultValue ?? options[0])
+      const firstOption = options[0]
+      const firstValue = typeof firstOption === 'string' ? firstOption : firstOption.id
+      setValue(firstValue)
     }
   }, [value, options, defaultValue, setValue])
+
+  const getOptionValue = (option: string | { label: string; id: string }) => {
+    return typeof option === 'string' ? option : option.id
+  }
+
+  const getOptionLabel = (option: string | { label: string; id: string }) => {
+    return typeof option === 'string' ? option : option.label
+  }
 
   return (
     <Select
       value={value as string | undefined}
-      defaultValue={defaultValue ?? options[0]}
+      defaultValue={defaultValue ?? getOptionValue(options[0])}
       onValueChange={(value) => setValue(value)}
     >
       <SelectTrigger className="text-left">
@@ -36,8 +46,8 @@ export function Dropdown({ options, defaultValue, blockId, subBlockId }: Dropdow
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
+          <SelectItem key={getOptionValue(option)} value={getOptionValue(option)}>
+            {getOptionLabel(option)}
           </SelectItem>
         ))}
       </SelectContent>

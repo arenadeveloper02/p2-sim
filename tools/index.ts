@@ -5,6 +5,9 @@ import { reasonerTool as deepseekReasoner } from './deepseek/reasoner'
 import { scrapeTool } from './firecrawl/scrape'
 import { functionExecuteTool as functionExecute } from './function/execute'
 import { repoInfoTool } from './github/repo'
+import { gmailReadTool } from './gmail/read'
+import { gmailSearchTool } from './gmail/search'
+import { gmailSendTool } from './gmail/send'
 import { chatTool as googleChat } from './google/chat'
 import { requestTool as httpRequest } from './http/request'
 import { contactsTool as hubspotContacts } from './hubspot/contacts'
@@ -44,6 +47,9 @@ export const tools: Record<string, ToolConfig> = {
   youtube_search: youtubeSearchTool,
   notion_read: notionReadTool,
   notion_write: notionWriteTool,
+  gmail_send: gmailSendTool,
+  gmail_read: gmailReadTool,
+  gmail_search: gmailSearchTool,
 }
 
 // Get a tool by its ID

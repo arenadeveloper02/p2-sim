@@ -15,7 +15,7 @@ export const NotionBlock: BlockConfig<NotionResponse> = {
     access: ['notion_read', 'notion_write'],
     config: {
       tool: (params) => {
-        return params.operation === 'write' ? 'notion_write' : 'notion_read'
+        return params.operation === 'write_notion' ? 'notion_write' : 'notion_read'
       },
     },
   },
@@ -40,7 +40,10 @@ export const NotionBlock: BlockConfig<NotionResponse> = {
         title: 'Operation',
         type: 'dropdown',
         layout: 'full',
-        options: ['read', 'write'],
+        options: [
+          { label: 'Read Page', id: 'read_notion' },
+          { label: 'Write Page', id: 'write_notion' },
+        ],
       },
       {
         id: 'pageId',
@@ -55,6 +58,7 @@ export const NotionBlock: BlockConfig<NotionResponse> = {
         type: 'long-input',
         layout: 'full',
         placeholder: 'Enter content to write (for write operation)',
+        condition: { field: 'operation', value: 'write_notion' },
       },
       {
         id: 'apiKey',
