@@ -9,6 +9,8 @@ import { chatTool as googleChat } from './google/chat'
 import { requestTool as httpRequest } from './http/request'
 import { contactsTool as hubspotContacts } from './hubspot/contacts'
 import { readUrlTool } from './jina/reader'
+import { notionReadTool } from './notion/read'
+import { notionWriteTool } from './notion/write'
 import { chatTool as openAIChat } from './openai/chat'
 import { opportunitiesTool as salesforceOpportunities } from './salesforce/opportunities'
 import { searchTool as serperSearch } from './serper/search'
@@ -21,35 +23,27 @@ import { youtubeSearchTool } from './youtube/search'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
-  // AI Models
   openai_chat: openAIChat,
   anthropic_chat: anthropicChat,
   google_chat: googleChat,
   xai_chat: xaiChat,
   deepseek_chat: deepseekChat,
   deepseek_reasoner: deepseekReasoner,
-  // HTTP
   http_request: httpRequest,
-  // CRM Tools
   hubspot_contacts: hubspotContacts,
   salesforce_opportunities: salesforceOpportunities,
-  // Function Tools
   function_execute: functionExecute,
-  // CrewAI Tools
   crewai_vision: crewAIVision,
-  // Firecrawl Tools
   firecrawl_scrape: scrapeTool,
-  // Jina Tools
   jina_readurl: readUrlTool,
-  // Slack Tools
   slack_message: slackMessageTool,
-  // GitHub Tools
   github_repoinfo: repoInfoTool,
-  // Search Tools
   serper_search: serperSearch,
   tavily_search: tavilySearch,
   tavily_extract: tavilyExtract,
   youtube_search: youtubeSearchTool,
+  notion_read: notionReadTool,
+  notion_write: notionWriteTool,
 }
 
 // Get a tool by its ID

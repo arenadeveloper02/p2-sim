@@ -7,6 +7,7 @@ import { FirecrawlScrapeBlock } from './blocks/firecrawl'
 import { FunctionBlock } from './blocks/function'
 import { GitHubBlock } from './blocks/github'
 import { JinaBlock } from './blocks/jina'
+import { NotionBlock } from './blocks/notion'
 import { RouterBlock } from './blocks/router'
 import { SerperBlock } from './blocks/serper'
 import { SlackMessageBlock } from './blocks/slack'
@@ -32,6 +33,7 @@ export {
   TavilyExtractBlock,
   RouterBlock,
   YouTubeSearchBlock,
+  NotionBlock,
 }
 
 // Registry of all block configurations
@@ -51,6 +53,7 @@ const blocks: Record<string, BlockConfig> = {
   tavily_search: TavilySearchBlock,
   tavily_extract: TavilyExtractBlock,
   youtube_search: YouTubeSearchBlock,
+  notion_reader: NotionBlock,
 }
 
 // Build a reverse mapping of tools to block types
