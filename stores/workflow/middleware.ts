@@ -17,6 +17,7 @@ export const withHistory = (
       state: {
         blocks: initialState.blocks,
         edges: initialState.edges,
+        loops: initialState.loops,
       },
       timestamp: Date.now(),
       action: 'Initial state',
@@ -73,10 +74,11 @@ export const withHistory = (
         const newState = {
           blocks: {},
           edges: [],
+          loops: {},
           history: {
             past: [],
             present: {
-              state: { blocks: {}, edges: [] },
+              state: { blocks: {}, edges: [], loops: {} },
               timestamp: Date.now(),
               action: 'Clear workflow',
             },
@@ -115,6 +117,7 @@ export const createHistoryEntry = (state: WorkflowState, action: string): Histor
   state: {
     blocks: { ...state.blocks },
     edges: [...state.edges],
+    loops: { ...state.loops },
   },
   timestamp: Date.now(),
   action,

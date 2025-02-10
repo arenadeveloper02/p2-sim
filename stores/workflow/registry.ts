@@ -27,7 +27,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             JSON.stringify({
               blocks: currentState.blocks,
               edges: currentState.edges,
-              history: currentState.history, // Save history state
+              loops: currentState.loops,
+              history: currentState.history,
             })
           )
         }
@@ -35,14 +36,15 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         // Load new workflow state
         const savedState = localStorage.getItem(`workflow-${id}`)
         if (savedState) {
-          const { blocks, edges, history } = JSON.parse(savedState)
+          const { blocks, edges, history, loops } = JSON.parse(savedState)
           useWorkflowStore.setState({
             blocks,
             edges,
+            loops: loops || {},
             history: history || {
               past: [],
               present: {
-                state: { blocks, edges },
+                state: { blocks, edges, loops: {} },
                 timestamp: Date.now(),
                 action: 'Initial state',
               },
@@ -53,10 +55,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           useWorkflowStore.setState({
             blocks: {},
             edges: [],
+            loops: {},
             history: {
               past: [],
               present: {
-                state: { blocks: {}, edges: [] },
+                state: { blocks: {}, edges: [], loops: {} },
                 timestamp: Date.now(),
                 action: 'Initial state',
               },
@@ -123,10 +126,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               useWorkflowStore.setState({
                 blocks: {},
                 edges: [],
+                loops: {},
                 history: {
                   past: [],
                   present: {
-                    state: { blocks: {}, edges: [] },
+                    state: { blocks: {}, edges: [], loops: {} },
                     timestamp: Date.now(),
                     action: 'Initial state',
                   },
@@ -201,7 +205,6 @@ const initializeRegistry = () => {
 
   // Add event listeners for page unload
   window.addEventListener('beforeunload', () => {
-    // Save current workflow state
     const currentId = useWorkflowRegistry.getState().activeWorkflowId
     if (currentId) {
       const currentState = useWorkflowStore.getState()
@@ -210,6 +213,7 @@ const initializeRegistry = () => {
         JSON.stringify({
           blocks: currentState.blocks,
           edges: currentState.edges,
+          loops: currentState.loops,
           history: currentState.history,
         })
       )

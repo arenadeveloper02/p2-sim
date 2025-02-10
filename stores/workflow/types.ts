@@ -24,10 +24,16 @@ export interface SubBlockState {
   value: string | number | string[][] | null
 }
 
+export interface Loop {
+  id: string
+  nodes: string[]
+}
+
 export interface WorkflowState {
   blocks: Record<string, BlockState>
   edges: Edge[]
   lastSaved?: number
+  loops: Record<string, Loop>
 }
 
 export interface WorkflowActions {

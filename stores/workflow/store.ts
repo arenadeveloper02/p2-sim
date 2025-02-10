@@ -4,17 +4,18 @@ import { devtools } from 'zustand/middleware'
 import { getBlock } from '@/blocks'
 import { resolveOutputType } from '@/blocks/utils'
 import { WorkflowStoreWithHistory, pushHistory, withHistory } from './middleware'
-import { Position, SubBlockState } from './types'
+import { Position, SubBlockState, Loop } from './types'
 import { detectCycle } from './utils'
 
 const initialState = {
   blocks: {},
   edges: [],
+  loops: {},
   lastSaved: undefined,
   history: {
     past: [],
     present: {
-      state: { blocks: {}, edges: [] },
+      state: { blocks: {}, edges: [], loops: {} },
       timestamp: Date.now(),
       action: 'Initial state',
     },
@@ -146,6 +147,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             },
           },
           edges: [...get().edges],
+          loops: { ...get().loops },
         }
 
         set(newState)
@@ -171,6 +173,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         const newState = {
           blocks: { ...get().blocks },
           edges: [...get().edges].filter((edge) => edge.source !== id && edge.target !== id),
+          loops: { ...get().loops },
         }
         delete newState.blocks[id]
 
@@ -180,7 +183,6 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       },
 
       addEdge: (edge: Edge) => {
-        // First create the new edge
         const newEdge = {
           id: edge.id || crypto.randomUUID(),
           source: edge.source,
@@ -189,19 +191,24 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           targetHandle: edge.targetHandle,
         }
         
-        // Create temporary edges array with the new edge
         const newEdges = [...get().edges, newEdge]
-        
-        // Check for cycles starting from the source node
         const { hasCycle, path } = detectCycle(newEdges, edge.source)
         
+        // Create new loops state
+        const newLoops = { ...get().loops }
+        
         if (hasCycle) {
-          console.log('Loop detected through nodes:', path.join(' → '))
+          const loopId = crypto.randomUUID()
+          newLoops[loopId] = {
+            id: loopId,
+            nodes: path
+          }
         }
         
         const newState = {
           blocks: { ...get().blocks },
           edges: newEdges,
+          loops: newLoops,
         }
 
         set(newState)
@@ -210,9 +217,31 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       },
 
       removeEdge: (edgeId: string) => {
+        const newEdges = get().edges.filter((edge) => edge.id !== edgeId)
+        
+        // Recalculate loops after edge removal
+        const newLoops: Record<string, Loop> = {}
+        const processedNodes = new Set<string>()
+        
+        // Check for cycles from each source node
+        newEdges.forEach(edge => {
+          if (!processedNodes.has(edge.source)) {
+            const { hasCycle, path } = detectCycle(newEdges, edge.source)
+            if (hasCycle) {
+              const loopId = crypto.randomUUID()
+              newLoops[loopId] = {
+                id: loopId,
+                nodes: path
+              }
+            }
+            processedNodes.add(edge.source)
+          }
+        })
+
         const newState = {
           blocks: { ...get().blocks },
-          edges: get().edges.filter((edge) => edge.id !== edgeId),
+          edges: newEdges,
+          loops: newLoops,
         }
 
         set(newState)
@@ -224,10 +253,11 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         const newState = {
           blocks: {},
           edges: [],
+          loops: {},
           history: {
             past: [],
             present: {
-              state: { blocks: {}, edges: [] },
+              state: { blocks: {}, edges: [], loops: {} },
               timestamp: Date.now(),
               action: 'Initial state',
             },
@@ -297,6 +327,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             },
           },
           edges: [...get().edges],
+          loops: { ...get().loops },
         }
 
         set(newState)
@@ -330,6 +361,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             },
           },
           edges: [...get().edges],
+          loops: { ...get().loops },
         }
 
         set(newState)
@@ -347,6 +379,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             },
           },
           edges: [...state.edges],
+          loops: { ...get().loops },
         }))
       },
     })),
