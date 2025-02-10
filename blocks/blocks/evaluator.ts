@@ -17,75 +17,41 @@ interface EvaluatorResponse extends ToolResponse {
       reasoning: string
       metrics: Record<string, number>
     }
+    selectedPath: {
+      blockId: string
+      blockType: string
+      blockTitle: string
+    }
   }
 }
 
-interface EvaluationTarget {
-  id: string
-  type?: string
-  title?: string
-  description?: string
-  category?: string
-  subBlocks?: Record<string, any>
-  currentState?: any
-  expectedOutput?: any
-  actualOutput?: any
-}
+export const generateEvaluatorPrompt = (prompt: string, content: string): string => {
+  const basePrompt = `You are an objective and meticulous evaluation agent—your role is to act as an impartial judge. Your task is to evaluate content provided in a separate sub‑block strictly based on the specific evaluation criteria supplied by the user.
 
-export const generateEvaluatorPrompt = (prompt: string, target?: EvaluationTarget): string => {
-  const basePrompt = `You are an intelligent evaluation agent responsible for assessing the quality and accuracy of workflow outputs. Your task is to analyze the input and provide a detailed evaluation with scoring.
+Guidelines:
+1. First, carefully read the evaluation criteria provided by the user. These criteria define the standards against which the content must be judged.
+2. Review the content that has been separately provided.
+3. Assess the content on the following key metrics:
+   - Accuracy: How precisely does the content align with the defined criteria?
+   - Completeness: Does the content thoroughly address every aspect outlined in the criteria?
+   - Quality: Is the content clear, coherent, and professionally presented?
+   - Relevance: How well does the content match the expectations and requirements stated in the criteria?
 
-Key Instructions:
-1. You MUST provide a numerical score between 0 and 1 (0 being worst, 1 being perfect)
-2. You MUST provide detailed reasoning for your evaluation
-3. You MUST evaluate based on multiple metrics where applicable
+Instructions:
+- Analyze the content in the context of the provided evaluation criteria.
+- Assign a numerical score between 0 (poor) and 1 (excellent) that reflects the overall performance.
+- For each metric, compute a score and provide a detailed, step‑by‑step explanation of your evaluation.
+- Your final output must be a valid JSON object that strictly matches the following format. Do not include any extra text, commentary, or formatting outside of this JSON structure.
 
-Evaluation Framework:
-- Accuracy: How well does the output match the expected result?
-- Completeness: Does the output address all aspects of the task?
-- Quality: Is the output well-formed and professional?
-- Relevance: Is the output relevant to the original request?`
-
-  const targetInfo = target
-    ? `
-
-Evaluation Target:
-${JSON.stringify(
-  {
-    id: target.id,
-    type: target.type,
-    title: target.title,
-    description: target.description,
-    category: target.category,
-    expectedOutput: target.expectedOutput,
-    actualOutput: target.actualOutput,
-  },
-  null,
-  2
-)}
-
-Evaluation Instructions:
-1. Compare the actual output against:
-   - Expected output (if provided)
-   - Task requirements
-   - Quality standards
-   - Technical constraints
-
-2. Scoring Criteria:
-   - Use objective metrics where possible
-   - Consider both technical and functional aspects
-   - Factor in any specific requirements or constraints
-   - Evaluate against industry best practices`
-    : ''
-
-  return `${basePrompt}${targetInfo}
+Content to Evaluate:
+${content}
 
 Evaluation Request: ${prompt}
 
 Response Format:
 {
   "score": <number between 0 and 1>,
-  "reasoning": "<detailed explanation>",
+  "reasoning": "<detailed explanation, including analysis for each metric>",
   "metrics": {
     "accuracy": <number between 0 and 1>,
     "completeness": <number between 0 and 1>,
@@ -94,7 +60,9 @@ Response Format:
   }
 }
 
-Remember: Your response must be valid JSON following the exact format above.`
+Remember: Your evaluation must be entirely unbiased and based solely on the provided criteria and content. Any output outside of the valid JSON format is unacceptable.`
+
+  return basePrompt
 }
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
@@ -134,8 +102,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
       prompt: { type: 'string' as ParamType, required: true },
       model: { type: 'string' as ParamType, required: true },
       apiKey: { type: 'string' as ParamType, required: true },
-      expectedOutput: { type: 'object' as ParamType, required: false },
-      actualOutput: { type: 'object' as ParamType, required: true },
+      content: { type: 'string' as ParamType, required: true },
     },
     outputs: {
       response: {
@@ -144,6 +111,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
           model: 'string',
           tokens: 'any',
           evaluation: 'json',
+          selectedPath: 'json',
         },
       },
     },
@@ -185,9 +153,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
         layout: 'full',
         hidden: true,
         value: (params: Record<string, any>) => {
-          return generateEvaluatorPrompt(params.prompt || '', {
-            id: 'runtime-evaluation',
-          })
+          return generateEvaluatorPrompt(params.prompt || '', params.content || '')
         },
       },
     ],
