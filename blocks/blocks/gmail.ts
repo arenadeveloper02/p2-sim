@@ -7,7 +7,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
   toolbar: {
     title: 'Gmail',
     description: 'Send, read, and search Gmail messages',
-    bgColor: '#EA4335', // Gmail red color
+    bgColor: '#F14537',
     icon: GmailIcon,
     category: 'tools',
   },

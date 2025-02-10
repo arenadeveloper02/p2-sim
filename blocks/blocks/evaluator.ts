@@ -102,7 +102,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
   toolbar: {
     title: 'Evaluator',
     description: 'Add an evaluator',
-    bgColor: '#FF69B4',
+    bgColor: '#2FA1FF',
     icon: ChartBarIcon,
     category: 'blocks',
   },
@@ -150,10 +150,17 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
     subBlocks: [
       {
         id: 'prompt',
-        title: 'Evaluation Prompt',
+        title: 'Evaluation Criteria',
         type: 'long-input',
         layout: 'full',
-        placeholder: 'Evaluate the output based on the following criteria...',
+        placeholder: 'Evaluate the input based on the following criteria...',
+      },
+      {
+        id: 'content',
+        title: 'Content',
+        type: 'short-input',
+        layout: 'full',
+        placeholder: 'Enter the content to evaluate',
       },
       {
         id: 'model',
@@ -172,20 +179,6 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
         connectionDroppable: false,
       },
       {
-        id: 'expectedOutput',
-        title: 'Expected Output',
-        type: 'code',
-        layout: 'full',
-        placeholder: 'Enter the expected output (optional)',
-      },
-      {
-        id: 'actualOutput',
-        title: 'Actual Output',
-        type: 'code',
-        layout: 'full',
-        placeholder: 'Enter the actual output to evaluate',
-      },
-      {
         id: 'systemPrompt',
         title: 'System Prompt',
         type: 'code',
@@ -194,8 +187,6 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
         value: (params: Record<string, any>) => {
           return generateEvaluatorPrompt(params.prompt || '', {
             id: 'runtime-evaluation',
-            expectedOutput: params.expectedOutput,
-            actualOutput: params.actualOutput,
           })
         },
       },
