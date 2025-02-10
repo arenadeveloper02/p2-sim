@@ -40,7 +40,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           useWorkflowStore.setState({
             blocks,
             edges,
-            loops: loops || {},
+            loops,
             history: history || {
               past: [],
               present: {
@@ -108,14 +108,15 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             newActiveWorkflowId = remainingIds[0]
             const savedState = localStorage.getItem(`workflow-${newActiveWorkflowId}`)
             if (savedState) {
-              const { blocks, edges, history } = JSON.parse(savedState)
+              const { blocks, edges, history, loops } = JSON.parse(savedState)
               useWorkflowStore.setState({
                 blocks,
                 edges,
+                loops,
                 history: history || {
                   past: [],
                   present: {
-                    state: { blocks, edges },
+                    state: { blocks, edges, loops },
                     timestamp: Date.now(),
                     action: 'Initial state',
                   },

@@ -6,6 +6,7 @@ export function initializeStateLogger() {
       current: {
         blocks: state.blocks,
         edges: state.edges,
+        loops: state.loops,
       },
       history: {
         past: state.history.past,
