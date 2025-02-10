@@ -5,6 +5,7 @@ import { getBlock } from '@/blocks'
 import { resolveOutputType } from '@/blocks/utils'
 import { WorkflowStoreWithHistory, pushHistory, withHistory } from './middleware'
 import { Position, SubBlockState } from './types'
+import { detectCycle } from './utils'
 
 const initialState = {
   blocks: {},
@@ -179,18 +180,28 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       },
 
       addEdge: (edge: Edge) => {
+        // First create the new edge
+        const newEdge = {
+          id: edge.id || crypto.randomUUID(),
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+        }
+        
+        // Create temporary edges array with the new edge
+        const newEdges = [...get().edges, newEdge]
+        
+        // Check for cycles starting from the source node
+        const { hasCycle, path } = detectCycle(newEdges, edge.source)
+        
+        if (hasCycle) {
+          console.log('Loop detected through nodes:', path.join(' → '))
+        }
+        
         const newState = {
           blocks: { ...get().blocks },
-          edges: [
-            ...get().edges,
-            {
-              id: edge.id || crypto.randomUUID(),
-              source: edge.source,
-              target: edge.target,
-              sourceHandle: edge.sourceHandle,
-              targetHandle: edge.targetHandle,
-            },
-          ],
+          edges: newEdges,
         }
 
         set(newState)
