@@ -15,6 +15,7 @@
  * - Meaningful error messages are provided.
  */
 import { getAllBlocks } from '@/blocks'
+import { generateEvaluatorPrompt } from '@/blocks/blocks/evaluator'
 import { generateRouterPrompt } from '@/blocks/blocks/router'
 import { BlockOutput } from '@/blocks/types'
 import { BlockConfig } from '@/blocks/types'
@@ -101,22 +102,47 @@ export class Executor {
       adjacency.set(block.id, [])
     }
 
-    // Populate inDegree and adjacency. For conditional connections, inDegree is handled dynamically.
+    // Set to track which connections are counted in inDegree.
+    const countedEdges = new Set<(typeof connections)[number]>()
+
+    // Populate inDegree and adjacency.
     for (const conn of connections) {
-      // Increase inDegree only for regular (non-conditional) connections.
-      if (!conn.condition) {
+      const sourceBlock = blocks.find((b) => b.id === conn.source)
+      let countEdge = true
+      if (conn.condition) {
+        countEdge = false
+      } else if (sourceBlock && sourceBlock.metadata?.type === 'evaluator') {
+        // For evaluator edges, count the dependency only if the target block's config references the evaluator output.
+        const targetBlock = blocks.find((b) => b.id === conn.target)
+        if (targetBlock) {
+          const paramsStr = JSON.stringify(targetBlock.config.params || {})
+          // Look for the evaluator block's id or normalized title (lowercase, no spaces) in the template.
+          const evaluatorIdRef = `<${sourceBlock.id}`
+          const evaluatorTitleRef = sourceBlock.metadata?.title
+            ? `<${sourceBlock.metadata.title.toLowerCase().replace(/\s+/g, '')}`
+            : ''
+          if (
+            !(
+              paramsStr.includes(evaluatorIdRef) ||
+              (evaluatorTitleRef && paramsStr.includes(evaluatorTitleRef))
+            )
+          ) {
+            countEdge = false
+          }
+        }
+      }
+      if (countEdge) {
         inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1)
+        countedEdges.add(conn)
       }
       adjacency.get(conn.source)?.push(conn.target)
     }
 
     // Maps for router and conditional decisions.
-    // routerDecisions: router block id -> chosen target block id.
-    // activeConditionalPaths: conditional block id -> selected condition id.
     const routerDecisions = new Map<string, string>()
     const activeConditionalPaths = new Map<string, string>()
 
-    // Queue initially contains all blocks without dependencies.
+    // Initial queue: all blocks with zero inDegree.
     const queue: string[] = []
     for (const [blockId, degree] of inDegree) {
       if (degree === 0) {
@@ -124,30 +150,21 @@ export class Executor {
       }
     }
 
-    // This variable will store the output of the latest executed block.
     let lastOutput: BlockOutput = { response: {} }
 
-    // Process blocks layer by layer.
     while (queue.length > 0) {
       const currentLayer = [...queue]
       queue.length = 0
 
-      // Filtering: only execute blocks that match router and conditional decisions.
+      // Filtering: only execute blocks that satisfy router and condition decisions.
       const executableBlocks = currentLayer.filter((blockId) => {
-        // First check if block is enabled
         const block = blocks.find((b) => b.id === blockId)
-        if (!block || block.enabled === false) {
-          return false
-        }
+        if (!block || block.enabled === false) return false
 
-        // Verify if block lies on the router's chosen path
         for (const [routerId, chosenPath] of routerDecisions) {
-          if (!this.isInChosenPath(blockId, chosenPath, routerId)) {
-            return false
-          }
+          if (!this.isInChosenPath(blockId, chosenPath, routerId)) return false
         }
 
-        // Verify if block lies on the selected conditional path
         for (const [conditionBlockId, selectedConditionId] of activeConditionalPaths) {
           const connection = connections.find(
             (conn) =>
@@ -156,43 +173,30 @@ export class Executor {
               conn.sourceHandle?.startsWith('condition-')
           )
           if (connection) {
-            // Extract condition id from sourceHandle (format: "condition-<conditionId>")
             const connConditionId = connection.sourceHandle?.replace('condition-', '')
-            if (connConditionId !== selectedConditionId) {
-              return false
-            }
+            if (connConditionId !== selectedConditionId) return false
           }
         }
         return true
       })
 
-      // Execute blocks in the current layer in parallel.
+      // Execute all blocks in the current layer in parallel.
       const layerResults = await Promise.all(
         executableBlocks.map(async (blockId) => {
           const block = blocks.find((b) => b.id === blockId)
-          if (!block) {
-            throw new Error(`Block ${blockId} not found`)
-          }
+          if (!block) throw new Error(`Block ${blockId} not found`)
 
-          // Resolve inputs (including template variables and env vars) for the block.
           const inputs = this.resolveInputs(block, context)
           const result = await this.executeBlock(block, inputs, context)
-          // Store the block output in context for later reference.
           context.blockStates.set(block.id, result)
-          // Update lastOutput to reflect the latest executed block.
           lastOutput = result
 
-          // For router or condition blocks, update decision maps accordingly.
           if (block.metadata?.type === 'router') {
             const routerResult = result as {
               response: {
                 content: string
                 model: string
-                tokens: {
-                  prompt: number
-                  completion: number
-                  total: number
-                }
+                tokens: { prompt: number; completion: number; total: number }
                 selectedPath: { blockId: string }
               }
             }
@@ -215,32 +219,22 @@ export class Executor {
         })
       )
 
-      // After executing a layer, update in-degrees for all adjacent blocks.
+      // After executing a layer, update inDegree for all adjacent blocks using only counted edges.
       for (const finishedBlockId of layerResults) {
-        const neighbors = adjacency.get(finishedBlockId) || []
-        for (const neighbor of neighbors) {
-          // Find the relevant connection from finishedBlockId to neighbor.
-          const connection = connections.find(
-            (conn) => conn.source === finishedBlockId && conn.target === neighbor
-          )
-          if (!connection) continue
-
-          // Regular (non-conditional) connection: always decrement.
-          if (!connection.sourceHandle || !connection.sourceHandle.startsWith('condition-')) {
-            const newDegree = (inDegree.get(neighbor) || 0) - 1
-            inDegree.set(neighbor, newDegree)
-            if (newDegree === 0) {
-              queue.push(neighbor)
-            }
+        const outgoingConns = connections.filter(
+          (conn) => conn.source === finishedBlockId && countedEdges.has(conn)
+        )
+        for (const conn of outgoingConns) {
+          if (!conn.sourceHandle || !conn.sourceHandle.startsWith('condition-')) {
+            const newDegree = (inDegree.get(conn.target) || 0) - 1
+            inDegree.set(conn.target, newDegree)
+            if (newDegree === 0) queue.push(conn.target)
           } else {
-            // For a conditional connection, only decrement if the active condition matches.
-            const conditionId = connection.sourceHandle.replace('condition-', '')
+            const conditionId = conn.sourceHandle.replace('condition-', '')
             if (activeConditionalPaths.get(finishedBlockId) === conditionId) {
-              const newDegree = (inDegree.get(neighbor) || 0) - 1
-              inDegree.set(neighbor, newDegree)
-              if (newDegree === 0) {
-                queue.push(neighbor)
-              }
+              const newDegree = (inDegree.get(conn.target) || 0) - 1
+              inDegree.set(conn.target, newDegree)
+              if (newDegree === 0) queue.push(conn.target)
             }
           }
         }
@@ -289,6 +283,16 @@ export class Executor {
             model: routerOutput.model,
             tokens: routerOutput.tokens,
             selectedPath: routerOutput.selectedPath,
+          },
+        }
+      } else if (block.metadata?.type === 'evaluator') {
+        const evaluatorOutput = await this.executeEvaluatorBlock(block, context)
+        output = {
+          response: {
+            content: evaluatorOutput.content,
+            model: evaluatorOutput.model,
+            tokens: evaluatorOutput.tokens,
+            selectedPath: evaluatorOutput.selectedPath,
           },
         }
       } else if (block.metadata?.type === 'condition') {
@@ -638,6 +642,107 @@ export class Executor {
       temperature: routerConfig.temperature,
       apiKey: routerConfig.apiKey,
     })
+
+    const chosenBlockId = response.content.trim().toLowerCase()
+    const chosenBlock = targetBlocks.find((b) => b.id === chosenBlockId)
+    if (!chosenBlock) {
+      throw new Error(`Invalid routing decision: ${chosenBlockId}`)
+    }
+
+    const tokens = response.tokens || { prompt: 0, completion: 0, total: 0 }
+    return {
+      content: resolvedInputs.prompt,
+      model: response.model,
+      tokens: {
+        prompt: tokens.prompt || 0,
+        completion: tokens.completion || 0,
+        total: tokens.total || 0,
+      },
+      selectedPath: {
+        blockId: chosenBlock.id,
+        blockType: chosenBlock.type || 'unknown',
+        blockTitle: chosenBlock.title || 'Untitled Block',
+      },
+    }
+  }
+
+  /**
+   * Executes a router block which calculates branching decisions based on a prompt.
+   */
+  private async executeEvaluatorBlock(
+    block: SerializedBlock,
+    context: ExecutionContext
+  ): Promise<{
+    content: string
+    model: string
+    tokens: {
+      prompt: number
+      completion: number
+      total: number
+    }
+    selectedPath: {
+      blockId: string
+      blockType: string
+      blockTitle: string
+    }
+  }> {
+    // Resolve inputs for the evaluator block.
+    console.log('Evaluator: Resolving inputs for the evaluator block.')
+    const resolvedInputs = this.resolveInputs(block, context)
+    console.log('Evaluator: Resolved inputs:', resolvedInputs)
+
+    console.log('Evaluator: Filtering outgoing connections for the block.')
+    const outgoingConnections = this.workflow.connections.filter((conn) => conn.source === block.id)
+    console.log('Evaluator: Outgoing connections:', outgoingConnections)
+
+    console.log('Evaluator: Mapping target blocks from outgoing connections.')
+    const targetBlocks = outgoingConnections.map((conn) => {
+      const targetBlock = this.workflow.blocks.find((b) => b.id === conn.target)
+      if (!targetBlock) {
+        throw new Error(`Target block ${conn.target} not found`)
+      }
+      console.log('Evaluator: Found target block:', targetBlock)
+      return {
+        id: targetBlock.id,
+        type: targetBlock.metadata?.type,
+        title: targetBlock.metadata?.title,
+        description: targetBlock.metadata?.description,
+        subBlocks: targetBlock.config.params,
+        currentState: context.blockStates.get(targetBlock.id),
+      }
+    })
+    console.log('Evaluator: Mapped target blocks:', targetBlocks)
+
+    const evaluatorConfig = {
+      prompt: resolvedInputs.prompt,
+      content: resolvedInputs.content,
+      model: resolvedInputs.model,
+      apiKey: resolvedInputs.apiKey,
+      temperature: resolvedInputs.temperature || 0,
+    }
+
+    const model = evaluatorConfig.model || 'gpt-4o'
+    const providerId = getProviderFromModel(model)
+
+    // Add logging before making the request
+    console.log('Evaluator: Sending request with prompt:', evaluatorConfig.prompt)
+    console.log('Evaluator: Available target blocks:', targetBlocks)
+
+    const response = await executeProviderRequest(providerId, {
+      model: evaluatorConfig.model,
+      systemPrompt: generateEvaluatorPrompt(
+        evaluatorConfig.prompt,
+        evaluatorConfig.content,
+        targetBlocks
+      ),
+      messages: [{ role: 'user', content: evaluatorConfig.prompt }],
+      temperature: evaluatorConfig.temperature,
+      apiKey: evaluatorConfig.apiKey,
+    })
+
+    // Add logging after getting the response
+    console.log('Evaluator: Raw response:', response)
+    console.log('Evaluator: Chosen block ID:', response.content.trim().toLowerCase())
 
     const chosenBlockId = response.content.trim().toLowerCase()
     const chosenBlock = targetBlocks.find((b) => b.id === chosenBlockId)

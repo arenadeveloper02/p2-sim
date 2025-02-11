@@ -3,6 +3,16 @@ import { ToolResponse } from '@/tools/types'
 import { MODEL_TOOLS, ModelType } from '../consts'
 import { BlockConfig, ParamType } from '../types'
 
+interface TargetBlock {
+  id: string
+  type?: string
+  title?: string
+  description?: string
+  category?: string
+  subBlocks?: Record<string, any>
+  currentState?: any
+}
+
 interface EvaluatorResponse extends ToolResponse {
   output: {
     content: string
@@ -25,44 +35,55 @@ interface EvaluatorResponse extends ToolResponse {
   }
 }
 
-export const generateEvaluatorPrompt = (prompt: string, content: string): string => {
-  const basePrompt = `You are an objective and meticulous evaluation agent—your role is to act as an impartial judge. Your task is to evaluate content provided in a separate sub‑block strictly based on the specific evaluation criteria supplied by the user.
+export const generateEvaluatorPrompt = (
+  evaluationCriteria: string,
+  content: string,
+  targetBlocks?: TargetBlock[]
+): string => {
+  const basePrompt = `You are an objective evaluation agent. Analyze the content against the provided criteria and determine the next step based on the evaluation score.
 
-Guidelines:
-1. First, carefully read the evaluation criteria provided by the user. These criteria define the standards against which the content must be judged.
-2. Review the content that has been separately provided.
-3. Assess the content on the following key metrics:
-   - Accuracy: How precisely does the content align with the defined criteria?
-   - Completeness: Does the content thoroughly address every aspect outlined in the criteria?
-   - Quality: Is the content clear, coherent, and professionally presented?
-   - Relevance: How well does the content match the expectations and requirements stated in the criteria?
+Evaluation Instructions:
+1. Score the content (0 to 1) using these metrics:
+   - Accuracy: How well does it meet requirements?
+   - Completeness: Are all aspects addressed?
+   - Quality: Is it clear and professional?
+   - Relevance: Does it match the criteria?
 
-Instructions:
-- Analyze the content in the context of the provided evaluation criteria.
-- Assign a numerical score between 0 (poor) and 1 (excellent) that reflects the overall performance.
-- For each metric, compute a score and provide a detailed, step‑by‑step explanation of your evaluation.
-- Your final output must be a valid JSON object that strictly matches the following format. Do not include any extra text, commentary, or formatting outside of this JSON structure.
+2. Calculate final score:
+   - Average all metrics
+   - Round to 2 decimal places
 
-Content to Evaluate:
+Content:
 ${content}
 
-Evaluation Request: ${prompt}
+Criteria:
+${evaluationCriteria}`
+
+  const targetBlocksInfo = targetBlocks
+    ? `
+Available Destinations:
+${targetBlocks
+  .map(
+    (block) => `
+ID: ${block.id}
+Type: ${block.type}
+Title: ${block.title}
+Description: ${block.description}`
+  )
+  .join('\n---\n')}
+
+Routing Rules:
+- Score greater than or equal to 0.85: Choose success path block
+- Score less than 0.85: Choose failure path block`
+    : ''
+
+  return `${basePrompt}${targetBlocksInfo}
 
 Response Format:
-{
-  "score": <number between 0 and 1>,
-  "reasoning": "<detailed explanation, including analysis for each metric>",
-  "metrics": {
-    "accuracy": <number between 0 and 1>,
-    "completeness": <number between 0 and 1>,
-    "quality": <number between 0 and 1>,
-    "relevance": <number between 0 and 1>
-  }
-}
+Return ONLY the destination block ID as a single word, no punctuation or explanation.
+Example: "2acd9007-27e8-4510-a487-73d3b825e7c1"
 
-Remember: Your evaluation must be entirely unbiased and based solely on the provided criteria and content. Any output outside of the valid JSON format is unacceptable.`
-
-  return basePrompt
+Remember: Your response must be ONLY the block ID.`
 }
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
