@@ -8,8 +8,14 @@ interface WorkflowLoopProps {
 
 // Pure calculation function - no hooks
 function calculateLoopBounds(loop: Loop, blocks: Record<string, any>) {
-  // Get all blocks in this loop
-  const loopBlocks = loop.nodes.map((id) => blocks[id])
+  // Get all blocks in this loop and filter out any undefined blocks
+  const loopBlocks = loop.nodes
+    .map((id) => blocks[id])
+    .filter(
+      (block): block is NonNullable<typeof block> =>
+        block !== undefined && block.position !== undefined
+    )
+
   if (!loopBlocks.length) return null
 
   // Calculate bounds of all blocks in loop

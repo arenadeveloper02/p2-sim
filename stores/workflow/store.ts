@@ -175,6 +175,24 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           edges: [...get().edges].filter((edge) => edge.source !== id && edge.target !== id),
           loops: { ...get().loops },
         }
+
+        // Remove the block from any loops that contain it
+        Object.entries(newState.loops).forEach(([loopId, loop]) => {
+          if (loop.nodes.includes(id)) {
+            // If the loop would only have 1 or 0 nodes after removal, delete the loop
+            if (loop.nodes.length <= 2) {
+              delete newState.loops[loopId]
+            } else {
+              // Otherwise, just remove the node from the loop
+              newState.loops[loopId] = {
+                ...loop,
+                nodes: loop.nodes.filter((nodeId) => nodeId !== id)
+              }
+            }
+          }
+        })
+
+        // Delete the block itself
         delete newState.blocks[id]
 
         set(newState)
