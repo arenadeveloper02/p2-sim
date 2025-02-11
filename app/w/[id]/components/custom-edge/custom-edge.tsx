@@ -20,13 +20,14 @@ export const CustomEdge = (props: EdgeProps) => {
   const isSelected = props.id === props.data?.selectedEdgeId
 
   return (
-    <g>
+    <g style={{ zIndex: 1 }}>
       <path
         d={edgePath}
         strokeWidth={20}
         stroke="transparent"
         fill="none"
         className="react-flow__edge-interaction"
+        style={{ pointerEvents: 'all' }}
       />
       <path
         d={edgePath}
@@ -51,9 +52,10 @@ export const CustomEdge = (props: EdgeProps) => {
           x={labelX - 12}
           y={labelY - 12}
           className="overflow-visible"
+          style={{ zIndex: 999 }}
         >
           <div
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-[#FAFBFC]"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-[#FAFBFC] relative z-[9999]"
             onClick={(e) => {
               e.stopPropagation()
               props.data?.onDelete?.(props.id)
