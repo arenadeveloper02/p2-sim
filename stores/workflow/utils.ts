@@ -1,68 +1,53 @@
 import { Edge } from 'reactflow'
 
 /**
- * Performs a depth-first search to detect cycles in the graph
+ * Performs a depth-first search to detect all cycles in the graph
  * @param edges - List of all edges in the graph
  * @param startNode - Starting node for cycle detection
- * @returns boolean indicating if a cycle was detected and the path of the cycle if found
+ * @returns Array of all unique cycles found in the graph
  */
-export function detectCycle(edges: Edge[], startNode: string): { hasCycle: boolean; path: string[] } {
+export function detectCycle(edges: Edge[], startNode: string): { hasCycle: boolean; paths: string[][] } {
   const visited = new Set<string>()
   const recursionStack = new Set<string>()
-  const pathMap = new Map<string, string>()
-  
-  function dfs(node: string): boolean {
-    // Add to both visited and recursion stack
+  const allCycles: string[][] = []
+  const currentPath: string[] = []
+
+  function dfs(node: string) {
     visited.add(node)
     recursionStack.add(node)
-    
+    currentPath.push(node)
+
     // Get all neighbors of current node
     const neighbors = edges
       .filter(edge => edge.source === node)
       .map(edge => edge.target)
-    
+
     for (const neighbor of neighbors) {
-      // If not visited, explore that path
-      if (!visited.has(neighbor)) {
-        pathMap.set(neighbor, node)
-        if (dfs(neighbor)) return true
-      }
-      // If the neighbor is in recursion stack, we found a cycle
-      else if (recursionStack.has(neighbor)) {
-        // Record the last edge of the cycle
-        pathMap.set(neighbor, node)
-        return true
+      if (!recursionStack.has(neighbor)) {
+        if (!visited.has(neighbor)) {
+          dfs(neighbor)
+        }
+      } else {
+        // Found a cycle
+        const cycleStartIndex = currentPath.indexOf(neighbor)
+        if (cycleStartIndex !== -1) {
+          const cycle = currentPath.slice(cycleStartIndex)
+          // Only add cycles with length > 1
+          if (cycle.length > 1) {
+            allCycles.push([...cycle])
+          }
+        }
       }
     }
-    
-    // Remove from recursion stack when backtracking
+
+    currentPath.pop()
     recursionStack.delete(node)
-    return false
   }
-  
-  // Perform DFS and construct cycle path if found
-  const hasCycle = dfs(startNode)
-  
-  // If cycle found, construct the path and ensure no duplicates
-  const cyclePath: string[] = []
-  if (hasCycle) {
-    let current = startNode
-    const seenNodes = new Set<string>()
-    
-    do {
-      // Only add node if we haven't seen it before
-      if (!seenNodes.has(current)) {
-        cyclePath.unshift(current)
-        seenNodes.add(current)
-      }
-      current = pathMap.get(current)!
-    } while (current !== startNode && current !== undefined)
-    
-    // Add starting node only if it's not already in the path
-    if (current === startNode && !seenNodes.has(startNode)) {
-      cyclePath.unshift(startNode)
-    }
+
+  dfs(startNode)
+
+  return {
+    hasCycle: allCycles.length > 0,
+    paths: allCycles
   }
-  
-  return { hasCycle, path: cyclePath }
 } 

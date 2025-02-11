@@ -192,18 +192,28 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         }
         
         const newEdges = [...get().edges, newEdge]
-        const { hasCycle, path } = detectCycle(newEdges, edge.source)
         
-        // Only create a loop if we have a valid cycle with at least 2 unique nodes
-        const newLoops = { ...get().loops }
+        // Recalculate all loops after adding the edge
+        const newLoops: Record<string, Loop> = {}
+        const processedPaths = new Set<string>()
         
-        if (hasCycle && path.length > 1) {
-          const loopId = crypto.randomUUID()
-          newLoops[loopId] = {
-            id: loopId,
-            nodes: path
-          }
-        }
+        // Check for cycles from each node
+        const nodes = new Set(newEdges.map(e => e.source))
+        nodes.forEach(node => {
+          const { paths } = detectCycle(newEdges, node)
+          paths.forEach(path => {
+            // Create a canonical path representation for deduplication
+            const canonicalPath = [...path].sort().join(',')
+            if (!processedPaths.has(canonicalPath)) {
+              const loopId = crypto.randomUUID()
+              newLoops[loopId] = {
+                id: loopId,
+                nodes: path
+              }
+              processedPaths.add(canonicalPath)
+            }
+          })
+        })
         
         const newState = {
           blocks: { ...get().blocks },
@@ -219,23 +229,26 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       removeEdge: (edgeId: string) => {
         const newEdges = get().edges.filter((edge) => edge.id !== edgeId)
         
-        // Recalculate loops after edge removal
+        // Recalculate all loops after edge removal
         const newLoops: Record<string, Loop> = {}
-        const processedNodes = new Set<string>()
+        const processedPaths = new Set<string>()
         
-        // Check for cycles from each source node
-        newEdges.forEach(edge => {
-          if (!processedNodes.has(edge.source)) {
-            const { hasCycle, path } = detectCycle(newEdges, edge.source)
-            if (hasCycle) {
+        // Check for cycles from each node
+        const nodes = new Set(newEdges.map(e => e.source))
+        nodes.forEach(node => {
+          const { paths } = detectCycle(newEdges, node)
+          paths.forEach(path => {
+            // Create a canonical path representation for deduplication
+            const canonicalPath = [...path].sort().join(',')
+            if (!processedPaths.has(canonicalPath)) {
               const loopId = crypto.randomUUID()
               newLoops[loopId] = {
                 id: loopId,
                 nodes: path
               }
+              processedPaths.add(canonicalPath)
             }
-            processedNodes.add(edge.source)
-          }
+          })
         })
 
         const newState = {
