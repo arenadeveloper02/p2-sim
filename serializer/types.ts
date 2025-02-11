@@ -5,6 +5,7 @@ export interface SerializedWorkflow {
   version: string
   blocks: SerializedBlock[]
   connections: SerializedConnection[]
+  loops: Record<string, SerializedLoop>
 }
 
 export interface SerializedConnection {
@@ -36,4 +37,9 @@ export interface SerializedBlock {
     type: string
   }
   enabled: boolean
+}
+
+export interface SerializedLoop {
+  id: string
+  nodes: string[]
 }

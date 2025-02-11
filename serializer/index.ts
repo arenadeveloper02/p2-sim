@@ -1,10 +1,14 @@
 import { Edge } from 'reactflow'
-import { BlockState, SubBlockState } from '@/stores/workflow/types'
+import { BlockState, Loop, SubBlockState } from '@/stores/workflow/types'
 import { getBlock } from '@/blocks'
 import { SerializedBlock, SerializedConnection, SerializedWorkflow } from './types'
 
 export class Serializer {
-  serializeWorkflow(blocks: Record<string, BlockState>, edges: Edge[]): SerializedWorkflow {
+  serializeWorkflow(
+    blocks: Record<string, BlockState>,
+    edges: Edge[],
+    loops: Record<string, Loop>
+  ): SerializedWorkflow {
     return {
       version: '1.0',
       blocks: Object.values(blocks).map((block) => this.serializeBlock(block)),
@@ -14,6 +18,7 @@ export class Serializer {
         sourceHandle: edge.sourceHandle || undefined,
         targetHandle: edge.targetHandle || undefined,
       })),
+      loops,
     }
   }
 

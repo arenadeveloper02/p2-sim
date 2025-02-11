@@ -11,7 +11,7 @@ import { Serializer } from '@/serializer'
 export function useWorkflowExecution() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null)
-  const { blocks, edges } = useWorkflowStore()
+  const { blocks, edges, loops } = useWorkflowStore()
   const { activeWorkflowId } = useWorkflowRegistry()
   const { addNotification } = useNotificationStore()
   const { addConsole, toggleConsole, isOpen } = useConsoleStore()
@@ -50,7 +50,7 @@ export function useWorkflowExecution() {
       )
 
       // Execute workflow
-      const workflow = new Serializer().serializeWorkflow(blocks, edges)
+      const workflow = new Serializer().serializeWorkflow(blocks, edges, loops)
       const executor = new Executor(workflow, currentBlockStates, envVarValues)
 
       const result = await executor.execute('my-run-id')
