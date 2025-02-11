@@ -1,51 +1,56 @@
 import { useEffect, useRef, useState } from 'react'
 import { RectangleHorizontal, RectangleVertical } from 'lucide-react'
-import { Handle, Position } from 'reactflow'
-import { useUpdateNodeInternals } from 'reactflow'
+import { Handle, NodeProps, Position, useUpdateNodeInternals } from 'reactflow'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useWorkflowStore } from '@/stores/workflow/store'
-import { BlockConfig, SubBlockConfig } from '../../../../../blocks/types'
+import { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
 import { SubBlock } from './components/sub-block/sub-block'
 
-interface WorkflowBlockProps {
-  id: string
+interface WorkflowBlockData {
   type: string
-  position: { x: number; y: number }
   config: BlockConfig
   name: string
-  selected?: boolean
 }
 
-export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBlockProps) {
+// Combine both interfaces into a single component
+export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockData>) {
+  const { type, config, name } = data
   const { toolbar, workflow } = config
+
+  // State management
   const [isConnecting, setIsConnecting] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedName, setEditedName] = useState('')
+
+  // Refs
+  const blockRef = useRef<HTMLDivElement>(null)
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  // Store selectors
   const isEnabled = useWorkflowStore((state) => state.blocks[id]?.enabled ?? true)
   const horizontalHandles = useWorkflowStore(
     (state) => state.blocks[id]?.horizontalHandles ?? false
   )
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedName, setEditedName] = useState('')
-  const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
-  const blockRef = useRef<HTMLDivElement>(null)
-  const updateNodeInternals = useUpdateNodeInternals()
   const isWide = useWorkflowStore((state) => state.blocks[id]?.isWide ?? false)
+
+  // Store actions
+  const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
   const toggleBlockWide = useWorkflowStore((state) => state.toggleBlockWide)
 
-  // Add effect to update node internals when handles change
+  // Update node internals when handles change
   useEffect(() => {
     updateNodeInternals(id)
-  }, [id, horizontalHandles])
+  }, [id, horizontalHandles, updateNodeInternals])
 
+  // SubBlock layout management
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
-    // Filter out hidden subblocks
     const visibleSubBlocks = subBlocks.filter((block) => !block.hidden)
-
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
     let currentRowWidth = 0
@@ -71,6 +76,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
 
   const subBlockRows = groupSubBlocks(workflow.subBlocks)
 
+  // Name editing handlers
   const handleNameClick = () => {
     setEditedName(name)
     setIsEditing(true)
@@ -104,6 +110,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
       {selected && <ActionBar blockId={id} />}
       <ConnectionBlocks blockId={id} setIsConnecting={setIsConnecting} />
 
+      {/* Input Handle */}
       <Handle
         type="target"
         position={horizontalHandles ? Position.Left : Position.Top}
@@ -121,6 +128,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
         isConnectableEnd={true}
       />
 
+      {/* Block Header */}
       <div className="flex items-center justify-between p-3 border-b workflow-drag-handle cursor-grab [&:active]:cursor-grabbing">
         <div className="flex items-center gap-3">
           <div
@@ -175,6 +183,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
         </div>
       </div>
 
+      {/* Block Content */}
       <div className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
         {subBlockRows.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`} className="flex gap-4">
@@ -190,7 +199,7 @@ export function WorkflowBlock({ id, type, config, name, selected }: WorkflowBloc
         ))}
       </div>
 
-      {/* Main output handle - only render if not a condition block */}
+      {/* Output Handle */}
       {type !== 'condition' && (
         <Handle
           type="source"
