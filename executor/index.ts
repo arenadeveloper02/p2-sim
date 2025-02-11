@@ -295,7 +295,7 @@ export class Executor {
         const conditionResult = await this.executeConditionalBlock(block, context)
         output = {
           response: {
-            result: conditionResult.condition,
+            result: conditionResult.sourceOutput,
             content: conditionResult.content,
             condition: {
               result: conditionResult.condition,
@@ -440,26 +440,6 @@ export class Executor {
       context.blockLogs.push(blockLog)
       throw error
     }
-  }
-
-  /**
-   * Validates required parameters for a given tool configuration.
-   * Uses defaults when available and throws an error if a required parameter is missing.
-   */
-  private validateToolParams(tool: Tool, params: Record<string, any>): Record<string, any> {
-    return Object.entries(tool.params).reduce(
-      (acc, [name, config]) => {
-        if (name in params) {
-          acc[name] = params[name]
-        } else if ('default' in config) {
-          acc[name] = config.default
-        } else if (config.required) {
-          throw new Error(`Missing required parameter '${name}'`)
-        }
-        return acc
-      },
-      {} as Record<string, any>
-    )
   }
 
   /**
@@ -812,11 +792,37 @@ export class Executor {
       throw new Error(`Target block ${selectedConnection!.target} not found`)
     }
 
+    // Get the raw output from the source block's state
+    const sourceBlockState = context.blockStates.get(sourceBlockId)
+    if (!sourceBlockState) {
+      throw new Error(`No state found for source block ${sourceBlockId}`)
+    }
+
+    // Create the block output with the source output when condition is met
+    const blockOutput = {
+      response: {
+        result: conditionMet ? sourceBlockState : false,
+        content: `Condition '${selectedCondition.title}' evaluated to ${conditionMet}`,
+        condition: {
+          result: conditionMet,
+          selectedPath: {
+            blockId: targetBlock.id,
+            blockType: targetBlock.metadata?.type || '',
+            blockTitle: targetBlock.metadata?.title || '',
+          },
+          selectedConditionId: selectedCondition.id,
+        },
+      },
+    }
+
+    // Store the block output in the context
+    context.blockStates.set(block.id, blockOutput)
+
     return {
       content: `Condition '${selectedCondition.title}' chosen`,
       condition: conditionMet,
       selectedConditionId: selectedCondition.id,
-      sourceOutput,
+      sourceOutput: sourceBlockState,
       selectedPath: {
         blockId: targetBlock.id,
         blockType: targetBlock.metadata?.type || '',
