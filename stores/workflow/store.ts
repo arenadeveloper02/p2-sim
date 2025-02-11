@@ -194,10 +194,10 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         const newEdges = [...get().edges, newEdge]
         const { hasCycle, path } = detectCycle(newEdges, edge.source)
         
-        // Create new loops state
+        // Only create a loop if we have a valid cycle with at least 2 unique nodes
         const newLoops = { ...get().loops }
         
-        if (hasCycle) {
+        if (hasCycle && path.length > 1) {
           const loopId = crypto.randomUUID()
           newLoops[loopId] = {
             id: loopId,

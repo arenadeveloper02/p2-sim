@@ -43,16 +43,23 @@ export function detectCycle(edges: Edge[], startNode: string): { hasCycle: boole
   // Perform DFS and construct cycle path if found
   const hasCycle = dfs(startNode)
   
-  // If cycle found, construct the path
+  // If cycle found, construct the path and ensure no duplicates
   const cyclePath: string[] = []
   if (hasCycle) {
     let current = startNode
+    const seenNodes = new Set<string>()
+    
     do {
-      cyclePath.unshift(current)
+      // Only add node if we haven't seen it before
+      if (!seenNodes.has(current)) {
+        cyclePath.unshift(current)
+        seenNodes.add(current)
+      }
       current = pathMap.get(current)!
     } while (current !== startNode && current !== undefined)
     
-    if (current === startNode) {
+    // Add starting node only if it's not already in the path
+    if (current === startNode && !seenNodes.has(startNode)) {
       cyclePath.unshift(startNode)
     }
   }
