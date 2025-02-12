@@ -182,8 +182,15 @@ export const googleProvider: ProviderConfig = {
   },
 
   transformResponse: (response: any) => {
+    let content = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+    if (content) {
+      content = content.replace(/```json\n?|\n?```/g, '')
+      content = content.trim()
+    }
+
     return {
-      content: response.candidates?.[0]?.content?.parts?.[0]?.text || '',
+      content,
       tokens: response.usageMetadata && {
         prompt: response.usageMetadata.promptTokenCount,
         completion: response.usageMetadata.candidatesTokenCount,
