@@ -120,6 +120,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
           '!bg-white !rounded-full !border !border-gray-200',
           'group-hover:!border-blue-500',
           '!cursor-crosshair',
+          'transition-[border-color] duration-150',
           horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
         )}
         data-nodeid={id}
@@ -210,6 +211,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
             '!bg-white !rounded-full !border !border-gray-200',
             'group-hover:!border-blue-500',
             '!cursor-crosshair',
+            'transition-[border-color] duration-150',
             horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
           )}
           data-nodeid={id}
