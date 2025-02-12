@@ -234,6 +234,7 @@ export class Executor {
                 model: string
                 tokens: { prompt: number; completion: number; total: number }
                 selectedPath: { blockId: string }
+                justification: string
               }
             }
             evaluatorDecisions.set(block.id, evaluatorResult.response.selectedPath.blockId)
@@ -400,6 +401,7 @@ export class Executor {
             model: evaluatorOutput.model,
             tokens: evaluatorOutput.tokens,
             selectedPath: evaluatorOutput.selectedPath,
+            justification: evaluatorOutput.justification,
           },
         }
       } else if (block.metadata?.type === 'condition') {
@@ -672,6 +674,7 @@ export class Executor {
       blockType: string
       blockTitle: string
     }
+    justification: string
   }> {
     // Resolve inputs for the evaluator block.
     const resolvedInputs = this.resolveInputs(block, context)
@@ -686,44 +689,45 @@ export class Executor {
       }
       return {
         id: targetBlock.id,
-        type: targetBlock.metadata?.type,
-        title: targetBlock.metadata?.title,
+        type: targetBlock.metadata?.type || 'unknown',
+        title: targetBlock.metadata?.title || 'Untitled Block',
         description: targetBlock.metadata?.description,
         subBlocks: targetBlock.config.params,
         currentState: context.blockStates.get(targetBlock.id),
       }
     })
 
-    const evaluatorConfig = {
-      prompt: resolvedInputs.prompt,
-      content: resolvedInputs.content,
-      model: resolvedInputs.model,
-      apiKey: resolvedInputs.apiKey,
-      temperature: resolvedInputs.temperature || 0,
-    }
-
-    const model = evaluatorConfig.model || 'gpt-4o'
+    const model = resolvedInputs.model || 'gpt-4o'
     const providerId = getProviderFromModel(model)
 
     // Generate and execute the evaluator prompt
     const response = await executeProviderRequest(providerId, {
-      model: evaluatorConfig.model,
+      model: resolvedInputs.model,
       systemPrompt: generateEvaluatorPrompt(
-        evaluatorConfig.prompt,
-        evaluatorConfig.content,
+        resolvedInputs.prompt,
+        resolvedInputs.content,
         targetBlocks
       ),
-      messages: [{ role: 'user', content: evaluatorConfig.prompt }],
-      temperature: evaluatorConfig.temperature,
-      apiKey: evaluatorConfig.apiKey,
+      messages: [{ role: 'user', content: resolvedInputs.prompt }],
+      temperature: resolvedInputs.temperature || 0,
+      apiKey: resolvedInputs.apiKey,
     })
 
-    const chosenBlockId = response.content.trim().toLowerCase()
+    // Parse the evaluator response as JSON
+    let evaluatorResponse
+    try {
+      evaluatorResponse = JSON.parse(response.content.trim())
+    } catch (e) {
+      throw new Error(`Invalid evaluator response format: ${response.content}`)
+    }
+
+    const chosenBlockId = evaluatorResponse.decision
+    const justification = evaluatorResponse.justification
 
     // Handle case where evaluator has no targets
     if (chosenBlockId === 'end') {
       const result = {
-        content: evaluatorConfig.content,
+        content: resolvedInputs.content,
         model: response.model,
         tokens: {
           prompt: response.tokens?.prompt || 0,
@@ -735,6 +739,7 @@ export class Executor {
           blockType: '',
           blockTitle: '',
         },
+        justification,
       }
 
       context.blockStates.set(block.id, {
@@ -749,24 +754,22 @@ export class Executor {
       throw new Error(`Invalid evaluation decision: ${chosenBlockId}`)
     }
 
-    // Store the evaluation result in the context
-    const tokens = response.tokens || { prompt: 0, completion: 0, total: 0 }
     const result = {
-      content: evaluatorConfig.content,
+      content: resolvedInputs.content,
       model: response.model,
       tokens: {
-        prompt: tokens.prompt || 0,
-        completion: tokens.completion || 0,
-        total: tokens.total || 0,
+        prompt: response.tokens?.prompt || 0,
+        completion: response.tokens?.completion || 0,
+        total: response.tokens?.total || 0,
       },
       selectedPath: {
         blockId: chosenBlock.id,
-        blockType: chosenBlock.type || 'unknown',
-        blockTitle: chosenBlock.title || 'Untitled Block',
+        blockType: chosenBlock.type,
+        blockTitle: chosenBlock.title,
       },
+      justification,
     }
 
-    // ADDED: Explicitly store the evaluation decision in the context
     context.blockStates.set(block.id, {
       response: result,
     })

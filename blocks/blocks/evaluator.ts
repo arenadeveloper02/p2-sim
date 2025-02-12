@@ -32,6 +32,7 @@ interface EvaluatorResponse extends ToolResponse {
       blockType: string
       blockTitle: string
     }
+    justification: string
   }
 }
 
@@ -64,9 +65,13 @@ ${evaluationCriteria}`
     return `${basePrompt}
 
 Response Format:
-Return ONLY "end" to indicate no further routing is needed.
+Return a JSON object with the following structure:
+{
+  "decision": "end",
+  "justification": "Brief explanation of the pure evaluation of the content. DO NOT include any information about the target blocks."
+}
 
-Remember: Your response must be ONLY the word "end" - no additional text, formatting, or explanation.`
+Remember: Your response must be ONLY the JSON object - no additional text, formatting, or explanation.`
   }
 
   const targetBlocksInfo = `
@@ -92,11 +97,14 @@ ${
   return `${basePrompt}${targetBlocksInfo}
 
 Response Format:
-Return ONLY the destination block ID as a single word, no punctuation or explanation.
-Example: "2acd9007-27e8-4510-a487-73d3b825e7c1"
+Return a JSON object with the following structure:
+{
+  "decision": "block-id-here",
+  "justification": "Brief explanation of the pure evaluation of the content. DO NOT include any information about the target blocks."
+}
 
-Remember: Your response must be ONLY the block ID - no additional text, formatting, or explanation.
-If there is only one available destination, return that block's ID regardless of the score.`
+Remember: Your response must be ONLY the JSON object - no additional text, formatting, or explanation.
+If there is only one available destination, return that block's ID in the decision field regardless of the score.`
 }
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
@@ -146,6 +154,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
           tokens: 'any',
           evaluation: 'json',
           selectedPath: 'json',
+          justification: 'string',
         },
       },
     },
