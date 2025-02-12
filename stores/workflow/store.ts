@@ -4,7 +4,7 @@ import { devtools } from 'zustand/middleware'
 import { getBlock } from '@/blocks'
 import { resolveOutputType } from '@/blocks/utils'
 import { WorkflowStoreWithHistory, pushHistory, withHistory } from './middleware'
-import { Position, SubBlockState, Loop } from './types'
+import { Loop, Position, SubBlockState } from './types'
 import { detectCycle } from './utils'
 
 const initialState = {
@@ -144,6 +144,8 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               outputs,
               enabled: true,
               horizontalHandles: true,
+              isWide: false,
+              height: 0,
             },
           },
           edges: [...get().edges],
@@ -186,7 +188,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               // Otherwise, just remove the node from the loop
               newState.loops[loopId] = {
                 ...loop,
-                nodes: loop.nodes.filter((nodeId) => nodeId !== id)
+                nodes: loop.nodes.filter((nodeId) => nodeId !== id),
               }
             }
           }
@@ -208,31 +210,31 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           sourceHandle: edge.sourceHandle,
           targetHandle: edge.targetHandle,
         }
-        
+
         const newEdges = [...get().edges, newEdge]
-        
+
         // Recalculate all loops after adding the edge
         const newLoops: Record<string, Loop> = {}
         const processedPaths = new Set<string>()
-        
+
         // Check for cycles from each node
-        const nodes = new Set(newEdges.map(e => e.source))
-        nodes.forEach(node => {
+        const nodes = new Set(newEdges.map((e) => e.source))
+        nodes.forEach((node) => {
           const { paths } = detectCycle(newEdges, node)
-          paths.forEach(path => {
+          paths.forEach((path) => {
             // Create a canonical path representation for deduplication
             const canonicalPath = [...path].sort().join(',')
             if (!processedPaths.has(canonicalPath)) {
               const loopId = crypto.randomUUID()
               newLoops[loopId] = {
                 id: loopId,
-                nodes: path
+                nodes: path,
               }
               processedPaths.add(canonicalPath)
             }
           })
         })
-        
+
         const newState = {
           blocks: { ...get().blocks },
           edges: newEdges,
@@ -246,23 +248,23 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
 
       removeEdge: (edgeId: string) => {
         const newEdges = get().edges.filter((edge) => edge.id !== edgeId)
-        
+
         // Recalculate all loops after edge removal
         const newLoops: Record<string, Loop> = {}
         const processedPaths = new Set<string>()
-        
+
         // Check for cycles from each node
-        const nodes = new Set(newEdges.map(e => e.source))
-        nodes.forEach(node => {
+        const nodes = new Set(newEdges.map((e) => e.source))
+        nodes.forEach((node) => {
           const { paths } = detectCycle(newEdges, node)
-          paths.forEach(path => {
+          paths.forEach((path) => {
             // Create a canonical path representation for deduplication
             const canonicalPath = [...path].sort().join(',')
             if (!processedPaths.has(canonicalPath)) {
               const loopId = crypto.randomUUID()
               newLoops[loopId] = {
                 id: loopId,
-                nodes: path
+                nodes: path,
               }
               processedPaths.add(canonicalPath)
             }
@@ -411,6 +413,19 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...state.edges],
           loops: { ...get().loops },
+        }))
+      },
+
+      updateBlockHeight: (id: string, height: number) => {
+        set((state) => ({
+          blocks: {
+            ...state.blocks,
+            [id]: {
+              ...state.blocks[id],
+              height,
+            },
+          },
+          edges: [...state.edges],
         }))
       },
     })),

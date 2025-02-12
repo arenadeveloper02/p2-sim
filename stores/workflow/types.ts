@@ -16,6 +16,7 @@ export interface BlockState {
   enabled: boolean
   horizontalHandles?: boolean
   isWide?: boolean
+  height?: number
 }
 
 export interface SubBlockState {
@@ -50,6 +51,7 @@ export interface WorkflowActions {
   toggleBlockHandles: (id: string) => void
   updateBlockName: (id: string, name: string) => void
   toggleBlockWide: (id: string) => void
+  updateBlockHeight: (id: string, height: number) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions

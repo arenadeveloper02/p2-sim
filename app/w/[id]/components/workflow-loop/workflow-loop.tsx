@@ -34,22 +34,33 @@ function calculateLoopBounds(loop: Loop, blocks: Record<string, any>) {
   // Calculate bounds of all blocks in loop
   const bound = loopBlocks.reduce(
     (acc, block) => {
+      // Calculate block dimensions
+      const blockWidth = block.isWide ? 480 : 320
+      const blockHeight = block.height || 200 // Fallback height if not set
+
+      // Update bounds
       acc.minX = Math.min(acc.minX, block.position.x)
       acc.minY = Math.min(acc.minY, block.position.y)
-      acc.maxX = Math.max(acc.maxX, block.position.x + (block.isWide ? 480 : 320))
-      acc.maxY = Math.max(acc.maxY, block.position.y + 200)
+      acc.maxX = Math.max(acc.maxX, block.position.x + blockWidth)
+      acc.maxY = Math.max(acc.maxY, block.position.y + blockHeight)
       return acc
     },
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
   )
 
-  // Add padding around the group
-  const PADDING = 50
+  // Add padding around the group with extra bottom padding
+  const PADDING = {
+    TOP: 50,
+    RIGHT: 50,
+    BOTTOM: 110,
+    LEFT: 50,
+  }
+
   return {
-    x: bound.minX - PADDING,
-    y: bound.minY - PADDING,
-    width: bound.maxX - bound.minX + PADDING * 2,
-    height: bound.maxY - bound.minY + PADDING * 2,
+    x: bound.minX - PADDING.LEFT,
+    y: bound.minY - PADDING.TOP,
+    width: bound.maxX - bound.minX + PADDING.LEFT + PADDING.RIGHT,
+    height: bound.maxY - bound.minY + PADDING.TOP + PADDING.BOTTOM,
   }
 }
 

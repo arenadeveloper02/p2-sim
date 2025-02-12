@@ -30,6 +30,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
 
   // Refs
   const blockRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
 
   // Store selectors
@@ -38,15 +39,64 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
     (state) => state.blocks[id]?.horizontalHandles ?? false
   )
   const isWide = useWorkflowStore((state) => state.blocks[id]?.isWide ?? false)
+  const blockHeight = useWorkflowStore((state) => state.blocks[id]?.height ?? 0)
 
   // Store actions
   const updateBlockName = useWorkflowStore((state) => state.updateBlockName)
   const toggleBlockWide = useWorkflowStore((state) => state.toggleBlockWide)
+  const updateBlockHeight = useWorkflowStore((state) => state.updateBlockHeight)
 
   // Update node internals when handles change
   useEffect(() => {
     updateNodeInternals(id)
   }, [id, horizontalHandles, updateNodeInternals])
+
+  // Add debounce helper
+  const debounce = (func: Function, wait: number) => {
+    let timeout: NodeJS.Timeout
+    return (...args: any[]) => {
+      clearTimeout(timeout)
+      timeout = setTimeout(() => func(...args), wait)
+    }
+  }
+
+  // Add effect to observe size changes with debounced updates
+  useEffect(() => {
+    if (!contentRef.current) return
+
+    let rafId: number
+    const debouncedUpdate = debounce((height: number) => {
+      if (height !== blockHeight) {
+        updateBlockHeight(id, height)
+        updateNodeInternals(id)
+      }
+    }, 100)
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Cancel any pending animation frame
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+
+      // Schedule the update on the next animation frame
+      rafId = requestAnimationFrame(() => {
+        for (const entry of entries) {
+          const height =
+            entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height
+          debouncedUpdate(height)
+        }
+      })
+    })
+
+    resizeObserver.observe(contentRef.current)
+
+    return () => {
+      resizeObserver.disconnect()
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+    }
+  }, [id, blockHeight, updateBlockHeight, updateNodeInternals])
 
   // SubBlock layout management
   function groupSubBlocks(subBlocks: SubBlockConfig[]) {
@@ -185,7 +235,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
       </div>
 
       {/* Block Content */}
-      <div className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
+      <div ref={contentRef} className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
         {subBlockRows.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`} className="flex gap-4">
             {row.map((subBlock, blockIndex) => (
