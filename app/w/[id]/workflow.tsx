@@ -20,6 +20,7 @@ import { NotificationList } from '@/app/w/components/notifications/notifications
 import { getBlock } from '../../../blocks'
 import { CustomEdge } from './components/custom-edge/custom-edge'
 import { WorkflowBlock } from './components/workflow-block/workflow-block'
+import { LoopInput } from './components/workflow-loop/components/loop-input/loop-input'
 import { LoopLabel } from './components/workflow-loop/components/loop-label/loop-label'
 import { createLoopNode, getRelativeLoopPosition } from './components/workflow-loop/workflow-loop'
 
@@ -27,6 +28,7 @@ import { createLoopNode, getRelativeLoopPosition } from './components/workflow-l
 const nodeTypes: NodeTypes = {
   workflowBlock: WorkflowBlock,
   loopLabel: LoopLabel,
+  loopInput: LoopInput,
 }
 const edgeTypes: EdgeTypes = { custom: CustomEdge }
 

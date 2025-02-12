@@ -20,6 +20,22 @@ function createLoopLabelNode(loopId: string, bounds: { x: number; y: number }) {
   }
 }
 
+// Helper function to create loop input node
+function createLoopInputNode(loopId: string, bounds: { x: number; width: number }) {
+  const BADGE_WIDTH = 128
+
+  return {
+    id: `loop-input-${loopId}`,
+    type: 'loopInput',
+    position: { x: bounds.width - BADGE_WIDTH, y: -32 }, // Position from right edge
+    parentNode: `loop-${loopId}`,
+    draggable: false,
+    data: {
+      loopId,
+    },
+  }
+}
+
 function calculateLoopBounds(loop: Loop, blocks: Record<string, any>) {
   // Get all blocks in this loop and filter out any undefined blocks
   const loopBlocks = loop.nodes
@@ -64,7 +80,7 @@ function calculateLoopBounds(loop: Loop, blocks: Record<string, any>) {
   }
 }
 
-// Helper function to create loop node
+// Update the createLoopNode function
 export function createLoopNode({ loopId, loop, blocks }: WorkflowLoopProps) {
   const loopBounds = calculateLoopBounds(loop, blocks)
   if (!loopBounds) return null
@@ -88,11 +104,12 @@ export function createLoopNode({ loopId, loop, blocks }: WorkflowLoopProps) {
     },
   }
 
-  // Create the label node
+  // Create both label and input nodes
   const labelNode = createLoopLabelNode(loopId, loopBounds)
+  const inputNode = createLoopInputNode(loopId, loopBounds)
 
-  // Return both nodes
-  return [loopNode, labelNode]
+  // Return all three nodes
+  return [loopNode, labelNode, inputNode]
 }
 
 // Helper function to calculate relative position for child blocks
