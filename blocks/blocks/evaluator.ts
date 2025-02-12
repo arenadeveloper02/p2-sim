@@ -33,13 +33,15 @@ interface EvaluatorResponse extends ToolResponse {
       blockTitle: string
     }
     justification: string
+    history: Array<{ response: string; justification: string }>
   }
 }
 
 export const generateEvaluatorPrompt = (
   evaluationCriteria: string,
   content: string,
-  targetBlocks?: TargetBlock[]
+  targetBlocks?: TargetBlock[],
+  history?: Array<{ response: string; justification: string }>
 ): string => {
   const basePrompt = `You are an objective evaluation agent. Analyze the content against the provided criteria and determine the next step based on the evaluation score.
 
@@ -52,7 +54,22 @@ Evaluation Instructions:
 
 2. Calculate final score:
    - Average all metrics
-   - Round to 2 decimal places
+   - Round to 2 decimal places${
+     history && history.length > 0
+       ? `
+
+Previous Attempts:
+${history
+  .map(
+    (entry, i) => `
+Attempt ${i + 1}:
+Response: ${entry.response}
+Evaluation: ${entry.justification}
+---`
+  )
+  .join('\n')}`
+       : ''
+   }
 
 Content:
 ${content}
@@ -145,6 +162,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
       model: { type: 'string' as ParamType, required: true },
       apiKey: { type: 'string' as ParamType, required: true },
       content: { type: 'string' as ParamType, required: true },
+      history: { type: 'json' as ParamType, required: false },
     },
     outputs: {
       response: {
@@ -155,6 +173,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
           evaluation: 'json',
           selectedPath: 'json',
           justification: 'string',
+          history: 'json',
         },
       },
     },
@@ -196,7 +215,12 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
         layout: 'full',
         hidden: true,
         value: (params: Record<string, any>) => {
-          return generateEvaluatorPrompt(params.prompt || '', params.content || '')
+          return generateEvaluatorPrompt(
+            params.prompt || '',
+            params.content || '',
+            undefined,
+            params.history || []
+          )
         },
       },
     ],

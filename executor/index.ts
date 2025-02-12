@@ -235,6 +235,7 @@ export class Executor {
                 tokens: { prompt: number; completion: number; total: number }
                 selectedPath: { blockId: string }
                 justification: string
+                history: Array<{ response: string; justification: string }>
               }
             }
             evaluatorDecisions.set(block.id, evaluatorResult.response.selectedPath.blockId)
@@ -402,6 +403,7 @@ export class Executor {
             tokens: evaluatorOutput.tokens,
             selectedPath: evaluatorOutput.selectedPath,
             justification: evaluatorOutput.justification,
+            history: evaluatorOutput.history,
           },
         }
       } else if (block.metadata?.type === 'condition') {
@@ -675,6 +677,7 @@ export class Executor {
       blockTitle: string
     }
     justification: string
+    history: Array<{ response: string; justification: string }>
   }> {
     // Resolve inputs for the evaluator block.
     const resolvedInputs = this.resolveInputs(block, context)
@@ -697,6 +700,16 @@ export class Executor {
       }
     })
 
+    // Get history from previous state if it exists, otherwise initialize empty
+    let history: Array<{ response: string; justification: string }> = []
+    const previousState = context.blockStates.get(block.id)
+    if (previousState && typeof previousState === 'object' && 'response' in previousState) {
+      const response = previousState.response
+      if (response && typeof response === 'object' && 'history' in response) {
+        history = response.history as Array<{ response: string; justification: string }>
+      }
+    }
+
     const model = resolvedInputs.model || 'gpt-4o'
     const providerId = getProviderFromModel(model)
 
@@ -706,7 +719,8 @@ export class Executor {
       systemPrompt: generateEvaluatorPrompt(
         resolvedInputs.prompt,
         resolvedInputs.content,
-        targetBlocks
+        targetBlocks,
+        history
       ),
       messages: [{ role: 'user', content: resolvedInputs.prompt }],
       temperature: resolvedInputs.temperature || 0,
@@ -724,6 +738,15 @@ export class Executor {
     const chosenBlockId = evaluatorResponse.decision
     const justification = evaluatorResponse.justification
 
+    // Update history with current response and evaluation
+    const updatedHistory = [
+      ...history,
+      {
+        response: resolvedInputs.content,
+        justification,
+      },
+    ]
+
     // Handle case where evaluator has no targets
     if (chosenBlockId === 'end') {
       const result = {
@@ -740,6 +763,7 @@ export class Executor {
           blockTitle: '',
         },
         justification,
+        history: updatedHistory,
       }
 
       context.blockStates.set(block.id, {
@@ -768,6 +792,7 @@ export class Executor {
         blockTitle: chosenBlock.title,
       },
       justification,
+      history: updatedHistory,
     }
 
     context.blockStates.set(block.id, {
