@@ -720,6 +720,30 @@ export class Executor {
 
     const chosenBlockId = response.content.trim().toLowerCase()
 
+    // Handle case where evaluator has no targets
+    if (chosenBlockId === 'end') {
+      const result = {
+        content: evaluatorConfig.content,
+        model: response.model,
+        tokens: {
+          prompt: response.tokens?.prompt || 0,
+          completion: response.tokens?.completion || 0,
+          total: response.tokens?.total || 0,
+        },
+        selectedPath: {
+          blockId: '',
+          blockType: '',
+          blockTitle: '',
+        },
+      }
+
+      context.blockStates.set(block.id, {
+        response: result,
+      })
+
+      return result
+    }
+
     const chosenBlock = targetBlocks.find((b) => b.id === chosenBlockId)
     if (!chosenBlock) {
       throw new Error(`Invalid evaluation decision: ${chosenBlockId}`)

@@ -59,8 +59,17 @@ ${content}
 Criteria:
 ${evaluationCriteria}`
 
-  const targetBlocksInfo = targetBlocks
-    ? `
+  // If no target blocks, just return the evaluation without routing
+  if (!targetBlocks || targetBlocks.length === 0) {
+    return `${basePrompt}
+
+Response Format:
+Return ONLY "end" to indicate no further routing is needed.
+
+Remember: Your response must be ONLY the word "end" - no additional text, formatting, or explanation.`
+  }
+
+  const targetBlocksInfo = `
 Available Destinations:
 ${targetBlocks
   .map(
@@ -79,7 +88,6 @@ ${
     : `- Score greater than or equal to 0.85: Choose success path block
 - Score less than 0.85: Choose failure path block`
 }`
-    : ''
 
   return `${basePrompt}${targetBlocksInfo}
 
