@@ -12,14 +12,14 @@ import { ActionBar } from './components/action-bar/action-bar'
 import { ConnectionBlocks } from './components/connection-blocks/connection-blocks'
 import { SubBlock } from './components/sub-block/sub-block'
 
-interface WorkflowBlockData {
+interface WorkflowBlockProps {
   type: string
   config: BlockConfig
   name: string
 }
 
 // Combine both interfaces into a single component
-export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockData>) {
+export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockProps>) {
   const { type, config, name } = data
   const { toolbar, workflow } = config
 
@@ -119,7 +119,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockDat
           '!w-3.5 !h-3.5',
           '!bg-white !rounded-full !border !border-gray-200',
           'group-hover:!border-blue-500',
-          '!transition-border !duration-150 !cursor-crosshair',
+          '!cursor-crosshair',
           horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
         )}
         data-nodeid={id}
@@ -209,7 +209,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockDat
             '!w-3.5 !h-3.5',
             '!bg-white !rounded-full !border !border-gray-200',
             'group-hover:!border-blue-500',
-            '!transition-border !duration-150 !cursor-crosshair',
+            '!cursor-crosshair',
             horizontalHandles ? '!right-[-7px]' : '!bottom-[-7px]'
           )}
           data-nodeid={id}
