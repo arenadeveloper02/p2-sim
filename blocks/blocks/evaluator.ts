@@ -81,14 +81,18 @@ ${evaluationCriteria}`
   if (!targetBlocks || targetBlocks.length === 0) {
     return `${basePrompt}
 
+IMPORTANT: When there are no target blocks, you must use exactly "end" as the decision value. Do not use any other word.
+
 Response Format:
 Return a JSON object with the following structure:
 {
-  "decision": "end",
+  "decision": "end",  // You must use exactly "end" here - this is a required system keyword
   "justification": "Brief explanation of the pure evaluation of the content. DO NOT include any information about the target blocks."
 }
 
-Remember: Your response must be ONLY the JSON object - no additional text, formatting, or explanation.`
+Remember: 
+1. Your response must be ONLY the JSON object - no additional text, formatting, or explanation.
+2. The "decision" field MUST be exactly "end" - this is a required keyword that the system expects.`
   }
 
   const targetBlocksInfo = `
