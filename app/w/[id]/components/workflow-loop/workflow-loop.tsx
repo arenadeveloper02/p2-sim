@@ -6,7 +6,20 @@ interface WorkflowLoopProps {
   blocks: Record<string, any>
 }
 
-// Pure calculation function - no hooks
+// Helper function to create loop label node
+function createLoopLabelNode(loopId: string, bounds: { x: number; y: number }) {
+  return {
+    id: `loop-label-${loopId}`,
+    type: 'loopLabel',
+    position: { x: 0, y: -32 },
+    parentNode: `loop-${loopId}`,
+    draggable: false,
+    data: {
+      label: 'Loop',
+    },
+  }
+}
+
 function calculateLoopBounds(loop: Loop, blocks: Record<string, any>) {
   // Get all blocks in this loop and filter out any undefined blocks
   const loopBlocks = loop.nodes
@@ -45,7 +58,7 @@ export function createLoopNode({ loopId, loop, blocks }: WorkflowLoopProps) {
   const loopBounds = calculateLoopBounds(loop, blocks)
   if (!loopBounds) return null
 
-  return {
+  const loopNode = {
     id: `loop-${loopId}`,
     type: 'group',
     position: { x: loopBounds.x, y: loopBounds.y },
@@ -63,6 +76,12 @@ export function createLoopNode({ loopId, loop, blocks }: WorkflowLoopProps) {
       label: 'Loop',
     },
   }
+
+  // Create the label node
+  const labelNode = createLoopLabelNode(loopId, loopBounds)
+
+  // Return both nodes
+  return [loopNode, labelNode]
 }
 
 // Helper function to calculate relative position for child blocks

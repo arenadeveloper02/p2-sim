@@ -20,10 +20,14 @@ import { NotificationList } from '@/app/w/components/notifications/notifications
 import { getBlock } from '../../../blocks'
 import { CustomEdge } from './components/custom-edge/custom-edge'
 import { WorkflowBlock } from './components/workflow-block/workflow-block'
+import { LoopLabel } from './components/workflow-loop/components/loop-label/loop-label'
 import { createLoopNode, getRelativeLoopPosition } from './components/workflow-loop/workflow-loop'
 
 // Define custom node and edge types
-const nodeTypes: NodeTypes = { workflowBlock: WorkflowBlock }
+const nodeTypes: NodeTypes = {
+  workflowBlock: WorkflowBlock,
+  loopLabel: LoopLabel,
+}
 const edgeTypes: EdgeTypes = { custom: CustomEdge }
 
 function WorkflowContent() {
@@ -96,10 +100,13 @@ function WorkflowContent() {
   const nodes = useMemo(() => {
     const nodeArray: any[] = []
 
-    // Add loop group nodes
+    // Add loop group nodes and their labels
     Object.entries(loops).forEach(([loopId, loop]) => {
-      const loopNode = createLoopNode({ loopId, loop, blocks })
-      if (loopNode) nodeArray.push(loopNode)
+      const loopNodes = createLoopNode({ loopId, loop, blocks })
+      if (loopNodes) {
+        // Add both the loop node and its label node
+        nodeArray.push(...loopNodes)
+      }
     })
 
     // Add block nodes
