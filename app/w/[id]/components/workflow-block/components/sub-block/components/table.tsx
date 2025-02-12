@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,16 +47,22 @@ export function Table({ columns, blockId, subBlockId }: TableProps) {
     }
   }, [value])
 
-  // Initialize with empty row if no value exists
-  const rows = (value as any[]) || [
-    {
-      id: crypto.randomUUID(),
-      cells: Object.fromEntries(columns.map((col) => [col, ''])),
-    },
-  ]
+  // Ensure value is properly typed and initialized
+  const rows = useMemo(() => {
+    if (!Array.isArray(value)) {
+      // Initialize with a single empty row if value is null or invalid
+      return [
+        {
+          id: crypto.randomUUID(),
+          cells: Object.fromEntries(columns.map((col) => [col, ''])),
+        },
+      ]
+    }
+    return value as TableRow[]
+  }, [value, columns])
 
   const handleCellChange = (rowIndex: number, column: string, value: string) => {
-    const updatedRows = rows.map((row, idx) =>
+    const updatedRows = [...rows].map((row, idx) =>
       idx === rowIndex
         ? {
             ...row,

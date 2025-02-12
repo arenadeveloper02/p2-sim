@@ -38,19 +38,26 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           const block = state.blocks[blockId]
           if (!block) return state
 
-          const blockConfig = getBlock(block.type)
-          if (!blockConfig) return state
+          const processedValue = Array.isArray(value)
+            ? value
+            : typeof value === 'string'
+              ? value
+              : JSON.stringify(value, null, 2)
 
-          // Validate responseFormat if it's the agent block's responseFormat input
-          if (blockConfig.type === 'agent' && subBlockId === 'responseFormat' && value) {
+          // Only attempt JSON parsing for agent responseFormat validation
+          if (
+            block.type === 'agent' &&
+            subBlockId === 'responseFormat' &&
+            typeof processedValue === 'string'
+          ) {
             console.log('Validating responseFormat input:', {
-              type: typeof value,
-              rawValue: value,
+              type: typeof processedValue,
+              rawValue: processedValue,
             })
 
             try {
               // Parse the input string to validate JSON but keep original string value
-              const parsed = JSON.parse(value)
+              const parsed = JSON.parse(processedValue)
               console.log('Parsed responseFormat:', parsed)
 
               // Simple validation of required schema structure
@@ -81,35 +88,18 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             }
           }
 
-          // Create new subBlocks state with the original value
-          const newSubBlocks = {
-            ...block.subBlocks,
-            [subBlockId]: {
-              ...block.subBlocks[subBlockId],
-              value:
-                // Keep tools as arrays
-                subBlockId === 'tools' && Array.isArray(value)
-                  ? value
-                  : // Keep responseFormat as string
-                    subBlockId === 'responseFormat'
-                    ? value
-                    : // For all other values, use the previous logic of stringifying
-                      typeof value === 'string'
-                      ? value
-                      : JSON.stringify(value, null, 2),
-            },
-          }
-
-          // Resolve new outputs
-          const newOutputs = resolveOutputType(blockConfig.workflow.outputs, newSubBlocks)
-
           return {
             blocks: {
               ...state.blocks,
               [blockId]: {
                 ...block,
-                subBlocks: newSubBlocks,
-                outputs: newOutputs,
+                subBlocks: {
+                  ...block.subBlocks,
+                  [subBlockId]: {
+                    ...block.subBlocks[subBlockId],
+                    value: processedValue,
+                  },
+                },
               },
             },
           }

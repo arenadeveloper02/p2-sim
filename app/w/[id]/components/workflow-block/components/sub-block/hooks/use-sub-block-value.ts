@@ -1,7 +1,10 @@
 import { useCallback } from 'react'
 import { useWorkflowStore } from '@/stores/workflow/store'
 
-export function useSubBlockValue(blockId: string, subBlockId: string) {
+export function useSubBlockValue<T = any>(
+  blockId: string,
+  subBlockId: string
+): readonly [T | null, (value: T) => void] {
   const value = useWorkflowStore(
     useCallback(
       (state) => state.blocks[blockId]?.subBlocks[subBlockId]?.value ?? null,
@@ -12,11 +15,11 @@ export function useSubBlockValue(blockId: string, subBlockId: string) {
   const updateSubBlock = useWorkflowStore((state) => state.updateSubBlock)
 
   const setValue = useCallback(
-    (newValue: any) => {
-      updateSubBlock(blockId, subBlockId, newValue)
+    (newValue: T) => {
+      updateSubBlock(blockId, subBlockId, newValue as any)
     },
     [blockId, subBlockId, updateSubBlock]
   )
 
-  return [value, setValue] as const
+  return [value as T | null, setValue] as const
 }
