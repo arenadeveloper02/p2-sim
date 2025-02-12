@@ -88,7 +88,6 @@ export class Executor {
    */
   private async executeInParallel(context: ExecutionContext): Promise<BlockOutput> {
     const { blocks, connections } = this.workflow
-    const MAX_ITERATIONS = 2 // Add safety limit for loops
 
     // Track iterations per loop
     const loopIterations = new Map<string, number>()
@@ -315,7 +314,7 @@ export class Executor {
 
         if (executedLoopBlocks.length > 0) {
           const iterations = loopIterations.get(loopId) || 0
-          if (iterations < MAX_ITERATIONS) {
+          if (iterations < (loop.maxIterations ?? 5)) {
             // Check if the evaluator chose a block within the loop
             const evaluatorInLoop = executedLoopBlocks.find((blockId) => {
               const block = blocks.find((b) => b.id === blockId)
