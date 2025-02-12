@@ -28,6 +28,7 @@ export interface SubBlockState {
 export interface Loop {
   id: string
   nodes: string[]
+  maxIterations: number
 }
 
 export interface WorkflowState {
@@ -52,6 +53,7 @@ export interface WorkflowActions {
   updateBlockName: (id: string, name: string) => void
   toggleBlockWide: (id: string) => void
   updateBlockHeight: (id: string, height: number) => void
+  updateLoopMaxIterations: (loopId: string, maxIterations: number) => void
 }
 
 export type WorkflowStore = WorkflowState & WorkflowActions

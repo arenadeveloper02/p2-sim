@@ -114,6 +114,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             },
           }
         })
+        get().updateLastSaved()
       },
 
       addBlock: (id: string, type: string, name: string, position: Position) => {
@@ -229,6 +230,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               newLoops[loopId] = {
                 id: loopId,
                 nodes: path,
+                maxIterations: 5,
               }
               processedPaths.add(canonicalPath)
             }
@@ -265,6 +267,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               newLoops[loopId] = {
                 id: loopId,
                 nodes: path,
+                maxIterations: 5,
               }
               processedPaths.add(canonicalPath)
             }
@@ -414,6 +417,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           edges: [...state.edges],
           loops: { ...get().loops },
         }))
+        get().updateLastSaved()
       },
 
       updateBlockHeight: (id: string, height: number) => {
@@ -427,6 +431,25 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           },
           edges: [...state.edges],
         }))
+        get().updateLastSaved()
+      },
+
+      updateLoopMaxIterations: (loopId: string, maxIterations: number) => {
+        const newState = {
+          blocks: { ...get().blocks },
+          edges: [...get().edges],
+          loops: {
+            ...get().loops,
+            [loopId]: {
+              ...get().loops[loopId],
+              maxIterations: Math.max(1, Math.min(50, maxIterations)), // Clamp between 1-50
+            },
+          },
+        }
+
+        set(newState)
+        pushHistory(set, get, newState, 'Update loop max iterations')
+        get().updateLastSaved()
       },
     })),
     { name: 'workflow-store' }
