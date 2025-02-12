@@ -73,8 +73,12 @@ Description: ${block.description}`
   .join('\n---\n')}
 
 Routing Rules:
-- Score greater than or equal to 0.85: Choose success path block
+${
+  targetBlocks.length === 1
+    ? `- Route back to the only available block (${targetBlocks[0].id}) to continue the iteration`
+    : `- Score greater than or equal to 0.85: Choose success path block
 - Score less than 0.85: Choose failure path block`
+}`
     : ''
 
   return `${basePrompt}${targetBlocksInfo}
@@ -83,7 +87,8 @@ Response Format:
 Return ONLY the destination block ID as a single word, no punctuation or explanation.
 Example: "2acd9007-27e8-4510-a487-73d3b825e7c1"
 
-Remember: Your response must be ONLY the block ID.`
+Remember: Your response must be ONLY the block ID - no additional text, formatting, or explanation.
+If there is only one available destination, return that block's ID regardless of the score.`
 }
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {

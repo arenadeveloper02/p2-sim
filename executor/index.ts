@@ -314,7 +314,7 @@ export class Executor {
 
         if (executedLoopBlocks.length > 0) {
           const iterations = loopIterations.get(loopId) || 0
-          if (iterations < (loop.maxIterations ?? 5)) {
+          if (iterations < loop.maxIterations - 1) {
             // Check if the evaluator chose a block within the loop
             const evaluatorInLoop = executedLoopBlocks.find((blockId) => {
               const block = blocks.find((b) => b.id === blockId)
