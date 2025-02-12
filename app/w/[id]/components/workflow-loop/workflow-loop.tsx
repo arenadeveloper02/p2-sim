@@ -1,3 +1,4 @@
+import { useWorkflowStore } from '@/stores/workflow/store'
 import { Loop } from '@/stores/workflow/types'
 
 interface WorkflowLoopProps {
@@ -22,7 +23,8 @@ function createLoopLabelNode(loopId: string, bounds: { x: number; y: number }) {
 
 // Helper function to create loop input node
 function createLoopInputNode(loopId: string, bounds: { x: number; width: number }) {
-  const BADGE_WIDTH = 128
+  const loop = useWorkflowStore.getState().loops[loopId]
+  const BADGE_WIDTH = loop?.maxIterations > 9 ? 153 : 144
 
   return {
     id: `loop-input-${loopId}`,
