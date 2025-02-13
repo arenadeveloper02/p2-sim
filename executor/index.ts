@@ -99,28 +99,86 @@ export class Executor {
     const inDegree = new Map<string, number>()
     const adjacency = new Map<string, string[]>()
 
+    // Initialize maps
     for (const block of blocks) {
       inDegree.set(block.id, 0)
       adjacency.set(block.id, [])
     }
 
+    // Helper functions for identifying entry points and feedback edges
+    const isEntryBlock = (blockId: string): boolean => {
+      const incomingEdges = connections.filter((conn) => conn.target === blockId)
+      const nonConditionalEdges = incomingEdges.filter(
+        (conn) => !conn.sourceHandle?.startsWith('condition-')
+      )
+      const conditionalEdges = incomingEdges.filter((conn) =>
+        conn.sourceHandle?.startsWith('condition-')
+      )
+
+      // Block is an entry point if:
+      // 1. It has no incoming edges, OR
+      // 2. All its incoming edges are conditional feedback loops
+      return (
+        nonConditionalEdges.length === 0 &&
+        conditionalEdges.every((conn) => {
+          const loop = Object.values(this.workflow.loops || {}).find(
+            (loop) => loop.nodes.includes(conn.source) && loop.nodes.includes(conn.target)
+          )
+          return !!loop
+        })
+      )
+    }
+
+    const isFeedbackEdge = (conn: (typeof connections)[number]): boolean => {
+      if (!conn.sourceHandle?.startsWith('condition-')) return false
+
+      const loop = Object.values(this.workflow.loops || {}).find(
+        (loop) => loop.nodes.includes(conn.source) && loop.nodes.includes(conn.target)
+      )
+
+      if (!loop) return false
+
+      // Get execution order within the loop
+      const loopBlocks = loop.nodes
+      const sourceIndex = loopBlocks.indexOf(conn.source)
+      const targetIndex = loopBlocks.indexOf(conn.target)
+
+      // It's a feedback edge if it points to an earlier block in the loop
+      return targetIndex < sourceIndex
+    }
+
     // Set to track which connections are counted in inDegree
     const countedEdges = new Set<(typeof connections)[number]>()
 
-    // Populate inDegree and adjacency
+    // Build initial dependency graph
     for (const conn of connections) {
       const sourceBlock = blocks.find((b) => b.id === conn.source)
+      const targetBlock = blocks.find((b) => b.id === conn.target)
       let countEdge = true
 
-      if (conn.condition) {
+      if (!sourceBlock || !targetBlock) continue
+
+      if (isFeedbackEdge(conn)) {
         countEdge = false
+        console.log(
+          `Skipping feedback edge: ${sourceBlock.metadata?.type} -> ${targetBlock.metadata?.type}`
+        )
       }
 
       if (countEdge) {
         inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1)
         countedEdges.add(conn)
+        console.log(`Counted edge: ${sourceBlock.metadata?.type} -> ${targetBlock.metadata?.type}`)
       }
       adjacency.get(conn.source)?.push(conn.target)
+    }
+
+    // Ensure entry blocks have inDegree 0
+    for (const block of blocks) {
+      if (isEntryBlock(block.id)) {
+        inDegree.set(block.id, 0)
+        console.log(`Set entry block ${block.metadata?.type} (${block.id}) inDegree to 0`)
+      }
     }
 
     // Function to reset inDegree for blocks in a loop
@@ -133,14 +191,17 @@ export class Executor {
         let degree = 0
         for (const conn of connections) {
           if (conn.target === blockId && loop.nodes.includes(conn.source)) {
-            degree++
+            // Count non-feedback edges within the loop
+            if (!isFeedbackEdge(conn)) {
+              degree++
+            }
           }
         }
         inDegree.set(blockId, degree)
       }
     }
 
-    // Maps for decisions
+    // Maps for tracking routing decisions
     const routerDecisions = new Map<string, string>()
     const activeConditionalPaths = new Map<string, string>()
 
@@ -152,11 +213,15 @@ export class Executor {
       }
     }
 
+    console.log('Initial queue:', queue)
+
     let lastOutput: BlockOutput = { response: {} }
 
     while (queue.length > 0) {
       const currentLayer = [...queue]
       queue.length = 0
+
+      console.log('Processing layer:', currentLayer)
 
       // Filter executable blocks
       const executableBlocks = currentLayer.filter((blockId) => {
@@ -190,9 +255,11 @@ export class Executor {
           const block = blocks.find((b) => b.id === blockId)
           if (!block) throw new Error(`Block ${blockId} not found`)
 
+          console.log(`Executing block: ${block.metadata?.type} (${blockId})`)
+
           const inputs = this.resolveInputs(block, context)
           const result = await this.executeBlock(block, inputs, context)
-          context.blockStates.set(block.id, result)
+          context.blockStates.set(blockId, result)
           lastOutput = result
 
           if (block.metadata?.type === 'router') {
@@ -208,7 +275,18 @@ export class Executor {
           } else if (block.metadata?.type === 'condition') {
             const conditionResult = await this.executeConditionalBlock(block, context)
             activeConditionalPaths.set(block.id, conditionResult.selectedConditionId)
+            console.log('Condition decision:', {
+              blockId: block.id,
+              condition: conditionResult.condition,
+              selectedId: conditionResult.selectedConditionId,
+              paths: {
+                if: 'e42897bb-23f1-4af6-863b-3f48566466ec',
+                else: 'c160e787-847d-41a9-87da-7f74f126e066',
+              },
+            })
           }
+
+          console.log(`Completed block: ${block.metadata?.type} (${blockId})`)
           return blockId
         })
       )
@@ -221,26 +299,26 @@ export class Executor {
           const sourceBlock = blocks.find((b) => b.id === conn.source)
 
           if (sourceBlock?.metadata?.type === 'router') {
-            // Only add to queue if this is the chosen path
+            // Router block: only follow chosen path
             const chosenPath = routerDecisions.get(sourceBlock.id)
             if (conn.target === chosenPath) {
               const newDegree = (inDegree.get(conn.target) || 0) - 1
               inDegree.set(conn.target, newDegree)
               if (newDegree === 0) queue.push(conn.target)
             }
-          } else if (!conn.sourceHandle?.startsWith('condition-')) {
-            // Normal connection
-            const newDegree = (inDegree.get(conn.target) || 0) - 1
-            inDegree.set(conn.target, newDegree)
-            if (newDegree === 0) queue.push(conn.target)
-          } else {
-            // Condition connection
+          } else if (conn.sourceHandle?.startsWith('condition-')) {
+            // Condition block: follow selected path
             const conditionId = conn.sourceHandle.replace('condition-', '')
             if (activeConditionalPaths.get(finishedBlockId) === conditionId) {
               const newDegree = (inDegree.get(conn.target) || 0) - 1
               inDegree.set(conn.target, newDegree)
               if (newDegree === 0) queue.push(conn.target)
             }
+          } else {
+            // Normal connection
+            const newDegree = (inDegree.get(conn.target) || 0) - 1
+            inDegree.set(conn.target, newDegree)
+            if (newDegree === 0) queue.push(conn.target)
           }
         }
       }
@@ -252,22 +330,36 @@ export class Executor {
 
         if (executedLoopBlocks.length > 0) {
           const iterations = loopIterations.get(loopId) || 0
+
+          // Only process if we haven't hit max iterations
           if (iterations < loop.maxIterations - 1) {
+            // Removed the -1
             // Check if any block in the loop has outgoing connections to other blocks in the loop
             const hasLoopConnection = executedLoopBlocks.some((blockId) => {
               const outgoingConns = connections.filter((conn) => conn.source === blockId)
               return outgoingConns.some((conn) => loopBlocks.has(conn.target))
             })
 
+            // Check if this was the last block in the loop
+            const isLoopComplete = executedLoopBlocks.some((blockId) => {
+              const block = blocks.find((b) => b.id === blockId)
+              return block?.metadata?.type === 'condition' // Last block in our loop is condition
+            })
+
             if (hasLoopConnection) {
-              // Reset the loop blocks' inDegrees and add them back to queue if needed
+              // Reset the loop blocks' inDegrees
               resetLoopBlocksDegrees(loopId)
               for (const blockId of loop.nodes) {
                 if (inDegree.get(blockId) === 0) {
                   queue.push(blockId)
                 }
               }
-              loopIterations.set(loopId, iterations + 1)
+
+              // Only increment counter when we complete a loop cycle
+              if (isLoopComplete) {
+                loopIterations.set(loopId, iterations + 1)
+                console.log(`Completed loop iteration ${iterations + 1} for loop ${loopId}`)
+              }
             }
           }
         }
