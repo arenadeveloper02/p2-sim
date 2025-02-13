@@ -761,11 +761,26 @@ export class Executor {
       throw new Error(`No output found for source block ${sourceBlockId}`)
     }
 
+    // Retrieve the source block to derive a dynamic key.
+    const sourceBlock = this.workflow.blocks.find((b) => b.id === sourceBlockId)
+    if (!sourceBlock) {
+      throw new Error(`Source block ${sourceBlockId} not found`)
+    }
+    const sourceKey = sourceBlock.metadata?.title
+      ? sourceBlock.metadata.title.toLowerCase().replace(/\s+/g, '')
+      : 'source'
+
     const outgoingConnections = this.workflow.connections.filter((conn) => conn.source === block.id)
 
     let conditionMet = false
     let selectedConnection: { target: string; sourceHandle?: string } | null = null
     let selectedCondition: { id: string; title: string; value: string } | null = null
+
+    // Build the evaluation context using the dynamic key instead of a hardcoded "agent1".
+    const evalContext = {
+      ...(typeof sourceOutput === 'object' && sourceOutput !== null ? sourceOutput : {}),
+      [sourceKey]: sourceOutput,
+    }
 
     // Evaluate conditions one by one.
     for (const condition of conditions) {
@@ -783,10 +798,7 @@ export class Executor {
           },
           context
         )
-        const evalContext = {
-          ...(typeof sourceOutput === 'object' && sourceOutput !== null ? sourceOutput : {}),
-          agent1: sourceOutput,
-        }
+        // Evaluate the condition based on the resolved condition string.
         conditionMet = new Function(
           'context',
           `with(context) { return ${resolvedCondition.condition} }`
@@ -829,13 +841,13 @@ export class Executor {
       throw new Error(`Target block ${selectedConnection!.target} not found`)
     }
 
-    // Get the raw output from the source block's state
+    // Get the raw output from the source block's state.
     const sourceBlockState = context.blockStates.get(sourceBlockId)
     if (!sourceBlockState) {
       throw new Error(`No state found for source block ${sourceBlockId}`)
     }
 
-    // Create the block output with the source output when condition is met
+    // Create the block output with the source output when condition is met.
     const blockOutput = {
       response: {
         result: conditionMet ? sourceBlockState : false,
@@ -852,7 +864,7 @@ export class Executor {
       },
     }
 
-    // Store the block output in the context
+    // Store the block output in the context.
     context.blockStates.set(block.id, blockOutput)
 
     return {
