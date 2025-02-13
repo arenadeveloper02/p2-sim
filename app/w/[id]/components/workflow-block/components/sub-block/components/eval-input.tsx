@@ -139,7 +139,7 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
                 value={metric.name}
                 onChange={(e) => updateMetric(metric.id, 'name', e.target.value)}
                 placeholder="Accuracy"
-                className="text-muted-foreground placeholder:text-muted-foreground/50"
+                className="placeholder:text-muted-foreground/50"
               />
             </div>
 
@@ -148,8 +148,8 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
               <Input
                 value={metric.description}
                 onChange={(e) => updateMetric(metric.id, 'description', e.target.value)}
-                placeholder="How well does it meet the requirements?"
-                className="text-muted-foreground placeholder:text-muted-foreground/50"
+                placeholder="How accurate is the response?"
+                className="placeholder:text-muted-foreground/50"
               />
             </div>
 
@@ -161,7 +161,7 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
                   value={metric.range.min}
                   onChange={(e) => updateRange(metric.id, 'min', e.target.value)}
                   onBlur={(e) => handleRangeBlur(metric.id, 'min', e.target.value)}
-                  className="text-muted-foreground placeholder:text-muted-foreground/50"
+                  className="placeholder:text-muted-foreground/50"
                 />
               </div>
               <div className="space-y-1">
@@ -171,7 +171,7 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
                   value={metric.range.max}
                   onChange={(e) => updateRange(metric.id, 'max', e.target.value)}
                   onBlur={(e) => handleRangeBlur(metric.id, 'max', e.target.value)}
-                  className="text-muted-foreground placeholder:text-muted-foreground/50"
+                  className="placeholder:text-muted-foreground/50"
                 />
               </div>
             </div>
