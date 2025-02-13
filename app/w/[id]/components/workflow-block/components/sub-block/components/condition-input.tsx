@@ -424,6 +424,7 @@ export function ConditionInput({ blockId, subBlockId, isConnecting }: ConditionI
               type="source"
               position={Position.Right}
               id={`condition-${block.id}`}
+              key={`${block.id}-${index}`}
               className={cn(
                 '!w-3.5 !h-3.5',
                 '!bg-white !rounded-full !border !border-gray-200',
