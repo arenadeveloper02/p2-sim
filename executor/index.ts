@@ -7,6 +7,7 @@ import { getProviderFromModel } from '@/providers/utils'
 import { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import { executeTool, getTool } from '@/tools'
 import { BlockLog, ExecutionContext, ExecutionResult, Tool } from './types'
+import { resolveBlockReferences, resolveEnvVariables } from './utils'
 
 /**
  * Main executor class for running agentic workflows.
@@ -177,7 +178,6 @@ export class Executor {
     for (const block of blocks) {
       if (isEntryBlock(block.id)) {
         inDegree.set(block.id, 0)
-        console.log(`Set entry block ${block.metadata?.type} (${block.id}) inDegree to 0`)
       }
     }
 
@@ -286,40 +286,22 @@ export class Executor {
             })
           }
 
-          console.log(`Completed block: ${block.metadata?.type} (${blockId})`)
           return blockId
         })
       )
 
-      // Process outgoing connections and update queue
+      // Process outgoing connections and update queue using the updateInDegree helper
       for (const finishedBlockId of layerResults) {
         const outgoingConns = connections.filter((conn) => conn.source === finishedBlockId)
-
         for (const conn of outgoingConns) {
-          const sourceBlock = blocks.find((b) => b.id === conn.source)
-
-          if (sourceBlock?.metadata?.type === 'router') {
-            // Router block: only follow chosen path
-            const chosenPath = routerDecisions.get(sourceBlock.id)
-            if (conn.target === chosenPath) {
-              const newDegree = (inDegree.get(conn.target) || 0) - 1
-              inDegree.set(conn.target, newDegree)
-              if (newDegree === 0) queue.push(conn.target)
-            }
-          } else if (conn.sourceHandle?.startsWith('condition-')) {
-            // Condition block: follow selected path
-            const conditionId = conn.sourceHandle.replace('condition-', '')
-            if (activeConditionalPaths.get(finishedBlockId) === conditionId) {
-              const newDegree = (inDegree.get(conn.target) || 0) - 1
-              inDegree.set(conn.target, newDegree)
-              if (newDegree === 0) queue.push(conn.target)
-            }
-          } else {
-            // Normal connection
-            const newDegree = (inDegree.get(conn.target) || 0) - 1
-            inDegree.set(conn.target, newDegree)
-            if (newDegree === 0) queue.push(conn.target)
-          }
+          this.updateInDegree(
+            conn,
+            inDegree,
+            queue,
+            blocks,
+            routerDecisions,
+            activeConditionalPaths
+          )
         }
       }
 
@@ -340,10 +322,10 @@ export class Executor {
               return outgoingConns.some((conn) => loopBlocks.has(conn.target))
             })
 
-            // Check if this was the last block in the loop
+            // Check if this was the last block in the loop (e.g., a condition block)
             const isLoopComplete = executedLoopBlocks.some((blockId) => {
               const block = blocks.find((b) => b.id === blockId)
-              return block?.metadata?.type === 'condition' // Last block in our loop is condition
+              return block?.metadata?.type === 'condition'
             })
 
             if (hasLoopConnection) {
@@ -358,7 +340,6 @@ export class Executor {
               // Only increment counter when we complete a loop cycle
               if (isLoopComplete) {
                 loopIterations.set(loopId, iterations + 1)
-                console.log(`Completed loop iteration ${iterations + 1} for loop ${loopId}`)
               }
             }
           }
@@ -393,21 +374,11 @@ export class Executor {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<BlockOutput> {
-    // Check if block is disabled
     if (block.enabled === false) {
       throw new Error(`Cannot execute disabled block: ${block.metadata?.title || block.id}`)
     }
 
-    const startTime = new Date()
-    const blockLog: BlockLog = {
-      blockId: block.id,
-      blockTitle: block.metadata?.title || '',
-      blockType: block.metadata?.type || '',
-      startedAt: startTime.toISOString(),
-      endedAt: '',
-      durationMs: 0,
-      success: false,
-    }
+    const blockLog = this.startBlockLog(block)
 
     try {
       let output: BlockOutput
@@ -554,24 +525,17 @@ export class Executor {
         output = { response: result.output }
       }
 
-      // Mark block execution as successful and record timing.
       blockLog.success = true
       blockLog.output = output
-      const endTime = new Date()
-      blockLog.endedAt = endTime.toISOString()
-      blockLog.durationMs = endTime.getTime() - startTime.getTime()
+      this.finalizeBlockLog(blockLog)
       context.blockLogs.push(blockLog)
 
-      // Ensure block output is available in the context for downstream blocks.
       context.blockStates.set(block.id, output)
       return output
     } catch (error: any) {
-      // On error: log the error, update blockLog, and rethrow.
       blockLog.success = false
       blockLog.error = error.message || 'Block execution failed'
-      const endTime = new Date()
-      blockLog.endedAt = endTime.toISOString()
-      blockLog.durationMs = endTime.getTime() - startTime.getTime()
+      this.finalizeBlockLog(blockLog)
       context.blockLogs.push(blockLog)
       throw error
     }
@@ -940,7 +904,6 @@ export class Executor {
   private resolveInputs(block: SerializedBlock, context: ExecutionContext): Record<string, any> {
     const inputs = { ...block.config.params }
 
-    // Create quick lookups for blocks by ID and by normalized title.
     const blockById = new Map(this.workflow.blocks.map((b) => [b.id, b]))
     const blockByName = new Map(
       this.workflow.blocks.map((b) => [
@@ -949,109 +912,20 @@ export class Executor {
       ])
     )
 
-    // Helper to resolve environment variables in a given value.
-    const resolveEnvVars = (value: any): any => {
-      if (typeof value === 'string') {
-        const envMatches = value.match(/\{\{([^}]+)\}\}/g)
-        if (envMatches) {
-          let resolvedValue = value
-          for (const match of envMatches) {
-            const envKey = match.slice(2, -2)
-            const envValue = this.environmentVariables?.[envKey]
-            if (envValue === undefined) {
-              throw new Error(`Environment variable "${envKey}" was not found.`)
-            }
-            resolvedValue = resolvedValue.replace(match, envValue)
-          }
-          return resolvedValue
-        }
-      } else if (Array.isArray(value)) {
-        return value.map((item) => resolveEnvVars(item))
-      } else if (value && typeof value === 'object') {
-        return Object.entries(value).reduce(
-          (acc, [k, v]) => ({
-            ...acc,
-            [k]: resolveEnvVars(v),
-          }),
-          {}
-        )
-      }
-      return value
-    }
-
     const resolvedInputs = Object.entries(inputs).reduce(
       (acc, [key, value]) => {
         if (typeof value === 'string') {
-          let resolvedValue = value
+          // Resolve block references
+          let resolvedValue = resolveBlockReferences(
+            value,
+            blockById,
+            blockByName,
+            context.blockStates,
+            block.metadata?.title || ''
+          )
 
-          // Resolve block reference templates in the format "<blockId.property>"
-          const blockMatches = value.match(/<([^>]+)>/g)
-          if (blockMatches) {
-            for (const match of blockMatches) {
-              // e.g. "<someBlockId.response>"
-              const path = match.slice(1, -1)
-              const [blockRef, ...pathParts] = path.split('.')
-              let sourceBlock = blockById.get(blockRef)
-              if (!sourceBlock) {
-                const normalized = blockRef.toLowerCase().replace(/\s+/g, '')
-                sourceBlock = blockByName.get(normalized)
-              }
-              if (!sourceBlock) {
-                throw new Error(`Block reference "${blockRef}" was not found.`)
-              }
-              if (sourceBlock.enabled === false) {
-                throw new Error(
-                  `Block "${sourceBlock.metadata?.title}" is disabled, and block "${block.metadata?.title}" depends on it.`
-                )
-              }
-              const sourceState = context.blockStates.get(sourceBlock.id)
-              if (!sourceState) {
-                throw new Error(
-                  `No state found for block "${sourceBlock.metadata?.title}" (ID: ${sourceBlock.id}).`
-                )
-              }
-              // Drill into the property path.
-              let replacementValue: any = sourceState
-              for (const part of pathParts) {
-                if (!replacementValue || typeof replacementValue !== 'object') {
-                  throw new Error(
-                    `Invalid path "${part}" in "${path}" for block "${block.metadata?.title}".`
-                  )
-                }
-                // Optional: special-case formatting for response formats.
-                replacementValue = replacementValue[part]
-              }
-              if (replacementValue !== undefined) {
-                if (block.metadata?.type === 'function' && key === 'code') {
-                  // For function blocks, format the code nicely.
-                  resolvedValue = resolvedValue.replace(
-                    match,
-                    typeof replacementValue === 'object'
-                      ? JSON.stringify(replacementValue, null, 2)
-                      : JSON.stringify(String(replacementValue))
-                  )
-                } else if (key === 'context') {
-                  resolvedValue =
-                    typeof replacementValue === 'string'
-                      ? replacementValue
-                      : JSON.stringify(replacementValue, null, 2)
-                } else {
-                  resolvedValue = resolvedValue.replace(
-                    match,
-                    typeof replacementValue === 'object'
-                      ? JSON.stringify(replacementValue)
-                      : String(replacementValue)
-                  )
-                }
-              } else {
-                throw new Error(
-                  `No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`
-                )
-              }
-            }
-          }
-          // Resolve environment variables.
-          resolvedValue = resolveEnvVars(resolvedValue)
+          // Resolve environment variables
+          resolvedValue = resolveEnvVariables(resolvedValue, this.environmentVariables)
           try {
             if (resolvedValue.startsWith('{') || resolvedValue.startsWith('[')) {
               acc[key] = JSON.parse(resolvedValue)
@@ -1062,7 +936,7 @@ export class Executor {
             acc[key] = resolvedValue
           }
         } else {
-          acc[key] = resolveEnvVars(value)
+          acc[key] = resolveEnvVariables(value, this.environmentVariables)
         }
         return acc
       },
@@ -1070,5 +944,54 @@ export class Executor {
     )
 
     return resolvedInputs
+  }
+
+  private startBlockLog(block: SerializedBlock): BlockLog {
+    return {
+      blockId: block.id,
+      blockTitle: block.metadata?.title || '',
+      blockType: block.metadata?.type || '',
+      startedAt: new Date().toISOString(),
+      endedAt: '',
+      durationMs: 0,
+      success: false,
+    }
+  }
+
+  private finalizeBlockLog(blockLog: BlockLog): void {
+    const endTime = new Date()
+    blockLog.endedAt = endTime.toISOString()
+    blockLog.durationMs = endTime.getTime() - new Date(blockLog.startedAt).getTime()
+  }
+
+  private updateInDegree(
+    conn: (typeof this.workflow.connections)[number],
+    inDegree: Map<string, number>,
+    queue: string[],
+    blocks: SerializedBlock[],
+    routerDecisions?: Map<string, string>,
+    activeConditionalPaths?: Map<string, string>
+  ) {
+    const sourceBlock = blocks.find((b) => b.id === conn.source)
+    if (sourceBlock?.metadata?.type === 'router') {
+      const chosenPath = routerDecisions?.get(sourceBlock.id)
+      if (conn.target === chosenPath) {
+        const newDegree = (inDegree.get(conn.target) || 0) - 1
+        inDegree.set(conn.target, newDegree)
+        if (newDegree === 0) queue.push(conn.target)
+      }
+    } else if (conn.sourceHandle?.startsWith('condition-')) {
+      const conditionId = conn.sourceHandle.replace('condition-', '')
+      // Assuming finishedBlockId equals the condition block id
+      if (activeConditionalPaths && activeConditionalPaths.get(conn.source) === conditionId) {
+        const newDegree = (inDegree.get(conn.target) || 0) - 1
+        inDegree.set(conn.target, newDegree)
+        if (newDegree === 0) queue.push(conn.target)
+      }
+    } else {
+      const newDegree = (inDegree.get(conn.target) || 0) - 1
+      inDegree.set(conn.target, newDegree)
+      if (newDegree === 0) queue.push(conn.target)
+    }
   }
 }
