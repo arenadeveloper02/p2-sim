@@ -99,16 +99,30 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
   }, [id, blockHeight, updateBlockHeight, updateNodeInternals])
 
   // SubBlock layout management
-  function groupSubBlocks(subBlocks: SubBlockConfig[]) {
-    const visibleSubBlocks = subBlocks.filter((block) => !block.hidden)
+  function groupSubBlocks(subBlocks: SubBlockConfig[], blockId: string) {
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
     let currentRowWidth = 0
 
+    // Filter visible blocks and those that meet their conditions
+    const visibleSubBlocks = subBlocks.filter((block) => {
+      if (block.hidden) return false
+
+      // If there's no condition, the block should be shown
+      if (!block.condition) return true
+
+      // Get the value of the field this block depends on
+      const fieldValue =
+        useWorkflowStore.getState().blocks[blockId]?.subBlocks[block.condition.field]?.value
+      return fieldValue === block.condition.value
+    })
+
     visibleSubBlocks.forEach((block) => {
       const blockWidth = block.layout === 'half' ? 0.5 : 1
       if (currentRowWidth + blockWidth > 1) {
-        rows.push([...currentRow])
+        if (currentRow.length > 0) {
+          rows.push([...currentRow])
+        }
         currentRow = [block]
         currentRowWidth = blockWidth
       } else {
@@ -124,7 +138,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
     return rows
   }
 
-  const subBlockRows = groupSubBlocks(workflow.subBlocks)
+  const subBlockRows = groupSubBlocks(workflow.subBlocks, id)
 
   // Name editing handlers
   const handleNameClick = () => {
@@ -236,18 +250,20 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
 
       {/* Block Content */}
       <div ref={contentRef} className="px-4 pt-3 pb-4 space-y-4 cursor-pointer">
-        {subBlockRows.map((row, rowIndex) => (
-          <div key={`row-${rowIndex}`} className="flex gap-4">
-            {row.map((subBlock, blockIndex) => (
-              <div
-                key={`${id}-${rowIndex}-${blockIndex}`}
-                className={`space-y-1 ${subBlock.layout === 'half' ? 'flex-1' : 'w-full'}`}
-              >
-                <SubBlock blockId={id} config={subBlock} isConnecting={isConnecting} />
+        {subBlockRows.length > 0
+          ? subBlockRows.map((row, rowIndex) => (
+              <div key={`row-${rowIndex}`} className="flex gap-4">
+                {row.map((subBlock, blockIndex) => (
+                  <div
+                    key={`${id}-${rowIndex}-${blockIndex}`}
+                    className={cn('space-y-1', subBlock.layout === 'half' ? 'flex-1' : 'w-full')}
+                  >
+                    <SubBlock blockId={id} config={subBlock} isConnecting={isConnecting} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ))}
+            ))
+          : null}
       </div>
 
       {/* Output Handle */}

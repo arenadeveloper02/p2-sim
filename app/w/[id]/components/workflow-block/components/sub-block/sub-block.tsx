@@ -19,16 +19,8 @@ interface SubBlockProps {
 }
 
 export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
-  const [fieldValue] = useSubBlockValue(blockId, config.condition?.field || '')
-
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
-  }
-
-  // Check if the sub-block should be rendered based on its condition
-  const shouldRender = () => {
-    if (!config.condition) return true
-    return fieldValue === config.condition.value
   }
 
   const renderInput = () => {
@@ -106,10 +98,6 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
       default:
         return null
     }
-  }
-
-  if (!shouldRender()) {
-    return null
   }
 
   return (
