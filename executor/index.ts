@@ -161,15 +161,11 @@ export class Executor {
 
       if (isFeedbackEdge(conn)) {
         countEdge = false
-        console.log(
-          `Skipping feedback edge: ${sourceBlock.metadata?.type} -> ${targetBlock.metadata?.type}`
-        )
       }
 
       if (countEdge) {
         inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1)
         countedEdges.add(conn)
-        console.log(`Counted edge: ${sourceBlock.metadata?.type} -> ${targetBlock.metadata?.type}`)
       }
       adjacency.get(conn.source)?.push(conn.target)
     }
@@ -213,15 +209,11 @@ export class Executor {
       }
     }
 
-    console.log('Initial queue:', queue)
-
     let lastOutput: BlockOutput = { response: {} }
 
     while (queue.length > 0) {
       const currentLayer = [...queue]
       queue.length = 0
-
-      console.log('Processing layer:', currentLayer)
 
       // Filter executable blocks
       const executableBlocks = currentLayer.filter((blockId) => {
@@ -255,8 +247,6 @@ export class Executor {
           const block = blocks.find((b) => b.id === blockId)
           if (!block) throw new Error(`Block ${blockId} not found`)
 
-          console.log(`Executing block: ${block.metadata?.type} (${blockId})`)
-
           const inputs = this.resolveInputs(block, context)
           const result = await this.executeBlock(block, inputs, context)
           context.blockStates.set(blockId, result)
@@ -275,15 +265,6 @@ export class Executor {
           } else if (block.metadata?.type === 'condition') {
             const conditionResult = await this.executeConditionalBlock(block, context)
             activeConditionalPaths.set(block.id, conditionResult.selectedConditionId)
-            console.log('Condition decision:', {
-              blockId: block.id,
-              condition: conditionResult.condition,
-              selectedId: conditionResult.selectedConditionId,
-              paths: {
-                if: 'e42897bb-23f1-4af6-863b-3f48566466ec',
-                else: 'c160e787-847d-41a9-87da-7f74f126e066',
-              },
-            })
           }
 
           return blockId
