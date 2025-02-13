@@ -264,11 +264,6 @@ export class Executor {
             routerDecisions.set(block.id, routerResult.response.selectedPath.blockId)
           } else if (block.metadata?.type === 'condition') {
             const conditionResult = await this.executeConditionalBlock(block, context)
-            // Add a wait here to simulate a slow condition block
-            const waitTime = 5000
-            if (waitTime > 0) {
-              await new Promise((resolve) => setTimeout(resolve, waitTime))
-            }
             activeConditionalPaths.set(block.id, conditionResult.selectedConditionId)
           }
 
@@ -301,30 +296,58 @@ export class Executor {
 
           // Only process if we haven't hit max iterations
           if (iterations < loop.maxIterations - 1) {
-            // Removed the -1
-            // Check if any block in the loop has outgoing connections to other blocks in the loop
             const hasLoopConnection = executedLoopBlocks.some((blockId) => {
               const outgoingConns = connections.filter((conn) => conn.source === blockId)
               return outgoingConns.some((conn) => loopBlocks.has(conn.target))
             })
 
-            // Check if this was the last block in the loop (e.g., a condition block)
-            const isLoopComplete = executedLoopBlocks.some((blockId) => {
+            // Track if this iteration is complete by checking if we've hit a terminal node
+            const isTerminalNode = executedLoopBlocks.some((blockId) => {
+              // A block is terminal if:
+              // 1. It's not in the loop nodes (like the Function block), OR
+              // 2. It's a condition block that selected a path to a non-loop node
               const block = blocks.find((b) => b.id === blockId)
-              return block?.metadata?.type === 'condition'
-            })
+              if (!block) return false
 
-            if (hasLoopConnection) {
-              // Reset the loop blocks' inDegrees
-              resetLoopBlocksDegrees(loopId)
-              for (const blockId of loop.nodes) {
-                if (inDegree.get(blockId) === 0) {
-                  queue.push(blockId)
+              if (!loop.nodes.includes(blockId)) return true
+
+              if (block.metadata?.type === 'condition') {
+                const conditionResult = context.blockStates.get(blockId)
+                if (
+                  !conditionResult ||
+                  typeof conditionResult === 'string' ||
+                  !('response' in conditionResult)
+                )
+                  return false
+
+                // Check if the selected path goes to a node outside the loop
+                const response = conditionResult.response as {
+                  condition?: { selectedPath?: { blockId?: string } }
                 }
+                const selectedPath = response.condition?.selectedPath?.blockId
+                return selectedPath && !loop.nodes.includes(selectedPath)
               }
 
-              // Only increment counter when we complete a loop cycle
-              if (isLoopComplete) {
+              return false
+            })
+
+            // Only reset and queue new blocks if we haven't hit a terminal node
+            if (hasLoopConnection && !isTerminalNode) {
+              const allCurrentBlocksComplete = executedLoopBlocks.every((blockId) => {
+                const blockState = context.blockStates.get(blockId)
+                return blockState !== undefined
+              })
+
+              if (allCurrentBlocksComplete) {
+                // Reset the loop blocks' inDegrees
+                resetLoopBlocksDegrees(loopId)
+                for (const blockId of loop.nodes) {
+                  if (inDegree.get(blockId) === 0) {
+                    queue.push(blockId)
+                  }
+                }
+
+                // Increment the iteration counter when all blocks in current iteration are done
                 loopIterations.set(loopId, iterations + 1)
               }
             }
@@ -852,6 +875,15 @@ export class Executor {
       throw new Error(`No state found for source block ${sourceBlockId}`)
     }
 
+    const isExitingLoop = () => {
+      const loop = Object.values(this.workflow.loops || {}).find((loop) =>
+        loop.nodes.includes(block.id)
+      )
+      if (!loop) return false
+
+      return !loop.nodes.includes(targetBlock.id)
+    }
+
     // Create the block output with the source output when condition is met.
     const blockOutput = {
       response: {
@@ -865,6 +897,7 @@ export class Executor {
             blockTitle: targetBlock.metadata?.title || '',
           },
           selectedConditionId: selectedCondition.id,
+          exitsLoop: isExitingLoop(),
         },
       },
     }
