@@ -191,6 +191,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
         data-handleid="target"
         isConnectableStart={false}
         isConnectableEnd={true}
+        isValidConnection={(connection) => connection.source !== id}
       />
 
       {/* Block Header */}
@@ -284,6 +285,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
           data-handleid="source"
           isConnectableStart={true}
           isConnectableEnd={false}
+          isValidConnection={(connection) => connection.target !== id}
         />
       )}
     </Card>

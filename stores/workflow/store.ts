@@ -186,6 +186,20 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       },
 
       addEdge: (edge: Edge) => {
+        // Check for duplicate connections
+        const isDuplicate = get().edges.some(
+          (existingEdge) =>
+            existingEdge.source === edge.source &&
+            existingEdge.target === edge.target &&
+            existingEdge.sourceHandle === edge.sourceHandle &&
+            existingEdge.targetHandle === edge.targetHandle
+        )
+
+        // If it's a duplicate connection, return early without adding the edge
+        if (isDuplicate) {
+          return
+        }
+
         const newEdge = {
           id: edge.id || crypto.randomUUID(),
           source: edge.source,
