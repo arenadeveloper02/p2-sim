@@ -265,7 +265,7 @@ export class Executor {
           } else if (block.metadata?.type === 'condition') {
             const conditionResult = await this.executeConditionalBlock(block, context)
             // Add a wait here to simulate a slow condition block
-            const waitTime = 1000
+            const waitTime = 5000
             if (waitTime > 0) {
               await new Promise((resolve) => setTimeout(resolve, waitTime))
             }
