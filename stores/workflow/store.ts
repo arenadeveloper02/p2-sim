@@ -50,15 +50,9 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
             subBlockId === 'responseFormat' &&
             typeof processedValue === 'string'
           ) {
-            console.log('Validating responseFormat input:', {
-              type: typeof processedValue,
-              rawValue: processedValue,
-            })
-
             try {
               // Parse the input string to validate JSON but keep original string value
               const parsed = JSON.parse(processedValue)
-              console.log('Parsed responseFormat:', parsed)
 
               // Simple validation of required schema structure
               if (!parsed.fields || !Array.isArray(parsed.fields)) {
@@ -67,7 +61,6 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
               }
 
               for (const field of parsed.fields) {
-                console.log('Validating field:', field)
                 if (!field.name || !field.type) {
                   console.error('Validation failed: field missing name or type', field)
                   throw new Error('Each field must have a name and type')
@@ -80,7 +73,6 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
                 }
               }
 
-              console.log('responseFormat validation successful')
               // Don't modify the value, keep it as the original string
             } catch (error: any) {
               console.error('responseFormat validation error:', error)

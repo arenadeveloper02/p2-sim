@@ -6,22 +6,52 @@ import { ProviderRequest, ProviderResponse, TokenInfo } from './types'
 function generateStructuredOutputInstructions(responseFormat: any): string {
   if (!responseFormat?.fields) return ''
 
-  const fields = responseFormat.fields
+  function generateFieldStructure(field: any): string {
+    if (field.type === 'object' && field.properties) {
+      return `{
+    ${Object.entries(field.properties)
+      .map(([key, prop]: [string, any]) => `"${key}": ${prop.type === 'number' ? '0' : '"value"'}`)
+      .join(',\n    ')}
+  }`
+    }
+    return field.type === 'string'
+      ? '"value"'
+      : field.type === 'number'
+        ? '0'
+        : field.type === 'boolean'
+          ? 'true/false'
+          : '[]'
+  }
+
+  const exampleFormat = responseFormat.fields
+    .map((field: any) => `  "${field.name}": ${generateFieldStructure(field)}`)
+    .join(',\n')
+
+  const fieldDescriptions = responseFormat.fields
     .map((field: any) => {
-      return `${field.name} (${field.type})${field.description ? `: ${field.description}` : ''}`
+      let desc = `${field.name} (${field.type})`
+      if (field.description) desc += `: ${field.description}`
+      if (field.type === 'object' && field.properties) {
+        desc += '\nProperties:'
+        Object.entries(field.properties).forEach(([key, prop]: [string, any]) => {
+          desc += `\n  - ${key} (${(prop as any).type}): ${(prop as any).description || ''}`
+        })
+      }
+      return desc
     })
     .join('\n')
 
   return `
 Please provide your response in the following JSON format:
 {
-  ${responseFormat.fields.map((field: any) => `"${field.name}": "${field.type === 'string' ? 'value' : field.type === 'number' ? '0' : field.type === 'boolean' ? 'true/false' : '[]'}"`).join(',\n  ')}
+${exampleFormat}
 }
 
 Field descriptions:
-${fields}
+${fieldDescriptions}
 
-Your response MUST be valid JSON and include all the specified fields with their correct types.`
+Your response MUST be valid JSON and include all the specified fields with their correct types.
+Each metric should be an object containing 'score' (number) and 'reasoning' (string).`
 }
 
 export async function executeProviderRequest(
@@ -74,9 +104,18 @@ export async function executeProviderRequest(
           // Try to parse the content as JSON
           const parsedContent = JSON.parse(content)
 
+          console.log('Response Format:', JSON.stringify(request.responseFormat, null, 2))
+          console.log('Parsed Content:', JSON.stringify(parsedContent, null, 2))
+
           // Validate that all required fields are present and have correct types
           const validationErrors = request.responseFormat.fields
             .map((field: any) => {
+              console.log(`Validating field ${field.name}:`, {
+                expectedType: field.type,
+                actualValue: parsedContent[field.name],
+                actualType: typeof parsedContent[field.name],
+              })
+
               if (!(field.name in parsedContent)) {
                 return `Missing field: ${field.name}`
               }
