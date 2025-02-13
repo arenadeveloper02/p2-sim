@@ -38,7 +38,7 @@ Evaluation Instructions:
 - For each metric, provide a numeric score within the specified range
 - Your response must be a valid JSON object with each metric as a number field
 - Do not include explanations in the JSON - only numeric scores
-
+- Under any circumstances, do not include any text before or after the JSON object
 Metrics to evaluate:
 ${metricsDescription}
 
