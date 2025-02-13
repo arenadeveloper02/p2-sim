@@ -4,13 +4,13 @@ import { CheckboxList } from './components/checkbox-list'
 import { Code } from './components/code'
 import { ConditionInput } from './components/condition-input'
 import { Dropdown } from './components/dropdown'
+import { EvalInput } from './components/eval-input'
 import { LongInput } from './components/long-input'
 import { ShortInput } from './components/short-input'
 import { SliderInput } from './components/slider-input'
 import { Switch } from './components/switch'
 import { Table } from './components/table'
 import { ToolInput } from './components/tool-input'
-import { useSubBlockValue } from './hooks/use-sub-block-value'
 
 interface SubBlockProps {
   blockId: string
@@ -95,6 +95,8 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
         return (
           <ConditionInput blockId={blockId} subBlockId={config.id} isConnecting={isConnecting} />
         )
+      case 'eval-input':
+        return <EvalInput blockId={blockId} subBlockId={config.id} />
       default:
         return null
     }

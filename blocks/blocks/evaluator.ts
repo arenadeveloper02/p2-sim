@@ -185,9 +185,8 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
       {
         id: 'prompt',
         title: 'Evaluation Criteria',
-        type: 'long-input',
+        type: 'eval-input',
         layout: 'full',
-        placeholder: 'Evaluate the input based on the following criteria...',
       },
       {
         id: 'content',

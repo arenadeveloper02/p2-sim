@@ -20,6 +20,7 @@ export type SubBlockType =
   | 'tool-input'
   | 'checkbox-list'
   | 'condition-input'
+  | 'eval-input'
 export type SubBlockLayout = 'full' | 'half'
 
 // Tool output type utilities

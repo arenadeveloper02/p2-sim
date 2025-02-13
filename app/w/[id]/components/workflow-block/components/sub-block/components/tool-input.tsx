@@ -22,7 +22,6 @@ interface ToolInputProps {
   subBlockId: string
 }
 
-// State interface - only what we need to store
 interface StoredTool {
   type: string
   title: string
