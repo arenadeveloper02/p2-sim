@@ -104,18 +104,9 @@ export async function executeProviderRequest(
           // Try to parse the content as JSON
           const parsedContent = JSON.parse(content)
 
-          console.log('Response Format:', JSON.stringify(request.responseFormat, null, 2))
-          console.log('Parsed Content:', JSON.stringify(parsedContent, null, 2))
-
           // Validate that all required fields are present and have correct types
           const validationErrors = request.responseFormat.fields
             .map((field: any) => {
-              console.log(`Validating field ${field.name}:`, {
-                expectedType: field.type,
-                actualValue: parsedContent[field.name],
-                actualType: typeof parsedContent[field.name],
-              })
-
               if (!(field.name in parsedContent)) {
                 return `Missing field: ${field.name}`
               }
@@ -164,11 +155,9 @@ export async function executeProviderRequest(
 
       // Check for function calls using provider-specific logic
       const hasFunctionCall = provider.hasFunctionCall(currentResponse)
-      console.log('Has function call:', hasFunctionCall)
 
       // Break if we have content and no function call
       if (!hasFunctionCall) {
-        console.log('No function call detected, breaking loop')
         break
       }
 
@@ -196,24 +185,18 @@ export async function executeProviderRequest(
       }
 
       if (!functionCall) {
-        console.log('No function call after transformation, breaking loop')
         break
       }
-
-      console.log('Function call:', functionCall.name)
 
       // Execute the tool
       const tool = getTool(functionCall.name)
       if (!tool) {
-        console.log(`Tool not found: ${functionCall.name}`)
         break
       }
 
       const result = await executeTool(functionCall.name, functionCall.arguments)
-      console.log('Tool execution result:', result.success)
 
       if (!result.success) {
-        console.log('Tool execution failed')
         break
       }
 
@@ -250,7 +233,7 @@ export async function executeProviderRequest(
     }
 
     if (iterationCount >= MAX_ITERATIONS) {
-      console.log('Max iterations reached, breaking loop')
+      console.log('Max iterations of tool calls reached, breaking loop')
     }
   } catch (error) {
     console.error('Error executing tool:', error)
@@ -289,6 +272,6 @@ async function makeProxyRequest(providerId: string, payload: any, apiKey: string
     throw new Error(data.error || 'Provider API error')
   }
 
-  console.log('Proxy request completed')
+  console.log('Proxy request for provider:', providerId, 'completed')
   return data.output
 }
