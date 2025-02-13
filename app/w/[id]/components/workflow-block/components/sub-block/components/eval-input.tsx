@@ -209,8 +209,6 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
                   type="number"
                   value={metric.range.min}
                   onChange={(e) => updateRange(metric.id, 'min', e.target.value)}
-                  min={0}
-                  max={metric.range.max}
                   step={0.1}
                   className="text-muted-foreground placeholder:text-muted-foreground/50"
                 />
@@ -221,7 +219,6 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
                   type="number"
                   value={metric.range.max}
                   onChange={(e) => updateRange(metric.id, 'max', e.target.value)}
-                  min={metric.range.min}
                   step={0.1}
                   className="text-muted-foreground placeholder:text-muted-foreground/50"
                 />
