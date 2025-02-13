@@ -75,8 +75,25 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
   }
 
   const updateRange = (id: string, field: 'min' | 'max', value: string) => {
-    const numValue = parseFloat(value)
-    if (isNaN(numValue)) return
+    setValue(
+      metrics.map((metric) =>
+        metric.id === id
+          ? {
+              ...metric,
+              range: {
+                ...metric.range,
+                [field]: value,
+              },
+            }
+          : metric
+      )
+    )
+  }
+
+  const handleRangeBlur = (id: string, field: 'min' | 'max', value: string) => {
+    // Allow any number including negatives, just remove non-numeric characters except - and .
+    const sanitizedValue = value.replace(/[^\d.-]/g, '')
+    const numValue = parseFloat(sanitizedValue)
 
     setValue(
       metrics.map((metric) =>
@@ -85,7 +102,7 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
               ...metric,
               range: {
                 ...metric.range,
-                [field]: numValue,
+                [field]: !isNaN(numValue) ? numValue : 0,
               },
             }
           : metric
@@ -206,20 +223,20 @@ export function EvalInput({ blockId, subBlockId }: EvalInputProps) {
               <div className="space-y-1">
                 <Label>Min Value</Label>
                 <Input
-                  type="number"
+                  type="text"
                   value={metric.range.min}
                   onChange={(e) => updateRange(metric.id, 'min', e.target.value)}
-                  step={0.1}
+                  onBlur={(e) => handleRangeBlur(metric.id, 'min', e.target.value)}
                   className="text-muted-foreground placeholder:text-muted-foreground/50"
                 />
               </div>
               <div className="space-y-1">
                 <Label>Max Value</Label>
                 <Input
-                  type="number"
+                  type="text"
                   value={metric.range.max}
                   onChange={(e) => updateRange(metric.id, 'max', e.target.value)}
-                  step={0.1}
+                  onBlur={(e) => handleRangeBlur(metric.id, 'max', e.target.value)}
                   className="text-muted-foreground placeholder:text-muted-foreground/50"
                 />
               </div>
