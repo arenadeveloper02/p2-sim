@@ -18,7 +18,8 @@ export class Executor {
     private workflow: SerializedWorkflow,
     // Initial block states can be passed in (e.g., for resuming workflows or pre-populating data)
     private initialBlockStates: Record<string, BlockOutput> = {},
-    private environmentVariables: Record<string, string> = {}
+    private environmentVariables: Record<string, string> = {},
+    private processedConditionBlocks: Set<string> = new Set<string>()
   ) {}
 
   /**
@@ -99,6 +100,7 @@ export class Executor {
     // Build dependency graphs: inDegree (number of incoming edges) and adjacency (outgoing connections)
     const inDegree = new Map<string, number>()
     const adjacency = new Map<string, string[]>()
+    this.processedConditionBlocks = new Set<string>()
 
     // Initialize maps
     for (const block of blocks) {
@@ -163,6 +165,20 @@ export class Executor {
         countEdge = false
       }
 
+      // For conditional blocks, only count one incoming edge per source block
+      if (conn.sourceHandle?.startsWith('condition-')) {
+        // Check if we already counted an edge from this source to this target with a condition handle
+        const existingConditionEdge = Array.from(countedEdges).some(
+          (edge) =>
+            edge.source === conn.source &&
+            edge.target === conn.target &&
+            edge.sourceHandle?.startsWith('condition-')
+        )
+        if (existingConditionEdge) {
+          countEdge = false
+        }
+      }
+
       if (countEdge) {
         inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1)
         countedEdges.add(conn)
@@ -214,6 +230,8 @@ export class Executor {
     while (queue.length > 0) {
       const currentLayer = [...queue]
       queue.length = 0
+
+      this.processedConditionBlocks.clear()
 
       // Filter executable blocks
       const executableBlocks = currentLayer.filter((blockId) => {
@@ -966,20 +984,31 @@ export class Executor {
     activeConditionalPaths?: Map<string, string>
   ) {
     const sourceBlock = blocks.find((b) => b.id === conn.source)
+
     if (sourceBlock?.metadata?.type === 'router') {
       const chosenPath = routerDecisions?.get(sourceBlock.id)
+
       if (conn.target === chosenPath) {
         const newDegree = (inDegree.get(conn.target) || 0) - 1
         inDegree.set(conn.target, newDegree)
         if (newDegree === 0) queue.push(conn.target)
       }
     } else if (conn.sourceHandle?.startsWith('condition-')) {
+      const sourceBlockId = conn.source
       const conditionId = conn.sourceHandle.replace('condition-', '')
-      // Assuming finishedBlockId equals the condition block id
-      if (activeConditionalPaths && activeConditionalPaths.get(conn.source) === conditionId) {
-        const newDegree = (inDegree.get(conn.target) || 0) - 1
-        inDegree.set(conn.target, newDegree)
-        if (newDegree === 0) queue.push(conn.target)
+      const activeCondition = activeConditionalPaths?.get(sourceBlockId)
+
+      // Only decrement if this connection matches the active condition path
+      if (activeCondition === conditionId) {
+        // Only decrement once per condition block, regardless of number of connections
+        if (!this.processedConditionBlocks.has(`${sourceBlockId}-${conn.target}`)) {
+          const newDegree = (inDegree.get(conn.target) || 0) - 1
+          inDegree.set(conn.target, newDegree)
+          if (newDegree === 0) {
+            queue.push(conn.target)
+          }
+          this.processedConditionBlocks.add(`${sourceBlockId}-${conn.target}`)
+        }
       }
     } else {
       const newDegree = (inDegree.get(conn.target) || 0) - 1
