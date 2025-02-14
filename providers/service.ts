@@ -1,6 +1,7 @@
 import { executeTool, getTool } from '@/tools'
 import { getProvider } from './registry'
 import { ProviderRequest, ProviderResponse, TokenInfo } from './types'
+import { extractAndParseJSON } from './utils'
 
 // Helper function to generate provider-specific structured output instructions
 function generateStructuredOutputInstructions(responseFormat: any): string {
@@ -101,8 +102,8 @@ export async function executeProviderRequest(
       // If responseFormat is specified and we have content (not a function call), validate and parse the response
       if (request.responseFormat && content && !provider.hasFunctionCall(currentResponse)) {
         try {
-          // Try to parse the content as JSON
-          const parsedContent = JSON.parse(content)
+          // Extract and parse the JSON content
+          const parsedContent = extractAndParseJSON(content)
 
           // Validate that all required fields are present and have correct types
           const validationErrors = request.responseFormat.fields
@@ -138,8 +139,8 @@ export async function executeProviderRequest(
           // Store the validated JSON response
           content = JSON.stringify(parsedContent)
         } catch (error: any) {
-          console.error('Error parsing structured response:', error)
-          throw new Error(`Failed to parse response as structured output: ${error.message}`)
+          console.error('Raw content:', content)
+          throw new Error(`Failed to parse structured response: ${error.message}`)
         }
       }
 
