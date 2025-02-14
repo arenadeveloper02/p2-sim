@@ -1,3 +1,16 @@
+function stringifyValue(value: any): string {
+  if (typeof value === 'string') {
+    return `"${value.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+  } else if (value === null) {
+    return 'null'
+  } else if (typeof value === 'undefined') {
+    return 'undefined'
+  } else if (typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  return String(value)
+}
+
 export function resolveEnvVariables(value: any, environmentVariables: Record<string, string>): any {
   if (typeof value === 'string') {
     const envMatches = value.match(/\{\{([^}]+)\}\}/g)
@@ -29,7 +42,8 @@ export function resolveBlockReferences(
   blockById: Map<string, any>,
   blockByName: Map<string, any>,
   contextBlockStates: Map<string, any>,
-  currentBlockTitle: string
+  currentBlockTitle: string,
+  currentBlockType: string
 ): string {
   const blockMatches = value.match(/<([^>]+)>/g)
   let resolvedValue = value
@@ -65,12 +79,17 @@ export function resolveBlockReferences(
         replacementValue = replacementValue[part]
       }
       if (replacementValue !== undefined) {
-        resolvedValue = resolvedValue.replace(
-          match,
-          typeof replacementValue === 'object'
-            ? JSON.stringify(replacementValue)
-            : String(replacementValue)
-        )
+        // For condition blocks, we need to properly stringify the value
+        if (currentBlockType === 'condition') {
+          resolvedValue = resolvedValue.replace(match, stringifyValue(replacementValue))
+        } else {
+          resolvedValue = resolvedValue.replace(
+            match,
+            typeof replacementValue === 'object'
+              ? JSON.stringify(replacementValue)
+              : String(replacementValue)
+          )
+        }
       } else {
         throw new Error(
           `No value found at path "${path}" in block "${sourceBlock.metadata?.title}".`
@@ -78,5 +97,6 @@ export function resolveBlockReferences(
       }
     }
   }
+
   return resolvedValue
 }

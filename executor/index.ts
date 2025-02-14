@@ -932,7 +932,8 @@ export class Executor {
             blockById,
             blockByName,
             context.blockStates,
-            block.metadata?.title || ''
+            block.metadata?.title || '',
+            block.metadata?.type || ''
           )
 
           // Resolve environment variables
