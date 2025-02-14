@@ -145,14 +145,13 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         try {
           const metricsValue = sourceBlock.subBlocks?.metrics?.value as unknown as Metric[]
           if (Array.isArray(metricsValue)) {
-            return {
-              tags: metricsValue.map(
-                (metric) => `${normalizedBlockName}.response.${metric.name.toLowerCase()}`
-              ),
-            }
+            return metricsValue.map(
+              (metric) => `${normalizedBlockName}.response.${metric.name.toLowerCase()}`
+            )
           }
         } catch (e) {
           console.error('Error parsing metrics:', e)
+          return []
         }
       }
 
@@ -223,7 +222,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
   }, [visible, selectedIndex, filteredTags])
 
   // Don't render if not visible or no tags
-  if (!visible || tags.length === 0) return null
+  if (!visible || tags.length === 0 || filteredTags.length === 0) return null
 
   return (
     <div
