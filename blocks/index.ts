@@ -9,7 +9,6 @@ import { FunctionBlock } from './blocks/function'
 import { GitHubBlock } from './blocks/github'
 import { GmailBlock } from './blocks/gmail'
 import { JinaBlock } from './blocks/jina'
-import { MemoryBlock } from './blocks/memory'
 import { NotionBlock } from './blocks/notion'
 import { RouterBlock } from './blocks/router'
 import { SerperBlock } from './blocks/serper'
@@ -40,7 +39,6 @@ export {
   NotionBlock,
   GmailBlock,
   XBlock,
-  MemoryBlock,
 }
 
 // Registry of all block configurations
@@ -51,7 +49,6 @@ const blocks: Record<string, BlockConfig> = {
   function: FunctionBlock,
   router: RouterBlock,
   evaluator: EvaluatorBlock,
-  memory: MemoryBlock,
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,

@@ -1,13 +1,13 @@
-import { BrainIcon } from '@/components/icons'
+import { InputIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 
-export const MemoryBlock: BlockConfig = {
-  type: 'memory',
+export const InputBlock: BlockConfig = {
+  type: 'input',
   toolbar: {
-    title: 'Memory',
-    description: 'Add memory store',
-    bgColor: '#FF65BF',
-    icon: BrainIcon,
+    title: 'Input',
+    description: 'Add workflow input',
+    bgColor: '#2FB3FF',
+    icon: InputIcon,
     category: 'blocks',
   },
   tools: {
@@ -16,8 +16,6 @@ export const MemoryBlock: BlockConfig = {
   workflow: {
     inputs: {
       code: { type: 'string', required: true },
-      timeout: { type: 'number', required: false },
-      memoryLimit: { type: 'number', required: false },
     },
     outputs: {
       response: {
@@ -30,8 +28,9 @@ export const MemoryBlock: BlockConfig = {
     },
     subBlocks: [
       {
-        id: 'code',
-        type: 'code',
+        title: 'Input',
+        id: 'input',
+        type: 'short-input',
         layout: 'full',
       },
     ],
