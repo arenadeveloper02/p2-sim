@@ -89,7 +89,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
   type: 'router',
   toolbar: {
     title: 'Router',
-    description: 'Add a router',
+    description: 'Route workflow',
     bgColor: '#28C43F',
     icon: ConnectIcon,
     category: 'blocks',

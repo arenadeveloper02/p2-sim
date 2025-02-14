@@ -59,7 +59,7 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
   type: 'evaluator',
   toolbar: {
     title: 'Evaluator',
-    description: 'Add an evaluator',
+    description: 'Evaluate content',
     bgColor: '#2FA1FF',
     icon: ChartBarIcon,
     category: 'blocks',

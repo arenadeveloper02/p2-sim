@@ -9,6 +9,7 @@ import { FunctionBlock } from './blocks/function'
 import { GitHubBlock } from './blocks/github'
 import { GmailBlock } from './blocks/gmail'
 import { JinaBlock } from './blocks/jina'
+import { MemoryBlock } from './blocks/memory'
 import { NotionBlock } from './blocks/notion'
 import { RouterBlock } from './blocks/router'
 import { SerperBlock } from './blocks/serper'
@@ -39,6 +40,7 @@ export {
   NotionBlock,
   GmailBlock,
   XBlock,
+  MemoryBlock,
 }
 
 // Registry of all block configurations
@@ -49,6 +51,7 @@ const blocks: Record<string, BlockConfig> = {
   function: FunctionBlock,
   router: RouterBlock,
   evaluator: EvaluatorBlock,
+  memory: MemoryBlock,
   crewai_vision: CrewAIVisionBlock,
   firecrawl_scrape: FirecrawlScrapeBlock,
   jina_reader: JinaBlock,
@@ -62,17 +65,6 @@ const blocks: Record<string, BlockConfig> = {
   gmail_block: GmailBlock,
   x_block: XBlock,
 }
-
-// Build a reverse mapping of tools to block types
-const toolToBlockType = Object.entries(blocks).reduce(
-  (acc, [blockType, config]) => {
-    config.tools.access.forEach((toolId) => {
-      acc[toolId] = blockType
-    })
-    return acc
-  },
-  {} as Record<string, string>
-)
 
 // Helper functions
 export const getBlock = (type: string): BlockConfig | undefined => blocks[type]

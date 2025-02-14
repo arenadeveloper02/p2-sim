@@ -1,18 +1,17 @@
-import { CodeIcon } from '@/components/icons'
-import { CodeExecutionOutput } from '@/tools/function/execute'
+import { BrainIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 
-export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
-  type: 'function',
+export const MemoryBlock: BlockConfig = {
+  type: 'memory',
   toolbar: {
-    title: 'Function',
-    description: 'Run custom logic',
-    bgColor: '#FF402F',
-    icon: CodeIcon,
+    title: 'Memory',
+    description: 'Add memory store',
+    bgColor: '#FF65BF',
+    icon: BrainIcon,
     category: 'blocks',
   },
   tools: {
-    access: ['function_execute'],
+    access: [],
   },
   workflow: {
     inputs: {
