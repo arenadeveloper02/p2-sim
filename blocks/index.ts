@@ -13,6 +13,7 @@ import { NotionBlock } from './blocks/notion'
 import { RouterBlock } from './blocks/router'
 import { SerperBlock } from './blocks/serper'
 import { SlackMessageBlock } from './blocks/slack'
+import { StarterBlock } from './blocks/starter'
 import { TavilyBlock } from './blocks/tavily'
 import { TranslateBlock } from './blocks/translate'
 import { XBlock } from './blocks/x'
@@ -39,12 +40,14 @@ export {
   NotionBlock,
   GmailBlock,
   XBlock,
+  StarterBlock,
 }
 
 // Registry of all block configurations
 const blocks: Record<string, BlockConfig> = {
   agent: AgentBlock,
   api: ApiBlock,
+  starter: StarterBlock,
   condition: ConditionBlock,
   function: FunctionBlock,
   router: RouterBlock,

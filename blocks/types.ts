@@ -81,6 +81,10 @@ export interface SubBlockConfig {
   condition?: {
     field: string
     value: string | number | boolean
+    and?: {
+      field: string
+      value: string | number | boolean
+    }
   }
 }
 

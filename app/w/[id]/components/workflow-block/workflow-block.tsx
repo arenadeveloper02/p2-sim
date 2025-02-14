@@ -111,10 +111,18 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
       // If there's no condition, the block should be shown
       if (!block.condition) return true
 
-      // Get the value of the field this block depends on
+      // Get the values of the fields this block depends on
       const fieldValue =
         useWorkflowStore.getState().blocks[blockId]?.subBlocks[block.condition.field]?.value
-      return fieldValue === block.condition.value
+      const andFieldValue = block.condition.and
+        ? useWorkflowStore.getState().blocks[blockId]?.subBlocks[block.condition.and.field]?.value
+        : undefined
+
+      // Check both conditions if 'and' is present
+      return (
+        fieldValue === block.condition.value &&
+        (!block.condition.and || andFieldValue === block.condition.and.value)
+      )
     })
 
     visibleSubBlocks.forEach((block) => {
@@ -174,25 +182,27 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
       {selected && <ActionBar blockId={id} />}
       <ConnectionBlocks blockId={id} setIsConnecting={setIsConnecting} />
 
-      {/* Input Handle */}
-      <Handle
-        type="target"
-        position={horizontalHandles ? Position.Left : Position.Top}
-        id="target"
-        className={cn(
-          '!w-3.5 !h-3.5',
-          '!bg-white !rounded-full !border !border-gray-200',
-          'group-hover:!border-blue-500',
-          '!cursor-crosshair',
-          'transition-[border-color] duration-150',
-          horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
-        )}
-        data-nodeid={id}
-        data-handleid="target"
-        isConnectableStart={false}
-        isConnectableEnd={true}
-        isValidConnection={(connection) => connection.source !== id}
-      />
+      {/* Input Handle - Don't show for starter blocks */}
+      {type !== 'starter' && (
+        <Handle
+          type="target"
+          position={horizontalHandles ? Position.Left : Position.Top}
+          id="target"
+          className={cn(
+            '!w-3.5 !h-3.5',
+            '!bg-white !rounded-full !border !border-gray-200',
+            'group-hover:!border-blue-500',
+            '!cursor-crosshair',
+            'transition-[border-color] duration-150',
+            horizontalHandles ? '!left-[-7px]' : '!top-[-7px]'
+          )}
+          data-nodeid={id}
+          data-handleid="target"
+          isConnectableStart={false}
+          isConnectableEnd={true}
+          isValidConnection={(connection) => connection.source !== id}
+        />
+      )}
 
       {/* Block Header */}
       <div className="flex items-center justify-between p-3 border-b workflow-drag-handle cursor-grab [&:active]:cursor-grabbing">
