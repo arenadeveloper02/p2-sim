@@ -305,7 +305,7 @@ function WorkflowContent() {
         onDrop={onDrop}
         onDragOver={(e) => e.preventDefault()}
         fitView
-        minZoom={0.2}
+        minZoom={0.4}
         maxZoom={1}
         panOnScroll
         defaultEdgeOptions={{ type: 'custom' }}
