@@ -69,14 +69,7 @@ export function SubBlock({ blockId, config, isConnecting }: SubBlockProps) {
       case 'table':
         return <Table blockId={blockId} subBlockId={config.id} columns={config.columns ?? []} />
       case 'code':
-        return (
-          <Code
-            blockId={blockId}
-            subBlockId={config.id}
-            isConnecting={isConnecting}
-            minimizable={config.minimizable}
-          />
-        )
+        return <Code blockId={blockId} subBlockId={config.id} isConnecting={isConnecting} />
       case 'switch':
         return <Switch blockId={blockId} subBlockId={config.id} title={config.title ?? ''} />
       case 'tool-input':

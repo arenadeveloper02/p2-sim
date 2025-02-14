@@ -78,7 +78,6 @@ export interface SubBlockConfig {
   connectionDroppable?: boolean
   hidden?: boolean
   value?: (params: Record<string, any>) => string
-  minimizable?: boolean
   condition?: {
     field: string
     value: string | number | boolean
