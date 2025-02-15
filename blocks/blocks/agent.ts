@@ -57,7 +57,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       type: 'slider',
       layout: 'half',
       min: 0,
-      max: 2,
+      max: 1,
     },
     {
       id: 'apiKey',

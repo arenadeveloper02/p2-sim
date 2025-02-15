@@ -38,11 +38,14 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           const block = state.blocks[blockId]
           if (!block) return state
 
+          // Handle different value types appropriately
           const processedValue = Array.isArray(value)
             ? value
-            : typeof value === 'string'
-              ? value
-              : JSON.stringify(value, null, 2)
+            : block.subBlocks[subBlockId]?.type === 'slider'
+              ? Number(value) // Convert slider values to numbers
+              : typeof value === 'string'
+                ? value
+                : JSON.stringify(value, null, 2)
 
           // Only attempt JSON parsing for agent responseFormat validation
           if (
