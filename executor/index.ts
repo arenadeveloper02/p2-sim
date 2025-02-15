@@ -37,7 +37,7 @@ export class Executor {
 
     // Validate that the workflow has a starter block
     const starterBlock = this.workflow.blocks.find((block) => block.metadata?.id === 'starter')
-    if (!starterBlock) {
+    if (!starterBlock || !starterBlock.enabled) {
       throw new Error('Workflow must have a starter block')
     }
 
