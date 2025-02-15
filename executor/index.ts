@@ -270,7 +270,7 @@ export class Executor {
           context.blockStates.set(blockId, result)
           lastOutput = result
 
-          if (block.metadata?.type === 'router') {
+          if (block.metadata?.id === 'router') {
             const routerResult = result as {
               response: {
                 content: string
@@ -280,7 +280,7 @@ export class Executor {
               }
             }
             routerDecisions.set(block.id, routerResult.response.selectedPath.blockId)
-          } else if (block.metadata?.type === 'condition') {
+          } else if (block.metadata?.id === 'condition') {
             const conditionResult = await this.executeConditionalBlock(block, context)
             activeConditionalPaths.set(block.id, conditionResult.selectedConditionId)
           }
@@ -324,7 +324,7 @@ export class Executor {
             // Check if this was the last block in the loop (e.g., a condition block)
             const isLoopComplete = executedLoopBlocks.some((blockId) => {
               const block = blocks.find((b) => b.id === blockId)
-              return block?.metadata?.type === 'condition'
+              return block?.metadata?.id === 'condition'
             })
 
             if (hasLoopConnection) {
@@ -374,7 +374,7 @@ export class Executor {
     context: ExecutionContext
   ): Promise<BlockOutput> {
     if (block.enabled === false) {
-      throw new Error(`Cannot execute disabled block: ${block.metadata?.title || block.id}`)
+      throw new Error(`Cannot execute disabled block: ${block.metadata?.name || block.id}`)
     }
 
     const blockLog = this.startBlockLog(block)
@@ -383,7 +383,7 @@ export class Executor {
       let output: BlockOutput
 
       // Execute block based on its type.
-      if (block.metadata?.type === 'router') {
+      if (block.metadata?.id === 'router') {
         const routerOutput = await this.executeRouterBlock(block, context)
         output = {
           response: {
@@ -393,10 +393,10 @@ export class Executor {
             selectedPath: routerOutput.selectedPath,
           },
         }
-      } else if (block.metadata?.type === 'evaluator') {
+      } else if (block.metadata?.id === 'evaluator') {
         const evaluatorOutput = await this.executeEvaluatorBlock(block, context)
         output = evaluatorOutput
-      } else if (block.metadata?.type === 'condition') {
+      } else if (block.metadata?.id === 'condition') {
         const conditionResult = await this.executeConditionalBlock(block, context)
         output = {
           response: {
@@ -409,7 +409,7 @@ export class Executor {
             },
           },
         }
-      } else if (block.metadata?.type === 'agent') {
+      } else if (block.metadata?.id === 'agent') {
         // Agent block: use a provider request.
         let responseFormat: any = undefined
         if (inputs.responseFormat) {
@@ -431,7 +431,7 @@ export class Executor {
         const formattedTools = Array.isArray(inputs.tools)
           ? inputs.tools
               .map((tool: any) => {
-                const blockFound = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
+                const blockFound = getAllBlocks().find((b: BlockConfig) => b.id === tool.type)
                 const toolId = blockFound?.tools.access[0]
                 if (!toolId) return null
 
@@ -580,8 +580,8 @@ export class Executor {
       }
       return {
         id: targetBlock.id,
-        type: targetBlock.metadata?.type,
-        title: targetBlock.metadata?.title,
+        type: targetBlock.metadata?.id,
+        title: targetBlock.metadata?.name,
         description: targetBlock.metadata?.description,
         subBlocks: targetBlock.config.params,
         currentState: context.blockStates.get(targetBlock.id),
@@ -729,7 +729,7 @@ export class Executor {
       for (const conn of connections) {
         // Don't follow connections from other routers
         const sourceBlock = this.workflow.blocks.find((b) => b.id === conn.source)
-        if (sourceBlock?.metadata?.type !== 'router') {
+        if (sourceBlock?.metadata?.id !== 'router') {
           queue.push(conn.target)
         }
       }
@@ -784,8 +784,8 @@ export class Executor {
     if (!sourceBlock) {
       throw new Error(`Source block ${sourceBlockId} not found`)
     }
-    const sourceKey = sourceBlock.metadata?.title
-      ? sourceBlock.metadata.title.toLowerCase().replace(/\s+/g, '')
+    const sourceKey = sourceBlock.metadata?.name
+      ? sourceBlock.metadata.name.toLowerCase().replace(/\s+/g, '')
       : 'source'
 
     const outgoingConnections = this.workflow.connections.filter((conn) => conn.source === block.id)
@@ -874,8 +874,8 @@ export class Executor {
           result: conditionMet,
           selectedPath: {
             blockId: targetBlock.id,
-            blockType: targetBlock.metadata?.type || '',
-            blockTitle: targetBlock.metadata?.title || '',
+            blockType: targetBlock.metadata?.id || '',
+            blockTitle: targetBlock.metadata?.name || '',
           },
           selectedConditionId: selectedCondition.id,
         },
@@ -892,8 +892,8 @@ export class Executor {
       sourceOutput: sourceBlockState,
       selectedPath: {
         blockId: targetBlock.id,
-        blockType: targetBlock.metadata?.type || '',
-        blockTitle: targetBlock.metadata?.title || '',
+        blockType: targetBlock.metadata?.id || '',
+        blockTitle: targetBlock.metadata?.name || '',
       },
     }
   }
@@ -918,7 +918,7 @@ export class Executor {
     const blockById = new Map(this.workflow.blocks.map((b) => [b.id, b]))
     const blockByName = new Map(
       this.workflow.blocks.map((b) => [
-        b.metadata?.title?.toLowerCase().replace(/\s+/g, '') || '',
+        b.metadata?.name?.toLowerCase().replace(/\s+/g, '') || '',
         b,
       ])
     )
@@ -932,8 +932,8 @@ export class Executor {
             blockById,
             blockByName,
             context.blockStates,
-            block.metadata?.title || '',
-            block.metadata?.type || ''
+            block.metadata?.name || '',
+            block.metadata?.id || ''
           )
 
           // Resolve environment variables
@@ -961,8 +961,8 @@ export class Executor {
   private startBlockLog(block: SerializedBlock): BlockLog {
     return {
       blockId: block.id,
-      blockTitle: block.metadata?.title || '',
-      blockType: block.metadata?.type || '',
+      blockName: block.metadata?.name || '',
+      blockType: block.metadata?.id || '',
       startedAt: new Date().toISOString(),
       endedAt: '',
       durationMs: 0,
@@ -986,7 +986,7 @@ export class Executor {
   ) {
     const sourceBlock = blocks.find((b) => b.id === conn.source)
 
-    if (sourceBlock?.metadata?.type === 'router') {
+    if (sourceBlock?.metadata?.id === 'router') {
       const chosenPath = routerDecisions?.get(sourceBlock.id)
 
       if (conn.target === chosenPath) {

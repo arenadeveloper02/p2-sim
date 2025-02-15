@@ -39,7 +39,7 @@ interface ToolParam {
 // Assumes the first tool in the access array is the tool to be used
 // TODO: Switch to getting tools instead of tool blocks once we switch to providers
 const getToolIdFromBlock = (blockType: string): string | undefined => {
-  const block = getAllBlocks().find((block) => block.type === blockType)
+  const block = getAllBlocks().find((block) => block.id === blockType)
   return block?.tools.access[0]
 }
 
@@ -62,7 +62,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
   const [open, setOpen] = useState(false)
   const isWide = useWorkflowStore((state) => state.blocks[blockId]?.isWide)
 
-  const toolBlocks = getAllBlocks().filter((block) => block.toolbar.category === 'tools')
+  const toolBlocks = getAllBlocks().filter((block) => block.category === 'tools')
 
   const selectedTools: StoredTool[] =
     Array.isArray(value) && value.length > 0 && typeof value[0] === 'object'
@@ -71,15 +71,15 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
 
   const handleSelectTool = (toolBlock: (typeof toolBlocks)[0]) => {
     // Check if tool already exists
-    if (selectedTools.some((tool) => tool.type === toolBlock.type)) {
+    if (selectedTools.some((tool) => tool.type === toolBlock.id)) {
       setOpen(false)
       return
     }
 
-    const toolId = getToolIdFromBlock(toolBlock.type)
+    const toolId = getToolIdFromBlock(toolBlock.id)
     const newTool: StoredTool = {
-      type: toolBlock.type,
-      title: toolBlock.toolbar.title,
+      type: toolBlock.id,
+      title: toolBlock.name,
       params: {},
       isExpanded: true,
     }
@@ -135,12 +135,6 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
     return <Icon className={className} />
   }
 
-  // Helper function to get the icon component for a tool type
-  const getToolIcon = (type: string) => {
-    const toolBlock = toolBlocks.find((block) => block.type === type)
-    return toolBlock?.toolbar.icon
-  }
-
   return (
     <div className="w-full">
       {selectedTools.length === 0 ? (
@@ -161,17 +155,17 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                 <CommandGroup>
                   {toolBlocks.map((block) => (
                     <CommandItem
-                      key={block.type}
+                      key={block.id}
                       onSelect={() => handleSelectTool(block)}
                       className="flex items-center gap-2 cursor-pointer"
                     >
                       <div
                         className="flex items-center justify-center w-6 h-6 rounded"
-                        style={{ backgroundColor: block.toolbar.bgColor }}
+                        style={{ backgroundColor: block.bgColor }}
                       >
-                        <IconComponent icon={block.toolbar.icon} className="w-4 h-4 text-white" />
+                        <IconComponent icon={block.icon} className="w-4 h-4 text-white" />
                       </div>
-                      <span>{block.toolbar.title}</span>
+                      <span>{block.name}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -182,7 +176,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       ) : (
         <div className="flex flex-wrap gap-2 min-h-[2.5rem] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background">
           {selectedTools.map((tool) => {
-            const toolBlock = toolBlocks.find((block) => block.type === tool.type)
+            const toolBlock = toolBlocks.find((block) => block.id === tool.type)
             const toolId = getToolIdFromBlock(tool.type)
             const requiredParams = toolId ? getRequiredToolParams(toolId) : []
 
@@ -199,12 +193,9 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                     <div className="flex items-center gap-2">
                       <div
                         className="flex items-center justify-center w-5 h-5 rounded"
-                        style={{ backgroundColor: toolBlock?.toolbar.bgColor }}
+                        style={{ backgroundColor: toolBlock?.bgColor }}
                       >
-                        <IconComponent
-                          icon={toolBlock?.toolbar.icon}
-                          className="w-3 h-3 text-white"
-                        />
+                        <IconComponent icon={toolBlock?.icon} className="w-3 h-3 text-white" />
                       </div>
                       <span className="text-sm font-medium">{tool.title}</span>
                     </div>
@@ -278,17 +269,17 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                   <CommandGroup>
                     {toolBlocks.map((block) => (
                       <CommandItem
-                        key={block.type}
+                        key={block.id}
                         onSelect={() => handleSelectTool(block)}
                         className="flex items-center gap-2 cursor-pointer"
                       >
                         <div
                           className="flex items-center justify-center w-6 h-6 rounded"
-                          style={{ backgroundColor: block.toolbar.bgColor }}
+                          style={{ backgroundColor: block.bgColor }}
                         >
-                          <IconComponent icon={block.toolbar.icon} className="w-4 h-4 text-white" />
+                          <IconComponent icon={block.icon} className="w-4 h-4 text-white" />
                         </div>
-                        <span>{block.toolbar.title}</span>
+                        <span>{block.name}</span>
                       </CommandItem>
                     ))}
                   </CommandGroup>

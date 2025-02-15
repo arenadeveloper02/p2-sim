@@ -56,14 +56,60 @@ const generateResponseFormat = (metrics: Metric[]) => ({
 })
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
-  type: 'evaluator',
-  toolbar: {
-    title: 'Evaluator',
-    description: 'Evaluate content',
-    bgColor: '#2FA1FF',
-    icon: ChartBarIcon,
-    category: 'blocks',
-  },
+  id: 'evaluator',
+  name: 'Evaluator',
+  description: 'Evaluate content',
+  category: 'blocks',
+  bgColor: '#2FA1FF',
+  icon: ChartBarIcon,
+  subBlocks: [
+    {
+      id: 'metrics',
+      title: 'Evaluation Metrics',
+      type: 'eval-input',
+      layout: 'full',
+    },
+    {
+      id: 'content',
+      title: 'Content',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'Enter the content to evaluate',
+    },
+    {
+      id: 'model',
+      title: 'Model',
+      type: 'dropdown',
+      layout: 'half',
+      options: Object.keys(MODEL_TOOLS),
+    },
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'Enter your API key',
+      password: true,
+      connectionDroppable: false,
+    },
+    {
+      id: 'systemPrompt',
+      title: 'System Prompt',
+      type: 'code',
+      layout: 'full',
+      hidden: true,
+      value: (params: Record<string, any>) => {
+        const metrics = params.metrics || []
+        const content = params.content || ''
+        const responseFormat = generateResponseFormat(metrics)
+
+        return JSON.stringify({
+          systemPrompt: generateEvaluatorPrompt(metrics, content),
+          responseFormat,
+        })
+      },
+    },
+  ],
   tools: {
     access: [
       'openai_chat',
@@ -87,116 +133,66 @@ export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
       },
     },
   },
-  workflow: {
-    inputs: {
-      metrics: {
-        type: 'json' as ParamType,
-        required: true,
-        description: 'Array of metrics to evaluate against',
-        schema: {
-          type: 'array',
-          properties: {},
-          items: {
-            type: 'object',
-            properties: {
-              name: {
-                type: 'string',
-                description: 'Name of the metric',
-              },
-              description: {
-                type: 'string',
-                description: 'Description of what this metric measures',
-              },
-              range: {
-                type: 'object',
-                properties: {
-                  min: {
-                    type: 'number',
-                    description: 'Minimum possible score',
-                  },
-                  max: {
-                    type: 'number',
-                    description: 'Maximum possible score',
-                  },
+  inputs: {
+    metrics: {
+      type: 'json' as ParamType,
+      required: true,
+      description: 'Array of metrics to evaluate against',
+      schema: {
+        type: 'array',
+        properties: {},
+        items: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name of the metric',
+            },
+            description: {
+              type: 'string',
+              description: 'Description of what this metric measures',
+            },
+            range: {
+              type: 'object',
+              properties: {
+                min: {
+                  type: 'number',
+                  description: 'Minimum possible score',
                 },
-                required: ['min', 'max'],
+                max: {
+                  type: 'number',
+                  description: 'Maximum possible score',
+                },
               },
+              required: ['min', 'max'],
             },
-            required: ['name', 'description', 'range'],
           },
-        },
-      },
-      model: { type: 'string' as ParamType, required: true },
-      apiKey: { type: 'string' as ParamType, required: true },
-      content: { type: 'string' as ParamType, required: true },
-    },
-    outputs: {
-      response: {
-        type: {
-          content: 'string',
-          model: 'string',
-          tokens: 'any',
-        },
-        dependsOn: {
-          subBlockId: 'metrics',
-          condition: {
-            whenEmpty: {
-              content: 'string',
-              model: 'string',
-              tokens: 'any',
-            },
-            whenFilled: 'json',
-          },
+          required: ['name', 'description', 'range'],
         },
       },
     },
-    subBlocks: [
-      {
-        id: 'metrics',
-        title: 'Evaluation Metrics',
-        type: 'eval-input',
-        layout: 'full',
+    model: { type: 'string' as ParamType, required: true },
+    apiKey: { type: 'string' as ParamType, required: true },
+    content: { type: 'string' as ParamType, required: true },
+  },
+  outputs: {
+    response: {
+      type: {
+        content: 'string',
+        model: 'string',
+        tokens: 'any',
       },
-      {
-        id: 'content',
-        title: 'Content',
-        type: 'short-input',
-        layout: 'full',
-        placeholder: 'Enter the content to evaluate',
-      },
-      {
-        id: 'model',
-        title: 'Model',
-        type: 'dropdown',
-        layout: 'half',
-        options: Object.keys(MODEL_TOOLS),
-      },
-      {
-        id: 'apiKey',
-        title: 'API Key',
-        type: 'short-input',
-        layout: 'full',
-        placeholder: 'Enter your API key',
-        password: true,
-        connectionDroppable: false,
-      },
-      {
-        id: 'systemPrompt',
-        title: 'System Prompt',
-        type: 'code',
-        layout: 'full',
-        hidden: true,
-        value: (params: Record<string, any>) => {
-          const metrics = params.metrics || []
-          const content = params.content || ''
-          const responseFormat = generateResponseFormat(metrics)
-
-          return JSON.stringify({
-            systemPrompt: generateEvaluatorPrompt(metrics, content),
-            responseFormat,
-          })
+      dependsOn: {
+        subBlockId: 'metrics',
+        condition: {
+          whenEmpty: {
+            content: 'string',
+            model: 'string',
+            tokens: 'any',
+          },
+          whenFilled: 'json',
         },
       },
-    ],
+    },
   },
 }

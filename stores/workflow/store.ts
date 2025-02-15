@@ -104,7 +104,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
         if (!blockConfig) return
 
         const subBlocks: Record<string, SubBlockState> = {}
-        blockConfig.workflow.subBlocks.forEach((subBlock) => {
+        blockConfig.subBlocks.forEach((subBlock) => {
           const subBlockId = subBlock.id
           subBlocks[subBlockId] = {
             id: subBlockId,
@@ -113,7 +113,7 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           }
         })
 
-        const outputs = resolveOutputType(blockConfig.workflow.outputs, subBlocks)
+        const outputs = resolveOutputType(blockConfig.outputs, subBlocks)
 
         const newState = {
           blocks: {

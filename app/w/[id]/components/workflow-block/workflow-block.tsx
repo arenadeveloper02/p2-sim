@@ -21,7 +21,6 @@ interface WorkflowBlockProps {
 // Combine both interfaces into a single component
 export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockProps>) {
   const { type, config, name } = data
-  const { toolbar, workflow } = config
 
   // State management
   const [isConnecting, setIsConnecting] = useState(false)
@@ -146,7 +145,7 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
     return rows
   }
 
-  const subBlockRows = groupSubBlocks(workflow.subBlocks, id)
+  const subBlockRows = groupSubBlocks(config.subBlocks, id)
 
   // Name editing handlers
   const handleNameClick = () => {
@@ -209,9 +208,9 @@ export function WorkflowBlock({ id, data, selected }: NodeProps<WorkflowBlockPro
         <div className="flex items-center gap-3">
           <div
             className="flex items-center justify-center w-7 h-7 rounded"
-            style={{ backgroundColor: isEnabled ? toolbar.bgColor : 'gray' }}
+            style={{ backgroundColor: isEnabled ? config.bgColor : 'gray' }}
           >
-            <toolbar.icon className="w-5 h-5 text-white" />
+            <config.icon className="w-5 h-5 text-white" />
           </div>
           {isEditing ? (
             <input

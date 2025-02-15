@@ -26,7 +26,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
     return getBlock(entry.blockType)
   }, [entry.blockType])
 
-  const BlockIcon = blockConfig?.toolbar.icon
+  const BlockIcon = blockConfig?.icon
 
   const statusIcon = entry.error ? (
     <AlertCircle className="h-4 w-4 text-destructive" />

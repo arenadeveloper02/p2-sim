@@ -2,30 +2,35 @@ import type { SVGProps } from 'react'
 import type { JSX } from 'react'
 import { ToolResponse } from '@/tools/types'
 
-// Basic type definitions for block components
+// Basic types
 export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
-export type BlockCategory = 'blocks' | 'tools'
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 export type PrimitiveValueType = 'string' | 'number' | 'boolean' | 'json' | 'any'
 
-// Sub-block configuration types
+// Block classification
+export type BlockCategory = 'blocks' | 'tools'
+
+// SubBlock types
 export type SubBlockType =
-  | 'short-input'
-  | 'long-input'
-  | 'dropdown'
-  | 'slider'
-  | 'table'
-  | 'code'
-  | 'switch'
-  | 'tool-input'
-  | 'checkbox-list'
-  | 'condition-input'
-  | 'eval-input'
+  | 'short-input' // Single line input
+  | 'long-input' // Multi-line input
+  | 'dropdown' // Select menu
+  | 'slider' // Range input
+  | 'table' // Grid layout
+  | 'code' // Code editor
+  | 'switch' // Toggle button
+  | 'tool-input' // Tool configuration
+  | 'checkbox-list' // Multiple selection
+  | 'condition-input' // Conditional logic
+  | 'eval-input' // Evaluation input
+
+// Component width setting
 export type SubBlockLayout = 'full' | 'half'
 
-// Tool output type utilities
+// Tool result extraction
 export type ExtractToolOutput<T> = T extends ToolResponse ? T['output'] : never
 
+// Convert tool output to types
 export type ToolOutputToValueType<T> =
   T extends Record<string, any>
     ? {
@@ -41,11 +46,12 @@ export type ToolOutputToValueType<T> =
       }
     : never
 
-// Block configuration interfaces and types
+// Block output definition
 export type BlockOutput =
   | PrimitiveValueType
   | { [key: string]: PrimitiveValueType | Record<string, any> }
 
+// Parameter validation rules
 export interface ParamConfig {
   type: ParamType
   required: boolean
@@ -64,6 +70,7 @@ export interface ParamConfig {
   }
 }
 
+// SubBlock configuration
 export interface SubBlockConfig {
   id: string
   title?: string
@@ -88,39 +95,38 @@ export interface SubBlockConfig {
   }
 }
 
+// Main block definition
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {
-  type: string
-  toolbar: {
-    title: string
-    description: string
-    bgColor: string
-    icon: BlockIcon
-    category: BlockCategory
-  }
+  id: string
+  name: string
+  description: string
+  category: BlockCategory
+  longDescription?: string
+  bgColor: string
+  icon: BlockIcon
+  subBlocks: SubBlockConfig[]
   tools: {
     access: string[]
     config?: {
       tool: (params: Record<string, any>) => string
     }
   }
-  workflow: {
-    subBlocks: SubBlockConfig[]
-    inputs: Record<string, ParamConfig>
-    outputs: {
-      response: {
-        type: ToolOutputToValueType<ExtractToolOutput<T>>
-        dependsOn?: {
-          subBlockId: string
-          condition: {
-            whenEmpty: ToolOutputToValueType<ExtractToolOutput<T>>
-            whenFilled: 'json'
-          }
+  inputs: Record<string, ParamConfig>
+  outputs: {
+    response: {
+      type: ToolOutputToValueType<ExtractToolOutput<T>>
+      dependsOn?: {
+        subBlockId: string
+        condition: {
+          whenEmpty: ToolOutputToValueType<ExtractToolOutput<T>>
+          whenFilled: 'json'
         }
       }
     }
   }
 }
 
+// Output configuration rules
 export interface OutputConfig {
   type: BlockOutput
   dependsOn?: {

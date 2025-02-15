@@ -23,8 +23,7 @@ export function Toolbar() {
     const query = searchQuery.toLowerCase()
     return getAllBlocks().filter(
       (block) =>
-        block.toolbar.title.toLowerCase().includes(query) ||
-        block.toolbar.description.toLowerCase().includes(query)
+        block.name.toLowerCase().includes(query) || block.description.toLowerCase().includes(query)
     )
   }, [searchQuery, activeTab])
 
@@ -70,7 +69,7 @@ export function Toolbar() {
           <div className="p-4 pb-20">
             <div className="flex flex-col gap-3">
               {blocks.map((block) => (
-                <ToolbarBlock key={block.type} config={block} />
+                <ToolbarBlock key={block.id} config={block} />
               ))}
             </div>
           </div>

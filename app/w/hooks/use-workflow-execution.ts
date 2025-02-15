@@ -67,7 +67,7 @@ export function useWorkflowExecution() {
             endedAt: log.endedAt,
             workflowId: activeWorkflowId,
             timestamp: log.startedAt,
-            blockName: log.blockTitle,
+            blockName: log.blockName,
             blockType: log.blockType,
           })
         })
@@ -76,7 +76,7 @@ export function useWorkflowExecution() {
       if (result.logs) {
         console.group('Detailed Block Logs')
         result.logs.forEach((log) => {
-          console.log(`Block ${log.blockTitle}: Success=${log.success}`, {
+          console.log(`Block ${log.blockName}: Success=${log.success}`, {
             output: log.output,
             error: log.error,
             durationMs: log.durationMs,
