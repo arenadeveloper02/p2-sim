@@ -23,7 +23,7 @@ interface AgentResponse extends ToolResponse {
 }
 
 export const AgentBlock: BlockConfig<AgentResponse> = {
-  id: 'agent',
+  type: 'agent',
   name: 'Agent',
   description: 'Build an agent',
   category: 'blocks',

@@ -3,7 +3,7 @@ import { ScrapeResponse } from '@/tools/firecrawl/scrape'
 import { BlockConfig } from '../types'
 
 export const FirecrawlBlock: BlockConfig<ScrapeResponse> = {
-  id: 'firecrawl',
+  type: 'firecrawl',
   name: 'Firecrawl',
   description: 'Scrape website content',
   category: 'tools',

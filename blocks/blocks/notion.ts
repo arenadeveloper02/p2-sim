@@ -3,7 +3,7 @@ import { NotionResponse } from '@/tools/notion/read'
 import { BlockConfig } from '../types'
 
 export const NotionBlock: BlockConfig<NotionResponse> = {
-  id: 'notion',
+  type: 'notion',
   name: 'Notion',
   description: 'Read and write to Notion pages and databases',
   category: 'tools',

@@ -15,7 +15,7 @@ const getTranslationPrompt = (
 Only return the translated text without any explanations or notes. The translation should be natural and fluent in ${targetLanguage || 'English'}.`
 
 export const TranslateBlock: BlockConfig<ChatResponse> = {
-  id: 'translate',
+  type: 'translate',
   name: 'Translate',
   description: 'Translate text to any language',
   category: 'tools',

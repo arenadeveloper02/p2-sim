@@ -2,7 +2,7 @@ import { StartIcon } from '@/components/icons'
 import { BlockConfig } from '../types'
 
 export const StarterBlock: BlockConfig = {
-  id: 'starter',
+  type: 'starter',
   name: 'Starter',
   description: 'Start workflow',
   category: 'blocks',

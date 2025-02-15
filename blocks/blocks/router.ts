@@ -86,7 +86,7 @@ Remember: Your response must be ONLY the block ID - no additional text, formatti
 }
 
 export const RouterBlock: BlockConfig<RouterResponse> = {
-  id: 'router',
+  type: 'router',
   name: 'Router',
   description: 'Route workflow',
   category: 'blocks',

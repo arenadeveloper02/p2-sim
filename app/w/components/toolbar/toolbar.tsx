@@ -69,7 +69,7 @@ export function Toolbar() {
           <div className="p-4 pb-20">
             <div className="flex flex-col gap-3">
               {blocks.map((block) => (
-                <ToolbarBlock key={block.id} config={block} />
+                <ToolbarBlock key={block.type} config={block} />
               ))}
             </div>
           </div>

@@ -3,7 +3,7 @@ import { SearchResponse } from '@/tools/serper/search'
 import { BlockConfig } from '../types'
 
 export const SerperBlock: BlockConfig<SearchResponse> = {
-  id: 'serper',
+  type: 'serper',
   name: 'Serper',
   description: 'Search the web using Serper',
   category: 'tools',

@@ -3,7 +3,7 @@ import { RequestResponse } from '@/tools/http/request'
 import { BlockConfig } from '../types'
 
 export const ApiBlock: BlockConfig<RequestResponse> = {
-  id: 'api',
+  type: 'api',
   name: 'API',
   description: 'Use any API',
   category: 'blocks',

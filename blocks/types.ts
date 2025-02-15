@@ -97,7 +97,7 @@ export interface SubBlockConfig {
 
 // Main block definition
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {
-  id: string
+  type: string
   name: string
   description: string
   category: BlockCategory

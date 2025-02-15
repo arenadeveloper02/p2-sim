@@ -6,7 +6,7 @@ export type ToolbarBlockProps = {
 
 export function ToolbarBlock({ config }: ToolbarBlockProps) {
   const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({ type: config.id }))
+    e.dataTransfer.setData('application/json', JSON.stringify({ type: config.type }))
     e.dataTransfer.effectAllowed = 'move'
   }
 
@@ -22,7 +22,7 @@ export function ToolbarBlock({ config }: ToolbarBlockProps) {
       >
         <config.icon
           className={`text-white transition-transform duration-200 group-hover:scale-110 ${
-            config.id === 'agent' ? 'w-[24px] h-[24px]' : 'w-[22px] h-[22px]'
+            config.type === 'agent' ? 'w-[24px] h-[24px]' : 'w-[22px] h-[22px]'
           }`}
         />
       </div>

@@ -3,7 +3,7 @@ import { ReadUrlResponse } from '@/tools/jina/reader'
 import { BlockConfig } from '../types'
 
 export const JinaBlock: BlockConfig<ReadUrlResponse> = {
-  id: 'jina',
+  type: 'jina',
   name: 'Jina',
   description: 'Convert website content into text',
   category: 'tools',

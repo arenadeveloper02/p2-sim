@@ -39,7 +39,7 @@ interface ToolParam {
 // Assumes the first tool in the access array is the tool to be used
 // TODO: Switch to getting tools instead of tool blocks once we switch to providers
 const getToolIdFromBlock = (blockType: string): string | undefined => {
-  const block = getAllBlocks().find((block) => block.id === blockType)
+  const block = getAllBlocks().find((block) => block.type === blockType)
   return block?.tools.access[0]
 }
 
@@ -71,14 +71,14 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
 
   const handleSelectTool = (toolBlock: (typeof toolBlocks)[0]) => {
     // Check if tool already exists
-    if (selectedTools.some((tool) => tool.type === toolBlock.id)) {
+    if (selectedTools.some((tool) => tool.type === toolBlock.type)) {
       setOpen(false)
       return
     }
 
-    const toolId = getToolIdFromBlock(toolBlock.id)
+    const toolId = getToolIdFromBlock(toolBlock.type)
     const newTool: StoredTool = {
-      type: toolBlock.id,
+      type: toolBlock.type,
       title: toolBlock.name,
       params: {},
       isExpanded: true,
@@ -155,7 +155,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                 <CommandGroup>
                   {toolBlocks.map((block) => (
                     <CommandItem
-                      key={block.id}
+                      key={block.type}
                       onSelect={() => handleSelectTool(block)}
                       className="flex items-center gap-2 cursor-pointer"
                     >
@@ -176,7 +176,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
       ) : (
         <div className="flex flex-wrap gap-2 min-h-[2.5rem] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background">
           {selectedTools.map((tool) => {
-            const toolBlock = toolBlocks.find((block) => block.id === tool.type)
+            const toolBlock = toolBlocks.find((block) => block.type === tool.type)
             const toolId = getToolIdFromBlock(tool.type)
             const requiredParams = toolId ? getRequiredToolParams(toolId) : []
 
@@ -269,7 +269,7 @@ export function ToolInput({ blockId, subBlockId }: ToolInputProps) {
                   <CommandGroup>
                     {toolBlocks.map((block) => (
                       <CommandItem
-                        key={block.id}
+                        key={block.type}
                         onSelect={() => handleSelectTool(block)}
                         className="flex items-center gap-2 cursor-pointer"
                       >

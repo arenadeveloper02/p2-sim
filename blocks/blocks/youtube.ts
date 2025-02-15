@@ -3,7 +3,7 @@ import { YouTubeSearchResponse } from '@/tools/youtube/search'
 import { BlockConfig } from '../types'
 
 export const YouTubeBlock: BlockConfig<YouTubeSearchResponse> = {
-  id: 'youtube',
+  type: 'youtube',
   name: 'YouTube',
   description: 'Search for videos on YouTube',
   category: 'tools',

@@ -3,7 +3,7 @@ import { SlackMessageResponse } from '@/tools/slack/message'
 import { BlockConfig } from '../types'
 
 export const SlackBlock: BlockConfig<SlackMessageResponse> = {
-  id: 'slack',
+  type: 'slack',
   name: 'Slack',
   description: 'Send a message to Slack',
   category: 'tools',

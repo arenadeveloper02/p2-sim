@@ -67,13 +67,13 @@ const blocks: Record<string, BlockConfig> = {
 }
 
 // Helper functions
-export const getBlock = (id: string): BlockConfig | undefined => blocks[id]
+export const getBlock = (type: string): BlockConfig | undefined => blocks[type]
 
 export const getBlocksByCategory = (category: 'blocks' | 'tools'): BlockConfig[] =>
   Object.values(blocks).filter((block) => block.category === category)
 
-export const getAllBlockIds = (): string[] => Object.keys(blocks)
+export const getAllBlockTypes = (): string[] => Object.keys(blocks)
 
-export const isValidBlockId = (id: string): id is string => id in blocks
+export const isValidBlockType = (type: string): type is string => type in blocks
 
 export const getAllBlocks = (): BlockConfig[] => Object.values(blocks)

@@ -3,7 +3,7 @@ import { CodeExecutionOutput } from '@/tools/function/execute'
 import { BlockConfig } from '../types'
 
 export const ConditionBlock: BlockConfig<CodeExecutionOutput> = {
-  id: 'condition',
+  type: 'condition',
   name: 'Condition',
   description: 'Add a condition',
   longDescription: 'Add a condition to the workflow',

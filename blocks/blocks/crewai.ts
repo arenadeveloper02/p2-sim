@@ -3,7 +3,7 @@ import { VisionResponse } from '@/tools/crewai/vision'
 import { BlockConfig } from '../types'
 
 export const CrewAIVisionBlock: BlockConfig<VisionResponse> = {
-  id: 'crewai_vision',
+  type: 'crewai_vision',
   name: 'CrewAI Vision',
   description: 'Analyze images with vision models',
   category: 'tools',

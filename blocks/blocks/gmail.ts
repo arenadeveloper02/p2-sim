@@ -3,7 +3,7 @@ import { GmailToolResponse } from '@/tools/gmail/types'
 import { BlockConfig } from '../types'
 
 export const GmailBlock: BlockConfig<GmailToolResponse> = {
-  id: 'gmail',
+  type: 'gmail',
   name: 'Gmail',
   description: 'Send, read, and search Gmail messages',
   category: 'tools',

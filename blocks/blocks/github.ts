@@ -3,7 +3,7 @@ import { GithubIcon } from '../../components/icons'
 import { BlockConfig } from '../types'
 
 export const GitHubBlock: BlockConfig<RepoInfoResponse> = {
-  id: 'github',
+  type: 'github',
   name: 'GitHub',
   description: 'Fetch GitHub repository',
   category: 'tools',

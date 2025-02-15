@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { format, formatDistanceToNow } from 'date-fns'
+import { format } from 'date-fns'
 import { AlertCircle, AlertTriangle, Calendar, CheckCircle2, Clock, Terminal } from 'lucide-react'
 import { ConsoleEntry as ConsoleEntryType } from '@/stores/console/types'
 import { getBlock } from '@/blocks'
@@ -12,14 +12,6 @@ interface ConsoleEntryProps {
 
 export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-
-  const timeAgo = useMemo(
-    () =>
-      formatDistanceToNow(new Date(entry.startedAt), {
-        addSuffix: true,
-      }),
-    [entry.startedAt]
-  )
 
   const blockConfig = useMemo(() => {
     if (!entry.blockType) return null

@@ -486,7 +486,7 @@ export class Executor {
         const formattedTools = Array.isArray(inputs.tools)
           ? inputs.tools
               .map((tool: any) => {
-                const blockFound = getAllBlocks().find((b: BlockConfig) => b.id === tool.type)
+                const blockFound = getAllBlocks().find((b: BlockConfig) => b.type === tool.type)
                 const toolId = blockFound?.tools.access[0]
                 if (!toolId) return null
 

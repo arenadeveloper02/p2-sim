@@ -56,7 +56,7 @@ const generateResponseFormat = (metrics: Metric[]) => ({
 })
 
 export const EvaluatorBlock: BlockConfig<EvaluatorResponse> = {
-  id: 'evaluator',
+  type: 'evaluator',
   name: 'Evaluator',
   description: 'Evaluate content',
   category: 'blocks',

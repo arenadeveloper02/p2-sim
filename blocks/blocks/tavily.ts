@@ -5,7 +5,7 @@ import { BlockConfig } from '../types'
 type TavilyResponse = TavilySearchResponse | TavilyExtractResponse
 
 export const TavilyBlock: BlockConfig<TavilyResponse> = {
-  id: 'tavily',
+  type: 'tavily',
   name: 'Tavily',
   description: 'Search and extract information using Tavily AI',
   category: 'tools',

@@ -5,7 +5,7 @@ import { BlockConfig } from '../types'
 type XResponse = XWriteResponse | XReadResponse | XSearchResponse | XUserResponse
 
 export const XBlock: BlockConfig<XResponse> = {
-  id: 'x',
+  type: 'x',
   name: 'X',
   description: 'Interact with X',
   category: 'tools',

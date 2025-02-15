@@ -3,7 +3,7 @@ import { CodeExecutionOutput } from '@/tools/function/execute'
 import { BlockConfig } from '../types'
 
 export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
-  id: 'function',
+  type: 'function',
   name: 'Function',
   description: 'Run custom logic',
   category: 'blocks',
