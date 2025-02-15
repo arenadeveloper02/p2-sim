@@ -14,13 +14,16 @@ import { resolveBlockReferences, resolveEnvVariables } from './utils'
  * Handles parallel execution, state management, and special block types.
  */
 export class Executor {
+  private loopIterations: Map<string, number>
+
   constructor(
     private workflow: SerializedWorkflow,
-    // Initial block states can be passed in (e.g., for resuming workflows or pre-populating data)
     private initialBlockStates: Record<string, BlockOutput> = {},
     private environmentVariables: Record<string, string> = {},
     private processedConditionBlocks: Set<string> = new Set<string>()
-  ) {}
+  ) {
+    this.loopIterations = new Map<string, number>()
+  }
 
   /**
    * Main entry point for workflow execution.
@@ -116,10 +119,9 @@ export class Executor {
   private async executeInParallel(context: ExecutionContext): Promise<BlockOutput> {
     const { blocks, connections } = this.workflow
 
-    // Track iterations per loop
-    const loopIterations = new Map<string, number>()
+    this.loopIterations.clear()
     for (const [loopId, loop] of Object.entries(this.workflow.loops || {})) {
-      loopIterations.set(loopId, 0)
+      this.loopIterations.set(loopId, 0)
     }
 
     // Build dependency graphs: inDegree (number of incoming edges) and adjacency (outgoing connections)
@@ -135,7 +137,6 @@ export class Executor {
 
     // Helper functions for identifying entry points and feedback edges
     const isEntryBlock = (blockId: string): boolean => {
-      const block = blocks.find((b) => b.id === blockId)
       const starterBlock = blocks.find((b) => b.metadata?.id === 'starter')
 
       // Entry blocks are those that are directly connected to the starter block
@@ -334,11 +335,10 @@ export class Executor {
         const executedLoopBlocks = layerResults.filter((blockId) => loopBlocks.has(blockId))
 
         if (executedLoopBlocks.length > 0) {
-          const iterations = loopIterations.get(loopId) || 0
+          const iterations = this.loopIterations.get(loopId) || 0
 
           // Only process if we haven't hit max iterations
-          if (iterations < loop.maxIterations - 1) {
-            // Removed the -1
+          if (iterations < loop.maxIterations) {
             // Check if any block in the loop has outgoing connections to other blocks in the loop
             const hasLoopConnection = executedLoopBlocks.some((blockId) => {
               const outgoingConns = connections.filter((conn) => conn.source === blockId)
@@ -351,19 +351,8 @@ export class Executor {
               return block?.metadata?.id === 'condition'
             })
 
-            if (hasLoopConnection) {
-              // Reset the loop blocks' inDegrees
-              resetLoopBlocksDegrees(loopId)
-              for (const blockId of loop.nodes) {
-                if (inDegree.get(blockId) === 0) {
-                  queue.push(blockId)
-                }
-              }
-
-              // Only increment counter when we complete a loop cycle
-              if (isLoopComplete) {
-                loopIterations.set(loopId, iterations + 1)
-              }
+            if (hasLoopConnection && isLoopComplete) {
+              this.loopIterations.set(loopId, iterations + 1)
             }
           }
         }
@@ -371,6 +360,48 @@ export class Executor {
     }
 
     return lastOutput
+  }
+
+  private resetLoopBlocksDegrees(
+    loopId: string,
+    inDegree: Map<string, number>,
+    isFeedbackEdge: (conn: (typeof this.workflow.connections)[number]) => boolean
+  ): void {
+    const loop = this.workflow.loops?.[loopId]
+    if (!loop) return
+
+    for (const blockId of loop.nodes) {
+      // For each block in the loop, recalculate its initial inDegree
+      let degree = 0
+      for (const conn of this.workflow.connections) {
+        if (conn.target === blockId && loop.nodes.includes(conn.source)) {
+          // Count non-feedback edges within the loop
+          if (!isFeedbackEdge(conn)) {
+            degree++
+          }
+        }
+      }
+      inDegree.set(blockId, degree)
+    }
+  }
+
+  private shouldResetLoop(loopId: string, blockId: string, chosenPath: string): boolean {
+    const loop = this.workflow.loops?.[loopId]
+    if (!loop) return false
+
+    const iterations = this.loopIterations.get(loopId) || 0
+    const block = this.workflow.blocks.find((b) => b.id === blockId)
+    const isConditionBlock = block?.metadata?.id === 'condition'
+
+    // Get execution order within the loop
+    const loopBlocks = loop.nodes
+    const sourceIndex = loopBlocks.indexOf(blockId)
+    const targetIndex = loopBlocks.indexOf(chosenPath)
+
+    // Check if this is a feedback path (points to an earlier block in the loop)
+    const isFeedbackPath = targetIndex < sourceIndex
+
+    return isConditionBlock && isFeedbackPath && iterations < loop.maxIterations
   }
 
   /**
@@ -1023,13 +1054,50 @@ export class Executor {
       const conditionId = conn.sourceHandle.replace('condition-', '')
       const activeCondition = activeConditionalPaths?.get(sourceBlockId)
 
-      // Only decrement if this connection matches the active condition path
+      // Only process if this is the active condition path
       if (activeCondition === conditionId) {
-        // Only decrement once per condition block, regardless of number of connections
         if (!this.processedConditionBlocks.has(`${sourceBlockId}-${conn.target}`)) {
+          // Check if this is a loop-back connection first
+          const loopId = Object.keys(this.workflow.loops || {}).find(
+            (id) =>
+              this.workflow.loops?.[id].nodes.includes(conn.target) &&
+              this.workflow.loops?.[id].nodes.includes(sourceBlockId)
+          )
+
+          if (loopId) {
+            const loop = this.workflow.loops?.[loopId]
+            if (loop) {
+              const sourceIndex = loop.nodes.indexOf(sourceBlockId)
+              const targetIndex = loop.nodes.indexOf(conn.target)
+              const isFeedbackPath = targetIndex < sourceIndex
+
+              if (isFeedbackPath) {
+                const iterations = this.loopIterations.get(loopId) || 0
+                if (iterations < loop.maxIterations) {
+                  // Reset all blocks in the loop
+                  this.resetLoopBlocksDegrees(loopId, inDegree, (conn) => {
+                    if (!conn.sourceHandle?.startsWith('condition-')) return false
+                    const loopBlocks = loop.nodes
+                    const srcIndex = loopBlocks.indexOf(conn.source)
+                    const tgtIndex = loopBlocks.indexOf(conn.target)
+                    return tgtIndex < srcIndex
+                  })
+
+                  // Add loop entry block to queue
+                  const entryBlock = loop.nodes[0]
+                  if (inDegree.get(entryBlock) === 0) {
+                    queue.push(entryBlock)
+                  }
+
+                  this.loopIterations.set(loopId, iterations + 1)
+                }
+              }
+            }
+          }
+
           const newDegree = (inDegree.get(conn.target) || 0) - 1
           inDegree.set(conn.target, newDegree)
-          if (newDegree === 0) {
+          if (newDegree === 0 && !queue.includes(conn.target)) {
             queue.push(conn.target)
           }
           this.processedConditionBlocks.add(`${sourceBlockId}-${conn.target}`)
