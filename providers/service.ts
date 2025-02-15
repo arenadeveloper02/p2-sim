@@ -93,8 +93,6 @@ export async function executeProviderRequest(
 
   try {
     while (iterationCount < MAX_ITERATIONS) {
-      console.log(`Processing iteration ${iterationCount + 1}`)
-
       // Transform the response using provider-specific logic
       const transformedResponse = provider.transformResponse(currentResponse)
       content = transformedResponse.content
@@ -251,8 +249,6 @@ export async function executeProviderRequest(
 }
 
 async function makeProxyRequest(providerId: string, payload: any, apiKey: string) {
-  console.log('Making proxy request for provider:', providerId)
-
   const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
@@ -273,6 +269,5 @@ async function makeProxyRequest(providerId: string, payload: any, apiKey: string
     throw new Error(data.error || 'Provider API error')
   }
 
-  console.log('Proxy request for provider:', providerId, 'completed')
   return data.output
 }
