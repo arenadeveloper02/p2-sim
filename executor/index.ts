@@ -32,6 +32,28 @@ export class Executor {
   async execute(workflowId: string): Promise<ExecutionResult> {
     const startTime = new Date()
 
+    // Validate that the workflow has a starter block
+    const starterBlock = this.workflow.blocks.find((block) => block.metadata?.id === 'starter')
+    if (!starterBlock) {
+      throw new Error('Workflow must have a starter block')
+    }
+
+    // Validate that the starter block is an entry point
+    const incomingToStarter = this.workflow.connections.filter(
+      (conn) => conn.target === starterBlock.id
+    )
+    if (incomingToStarter.length > 0) {
+      throw new Error('Starter block cannot have incoming connections')
+    }
+
+    // Validate that the starter block has outgoing connections
+    const outgoingFromStarter = this.workflow.connections.filter(
+      (conn) => conn.source === starterBlock.id
+    )
+    if (outgoingFromStarter.length === 0) {
+      throw new Error('Starter block must have at least one outgoing connection')
+    }
+
     // Build the execution context: holds outputs, logs, metadata, and environment variables.
     const context: ExecutionContext = {
       workflowId,
@@ -47,6 +69,9 @@ export class Executor {
     Object.entries(this.initialBlockStates).forEach(([blockId, output]) => {
       context.blockStates.set(blockId, output)
     })
+
+    // Add a dummy output for the starter block so downstream blocks can reference it if needed
+    context.blockStates.set(starterBlock.id, { response: { result: true } })
 
     try {
       // Execute all blocks in parallel layers (using topological sorting).
@@ -110,26 +135,17 @@ export class Executor {
 
     // Helper functions for identifying entry points and feedback edges
     const isEntryBlock = (blockId: string): boolean => {
-      const incomingEdges = connections.filter((conn) => conn.target === blockId)
-      const nonConditionalEdges = incomingEdges.filter(
-        (conn) => !conn.sourceHandle?.startsWith('condition-')
-      )
-      const conditionalEdges = incomingEdges.filter((conn) =>
-        conn.sourceHandle?.startsWith('condition-')
-      )
+      const block = blocks.find((b) => b.id === blockId)
+      const starterBlock = blocks.find((b) => b.metadata?.id === 'starter')
 
-      // Block is an entry point if:
-      // 1. It has no incoming edges, OR
-      // 2. All its incoming edges are conditional feedback loops
-      return (
-        nonConditionalEdges.length === 0 &&
-        conditionalEdges.every((conn) => {
-          const loop = Object.values(this.workflow.loops || {}).find(
-            (loop) => loop.nodes.includes(conn.source) && loop.nodes.includes(conn.target)
-          )
-          return !!loop
-        })
-      )
+      // Entry blocks are those that are directly connected to the starter block
+      if (starterBlock) {
+        const outgoingFromStarter = connections.filter(
+          (conn) => conn.source === starterBlock.id && conn.target === blockId
+        )
+        return outgoingFromStarter.length > 0
+      }
+      return false
     }
 
     const isFeedbackEdge = (conn: (typeof connections)[number]): boolean => {
@@ -217,11 +233,18 @@ export class Executor {
     const routerDecisions = new Map<string, string>()
     const activeConditionalPaths = new Map<string, string>()
 
-    // Initial queue: all blocks with zero inDegree
+    // Initial queue: blocks connected to starter
     const queue: string[] = []
-    for (const [blockId, degree] of inDegree) {
-      if (degree === 0) {
-        queue.push(blockId)
+    const starterBlock = blocks.find((b) => b.metadata?.id === 'starter')
+    if (starterBlock) {
+      const outgoingFromStarter = connections
+        .filter((conn) => conn.source === starterBlock.id)
+        .map((conn) => conn.target)
+
+      for (const targetId of outgoingFromStarter) {
+        // Set inDegree to 0 for blocks connected to starter
+        inDegree.set(targetId, 0)
+        queue.push(targetId)
       }
     }
 
@@ -236,7 +259,8 @@ export class Executor {
       // Filter executable blocks
       const executableBlocks = currentLayer.filter((blockId) => {
         const block = blocks.find((b) => b.id === blockId)
-        if (!block || block.enabled === false) return false
+        // Skip starter block execution
+        if (!block || block.enabled === false || block.metadata?.id === 'starter') return false
 
         // Check router decisions
         for (const [routerId, chosenPath] of routerDecisions) {
