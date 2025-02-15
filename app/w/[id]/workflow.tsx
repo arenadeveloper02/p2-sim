@@ -228,7 +228,7 @@ function WorkflowContent() {
 
         const id = crypto.randomUUID()
         const name = `${blockConfig.name} ${
-          Object.values(blocks).filter((b) => b.id === data.type).length + 1
+          Object.values(blocks).filter((b) => b.type === data.type).length + 1
         }`
 
         addBlock(id, data.type, name, position)
