@@ -423,8 +423,8 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     }
   }
 
-  // Check webhook indicator
-  const showWebhookIndicator = (isStarterBlock || isWebhookTriggerBlock) && blockWebhookStatus
+  // Check webhook indicator - only show for webhook trigger blocks, not starter blocks
+  const showWebhookIndicator = isWebhookTriggerBlock && blockWebhookStatus
 
   const getProviderName = (providerId: string): string => {
     const providers: Record<string, string> = {
@@ -556,7 +556,7 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
                 Disabled
               </Badge>
             )}
-            {/* Schedule indicator badge - displayed for starter blocks with active schedules */}
+            {/* Schedule indicator badge - displayed for schedule blocks with active schedules */}
             {shouldShowScheduleBadge && (
               <Tooltip>
                 <TooltipTrigger asChild>
