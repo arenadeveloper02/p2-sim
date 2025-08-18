@@ -11,23 +11,23 @@
 </p>
 
 <p align="center">
-  <strong>Sim</strong> is a lightweight, user-friendly platform for building AI agent workflows.
+  <strong>P2 Agents</strong> is a lightweight, user-friendly platform for building AI agent workflows.
 </p>
 
 <p align="center">
-  <img src="apps/sim/public/static/demo.gif" alt="Sim Demo" width="800"/>
+  <img src="apps/sim/public/static/demo.gif" alt="P2 Agents Demo" width="800"/>
 </p>
 
 ## Getting Started
 
-1. Use our [cloud-hosted version](https://sim.ai)
-2. Self-host using one of the methods below
+<!-- 1. Use our [cloud-hosted version](https://sim.ai) -->
+1. Self-host using one of the methods below
 
 ## Self-Hosting Options
 
 ### Option 1: NPM Package (Simplest)
 
-The easiest way to run Sim locally is using our [NPM package](https://www.npmjs.com/package/simstudio?activeTab=readme):
+The easiest way to run P2 Agents locally is using our [NPM package](https://www.npmjs.com/package/simstudio?activeTab=readme):
 
 ```bash
 npx simstudio
@@ -37,7 +37,7 @@ After running these commands, open [http://localhost:3000/](http://localhost:300
 
 #### Options
 
-- `-p, --port <port>`: Specify the port to run Sim on (default: 3000)
+- `-p, --port <port>`: Specify the port to run P2 Agents on (default: 3000)
 - `--no-pull`: Skip pulling the latest Docker images
 
 #### Requirements

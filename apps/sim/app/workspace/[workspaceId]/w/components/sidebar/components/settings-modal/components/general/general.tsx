@@ -110,7 +110,7 @@ export function General() {
             </>
           ) : (
             <>
-              <div className='flex items-center justify-between py-1'>
+              {/* <div className='flex items-center justify-between py-1'>
                 <div className='flex items-center gap-2'>
                   <Label htmlFor='theme-select' className='font-medium'>
                     Theme
@@ -130,7 +130,7 @@ export function General() {
                     <SelectItem value='dark'>Dark</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </div> */}
               <div className='flex items-center justify-between py-1'>
                 <div className='flex items-center gap-2'>
                   <Label htmlFor='auto-connect' className='font-medium'>

@@ -5,7 +5,7 @@
 /**
  * Default free credits (in dollars) for new users
  */
-export const DEFAULT_FREE_CREDITS = 10
+export const DEFAULT_FREE_CREDITS = 10000000
 
 /**
  * Base charge applied to every workflow execution

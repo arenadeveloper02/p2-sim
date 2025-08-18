@@ -23,12 +23,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       <DocsLayout
         tree={source.pageTree}
         nav={{
-          title: <div className='flex items-center font-medium'>Sim</div>,
+          title: <div className='flex items-center font-medium'>P2 Agents</div>,
         }}
         links={[
           {
-            text: 'Visit Sim',
-            url: 'https://sim.ai',
+            text: 'Visit P2 Agents',
+            url: 'https://agent.thearena.ai',
             icon: <ExternalLink className='h-4 w-4' />,
           },
         ]}

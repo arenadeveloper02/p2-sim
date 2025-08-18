@@ -15,11 +15,11 @@ export interface BrandConfig {
  * Default brand configuration values
  */
 const defaultConfig: BrandConfig = {
-  name: 'Sim',
+  name: 'P2 Agents',
   logoUrl: undefined,
   faviconUrl: '/favicon/favicon.ico',
   customCssUrl: undefined,
-  supportEmail: 'help@sim.ai',
+  supportEmail: 'arenadeveloper@position2.com',
   documentationUrl: undefined,
   termsUrl: undefined,
   privacyUrl: undefined,
