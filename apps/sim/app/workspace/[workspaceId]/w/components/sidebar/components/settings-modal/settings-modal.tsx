@@ -14,9 +14,9 @@ import {
   Credentials,
   EnvironmentVariables,
   General,
-  Privacy,
+  // Privacy,
   SettingsNavigation,
-  Subscription,
+  // Subscription,
   TeamManagement,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components'
 import { useOrganizationStore } from '@/stores/organization'

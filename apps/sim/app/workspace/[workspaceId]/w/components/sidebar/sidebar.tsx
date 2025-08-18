@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { HelpCircle, LibraryBig, ScrollText, Search, Settings, Shapes } from 'lucide-react'
+import { LibraryBig, ScrollText, Search, Settings, Shapes } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button, ScrollArea, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'

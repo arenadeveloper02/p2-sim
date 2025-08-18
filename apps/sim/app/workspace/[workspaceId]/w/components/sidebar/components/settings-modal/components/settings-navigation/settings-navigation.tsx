@@ -1,11 +1,11 @@
 import {
   Bot,
-  CreditCard,
+  // CreditCard,
   KeyRound,
   KeySquare,
   Lock,
   Settings,
-  Shield,
+  // Shield,
   UserCircle,
   Users,
 } from 'lucide-react'

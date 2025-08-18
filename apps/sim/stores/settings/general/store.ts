@@ -150,7 +150,7 @@ export const useGeneralStore = create<GeneralStore>()(
                 isAutoPanEnabled: data.autoPan ?? true, // Default to true if undefined
                 isConsoleExpandedByDefault: data.consoleExpandedByDefault ?? true, // Default to true if undefined
                 // theme: data.theme,
-                theme:'light',
+                theme: 'light' as const,
                 telemetryEnabled: data.telemetryEnabled,
                 isLoading: false,
               })
