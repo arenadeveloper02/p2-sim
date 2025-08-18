@@ -61,7 +61,8 @@ export async function GET() {
     return NextResponse.json(
       {
         data: {
-          theme: userSettings.theme,
+          // theme: userSettings.theme,
+          theme: 'light',
           autoConnect: userSettings.autoConnect,
           autoFillEnvVars: userSettings.autoFillEnvVars, // DEPRECATED: kept for backwards compatibility
           autoPan: userSettings.autoPan,

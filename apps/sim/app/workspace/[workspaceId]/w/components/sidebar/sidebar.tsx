@@ -943,12 +943,12 @@ export function Sidebar() {
       onClick: () => setShowSettings(true),
       tooltip: 'Settings',
     },
-    {
-      id: 'help',
-      icon: HelpCircle,
-      onClick: () => setShowHelp(true),
-      tooltip: 'Help',
-    },
+    // {
+    //   id: 'help',
+    //   icon: HelpCircle,
+    //   onClick: () => setShowHelp(true),
+    //   tooltip: 'Help',
+    // },
     {
       id: 'logs',
       icon: ScrollText,
@@ -1133,7 +1133,7 @@ export function Sidebar() {
         className='pointer-events-auto fixed left-4 z-50 w-56'
         style={{ bottom: `${navigationBottom}px` }}
       >
-        <div className='flex items-center gap-1'>
+        <div className='flex items-center gap-5'>
           {navigationItems.map((item) => (
             <NavigationItem key={item.id} item={item} />
           ))}

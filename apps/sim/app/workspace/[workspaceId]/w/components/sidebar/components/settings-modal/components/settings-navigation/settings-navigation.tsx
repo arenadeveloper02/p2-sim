@@ -25,9 +25,9 @@ interface SettingsNavigationProps {
       | 'account'
       | 'credentials'
       | 'apikeys'
-      | 'subscription'
+      // | 'subscription'
       | 'team'
-      | 'privacy'
+      // | 'privacy'
       | 'copilot'
   ) => void
   hasOrganization: boolean
@@ -81,22 +81,22 @@ const allNavigationItems: NavigationItem[] = [
     label: 'Copilot',
     icon: Bot,
   },
-  {
-    id: 'privacy',
-    label: 'Privacy',
-    icon: Shield,
-  },
-  {
-    id: 'subscription',
-    label: 'Subscription',
-    icon: CreditCard,
-    hideWhenBillingDisabled: true,
-  },
+  // {
+  //   id: 'privacy',
+  //   label: 'Privacy',
+  //   icon: Shield,
+  // },
+  // {
+  //   id: 'subscription',
+  //   label: 'Subscription',
+  //   icon: CreditCard,
+  //   hideWhenBillingDisabled: true,
+  // },
   {
     id: 'team',
     label: 'Team',
     icon: Users,
-    hideWhenBillingDisabled: true,
+    hideWhenBillingDisabled: false,
     requiresTeam: true,
   },
 ]
