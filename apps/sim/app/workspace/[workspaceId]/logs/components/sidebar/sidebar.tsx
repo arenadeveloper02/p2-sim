@@ -570,7 +570,9 @@ export function Sidebar({
                 )}
 
                 {/* Cost Information (moved to bottom) */}
-                {hasCostInfo && (
+                {
+                // hasCostInfo 
+                false && (
                   <div>
                     <h3 className='mb-1 font-medium text-muted-foreground text-xs'>
                       Cost Breakdown

@@ -2,13 +2,13 @@ import { useEffect } from 'react'
 import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+// import {
+//   Select,
+//   SelectContent,
+//   SelectItem,
+//   SelectTrigger,
+//   SelectValue,
+// } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -145,7 +145,7 @@ export function General() {
           </>
         ) : (
           <>
-            <div className='flex items-center justify-between'>
+            {/* <div className='flex items-center justify-between'>
               <div className='flex items-center gap-2'>
                 <Label htmlFor='theme-select' className='font-normal'>
                   Theme
@@ -178,9 +178,9 @@ export function General() {
                   >
                     Dark
                   </SelectItem>
-                </SelectContent>
+                </SelectContent>  
               </Select>
-            </div>
+            </div> */}
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-2'>
                 <Label htmlFor='auto-connect' className='font-normal'>

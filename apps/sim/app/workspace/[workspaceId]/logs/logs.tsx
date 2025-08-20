@@ -655,9 +655,9 @@ export default function Logs() {
                     <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
                       Workflow
                     </div>
-                    <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                    {/* <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
                       Cost
-                    </div>
+                    </div> */}
                     <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
                       Trigger
                     </div>
@@ -746,13 +746,13 @@ export default function Logs() {
                           </div>
 
                           {/* Cost */}
-                          <div>
+                          {/* <div>
                             <div className='font-medium text-muted-foreground text-xs'>
                               {typeof (log as any)?.cost?.total === 'number'
                                 ? `$${((log as any).cost.total as number).toFixed(4)}`
                                 : '—'}
                             </div>
-                          </div>
+                          </div> */}
 
                           {/* Trigger */}
                           <div className='hidden xl:block'>
