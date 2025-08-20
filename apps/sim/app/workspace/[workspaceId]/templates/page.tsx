@@ -9,7 +9,7 @@ export default async function TemplatesPage() {
   const session = await getSession()
 
   if (!session?.user?.id) {
-    return <div>Please log in to view templates</div>
+    return <div>Please log in to view agents</div>
   }
 
   // Fetch templates server-side with all necessary data

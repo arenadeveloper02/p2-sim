@@ -95,7 +95,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
 
   const handleCreateNew = () => {
     // TODO: Open create template modal or navigate to create page
-    logger.info('Create new template')
+    logger.info('Create new agent')
   }
 
   // Handle star change callback from template card
@@ -171,7 +171,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
       ? [
           {
             id: 'your',
-            label: 'Your templates',
+            label: 'Your agents',
             count: loading ? 8 : getTemplatesByCategory('your').length,
           },
         ]
@@ -212,10 +212,10 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
           {/* Header */}
           <div className='mb-6'>
             <h1 className='mb-2 font-sans font-semibold text-3xl text-foreground tracking-[0.01em]'>
-              Templates
+              Agents
             </h1>
             <p className='font-[350] font-sans text-muted-foreground text-sm leading-[1.5] tracking-[0.01em]'>
-              Grab a template and start building, or make
+              Grab a agent and start building, or make
               <br />
               one from scratch.
             </p>
@@ -226,7 +226,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             <div className='flex h-9 w-[460px] items-center gap-2 rounded-lg border bg-transparent pr-2 pl-3'>
               <Search className='h-4 w-4 text-muted-foreground' strokeWidth={2} />
               <Input
-                placeholder='Search templates...'
+                placeholder='Search agents...'
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className='flex-1 border-0 bg-transparent px-0 font-normal font-sans text-base text-foreground leading-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
@@ -254,7 +254,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
           {yourTemplatesCount > 0 || loading ? (
             <div ref={sectionRefs.your} className='mb-8'>
               <div className='mb-4 flex items-center gap-2'>
-                <h2 className='font-medium font-sans text-foreground text-lg'>Your templates</h2>
+                <h2 className='font-medium font-sans text-foreground text-lg'>Your agents</h2>
                 <ChevronRight className='h-4 w-4 text-muted-foreground' />
               </div>
 

@@ -965,10 +965,10 @@ export function Sidebar() {
       active: pathname === `/workspace/${workspaceId}/knowledge`,
     },
     {
-      id: 'templates',
+      id: 'agents',
       icon: Shapes,
       href: `/workspace/${workspaceId}/templates`,
-      tooltip: 'Templates',
+      tooltip: 'Agents',
       active: pathname === `/workspace/${workspaceId}/templates`,
     },
   ]
