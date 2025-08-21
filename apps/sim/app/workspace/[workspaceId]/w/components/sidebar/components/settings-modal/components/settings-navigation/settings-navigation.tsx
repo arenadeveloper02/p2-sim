@@ -1,10 +1,10 @@
 import {
   Bot,
-  CreditCard,
+  // CreditCard,
   FileCode,
   Key,
   Settings,
-  Shield,
+  // Shield,
   User,
   Users,
   Waypoints,
