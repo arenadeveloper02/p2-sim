@@ -129,21 +129,19 @@ const BlockContentDisplay = ({
         <div className='mb-2 flex space-x-1'>
           <button
             onClick={() => setActiveTab('output')}
-            className={`rounded-md px-3 py-1 text-xs transition-colors ${
-              activeTab === 'output'
+            className={`rounded-md px-3 py-1 text-xs transition-colors ${activeTab === 'output'
                 ? 'bg-secondary text-foreground'
                 : 'text-muted-foreground hover:bg-secondary/50'
-            }`}
+              }`}
           >
             Output
           </button>
           <button
             onClick={() => setActiveTab('input')}
-            className={`rounded-md px-3 py-1 text-xs transition-colors ${
-              activeTab === 'input'
+            className={`rounded-md px-3 py-1 text-xs transition-colors ${activeTab === 'input'
                 ? 'bg-secondary text-foreground'
                 : 'text-muted-foreground hover:bg-secondary/50'
-            }`}
+              }`}
           >
             Input
           </button>
@@ -343,9 +341,8 @@ export function Sidebar({
 
   return (
     <div
-      className={`fixed top-[148px] right-4 bottom-4 transform rounded-[14px] border bg-card shadow-xs ${
-        isOpen ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
-      } ${isDragging ? '' : 'transition-all duration-300 ease-in-out'} z-50 flex flex-col`}
+      className={`fixed top-[148px] right-4 bottom-4 transform rounded-[14px] border bg-card shadow-xs ${isOpen ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
+        } ${isDragging ? '' : 'transition-all duration-300 ease-in-out'} z-50 flex flex-col`}
       style={{ width: `${width}px`, minWidth: `${MIN_WIDTH}px` }}
     >
       <div
@@ -570,9 +567,7 @@ export function Sidebar({
                 )}
 
                 {/* Cost Information (moved to bottom) */}
-                {
-                // hasCostInfo 
-                false && (
+                {false && (
                   <div>
                     <h3 className='mb-1 font-medium text-muted-foreground text-xs'>
                       Cost Breakdown
