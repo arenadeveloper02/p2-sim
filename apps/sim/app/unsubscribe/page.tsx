@@ -1,5 +1,10 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'default-no-store'
+export const runtime = 'nodejs'
+
 import { Suspense, useEffect, useState } from 'react'
 import { CheckCircle, Heart, Info, Loader2, XCircle } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
