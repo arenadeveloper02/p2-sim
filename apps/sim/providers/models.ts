@@ -34,6 +34,12 @@ export interface ModelCapabilities {
   }
   toolUsageControl?: boolean
   computerUse?: boolean
+  reasoningEffort?: {
+    values: string[]
+  }
+  verbosity?: {
+    values: string[]
+  }
 }
 
 export interface ModelDefinition {
@@ -87,6 +93,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -99,6 +111,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -111,6 +129,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -245,6 +269,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -257,6 +287,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -269,6 +305,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           toolUsageControl: true,
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -855,4 +897,34 @@ export const EMBEDDING_MODEL_PRICING: Record<string, ModelPricing> = {
  */
 export function getEmbeddingModelPricing(modelId: string): ModelPricing | null {
   return EMBEDDING_MODEL_PRICING[modelId] || null
+}
+
+/**
+ * Get all models that support reasoning effort
+ */
+export function getModelsWithReasoningEffort(): string[] {
+  const models: string[] = []
+  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+    for (const model of provider.models) {
+      if (model.capabilities.reasoningEffort) {
+        models.push(model.id)
+      }
+    }
+  }
+  return models
+}
+
+/**
+ * Get all models that support verbosity
+ */
+export function getModelsWithVerbosity(): string[] {
+  const models: string[] = []
+  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+    for (const model of provider.models) {
+      if (model.capabilities.verbosity) {
+        models.push(model.id)
+      }
+    }
+  }
+  return models
 }
