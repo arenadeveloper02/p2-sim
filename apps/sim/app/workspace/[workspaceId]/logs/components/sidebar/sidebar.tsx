@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
+// import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { redactApiKeys } from '@/lib/utils'
 import { FrozenCanvasModal } from '@/app/workspace/[workspaceId]/logs/components/frozen-canvas/frozen-canvas-modal'
 import { FileDownload } from '@/app/workspace/[workspaceId]/logs/components/sidebar/components/file-download'
@@ -14,7 +14,7 @@ import LogMarkdownRenderer from '@/app/workspace/[workspaceId]/logs/components/s
 import { ToolCallsDisplay } from '@/app/workspace/[workspaceId]/logs/components/tool-calls/tool-calls-display'
 import { TraceSpansDisplay } from '@/app/workspace/[workspaceId]/logs/components/trace-spans/trace-spans-display'
 import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils/format-date'
-import { formatCost } from '@/providers/utils'
+// import { formatCost } from '@/providers/utils'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 
 interface LogSidebarProps {
