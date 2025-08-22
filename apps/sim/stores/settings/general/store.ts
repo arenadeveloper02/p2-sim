@@ -22,7 +22,7 @@ export const useGeneralStore = create<GeneralStore>()(
           isAutoPanEnabled: true,
           isConsoleExpandedByDefault: true,
           isDebugModeEnabled: false,
-          theme: 'system' as const, // Keep for compatibility but not used
+          theme: 'light' as const, // Keep for compatibility but not used
           telemetryEnabled: true,
           isLoading: false,
           error: null,
