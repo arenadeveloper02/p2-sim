@@ -46,12 +46,12 @@ const nodeTypes: NodeTypes = {
 const features: FeaturesArray = [
   {
     icon: AgentIcon,
-    color: 'bg-violet-500/5',
+    color: '#F3F8FE',
     name: 'Agent 1',
     feature: {
       icon: (
-        <div className='flex h-8 w-8 items-center justify-center rounded bg-[#7c3aed]'>
-          <AgentIcon className='h-5 w-5 text-white' />
+        <div className='flex h-8 w-8 items-center justify-center rounded'>
+          <AgentIcon className='h-5 w-5 text-[#F3F8FE]' />
         </div>
       ),
       title: 'Agents',

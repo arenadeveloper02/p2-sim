@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { LoadingAgent } from '@/components/ui/loading-agent'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { LoadingAgent2 } from '@/components/ui/loading-agent-arena'
 
 export default function WorkflowsPage() {
   const router = useRouter()
@@ -55,7 +55,7 @@ export default function WorkflowsPage() {
     <div className='flex h-screen items-center justify-center'>
       <div className='text-center'>
         <div className='mx-auto mb-4'>
-          <LoadingAgent size='lg' />
+          <LoadingAgent2 size='lg' />        
         </div>
       </div>
     </div>
