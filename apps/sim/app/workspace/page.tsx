@@ -2,9 +2,9 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { LoadingAgent } from '@/components/ui/loading-agent'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
+import { LoadingAgent2 } from '@/components/ui/loading-agent-arena'
 
 const logger = createLogger('WorkspacePage')
 
@@ -119,7 +119,7 @@ export default function WorkspacePage() {
     return (
       <div className='flex h-screen w-full items-center justify-center'>
         <div className='flex flex-col items-center justify-center text-center align-middle'>
-          <LoadingAgent size='lg' />
+          <LoadingAgent2 size='lg' />          
         </div>
       </div>
     )
