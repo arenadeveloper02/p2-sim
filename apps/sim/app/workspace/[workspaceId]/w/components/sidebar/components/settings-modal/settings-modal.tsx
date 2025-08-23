@@ -36,9 +36,9 @@ type SettingsSection =
   | 'account'
   | 'credentials'
   | 'apikeys'
-  // | 'subscription'
+  | 'subscription'
   | 'team'
-  // | 'privacy'
+  | 'privacy'
   | 'copilot'
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
