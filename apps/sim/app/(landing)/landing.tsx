@@ -35,20 +35,11 @@ export default function Landing() {
           body: JSON.stringify(body),
         });
 
-        // Check if the response is successful
-        if (!response.ok) {
-          throw new Error(
-            `HTTP error! Status: ${response.status}, ${response.statusText}`
-          );
-        }
-
         // Parse the response (if the server returns JSON)
         const data = await response.json();
         console.log('Login successful:', data);
         return data; // Optionally return the response data for further processing
       } catch (error) {
-        //console.error('Login failed:', error.message);
-        throw error; // Re-throw the error for the caller to handle if needed
       } finally {
         setLoading(false);
       }
