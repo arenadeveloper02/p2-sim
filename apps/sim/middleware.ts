@@ -1,11 +1,11 @@
-import { getSessionCookie } from 'better-auth/cookies';
-import { type NextRequest, NextResponse } from 'next/server';
-import { isDev, isHosted } from './lib/environment';
-import { createLogger } from './lib/logs/console/logger';
-import { generateRuntimeCSP } from './lib/security/csp';
-import { getBaseDomain } from './lib/urls/utils';
+import { getSessionCookie } from 'better-auth/cookies'
+import { type NextRequest, NextResponse } from 'next/server'
+import { isDev, isHosted } from './lib/environment'
+import { createLogger } from './lib/logs/console/logger'
+import { generateRuntimeCSP } from './lib/security/csp'
+import { getBaseDomain } from './lib/urls/utils'
 
-const logger = createLogger('Middleware');
+const logger = createLogger('Middleware')
 
 const SUSPICIOUS_UA_PATTERNS = [
   /^\s*$/, // Empty user agents
@@ -13,77 +13,74 @@ const SUSPICIOUS_UA_PATTERNS = [
   /<\s*script/i, // Potential XSS payloads
   /^\(\)\s*{/, // Command execution attempt
   /\b(sqlmap|nikto|gobuster|dirb|nmap)\b/i, // Known scanning tools
-];
+]
 
-const BASE_DOMAIN = getBaseDomain();
+const BASE_DOMAIN = getBaseDomain()
 
 export async function middleware(request: NextRequest) {
-  let email = request.cookies.get('email')?.value;
-  console.log(request.cookies);
+  const email = request.cookies.get('email')?.value
+  console.log(request.cookies)
   // Check for active session
-  const sessionCookie = getSessionCookie(request);
-  const hasActiveSession = !!sessionCookie;
+  const sessionCookie = getSessionCookie(request)
+  const hasActiveSession = !!sessionCookie
 
-  const url = request.nextUrl;
-  const hostname = request.headers.get('host') || '';
+  const url = request.nextUrl
+  const hostname = request.headers.get('host') || ''
 
   // ✅ If user is on /login and already has email cookie → redirect to /workspace
   if (url.pathname === '/login' && email) {
-    return NextResponse.redirect(new URL('/workspace', request.url));
+    return NextResponse.redirect(new URL('/workspace', request.url))
   }
 
   if (email) {
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
   // Extract subdomain - handle nested subdomains for any domain
   const isCustomDomain = (() => {
     // Standard check for non-base domains
     if (hostname === BASE_DOMAIN || hostname.startsWith('www.')) {
-      return false;
+      return false
     }
 
     // Extract root domain from BASE_DOMAIN (e.g., "sim.ai" from "staging.sim.ai")
-    const baseParts = BASE_DOMAIN.split('.');
+    const baseParts = BASE_DOMAIN.split('.')
     const rootDomain = isDev
       ? 'localhost'
       : baseParts.length >= 2
-        ? baseParts.slice(-2).join('.') // Last 2 parts: ["simstudio", "ai"] -> "sim.ai"
-        : BASE_DOMAIN;
+        ? baseParts
+            .slice(-2)
+            .join('.') // Last 2 parts: ["simstudio", "ai"] -> "sim.ai"
+        : BASE_DOMAIN
 
     // Check if hostname is under the same root domain
     if (!hostname.includes(rootDomain)) {
-      return false;
+      return false
     }
 
     // For nested subdomain environments: handle cases like myapp.staging.example.com
-    const hostParts = hostname.split('.');
-    const basePartCount = BASE_DOMAIN.split('.').length;
+    const hostParts = hostname.split('.')
+    const basePartCount = BASE_DOMAIN.split('.').length
 
     // If hostname has more parts than base domain, it's a nested subdomain
     if (hostParts.length > basePartCount) {
-      return true;
+      return true
     }
 
     // For single-level subdomains: regular subdomain logic
-    return hostname !== BASE_DOMAIN;
-  })();
+    return hostname !== BASE_DOMAIN
+  })()
 
-  const subdomain = isCustomDomain ? hostname.split('.')[0] : null;
+  const subdomain = isCustomDomain ? hostname.split('.')[0] : null
 
   // Handle chat subdomains
   if (subdomain && isCustomDomain) {
-    if (
-      url.pathname.startsWith('/api/chat/') ||
-      url.pathname.startsWith('/api/proxy/')
-    ) {
-      return NextResponse.next();
+    if (url.pathname.startsWith('/api/chat/') || url.pathname.startsWith('/api/proxy/')) {
+      return NextResponse.next()
     }
 
     // Rewrite to the chat page but preserve the URL in browser
-    return NextResponse.rewrite(
-      new URL(`/chat/${subdomain}${url.pathname}`, request.url)
-    );
+    return NextResponse.rewrite(new URL(`/chat/${subdomain}${url.pathname}`, request.url))
   }
 
   // For self-hosted deployments, redirect root path based on session status
@@ -91,43 +88,41 @@ export async function middleware(request: NextRequest) {
   if (!isHosted && !isCustomDomain && url.pathname === '/') {
     if (hasActiveSession) {
       // User has active session, redirect to workspace
-      return NextResponse.redirect(new URL('/workspace', request.url));
+      return NextResponse.redirect(new URL('/workspace', request.url))
     }
     // User doesn't have active session, redirect to login
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // Legacy redirect: /w -> /workspace (will be handled by workspace layout)
   if (url.pathname === '/w' || url.pathname.startsWith('/w/')) {
     // Extract workflow ID if present
-    const pathParts = url.pathname.split('/');
+    const pathParts = url.pathname.split('/')
     if (pathParts.length >= 3 && pathParts[1] === 'w') {
-      const workflowId = pathParts[2];
+      const workflowId = pathParts[2]
       // Redirect old workflow URLs to new format
       // We'll need to resolve the workspace ID for this workflow
       return NextResponse.redirect(
         new URL(`/workspace?redirect_workflow=${workflowId}`, request.url)
-      );
+      )
     }
     // Simple /w redirect to workspace root
-    return NextResponse.redirect(new URL('/workspace', request.url));
+    return NextResponse.redirect(new URL('/workspace', request.url))
   }
 
   // Handle protected routes that require authentication
   if (url.pathname.startsWith('/workspace')) {
     if (!hasActiveSession) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      return NextResponse.redirect(new URL('/login', request.url))
     }
 
     // Check if user needs email verification
-    const requiresVerification = request.cookies.get(
-      'requiresEmailVerification'
-    );
+    const requiresVerification = request.cookies.get('requiresEmailVerification')
     if (requiresVerification?.value === 'true') {
-      return NextResponse.redirect(new URL('/verify', request.url));
+      return NextResponse.redirect(new URL('/verify', request.url))
     }
 
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
   // Allow access to invitation links
@@ -138,42 +133,35 @@ export async function middleware(request: NextRequest) {
       !request.nextUrl.pathname.endsWith('/signup') &&
       !request.nextUrl.search.includes('callbackUrl')
     ) {
-      const token = request.nextUrl.searchParams.get('token');
-      const inviteId = request.nextUrl.pathname.split('/').pop();
+      const token = request.nextUrl.searchParams.get('token')
+      const inviteId = request.nextUrl.pathname.split('/').pop()
       const callbackParam = encodeURIComponent(
         `/invite/${inviteId}${token ? `?token=${token}` : ''}`
-      );
+      )
       return NextResponse.redirect(
-        new URL(
-          `/login?callbackUrl=${callbackParam}&invite_flow=true`,
-          request.url
-        )
-      );
+        new URL(`/login?callbackUrl=${callbackParam}&invite_flow=true`, request.url)
+      )
     }
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
   // Allow access to workspace invitation API endpoint
   if (request.nextUrl.pathname.startsWith('/api/workspaces/invitations')) {
     if (request.nextUrl.pathname.includes('/accept') && !hasActiveSession) {
-      const token = request.nextUrl.searchParams.get('token');
+      const token = request.nextUrl.searchParams.get('token')
       if (token) {
-        return NextResponse.redirect(
-          new URL(`/invite/${token}?token=${token}`, request.url)
-        );
+        return NextResponse.redirect(new URL(`/invite/${token}?token=${token}`, request.url))
       }
     }
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
-  const userAgent = request.headers.get('user-agent') || '';
+  const userAgent = request.headers.get('user-agent') || ''
 
   // Check if this is a webhook endpoint that should be exempt from User-Agent validation
-  const isWebhookEndpoint = url.pathname.startsWith('/api/webhooks/trigger/');
+  const isWebhookEndpoint = url.pathname.startsWith('/api/webhooks/trigger/')
 
-  const isSuspicious = SUSPICIOUS_UA_PATTERNS.some((pattern) =>
-    pattern.test(userAgent)
-  );
+  const isSuspicious = SUSPICIOUS_UA_PATTERNS.some((pattern) => pattern.test(userAgent))
 
   // Block suspicious requests, but exempt webhook endpoints from User-Agent validation only
   if (isSuspicious && !isWebhookEndpoint) {
@@ -182,10 +170,8 @@ export async function middleware(request: NextRequest) {
       ip: request.headers.get('x-forwarded-for') || 'unknown',
       url: request.url,
       method: request.method,
-      pattern: SUSPICIOUS_UA_PATTERNS.find((pattern) =>
-        pattern.test(userAgent)
-      )?.toString(),
-    });
+      pattern: SUSPICIOUS_UA_PATTERNS.find((pattern) => pattern.test(userAgent))?.toString(),
+    })
     return new NextResponse(null, {
       status: 403,
       statusText: 'Forbidden',
@@ -194,16 +180,15 @@ export async function middleware(request: NextRequest) {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'Content-Security-Policy': "default-src 'none'",
-        'Cache-Control':
-          'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         Pragma: 'no-cache',
         Expires: '0',
       },
-    });
+    })
   }
 
-  const response = NextResponse.next();
-  response.headers.set('Vary', 'User-Agent');
+  const response = NextResponse.next()
+  response.headers.set('Vary', 'User-Agent')
 
   // Generate runtime CSP for main application routes that need dynamic environment variables
   if (
@@ -211,10 +196,10 @@ export async function middleware(request: NextRequest) {
     url.pathname.startsWith('/chat') ||
     url.pathname === '/'
   ) {
-    response.headers.set('Content-Security-Policy', generateRuntimeCSP());
+    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
   }
 
-  return response;
+  return response
 }
 
 // Update matcher to include invitation routes and root path
@@ -229,4 +214,4 @@ export const config = {
     '/invite/:path*', // Match invitation routes
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
-};
+}
