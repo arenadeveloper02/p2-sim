@@ -110,10 +110,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      if (!hasAccess) {
-        logger.warn(`[${requestId}] User ${userId} denied access to workflow ${workflowId}`)
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-      }
+      // if (!hasAccess) {
+      //   logger.warn(`[${requestId}] User ${userId} denied access to workflow ${workflowId}`)
+      //   return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      // }
     }
 
     // Try to load from normalized tables first

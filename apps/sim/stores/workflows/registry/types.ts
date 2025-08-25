@@ -59,6 +59,7 @@ export interface WorkflowRegistryActions {
     apiKey?: string
   ) => void
   setWorkflowNeedsRedeployment: (workflowId: string | null, needsRedeployment: boolean) => void
+  loadWorkflowForReview: (id: string) => Promise<void>
 }
 
 export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions

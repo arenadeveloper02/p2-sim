@@ -704,7 +704,7 @@ export function SearchModal({
               {(loading || filteredTemplates.length > 0) && (
                 <div>
                   <h3 className='mb-3 ml-6 font-normal font-sans text-muted-foreground text-sm leading-none tracking-normal'>
-                    Templates
+                    Agents
                   </h3>
                   <div
                     ref={(el) => {

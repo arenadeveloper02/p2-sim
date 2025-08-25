@@ -11,7 +11,9 @@ import {
   TemplateCardSkeleton,
 } from '@/app/workspace/[workspaceId]/templates/components/template-card'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
-
+import { Button } from '@/components/ui/button'
+import ApprovalList from './approval'
+import WorkFlow from '@/app/workspace/[workspaceId]/w/[workflowId]/workflow'
 const logger = createLogger('TemplatesPage')
 
 // Shared categories definition
@@ -57,6 +59,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
   const [activeTab, setActiveTab] = useState('your')
   const [templates, setTemplates] = useState<Template[]>(initialTemplates)
   const [loading, setLoading] = useState(false)
+  const [openApprovalList, setOpenApprovalList] = useState(false)
 
   // Refs for scrolling to sections
   const sectionRefs = {
@@ -211,8 +214,21 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
         <div className='flex flex-1 flex-col overflow-auto p-6'>
           {/* Header */}
           <div className='mb-6'>
-            <h1 className='mb-2 font-sans font-semibold text-3xl text-foreground tracking-[0.01em]'>
-              Agents
+            <h1 className='flex mb-2 font-sans font-semibold text-3xl text-foreground tracking-[0.01em]'>
+              <div className='flex-1'>Agents</div>
+              <div className='justify-end'>
+                <Button
+                  variant='outline'
+                  className={openApprovalList ? '' : 'w-64'}
+                  disabled={false}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpenApprovalList(!openApprovalList)
+                  }}
+                >
+                  {openApprovalList ? 'x' : 'Approval List'}
+                </Button>
+              </div>
             </h1>
             <p className='font-[350] font-sans text-muted-foreground text-sm leading-[1.5] tracking-[0.01em]'>
               Grab a agent and start building, or make
@@ -220,155 +236,171 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
               one from scratch.
             </p>
           </div>
-
-          {/* Search and Create New */}
-          <div className='mb-6 flex items-center justify-between'>
-            <div className='flex h-9 w-[460px] items-center gap-2 rounded-lg border bg-transparent pr-2 pl-3'>
-              <Search className='h-4 w-4 text-muted-foreground' strokeWidth={2} />
-              <Input
-                placeholder='Search agents...'
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className='flex-1 border-0 bg-transparent px-0 font-normal font-sans text-base text-foreground leading-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
-              />
-            </div>
-            {/* <Button
+          {openApprovalList && <ApprovalList />}
+          {!openApprovalList && (
+            <>
+              {/* Search and Create New */}
+              <div className='mb-6 flex items-center justify-between'>
+                <div className='flex h-9 w-[460px] items-center gap-2 rounded-lg border bg-transparent pr-2 pl-3'>
+                  <Search className='h-4 w-4 text-muted-foreground' strokeWidth={2} />
+                  <Input
+                    placeholder='Search agents...'
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className='flex-1 border-0 bg-transparent px-0 font-normal font-sans text-base text-foreground leading-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
+                  />
+                </div>
+                {/* <Button
               onClick={handleCreateNew}
               className='flex h-9 items-center gap-2 rounded-lg bg-[var(--brand-primary-hex)] px-4 py-2 font-normal font-sans text-sm text-white hover:bg-[#601EE0]'
             >
               <Plus className='h-4 w-4' />
               Create New
             </Button> */}
-          </div>
-
-          {/* Navigation */}
-          <div className='mb-6'>
-            <NavigationTabs
-              tabs={navigationTabs}
-              activeTab={activeTab}
-              onTabClick={handleTabClick}
-            />
-          </div>
-
-          {/* Your Templates Section */}
-          {yourTemplatesCount > 0 || loading ? (
-            <div ref={sectionRefs.your} className='mb-8'>
-              <div className='mb-4 flex items-center gap-2'>
-                <h2 className='font-medium font-sans text-foreground text-lg'>Your agents</h2>
-                <ChevronRight className='h-4 w-4 text-muted-foreground' />
               </div>
 
-              <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-                {loading
-                  ? renderSkeletonCards()
-                  : getTemplatesByCategory('your').map((template) => renderTemplateCard(template))}
+              {/* Navigation */}
+              <div className='mb-6'>
+                <NavigationTabs
+                  tabs={navigationTabs}
+                  activeTab={activeTab}
+                  onTabClick={handleTabClick}
+                />
               </div>
-            </div>
-          ) : null}
 
-          {/* Recent Templates Section */}
-          <div ref={sectionRefs.recent} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Recent</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Your Templates Section */}
+              {yourTemplatesCount > 0 || loading ? (
+                <div ref={sectionRefs.your} className='mb-8'>
+                  <div className='mb-4 flex items-center gap-2'>
+                    <h2 className='font-medium font-sans text-foreground text-lg'>Your agents</h2>
+                    <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                  </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('recent').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
+                  <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                    {loading
+                      ? renderSkeletonCards()
+                      : getTemplatesByCategory('your').map((template) =>
+                          renderTemplateCard(template)
+                        )}
+                  </div>
+                </div>
+              ) : null}
 
-          {/* Marketing Section */}
-          <div ref={sectionRefs.marketing} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Marketing</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Recent Templates Section */}
+              <div ref={sectionRefs.recent} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Recent</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('marketing').map((template) =>
-                    renderTemplateCard(template)
-                  )}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('recent').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
 
-          {/* Sales Section */}
-          <div ref={sectionRefs.sales} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Sales</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Marketing Section */}
+              <div ref={sectionRefs.marketing} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Marketing</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('sales').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('marketing').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
 
-          {/* Finance Section */}
-          <div ref={sectionRefs.finance} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Finance</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Sales Section */}
+              <div ref={sectionRefs.sales} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Sales</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('finance').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('sales').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
 
-          {/* Support Section */}
-          <div ref={sectionRefs.support} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Support</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Finance Section */}
+              <div ref={sectionRefs.finance} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Finance</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('support').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('finance').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
 
-          {/* Artificial Intelligence Section */}
-          <div ref={sectionRefs['artificial-intelligence']} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>
-                Artificial Intelligence
-              </h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Support Section */}
+              <div ref={sectionRefs.support} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Support</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('artificial-intelligence').map((template) =>
-                    renderTemplateCard(template)
-                  )}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('support').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
 
-          {/* Other Section */}
-          <div ref={sectionRefs.other} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Other</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
+              {/* Artificial Intelligence Section */}
+              <div ref={sectionRefs['artificial-intelligence']} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>
+                    Artificial Intelligence
+                  </h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
 
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('other').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('artificial-intelligence').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
+
+              {/* Other Section */}
+              <div ref={sectionRefs.other} className='mb-8'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <h2 className='font-medium font-sans text-foreground text-lg'>Other</h2>
+                  <ChevronRight className='h-4 w-4 text-muted-foreground' />
+                </div>
+
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+                  {loading
+                    ? renderSkeletonCards()
+                    : getTemplatesByCategory('other').map((template) =>
+                        renderTemplateCard(template)
+                      )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

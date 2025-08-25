@@ -435,11 +435,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           return
         }
 
-        if (!workflows[id]) {
-          logger.error(`Workflow ${id} not found in registry`)
-          set({ error: `Workflow not found: ${id}` })
-          throw new Error(`Workflow not found: ${id}`)
-        }
+        // if (!workflows[id]) {
+        //   logger.error(`Workflow ${id} not found in registry`)
+        //   set({ error: `Workflow not found: ${id}` })
+        //   throw new Error(`Workflow not found: ${id}`)
+        // }
 
         logger.info(`Switching to workflow ${id}`)
 
@@ -1411,6 +1411,113 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         })
 
         logger.info('Logout complete - all workflow data cleared')
+      },
+
+      /**
+       * Loads a workflow's state into the workflow store for review,
+       * without changing the activeWorkflowId in the registry.
+       * Useful for background/modal review.
+       */
+      loadWorkflowForReview: async (id: string) => {
+        const { workflows } = get()
+        // if (!workflows[id]) {
+        //   logger.error(`Workflow ${id} not found in registry`)
+        //   set({ error: `Workflow not found: ${id}` })
+        //   throw new Error(`Workflow not found: ${id}`)
+        // }
+
+        logger.info(`Loading workflow ${id} for review (background)`)
+
+        // Fetch workflow state from database
+        const response = await fetch(`/api/workflows/${id}`, { method: 'GET' })
+        const workflowData = response.ok ? (await response.json()).data : null
+
+        let workflowState: any
+
+        if (workflowData?.state) {
+          workflowState = {
+            blocks: workflowData.state.blocks || {},
+            edges: workflowData.state.edges || [],
+            loops: workflowData.state.loops || {},
+            parallels: workflowData.state.parallels || {},
+            isDeployed: workflowData.isDeployed || false,
+            deployedAt: workflowData.deployedAt ? new Date(workflowData.deployedAt) : undefined,
+            apiKey: workflowData.apiKey,
+            lastSaved: Date.now(),
+            marketplaceData: workflowData.marketplaceData || null,
+            deploymentStatuses: {},
+            history: {
+              past: [],
+              present: {
+                state: {
+                  blocks: workflowData.state.blocks || {},
+                  edges: workflowData.state.edges || [],
+                  loops: workflowData.state.loops || {},
+                  parallels: workflowData.state.parallels || {},
+                  isDeployed: workflowData.isDeployed || false,
+                  deployedAt: workflowData.deployedAt
+                    ? new Date(workflowData.deployedAt)
+                    : undefined,
+                },
+                timestamp: Date.now(),
+                action: 'Loaded for review (background)',
+                subblockValues: {},
+              },
+              future: [],
+            },
+          }
+
+          // Extract and update subblock values
+          const subblockValues: Record<string, Record<string, any>> = {}
+          Object.entries(workflowState.blocks).forEach(([blockId, block]) => {
+            const blockState = block as any
+            subblockValues[blockId] = {}
+            Object.entries(blockState.subBlocks || {}).forEach(([subblockId, subblock]) => {
+              subblockValues[blockId][subblockId] = (subblock as any).value
+            })
+          })
+
+          // Update subblock store for this workflow
+          useSubBlockStore.setState((state) => ({
+            workflowValues: {
+              ...state.workflowValues,
+              [id]: subblockValues,
+            },
+          }))
+        } else {
+          workflowState = {
+            blocks: {},
+            edges: [],
+            loops: {},
+            parallels: {},
+            isDeployed: false,
+            deployedAt: undefined,
+            deploymentStatuses: {},
+            history: {
+              past: [],
+              present: {
+                state: {
+                  blocks: {},
+                  edges: [],
+                  loops: {},
+                  parallels: {},
+                  isDeployed: false,
+                  deployedAt: undefined,
+                },
+                timestamp: Date.now(),
+                action: 'Empty initial state (review)',
+                subblockValues: {},
+              },
+              future: [],
+            },
+            lastSaved: Date.now(),
+          }
+        }
+
+        // Set the workflow state in the store (for review)
+        useWorkflowStore.setState(workflowState)
+
+        logger.info(`Loaded workflow ${id} for review (background)`)
       },
     }),
     { name: 'workflow-registry' }

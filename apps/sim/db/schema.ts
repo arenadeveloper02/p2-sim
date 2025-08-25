@@ -309,6 +309,21 @@ export const workflowExecutionLogs = pgTable(
   })
 )
 
+export const approvalList = pgTable('workflow_approval', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  name: text('name').notNull(),
+  approvalId: text('approval_id').notNull(),
+  description: text('description').notNull(),
+  status: text('status').notNull(),
+  rejectedComment: text('rejected_comment').notNull(),
+  workspaceId: text('workspace_id').notNull(),
+  workflowId: text('workflow_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdBy: text('created_by').notNull(),
+})
+
 export const environment = pgTable('environment', {
   id: text('id').primaryKey(), // Use the user id as the key
   userId: text('user_id')

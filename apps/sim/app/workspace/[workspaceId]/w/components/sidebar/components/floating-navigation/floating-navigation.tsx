@@ -50,7 +50,7 @@ export const FloatingNavigation = ({
       id: 'templates',
       icon: Shapes,
       href: `/workspace/${workspaceId}/templates`,
-      tooltip: 'Templates',
+      tooltip: 'Agents',
       active: pathname === `/workspace/${workspaceId}/templates`,
     },
   ]
