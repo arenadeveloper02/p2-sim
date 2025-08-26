@@ -7,8 +7,9 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return (
     <NextThemesProvider
       attribute='class'
-      defaultTheme='system'
-      enableSystem
+      defaultTheme='light'
+      value={{ light: 'light' }} // 👈 Restrict themes to only light
+      enableSystem={false}
       disableTransitionOnChange
       storageKey='sim-theme'
       {...props}
