@@ -96,11 +96,11 @@
     --gradient-secondary: 336 95% 65%; /* More vibrant pink */
 
     /* Brand Colors (Default Sim Theme) */
-    --brand-primary-hex: #701ffc; /* Primary brand purple */
-    --brand-primary-hover-hex: #802fff; /* Primary brand purple hover */
-    --brand-secondary-hex: #6518e6; /* Secondary brand purple */
-    --brand-accent-hex: #9d54ff; /* Accent purple for links */
-    --brand-accent-hover-hex: #a66fff; /* Accent purple hover */
+     --brand-primary-hex: #1a73e8; /* Primary brand purple */
+    --brand-primary-hover-hex: #155cba; /* Primary brand purple hover */
+    --brand-secondary-hex: #488fed; /* Secondary brand purple */
+    --brand-accent-hex: #76abf1; /* Accent purple for links */
+    --brand-accent-hover-hex: #a3c7f6; /* Accent purple hover */
     --brand-background-hex: #0c0c0c; /* Primary dark background */
 
     /* UI Surface Colors */
@@ -167,11 +167,11 @@
     --gradient-secondary: 336 100% 72%; /* More vibrant pink for dark mode */
 
     /* Brand Colors (Same in dark mode) */
-    --brand-primary-hex: #701ffc; /* Primary brand purple */
-    --brand-primary-hover-hex: #802fff; /* Primary brand purple hover */
-    --brand-secondary-hex: #6518e6; /* Secondary brand purple */
-    --brand-accent-hex: #9d54ff; /* Accent purple for links */
-    --brand-accent-hover-hex: #a66fff; /* Accent purple hover */
+    --brand-primary-hex: #1a73e8; /* Primary brand purple */
+    --brand-primary-hover-hex: #155cba; /* Primary brand purple hover */
+    --brand-secondary-hex: #488fed; /* Secondary brand purple */
+    --brand-accent-hex: #76abf1; /* Accent purple for links */
+    --brand-accent-hover-hex: #a3c7f6; /* Accent purple hover */
     --brand-background-hex: #0c0c0c; /* Primary dark background */
 
     /* UI Surface Colors */
