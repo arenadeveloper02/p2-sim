@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { eq, and } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -7,13 +7,13 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
 import {
+  permissions,
   workflow,
-  workspace,
-  workflowStatus,
   workflowBlocks,
   workflowEdges,
+  workflowStatus,
   workflowSubflows,
-  permissions,
+  workspace,
 } from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
 
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           createdAt: now,
           updatedAt: now,
         })
-        let permissionsId = crypto.randomUUID()
+        const permissionsId = crypto.randomUUID()
         await tx.insert(permissions).values({
           id: permissionsId,
           userId: approvalUserId,
@@ -381,9 +381,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .limit(1)
     if (userWorkspace.length === 0) {
       return ''
-    } else {
-      return userWorkspace[0].id
     }
+    return userWorkspace[0].id
   })
   return getWorkflowApproval
 }

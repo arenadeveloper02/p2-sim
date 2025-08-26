@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
 import { Copy } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+
 // import { useParams, useRouter } from 'next/navigation'
 
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { createLogger } from '@/lib/logs/console/logger'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const logger = createLogger('workflow-p2')
 
