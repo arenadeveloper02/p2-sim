@@ -20,7 +20,7 @@ import { COPILOT_TOOL_IDS } from '@/stores/copilot/constants'
 import { usePreviewStore } from '@/stores/copilot/preview-store'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { LoadingAgent2 } from '@/components/ui/loading-agent-arena'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 
 const logger = createLogger('Copilot')
 
@@ -376,7 +376,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
         {!isInitialized ? (
           <div className='flex h-full w-full items-center justify-center'>
             <div className='flex flex-col items-center gap-3'>
-              <LoadingAgent2 size='md' />              
+              <LoadingAgentP2 size='md' />              
               <p className='text-muted-foreground text-sm'>Loading chat history...</p>
             </div>
           </div>
