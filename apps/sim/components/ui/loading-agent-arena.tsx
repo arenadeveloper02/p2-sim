@@ -10,7 +10,7 @@ export interface LoadingAgentProps {
   size?: 'sm' | 'md' | 'lg'
 }
 
-export function LoadingAgent2({ size = 'md' }: LoadingAgentProps) {
+export function LoadingAgentP2({ size = 'md' }: LoadingAgentProps) {
   const pathLength = 120
 
   const sizes = {

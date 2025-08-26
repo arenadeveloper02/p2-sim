@@ -1,33 +1,29 @@
 'use client'
 
-import { useEffect, useMemo, useCallback } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
-export function isMacPlatform(): boolean {
+/**
+ * Detect if the current platform is Mac
+ */
+export function isMacPlatform() {
   if (typeof navigator === 'undefined') return false
   return navigator.platform.toUpperCase().indexOf('MAC') >= 0
 }
 
-function isEditableElement(element: Element | null): boolean {
-  if (!element) return false
-  
-  return (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    element.hasAttribute('contenteditable') ||
-    element.getAttribute('role') === 'textbox'
-  )
-}
-
 /**
  * Get a formatted keyboard shortcut string for display
+ * @param key The key part of the shortcut (e.g., "Enter")
+ * @param requiresCmd Whether the shortcut requires Cmd/Ctrl
+ * @param requiresShift Whether the shortcut requires Shift
+ * @param requiresAlt Whether the shortcut requires Alt/Option
  */
 export function getKeyboardShortcutText(
   key: string,
   requiresCmd = false,
   requiresShift = false,
   requiresAlt = false
-): string {
+) {
   const isMac = isMacPlatform()
   const cmdKey = isMac ? '⌘' : 'Ctrl'
   const altKey = isMac ? '⌥' : 'Alt'
@@ -43,38 +39,35 @@ export function getKeyboardShortcutText(
 }
 
 /**
- * Hook to manage keyboard shortcuts for workflow execution
+ * Hook to manage keyboard shortcuts
+ * @param onRunWorkflow - Function to run when Cmd/Ctrl+Enter is pressed
+ * @param isDisabled - Whether shortcuts should be disabled
  */
-export function useKeyboardShortcuts(
-  onRunWorkflow: () => void, 
-  isDisabled = false
-) {
+export function useKeyboardShortcuts(onRunWorkflow: () => void, isDisabled = false) {
+  // Memoize the platform detection
   const isMac = useMemo(() => isMacPlatform(), [])
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Early return if shortcuts are disabled
-    if (isDisabled) return
-    
-    // Ensure event.key exists
-    if (!event.key) return
-
-    // Check for Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
-    if (
-      event.key === 'Enter' && 
-      ((isMac && event.metaKey) || (!isMac && event.ctrlKey))
-    ) {
-      // Don't trigger if user is typing in an editable element
-      if (isEditableElement(document.activeElement)) return
-
-      event.preventDefault()
-      onRunWorkflow()
-    }
-  }, [onRunWorkflow, isDisabled, isMac])
-
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Run workflow with Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+      if (event.key === 'Enter' && ((isMac && event.metaKey) || (!isMac && event.ctrlKey))) {
+        // Don't trigger if user is typing in an input, textarea, or contenteditable element
+        const activeElement = document.activeElement
+        const isEditableElement =
+          activeElement instanceof HTMLInputElement ||
+          activeElement instanceof HTMLTextAreaElement ||
+          activeElement?.hasAttribute('contenteditable')
+
+        if (!isEditableElement && !isDisabled) {
+          event.preventDefault()
+          onRunWorkflow()
+        }
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
+  }, [onRunWorkflow, isDisabled, isMac])
 }
 
 /**
@@ -84,22 +77,25 @@ export function useGlobalShortcuts() {
   const router = useRouter()
   const isMac = useMemo(() => isMacPlatform(), [])
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Ensure event.key exists
-    if (!event.key) return
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input, textarea, or contenteditable element
+      const activeElement = document.activeElement
+      const isEditableElement =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement?.hasAttribute('contenteditable')
 
-    // Don't trigger if user is typing in an editable element
-    if (isEditableElement(document.activeElement)) return
+      if (isEditableElement) return
 
-    // Cmd/Ctrl + Shift + L - Navigate to Logs
-    if (
-      event.key.toLowerCase() === 'l' &&
-      event.shiftKey &&
-      ((isMac && event.metaKey) || (!isMac && event.ctrlKey))
-    ) {
-      event.preventDefault()
+      // Cmd/Ctrl + Shift + L - Navigate to Logs
+      if (
+        event.key.toLowerCase() === 'l' &&
+        event.shiftKey &&
+        ((isMac && event.metaKey) || (!isMac && event.ctrlKey))
+      ) {
+        event.preventDefault()
 
-      try {
         const pathParts = window.location.pathname.split('/')
         const workspaceIndex = pathParts.indexOf('workspace')
 
@@ -109,24 +105,10 @@ export function useGlobalShortcuts() {
         } else {
           router.push('/workspace')
         }
-      } catch (error) {
-        console.error('Navigation error:', error)
-        // Fallback navigation
-        router.push('/workspace')
       }
     }
-  }, [router, isMac])
 
-  useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
-}
-
-export function useAllShortcuts(
-  onRunWorkflow: () => void,
-  isWorkflowDisabled = false
-) {
-  useKeyboardShortcuts(onRunWorkflow, isWorkflowDisabled)
-  useGlobalShortcuts()
+  }, [router, isMac])
 }
