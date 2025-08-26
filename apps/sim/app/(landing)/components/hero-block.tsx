@@ -30,7 +30,7 @@ const blockConfig = {
   },
   agent: {
     icon: AgentIcon, // Assuming custom AgentIcon
-    color: '#9333ea', // Purple
+    color: '#F3F8FE', //primary-surface
     name: 'Agent 1',
   },
   router: {
