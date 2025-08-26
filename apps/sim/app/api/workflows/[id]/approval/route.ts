@@ -16,7 +16,6 @@ import {
   permissions,
 } from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
-import { consoleLoggingIntegration } from '@sentry/nextjs'
 
 const logger = createLogger('WorkflowApprovalAPI')
 
@@ -373,24 +372,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  // const requestId = crypto.randomUUID().slice(0, 8)
-  // const startTime = Date.now()
-  const url = new URL(req.url)
   const { id: workflowId } = await params
-  const session = await getSession()
   const getWorkflowApproval = await db.transaction(async (tx) => {
     const userWorkspace = await tx
       .select()
       .from(workflowStatus)
       .where(eq(workflowStatus.workflowId, workflowId))
       .limit(1)
-    console.log('userWorkspace', userWorkspace)
     if (userWorkspace.length === 0) {
       return ''
     } else {
       return userWorkspace[0].id
     }
   })
-  console.log('getWorkflowApproval', getWorkflowApproval)
   return getWorkflowApproval
 }
