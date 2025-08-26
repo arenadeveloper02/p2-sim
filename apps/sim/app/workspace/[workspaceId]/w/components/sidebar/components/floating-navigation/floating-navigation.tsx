@@ -1,4 +1,4 @@
-import { HelpCircle, LibraryBig, ScrollText, Settings, Shapes } from 'lucide-react'
+import { LibraryBig, ScrollText, Settings, Shapes } from 'lucide-react'
 import { NavigationItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/navigation-item/navigation-item'
 import { getKeyboardShortcutText } from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
 

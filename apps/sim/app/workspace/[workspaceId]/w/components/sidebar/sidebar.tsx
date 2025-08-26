@@ -14,7 +14,7 @@ import {
   CreateMenu,
   FloatingNavigation,
   FolderTree,
-  HelpModal,
+  // HelpModal,
   KeyboardShortcut,
   KnowledgeBaseTags,
   KnowledgeTags,

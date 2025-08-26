@@ -27,9 +27,8 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''
 
-  // ✅ If user is on /login and already has email cookie → redirect to /workspace
-  if ((url.pathname === '/login' || url.pathname === '/') && email) {
-    return NextResponse.redirect(new URL('/workspace', request.url))
+  if (url.pathname === '/login' && email) {
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
   if (email) {
