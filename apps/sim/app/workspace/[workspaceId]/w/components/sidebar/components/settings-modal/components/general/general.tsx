@@ -23,7 +23,7 @@ const TOOLTIPS = {
 
 export function General() {
   const isLoading = useGeneralStore((state) => state.isLoading)
-  const theme = useGeneralStore((state) => state.theme)
+  const theme = useGeneralStore((state) => 'light')
   const isAutoConnectEnabled = useGeneralStore((state) => state.isAutoConnectEnabled)
 
   const isAutoPanEnabled = useGeneralStore((state) => state.isAutoPanEnabled)

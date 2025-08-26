@@ -62,7 +62,7 @@ export async function GET() {
       {
         data: {
           // theme: userSettings.theme,
-          theme: 'light',
+          theme: 'light' as const,
           autoConnect: userSettings.autoConnect,
           autoFillEnvVars: userSettings.autoFillEnvVars, // DEPRECATED: kept for backwards compatibility
           autoPan: userSettings.autoPan,
