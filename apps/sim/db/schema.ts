@@ -1188,3 +1188,19 @@ export const copilotApiKeys = pgTable(
     ),
   })
 )
+
+export const workflowStatus = pgTable('workflow_status', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  workflowId: text('workflow_id').notNull(),
+  status: text('status').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  comments: text('comments'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})

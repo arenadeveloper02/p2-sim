@@ -1412,6 +1412,72 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 
         logger.info('Logout complete - all workflow data cleared')
       },
+      askApproveWorkflow: async (sourceId: string, approvalUserId: string) => {
+        const { workflows } = get()
+        const sourceWorkflow = workflows[sourceId]
+
+        if (!sourceWorkflow) {
+          set({ error: `Workflow ${sourceId} not found` })
+          return null
+        }
+
+        // Get the workspace ID from the source workflow (required)
+        const workspaceId = sourceWorkflow.workspaceId
+
+        // Call the server to duplicate the workflow - server generates all IDs
+        let duplicatedWorkflow
+        try {
+          const response = await fetch(`/api/workflows/${sourceId}/approval`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `${sourceWorkflow.name}`,
+              description: sourceWorkflow.description,
+              color: sourceWorkflow.color,
+              workspaceId: workspaceId,
+              folderId: sourceWorkflow.folderId,
+              approvalUserId: approvalUserId
+            }),
+          })
+
+          if (!response.ok) {
+            throw new Error(`Failed to duplicate workflow: ${response.statusText}`)
+          }
+
+          duplicatedWorkflow = await response.json()
+          logger.info(
+            `Successfully duplicated workflow ${sourceId} to ${duplicatedWorkflow.id} with ${duplicatedWorkflow.blocksCount} blocks, ${duplicatedWorkflow.edgesCount} edges, ${duplicatedWorkflow.subflowsCount} subflows`
+          )
+        } catch (error) {
+          logger.error(`Failed to duplicate workflow ${sourceId}:`, error)
+          set({
+            error: `Failed to duplicate workflow: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          })
+          return null
+        }
+        const id = duplicatedWorkflow.id
+        return id
+      },
+      getApprovalStatus: async (workflowId: string | null): Promise<string> => {
+        if (!workflowId) {
+          // If no workflow ID provided, check the active workflow
+          workflowId = get().activeWorkflowId
+          if (!workflowId) return ""
+        }
+        console.log("Fetching approval status for workflow:", workflowId)
+        const response = await fetch(`/api/workflows/${workflowId}/approval`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          })
+        console.log("Approval status response:", response)
+        if (response) {
+          const data = response.json()
+          console.log("Approval status data:", data)
+          return ""
+        }
+        // No deployment status found
+        return ""
+      },
     }),
     { name: 'workflow-registry' }
   )

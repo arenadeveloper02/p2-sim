@@ -52,7 +52,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
-
+import { renderApprovalButton } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/p2components'
 const logger = createLogger('ControlBar')
 
 // Cache for usage data to prevent excessive API calls
@@ -1212,6 +1212,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {isExpanded && renderPublishButton()}
+      {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId)}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {!isDebugging && renderDebugModeToggle()}
