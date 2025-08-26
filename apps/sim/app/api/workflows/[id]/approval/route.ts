@@ -1,12 +1,20 @@
 import crypto from 'crypto'
-import { eq ,and} from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { workflow,workspace,workflowStatus, workflowBlocks, workflowEdges, workflowSubflows,permissions } from '@/db/schema'
+import {
+  workflow,
+  workspace,
+  workflowStatus,
+  workflowBlocks,
+  workflowEdges,
+  workflowSubflows,
+  permissions,
+} from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
 import { consoleLoggingIntegration } from '@sentry/nextjs'
 
@@ -34,17 +42,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const body = await req.json()
-    const { name, description, color, workspaceId, folderId, approvalUserId } = ApprovalRequestSchema.parse(body)
+    const { name, description, color, workspaceId, folderId, approvalUserId } =
+      ApprovalRequestSchema.parse(body)
     let newWorkspaceId = crypto.randomUUID()
     const now = new Date()
     const workflowApproval = await db.transaction(async (tx) => {
       const userWorkspace = await tx
         .select()
         .from(workspace)
-        .where(and(eq(workspace.name, "APPROVAL LIST"), eq(workspace.ownerId, approvalUserId)))
+        .where(and(eq(workspace.name, 'APPROVAL LIST'), eq(workspace.ownerId, approvalUserId)))
         .limit(1)
       if (userWorkspace.length === 0) {
-        logger.warn(`[${requestId}] User ${session.user.id} does not have an approval workspace, creating one`)
+        logger.warn(
+          `[${requestId}] User ${session.user.id} does not have an approval workspace, creating one`
+        )
         await tx.insert(workspace).values({
           id: newWorkspaceId,
           ownerId: approvalUserId,
@@ -52,8 +63,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           createdAt: now,
           updatedAt: now,
         })
-         let permissionsId = crypto.randomUUID()
-         await tx.insert(permissions).values({
+        let permissionsId = crypto.randomUUID()
+        await tx.insert(permissions).values({
           id: permissionsId,
           userId: approvalUserId,
           entityType: `workspace`,
@@ -62,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           createdAt: now,
           updatedAt: now,
         })
-      }else{
+      } else {
         newWorkspaceId = userWorkspace[0].id as `${string}-${string}-${string}-${string}-${string}`
       }
     })
@@ -316,17 +327,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       `[${requestId}] Successfully approved workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
     )
     // Add the workflow status for maintaing the approval process
-      const workflowStatusId = crypto.randomUUID()
-      await db.insert(workflowStatus).values({
-        id: workflowStatusId,
-        name,
-        workflowId: newWorkflowId,
-        ownerId: session.user.id,
-        userId: approvalUserId,  
-        status: "Pending",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+    const workflowStatusId = crypto.randomUUID()
+    await db.insert(workflowStatus).values({
+      id: workflowStatusId,
+      name,
+      workflowId: newWorkflowId,
+      ownerId: session.user.id,
+      userId: approvalUserId,
+      status: 'Pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.log(error)
@@ -361,7 +372,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // const requestId = crypto.randomUUID().slice(0, 8)
   // const startTime = Date.now()
@@ -369,18 +379,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id: workflowId } = await params
   const session = await getSession()
   const getWorkflowApproval = await db.transaction(async (tx) => {
-      const userWorkspace = await tx
-        .select()
-        .from(workflowStatus)
-        .where(eq(workflowStatus.workflowId, workflowId))
-        .limit(1)
-      console.log("userWorkspace",userWorkspace)
-      if (userWorkspace.length === 0) {
-        return ""
-      }else{
-        return userWorkspace[0].id
-      }
-    })
-  console.log("getWorkflowApproval",getWorkflowApproval)
-  return getWorkflowApproval;
+    const userWorkspace = await tx
+      .select()
+      .from(workflowStatus)
+      .where(eq(workflowStatus.workflowId, workflowId))
+      .limit(1)
+    console.log('userWorkspace', userWorkspace)
+    if (userWorkspace.length === 0) {
+      return ''
+    } else {
+      return userWorkspace[0].id
+    }
+  })
+  console.log('getWorkflowApproval', getWorkflowApproval)
+  return getWorkflowApproval
 }

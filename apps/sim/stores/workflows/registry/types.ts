@@ -60,7 +60,7 @@ export interface WorkflowRegistryActions {
   ) => void
   setWorkflowNeedsRedeployment: (workflowId: string | null, needsRedeployment: boolean) => void
   askApproveWorkflow: (sourceId: string, approvalUserId: string) => Promise<string | null>
-  getApprovalStatus: (workflowId: string | null) =>  Promise<string>
+  getApprovalStatus: (workflowId: string | null) => Promise<string>
 }
 
 export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions

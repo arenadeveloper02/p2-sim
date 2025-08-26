@@ -1436,7 +1436,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               color: sourceWorkflow.color,
               workspaceId: workspaceId,
               folderId: sourceWorkflow.folderId,
-              approvalUserId: approvalUserId
+              approvalUserId: approvalUserId,
             }),
           })
 
@@ -1462,21 +1462,21 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         if (!workflowId) {
           // If no workflow ID provided, check the active workflow
           workflowId = get().activeWorkflowId
-          if (!workflowId) return ""
+          if (!workflowId) return ''
         }
-        console.log("Fetching approval status for workflow:", workflowId)
+        console.log('Fetching approval status for workflow:', workflowId)
         const response = await fetch(`/api/workflows/${workflowId}/approval`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-          })
-        console.log("Approval status response:", response)
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        console.log('Approval status response:', response)
         if (response) {
           const data = response.json()
-          console.log("Approval status data:", data)
-          return ""
+          console.log('Approval status data:', data)
+          return ''
         }
         // No deployment status found
-        return ""
+        return ''
       },
     }),
     { name: 'workflow-registry' }
