@@ -164,7 +164,7 @@ export function SocialLoginButtons({
 
   return (
     <div className='grid gap-3'>
-      {/* {renderGithubButton()} */}
+      {renderGithubButton()}
       {renderGoogleButton()}
     </div>
   )
