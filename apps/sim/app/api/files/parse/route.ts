@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 const logger = createLogger('FilesParseAPI')
 
 const MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 // 100 MB
-const DOWNLOAD_TIMEOUT_MS = 30000 // 30 seconds
+const DOWNLOAD_TIMEOUT_MS = 120000 // 120 seconds
 
 interface ParseResult {
   success: boolean

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
         text,
         model_id: modelId,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(600000),
     })
 
     if (!response.ok) {
