@@ -96,7 +96,7 @@
     --gradient-secondary: 336 95% 65%; /* More vibrant pink */
 
     /* Brand Colors (Default Sim Theme) */
-     --brand-primary-hex: #1a73e8; /* Primary brand purple */
+    --brand-primary-hex: #1a73e8; /* Primary brand purple */
     --brand-primary-hover-hex: #155cba; /* Primary brand purple hover */
     --brand-secondary-hex: #488fed; /* Secondary brand purple */
     --brand-accent-hex: #76abf1; /* Accent purple for links */
