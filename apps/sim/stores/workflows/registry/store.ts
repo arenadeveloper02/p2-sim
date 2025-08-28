@@ -1458,7 +1458,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         const id = duplicatedWorkflow.id
         return id
       },
-      getApprovalStatus: async (workflowId: string | null): Promise<string> => {
+      getApprovalStatus: async (workflowId: string | null) => {
         if (!workflowId) {
           // If no workflow ID provided, check the active workflow
           workflowId = get().activeWorkflowId
@@ -1471,9 +1471,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         })
         console.log('Approval status response:', response)
         if (response) {
-          const data = response.json()
+          const data = await response.json()
           console.log('Approval status data:', data)
-          return ''
+          return data
         }
         // No deployment status found
         return ''
