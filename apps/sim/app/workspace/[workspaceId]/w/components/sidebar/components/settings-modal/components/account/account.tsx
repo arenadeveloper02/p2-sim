@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { AgentIcon } from '@/components/icons'
-import { Button } from '@/components/ui/button'
+// import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { signOut, useSession } from '@/lib/auth-client'
@@ -225,18 +225,18 @@ export function Account({ onOpenChange }: AccountProps) {
             </div>
 
             {/* Password Field Skeleton */}
-            <div className='flex flex-col gap-2'>
+            {/* <div className='flex flex-col gap-2'>
               <Skeleton className='h-4 w-16' />
               <div className='flex items-center gap-4'>
                 <Skeleton className='h-5 w-20' />
                 <Skeleton className='h-5 w-[42px]' />
               </div>
-            </div>
+            </div> */}
 
             {/* Sign Out Button Skeleton */}
-            <div>
+            {/* <div>
               <Skeleton className='h-8 w-[71px] rounded-[8px]' />
-            </div>
+            </div> */}
           </>
         ) : (
           <>
@@ -287,7 +287,7 @@ export function Account({ onOpenChange }: AccountProps) {
               ) : (
                 <div className='flex items-center gap-4'>
                   <span className='text-sm'>{name}</span>
-                  <Button
+                  {/* <Button
                     variant='ghost'
                     className='h-auto p-0 font-normal text-muted-foreground text-xs transition-colors hover:bg-transparent hover:text-foreground'
                     onClick={() => setIsEditingName(true)}
@@ -295,6 +295,7 @@ export function Account({ onOpenChange }: AccountProps) {
                     update
                     <span className='sr-only'>Update name</span>
                   </Button>
+                  */}
                 </div>
               )}
             </div>
@@ -306,7 +307,7 @@ export function Account({ onOpenChange }: AccountProps) {
             </div>
 
             {/* Password Field */}
-            <div className='flex flex-col gap-2'>
+            {/* <div className='flex flex-col gap-2'>
               <Label className='font-normal text-muted-foreground text-xs'>Password</Label>
               <div className='flex items-center gap-4'>
                 <span className='text-sm'>••••••••</span>
@@ -330,10 +331,10 @@ export function Account({ onOpenChange }: AccountProps) {
                   <span className='sr-only'>Reset password</span>
                 </Button>
               </div>
-            </div>
+            </div> */}
 
             {/* Sign Out Button */}
-            <div>
+            {/* <div>
               <Button
                 onClick={handleSignOut}
                 variant='destructive'
@@ -341,7 +342,7 @@ export function Account({ onOpenChange }: AccountProps) {
               >
                 Sign Out
               </Button>
-            </div>
+            </div> */}
           </>
         )}
       </div>
