@@ -26,13 +26,33 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''
+  const isLocal = hostname === 'localhost:3000'
 
   if (url.pathname === '/login' && email) {
     return NextResponse.redirect(new URL('/', request.url))
   }
+  if (email && !hasActiveSession) {
+    return NextResponse.redirect(new URL('/', request.url))
+  }
 
-  if (email) {
-    return NextResponse.next()
+  function getLoginRedirectUrl() {
+    let redirectUrl = ''
+    if (hostname === 'dev-agent.thearena.ai') {
+      redirectUrl = 'https://dev.thearena.ai/'
+    } else if (hostname === 'test-agent.thearena.ai') {
+      redirectUrl = 'https://test.thearena.ai/'
+    } else if (hostname === 'sandbox-agent.thearena.ai') {
+      redirectUrl = 'https://sandbox.thearena.ai/'
+    } else if (hostname === 'agent.thearena.ai') {
+      redirectUrl = 'https://app.thearena.ai/'
+    } else {
+      redirectUrl = 'https://dev.thearena.ai/'
+    }
+    return redirectUrl
+  }
+  if (!email && !isLocal) {
+    const redirectUrl = getLoginRedirectUrl()
+    return NextResponse.redirect(redirectUrl)
   }
 
   // Extract subdomain - handle nested subdomains for any domain

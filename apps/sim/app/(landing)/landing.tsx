@@ -29,6 +29,7 @@ export default function Landing() {
           },
           {}
         )
+        document.cookie = 'has_logged_in_before=true; path=/; max-age=31536000; SameSite=Lax' // 1 year expiry
       } catch (error) {
       } finally {
         setLoading(false)
