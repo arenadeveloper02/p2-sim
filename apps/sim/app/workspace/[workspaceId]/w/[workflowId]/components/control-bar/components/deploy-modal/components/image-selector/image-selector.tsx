@@ -1,12 +1,12 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Image as LucideImage, Loader2, Upload, X } from 'lucide-react'
+import { Loader2, Image as LucideImage, Upload, X } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
-import Image from 'next/image'
 
 const logger = createLogger('ImageSelector')
 

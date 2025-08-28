@@ -5,13 +5,14 @@ import {
   Check,
   Clipboard,
   FileText,
-  Image as LucideImage,
   Loader2,
+  Image as LucideImage,
   RotateCcw,
   ThumbsDown,
   ThumbsUp,
   X,
 } from 'lucide-react'
+import Image from 'next/image'
 import { InlineToolCall } from '@/lib/copilot/inline-tool-call'
 import { createLogger } from '@/lib/logs/console/logger'
 import { usePreviewStore } from '@/stores/copilot/preview-store'
@@ -19,7 +20,6 @@ import { useCopilotStore } from '@/stores/copilot/store'
 import type { CopilotMessage as CopilotMessageType } from '@/stores/copilot/types'
 import CopilotMarkdownRenderer from './components/markdown-renderer'
 import { ThinkingBlock } from './components/thinking-block'
-import Image from 'next/image'
 
 const logger = createLogger('CopilotMessage')
 

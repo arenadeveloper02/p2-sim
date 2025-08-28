@@ -14,16 +14,17 @@ import {
   BrainCircuit,
   Check,
   FileText,
-  Image as LucideImage,
   Infinity as InfinityIcon,
   Info,
   Loader2,
+  Image as LucideImage,
   MessageCircle,
   Package,
   Paperclip,
   X,
   Zap,
 } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -38,7 +39,6 @@ import { useSession } from '@/lib/auth-client'
 import { cn } from '@/lib/utils'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { CopilotSlider as Slider } from './copilot-slider'
-import Image from 'next/image'
 
 export interface MessageFileAttachment {
   id: string
