@@ -129,14 +129,24 @@ export default function MarkdownRenderer({ content }: { content: string }) {
     ),
 
     // Images
-    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-      <img
-        src={src}
-        alt={alt || 'Image'}
-        className='my-2 h-auto max-w-full rounded-md'
-        {...props}
-      />
-    ),
+    img: ({ src = '', alt = 'Image', ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+      // Import Next.js Image component
+      // @ts-ignore
+      const Image = require('next/image').default
+      return (
+        <div className='my-2 h-auto max-w-full rounded-md'>
+          <Image
+            src={src}
+            alt={alt}
+            layout='responsive'
+            width={600}
+            height={400}
+            style={{ borderRadius: '0.375rem' }}
+            {...props}
+          />
+        </div>
+      )
+    },
   }
 
   // Process text to clean up unnecessary whitespace and formatting issues

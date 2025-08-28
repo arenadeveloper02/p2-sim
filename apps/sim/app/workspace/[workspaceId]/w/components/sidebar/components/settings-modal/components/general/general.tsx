@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -47,13 +46,13 @@ export function General() {
   )
 
   // Sync theme from store to next-themes when theme changes
-  useEffect(() => {
-    if (!isLoading && theme) {
-      // Ensure next-themes is in sync with our store
-      const { syncThemeToNextThemes } = require('@/lib/theme-sync')
-      syncThemeToNextThemes(theme)
-    }
-  }, [theme, isLoading])
+  // useEffect(() => {
+  //   if (!isLoading && theme) {
+  //     // Ensure next-themes is in sync with our store
+  //     const { syncThemeToNextThemes } = require('@/lib/theme-sync')
+  //     syncThemeToNextThemes(theme)
+  //   }
+  // }, [theme, isLoading])
 
   const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
     await setTheme(value)
