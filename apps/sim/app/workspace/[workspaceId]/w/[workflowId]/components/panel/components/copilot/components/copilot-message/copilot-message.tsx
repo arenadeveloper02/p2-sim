@@ -5,13 +5,14 @@ import {
   Check,
   Clipboard,
   FileText,
-  Image,
   Loader2,
+  Image as LucideImage,
   RotateCcw,
   ThumbsDown,
   ThumbsUp,
   X,
 } from 'lucide-react'
+import Image from 'next/image'
 import { InlineToolCall } from '@/lib/copilot/inline-tool-call'
 import { createLogger } from '@/lib/logs/console/logger'
 import { usePreviewStore } from '@/stores/copilot/preview-store'
@@ -68,7 +69,7 @@ const FileAttachmentDisplay = memo(({ fileAttachments }: FileAttachmentDisplayPr
 
   const getFileIcon = (mediaType: string) => {
     if (mediaType.startsWith('image/')) {
-      return <Image className='h-5 w-5 text-muted-foreground' />
+      return <LucideImage className='h-5 w-5 text-muted-foreground' />
     }
     if (mediaType.includes('pdf')) {
       return <FileText className='h-5 w-5 text-red-500' />
@@ -114,7 +115,7 @@ const FileAttachmentDisplay = memo(({ fileAttachments }: FileAttachmentDisplayPr
         >
           {isImageFile(file.media_type) ? (
             // For images, show actual thumbnail
-            <img
+            <Image
               src={getFileUrl(file)}
               alt={file.filename}
               className='h-full w-full object-cover'

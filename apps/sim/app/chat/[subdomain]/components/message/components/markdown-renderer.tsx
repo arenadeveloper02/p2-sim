@@ -197,14 +197,21 @@ export default function MarkdownRenderer({
     ),
 
     // Images
-    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-      <img
-        src={src}
-        alt={alt || 'Image'}
-        className='my-3 h-auto max-w-full rounded-md'
-        {...props}
-      />
-    ),
+    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+      // Import Next.js Image component
+      // @ts-ignore
+      const Image = require('next/image').default
+      return (
+        <Image
+          src={src || ''}
+          alt={alt || 'Image'}
+          className='my-3 h-auto max-w-full rounded-md'
+          width={props.width ? Number(props.width) : 600}
+          height={props.height ? Number(props.height) : 400}
+          {...props}
+        />
+      )
+    },
   }
 
   // Pre-process content to fix common issues
