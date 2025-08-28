@@ -14,16 +14,17 @@ import {
   BrainCircuit,
   Check,
   FileText,
-  Image,
   Infinity as InfinityIcon,
   Info,
   Loader2,
+  Image as LucideImage,
   MessageCircle,
   Package,
   Paperclip,
   X,
   Zap,
 } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -396,7 +397,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
 
     const getFileIcon = (mediaType: string) => {
       if (mediaType.startsWith('image/')) {
-        return <Image className='h-5 w-5 text-muted-foreground' />
+        return <LucideImage className='h-5 w-5 text-muted-foreground' />
       }
       if (mediaType.includes('pdf')) {
         return <FileText className='h-5 w-5 text-red-500' />
@@ -506,14 +507,14 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                 >
                   {isImageFile(file.type) && file.previewUrl ? (
                     // For images, show actual thumbnail
-                    <img
+                    <Image
                       src={file.previewUrl}
                       alt={file.name}
                       className='h-full w-full object-cover'
                     />
                   ) : isImageFile(file.type) && file.key ? (
                     // For uploaded images without preview URL, use S3 URL
-                    <img
+                    <Image
                       src={`/api/files/serve/s3/${encodeURIComponent(file.key)}?bucket=copilot`}
                       alt={file.name}
                       className='h-full w-full object-cover'

@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import Image from 'next/image'
 import { getAssetUrl } from '@/lib/utils'
 import useIsMobile from '@/app/(landing)/components/hooks/use-is-mobile'
 import { Marquee } from '@/app/(landing)/components/magicui/marquee'
@@ -124,10 +125,12 @@ function Testimonials() {
                 <div className='mt-auto flex items-center justify-between'>
                   <div className='flex items-center gap-1.5 sm:gap-2'>
                     {card.profileImage && (
-                      <img
+                      <Image
                         src={card.profileImage}
                         alt={`${card.username} profile`}
                         className='h-6 w-6 rounded-full border border-[#333] object-cover sm:h-8 sm:w-8'
+                        width={32}
+                        height={32}
                       />
                     )}
                     <div className='flex items-center'>
@@ -165,10 +168,12 @@ function Testimonials() {
                 <div className='mt-auto flex items-center justify-between'>
                   <div className='flex items-center gap-1.5 sm:gap-2'>
                     {card.profileImage && (
-                      <img
+                      <Image
                         src={card.profileImage}
                         alt={`${card.username} profile`}
                         className='h-6 w-6 rounded-full border border-[#333] object-cover sm:h-8 sm:w-8'
+                        width={32}
+                        height={32}
                       />
                     )}
                     <div className='flex items-center'>

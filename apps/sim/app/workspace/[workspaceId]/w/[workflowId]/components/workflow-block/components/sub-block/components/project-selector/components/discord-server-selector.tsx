@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Check, ChevronDown, RefreshCw, X } from 'lucide-react'
+import Image from 'next/image'
 import { DiscordIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import {
@@ -206,7 +207,7 @@ export function DiscordServerSelector({
             {selectedServer ? (
               <div className='flex items-center gap-2 overflow-hidden'>
                 {selectedServer.icon ? (
-                  <img
+                  <Image
                     src={selectedServer.icon}
                     alt={selectedServer.name}
                     className='h-4 w-4 rounded-full'
@@ -267,7 +268,7 @@ export function DiscordServerSelector({
                     >
                       <div className='flex items-center gap-2 overflow-hidden'>
                         {server.icon ? (
-                          <img
+                          <Image
                             src={server.icon}
                             alt={server.name}
                             className='h-4 w-4 rounded-full'
@@ -303,7 +304,7 @@ export function DiscordServerSelector({
           <div className='flex items-center gap-3 pr-4'>
             <div className='flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-muted/20'>
               {selectedServer.icon ? (
-                <img
+                <Image
                   src={selectedServer.icon}
                   alt={selectedServer.name}
                   className='h-4 w-4 rounded-full'

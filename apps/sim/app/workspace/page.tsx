@@ -2,9 +2,9 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
-import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 
 const logger = createLogger('WorkspacePage')
 

@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
@@ -20,7 +21,6 @@ import { COPILOT_TOOL_IDS } from '@/stores/copilot/constants'
 import { usePreviewStore } from '@/stores/copilot/preview-store'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 
 const logger = createLogger('Copilot')
 

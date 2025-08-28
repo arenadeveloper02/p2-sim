@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ExternalLink, RefreshCw, X } from 'lucide-react'
+import Image from 'next/image'
 import { JiraIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import {
@@ -520,7 +521,7 @@ export function JiraProjectSelector({
                         >
                           <div className='flex items-center gap-2 overflow-hidden'>
                             {project.avatarUrl ? (
-                              <img
+                              <Image
                                 src={project.avatarUrl}
                                 alt={project.name}
                                 className='h-4 w-4 rounded'

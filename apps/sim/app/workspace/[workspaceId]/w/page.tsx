@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 export default function WorkflowsPage() {
   const router = useRouter()
