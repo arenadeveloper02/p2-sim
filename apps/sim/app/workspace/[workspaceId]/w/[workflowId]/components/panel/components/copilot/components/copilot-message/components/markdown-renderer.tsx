@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -365,12 +366,13 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
           {children}
         </td>
       ),
-
       // Images
-      img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-        <img
-          src={src}
+      img: ({ src, alt, width, height, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+        <Image
+          src={typeof src === 'string' ? src : ''}
           alt={alt || 'Image'}
+          width={typeof width === 'string' ? Number(width) || 400 : width || 400}
+          height={typeof height === 'string' ? Number(height) || 300 : height || 300}
           className='my-3 h-auto max-w-full rounded-md'
           {...props}
         />

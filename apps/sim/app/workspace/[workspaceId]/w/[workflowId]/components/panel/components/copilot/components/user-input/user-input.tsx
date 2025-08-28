@@ -14,7 +14,7 @@ import {
   BrainCircuit,
   Check,
   FileText,
-  Image,
+  Image as LucideImage,
   Infinity as InfinityIcon,
   Info,
   Loader2,
@@ -38,6 +38,7 @@ import { useSession } from '@/lib/auth-client'
 import { cn } from '@/lib/utils'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { CopilotSlider as Slider } from './copilot-slider'
+import Image from 'next/image'
 
 export interface MessageFileAttachment {
   id: string
@@ -396,7 +397,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
 
     const getFileIcon = (mediaType: string) => {
       if (mediaType.startsWith('image/')) {
-        return <Image className='h-5 w-5 text-muted-foreground' />
+        return <LucideImage className='h-5 w-5 text-muted-foreground' />
       }
       if (mediaType.includes('pdf')) {
         return <FileText className='h-5 w-5 text-red-500' />
@@ -506,14 +507,14 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                 >
                   {isImageFile(file.type) && file.previewUrl ? (
                     // For images, show actual thumbnail
-                    <img
+                    <Image
                       src={file.previewUrl}
                       alt={file.name}
                       className='h-full w-full object-cover'
                     />
                   ) : isImageFile(file.type) && file.key ? (
                     // For uploaded images without preview URL, use S3 URL
-                    <img
+                    <Image
                       src={`/api/files/serve/s3/${encodeURIComponent(file.key)}?bucket=copilot`}
                       alt={file.name}
                       className='h-full w-full object-cover'
