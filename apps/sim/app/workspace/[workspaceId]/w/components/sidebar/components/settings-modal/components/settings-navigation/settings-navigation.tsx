@@ -25,9 +25,9 @@ interface SettingsNavigationProps {
       | 'account'
       | 'credentials'
       | 'apikeys'
-      // | 'subscription'
+      | 'subscription'
       | 'team'
-      // | 'privacy'
+      | 'privacy'
       | 'copilot'
   ) => void
   hasOrganization: boolean
