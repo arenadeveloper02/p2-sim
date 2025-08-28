@@ -20,7 +20,7 @@ const logger = createLogger('AgentBlockHandler')
 
 const DEFAULT_MODEL = 'gpt-4o'
 const DEFAULT_FUNCTION_TIMEOUT = 5000
-const REQUEST_TIMEOUT = 120000
+const REQUEST_TIMEOUT = 600000
 const CUSTOM_TOOL_PREFIX = 'custom_'
 
 /**
