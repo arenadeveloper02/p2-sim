@@ -680,7 +680,7 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
                     'inline-block cursor-text font-medium text-md hover:text-muted-foreground',
                     !isEnabled && 'text-muted-foreground'
                   )}
-                  onClick={handleNameClick}
+                  onClick={userPermissions.canEdit ? handleNameClick : undefined}
                   title={name}
                   style={{
                     maxWidth: !isEnabled ? (displayIsWide ? '200px' : '140px') : '180px',
