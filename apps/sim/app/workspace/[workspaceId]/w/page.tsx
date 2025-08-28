@@ -55,7 +55,7 @@ export default function WorkflowsPage() {
     <div className='flex h-screen items-center justify-center'>
       <div className='text-center'>
         <div className='mx-auto mb-4'>
-          <LoadingAgentP2 size='lg' />        
+          <LoadingAgentP2 size='lg' />
         </div>
       </div>
     </div>

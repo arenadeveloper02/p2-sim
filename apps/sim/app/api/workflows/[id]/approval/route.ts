@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -331,9 +331,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       id: workflowStatusId,
       name,
       workflowId: newWorkflowId,
+      mappedWorkflowId: sourceWorkflowId,
       ownerId: session.user.id,
       userId: approvalUserId,
-      status: 'Pending',
+      status: 'PENDING',
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -373,11 +374,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: workflowId } = await params
+  const session = await getSession()
+  if (!session?.user?.id) {
+    logger.warn(`Unauthorized workflow duplication attempt for ${workflowId}`)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const getWorkflowApproval = await db.transaction(async (tx) => {
     const userWorkspace = await tx
       .select()
       .from(workflowStatus)
-      .where(eq(workflowStatus.workflowId, workflowId))
+      .where(
+        and(
+          or(
+            eq(workflowStatus.workflowId, workflowId),
+            eq(workflowStatus.mappedWorkflowId, workflowId)
+          ),
+          eq(workflowStatus.userId, session.user.id)
+        )
+      )
       .limit(1)
     if (userWorkspace.length === 0) {
       return ''
@@ -385,4 +399,50 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return userWorkspace[0]
   })
   return NextResponse.json(getWorkflowApproval, { status: 201 })
+}
+
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: sourceWorkflowId } = await params
+  const requestId = crypto.randomUUID().slice(0, 8)
+  const startTime = Date.now()
+
+  const session = await getSession()
+  if (!session?.user?.id) {
+    logger.warn(`[${requestId}] Unauthorized workflow duplication attempt for ${sourceWorkflowId}`)
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const body = await req.json()
+    const { statusId, action, reason } = body
+    const now = new Date()
+    const getWorkflowApproval = await db.transaction(async (tx) => {
+      await tx
+        .update(workflowStatus)
+        .set({
+          updatedAt: now,
+          status: action,
+          comments: reason,
+        })
+        .where(eq(workflowStatus.id, statusId))
+      const userWorkspace = await tx
+        .select()
+        .from(workflowStatus)
+        .where(
+          and(
+            or(
+              eq(workflowStatus.workflowId, sourceWorkflowId),
+              eq(workflowStatus.mappedWorkflowId, sourceWorkflowId)
+            ),
+            eq(workflowStatus.userId, session.user.id)
+          )
+        )
+        .limit(1)
+      return userWorkspace[0]
+    })
+    return NextResponse.json(getWorkflowApproval, { status: 201 })
+  } catch (error) {
+    logger.error(`[${requestId}] Error approving workflow ${sourceWorkflowId}:`, error)
+    return NextResponse.json({ error: 'Failed to approval workflow' }, { status: 500 })
+  }
 }

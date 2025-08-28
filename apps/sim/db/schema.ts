@@ -1193,6 +1193,7 @@ export const workflowStatus = pgTable('workflow_status', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   workflowId: text('workflow_id').notNull(),
+  mappedWorkflowId: text('mapped_workflow_id').notNull(),
   status: text('status').notNull(),
   userId: text('user_id')
     .notNull()

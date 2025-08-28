@@ -119,7 +119,7 @@ export default function WorkspacePage() {
     return (
       <div className='flex h-screen w-full items-center justify-center'>
         <div className='flex flex-col items-center justify-center text-center align-middle'>
-          <LoadingAgentP2 size='lg' />          
+          <LoadingAgentP2 size='lg' />
         </div>
       </div>
     )

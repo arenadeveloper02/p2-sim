@@ -1,4 +1,4 @@
-import { useEffect,useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -15,18 +15,20 @@ export const renderApprovalButton = (
 ) => {
   const [approval, setApproval] = useState<any>()
   const { data: session } = useSession()
-  const { askApproveWorkflow, getApprovalStatus } = useWorkflowRegistry()
+  const { askApproveWorkflow, getApprovalStatus, approveRejectWorkflow } = useWorkflowRegistry()
   const canEdit = userPermissions.canEdit
   const isDisabled = !canEdit || isDebugging
 
   useEffect(() => {
     if (activeWorkflowId) {
       const workFlowStatus = getApprovalStatus(activeWorkflowId)
-      workFlowStatus.then((e)=>{
-        setApproval(e)
-      }).catch((error)=>{
-        // Handle the error here
-      })
+      workFlowStatus
+        .then((e) => {
+          setApproval(e)
+        })
+        .catch((error) => {
+          // Handle the error here
+        })
     }
   }, [activeWorkflowId])
 
@@ -53,6 +55,27 @@ export const renderApprovalButton = (
     }
   }
 
+  const handleApproveRejectWorkflow = async (action: 'APPROVED' | 'REJECTED') => {
+    if (!activeWorkflowId || !userPermissions.canEdit) return
+    try {
+      const aRWorkflow = await approveRejectWorkflow(
+        activeWorkflowId,
+        action,
+        'Reason for approval/rejection',
+        approval.id
+      )
+      if (aRWorkflow) {
+        if (action === 'APPROVED') {
+          alert(`Approved`)
+        } else {
+          alert(`Rejected`)
+        }
+      }
+    } catch (error) {
+      logger.error('Error approval workflow:', { error })
+    }
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -60,7 +83,9 @@ export const renderApprovalButton = (
           <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
             <Copy className='h-4 w-4' />
           </div>
-        ) : approval?.status !== 'Pending' && approval?.userId !==session?.user?.id ? (
+        ) : approval?.status === 'APPROVED' || approval?.status === 'REJECTED' ? (
+          <></>
+        ) : approval?.status !== 'PENDING' && approval?.userId !== session?.user?.id ? (
           <Button
             variant='outline'
             onClick={handleApprovalWorkflow}
@@ -69,24 +94,25 @@ export const renderApprovalButton = (
             <Copy className='h-5 w-5' />
             <span className='sr-only'>Ask For Approval of Workflow</span>
           </Button>
-        ):(
+        ) : (
           <>
-          <Button
-            variant='outline'
-            className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
-          >
-            <Copy className='h-5 w-5' />
-            <span className='sr-only'>Accept</span>
-          </Button>
-          <Button
-            variant='outline'
-            className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
-          >
-            <Copy className='h-5 w-5' />
-            <span className='sr-only'>Reject</span>
-          </Button>
+            <Button
+              variant='outline'
+              onClick={() => handleApproveRejectWorkflow('APPROVED')}
+              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+            >
+              <Copy className='h-5 w-5' />
+              <span className='sr-only'>Accept</span>
+            </Button>
+            <Button
+              variant='outline'
+              onClick={() => handleApproveRejectWorkflow('REJECTED')}
+              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+            >
+              <Copy className='h-5 w-5' />
+              <span className='sr-only'>Reject</span>
+            </Button>
           </>
-          
         )}
       </TooltipTrigger>
       <TooltipContent>{getTooltipText()}</TooltipContent>

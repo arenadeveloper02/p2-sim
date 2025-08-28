@@ -1478,6 +1478,31 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         // No deployment status found
         return ''
       },
+      approveRejectWorkflow: async (
+        workflowId: string | null,
+        action: 'APPROVED' | 'REJECTED' | 'PENDING_APPROVAL',
+        reason: string,
+        statusId: string
+      ) => {
+        if (!workflowId) {
+          workflowId = get().activeWorkflowId
+          if (!workflowId) return ''
+        }
+        const response = await fetch(`/api/workflows/${workflowId}/approval`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            statusId: `${statusId}`,
+            action: `${action}`,
+            reason: `${reason}`,
+          }),
+        })
+        if (response) {
+          const data = await response.json()
+          return data
+        }
+        return ''
+      },
     }),
     { name: 'workflow-registry' }
   )
