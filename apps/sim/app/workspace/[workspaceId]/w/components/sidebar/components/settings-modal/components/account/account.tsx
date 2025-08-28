@@ -243,7 +243,7 @@ export function Account({ onOpenChange }: AccountProps) {
             {/* User Info Section */}
             <div className='flex items-center gap-4'>
               {/* User Avatar */}
-              <div className='relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#802FFF]'>
+              <div className='relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#F3F8FE]'>
                 {userImage ? (
                   <Image
                     src={userImage}
@@ -253,7 +253,7 @@ export function Account({ onOpenChange }: AccountProps) {
                     className='h-full w-full object-cover'
                   />
                 ) : (
-                  <AgentIcon className='h-5 w-5 text-white' />
+                  <AgentIcon className='h-6 w-6 text-white' />
                 )}
               </div>
 

@@ -3,7 +3,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { LoadingAgent } from '@/components/ui/loading-agent'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
@@ -21,6 +20,7 @@ import { COPILOT_TOOL_IDS } from '@/stores/copilot/constants'
 import { usePreviewStore } from '@/stores/copilot/preview-store'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 
 const logger = createLogger('Copilot')
 
@@ -302,12 +302,12 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
     const previewToolCall = lastMessage.toolCalls.find(
       (tc) =>
         tc.name === COPILOT_TOOL_IDS.BUILD_WORKFLOW &&
-        tc.state === 'completed' &&
+        tc.state === 'success' &&
         !isToolCallSeen(tc.id)
     )
 
-    if (previewToolCall?.result) {
-      logger.info('Preview workflow completed via native SSE - handling result')
+    if (previewToolCall) {
+      logger.info('Preview workflow completed via native SSE')
       // Mark as seen to prevent duplicate processing
       markToolCallAsSeen(previewToolCall.id)
       // Tool call handling logic would go here if needed
@@ -376,7 +376,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
         {!isInitialized ? (
           <div className='flex h-full w-full items-center justify-center'>
             <div className='flex flex-col items-center gap-3'>
-              <LoadingAgent size='md' />
+              <LoadingAgentP2 size='md' />              
               <p className='text-muted-foreground text-sm'>Loading chat history...</p>
             </div>
           </div>
