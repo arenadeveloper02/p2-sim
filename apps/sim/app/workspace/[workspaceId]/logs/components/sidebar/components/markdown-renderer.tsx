@@ -190,7 +190,7 @@ export default function LogMarkdownRenderer({ content }: { content: string }) {
       // Dynamically import Next.js Image to avoid SSR issues
       const Image = require('next/image').default
       return (
-        <div className='my-3 h-auto max-w-full rounded overflow-hidden'>
+        <div className='my-3 h-auto max-w-full overflow-hidden rounded'>
           <Image
             src={src || ''}
             alt={alt || 'Image'}
