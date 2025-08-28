@@ -202,7 +202,7 @@ export default function NavClient({
             <div className='inline-block'>
               <Link href='/' className='inline-flex'>
                 {brand.logoUrl ? (
-                  <img
+                  <Image
                     src={brand.logoUrl}
                     alt={`${brand.name} Logo`}
                     width={42}

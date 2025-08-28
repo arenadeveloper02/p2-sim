@@ -186,9 +186,22 @@ export default function LogMarkdownRenderer({ content }: { content: string }) {
     ),
 
     // Images
-    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-      <img src={src} alt={alt || 'Image'} className='my-3 h-auto max-w-full rounded' {...props} />
-    ),
+    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+      // Dynamically import Next.js Image to avoid SSR issues
+      const Image = require('next/image').default
+      return (
+        <div className='my-3 h-auto max-w-full rounded overflow-hidden'>
+          <Image
+            src={src || ''}
+            alt={alt || 'Image'}
+            layout='responsive'
+            width={400}
+            height={300}
+            {...props}
+          />
+        </div>
+      )
+    },
   }
 
   return (
