@@ -1,6 +1,6 @@
 'use client'
 
-import Image from "next/image"
+import Image from 'next/image'
 
 export interface LoadingAgentProps {
   /**
@@ -23,10 +23,10 @@ export function LoadingAgentP2({ size = 'md' }: LoadingAgentProps) {
 
   return (
     <Image
-       src={'https://arenav2image.s3.us-west-1.amazonaws.com/agentic_ui/agent_loader.gif'}
-       alt="loading-gif"
-       height={width}
-       width={height}
+      src={'https://arenav2image.s3.us-west-1.amazonaws.com/agentic_ui/agent_loader.gif'}
+      alt='loading-gif'
+      height={width}
+      width={height}
     />
   )
 }
