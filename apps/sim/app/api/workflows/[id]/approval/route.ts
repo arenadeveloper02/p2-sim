@@ -382,7 +382,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (userWorkspace.length === 0) {
       return ''
     }
-    return userWorkspace[0].id
+    return userWorkspace[0]
   })
-  return getWorkflowApproval
+  return NextResponse.json(getWorkflowApproval, { status: 201 })
 }

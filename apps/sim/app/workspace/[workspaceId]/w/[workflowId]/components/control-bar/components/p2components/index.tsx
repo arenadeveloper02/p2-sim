@@ -1,8 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect,useState } from 'react'
 import { Copy } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
-
-// import { useParams, useRouter } from 'next/navigation'
+import { useSession } from '@/lib/auth-client'
 
 import { createLogger } from '@/lib/logs/console/logger'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -14,6 +13,8 @@ export const renderApprovalButton = (
   isDebugging: boolean,
   activeWorkflowId: string | null
 ) => {
+  const [approval, setApproval] = useState<any>()
+  const { data: session } = useSession()
   const { askApproveWorkflow, getApprovalStatus } = useWorkflowRegistry()
   const canEdit = userPermissions.canEdit
   const isDisabled = !canEdit || isDebugging
@@ -21,7 +22,11 @@ export const renderApprovalButton = (
   useEffect(() => {
     if (activeWorkflowId) {
       const workFlowStatus = getApprovalStatus(activeWorkflowId)
-      console.log('workflowStatus', workFlowStatus)
+      workFlowStatus.then((e)=>{
+        setApproval(e)
+      }).catch((error)=>{
+        // Handle the error here
+      })
     }
   }, [activeWorkflowId])
 
@@ -36,17 +41,12 @@ export const renderApprovalButton = (
   const handleApprovalWorkflow = async () => {
     if (!activeWorkflowId || !userPermissions.canEdit) return
     try {
-      //   const router = useRouter()
-
       const newWorkflow = await askApproveWorkflow(
         activeWorkflowId,
         '6GPiMTG96UJaRjPnnxflUGJsfQBro5OC'
       )
       if (newWorkflow) {
         alert(`Sent for approval`)
-        // const params = useParams()
-        // const workspaceId = params.workspaceId as string
-        // router.push(`/workspace/${workspaceId}/w/${activeWorkflowId}`)
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
@@ -60,7 +60,7 @@ export const renderApprovalButton = (
           <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
             <Copy className='h-4 w-4' />
           </div>
-        ) : (
+        ) : approval?.status !== 'Pending' && approval?.userId !==session?.user?.id ? (
           <Button
             variant='outline'
             onClick={handleApprovalWorkflow}
@@ -69,6 +69,24 @@ export const renderApprovalButton = (
             <Copy className='h-5 w-5' />
             <span className='sr-only'>Ask For Approval of Workflow</span>
           </Button>
+        ):(
+          <>
+          <Button
+            variant='outline'
+            className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+          >
+            <Copy className='h-5 w-5' />
+            <span className='sr-only'>Accept</span>
+          </Button>
+          <Button
+            variant='outline'
+            className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+          >
+            <Copy className='h-5 w-5' />
+            <span className='sr-only'>Reject</span>
+          </Button>
+          </>
+          
         )}
       </TooltipTrigger>
       <TooltipContent>{getTooltipText()}</TooltipContent>
