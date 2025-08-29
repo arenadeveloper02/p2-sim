@@ -473,6 +473,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           )
         )
         .limit(1)
+        /**
+         * Update the workflow edges and blocks of the original workflow
+         */
       return userWorkspace[0]
     })
     return NextResponse.json(getWorkflowApproval, { status: 201 })
