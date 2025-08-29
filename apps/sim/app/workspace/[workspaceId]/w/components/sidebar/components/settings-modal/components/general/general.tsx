@@ -54,9 +54,9 @@ export function General() {
   //   }
   // }, [theme, isLoading])
 
-  const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
-    await setTheme(value)
-  }
+  // const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
+  //   await setTheme(value)
+  // }
 
   const handleAutoConnectChange = async (checked: boolean) => {
     if (checked !== isAutoConnectEnabled && !isAutoConnectLoading) {

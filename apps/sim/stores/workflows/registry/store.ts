@@ -1464,15 +1464,12 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           workflowId = get().activeWorkflowId
           if (!workflowId) return ''
         }
-        console.log('Fetching approval status for workflow:', workflowId)
         const response = await fetch(`/api/workflows/${workflowId}/approval`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         })
-        console.log('Approval status response:', response)
         if (response) {
           const data = await response.json()
-          console.log('Approval status data:', data)
           return data
         }
         // No deployment status found

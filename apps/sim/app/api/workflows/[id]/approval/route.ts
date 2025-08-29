@@ -14,6 +14,7 @@ import {
   workflowStatus,
   workflowSubflows,
   workspace,
+  user,
 } from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
 
@@ -46,10 +47,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let newWorkspaceId = crypto.randomUUID()
     const now = new Date()
     const workflowApproval = await db.transaction(async (tx) => {
+      /**
+       * Get arena developer user details
+       */
+      const arenaUser = await tx
+        .select()
+        .from(user)
+        .where(eq(user.email, 'arenadeveloper@position2.com'))
+        .limit(1)
       const userWorkspace = await tx
         .select()
         .from(workspace)
-        .where(and(eq(workspace.name, 'APPROVAL LIST'), eq(workspace.ownerId, approvalUserId)))
+        .where(and(eq(workspace.name, 'APPROVAL LIST'), eq(workspace.ownerId, arenaUser[0].id)))
         .limit(1)
       if (userWorkspace.length === 0) {
         logger.warn(
@@ -57,11 +66,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         )
         await tx.insert(workspace).values({
           id: newWorkspaceId,
-          ownerId: approvalUserId,
+          ownerId: arenaUser[0].id,
           name: `APPROVAL LIST`,
           createdAt: now,
           updatedAt: now,
         })
+        const permissionsId = crypto.randomUUID()
+        await tx.insert(permissions).values({
+          id: permissionsId,
+          userId: arenaUser[0].id,
+          entityType: `workspace`,
+          entityId: newWorkspaceId,
+          permissionType: `admin`,
+          createdAt: now,
+          updatedAt: now,
+        })
+      } else {
+        newWorkspaceId = userWorkspace[0].id as `${string}-${string}-${string}-${string}-${string}`
+      }
+      const ownerPermission = await tx
+        .select()
+        .from(permissions)
+        .where(
+          and(
+            eq(permissions.entityType, 'workspace'),
+            eq(permissions.entityId, newWorkspaceId),
+            eq(permissions.userId, approvalUserId)
+          )
+        )
+        .limit(1)
+      if (ownerPermission.length === 0) {
         const permissionsId = crypto.randomUUID()
         await tx.insert(permissions).values({
           id: permissionsId,
@@ -72,8 +106,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           createdAt: now,
           updatedAt: now,
         })
-      } else {
-        newWorkspaceId = userWorkspace[0].id as `${string}-${string}-${string}-${string}-${string}`
       }
     })
     logger.info(
@@ -389,7 +421,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             eq(workflowStatus.workflowId, workflowId),
             eq(workflowStatus.mappedWorkflowId, workflowId)
           ),
-          eq(workflowStatus.userId, session.user.id)
+          or(
+            eq(workflowStatus.userId, session.user.id),
+            eq(workflowStatus.ownerId, session.user.id)
+          )
         )
       )
       .limit(1)

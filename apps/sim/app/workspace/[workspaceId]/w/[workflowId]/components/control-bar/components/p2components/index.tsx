@@ -19,7 +19,7 @@ export const renderApprovalButton = (
   const [approval, setApproval] = useState<any>()
   const { data: session } = useSession()
   const { askApproveWorkflow, getApprovalStatus, approveRejectWorkflow } = useWorkflowRegistry()
-  const { setGlobalActionsDisabled} = useUiFlagsStore();
+  const { setGlobalActionsDisabled } = useUiFlagsStore()
   const canEdit = userPermissions.canEdit
   const isDisabled = !canEdit || isDebugging
 
@@ -27,11 +27,16 @@ export const renderApprovalButton = (
     if (activeWorkflowId) {
       const workFlowStatus = getApprovalStatus(activeWorkflowId)
       workFlowStatus
-        .then((e:any) => {
+        .then((e: any) => {
           setApproval(e)
-          if (e?.status === "APPROVED" || e?.status === "REJECTED") {
+          if (
+            (e?.status === 'APPROVED' || e?.status === 'REJECTED') &&
+            e?.userId === session?.user?.id
+          ) {
             setGlobalActionsDisabled(true)
-          } else if (e?.status === "PENDING" && e?.ownerId === session?.user?.id) {
+          } else if (e?.status === 'APPROVED' && e?.ownerId === session?.user?.id) {
+            setGlobalActionsDisabled(true)
+          } else if (e?.status === 'PENDING' && e?.ownerId === session?.user?.id) {
             setGlobalActionsDisabled(true)
           } else {
             setGlobalActionsDisabled(false)
@@ -44,7 +49,7 @@ export const renderApprovalButton = (
   }, [activeWorkflowId])
 
   const getTooltipText = () => {
-    if (!canEdit) return 'Admin permission required to ask for approval'
+    // if (!canEdit) return 'Admin permission required to ask for approval'
     if (isDebugging) return 'Cannot ask for approval while debugging'
 
     if (approval?.status === 'APPROVED') return 'Already approved'
