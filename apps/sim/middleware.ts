@@ -34,12 +34,6 @@ export async function middleware(request: NextRequest) {
   if (url.pathname === '/login' && email) {
     return NextResponse.redirect(new URL('/', request.url))
   }
-  if (email && !hasActiveSession && url.pathname !== '/') {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
-  if (email && !hasActiveSession && url.pathname === '/') {
-    return NextResponse.next()
-  }
 
   function getLoginRedirectUrl() {
     let redirectUrl = ''
