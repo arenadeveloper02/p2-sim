@@ -17,6 +17,7 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
+  OpenRouterIcon,
   xAIIcon,
 } from '@/components/icons'
 
@@ -56,12 +57,26 @@ export interface ProviderDefinition {
   defaultModel: string
   modelPatterns?: RegExp[]
   icon?: React.ComponentType<{ className?: string }>
+  capabilities?: ModelCapabilities
 }
 
 /**
  * Comprehensive provider definitions, single source of truth
  */
 export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified access to many models via OpenRouter',
+    defaultModel: '',
+    modelPatterns: [/^openrouter\//],
+    icon: OpenRouterIcon,
+    capabilities: {
+      temperature: { min: 0, max: 2 },
+      toolUsageControl: true,
+    },
+    models: [],
+  },
   openai: {
     id: 'openai',
     name: 'OpenAI',
@@ -69,6 +84,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'gpt-4o',
     modelPatterns: [/^gpt/, /^o1/],
     icon: OpenAIIcon,
+    capabilities: {
+      toolUsageControl: true,
+    },
     models: [
       {
         id: 'gpt-4o',
@@ -80,7 +98,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -92,7 +109,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -110,7 +126,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -128,7 +143,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -145,9 +159,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 10.0,
           updatedAt: '2025-08-07',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'gpt-4o-search-preview',
@@ -169,9 +181,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 60,
           updatedAt: '2025-06-17',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'o3',
@@ -181,9 +191,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 8,
           updatedAt: '2025-06-17',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'o4-mini',
@@ -193,9 +201,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 4.4,
           updatedAt: '2025-06-17',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'gpt-4.1',
@@ -207,7 +213,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -220,7 +225,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -233,7 +237,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
     ],
@@ -244,6 +247,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     description: 'Microsoft Azure OpenAI Service models',
     defaultModel: 'azure/gpt-4o',
     modelPatterns: [/^azure\//],
+    capabilities: {
+      toolUsageControl: true,
+    },
     icon: AzureIcon,
     models: [
       {
@@ -256,7 +262,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -268,7 +273,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -286,7 +290,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -304,7 +307,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {
-          toolUsageControl: true,
           reasoningEffort: {
             values: ['minimal', 'low', 'medium', 'high'],
           },
@@ -321,9 +323,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 10.0,
           updatedAt: '2025-08-07',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'azure/o3',
@@ -333,9 +333,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 40,
           updatedAt: '2025-06-15',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'azure/o4-mini',
@@ -345,9 +343,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 4.4,
           updatedAt: '2025-06-15',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'azure/gpt-4.1',
@@ -357,9 +353,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 8.0,
           updatedAt: '2025-06-15',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'azure/model-router',
@@ -369,9 +363,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 8.0,
           updatedAt: '2025-06-15',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
     ],
   },
@@ -382,6 +374,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'claude-sonnet-4-0',
     modelPatterns: [/^claude/],
     icon: AnthropicIcon,
+    capabilities: {
+      toolUsageControl: true,
+    },
     models: [
       {
         id: 'claude-sonnet-4-0',
@@ -393,7 +388,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
         },
       },
       {
@@ -406,7 +400,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
         },
       },
       {
@@ -419,7 +412,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
           computerUse: true,
         },
       },
@@ -433,7 +425,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
           computerUse: true,
         },
       },
@@ -445,6 +436,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     description: "Google's Gemini models",
     defaultModel: 'gemini-2.5-pro',
     modelPatterns: [/^gemini/],
+    capabilities: {
+      toolUsageControl: true,
+    },
     icon: GeminiIcon,
     models: [
       {
@@ -457,7 +451,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -470,7 +463,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
     ],
@@ -482,6 +474,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'deepseek-chat',
     modelPatterns: [],
     icon: DeepseekIcon,
+    capabilities: {
+      toolUsageControl: true,
+    },
     models: [
       {
         id: 'deepseek-chat',
@@ -491,9 +486,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 1.0,
           updatedAt: '2025-03-21',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
       {
         id: 'deepseek-v3',
@@ -505,7 +498,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
-          toolUsageControl: true,
         },
       },
       {
@@ -516,9 +508,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 1.5,
           updatedAt: '2025-03-21',
         },
-        capabilities: {
-          toolUsageControl: true,
-        },
+        capabilities: {},
       },
     ],
   },
@@ -529,6 +519,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'grok-4-latest',
     modelPatterns: [/^grok/],
     icon: xAIIcon,
+    capabilities: {
+      toolUsageControl: true,
+    },
     models: [
       {
         id: 'grok-4-latest',
@@ -540,7 +533,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
         },
       },
       {
@@ -553,7 +545,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
         },
       },
       {
@@ -566,7 +557,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          toolUsageControl: true,
         },
       },
     ],
@@ -578,6 +568,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'cerebras/llama-3.3-70b',
     modelPatterns: [/^cerebras/],
     icon: CerebrasIcon,
+    capabilities: {
+      toolUsageControl: false,
+    },
     models: [
       {
         id: 'cerebras/llama-3.3-70b',
@@ -587,9 +580,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.94,
           updatedAt: '2025-03-21',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
     ],
   },
@@ -600,6 +591,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: 'groq/openai/gpt-oss-120b',
     modelPatterns: [/^groq/],
     icon: GroqIcon,
+    capabilities: {
+      toolUsageControl: false,
+    },
     models: [
       {
         id: 'groq/openai/gpt-oss-120b',
@@ -609,9 +603,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.75,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/openai/gpt-oss-20b',
@@ -621,9 +613,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.25,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/gemma2-9b-it',
@@ -633,9 +623,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.04,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/llama-3.1-8b-instant',
@@ -645,9 +633,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.08,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/llama-3.3-70b-versatile',
@@ -657,9 +643,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.61,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/meta-llama/llama-guard-4-12b',
@@ -669,9 +653,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.2,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/deepseek-r1-distill-llama-70b',
@@ -681,9 +663,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.99,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
       {
         id: 'groq/meta-llama/llama-4-maverick-17b-128e-instruct',
@@ -693,9 +673,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           output: 0.6,
           updatedAt: '2025-08-05',
         },
-        capabilities: {
-          toolUsageControl: false,
-        },
+        capabilities: {},
       },
     ],
   },
@@ -709,8 +687,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     models: [], // Populated dynamically
   },
 }
-
-// Helper functions to extract information from the comprehensive definitions
 
 /**
  * Get all models for a specific provider
@@ -746,9 +722,23 @@ export function getModelCapabilities(modelId: string): ModelCapabilities | null 
   for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
     const model = provider.models.find((m) => m.id.toLowerCase() === modelId.toLowerCase())
     if (model) {
-      return model.capabilities
+      // Merge provider capabilities with model capabilities, model takes precedence
+      const capabilities: ModelCapabilities = { ...provider.capabilities, ...model.capabilities }
+      return capabilities
     }
   }
+
+  // If no model found, check for provider-level capabilities for dynamically fetched models
+  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+    if (provider.modelPatterns) {
+      for (const pattern of provider.modelPatterns) {
+        if (pattern.test(modelId.toLowerCase())) {
+          return provider.capabilities || null
+        }
+      }
+    }
+  }
+
   return null
 }
 
@@ -803,7 +793,7 @@ export function getModelsWithTempRange02(): string[] {
 export function getProvidersWithToolUsageControl(): string[] {
   const providers: string[] = []
   for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
-    if (provider.models.some((model) => model.capabilities.toolUsageControl)) {
+    if (provider.capabilities?.toolUsageControl) {
       providers.push(providerId)
     }
   }
@@ -861,6 +851,21 @@ export function supportsToolUsageControl(providerId: string): boolean {
  */
 export function updateOllamaModels(models: string[]): void {
   PROVIDER_DEFINITIONS.ollama.models = models.map((modelId) => ({
+    id: modelId,
+    pricing: {
+      input: 0,
+      output: 0,
+      updatedAt: new Date().toISOString().split('T')[0],
+    },
+    capabilities: {},
+  }))
+}
+
+/**
+ * Update OpenRouter models dynamically
+ */
+export function updateOpenRouterModels(models: string[]): void {
+  PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
     id: modelId,
     pricing: {
       input: 0,
