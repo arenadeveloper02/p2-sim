@@ -1,3 +1,5 @@
+'use client'
+
 import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, FileCheck } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
