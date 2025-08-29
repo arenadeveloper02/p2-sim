@@ -54,6 +54,9 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = getLoginRedirectUrl()
     return NextResponse.redirect(redirectUrl)
   }
+  if (email) {
+    return NextResponse.next()
+  }
 
   // Extract subdomain - handle nested subdomains for any domain
   const isCustomDomain = (() => {
