@@ -37,7 +37,7 @@ export function General() {
   )
   const isThemeLoading = useGeneralStore((state) => state.isThemeLoading)
 
-  const setTheme = useGeneralStore((state) => state.setTheme)
+  const setTheme = useGeneralStore((state) => 'light')
   const toggleAutoConnect = useGeneralStore((state) => state.toggleAutoConnect)
 
   const toggleAutoPan = useGeneralStore((state) => state.toggleAutoPan)

@@ -7,6 +7,7 @@ import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useUiFlagsStore } from '@/stores/feature-flag/store'
 
 const logger = createLogger('workflow-p2')
 
@@ -18,6 +19,7 @@ export const renderApprovalButton = (
   const [approval, setApproval] = useState<any>()
   const { data: session } = useSession()
   const { askApproveWorkflow, getApprovalStatus, approveRejectWorkflow } = useWorkflowRegistry()
+  const { setGlobalActionsDisabled} = useUiFlagsStore();
   const canEdit = userPermissions.canEdit
   const isDisabled = !canEdit || isDebugging
 
@@ -25,11 +27,18 @@ export const renderApprovalButton = (
     if (activeWorkflowId) {
       const workFlowStatus = getApprovalStatus(activeWorkflowId)
       workFlowStatus
-        .then((e) => {
+        .then((e:any) => {
           setApproval(e)
+          if (e?.status === "APPROVED" || e?.status === "REJECTED") {
+            setGlobalActionsDisabled(true)
+          } else if (e?.status === "PENDING" && e?.ownerId === session?.user?.id) {
+            setGlobalActionsDisabled(true)
+          } else {
+            setGlobalActionsDisabled(false)
+          }
         })
         .catch((error) => {
-          // Handle the error here
+          console.log(error)
         })
     }
   }, [activeWorkflowId])
@@ -57,6 +66,7 @@ export const renderApprovalButton = (
       )
       if (newWorkflow) {
         alert(`Sent for approval`)
+        setGlobalActionsDisabled(true)
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
@@ -78,6 +88,7 @@ export const renderApprovalButton = (
         } else {
           alert(`Rejected`)
         }
+        setGlobalActionsDisabled(true)
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })

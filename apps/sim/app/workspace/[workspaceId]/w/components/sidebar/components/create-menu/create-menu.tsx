@@ -31,6 +31,8 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const [isCreating, setIsCreating] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [disableCreate, setDisableCreate] = useState(false)
+
   const [pressTimer, setPressTimer] = useState<NodeJS.Timeout | null>(null)
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null)
 
@@ -279,6 +281,24 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     startCloseTimer()
   }, [startCloseTimer])
 
+  const fetchWorkspaces = useCallback(async () => {
+    const response = await fetch('/api/workspaces')
+    if (!response.ok) {
+      throw new Error('Failed to fetch workspaces')
+    }else{
+      const data = await response.json()
+      data?.workspaces.forEach((work:any) => {
+        if(work.id=== workspaceId && work.name==="APPROVAL LIST"){
+          setDisableCreate(true)
+        }
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchWorkspaces()
+  }, [fetchWorkspaces])
+
   // Cleanup effect
   useEffect(() => {
     return () => clearAllTimers()
@@ -301,7 +321,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
 
   return (
     <>
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
+      {!disableCreate && <Popover open={isOpen} onOpenChange={setIsOpen}>
         <PopoverTrigger asChild>
           <Button
             variant='ghost'
@@ -366,7 +386,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
             </button>
           )}
         </PopoverContent>
-      </Popover>
+      </Popover>}
 
       <input
         ref={fileInputRef}
