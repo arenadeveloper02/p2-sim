@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, FileCheck } from 'lucide-react'
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -87,20 +95,19 @@ export const renderApprovalButton = (
     setReason(e.target.value)
   }
 
+  const canShowApprovalRequest =
+    !isDisabled &&
+    approval?.status !== 'APPROVED' &&
+    approval?.status !== 'REJECTED' &&
+    approval?.status !== 'PENDING' &&
+    approval?.userId !== session?.user?.id
+
+  const canShowApproveReject =
+    !isDisabled && approval?.status === 'PENDING' && approval?.userId !== session?.user?.id
+
   return (
     <>
-      {isDisabled ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
-              <FileCheck className='h-4 w-4' />
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>Disabled</TooltipContent>
-        </Tooltip>
-      ) : approval?.status === 'APPROVED' || approval?.status === 'REJECTED' ? (
-        <></>
-      ) : approval?.status !== 'PENDING' && approval?.userId !== session?.user?.id ? (
+      {canShowApprovalRequest && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -117,7 +124,9 @@ export const renderApprovalButton = (
           </TooltipTrigger>
           <TooltipContent>Ask For Approval</TooltipContent>
         </Tooltip>
-      ) : (
+      )}
+
+      {canShowApproveReject && (
         <>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -148,6 +157,7 @@ export const renderApprovalButton = (
           </Tooltip>
         </>
       )}
+
       {/* Reject approval Modal */}
       {activeWorkflowId && (
         <RejectApprovalModal
