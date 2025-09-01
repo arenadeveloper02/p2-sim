@@ -53,6 +53,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { GetApprovalModal } from './components/approval-modal/approval-modal'
 
 const logger = createLogger('ControlBar')
 
@@ -112,6 +113,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
   const [isAutoLayouting, setIsAutoLayouting] = useState(false)
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false)
 
   // Delete workflow state - grouped for better organization
   const [deleteState, setDeleteState] = useState({
@@ -1206,6 +1208,10 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  const handleOpenApproval = () => {
+    setIsApprovalModalOpen(true)
+  }
+
   return (
     <div className='fixed top-4 right-4 z-20 flex items-center gap-1'>
       {renderDisconnectionNotice()}
@@ -1213,7 +1219,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {isExpanded && renderPublishButton()}
-      {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId)}
+      {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId, handleOpenApproval)}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {!isDebugging && renderDebugModeToggle()}
@@ -1226,6 +1232,15 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           open={isTemplateModalOpen}
           onOpenChange={setIsTemplateModalOpen}
           workflowId={activeWorkflowId}
+        />
+      )}
+      {/* get approval Modal */}
+      {activeWorkflowId && (
+        <GetApprovalModal
+          open={isApprovalModalOpen}
+          onOpenChange={setIsApprovalModalOpen}
+          workflowId={activeWorkflowId}
+          canEdit={userPermissions.canEdit}
         />
       )}
     </div>

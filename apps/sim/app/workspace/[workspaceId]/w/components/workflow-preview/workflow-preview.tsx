@@ -5,6 +5,7 @@ import { cloneDeep } from 'lodash'
 import ReactFlow, {
   Background,
   ConnectionLineType,
+  Controls,
   type Edge,
   type EdgeTypes,
   type Node,
@@ -298,6 +299,7 @@ export function WorkflowPreview({
               : undefined
           }
         >
+          <Controls position='bottom-right' />
           <Background />
         </ReactFlow>
       </div>

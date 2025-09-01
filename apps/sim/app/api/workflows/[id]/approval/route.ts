@@ -1,8 +1,8 @@
 import crypto from 'crypto'
 import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { v4 as uuidv4 } from 'uuid'
+import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
@@ -10,14 +10,14 @@ import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { db } from '@/db'
 import {
   permissions,
+  templates,
+  user,
   workflow,
   workflowBlocks,
   workflowEdges,
   workflowStatus,
   workflowSubflows,
   workspace,
-  user,
-  templates,
 } from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
 

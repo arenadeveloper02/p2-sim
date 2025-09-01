@@ -285,14 +285,13 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     const response = await fetch('/api/workspaces')
     if (!response.ok) {
       throw new Error('Failed to fetch workspaces')
-    } else {
-      const data = await response.json()
-      data?.workspaces.forEach((work: any) => {
-        if (work.id === workspaceId && work.name === 'APPROVAL LIST') {
-          setDisableCreate(true)
-        }
-      })
     }
+    const data = await response.json()
+    data?.workspaces.forEach((work: any) => {
+      if (work.id === workspaceId && work.name === 'APPROVAL LIST') {
+        setDisableCreate(true)
+      }
+    })
   }, [])
 
   useEffect(() => {

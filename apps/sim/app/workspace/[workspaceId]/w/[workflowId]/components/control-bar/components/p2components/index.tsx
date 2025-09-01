@@ -6,19 +6,25 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useUiFlagsStore } from '@/stores/feature-flag/store'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { RejectApprovalModal } from '../reject-modal/reject-modal'
 
 const logger = createLogger('workflow-p2')
 
 export const renderApprovalButton = (
   userPermissions: any,
   isDebugging: boolean,
-  activeWorkflowId: string | null
+  activeWorkflowId: string | null,
+  handleOpenApproval: any
 ) => {
   const [approval, setApproval] = useState<any>()
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   const { data: session } = useSession()
-  const { askApproveWorkflow, getApprovalStatus, approveRejectWorkflow } = useWorkflowRegistry()
+  const { getApprovalStatus, approveRejectWorkflow } = useWorkflowRegistry()
   const { setGlobalActionsDisabled } = useUiFlagsStore()
   const canEdit = userPermissions.canEdit
   const isDisabled = !canEdit || isDebugging
@@ -48,43 +54,14 @@ export const renderApprovalButton = (
     }
   }, [activeWorkflowId])
 
-  const getTooltipText = () => {
-    // if (!canEdit) return 'Admin permission required to ask for approval'
-    if (isDebugging) return 'Cannot ask for approval while debugging'
-
-    if (approval?.status === 'APPROVED') return 'Already approved'
-    if (approval?.status === 'REJECTED') return 'Already rejected'
-
-    if (approval?.status === 'PENDING' && approval?.userId === session?.user?.id) {
-      return 'Approve or Reject the workflow'
-    }
-
-    return 'Ask For Approval'
-  }
-
-  const handleApprovalWorkflow = async () => {
+  const handleApproveRejectWorkflow = async (action: 'APPROVED' | 'REJECTED', reason?: string) => {
     if (!activeWorkflowId || !userPermissions.canEdit) return
-    try {
-      const newWorkflow = await askApproveWorkflow(
-        activeWorkflowId,
-        '6GPiMTG96UJaRjPnnxflUGJsfQBro5OC'
-      )
-      if (newWorkflow) {
-        alert(`Sent for approval`)
-        setGlobalActionsDisabled(true)
-      }
-    } catch (error) {
-      logger.error('Error approval workflow:', { error })
-    }
-  }
-
-  const handleApproveRejectWorkflow = async (action: 'APPROVED' | 'REJECTED') => {
-    if (!activeWorkflowId || !userPermissions.canEdit) return
+    setIsSubmitting(true)
     try {
       const aRWorkflow = await approveRejectWorkflow(
         activeWorkflowId,
         action,
-        'Reason for approval/rejection',
+        reason || 'Reason not provided',
         approval.id
       )
       if (aRWorkflow) {
@@ -93,6 +70,8 @@ export const renderApprovalButton = (
         } else {
           alert(`Rejected`)
         }
+        setIsSubmitting(false)
+        setIsRejectModalOpen(false)
         setGlobalActionsDisabled(true)
       }
     } catch (error) {
@@ -100,49 +79,86 @@ export const renderApprovalButton = (
     }
   }
 
+  const handleOpenReject = () => {
+    setIsRejectModalOpen(true)
+  }
+
+  const handleReasonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setReason(e.target.value)
+  }
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {isDisabled ? (
-          <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
-            <FileCheck className='h-4 w-4' />
-          </div>
-        ) : approval?.status === 'APPROVED' || approval?.status === 'REJECTED' ? (
-          <></>
-        ) : approval?.status !== 'PENDING' && approval?.userId !== session?.user?.id ? (
-          <Button
-            variant='outline'
-            onClick={handleApprovalWorkflow}
-            className={cn(
-              'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
-              'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
-            )}
-          >
-            <FileCheck className='h-5 w-5' />
-            <span className='sr-only'>Ask For Approval of Workflow</span>
-          </Button>
-        ) : (
-          <>
+    <>
+      {isDisabled ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
+              <FileCheck className='h-4 w-4' />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>Disabled</TooltipContent>
+        </Tooltip>
+      ) : approval?.status === 'APPROVED' || approval?.status === 'REJECTED' ? (
+        <></>
+      ) : approval?.status !== 'PENDING' && approval?.userId !== session?.user?.id ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               variant='outline'
-              onClick={() => handleApproveRejectWorkflow('APPROVED')}
-              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-green-500 hover:text-white'
+              onClick={handleOpenApproval}
+              className={cn(
+                'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+                'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
+              )}
             >
-              <CircleCheck className='h-5 w-5' />
-              <span className='sr-only'>Accept</span>
+              <FileCheck className='h-5 w-5' />
+              <span className='sr-only'>Ask For Approval of Workflow</span>
             </Button>
-            <Button
-              variant='outline'
-              onClick={() => handleApproveRejectWorkflow('REJECTED')}
-              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
-            >
-              <CircleX className='h-5 w-5' />
-              <span className='sr-only'>Reject</span>
-            </Button>
-          </>
-        )}
-      </TooltipTrigger>
-      <TooltipContent>{getTooltipText()}</TooltipContent>
-    </Tooltip>
+          </TooltipTrigger>
+          <TooltipContent>Ask For Approval</TooltipContent>
+        </Tooltip>
+      ) : (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='outline'
+                onClick={() => handleApproveRejectWorkflow('APPROVED')}
+                className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-green-500 hover:text-white'
+              >
+                <CircleCheck className='h-5 w-5' />
+                <span className='sr-only'>Accept</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Approve Workflow</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='outline'
+                onClick={handleOpenReject}
+                className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+              >
+                <CircleX className='h-5 w-5' />
+                <span className='sr-only'>Reject</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reject Workflow</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+      {/* Reject approval Modal */}
+      {activeWorkflowId && (
+        <RejectApprovalModal
+          open={isRejectModalOpen}
+          onOpenChange={setIsRejectModalOpen}
+          onConfirmReject={(reason: string) => handleApproveRejectWorkflow('REJECTED', reason)}
+          handleReasonChange={handleReasonChange}
+          reason={reason}
+          isSubmitting={isSubmitting}
+        />
+      )}
+    </>
   )
 }

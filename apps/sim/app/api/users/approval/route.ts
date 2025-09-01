@@ -4,8 +4,7 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { apiKey as apiKeyTable, subscription, user } from '@/db/schema'
-import { RateLimiter } from '@/services/queue'
+import { apiKey as apiKeyTable, user } from '@/db/schema'
 
 const logger = createLogger('RateLimitAPI')
 

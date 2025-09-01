@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   Background,
   ConnectionLineType,
+  Controls,
   type Edge,
   type EdgeTypes,
   type NodeTypes,
@@ -1691,6 +1692,7 @@ const WorkflowContent = React.memo(() => {
           autoPanOnConnect={effectivePermissions.canEdit}
           autoPanOnNodeDrag={effectivePermissions.canEdit}
         >
+          <Controls position='bottom-right' />
           <Background
             color='hsl(var(--workflow-dots))'
             size={4}
