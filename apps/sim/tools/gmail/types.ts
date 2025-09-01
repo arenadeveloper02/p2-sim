@@ -10,6 +10,7 @@ export interface GmailSendParams extends BaseGmailParams {
   to: string
   cc?: string
   bcc?: string
+  isHtml?: boolean
   subject: string
   body: string
 }
