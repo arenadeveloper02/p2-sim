@@ -2,9 +2,11 @@ import crypto from 'crypto'
 import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
+import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { db } from '@/db'
 import {
   permissions,
@@ -15,9 +17,9 @@ import {
   workflowSubflows,
   workspace,
   user,
+  templates,
 } from '@/db/schema'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
-import { buildWorkflowStateForTemplate } from '@/lib/workflows/state-builder'
 
 const logger = createLogger('WorkflowApprovalAPI')
 
@@ -675,26 +677,42 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       /**
        * Create the template for the approval workflow
        */
-      const templateState = buildWorkflowStateForTemplate(userWorkflowStatus[0].mappedWorkflowId)
+      const workflowData = await db
+        .select()
+        .from(workflow)
+        .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
+        .then((rows) => rows[0])
+      console.log('workflowData', workflowData)
+      const normalizedData = await loadWorkflowFromNormalizedTables(
+        userWorkflowStatus[0].mappedWorkflowId
+      )
+      console.log('workflowData', normalizedData)
 
-      const templateData = {
+      const templateId = uuidv4()
+      const newTemplate = {
+        id: templateId,
         workflowId: userWorkflowStatus[0].mappedWorkflowId,
+        userId: session.user.id,
         name: userWorkflowStatus[0].name,
-        description: 'Bot Created a Template',
-        author: userWorkflowStatus[0].ownerId,
+        description: ' Bot created the template',
+        author: session.user.name,
+        views: 0,
+        stars: 0,
+        color: '#3972F6',
+        icon: 'FileText',
         category: 'marketing',
-        icon: '',
-        color: '',
-        state: templateState,
-      }
-      const response = await fetch('/api/templates', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+        state: {
+          blocks: normalizedData?.blocks,
+          edges: normalizedData?.edges,
+          loops: normalizedData?.loops,
+          parallels: normalizedData?.parallels,
+          lastSaved: now,
         },
-        body: JSON.stringify(templateData),
-      })
-      console.log(response)
+        createdAt: now,
+        updatedAt: now,
+      }
+      console.log('newTemplate', newTemplate)
+      await db.insert(templates).values(newTemplate)
       return userWorkflowStatus[0]
     })
     return NextResponse.json(getWorkflowApproval, { status: 201 })

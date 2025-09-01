@@ -37,13 +37,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user subscription
-    const users = await db
-      .select()
-      .from(user)
+    const users = await db.select().from(user)
 
     return NextResponse.json({
       success: true,
-      users: users
+      users: users,
     })
   } catch (error: any) {
     logger.error('Error checking rate limit:', error)
