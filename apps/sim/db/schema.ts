@@ -109,6 +109,16 @@ export const workflowFolder = pgTable(
   })
 )
 
+export const workflowTemplateMapper = pgTable('workflow_template_mapper', {
+  id: text('id').primaryKey(),
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+  templateId: text('template_id'),
+  workflowId: text('workflow_id'),
+  workspaceId: text('workspace_id'),
+  name: text('name'),
+})
+
 export const workflow = pgTable(
   'workflow',
   {

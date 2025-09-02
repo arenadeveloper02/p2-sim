@@ -34,6 +34,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'lh3.googleusercontent.com',
       },
+      // ✅ Added placeholder.com for Next.js <Image />
+      {
+        protocol: 'https',
+        hostname: 'via.placeholder.com',
+      },
       // Custom domain for file storage if configured
       ...(env.NEXT_PUBLIC_BLOB_BASE_URL
         ? [
