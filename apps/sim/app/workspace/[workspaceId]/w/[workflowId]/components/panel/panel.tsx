@@ -264,7 +264,7 @@ export function Panel() {
     setIsResizing(false)
   }, [])
 
-  const handleViewWorkflow = ()=>{
+  const handleViewWorkflow = () => {
     handleClosePanel()
   }
 
@@ -317,7 +317,7 @@ export function Panel() {
 
       ;(async () => {
         const data = await handleFetchTemplate()
-        if(data?.templateId){
+        if (data?.templateId) {
           handleTabClick('chat')
         }
         setParentWorkflowId(data?.templateId || '')
@@ -331,14 +331,16 @@ export function Panel() {
       <div
         className={`fixed  ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
       >
-        {parentWorkflowId && isOpen && <button
-          onClick={() => {
-            handleViewWorkflow()
-          }}
-          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 absolute right-[102%] w-[128px] bg-blue-500 !text-white`}
-        >
-          View workflow
-        </button>}
+        {parentWorkflowId && isOpen && (
+          <button
+            onClick={() => {
+              handleViewWorkflow()
+            }}
+            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 absolute right-[102%] w-[128px] bg-blue-500 !text-white`}
+          >
+            View workflow
+          </button>
+        )}
         <button
           onClick={() => handleTabClick('chat')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${

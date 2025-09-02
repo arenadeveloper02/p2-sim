@@ -1207,27 +1207,31 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   }
 
   return (
-        <div className={cn('fixed top-4 right-4 z-20 flex items-center gap-1 test-2', isFullScreenExpanded && 'z-1 right-5')}>
-          {renderDisconnectionNotice()}
-          {renderToggleButton()}
-          {isExpanded && <ExportControls />}
-          {isExpanded && renderAutoLayoutButton()}
-          {isExpanded && renderPublishButton()}
-          {renderDeleteButton()}
-          {renderDuplicateButton()}
-          {!isDebugging && renderDebugModeToggle()}
-          {renderDeployButton()}
-          {isDebugging ? renderDebugControlsBar() : renderRunButton()}
+    <div
+      className={cn(
+        'fixed top-4 right-4 z-20 flex items-center gap-1 test-2',
+        isFullScreenExpanded && 'z-1 right-5'
+      )}
+    >
+      {renderDisconnectionNotice()}
+      {renderToggleButton()}
+      {isExpanded && <ExportControls />}
+      {isExpanded && renderAutoLayoutButton()}
+      {isExpanded && renderPublishButton()}
+      {renderDeleteButton()}
+      {renderDuplicateButton()}
+      {!isDebugging && renderDebugModeToggle()}
+      {renderDeployButton()}
+      {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
-          {/* Template Modal */}
-          {activeWorkflowId && (
-            <TemplateModal
-              open={isTemplateModalOpen}
-              onOpenChange={setIsTemplateModalOpen}
-              workflowId={activeWorkflowId}
-            />
-          )}
-        </div>
-     
+      {/* Template Modal */}
+      {activeWorkflowId && (
+        <TemplateModal
+          open={isTemplateModalOpen}
+          onOpenChange={setIsTemplateModalOpen}
+          workflowId={activeWorkflowId}
+        />
+      )}
+    </div>
   )
 }
