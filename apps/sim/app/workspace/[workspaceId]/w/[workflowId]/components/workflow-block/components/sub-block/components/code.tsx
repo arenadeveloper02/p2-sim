@@ -104,7 +104,7 @@ export function Code({
   }
 
   const showCollapseButton =
-    (subBlockId === 'responseFormat' || subBlockId === 'code') && code.split('\n').length > 5
+    (subBlockId === 'responseFormat' || subBlockId === 'code') && code?.split('\n')?.length > 5
 
   const isValidJson = useMemo(() => {
     if (subBlockId !== 'responseFormat' || !code.trim()) {

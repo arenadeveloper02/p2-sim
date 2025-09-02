@@ -46,6 +46,10 @@ export function Panel() {
   const clearChat = useChatStore((state) => state.clearChat)
   const exportChatCSV = useChatStore((state) => state.exportChatCSV)
   const { activeWorkflowId } = useWorkflowRegistry()
+  const isFullScreen = usePanelStore((state) => state.isFullScreen)
+  const setFullScreen = usePanelStore((state) => state.setFullScreen)
+  const parentWorkflowId = usePanelStore((state) => state.parentWorkflowId)
+  const setParentWorkflowId = usePanelStore((state) => state.setParentWorkflowId)
 
   // Copilot store for chat management
   const {
@@ -221,6 +225,7 @@ export function Panel() {
   // Handle tab clicks - no loading, just switch tabs
   const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot') => {
     setActiveTab(tab)
+    setFullScreen(tab === 'chat' || tab === 'console')
     if (!isOpen) {
       togglePanel()
     }
@@ -229,6 +234,7 @@ export function Panel() {
 
   const handleClosePanel = () => {
     togglePanel()
+    setFullScreen(false)
   }
 
   // Resize functionality
@@ -287,10 +293,36 @@ export function Panel() {
     }
   }, [activeWorkflowId, copilotWorkflowId, ensureCopilotDataLoaded])
 
+  useEffect(() => {
+    if (activeWorkflowId) {
+      async function handleFetchTemplate() {
+        const url = `/api/workflows/template-mapper/${activeWorkflowId}`
+        try {
+          const response = await fetch(url)
+          if (!response.ok) {
+            return { error: `Response status: ${response.status}` }
+          }
+
+          const result = await response.json()
+          return result
+        } catch (error: any) {
+          return { error: error.message }
+        }
+      }
+
+      ;(async () => {
+        const data = await handleFetchTemplate()
+        setParentWorkflowId(data?.templateId || '')
+      })()
+    }
+  }, [activeWorkflowId])
+
   return (
     <>
       {/* Tab Selector - Always visible */}
-      <div className='fixed top-[76px] right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs'>
+      <div
+        className={`fixed  ${isFullScreen && parentWorkflowId ? 'top-[64px]' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
+      >
         <button
           onClick={() => handleTabClick('chat')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
@@ -307,29 +339,35 @@ export function Panel() {
         >
           Console
         </button>
-        <button
-          onClick={() => handleTabClick('copilot')}
-          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-            isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
-          }`}
-        >
-          Copilot
-        </button>
-        <button
-          onClick={() => handleTabClick('variables')}
-          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-            isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
-          }`}
-        >
-          Variables
-        </button>
+        {!parentWorkflowId && (
+          <>
+            <button
+              onClick={() => handleTabClick('copilot')}
+              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+                isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
+              }`}
+            >
+              Copilot
+            </button>
+            <button
+              onClick={() => handleTabClick('variables')}
+              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+                isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+              }`}
+            >
+              Variables
+            </button>
+          </>
+        )}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}
       {isOpen && (
         <div
-          className='fixed top-[124px] right-4 bottom-4 z-10 flex flex-col rounded-[14px] border bg-card shadow-xs'
-          style={{ width: `${panelWidth}px` }}
+          className={`fixed ${isFullScreen && parentWorkflowId ? 'top-[16px]' : 'top-[124px]'} right-4 bottom-4 z-10 flex flex-col rounded-[14px] border bg-card shadow-xs`}
+          style={{
+            width: isFullScreen && parentWorkflowId ? 'calc(100vw - 265px)' : `${panelWidth}px`,
+          }}
         >
           {/* Invisible resize handle */}
           <div

@@ -94,7 +94,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     isLoading: isRegistryLoading,
   } = useWorkflowRegistry()
   const { isExecuting, handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
-  const { setActiveTab, togglePanel, isOpen } = usePanelStore()
+  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentWorkflowId } = usePanelStore()
   const { getFolderTree, expandedFolders } = useFolderStore()
 
   // User permissions - use stable activeWorkspaceId from registry instead of deriving from currentWorkflow
@@ -1206,26 +1206,32 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   }
 
   return (
-    <div className='fixed top-4 right-4 z-20 flex items-center gap-1'>
-      {renderDisconnectionNotice()}
-      {renderToggleButton()}
-      {isExpanded && <ExportControls />}
-      {isExpanded && renderAutoLayoutButton()}
-      {isExpanded && renderPublishButton()}
-      {renderDeleteButton()}
-      {renderDuplicateButton()}
-      {!isDebugging && renderDebugModeToggle()}
-      {renderDeployButton()}
-      {isDebugging ? renderDebugControlsBar() : renderRunButton()}
+    <>
+      {isFullScreen && parentWorkflowId && isOpen ? (
+        <></>
+      ) : (
+        <div className='fixed top-4 right-4 z-20 flex items-center gap-1 test-2'>
+          {renderDisconnectionNotice()}
+          {renderToggleButton()}
+          {isExpanded && <ExportControls />}
+          {isExpanded && renderAutoLayoutButton()}
+          {isExpanded && renderPublishButton()}
+          {renderDeleteButton()}
+          {renderDuplicateButton()}
+          {!isDebugging && renderDebugModeToggle()}
+          {renderDeployButton()}
+          {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
-      {/* Template Modal */}
-      {activeWorkflowId && (
-        <TemplateModal
-          open={isTemplateModalOpen}
-          onOpenChange={setIsTemplateModalOpen}
-          workflowId={activeWorkflowId}
-        />
+          {/* Template Modal */}
+          {activeWorkflowId && (
+            <TemplateModal
+              open={isTemplateModalOpen}
+              onOpenChange={setIsTemplateModalOpen}
+              workflowId={activeWorkflowId}
+            />
+          )}
+        </div>
       )}
-    </div>
+    </>
   )
 }
