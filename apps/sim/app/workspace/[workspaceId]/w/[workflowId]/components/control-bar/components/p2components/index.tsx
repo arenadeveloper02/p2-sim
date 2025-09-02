@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { useUiFlagsStore } from '@/stores/feature-flag/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { RejectApprovalModal } from '../reject-modal/reject-modal'
+import { set } from 'lodash'
 
 const logger = createLogger('workflow-p2')
 
@@ -26,7 +27,7 @@ export const renderApprovalButton = (
   activeWorkflowId: string | null,
   handleOpenApproval: any
 ) => {
-  const [approval, setApproval] = useState<any>()
+  const [approval, setApproval] = useState<any>({})
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -97,13 +98,11 @@ export const renderApprovalButton = (
 
   const canShowApprovalRequest =
     !isDisabled &&
-    approval?.status !== 'APPROVED' &&
-    approval?.status !== 'REJECTED' &&
-    approval?.status !== 'PENDING' &&
+    (approval?.status === 'NO_APPROVAL_REQUEST' || approval?.status === 'REJECTED') &&
     approval?.userId !== session?.user?.id
 
   const canShowApproveReject =
-    !isDisabled && approval?.status === 'PENDING' && approval?.userId !== session?.user?.id
+    !isDisabled && approval?.status === 'PENDING' && approval?.userId === session?.user?.id
 
   return (
     <>
@@ -163,7 +162,11 @@ export const renderApprovalButton = (
         <RejectApprovalModal
           open={isRejectModalOpen}
           onOpenChange={setIsRejectModalOpen}
-          onConfirmReject={(reason: string) => handleApproveRejectWorkflow('REJECTED', reason)}
+          onConfirmReject={(reason: string) => {
+            handleApproveRejectWorkflow('REJECTED', reason)
+            setIsRejectModalOpen(false)
+            setReason('')
+          }}
           handleReasonChange={handleReasonChange}
           reason={reason}
           isSubmitting={isSubmitting}

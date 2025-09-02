@@ -432,7 +432,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       )
       .limit(1)
     if (userWorkspace.length === 0) {
-      return ''
+      return { status: 'NO_APPROVAL_REQUEST' }
     }
     return userWorkspace[0]
   })

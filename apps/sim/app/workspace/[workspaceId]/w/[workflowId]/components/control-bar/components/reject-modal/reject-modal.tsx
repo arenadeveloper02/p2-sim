@@ -23,7 +23,6 @@ export function RejectApprovalModal({
   handleReasonChange,
   reason,
 }: RejectModalProps) {
-  const { data: session } = useSession()
   const handleCloseModal = () => {
     onOpenChange(false)
   }
@@ -64,7 +63,7 @@ export function RejectApprovalModal({
           </Button>
 
           <Button
-            disabled={false}
+            disabled={reason.trim().length === 0 || isSubmitting}
             variant={'destructive'}
             onClick={() => onConfirmReject('REJECTED')}
           >
