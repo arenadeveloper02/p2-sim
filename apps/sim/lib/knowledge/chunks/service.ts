@@ -12,6 +12,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 import { db } from '@/db'
 import { document, embedding } from '@/db/schema'
+import { hasCollection, createCollection, insertDocument } from '@/app/api/knowledge/p2Util'
 
 const logger = createLogger('ChunksService')
 
@@ -145,6 +146,20 @@ export async function createChunk(
     }
 
     await tx.insert(embedding).values(chunkDBData)
+
+    /**
+     * Also insert to milvus
+     */
+    const collectionName = 'data'
+
+    // Check if collection exists, create if not
+    const collectionExists = await hasCollection(collectionName)
+    if (!collectionExists) {
+      await createCollection(collectionName)
+    }
+    await insertDocument(collectionName, chunkDBData)
+
+    logger.info(`[${requestId}] Created chunk ${chunkId} in document ${documentId} (Milvus)`)
 
     // Update document statistics
     await tx

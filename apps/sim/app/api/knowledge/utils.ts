@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
 import { document, embedding, knowledgeBase } from '@/db/schema'
+import {searchCollection} from '@/app/api/knowledge/p2Util'
 
 export interface KnowledgeBaseData {
   id: string
@@ -336,19 +337,20 @@ export async function checkChunkAccess(
     }
   }
 
-  const chunk = await db
-    .select()
-    .from(embedding)
-    .where(and(eq(embedding.id, chunkId), eq(embedding.documentId, documentId)))
-    .limit(1)
+  // const chunk = await db
+  //   .select()
+  //   .from(embedding)
+  //   .where(and(eq(embedding.id, chunkId), eq(embedding.documentId, documentId)))
+  //   .limit(1)
+  const chunk = await searchCollection('data', chunkId, documentId)
 
-  if (chunk.length === 0) {
+  if (!chunk || chunk.data.length === 0) {
     return { hasAccess: false, notFound: true, reason: 'Chunk not found' }
   }
 
   return {
     hasAccess: true,
-    chunk: chunk[0] as EmbeddingData,
+    chunk: chunk.data[0] as EmbeddingData,
     document: docData,
     knowledgeBase: kbAccess.knowledgeBase!,
   }

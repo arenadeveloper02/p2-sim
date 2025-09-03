@@ -13,6 +13,7 @@ import { db } from '@/db'
 import { document, embedding, knowledgeBaseTagDefinitions } from '@/db/schema'
 import { DocumentProcessingQueue } from './queue'
 import type { DocumentSortField, SortOrder } from './types'
+import { hasCollection, createCollection, insertDocument } from '@/app/api/knowledge/p2Util'
 
 const logger = createLogger('DocumentService')
 
@@ -505,6 +506,20 @@ export async function processDocumentAsync(
         await db.transaction(async (tx) => {
           if (embeddingRecords.length > 0) {
             await tx.insert(embedding).values(embeddingRecords)
+            /**
+             * Also insert to milvus
+             */
+            const collectionName = 'data'
+
+            // Check if collection exists, create if not
+            const collectionExists = await hasCollection(collectionName)
+
+            if (!collectionExists) {
+              await createCollection(collectionName)
+            }
+            await insertDocument(collectionName, embeddingRecords)
+
+            logger.info(`[ Created chunk in document ${documentId} (Milvus)`)
           }
 
           await tx
