@@ -32,6 +32,7 @@ import type {
 import { streamingResponseFormatProcessor } from '@/executor/utils'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import { useExecutionStore } from '@/stores/execution/store'
+import { useMem0Store } from '@/stores/mem0/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { useGeneralStore } from '@/stores/settings/general/store'
 
@@ -100,6 +101,7 @@ export class Executor {
             workspaceId?: string
             isChildExecution?: boolean
           }
+          extraData?: Record<string, any> //pass extra Data
         },
     private initialBlockStates: Record<string, BlockOutput> = {},
     private environmentVariables: Record<string, string> = {},
@@ -342,6 +344,43 @@ export class Executor {
                       } else {
                         // No response format, use standard content setting
                         blockState.output.content = fullContent
+                        useMem0Store.getState().addMessage({
+                          role: 'assistant',
+                          content: fullContent,
+                        })
+
+                        const state = useMem0Store.getState()
+                        const payload = {
+                          messages: [
+                            ...state.messages.map((m) => ({
+                              role: m.role,
+                              content: m.content,
+                              timestamp: new Date().toISOString(),
+                            })),
+                            {
+                              role: 'assistant',
+                              content: `${new Date().toISOString()} this time stamp is important for order of prompt execution. If asked for retrieve latest or previous use this time stamp to get latest value`,
+                            },
+                          ],
+                          user_id: state.userId,
+                          agent_id: state.agentId,
+                          run_id: state.runId,
+                          metadata: {
+                            ...(state?.meta || {}),
+                            executionOrder: new Date().toISOString(),
+                          },
+                        }
+
+                        const memResponse = await fetch('http://localhost:8888/memories', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            accept: 'application/json',
+                          },
+                          body: JSON.stringify(payload),
+                        })
+                        const memResponseData = await memResponse.json()
+                        logger.info('memResponseData', memResponseData)
                       }
                     }
                   } catch (readerError: any) {

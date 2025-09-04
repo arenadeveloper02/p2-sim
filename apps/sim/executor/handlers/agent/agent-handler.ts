@@ -1,3 +1,4 @@
+import { client } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getAllBlocks } from '@/blocks'
@@ -13,6 +14,7 @@ import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/execu
 import { executeProviderRequest } from '@/providers'
 import { getApiKey, getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
+import { useMem0Store } from '@/stores/mem0/store'
 import { executeTool } from '@/tools'
 import { getTool, getToolAsync } from '@/tools/utils'
 
@@ -531,6 +533,53 @@ export class AgentBlockHandler implements BlockHandler {
     providerStartTime: number
   ) {
     logger.info('Using HTTP provider request (browser environment)')
+
+    const res = await client.getSession()
+    const session = res?.data ?? null
+    const userId = session?.user?.id
+    const agentId = providerRequest.workflowId
+    const conversationId = //run_id
+      Object.values(providerRequest.blockData).find(
+        (item): item is { conversationId: string } =>
+          typeof item === 'object' && item !== null && 'conversationId' in item
+      )?.conversationId || null
+
+    const runId = conversationId
+    useMem0Store.getState().setMessages(providerRequest.messages)
+    useMem0Store.getState().updateMeta({
+      agentId,
+      userId,
+      runId,
+      meta: {
+        date: new Date().toISOString(),
+      },
+    })
+
+    // let payload = {
+    //   query: providerRequest.messages[providerRequest.messages.length - 1].content,
+    //   version: 'v2',
+    //   filters: {
+    //     OR: [{ userId: userId }, { agentId: agentId }, { runId: runId }],
+    //   },
+    // }
+
+    const payload = {
+      query: providerRequest.messages[providerRequest.messages.length - 1].content,
+      user_id: userId,
+      agent_id: agentId,
+      run_id: runId,
+    }
+
+    const memResponse = await fetch('http://localhost:8888/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    const memResponseData = await memResponse.json()
+    logger.info('memResponseData', memResponseData)
 
     const url = new URL('/api/providers', getEnv('NEXT_PUBLIC_APP_URL') || '')
     const response = await fetch(url.toString(), {
