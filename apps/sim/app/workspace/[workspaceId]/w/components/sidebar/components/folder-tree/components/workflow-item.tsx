@@ -131,7 +131,7 @@ export function WorkflowItem({
 
   const handleClick = (e: React.MouseEvent) => {
     setParentWorkflowId('')
-    if (dragStartedRef.current || isEditing) {
+    if (isDragging || isEditing) {
       e.preventDefault()
       return
     }
