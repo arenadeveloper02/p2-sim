@@ -19,7 +19,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { type FolderTreeNode, useFolderStore } from '@/stores/folders/store'
-import { usePanelStore } from '@/stores/panel/store'
 
 const logger = createLogger('FolderItem')
 
@@ -61,7 +60,6 @@ export function FolderItem({
   const workspaceId = params.workspaceId as string
   const isExpanded = expandedFolders.has(folder.id)
   const userPermissions = useUserPermissionsContext()
-  const setParentWorkflowId = usePanelStore((state) => state.setParentWorkflowId)
 
   // Update editValue when folder name changes
   useEffect(() => {
@@ -109,7 +107,6 @@ export function FolderItem({
   }
 
   const handleClick = (e: React.MouseEvent) => {
-    setParentWorkflowId('')
     if (dragStartedRef.current || isEditing) {
       e.preventDefault()
       return
