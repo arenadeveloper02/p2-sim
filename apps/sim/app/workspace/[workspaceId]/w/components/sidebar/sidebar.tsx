@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { ScrollArea } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -869,6 +869,19 @@ export function Sidebar() {
           style={{ gap: `${SIDEBAR_GAP}px` }}
         >
           {/* 1. Workspace Header */}
+          <div>
+            <p className='pointer-events-auto w-full text-center text-gray-500 text-sm hover:cursor-pointer'>
+              <span
+                onClick={() => {
+                  window.location.href = '/'
+                }}
+                className='flex items-center justify-start gap-2 text-primary'
+              >
+                <ArrowLeft className='h-5 w-5' />
+                <span> Back </span>
+              </span>
+            </p>
+          </div>
           <div className='pointer-events-auto flex-shrink-0'>
             <WorkspaceHeader
               onCreateWorkflow={handleCreateWorkflow}
