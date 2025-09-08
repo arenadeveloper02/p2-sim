@@ -27,11 +27,11 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''
   const isLocal = hostname === 'localhost:3000'
+  logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
+  logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
+  logger.info(`url: ${url}`)
 
   if (url.pathname === '/login' && email) {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
-  if (email && !hasActiveSession) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -53,6 +53,9 @@ export async function middleware(request: NextRequest) {
   if (!email && !isLocal) {
     const redirectUrl = getLoginRedirectUrl()
     return NextResponse.redirect(redirectUrl)
+  }
+  if (email) {
+    return NextResponse.next()
   }
 
   // Extract subdomain - handle nested subdomains for any domain
