@@ -12,7 +12,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 import { db } from '@/db'
 import { document, embedding } from '@/db/schema'
-import { hasCollection, createCollection, insertDocument } from '@/app/api/knowledge/p2Util'
+import { hasCollection, createCollection, insertDocument, getLastChunkIndex, deleteChunksById, getChunksWithFilters, getChunksToDelete, deleteChunksByIds, updateChunksEnabledFlag, getChunkById, getChunkByIdWithMetadata } from '@/app/api/knowledge/p2Util'
 
 const logger = createLogger('ChunksService')
 
@@ -25,61 +25,62 @@ export async function queryChunks(
   requestId: string
 ): Promise<ChunkQueryResult> {
   const { search, enabled = 'all', limit = 50, offset = 0 } = filters
-
+  const { chunks, totalCount } = await getChunksWithFilters({documentId,enabled,search,limit,offset})
   // Build query conditions
-  const conditions = [eq(embedding.documentId, documentId)]
+  // const conditions = [eq(embedding.documentId, documentId)]
 
-  // Add enabled filter
-  if (enabled === 'true') {
-    conditions.push(eq(embedding.enabled, true))
-  } else if (enabled === 'false') {
-    conditions.push(eq(embedding.enabled, false))
-  }
+  // // Add enabled filter
+  // if (enabled === 'true') {
+  //   conditions.push(eq(embedding.enabled, true))
+  // } else if (enabled === 'false') {
+  //   conditions.push(eq(embedding.enabled, false))
+  // }
 
-  // Add search filter
-  if (search) {
-    conditions.push(ilike(embedding.content, `%${search}%`))
-  }
+  // // Add search filter
+  // if (search) {
+  //   conditions.push(ilike(embedding.content, `%${search}%`))
+  // }
 
-  // Fetch chunks
-  const chunks = await db
-    .select({
-      id: embedding.id,
-      chunkIndex: embedding.chunkIndex,
-      content: embedding.content,
-      contentLength: embedding.contentLength,
-      tokenCount: embedding.tokenCount,
-      enabled: embedding.enabled,
-      startOffset: embedding.startOffset,
-      endOffset: embedding.endOffset,
-      tag1: embedding.tag1,
-      tag2: embedding.tag2,
-      tag3: embedding.tag3,
-      tag4: embedding.tag4,
-      tag5: embedding.tag5,
-      tag6: embedding.tag6,
-      tag7: embedding.tag7,
-      createdAt: embedding.createdAt,
-      updatedAt: embedding.updatedAt,
-    })
-    .from(embedding)
-    .where(and(...conditions))
-    .orderBy(asc(embedding.chunkIndex))
-    .limit(limit)
-    .offset(offset)
+  // // Fetch chunks
+  // const chunks = await db
+  //   .select({
+  //     id: embedding.id,
+  //     chunkIndex: embedding.chunkIndex,
+  //     content: embedding.content,
+  //     contentLength: embedding.contentLength,
+  //     tokenCount: embedding.tokenCount,
+  //     enabled: embedding.enabled,
+  //     startOffset: embedding.startOffset,
+  //     endOffset: embedding.endOffset,
+  //     tag1: embedding.tag1,
+  //     tag2: embedding.tag2,
+  //     tag3: embedding.tag3,
+  //     tag4: embedding.tag4,
+  //     tag5: embedding.tag5,
+  //     tag6: embedding.tag6,
+  //     tag7: embedding.tag7,
+  //     createdAt: embedding.createdAt,
+  //     updatedAt: embedding.updatedAt,
+  //   })
+  //   .from(embedding)
+  //   .where(and(...conditions))
+  //   .orderBy(asc(embedding.chunkIndex))
+  //   .limit(limit)
+  //   .offset(offset)
 
-  // Get total count for pagination
-  const totalCount = await db
-    .select({ count: sql`count(*)` })
-    .from(embedding)
-    .where(and(...conditions))
+  // // Get total count for pagination
+  // const totalCount = await db
+  //   .select({ count: sql`count(*)` })
+  //   .from(embedding)
+  //   .where(and(...conditions))
 
   logger.info(`[${requestId}] Retrieved ${chunks.length} chunks for document ${documentId}`)
 
   return {
     chunks: chunks as ChunkData[],
     pagination: {
-      total: Number(totalCount[0]?.count || 0),
+      // total: Number(totalCount[0]?.count || 0),
+      total: totalCount,
       limit,
       offset,
       hasMore: chunks.length === limit,
@@ -110,14 +111,15 @@ export async function createChunk(
   // Use transaction to atomically get next index and insert chunk
   const newChunk = await db.transaction(async (tx) => {
     // Get the next chunk index atomically within the transaction
-    const lastChunk = await tx
-      .select({ chunkIndex: embedding.chunkIndex })
-      .from(embedding)
-      .where(eq(embedding.documentId, documentId))
-      .orderBy(sql`${embedding.chunkIndex} DESC`)
-      .limit(1)
+    // const lastChunk = await tx
+    //   .select({ chunkIndex: embedding.chunkIndex })
+    //   .from(embedding)
+    //   .where(eq(embedding.documentId, documentId))
+    //   .orderBy(sql`${embedding.chunkIndex} DESC`)
+    //   .limit(1)
+    const lastChunk = await getLastChunkIndex(documentId)
 
-    const nextChunkIndex = lastChunk.length > 0 ? lastChunk[0].chunkIndex + 1 : 0
+    const nextChunkIndex = lastChunk !== null ? lastChunk + 1 : 0
 
     const chunkDBData = {
       id: chunkId,
@@ -145,7 +147,7 @@ export async function createChunk(
       updatedAt: now,
     }
 
-    await tx.insert(embedding).values(chunkDBData)
+    // await tx.insert(embedding).values(chunkDBData)
 
     /**
      * Also insert to milvus
@@ -217,14 +219,15 @@ export async function batchChunkOperation(
     // Handle batch delete with transaction for consistency
     await db.transaction(async (tx) => {
       // Get chunks to delete for statistics update
-      const chunksToDelete = await tx
-        .select({
-          id: embedding.id,
-          tokenCount: embedding.tokenCount,
-          contentLength: embedding.contentLength,
-        })
-        .from(embedding)
-        .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
+      // const chunksToDelete = await tx
+      //   .select({
+      //     id: embedding.id,
+      //     tokenCount: embedding.tokenCount,
+      //     contentLength: embedding.contentLength,
+      //   })
+      //   .from(embedding)
+      //   .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
+      const chunksToDelete = await getChunksToDelete(documentId, chunkIds)
 
       if (chunksToDelete.length === 0) {
         errors.push('No matching chunks found to delete')
@@ -235,10 +238,10 @@ export async function batchChunkOperation(
       const totalCharsToRemove = chunksToDelete.reduce((sum, chunk) => sum + chunk.contentLength, 0)
 
       // Delete chunks
-      const deleteResult = await tx
-        .delete(embedding)
-        .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
-
+      // const deleteResult = await tx
+      //   .delete(embedding)
+      //   .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
+      const deleteResult = await deleteChunksByIds(documentId, chunkIds)
       // Update document statistics
       await tx
         .update(document)
@@ -255,14 +258,18 @@ export async function batchChunkOperation(
     // Handle enable/disable operations
     const enabled = operation === 'enable'
 
-    await db
-      .update(embedding)
-      .set({
-        enabled,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
-
+    // await db
+    //   .update(embedding)
+    //   .set({
+    //     enabled,
+    //     updatedAt: new Date(),
+    //   })
+    //   .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
+    updateChunksEnabledFlag({
+      documentId,
+      chunkIds,
+      enabled,
+    })
     // For enable/disable, we assume all chunks were processed successfully
     successCount = chunkIds.length
   }
@@ -305,18 +312,18 @@ export async function updateChunk(
   if (updateData.content !== undefined && typeof updateData.content === 'string') {
     return await db.transaction(async (tx) => {
       // Get current chunk data for character count calculation and content comparison
-      const currentChunk = await tx
-        .select({
-          documentId: embedding.documentId,
-          content: embedding.content,
-          contentLength: embedding.contentLength,
-          tokenCount: embedding.tokenCount,
-        })
-        .from(embedding)
-        .where(eq(embedding.id, chunkId))
-        .limit(1)
-
-      if (currentChunk.length === 0) {
+      // const currentChunk = await tx
+      //   .select({
+      //     documentId: embedding.documentId,
+      //     content: embedding.content,
+      //     contentLength: embedding.contentLength,
+      //     tokenCount: embedding.tokenCount,
+      //   })
+      //   .from(embedding)
+      //   .where(eq(embedding.id, chunkId))
+      //   .limit(1)
+      const currentChunk = await getChunkById(chunkId)
+      if (!currentChunk) {
         throw new Error(`Chunk ${chunkId} not found`)
       }
 
@@ -369,29 +376,30 @@ export async function updateChunk(
         .where(eq(document.id, currentChunk[0].documentId))
 
       // Fetch and return the updated chunk
-      const updatedChunk = await tx
-        .select({
-          id: embedding.id,
-          chunkIndex: embedding.chunkIndex,
-          content: embedding.content,
-          contentLength: embedding.contentLength,
-          tokenCount: embedding.tokenCount,
-          enabled: embedding.enabled,
-          startOffset: embedding.startOffset,
-          endOffset: embedding.endOffset,
-          tag1: embedding.tag1,
-          tag2: embedding.tag2,
-          tag3: embedding.tag3,
-          tag4: embedding.tag4,
-          tag5: embedding.tag5,
-          tag6: embedding.tag6,
-          tag7: embedding.tag7,
-          createdAt: embedding.createdAt,
-          updatedAt: embedding.updatedAt,
-        })
-        .from(embedding)
-        .where(eq(embedding.id, chunkId))
-        .limit(1)
+      // const updatedChunk = await tx
+      //   .select({
+      //     id: embedding.id,
+      //     chunkIndex: embedding.chunkIndex,
+      //     content: embedding.content,
+      //     contentLength: embedding.contentLength,
+      //     tokenCount: embedding.tokenCount,
+      //     enabled: embedding.enabled,
+      //     startOffset: embedding.startOffset,
+      //     endOffset: embedding.endOffset,
+      //     tag1: embedding.tag1,
+      //     tag2: embedding.tag2,
+      //     tag3: embedding.tag3,
+      //     tag4: embedding.tag4,
+      //     tag5: embedding.tag5,
+      //     tag6: embedding.tag6,
+      //     tag7: embedding.tag7,
+      //     createdAt: embedding.createdAt,
+      //     updatedAt: embedding.updatedAt,
+      //   })
+      //   .from(embedding)
+      //   .where(eq(embedding.id, chunkId))
+      //   .limit(1)
+      const updatedChunk = await getChunkByIdWithMetadata(chunkId)
 
       logger.info(
         `[${requestId}] Updated chunk: ${chunkId}${updateData.content !== currentChunk[0].content ? ' (regenerated embedding)' : ''}`
@@ -409,37 +417,39 @@ export async function updateChunk(
   await db.update(embedding).set(dbUpdateData).where(eq(embedding.id, chunkId))
 
   // Fetch the updated chunk
-  const updatedChunk = await db
-    .select({
-      id: embedding.id,
-      chunkIndex: embedding.chunkIndex,
-      content: embedding.content,
-      contentLength: embedding.contentLength,
-      tokenCount: embedding.tokenCount,
-      enabled: embedding.enabled,
-      startOffset: embedding.startOffset,
-      endOffset: embedding.endOffset,
-      tag1: embedding.tag1,
-      tag2: embedding.tag2,
-      tag3: embedding.tag3,
-      tag4: embedding.tag4,
-      tag5: embedding.tag5,
-      tag6: embedding.tag6,
-      tag7: embedding.tag7,
-      createdAt: embedding.createdAt,
-      updatedAt: embedding.updatedAt,
-    })
-    .from(embedding)
-    .where(eq(embedding.id, chunkId))
-    .limit(1)
+  // const updatedChunk = await db
+  //   .select({
+  //     id: embedding.id,
+  //     chunkIndex: embedding.chunkIndex,
+  //     content: embedding.content,
+  //     contentLength: embedding.contentLength,
+  //     tokenCount: embedding.tokenCount,
+  //     enabled: embedding.enabled,
+  //     startOffset: embedding.startOffset,
+  //     endOffset: embedding.endOffset,
+  //     tag1: embedding.tag1,
+  //     tag2: embedding.tag2,
+  //     tag3: embedding.tag3,
+  //     tag4: embedding.tag4,
+  //     tag5: embedding.tag5,
+  //     tag6: embedding.tag6,
+  //     tag7: embedding.tag7,
+  //     createdAt: embedding.createdAt,
+  //     updatedAt: embedding.updatedAt,
+  //   })
+  //   .from(embedding)
+  //   .where(eq(embedding.id, chunkId))
+  //   .limit(1)
+  const updatedChunk = await getChunkByIdWithMetadata(chunkId)
 
-  if (updatedChunk.length === 0) {
+
+  if (updatedChunk &&updatedChunk.length === 0) {
     throw new Error(`Chunk ${chunkId} not found`)
   }
 
   logger.info(`[${requestId}] Updated chunk: ${chunkId}`)
 
-  return updatedChunk[0] as ChunkData
+  return updatedChunk[0] as ChunkData 
 }
 
 /**
@@ -452,15 +462,15 @@ export async function deleteChunk(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // Get chunk data before deletion for statistics update
-    const chunkToDelete = await tx
-      .select({
-        tokenCount: embedding.tokenCount,
-        contentLength: embedding.contentLength,
-      })
-      .from(embedding)
-      .where(eq(embedding.id, chunkId))
-      .limit(1)
-
+    // const chunkToDelete = await tx
+    //   .select({
+    //     tokenCount: embedding.tokenCount,
+    //     contentLength: embedding.contentLength,
+    //   })
+    //   .from(embedding)
+    //   .where(eq(embedding.id, chunkId))
+    //   .limit(1)
+    const chunkToDelete = await getChunksToDelete(documentId, [chunkId])
     if (chunkToDelete.length === 0) {
       throw new Error('Chunk not found')
     }
@@ -468,7 +478,8 @@ export async function deleteChunk(
     const chunk = chunkToDelete[0]
 
     // Delete the chunk
-    await tx.delete(embedding).where(eq(embedding.id, chunkId))
+    // await tx.delete(embedding).where(eq(embedding.id, chunkId))
+    await deleteChunksById(chunkId)
 
     // Update document statistics
     await tx

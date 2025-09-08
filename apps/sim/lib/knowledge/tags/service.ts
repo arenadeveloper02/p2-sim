@@ -14,6 +14,7 @@ import type {
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { document, embedding, knowledgeBaseTagDefinitions } from '@/db/schema'
+import { clearTagSlot, getChunkCountByTagSlot, updateTagValueInChunks } from '@/app/api/knowledge/p2Util'
 
 const logger = createLogger('TagsService')
 
@@ -305,17 +306,23 @@ export async function updateTagValuesInDocumentsAndChunks(
     }
 
     if (oldValue) {
-      await tx
-        .update(embedding)
-        .set({
-          [tagSlot]: newValue,
-        })
-        .where(
-          and(
-            eq(embedding.knowledgeBaseId, knowledgeBaseId),
-            eq(sql.raw(`${embedding}.${tagSlot}`), oldValue)
-          )
-        )
+      // await tx
+      //   .update(embedding)
+      //   .set({
+      //     [tagSlot]: newValue,
+      //   })
+      //   .where(
+      //     and(
+      //       eq(embedding.knowledgeBaseId, knowledgeBaseId),
+      //       eq(sql.raw(`${embedding}.${tagSlot}`), oldValue)
+      //     )
+      //   )
+      await updateTagValueInChunks({
+        knowledgeBaseId,
+        tagSlot,
+        oldValue,
+        newValue,
+      })
       chunksUpdated = 1
     }
   })
@@ -352,15 +359,15 @@ export async function cleanupUnusedTagDefinitions(
         )
       )
 
-    const chunkCountResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(embedding)
-      .where(
-        and(eq(embedding.knowledgeBaseId, knowledgeBaseId), sql`${sql.raw(tagSlot)} IS NOT NULL`)
-      )
-
+    // const chunkCountResult = await db
+    //   .select({ count: sql<number>`count(*)` })
+    //   .from(embedding)
+    //   .where(
+    //     and(eq(embedding.knowledgeBaseId, knowledgeBaseId), sql`${sql.raw(tagSlot)} IS NOT NULL`)
+    //   )
+    const chunkCountResult = await getChunkCountByTagSlot(knowledgeBaseId, tagSlot)
     const docCount = Number(docCountResult[0]?.count || 0)
-    const chunkCount = Number(chunkCountResult[0]?.count || 0)
+    const chunkCount = Number(chunkCountResult || 0)
 
     if (docCount === 0 && chunkCount === 0) {
       await db.delete(knowledgeBaseTagDefinitions).where(eq(knowledgeBaseTagDefinitions.id, def.id))
@@ -431,12 +438,16 @@ export async function deleteTagDefinition(
         and(eq(document.knowledgeBaseId, knowledgeBaseId), isNotNull(sql`${sql.raw(tagSlot)}`))
       )
 
-    await tx
-      .update(embedding)
-      .set({ [tagSlot]: null })
-      .where(
-        and(eq(embedding.knowledgeBaseId, knowledgeBaseId), isNotNull(sql`${sql.raw(tagSlot)}`))
-      )
+    // await tx
+    //   .update(embedding)
+    //   .set({ [tagSlot]: null })
+    //   .where(
+    //     and(eq(embedding.knowledgeBaseId, knowledgeBaseId), isNotNull(sql`${sql.raw(tagSlot)}`))
+    //   )
+    await clearTagSlot({
+      knowledgeBaseId,
+      tagSlot,
+    })
 
     await tx
       .delete(knowledgeBaseTagDefinitions)
@@ -627,19 +638,20 @@ export async function getTagUsageStats(
         )
       )
 
-    const chunkCountResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(embedding)
-      .where(
-        and(eq(embedding.knowledgeBaseId, knowledgeBaseId), sql`${sql.raw(tagSlot)} IS NOT NULL`)
-      )
+    // const chunkCountResult = await db
+    //   .select({ count: sql<number>`count(*)` })
+    //   .from(embedding)
+    //   .where(
+    //     and(eq(embedding.knowledgeBaseId, knowledgeBaseId), sql`${sql.raw(tagSlot)} IS NOT NULL`)
+    //   )
 
+    const chunkCountResult = await getChunkCountByTagSlot(knowledgeBaseId, tagSlot)
     stats.push({
       tagSlot: def.tagSlot,
       displayName: def.displayName,
       fieldType: def.fieldType,
       documentCount: Number(docCountResult[0]?.count || 0),
-      chunkCount: Number(chunkCountResult[0]?.count || 0),
+      chunkCount: Number(chunkCountResult || 0),
     })
   }
 
