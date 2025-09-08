@@ -39,6 +39,12 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
       visibility: 'user-or-llm',
       description: 'Email body content',
     },
+    isHtml: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Is the email body HTML?',
+    },
     cc: {
       type: 'string',
       required: false,
@@ -61,11 +67,12 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
       'Content-Type': 'application/json',
     }),
     body: (params: GmailSendParams): Record<string, any> => {
-      const emailHeaders = [
-        'Content-Type: text/plain; charset="UTF-8"',
-        'MIME-Version: 1.0',
-        `To: ${params.to}`,
-      ]
+      const emailHeaders = ['MIME-Version: 1.0', `To: ${params.to}`]
+      if (params.isHtml) {
+        emailHeaders.push('Content-Type: text/html; charset="UTF-8"')
+      } else {
+        emailHeaders.push('Content-Type: text/plain; charset="UTF-8"')
+      }
 
       if (params.cc) {
         emailHeaders.push(`Cc: ${params.cc}`)
