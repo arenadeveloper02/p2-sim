@@ -1199,8 +1199,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   return (
     <div
       className={cn(
-        'fixed top-4 right-4 z-20 flex items-center gap-1 test-2',
-        isFullScreenExpanded && 'z-1 right-5'
+        'test-2 fixed top-4 right-4 z-20 flex items-center gap-1',
+        isFullScreenExpanded && 'right-5 z-1'
       )}
     >
       {renderDisconnectionNotice()}
