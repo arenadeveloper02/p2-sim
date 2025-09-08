@@ -10,7 +10,7 @@ export const usePanelStore = create<PanelStore>()(
         activeTab: 'console',
         panelWidth: 308,
         isFullScreen: false,
-        parentWorkflowId: '',
+        parentTemplateId: '',
 
         togglePanel: () => {
           set((state) => ({ isOpen: !state.isOpen }))
@@ -29,8 +29,8 @@ export const usePanelStore = create<PanelStore>()(
         setFullScreen: (fullScreen: boolean) => {
           set({ isFullScreen: fullScreen })
         },
-        setParentWorkflowId: (parentWorkflowId: string) => {
-          set({ parentWorkflowId })
+        setParentTemplateId: (parentTemplateId: string) => {
+          set({ parentTemplateId })
         },
       }),
       {

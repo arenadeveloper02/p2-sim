@@ -48,9 +48,9 @@ export function Panel() {
   const { activeWorkflowId } = useWorkflowRegistry()
   const isFullScreen = usePanelStore((state) => state.isFullScreen)
   const setFullScreen = usePanelStore((state) => state.setFullScreen)
-  const parentWorkflowId = usePanelStore((state) => state.parentWorkflowId)
-  const setParentWorkflowId = usePanelStore((state) => state.setParentWorkflowId)
-  const isFullScreenExpanded = isFullScreen && parentWorkflowId
+  const parentTemplateId = usePanelStore((state) => state.parentTemplateId)
+  const setParentTemplateId = usePanelStore((state) => state.setParentTemplateId)
+  const isFullScreenExpanded = isFullScreen
 
   // Copilot store for chat management
   const {
@@ -228,7 +228,6 @@ export function Panel() {
   // Handle tab clicks - no loading, just switch tabs
   const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot') => {
     setActiveTab(tab)
-    setFullScreen(tab === 'chat' || tab === 'console')
     if (!isOpen) {
       togglePanel()
     }
@@ -300,40 +299,13 @@ export function Panel() {
     }
   }, [activeWorkflowId, copilotWorkflowId, ensureCopilotDataLoaded])
 
-  useEffect(() => {
-    if (activeWorkflowId) {
-      async function handleFetchTemplate() {
-        const url = `/api/workflows/template-mapper/${activeWorkflowId}`
-        try {
-          const response = await fetch(url)
-          if (!response.ok) {
-            return { error: `Response status: ${response.status}` }
-          }
-
-          const result = await response.json()
-          return result
-        } catch (error: any) {
-          return { error: error.message }
-        }
-      }
-
-      ;(async () => {
-        const data = await handleFetchTemplate()
-        if (data?.templateId) {
-          handleTabClick('chat')
-        }
-        setParentWorkflowId(data?.templateId || '')
-      })()
-    }
-  }, [activeWorkflowId])
-
   return (
     <>
       {/* Tab Selector - Always visible */}
       <div
         className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
       >
-        {parentWorkflowId && isOpen && (
+        {parentTemplateId && isOpen && (
           <button
             onClick={() => {
               handleViewWorkflow()
