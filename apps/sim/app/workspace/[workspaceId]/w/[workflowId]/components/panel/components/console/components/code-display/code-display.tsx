@@ -32,8 +32,8 @@ export const CodeDisplay = ({ code, language = 'javascript' }: CodeDisplayProps)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Calculate sidebar width based on number of lines
-  const lineCount = code.split('\n').length
-  const sidebarWidth = Math.max(30, lineCount.toString().length * 8 + 16) // 8px per digit + 16px padding
+  const lineCount = code?.split('\n')?.length
+  const sidebarWidth = Math?.max(30, lineCount?.toString()?.length * 8 + 16) // 8px per digit + 16px padding
 
   // Calculate visual line heights similar to code.tsx
   useEffect(() => {
@@ -114,8 +114,8 @@ export const CodeDisplay = ({ code, language = 'javascript' }: CodeDisplayProps)
       lineNumber++
     })
 
-    if (numbers.length === 0) {
-      const lines = code.split('\n')
+    if (numbers?.length === 0) {
+      const lines = code?.split('\n')
       return lines.map((_, index) => (
         <div key={index} className='text-muted-foreground text-xs leading-[21px]'>
           {index + 1}

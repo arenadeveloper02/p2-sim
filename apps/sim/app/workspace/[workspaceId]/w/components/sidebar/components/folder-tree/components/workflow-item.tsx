@@ -11,6 +11,7 @@ import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/provide
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
+import { usePanelStore } from '@/stores/panel/store'
 
 const logger = createLogger('WorkflowItem')
 
@@ -61,6 +62,7 @@ export function WorkflowItem({
   const isSelected = useIsWorkflowSelected(workflow.id)
   const { updateWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
+  const setParentWorkflowId = usePanelStore((state) => state.setParentWorkflowId)
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -127,6 +129,7 @@ export function WorkflowItem({
   }
 
   const handleClick = (e: React.MouseEvent) => {
+    setParentWorkflowId('')
     if (isDragging || isEditing) {
       e.preventDefault()
       return

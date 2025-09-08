@@ -4,7 +4,13 @@ import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
-import { templates, workflow, workflowBlocks, workflowEdges } from '@/db/schema'
+import {
+  templates,
+  workflow,
+  workflowBlocks,
+  workflowEdges,
+  workflowTemplateMapper,
+} from '@/db/schema'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -58,6 +64,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Create a new workflow ID
     const newWorkflowId = uuidv4()
+    const templateMapperId = uuidv4()
 
     // Use a transaction to ensure consistency
     const result = await db.transaction(async (tx) => {
@@ -87,6 +94,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           lastSynced: now,
         })
         .returning({ id: workflow.id })
+
+      await tx.insert(workflowTemplateMapper).values({
+        id: templateMapperId,
+        createdAt: now,
+        updatedAt: now,
+        templateId: id,
+        workflowId: newWorkflowId,
+        workspaceId: workspaceId,
+        name: `${templateData.name} (copy)`,
+      })
 
       // Create workflow_blocks entries from the template state
       const templateState = templateData.state as any
