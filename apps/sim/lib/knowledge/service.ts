@@ -66,7 +66,7 @@ export async function getKnowledgeBases(
             )
       )
     )
-    .groupBy(knowledgeBase.id)
+    .groupBy(knowledgeBase.id,knowledgeBase.name,knowledgeBase.description,knowledgeBase.tokenCount,knowledgeBase.embeddingModel,knowledgeBase.embeddingDimension,knowledgeBase.chunkingConfig,knowledgeBase.createdAt,knowledgeBase.updatedAt,knowledgeBase.workspaceId)
     .orderBy(knowledgeBase.createdAt)
 
   return knowledgeBasesWithCounts.map((kb) => ({
