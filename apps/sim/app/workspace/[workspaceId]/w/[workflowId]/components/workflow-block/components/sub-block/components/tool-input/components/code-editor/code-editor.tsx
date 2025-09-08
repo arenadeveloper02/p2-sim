@@ -94,7 +94,7 @@ export function CodeEditor({
   }, [code])
 
   // Calculate the number of lines to determine gutter width
-  const lineCount = code.split('\n').length
+  const lineCount = code?.split('\n')?.length
   const gutterWidth = lineCount >= 100 ? '40px' : lineCount >= 10 ? '35px' : '30px'
 
   // Render helpers

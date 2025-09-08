@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import CopilotMarkdownRenderer from '../../../copilot/components/copilot-message/components/markdown-renderer'
+import { isBase64, renderBs64Img } from './constants'
 
 interface ChatMessageProps {
   message: {
@@ -71,12 +73,25 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )
   }
 
+  const renderContent = (content: any) => {
+    if (!content) {
+      return null
+    }
+    if (isBase64(content)) {
+      return renderBs64Img({ isBase64: true, imageData: message.content })
+    }
+    if (formattedContent) {
+      return <CopilotMarkdownRenderer content={formattedContent} />
+    }
+  }
+
   // Render agent/workflow messages as full-width text
   return (
     <div className='w-full py-2 pl-[2px]'>
       <div className='overflow-wrap-anywhere relative whitespace-normal break-normal font-normal text-sm leading-normal'>
-        <div className='whitespace-pre-wrap break-words text-foreground'>
-          <WordWrap text={formattedContent} />
+        <div className='whitespace-pre-wrap break-words text-foreground bg-secondary p-3'>
+          {/* <WordWrap text={formattedContent} /> */}
+          {renderContent(message?.content)}
           {message.isStreaming && (
             <span className='ml-1 inline-block h-4 w-2 animate-pulse bg-primary' />
           )}

@@ -23,6 +23,7 @@ import { useExecutionStore } from '@/stores/execution/store'
 import { useChatStore } from '@/stores/panel/chat/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { usePanelStore } from '@/stores/panel/store'
 
 const logger = createLogger('ChatPanel')
 
@@ -74,6 +75,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
   // Use the execution store state to track if a workflow is executing
   const { isExecuting } = useExecutionStore()
+  const isFullScreen = usePanelStore((state) => state.isFullScreen)
 
   // Get workflow execution functionality
   const { handleRunWorkflow } = useWorkflowExecution()
@@ -548,7 +550,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   return (
     <div className='flex h-full flex-col'>
       {/* Output Source Dropdown */}
-      <div className='flex-none py-2'>
+      <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
         <OutputSelect
           workflowId={activeWorkflowId}
           selectedOutputs={selectedOutputs}
