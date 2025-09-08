@@ -8,7 +8,7 @@ interface InviteLayoutProps {
   children: React.ReactNode
 }
 
-export function InviteLayout({ children }: InviteLayoutProps) {
+export default function InviteLayout({ children }: InviteLayoutProps) {
   const brandConfig = useBrandConfig()
 
   return (
