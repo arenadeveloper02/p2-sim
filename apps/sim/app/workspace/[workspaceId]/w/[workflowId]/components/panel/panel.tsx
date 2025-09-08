@@ -50,7 +50,7 @@ export function Panel() {
   const setFullScreen = usePanelStore((state) => state.setFullScreen)
   const parentTemplateId = usePanelStore((state) => state.parentTemplateId)
   const setParentTemplateId = usePanelStore((state) => state.setParentTemplateId)
-  const isFullScreenExpanded = isFullScreen
+  const isFullScreenExpanded = isFullScreen && isOpen
 
   // Copilot store for chat management
   const {
@@ -305,7 +305,7 @@ export function Panel() {
       <div
         className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
       >
-        {parentTemplateId && isOpen && (
+        {parentTemplateId && isOpen && isFullScreenExpanded && (
           <button
             onClick={() => {
               handleViewWorkflow()

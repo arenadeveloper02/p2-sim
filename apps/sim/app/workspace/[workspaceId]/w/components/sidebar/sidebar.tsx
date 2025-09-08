@@ -950,12 +950,12 @@ export function Sidebar() {
 
           {/* 4. Workflow Selector */}
           <div
-            className={`pointer-events-auto relative h-[212px] flex-shrink-0 rounded-[10px] border bg-background shadow-xs ${
+            className={`pointer-events-auto relative h-[180px] flex-shrink-0 rounded-[10px] border bg-background shadow-xs ${
               isSidebarCollapsed ? 'hidden' : ''
             }`}
           >
             <div className='px-2'>
-              <ScrollArea className='h-[210px]' hideScrollbar={true}>
+              <ScrollArea className='h-[175px]' hideScrollbar={true}>
                 <div ref={workflowScrollAreaRef}>
                   <FolderTree
                     regularWorkflows={regularWorkflows}
