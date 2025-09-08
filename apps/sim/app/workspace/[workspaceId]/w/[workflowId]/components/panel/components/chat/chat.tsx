@@ -71,7 +71,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   // Use the execution store state to track if a workflow is executing
-  const { isExecuting } = useExecutionStore()
+  const { isExecuting, isRespondToChatBlockRunning } = useExecutionStore()
 
   // Get workflow execution functionality
   const { handleRunWorkflow } = useWorkflowExecution()
@@ -294,6 +294,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Execute the workflow to generate a response
       result = await handleRunWorkflow(workflowInput)
+      debugger
     } catch (error) {
       logger.error('Error in handleSendMessage:', error)
       setIsUploadingFiles(false)
@@ -682,7 +683,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
               }}
               maxFiles={5}
               maxSize={10}
-              disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+              disabled={
+                !activeWorkflowId ||
+                (isExecuting && !isRespondToChatBlockRunning) ||
+                isUploadingFiles
+              }
               onError={(errors) => setUploadErrors(errors)}
             />
           </div>
@@ -702,7 +707,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                   ? 'border-[var(--brand-primary-hover-hex)] bg-purple-50/50 dark:border-[var(--brand-primary-hover-hex)] dark:bg-purple-950/20'
                   : ''
               }`}
-              disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+              disabled={
+                !activeWorkflowId ||
+                (isExecuting && !isRespondToChatBlockRunning) ||
+                isUploadingFiles
+              }
             />
             <Button
               onClick={handleSendMessage}

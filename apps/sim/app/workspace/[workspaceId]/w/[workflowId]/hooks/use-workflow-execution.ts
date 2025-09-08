@@ -62,6 +62,8 @@ export function useWorkflowExecution() {
     setExecutor,
     setDebugContext,
     setActiveBlocks,
+    isRespondToChatBlockRunning,
+    setIsRespondToChatBlockRunning,
   } = useExecutionStore()
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null)
 
@@ -88,6 +90,7 @@ export function useWorkflowExecution() {
    */
   const resetDebugState = useCallback(() => {
     setIsExecuting(false)
+
     setIsDebugging(false)
     setDebugContext(null)
     setExecutor(null)
@@ -245,6 +248,7 @@ export function useWorkflowExecution() {
 
   const handleRunWorkflow = useCallback(
     async (workflowInput?: any, enableDebug = false) => {
+      debugger
       if (!activeWorkflowId) return
 
       // Get workspaceId from workflow metadata
@@ -391,6 +395,7 @@ export function useWorkflowExecution() {
 
             try {
               const result = await executeWorkflow(workflowInput, onStream, executionId)
+              debugger
 
               // Check if execution was cancelled
               if (
@@ -448,10 +453,14 @@ export function useWorkflowExecution() {
             } catch (error: any) {
               controller.error(error)
             } finally {
-              controller.close()
-              setIsExecuting(false)
-              setIsDebugging(false)
-              setActiveBlocks(new Set())
+              setTimeout(() => {
+                controller.close()
+                if (!useExecutionStore.getState().isRespondToChatBlockRunning) {
+                  setIsExecuting(false)
+                  setIsDebugging(false)
+                  setActiveBlocks(new Set())
+                }
+              }, 100)
             }
           },
         })
@@ -467,9 +476,14 @@ export function useWorkflowExecution() {
           if (result.metadata.pendingBlocks) {
             setPendingBlocks(result.metadata.pendingBlocks)
           }
+        } else if (result && 'metadata' in result && result.metadata?.isRespondToChatBlock) {
+          if (result.metadata.pendingBlocks) {
+            setPendingBlocks(result.metadata.pendingBlocks)
+          }
         } else if (result && 'success' in result) {
           setExecutionResult(result)
           if (!isDebugModeEnabled) {
+            debugger
             setIsExecuting(false)
             setIsDebugging(false)
             setActiveBlocks(new Set())
@@ -508,6 +522,7 @@ export function useWorkflowExecution() {
       setExecutor,
       setPendingBlocks,
       setActiveBlocks,
+      isRespondToChatBlockRunning,
     ]
   )
 
@@ -716,6 +731,7 @@ export function useWorkflowExecution() {
     }
 
     setExecutionResult(errorResult)
+    debugger
     setIsExecuting(false)
     setIsDebugging(false)
     setActiveBlocks(new Set())
@@ -897,6 +913,7 @@ export function useWorkflowExecution() {
     }
 
     // Reset execution state
+    debugger
     setIsExecuting(false)
     setIsDebugging(false)
     setActiveBlocks(new Set())

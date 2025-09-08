@@ -189,7 +189,14 @@ export class Executor {
     workflowId: string,
     startBlockId?: string
   ): Promise<ExecutionResult | StreamingExecution> {
-    const { setIsExecuting, setIsDebugging, setPendingBlocks, reset } = useExecutionStore.getState()
+    const {
+      setIsExecuting,
+      setIsDebugging,
+      setPendingBlocks,
+      reset,
+      setIsRespondToChatBlockRunning,
+      isRespondToChatBlockRunning,
+    } = useExecutionStore.getState()
     const startTime = new Date()
     let finalOutput: NormalizedBlockOutput = {}
 
@@ -221,11 +228,39 @@ export class Executor {
 
       while (hasMoreLayers && iteration < maxIterations && !this.isCancelled) {
         const nextLayer = this.getNextExecutionLayer(context)
+        const isRespondToChatBlock = this.isRespondToChatBlock(nextLayer[0], context)
+        setIsRespondToChatBlockRunning(isRespondToChatBlock)
 
         if (this.isDebugging) {
           // In debug mode, update the pending blocks and wait for user interaction
           setPendingBlocks(nextLayer)
 
+          // If there are no more blocks, we're done
+          if (nextLayer.length === 0) {
+            hasMoreLayers = false
+          } else {
+            // Return early to wait for manual stepping
+            // The caller (useWorkflowExecution) will handle resumption
+            return {
+              success: true,
+              output: finalOutput,
+              metadata: {
+                duration: Date.now() - startTime.getTime(),
+                startTime: context.metadata.startTime!,
+                isRespondToChatBlock,
+                pendingBlocks: nextLayer,
+                isDebugSession: true,
+                context: context, // Include context for resumption
+                workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+                  source: conn.source,
+                  target: conn.target,
+                })),
+              },
+              logs: context.blockLogs,
+            }
+          }
+        } else if (isRespondToChatBlock) {
+          setPendingBlocks(nextLayer)
           // If there are no more blocks, we're done
           if (nextLayer.length === 0) {
             hasMoreLayers = false
@@ -426,6 +461,7 @@ export class Executor {
                     }
                   } finally {
                     try {
+                      debugger
                       reader.releaseLock()
                     } catch (releaseError: any) {
                       // Reader might already be released - this is expected and safe to ignore
@@ -550,7 +586,11 @@ export class Executor {
       }
     } finally {
       // Only reset global state for parent executions
-      if (!this.isChildExecution && !this.isDebugging) {
+      if (
+        !this.isChildExecution &&
+        !this.isDebugging &&
+        !useExecutionStore.getState().isRespondToChatBlockRunning
+      ) {
         reset()
       }
     }
@@ -2125,5 +2165,12 @@ export class Executor {
     if (!Array.isArray(childTraceSpans) || childTraceSpans.length === 0) {
       return
     }
+  }
+
+  private isRespondToChatBlock(blockId: string, context: ExecutionContext): boolean {
+    const respondtoChatBlock = this.actualWorkflow.blocks.find(
+      (b) => b?.id === blockId && b?.metadata?.id === BlockType.RESPOND_TO_CHAT
+    )
+    return !!respondtoChatBlock
   }
 }

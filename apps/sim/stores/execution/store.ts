@@ -57,9 +57,14 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>()((se
       set({ autoPanDisabled: false })
     }
   },
+  setIsRespondToChatBlockRunning: (isRespondToChatBlockRunning: boolean) => {
+    set({ isRespondToChatBlockRunning })
+  },
   setIsDebugging: (isDebugging) => set({ isDebugging }),
   setExecutor: (executor) => set({ executor }),
   setDebugContext: (debugContext) => set({ debugContext }),
   setAutoPanDisabled: (disabled) => set({ autoPanDisabled: disabled }),
-  reset: () => set(initialState),
+  reset: () => {
+    set(initialState)
+  },
 }))

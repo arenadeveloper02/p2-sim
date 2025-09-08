@@ -1,5 +1,6 @@
 import type { Executor } from '@/executor'
 import type { ExecutionContext } from '@/executor/types'
+import { C } from 'vitest/dist/chunks/environment.d.cL3nLXbE.js'
 
 export interface ExecutionState {
   activeBlockIds: Set<string>
@@ -8,7 +9,9 @@ export interface ExecutionState {
   pendingBlocks: string[]
   executor: Executor | null
   debugContext: ExecutionContext | null
+  currentRespondToChatContext: ExecutionContext | null
   autoPanDisabled: boolean
+  isRespondToChatBlockRunning?: boolean
 }
 
 export interface ExecutionActions {
@@ -19,6 +22,8 @@ export interface ExecutionActions {
   setExecutor: (executor: Executor | null) => void
   setDebugContext: (context: ExecutionContext | null) => void
   setAutoPanDisabled: (disabled: boolean) => void
+  setIsRespondToChatBlockRunning: (isRespondToChatBlockRunning: boolean) => void
+  setCurrentRespondToChatContext: (Context: ExecutionContext | null) => void
   reset: () => void
 }
 
@@ -30,6 +35,8 @@ export const initialState: ExecutionState = {
   executor: null,
   debugContext: null,
   autoPanDisabled: false,
+  isRespondToChatBlockRunning: false,
+  currentRespondToChatContext: null,
 }
 
 // Types for panning functionality
