@@ -1207,11 +1207,11 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {renderToggleButton()}
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
-      {isExpanded && renderPublishButton()}
+      {/* {isExpanded && renderPublishButton()} */}
       {renderDeleteButton()}
       {renderDuplicateButton()}
-      {!isDebugging && renderDebugModeToggle()}
-      {renderDeployButton()}
+      {/* {!isDebugging && renderDebugModeToggle()} */}
+      {/* {renderDeployButton()} */}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
       {/* Template Modal */}

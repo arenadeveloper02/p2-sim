@@ -359,26 +359,22 @@ export function Panel() {
         >
           Console
         </button>
-        {!parentWorkflowId && (
-          <>
-            <button
-              onClick={() => handleTabClick('copilot')}
-              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-                isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
-              }`}
-            >
-              Copilot
-            </button>
-            <button
-              onClick={() => handleTabClick('variables')}
-              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-                isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
-              }`}
-            >
-              Variables
-            </button>
-          </>
-        )}
+        <button
+          onClick={() => handleTabClick('copilot')}
+          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+            isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
+          }`}
+        >
+          Copilot
+        </button>
+        {/* <button
+          onClick={() => handleTabClick('variables')}
+          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+            isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+          }`}
+        >
+          Variables
+        </button> */}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}
