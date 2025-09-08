@@ -7,7 +7,7 @@ import Image from 'next/image'
  * @param str - input string to check
  * @returns true if Base64, false otherwise
  */
-export function isBase64(str: string): boolean {
+export function isBase64(str: string | any): boolean {
   if (!str || str.trim() === '') {
     return false
   }
@@ -47,7 +47,7 @@ export const renderBs64Img = ({
         className='h-auto w-full rounded-lg border'
         unoptimized
         onError={(e) => {
-          console.error('Image failed to load:......', imageSrc)
+          console.error('Image failed to load:......', imageSrc, e)
           //   setLoadError(true)
           //   onLoadError?.(true)
         }}
