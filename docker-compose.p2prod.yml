@@ -11,7 +11,7 @@ services:
         limits:
           memory: 12G
     environment:
-      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio
+      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
@@ -50,7 +50,7 @@ services:
         limits:
           memory: 6G
     environment:
-      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio
+      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
