@@ -7,4 +7,8 @@ export interface PanelStore {
   togglePanel: () => void
   setActiveTab: (tab: PanelTab) => void
   setPanelWidth: (width: number) => void
+  setFullScreen: (fullScreen: boolean) => void
+  isFullScreen: boolean
+  parentWorkflowId: string
+  setParentWorkflowId: (parentWorkflowId: string) => void
 }
