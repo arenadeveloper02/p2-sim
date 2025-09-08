@@ -3,7 +3,9 @@
 import { type FC, memo, useEffect, useMemo, useState } from 'react'
 import {
   Blocks,
+  BookOpen,
   Bot,
+  Box,
   Check,
   Clipboard,
   // FileText,
@@ -13,6 +15,7 @@ import {
   // Image as LucideImage,
   RotateCcw,
   Shapes,
+  SquareChevronRight,
   ThumbsDown,
   ThumbsUp,
   Workflow,
@@ -392,7 +395,9 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                     const fromBlock = Array.isArray((block as any)?.contexts)
                       ? ((block as any).contexts as any[])
                       : []
-                    const allContexts = direct.length > 0 ? direct : fromBlock
+                    const allContexts = (direct.length > 0 ? direct : fromBlock).filter(
+                      (c: any) => c?.kind !== 'current_workflow'
+                    )
                     const MAX_VISIBLE = 4
                     const visible = showAllContexts
                       ? allContexts
@@ -407,14 +412,20 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                           >
                             {ctx?.kind === 'past_chat' ? (
                               <Bot className='h-3 w-3 text-muted-foreground' />
-                            ) : ctx?.kind === 'workflow' ? (
+                            ) : ctx?.kind === 'workflow' || ctx?.kind === 'current_workflow' ? (
                               <Workflow className='h-3 w-3 text-muted-foreground' />
                             ) : ctx?.kind === 'blocks' ? (
                               <Blocks className='h-3 w-3 text-muted-foreground' />
+                            ) : ctx?.kind === 'workflow_block' ? (
+                              <Box className='h-3 w-3 text-muted-foreground' />
                             ) : ctx?.kind === 'knowledge' ? (
                               <LibraryBig className='h-3 w-3 text-muted-foreground' />
                             ) : ctx?.kind === 'templates' ? (
                               <Shapes className='h-3 w-3 text-muted-foreground' />
+                            ) : ctx?.kind === 'docs' ? (
+                              <BookOpen className='h-3 w-3 text-muted-foreground' />
+                            ) : ctx?.kind === 'logs' ? (
+                              <SquareChevronRight className='h-3 w-3 text-muted-foreground' />
                             ) : (
                               <Info className='h-3 w-3 text-muted-foreground' />
                             )}
@@ -503,7 +514,10 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                     const contexts: any[] = Array.isArray((message as any).contexts)
                       ? ((message as any).contexts as any[])
                       : []
-                    const labels = contexts.map((c) => c?.label).filter(Boolean) as string[]
+                    const labels = contexts
+                      .filter((c) => c?.kind !== 'current_workflow')
+                      .map((c) => c?.label)
+                      .filter(Boolean) as string[]
                     if (!labels.length) return <WordWrap text={text} />
 
                     const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
