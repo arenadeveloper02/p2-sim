@@ -1,17 +1,22 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+
 import clsx from 'clsx'
 import { Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { createLogger } from '@/lib/logs/console/logger'
+
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+
+import { createLogger } from '@/lib/logs/console/logger'
+
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
+import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-import { usePanelStore } from '@/stores/panel/store'
 
 const logger = createLogger('WorkflowItem')
 
