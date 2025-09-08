@@ -94,7 +94,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     isLoading: isRegistryLoading,
   } = useWorkflowRegistry()
   const { isExecuting, handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
-  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentWorkflowId } = usePanelStore()
+  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentTemplateId } = usePanelStore()
   const { getFolderTree, expandedFolders } = useFolderStore()
 
   // User permissions - use stable activeWorkspaceId from registry instead of deriving from currentWorkflow
@@ -128,7 +128,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   // Change detection state
   const [changeDetected, setChangeDetected] = useState(false)
 
-  const isFullScreenExpanded = isFullScreen && parentWorkflowId && isOpen
+  const isFullScreenExpanded = isFullScreen && isOpen
   // Usage limit state
   const [usageExceeded, setUsageExceeded] = useState(false)
   const [usageData, setUsageData] = useState<{
@@ -1207,11 +1207,11 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {renderToggleButton()}
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
-      {isExpanded && renderPublishButton()}
+      {/* {isExpanded && renderPublishButton()} */}
       {renderDeleteButton()}
       {renderDuplicateButton()}
-      {!isDebugging && renderDebugModeToggle()}
-      {renderDeployButton()}
+      {/* {!isDebugging && renderDebugModeToggle()} */}
+      {/* {renderDeployButton()} */}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
       {/* Template Modal */}
