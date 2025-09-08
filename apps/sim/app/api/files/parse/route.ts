@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 const logger = createLogger('FilesParseAPI')
 
 const MAX_DOWNLOAD_SIZE_BYTES = 100 * 1024 * 1024 // 100 MB
-const DOWNLOAD_TIMEOUT_MS = 30000 // 30 seconds
+const DOWNLOAD_TIMEOUT_MS = 120000 // 120 seconds
 
 interface ParseResult {
   success: boolean
@@ -553,22 +553,11 @@ function handleGenericBuffer(
  */
 async function parseBufferAsPdf(buffer: Buffer) {
   try {
-    try {
-      const { PdfParser } = await import('@/lib/file-parsers/pdf-parser')
-      const parser = new PdfParser()
-      logger.info('Using main PDF parser for buffer')
+    const { PdfParser } = await import('@/lib/file-parsers/pdf-parser')
+    const parser = new PdfParser()
+    logger.info('Using main PDF parser for buffer')
 
-      if (parser.parseBuffer) {
-        return await parser.parseBuffer(buffer)
-      }
-      throw new Error('PDF parser does not support buffer parsing')
-    } catch (error) {
-      logger.warn('Main PDF parser failed, using raw parser for buffer:', error)
-      const { RawPdfParser } = await import('@/lib/file-parsers/raw-pdf-parser')
-      const rawParser = new RawPdfParser()
-
-      return await rawParser.parseBuffer(buffer)
-    }
+    return await parser.parseBuffer(buffer)
   } catch (error) {
     throw new Error(`PDF parsing failed: ${(error as Error).message}`)
   }
