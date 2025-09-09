@@ -26,7 +26,7 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''
-  const isLocal = hostname === 'localhost:3000' || hostname.includes('api')
+  const isLocal = hostname === 'localhost:3000'
   logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
   logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
   logger.info(`url: ${url}`)
