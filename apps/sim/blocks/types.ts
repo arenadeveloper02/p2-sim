@@ -51,6 +51,7 @@ export type SubBlockType =
   | 'input-format' // Input structure format
   | 'response-format' // Response structure format
   | 'file-upload' // File uploader
+  | 'date-picker'
 
 export type SubBlockLayout = 'full' | 'half'
 

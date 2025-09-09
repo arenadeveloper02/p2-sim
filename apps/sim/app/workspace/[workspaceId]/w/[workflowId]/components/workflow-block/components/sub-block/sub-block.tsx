@@ -5,6 +5,7 @@ import { Label, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
+  DatePicker,
   ChannelSelectorInput,
   CheckboxList,
   Code,
@@ -244,6 +245,18 @@ export function SubBlock({
             subBlockId={config.id}
             title={config.title ?? ''}
             options={config.options as { label: string; id: string }[]}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'date-picker':
+        return (
+          <DatePicker
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
             layout={config.layout}
             isPreview={isPreview}
             subBlockValues={subBlockValues}

@@ -31,6 +31,7 @@ import { HunterBlock } from '@/blocks/blocks/hunter'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
+import { TaskManagerBlock } from '@/blocks/blocks/task_manager'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LinearBlock } from '@/blocks/blocks/linear'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
@@ -141,6 +142,7 @@ export const registry: Record<string, BlockConfig> = {
   slack: SlackBlock,
   starter: StarterBlock,
   supabase: SupabaseBlock,
+  task_manager: TaskManagerBlock,
   tavily: TavilyBlock,
   telegram: TelegramBlock,
   thinking: ThinkingBlock,

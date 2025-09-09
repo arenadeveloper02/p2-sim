@@ -1,3 +1,4 @@
+export { DatePicker } from './date-picker'
 export { ChannelSelectorInput } from './channel-selector/channel-selector-input'
 export { CheckboxList } from './checkbox-list'
 export { Code } from './code'
