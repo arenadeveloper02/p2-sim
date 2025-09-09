@@ -5,10 +5,12 @@ import { Label, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
+  ArenaClientsSelector,
   DatePicker,
   ChannelSelectorInput,
   CheckboxList,
   Code,
+  RadioInput,
   ComboBox,
   ConditionInput,
   CredentialSelector,
@@ -251,9 +253,34 @@ export function SubBlock({
             disabled={isDisabled}
           />
         )
+      case 'radio-input':
+        return (
+          <RadioInput
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            options={config.options as { label: string; id: string }[]}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
       case 'date-picker':
         return (
           <DatePicker
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-client-selector':
+        return (
+          <ArenaClientsSelector
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}

@@ -38,7 +38,7 @@ export const TaskManagerBlock: BlockConfig = {
     {
       id: 'task-type',
       title: 'Select Task Type',
-      type: 'checkbox-list',
+      type: 'radio-input',
       layout: 'full',
       required: true,
       options: [
@@ -61,6 +61,14 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Select planned end date',
+    },
+    {
+      id: 'task-client',
+      title: 'Client',
+      type: 'arena-client-selector',
+      layout: 'full',
+      required: true,
+      placeholder: 'Enter client name',
     },
   ],
   inputs: {

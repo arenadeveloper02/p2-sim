@@ -52,6 +52,8 @@ export type SubBlockType =
   | 'response-format' // Response structure format
   | 'file-upload' // File uploader
   | 'date-picker'
+  | 'arena-client-selector'
+  | 'radio-input'
 
 export type SubBlockLayout = 'full' | 'half'
 
