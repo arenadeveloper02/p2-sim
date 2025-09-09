@@ -126,7 +126,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
       .limit(1)
 
-    let newWorkflowId: string
     let result: any
 
     if (existingApproval.length > 0) {
@@ -194,7 +193,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // No existing approval request - create new workflow and approval record
-    newWorkflowId = crypto.randomUUID()
+    const newWorkflowId = crypto.randomUUID()
 
     // Create workflow and all related data in a transaction
     result = await db.transaction(async (tx) => {
