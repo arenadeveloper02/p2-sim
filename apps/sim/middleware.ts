@@ -28,10 +28,7 @@ export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || ''
   const isLocal =
     hostname === 'localhost:3000' ||
-    hostname === 'dev-service.thearena.ai' ||
-    hostname === 'test-service.thearena.ai' ||
-    hostname === 'service.thearena.ai' ||
-    hostname === 'sandbox-services.thearena.ai'
+    hostname.includes('api')
   logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
   logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
   logger.info(`url: ${url}`)
