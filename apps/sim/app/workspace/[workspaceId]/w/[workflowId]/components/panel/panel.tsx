@@ -46,6 +46,11 @@ export function Panel() {
   const clearChat = useChatStore((state) => state.clearChat)
   const exportChatCSV = useChatStore((state) => state.exportChatCSV)
   const { activeWorkflowId } = useWorkflowRegistry()
+  const isFullScreen = usePanelStore((state) => state.isFullScreen)
+  const setFullScreen = usePanelStore((state) => state.setFullScreen)
+  const parentTemplateId = usePanelStore((state) => state.parentTemplateId)
+  const setParentTemplateId = usePanelStore((state) => state.setParentTemplateId)
+  const isFullScreenExpanded = isFullScreen && isOpen
 
   // Copilot store for chat management
   const {
@@ -120,8 +125,10 @@ export function Panel() {
 
   // Handle new chat creation with data loading
   const handleNewChat = useCallback(async () => {
-    await ensureCopilotDataLoaded()
+    // Instantly clear to a fresh chat locally
     copilotRef.current?.createNewChat()
+    // Ensure copilot data is loaded in the background (do not await)
+    ensureCopilotDataLoaded().catch(() => {})
   }, [ensureCopilotDataLoaded])
 
   // Handle history dropdown opening - use smart caching instead of force refresh
@@ -229,6 +236,7 @@ export function Panel() {
 
   const handleClosePanel = () => {
     togglePanel()
+    setFullScreen(false)
   }
 
   // Resize functionality
@@ -256,6 +264,10 @@ export function Panel() {
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false)
   }, [])
+
+  const handleViewWorkflow = () => {
+    handleClosePanel()
+  }
 
   // Add global mouse event listeners for resize
   useEffect(() => {
@@ -290,7 +302,19 @@ export function Panel() {
   return (
     <>
       {/* Tab Selector - Always visible */}
-      <div className='fixed top-[76px] right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs'>
+      <div
+        className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
+      >
+        {parentTemplateId && isOpen && isFullScreenExpanded && (
+          <button
+            onClick={() => {
+              handleViewWorkflow()
+            }}
+            className={`panel-tab-base !text-white absolute right-[102%] inline-flex w-[128px] flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-blue-500 py-1 font-[450] text-sm outline-none transition-colors duration-200`}
+          >
+            View workflow
+          </button>
+        )}
         <button
           onClick={() => handleTabClick('chat')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
@@ -315,21 +339,23 @@ export function Panel() {
         >
           Copilot
         </button>
-        <button
+        {/* <button
           onClick={() => handleTabClick('variables')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
             isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
           }`}
         >
           Variables
-        </button>
+        </button> */}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}
       {isOpen && (
         <div
-          className='fixed top-[124px] right-4 bottom-4 z-10 flex flex-col rounded-[14px] border bg-card shadow-xs'
-          style={{ width: `${panelWidth}px` }}
+          className={`fixed ${isFullScreenExpanded ? 'top-[16px]' : 'top-[124px]'} right-4 bottom-4 z-10 flex flex-col rounded-[14px] border bg-card shadow-xs`}
+          style={{
+            width: isFullScreenExpanded ? 'calc(100vw - 265px)' : `${panelWidth}px`,
+          }}
         >
           {/* Invisible resize handle */}
           <div

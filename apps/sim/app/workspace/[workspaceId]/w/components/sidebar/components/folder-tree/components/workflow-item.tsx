@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Pencil } from 'lucide-react'
+import { Pencil, Play } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
+import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
+import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
@@ -62,6 +64,11 @@ export function WorkflowItem({
   const isSelected = useIsWorkflowSelected(workflow.id)
   const { updateWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
+  const setParentTemplateId = usePanelStore((state) => state.setParentTemplateId)
+  const togglePanel = usePanelStore((state) => state.togglePanel)
+  const isOpen = usePanelStore((state) => state.isOpen)
+  const setActiveTab = usePanelStore((state) => state.setActiveTab)
+  const setFullScreen = usePanelStore((state) => state.setFullScreen)
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -127,8 +134,23 @@ export function WorkflowItem({
     handleSaveEdit()
   }
 
+  const fetchTemplate = async (workflowId: string) => {
+    try {
+      const response = await fetch(`/api/workflows/template-mapper/${workflowId}`)
+      if (!response.ok) {
+        console.error(`Failed to fetch template: ${response.status}`)
+        return
+      }
+      const { templateId = '' } = await response.json()
+      setParentTemplateId(templateId)
+    } catch (error) {
+      console.error('Error fetching template:', error)
+    }
+  }
+
   const handleClick = (e: React.MouseEvent) => {
-    if (dragStartedRef.current || isEditing) {
+    setParentTemplateId('')
+    if (isDragging || isEditing) {
       e.preventDefault()
       return
     }
@@ -192,7 +214,12 @@ export function WorkflowItem({
         <Link
           href={`/workspace/${workspaceId}/w/${workflow.id}`}
           className='flex min-w-0 flex-1 items-center'
-          onClick={handleClick}
+          onClick={(e) => {
+            if (isOpen) {
+              togglePanel()
+            }
+            handleClick(e)
+          }}
         >
           <div
             className='mr-2 flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden'
@@ -282,6 +309,24 @@ export function WorkflowItem({
               <span className='sr-only'>Rename workflow</span>
             </Button>
           </div>
+        )}
+        {isHovered && (
+          <Link
+            href={`/workspace/${workspaceId}/w/${workflow.id}`}
+            onClick={(e) => {
+              setActiveTab('chat')
+              setFullScreen(true)
+              if (!isOpen) {
+                togglePanel()
+              }
+              fetchTemplate(workflow.id)
+              handleClick(e)
+            }}
+          >
+            <Play
+              className={cn('h-3.5 w-3.5', 'ml-1 cursor-pointer fill-current stroke-current')}
+            />
+          </Link>
         )}
       </div>
     </div>

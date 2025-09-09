@@ -66,7 +66,18 @@ export async function getKnowledgeBases(
             )
       )
     )
-    .groupBy(knowledgeBase.id)
+    .groupBy(
+      knowledgeBase.id,
+      knowledgeBase.name,
+      knowledgeBase.description,
+      knowledgeBase.tokenCount,
+      knowledgeBase.embeddingModel,
+      knowledgeBase.embeddingDimension,
+      knowledgeBase.chunkingConfig,
+      knowledgeBase.createdAt,
+      knowledgeBase.updatedAt,
+      knowledgeBase.workspaceId
+    )
     .orderBy(knowledgeBase.createdAt)
 
   return knowledgeBasesWithCounts.map((kb) => ({
@@ -231,7 +242,18 @@ export async function getKnowledgeBaseById(
       and(eq(document.knowledgeBaseId, knowledgeBase.id), isNull(document.deletedAt))
     )
     .where(and(eq(knowledgeBase.id, knowledgeBaseId), isNull(knowledgeBase.deletedAt)))
-    .groupBy(knowledgeBase.id)
+    .groupBy(
+      knowledgeBase.id,
+      knowledgeBase.name,
+      knowledgeBase.description,
+      knowledgeBase.tokenCount,
+      knowledgeBase.embeddingModel,
+      knowledgeBase.embeddingDimension,
+      knowledgeBase.chunkingConfig,
+      knowledgeBase.createdAt,
+      knowledgeBase.updatedAt,
+      knowledgeBase.workspaceId
+    )
     .limit(1)
 
   if (result.length === 0) {

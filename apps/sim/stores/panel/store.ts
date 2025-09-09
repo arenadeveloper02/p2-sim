@@ -9,6 +9,8 @@ export const usePanelStore = create<PanelStore>()(
         isOpen: false,
         activeTab: 'console',
         panelWidth: 308,
+        isFullScreen: false,
+        parentTemplateId: '',
 
         togglePanel: () => {
           set((state) => ({ isOpen: !state.isOpen }))
@@ -22,6 +24,13 @@ export const usePanelStore = create<PanelStore>()(
           // Ensure minimum width of 308px and maximum of 800px
           const clampedWidth = Math.max(308, Math.min(800, width))
           set({ panelWidth: clampedWidth })
+        },
+
+        setFullScreen: (fullScreen: boolean) => {
+          set({ isFullScreen: fullScreen })
+        },
+        setParentTemplateId: (parentTemplateId: string) => {
+          set({ parentTemplateId })
         },
       }),
       {

@@ -7,4 +7,8 @@ export interface PanelStore {
   togglePanel: () => void
   setActiveTab: (tab: PanelTab) => void
   setPanelWidth: (width: number) => void
+  setFullScreen: (fullScreen: boolean) => void
+  isFullScreen: boolean
+  parentTemplateId: string
+  setParentTemplateId: (parentTemplateId: string) => void
 }

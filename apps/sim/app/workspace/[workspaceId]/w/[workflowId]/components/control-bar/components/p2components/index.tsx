@@ -2,22 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, FileCheck } from 'lucide-react'
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui'
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUiFlagsStore } from '@/stores/feature-flag/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { RejectApprovalModal } from '../reject-modal/reject-modal'
-import { set } from 'lodash'
 
 const logger = createLogger('workflow-p2')
 

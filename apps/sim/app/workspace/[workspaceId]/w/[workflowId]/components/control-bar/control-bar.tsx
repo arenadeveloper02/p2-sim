@@ -96,7 +96,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     isLoading: isRegistryLoading,
   } = useWorkflowRegistry()
   const { isExecuting, handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
-  const { setActiveTab, togglePanel, isOpen } = usePanelStore()
+  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentTemplateId } = usePanelStore()
   const { getFolderTree, expandedFolders } = useFolderStore()
 
   // User permissions - use stable activeWorkspaceId from registry instead of deriving from currentWorkflow
@@ -131,6 +131,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   // Change detection state
   const [changeDetected, setChangeDetected] = useState(false)
 
+  const isFullScreenExpanded = isFullScreen && isOpen
   // Usage limit state
   const [usageExceeded, setUsageExceeded] = useState(false)
   const [usageData, setUsageData] = useState<{
@@ -324,7 +325,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
     try {
       // Primary: call server-side usage check to mirror backend enforcement
-      const res = await fetch('/api/usage/check', { cache: 'no-store' })
+      const res = await fetch('/api/usage?context=user', { cache: 'no-store' })
       if (res.ok) {
         const payload = await res.json()
         const usage = payload?.data
@@ -1104,21 +1105,11 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
    * Get workflows in the exact order they appear in the sidebar
    */
   const getSidebarOrderedWorkflows = () => {
-    // Get and sort regular workflows by last modified (newest first)
+    // Get and sort regular workflows by creation date (newest first) for stable ordering
     const regularWorkflows = Object.values(workflows)
       .filter((workflow) => workflow.workspaceId === workspaceId)
       .filter((workflow) => workflow.marketplaceData?.status !== 'temp')
-      .sort((a, b) => {
-        const dateA =
-          a.lastModified instanceof Date
-            ? a.lastModified.getTime()
-            : new Date(a.lastModified).getTime()
-        const dateB =
-          b.lastModified instanceof Date
-            ? b.lastModified.getTime()
-            : new Date(b.lastModified).getTime()
-        return dateB - dateA
-      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
     // Group workflows by folder
     const workflowsByFolder = regularWorkflows.reduce(
@@ -1213,17 +1204,22 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   }
 
   return (
-    <div className='fixed top-4 right-4 z-20 flex items-center gap-1'>
+    <div
+      className={cn(
+        'test-2 fixed top-4 right-4 z-20 flex items-center gap-1',
+        isFullScreenExpanded && 'right-5 z-1'
+      )}
+    >
       {renderDisconnectionNotice()}
       {renderToggleButton()}
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
-      {isExpanded && renderPublishButton()}
+      {/* {isExpanded && renderPublishButton()} */}
       {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId, handleOpenApproval)}
       {renderDeleteButton()}
       {renderDuplicateButton()}
-      {!isDebugging && renderDebugModeToggle()}
-      {renderDeployButton()}
+      {/* {!isDebugging && renderDebugModeToggle()} */}
+      {/* {renderDeployButton()} */}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
       {/* Template Modal */}

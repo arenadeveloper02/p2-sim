@@ -72,6 +72,15 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       condition: { field: 'operation', value: ['send_gmail', 'draft_gmail'] },
       required: true,
     },
+    {
+      id: 'isHtml',
+      title: 'Is HTML',
+      type: 'switch',
+      layout: 'full',
+      placeholder: 'Email HTML content',
+      condition: { field: 'operation', value: ['send_gmail', 'draft_gmail'] },
+      required: false,
+    },
     // Advanced Settings - Additional Recipients
     {
       id: 'cc',

@@ -5,8 +5,8 @@ import Cookies from 'js-cookie'
 // import NavWrapper from '@/app/(landing)/components/nav-wrapper'
 // import Footer from '@/app/(landing)/components/sections/footer'
 // import Hero from '@/app/(landing)/components/sections/hero'
-// import Integrations from '@/app/(landing)/components/sections/integrations'
-import { LoadingAgent } from '@/components/ui/loading-agent'
+// import Integrations from '@/app/(landing)/components/sections/integrations'}
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth-client'
 // import Testimonials from '@/app/(landing)/components/sections/testimonials'
 
@@ -41,7 +41,7 @@ export default function Landing() {
   return (
     <div className='flex h-screen w-full items-center justify-center'>
       <div className='flex flex-col items-center justify-center text-center align-middle'>
-        <LoadingAgent size='lg' />
+        <LoadingAgentP2 size='lg' />
       </div>
     </div>
   )

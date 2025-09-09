@@ -27,11 +27,14 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''
   const isLocal = hostname === 'localhost:3000'
+  logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
+  logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
+  logger.info(`url: ${url}`)
 
-  if (url.pathname === '/login' && email) {
-    return NextResponse.redirect(new URL('/', request.url))
+  if (url.pathname.startsWith('/api/')) {
+    return NextResponse.next()
   }
-  if (email && !hasActiveSession) {
+  if (url.pathname === '/login' && email) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -53,6 +56,9 @@ export async function middleware(request: NextRequest) {
   if (!email && !isLocal) {
     const redirectUrl = getLoginRedirectUrl()
     return NextResponse.redirect(redirectUrl)
+  }
+  if (email) {
+    return NextResponse.next()
   }
 
   // Extract subdomain - handle nested subdomains for any domain
@@ -111,6 +117,21 @@ export async function middleware(request: NextRequest) {
     }
     // User doesn't have active session, redirect to login
     return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Handle whitelabel redirects for terms and privacy pages
+  if (url.pathname === '/terms') {
+    const termsUrl = process.env.NEXT_PUBLIC_TERMS_URL
+    if (termsUrl?.startsWith('http')) {
+      return NextResponse.redirect(termsUrl)
+    }
+  }
+
+  if (url.pathname === '/privacy') {
+    const privacyUrl = process.env.NEXT_PUBLIC_PRIVACY_URL
+    if (privacyUrl?.startsWith('http')) {
+      return NextResponse.redirect(privacyUrl)
+    }
   }
 
   // Legacy redirect: /w -> /workspace (will be handled by workspace layout)
@@ -225,6 +246,8 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/', // Root path for self-hosted redirect logic
+    '/terms', // Whitelabel terms redirect
+    '/privacy', // Whitelabel privacy redirect
     '/w', // Legacy /w redirect
     '/w/:path*', // Legacy /w/* redirects
     '/workspace/:path*', // New workspace routes

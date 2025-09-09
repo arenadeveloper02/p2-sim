@@ -1,7 +1,6 @@
 'use client'
 import { Loader2, X } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Textarea } from '@/components/ui'
-import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('ApprovalModal')
