@@ -31,6 +31,9 @@ export async function middleware(request: NextRequest) {
   logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
   logger.info(`url: ${url}`)
 
+  if (url.pathname.startsWith('/api/')) {
+    return NextResponse.next()
+  }
   if (url.pathname === '/login' && email) {
     return NextResponse.redirect(new URL('/', request.url))
   }
