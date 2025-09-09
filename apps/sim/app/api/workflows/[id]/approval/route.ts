@@ -50,9 +50,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let newWorkspaceId = crypto.randomUUID()
     const now = new Date()
     const workflowApproval = await db.transaction(async (tx) => {
-      /**
-       * Get arena developer user details
-       */
       const arenaUser = await tx
         .select()
         .from(user)
@@ -111,15 +108,96 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         })
       }
     })
+
     logger.info(
       `[${requestId}] Duplicating workflow ${sourceWorkflowId} for user ${session.user.id}`
     )
 
-    // Generate new workflow ID
-    const newWorkflowId = crypto.randomUUID()
+    // Check if an approval request already exists for this workflow and users
+    const existingApproval = await db
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.mappedWorkflowId, sourceWorkflowId),
+          eq(workflowStatus.ownerId, session.user.id),
+          eq(workflowStatus.userId, approvalUserId)
+        )
+      )
+      .limit(1)
 
-    // Approval workflow and all related data in a transaction
-    const result = await db.transaction(async (tx) => {
+    let newWorkflowId: string
+    let result: any
+
+    if (existingApproval.length > 0) {
+      // Existing approval request found - update it to PENDING and reuse existing workflow
+      logger.info(
+        `[${requestId}] Found existing approval request ${existingApproval[0].id}, updating to PENDING`
+      )
+
+      await db
+        .update(workflowStatus)
+        .set({
+          status: 'PENDING',
+          updatedAt: now,
+          comments: null, // Reset comments
+          name: name, // Update name if changed
+        })
+        .where(eq(workflowStatus.id, existingApproval[0].id))
+
+      // Get the existing workflow details for the response
+      const existingWorkflow = await db
+        .select()
+        .from(workflow)
+        .where(eq(workflow.id, existingApproval[0].workflowId))
+        .limit(1)
+
+      if (existingWorkflow.length === 0) {
+        throw new Error('Associated workflow not found')
+      }
+
+      // Count existing blocks, edges, and subflows for response
+      const [blocksCount, edgesCount, subflowsCount] = await Promise.all([
+        db
+          .select({ count: workflowBlocks.id })
+          .from(workflowBlocks)
+          .where(eq(workflowBlocks.workflowId, existingWorkflow[0].id)),
+        db
+          .select({ count: workflowEdges.id })
+          .from(workflowEdges)
+          .where(eq(workflowEdges.workflowId, existingWorkflow[0].id)),
+        db
+          .select({ count: workflowSubflows.id })
+          .from(workflowSubflows)
+          .where(eq(workflowSubflows.workflowId, existingWorkflow[0].id)),
+      ])
+
+      result = {
+        id: existingWorkflow[0].id,
+        name,
+        description: description || existingWorkflow[0].description,
+        color: color || existingWorkflow[0].color,
+        workspaceId: existingWorkflow[0].workspaceId,
+        folderId: existingWorkflow[0].folderId,
+        blocksCount: blocksCount.length,
+        edgesCount: edgesCount.length,
+        subflowsCount: subflowsCount.length,
+        isExistingRequest: true,
+      }
+
+      const elapsed = Date.now() - startTime
+      logger.info(
+        `[${requestId}] Successfully updated existing approval request for workflow ${sourceWorkflowId} in ${elapsed}ms`
+      )
+
+      return NextResponse.json(result, { status: 200 })
+    }
+
+    // No existing approval request - create new workflow and approval record
+    newWorkflowId = crypto.randomUUID()
+
+    // Create workflow and all related data in a transaction
+    result = await db.transaction(async (tx) => {
       // First verify the source workflow exists
       const sourceWorkflow = await tx
         .select()
@@ -156,6 +234,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!canAccessSource) {
         throw new Error('Source workflow not found or access denied')
       }
+
       // Create the new workflow first (required for foreign key constraints)
       await tx.insert(workflow).values({
         id: newWorkflowId,
@@ -353,14 +432,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         blocksCount: sourceBlocks.length,
         edgesCount: sourceEdges.length,
         subflowsCount: sourceSubflows.length,
+        isExistingRequest: false,
       }
     })
 
-    const elapsed = Date.now() - startTime
-    logger.info(
-      `[${requestId}] Successfully approved workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
-    )
-    // Add the workflow status for maintaing the approval process
+    // Create the workflow status for maintaining the approval process
     const workflowStatusId = crypto.randomUUID()
     await db.insert(workflowStatus).values({
       id: workflowStatusId,
@@ -370,9 +446,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ownerId: session.user.id,
       userId: approvalUserId,
       status: 'PENDING',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
     })
+
+    const elapsed = Date.now() - startTime
+    logger.info(
+      `[${requestId}] Successfully created new approval request for workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
+    )
+
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.log(error)

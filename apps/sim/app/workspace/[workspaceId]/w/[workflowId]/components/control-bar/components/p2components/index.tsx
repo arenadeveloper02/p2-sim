@@ -97,7 +97,7 @@ export const renderApprovalButton = (
 
   return (
     <>
-      {approval?.status === 'REJECTED' && (
+      {!isDisabled && approval?.status === 'REJECTED' && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
