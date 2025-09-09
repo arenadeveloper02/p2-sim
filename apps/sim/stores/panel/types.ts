@@ -9,6 +9,6 @@ export interface PanelStore {
   setPanelWidth: (width: number) => void
   setFullScreen: (fullScreen: boolean) => void
   isFullScreen: boolean
-  parentWorkflowId: string
-  setParentWorkflowId: (parentWorkflowId: string) => void
+  parentTemplateId: string
+  setParentTemplateId: (parentTemplateId: string) => void
 }
