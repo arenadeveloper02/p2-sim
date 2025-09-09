@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CircleCheck, CircleX, ClockIcon, FileCheck, Hourglass } from 'lucide-react'
+import { CircleCheck, CircleX, FileCheck, Hourglass } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
