@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CircleCheck, CircleX, FileCheck } from 'lucide-react'
+import { CircleCheck, CircleX, ClockIcon, FileCheck, Hourglass } from 'lucide-react'
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -97,6 +97,42 @@ export const renderApprovalButton = (
 
   return (
     <>
+      {approval?.status === 'REJECTED' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='outline'
+              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+            >
+              <CircleX className='h-5 w-5' />
+              <span className='sr-only'>Rejected</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {approval?.comments
+              ? approval.comments.charAt(0).toUpperCase() + approval.comments.slice(1).toLowerCase()
+              : ''}
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {approval?.userId !== session?.user?.id && approval?.status === 'PENDING' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='outline'
+              className={cn(
+                'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+              )}
+            >
+              <Hourglass className='h-5 w-5' />
+              <span className='sr-only'>Pending Approval</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Pending Approval</TooltipContent>
+        </Tooltip>
+      )}
+
       {canShowApprovalRequest && (
         <Tooltip>
           <TooltipTrigger asChild>
