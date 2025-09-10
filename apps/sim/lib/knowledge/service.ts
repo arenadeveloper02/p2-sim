@@ -73,7 +73,6 @@ export async function getKnowledgeBases(
       knowledgeBase.tokenCount,
       knowledgeBase.embeddingModel,
       knowledgeBase.embeddingDimension,
-      knowledgeBase.chunkingConfig,
       knowledgeBase.createdAt,
       knowledgeBase.updatedAt,
       knowledgeBase.workspaceId

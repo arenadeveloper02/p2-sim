@@ -422,6 +422,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/documents',
           ],
           prompt: 'consent',
           redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-docs`,
@@ -436,6 +437,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/spreadsheets',
           ],
           prompt: 'consent',
           redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-sheets`,
@@ -1227,6 +1229,17 @@ export const auth = betterAuth({
                     subscriptionId: subscription.id,
                     referenceId: subscription.referenceId,
                     error,
+                  })
+                }
+
+                // Send welcome email for Pro and Team plans
+                try {
+                  const { sendPlanWelcomeEmail } = await import('@/lib/billing')
+                  await sendPlanWelcomeEmail(subscription)
+                } catch (error) {
+                  logger.error('[onSubscriptionComplete] Failed to send plan welcome email', {
+                    error,
+                    subscriptionId: subscription.id,
                   })
                 }
               },
