@@ -142,29 +142,29 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
     () => ({
       // Paragraph
       p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
-        <p className='mb-1 font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
+        <p className='font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
           {children}
         </p>
       ),
 
       // Headings
       h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h1 className='mt-3 mb-3 font-geist-sans font-semibold text-2xl text-gray-900 dark:text-gray-100'>
+        <h1 className='font-geist-sans font-semibold text-2xl text-gray-900 dark:text-gray-100'>
           {children}
         </h1>
       ),
       h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h2 className='mt-2.5 mb-2.5 font-geist-sans font-semibold text-gray-900 text-xl dark:text-gray-100'>
+        <h2 className='font-geist-sans font-semibold text-gray-900 text-xl dark:text-gray-100'>
           {children}
         </h2>
       ),
       h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h3 className='mt-2 mb-2 font-geist-sans font-semibold text-gray-900 text-lg dark:text-gray-100'>
+        <h3 className='font-geist-sans font-semibold text-gray-900 text-lg dark:text-gray-100'>
           {children}
         </h3>
       ),
       h4: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h4 className='mt-5 mb-2 font-geist-sans font-semibold text-base text-gray-900 dark:text-gray-100'>
+        <h4 className='font-geist-sans font-semibold text-base text-gray-900 dark:text-gray-100'>
           {children}
         </h4>
       ),
@@ -172,7 +172,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
       // Lists
       ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => (
         <ul
-          className='mt-1 mb-1 space-y-1 pl-6 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='space-y-1 pl-6 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'disc' }}
         >
           {children}
@@ -180,7 +180,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
       ),
       ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
         <ol
-          className='mt-1 mb-1 space-y-1 pl-6 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='space-y-1 pl-6 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'decimal' }}
         >
           {children}
@@ -252,7 +252,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
         }
 
         return (
-          <div className='my-6 w-0 min-w-full rounded-md bg-gray-900 text-sm dark:bg-black'>
+          <div className='w-0 min-w-full rounded-md bg-gray-900 text-sm dark:bg-black'>
             <div className='flex items-center justify-between border-gray-700 border-b px-4 py-1.5 dark:border-gray-800'>
               <span className='font-geist-sans text-gray-400 text-xs'>{language}</span>
               <button
@@ -268,7 +268,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
               </button>
             </div>
             <div className='overflow-x-auto'>
-              <pre className='whitespace-pre p-4 font-mono text-gray-100 text-sm leading-relaxed'>
+              <pre className='whitespace-pre p-1 font-mono text-gray-100 text-sm leading-relaxed'>
                 {actualCodeText}
               </pre>
             </div>
@@ -328,7 +328,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
       ),
 
       // Horizontal rule
-      hr: () => <hr className='my-8 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
+      hr: () => <hr className='my-4 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
 
       // Links
       a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -382,7 +382,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
   )
 
   return (
-    <div className='copilot-markdown-wrapper max-w-full space-y-4 break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100'>
+    <div className='copilot-markdown-wrapper max-w-full break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100'>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {content}
       </ReactMarkdown>
