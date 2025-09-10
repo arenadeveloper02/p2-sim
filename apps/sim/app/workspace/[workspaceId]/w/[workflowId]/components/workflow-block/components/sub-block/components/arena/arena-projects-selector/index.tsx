@@ -16,26 +16,29 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Label } from '@/components/ui/label'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
+import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
+import { useWorkflowStore } from '@/stores'
+import { T } from 'vitest/dist/chunks/reporters.d.BFLkQcL6.js'
 
-interface Client {
-  clientId: string
+interface Project {
+  sysId: string
   name: string
 }
 
-interface ArenaClientsSelectorProps {
+interface ArenaProjectSelectorProps {
   blockId: string
   subBlockId: string
   title: string
+  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
 }
 
-export function ArenaClientsSelector({
+export function ArenaProjectSelector({
   blockId,
   subBlockId,
   title,
@@ -43,41 +46,52 @@ export function ArenaClientsSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaClientsSelectorProps) {
-  const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
+}: ArenaProjectSelectorProps) {
+  const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+  const values = useSubBlockStore((state) => state.workflowValues)
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
-
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [clients, setClients] = React.useState<Client[]>([])
+  const [projects, setProjects] = React.useState<Project[]>([])
   const [open, setOpen] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState('')
 
   React.useEffect(() => {
-    const fetchClients = async () => {
+    if (!clientId) return // No clientId, don't fetch projects
+
+    const fetchProjects = async () => {
+      setProjects([])
       try {
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
-        const response = await axios.get(`${baseUrl}/list/userservice/getclientbyuser`, {
+
+        const url = `${baseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
+        const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
           },
         })
-        setClients(response.data.response || [])
+
+        setProjects(response.data.projectList || [])
       } catch (error) {
-        console.error('Error fetching clients:', error)
+        console.error('Error fetching projects:', error)
+        setProjects([])
       }
     }
 
-    fetchClients()
-  }, [])
+    fetchProjects()
+  }, [clientId, searchQuery])
 
   const selectedLabel =
-    clients.find((cl) => cl.clientId === selectedValue)?.name || 'Select client...'
+    projects.find((proj) => proj.sysId === selectedValue)?.name || 'Select project...'
 
-  const handleSelect = (clientId: string) => {
+  const handleSelect = (projectId: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(clientId)
+      setStoreValue(projectId)
       setOpen(false)
     }
   }
@@ -90,9 +104,9 @@ export function ArenaClientsSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`client-${subBlockId}`}
+            id={`project-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled}
+            disabled={disabled || !clientId} // Disable if no client selected
           >
             {selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
@@ -100,21 +114,27 @@ export function ArenaClientsSelector({
         </PopoverTrigger>
         <PopoverContent className='w-full p-0'>
           <Command>
-            <CommandInput placeholder='Search clients...' className='h-9' />
+            <CommandInput
+              placeholder='Search projects...'
+              className='h-9'
+              onChangeCapture={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSearchQuery(e.target.value)
+              }
+            />
             <CommandList>
-              <CommandEmpty>No client found.</CommandEmpty>
+              <CommandEmpty>No project found.</CommandEmpty>
               <CommandGroup>
-                {clients.map((client) => (
+                {projects.map((project) => (
                   <CommandItem
-                    key={client.clientId}
-                    value={client.clientId}
-                    onSelect={() => handleSelect(client.clientId)}
+                    key={project.sysId}
+                    value={project.sysId}
+                    onSelect={() => handleSelect(project.sysId)}
                   >
-                    {client.name}
+                    {project.name}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === client.clientId ? 'opacity-100' : 'opacity-0'
+                        selectedValue === project.sysId ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

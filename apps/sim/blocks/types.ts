@@ -54,6 +54,7 @@ export type SubBlockType =
   | 'date-picker'
   | 'arena-client-selector'
   | 'radio-input'
+  | 'arena-project-selector'
 
 export type SubBlockLayout = 'full' | 'half'
 

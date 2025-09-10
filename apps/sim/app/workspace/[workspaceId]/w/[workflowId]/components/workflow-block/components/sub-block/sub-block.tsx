@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
   ArenaClientsSelector,
+  ArenaProjectSelector,
   DatePicker,
   ChannelSelectorInput,
   CheckboxList,
@@ -281,6 +282,18 @@ export function SubBlock({
       case 'arena-client-selector':
         return (
           <ArenaClientsSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-project-selector':
+        return (
+          <ArenaProjectSelector
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}

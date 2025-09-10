@@ -1,4 +1,5 @@
-export { ArenaClientsSelector } from './arena-clients-selector'
+export { ArenaClientsSelector } from './arena/arena-clients-selector'
+export { ArenaProjectSelector } from './arena/arena-projects-selector'
 export { RadioInput } from './radio-input'
 export { DatePicker } from './date-picker'
 export { ChannelSelectorInput } from './channel-selector/channel-selector-input'

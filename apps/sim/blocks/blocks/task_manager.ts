@@ -70,6 +70,14 @@ export const TaskManagerBlock: BlockConfig = {
       required: true,
       placeholder: 'Enter client name',
     },
+    {
+      id: 'task-project',
+      title: 'Project',
+      type: 'arena-project-selector',
+      layout: 'full',
+      required: true,
+      placeholder: 'Enter project name',
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
