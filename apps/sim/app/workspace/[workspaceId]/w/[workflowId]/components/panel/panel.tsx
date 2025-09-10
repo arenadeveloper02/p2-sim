@@ -363,10 +363,12 @@ export function Panel() {
           }}
         >
           {/* Invisible resize handle */}
-          <div
-            className='-left-1 absolute top-0 bottom-0 w-2 cursor-col-resize'
-            onMouseDown={handleResizeStart}
-          />
+          {!isFullScreenExpanded && (
+            <div
+              className='-left-1 absolute top-0 bottom-0 w-2 cursor-col-resize'
+              onMouseDown={handleResizeStart}
+            />
+          )}
 
           {/* Header - Fixed width content */}
           <div className='flex items-center justify-between px-3 pt-3 pb-1'>
@@ -474,7 +476,10 @@ export function Panel() {
                                         ? 'bg-accent'
                                         : 'hover:bg-accent/50'
                                     }`}
-                                    style={{ width: '176px', maxWidth: '176px' }}
+                                    style={{
+                                      width: '176px',
+                                      maxWidth: '176px',
+                                    }}
                                   >
                                     <span
                                       className={`min-w-0 flex-1 truncate font-medium text-sm ${
@@ -534,16 +539,36 @@ export function Panel() {
           {/* Panel Content Area - Resizable */}
           <div className='flex-1 overflow-hidden px-3'>
             {/* Keep all tabs mounted but hidden to preserve state and animations */}
-            <div style={{ display: activeTab === 'chat' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'chat' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Chat chatMessage={chatMessage} setChatMessage={setChatMessage} />
             </div>
-            <div style={{ display: activeTab === 'console' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'console' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Console panelWidth={panelWidth} />
             </div>
-            <div style={{ display: activeTab === 'copilot' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'copilot' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Copilot ref={copilotRef} panelWidth={panelWidth} />
             </div>
-            <div style={{ display: activeTab === 'variables' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'variables' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Variables />
             </div>
           </div>
