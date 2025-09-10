@@ -311,7 +311,7 @@ export function Panel() {
             onClick={() => {
               handleViewWorkflow()
             }}
-            className={`panel-tab-base !text-white absolute right-[102%] inline-flex w-[128px] flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-blue-500 py-1 font-[450] text-sm outline-none transition-colors duration-200`}
+            className={`panel-tab-base !text-white absolute right-[102%] inline-flex w-[128px] flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-[var(--brand-primary-hover-hex)] py-1 font-[450] text-sm outline-none transition-colors duration-200`}
           >
             View workflow
           </button>
@@ -324,34 +324,35 @@ export function Panel() {
         >
           Chat
         </button>
-        {!isFullScreenExpanded && !parentTemplateId && (
-          <>
-            <button
-              onClick={() => handleTabClick('console')}
-              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-                isOpen && activeTab === 'console' ? 'panel-tab-active' : 'panel-tab-inactive'
-              }`}
-            >
-              Console
-            </button>
-            <button
-              onClick={() => handleTabClick('copilot')}
-              className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-                isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
-              }`}
-            >
-              Copilot
-            </button>
-          </>
-        )}
-        {/* <button
-          onClick={() => handleTabClick('variables')}
+
+        <button
+          onClick={() => handleTabClick('console')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-            isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+            isOpen && activeTab === 'console' ? 'panel-tab-active' : 'panel-tab-inactive'
           }`}
         >
-          Variables
-        </button> */}
+          Console
+        </button>
+        {!isFullScreenExpanded && !parentTemplateId && (
+          <button
+            onClick={() => handleTabClick('copilot')}
+            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+              isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
+            }`}
+          >
+            Copilot
+          </button>
+        )}
+        {false && (
+          <button
+            onClick={() => handleTabClick('variables')}
+            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+              isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+            }`}
+          >
+            Variables
+          </button>
+        )}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}
