@@ -268,6 +268,7 @@ export function SubBlock({
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
+            defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
           />
         )
       case 'date-picker':

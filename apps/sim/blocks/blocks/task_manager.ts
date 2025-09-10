@@ -3,7 +3,7 @@ import type { BlockConfig } from '@/blocks/types'
 
 export const TaskManagerBlock: BlockConfig = {
   type: 'task_manager',
-  name: 'task_manager',
+  name: 'Task Manager',
   description: 'Task Management',
   longDescription: 'Task Management',
   docsLink: 'https://docs.sim.ai/tools/jira',
@@ -36,17 +36,6 @@ export const TaskManagerBlock: BlockConfig = {
       placeholder: 'Enter task description',
     },
     {
-      id: 'task-type',
-      title: 'Select Task Type',
-      type: 'radio-input',
-      layout: 'full',
-      required: true,
-      options: [
-        { label: 'Task', id: 'task' },
-        { label: 'Sub Task', id: 'subTask' },
-      ],
-    },
-    {
       id: 'planned-start-date',
       title: 'Planned Start Date',
       type: 'date-picker',
@@ -61,6 +50,18 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Select planned end date',
+    },
+    {
+      id: 'task-type',
+      title: 'Select Task Type',
+      type: 'radio-input',
+      layout: 'full',
+      required: true,
+      options: [
+        { label: 'Task', id: 'task' },
+        { label: 'Sub Task', id: 'subTask' },
+      ],
+      value: () => 'task',
     },
     {
       id: 'task-client',
@@ -85,14 +86,8 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter group name',
-    },
-    {
-      id: 'task-assignee',
-      title: 'Assignee',
-      type: 'arena-assignee-selector',
-      layout: 'full',
-      required: true,
-      placeholder: 'Enter assignee name',
+      dependsOn: ['task-type'],
+      condition: { field: 'task-type', value: ['task'] },
     },
     {
       id: 'task-task',
@@ -101,6 +96,16 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter task name',
+      dependsOn: ['task-type'],
+      condition: { field: 'task-type', value: ['subTask'] },
+    },
+    {
+      id: 'task-assignee',
+      title: 'Assignee',
+      type: 'arena-assignee-selector',
+      layout: 'full',
+      required: true,
+      placeholder: 'Enter assignee name',
     },
   ],
   inputs: {

@@ -2,6 +2,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
+import { useEffect } from 'react'
 
 interface RadioInputProps {
   blockId: string
@@ -12,12 +13,14 @@ interface RadioInputProps {
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
+  defaultValue?: string
 }
 
 export function RadioInput({
   blockId,
   subBlockId,
   title,
+  defaultValue,
   options,
   layout,
   isPreview = false,
@@ -32,6 +35,12 @@ export function RadioInput({
 
   // Use preview value when in preview mode, otherwise use stored value
   const selectedValue = isPreview ? previewValue : storeValue
+
+  useEffect(() => {
+    if (!selectedValue && defaultValue) {
+      setStoreValue(defaultValue)
+    }
+  }, [defaultValue, selectedValue])
 
   const handleChange = (value: string) => {
     if (!isPreview && !disabled) {
