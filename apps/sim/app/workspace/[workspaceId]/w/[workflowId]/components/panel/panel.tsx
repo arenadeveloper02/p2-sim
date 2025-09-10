@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useChatStore } from '@/stores/panel/chat/store'
@@ -386,7 +386,9 @@ export function Panel() {
                       <ArrowDownToLine className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Export console data</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Export console data</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               {activeTab === 'chat' && (
@@ -400,7 +402,9 @@ export function Panel() {
                       <ArrowDownToLine className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Export chat data</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Export chat data</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               {activeTab === 'copilot' && (
@@ -416,7 +420,9 @@ export function Panel() {
                         <Plus className='h-4 w-4' strokeWidth={2} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side='bottom'>New chat</TooltipContent>
+                    <TooltipPortal>
+                      <TooltipContent side='bottom'>New chat</TooltipContent>
+                    </TooltipPortal>
                   </Tooltip>
 
                   {/* History Dropdown */}
@@ -435,7 +441,9 @@ export function Panel() {
                           </button>
                         </TooltipTrigger>
                       </DropdownMenuTrigger>
-                      <TooltipContent side='bottom'>Chat history</TooltipContent>
+                      <TooltipPortal>
+                        <TooltipContent side='bottom'>Chat history</TooltipContent>
+                      </TooltipPortal>
                     </Tooltip>
                     <DropdownMenuContent
                       align='end'
@@ -519,7 +527,9 @@ export function Panel() {
                       <CircleSlash className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Clear {activeTab}</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Clear {activeTab}</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               <Tooltip>
@@ -532,7 +542,9 @@ export function Panel() {
                     <X className='h-4 w-4' strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side='bottom'>Close panel</TooltipContent>
+                <TooltipPortal>
+                  <TooltipContent side='bottom'>Close panel</TooltipContent>
+                </TooltipPortal>
               </Tooltip>
             </div>
           </div>
