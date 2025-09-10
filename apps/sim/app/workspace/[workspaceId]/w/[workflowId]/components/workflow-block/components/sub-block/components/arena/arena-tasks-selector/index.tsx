@@ -16,16 +16,17 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Label } from '@/components/ui/label'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
+import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
-interface Client {
-  clientId: string
+interface Task {
+  sysId: string
+  id?: string
   name: string
 }
 
-interface ArenaClientsSelectorProps {
+interface ArenaTaskSelectorProps {
   blockId: string
   subBlockId: string
   title: string
@@ -35,7 +36,7 @@ interface ArenaClientsSelectorProps {
   disabled?: boolean
 }
 
-export function ArenaClientsSelector({
+export function ArenaTaskSelector({
   blockId,
   subBlockId,
   title,
@@ -43,43 +44,52 @@ export function ArenaClientsSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaClientsSelectorProps) {
-  const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
+}: ArenaTaskSelectorProps) {
+  const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+  const values = useSubBlockStore((state) => state.workflowValues)
+  const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
-
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [clients, setClients] = React.useState<Client[]>([])
+  const [tasks, setTasks] = React.useState<Task[]>([])
   const [open, setOpen] = React.useState(false)
 
   React.useEffect(() => {
-    const fetchClients = async () => {
+    if (!projectId) return
+
+    const fetchTasks = async () => {
+      setTasks([])
       try {
-        setClients([])
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
-        const response = await axios.get(`${baseUrl}/list/userservice/getclientbyuser`, {
+
+        const url = `${baseUrl}/sol/v1/tasks/deliverable/list?projectId=${projectId}`
+        const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
           },
         })
-        setClients(response.data.response || [])
+
+        setTasks(response.data.deliverables || [])
       } catch (error) {
-        console.error('Error fetching clients:', error)
+        console.error('Error fetching tasks:', error)
+        setTasks([])
       }
     }
 
-    fetchClients()
-  }, [])
+    fetchTasks()
+  }, [projectId])
 
   const selectedLabel =
-    clients.find((cl) => cl.clientId === selectedValue)?.name || 'Select client...'
+    tasks.find((task) => task.sysId === selectedValue || task.id === selectedValue)?.name ||
+    'Select task...'
 
-  const handleSelect = (clientId: string) => {
-    console.log('Selected client:', clientId)
+  const handleSelect = (taskId: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(clientId)
+      setStoreValue(taskId)
       setOpen(false)
     }
   }
@@ -92,41 +102,33 @@ export function ArenaClientsSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`client-${subBlockId}`}
+            id={`task-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled}
+            disabled={disabled || !projectId}
           >
             {selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
         <PopoverContent className='w-full p-0'>
-          <Command
-            filter={(value, search) => {
-              const client = clients.find((cl) => cl.clientId === value || cl.name === value)
-              if (!client) return 0
-
-              return client.name.toLowerCase().includes(search.toLowerCase()) ||
-                client.clientId.toLowerCase().includes(search.toLowerCase())
-                ? 1
-                : 0
-            }}
-          >
-            <CommandInput placeholder='Search clients...' className='h-9' />
+          <Command>
+            <CommandInput placeholder='Search tasks...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No client found.</CommandEmpty>
+              <CommandEmpty>No task found.</CommandEmpty>
               <CommandGroup>
-                {clients.map((client) => (
+                {tasks.map((task) => (
                   <CommandItem
-                    key={client.clientId}
-                    value={client.clientId}
-                    onSelect={() => handleSelect(client.clientId)}
+                    key={task.sysId || task.id}
+                    value={task.name} // <-- IMPORTANT for Command filter
+                    onSelect={() => handleSelect(task.sysId)}
                   >
-                    {client.name}
+                    {task.name}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === client.clientId ? 'opacity-100' : 'opacity-0'
+                        selectedValue === task.sysId || selectedValue === task.id
+                          ? 'opacity-100'
+                          : 'opacity-0'
                       )}
                     />
                   </CommandItem>

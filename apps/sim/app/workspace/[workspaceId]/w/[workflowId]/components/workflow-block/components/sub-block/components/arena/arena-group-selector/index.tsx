@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
 import Cookies from 'js-cookie'
+import { Check, ChevronsUpDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -20,23 +20,22 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
-interface Project {
-  sysId: string
+interface Group {
+  id: string
   name: string
 }
 
-interface ArenaProjectSelectorProps {
+interface ArenaGroupSelectorProps {
   blockId: string
   subBlockId: string
   title: string
-  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
 }
 
-export function ArenaProjectSelector({
+export function ArenaGroupSelector({
   blockId,
   subBlockId,
   title,
@@ -44,52 +43,58 @@ export function ArenaProjectSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaProjectSelectorProps) {
+}: ArenaGroupSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
   const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
+  const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [projects, setProjects] = React.useState<Project[]>([])
+  const [groups, setGroups] = React.useState<Group[]>([])
   const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState('')
 
+  // Fetch groups when clientId & projectId are available
   React.useEffect(() => {
-    if (!clientId) return // No clientId, don't fetch projects
+    if (!clientId || !projectId) return
 
-    const fetchProjects = async () => {
-      setProjects([])
+    const fetchGroups = async () => {
       try {
+        setGroups([])
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
+        const url = `${baseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
 
-        const url = `${baseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
           },
         })
 
-        setProjects(response.data.projectList || [])
+        const epics = response.data?.epics || []
+        const formattedGroups = epics.map((epic: any) => ({
+          id: epic.id,
+          name: epic.name,
+        }))
+
+        setGroups(formattedGroups)
       } catch (error) {
-        console.error('Error fetching projects:', error)
-        setProjects([])
+        console.error('Error fetching groups:', error)
+        setGroups([])
       }
     }
 
-    fetchProjects()
-  }, [clientId, searchQuery])
+    fetchGroups()
+  }, [clientId, projectId])
 
-  const selectedLabel =
-    projects.find((proj) => proj.sysId === selectedValue)?.name || 'Select project...'
+  const selectedLabel = groups.find((grp) => grp.id === selectedValue)?.name || 'Select group...'
 
-  const handleSelect = (projectId: string) => {
+  const handleSelect = (groupId: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(projectId)
+      setStoreValue(groupId)
       setOpen(false)
     }
   }
@@ -102,34 +107,42 @@ export function ArenaProjectSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`project-${subBlockId}`}
+            id={`group-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled || !clientId} // Disable if no client selected
+            disabled={disabled || !clientId || !projectId}
           >
             {selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
         <PopoverContent className='w-full p-0'>
-          <Command>
-            <CommandInput
-              placeholder='Search projects...'
-              className='h-9'
-            />
+          <Command
+            filter={(value, search) => {
+              const group = groups.find((g) => g.id === value || g.name === value)
+              if (!group) return 0
+
+              return group.name.toLowerCase().includes(search.toLowerCase()) ||
+                group.id.toLowerCase().includes(search.toLowerCase())
+                ? 1
+                : 0
+            }}
+          >
+            {/* ✅ Internal filtering handled automatically */}
+            <CommandInput placeholder='Search groups...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No project found.</CommandEmpty>
+              <CommandEmpty>No groups found.</CommandEmpty>
               <CommandGroup>
-                {projects.map((project) => (
+                {groups.map((group) => (
                   <CommandItem
-                    key={project.sysId}
-                    value={project.sysId}
-                    onSelect={() => handleSelect(project.sysId)}
+                    key={group.id}
+                    value={group.name}
+                    onSelect={() => handleSelect(group.id)}
                   >
-                    {project.name}
+                    {group.name}
                     <Check
                       className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValue === project.sysId ? 'opacity-100' : 'opacity-0'
+                        'ml-auto',
+                        selectedValue === group.id ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

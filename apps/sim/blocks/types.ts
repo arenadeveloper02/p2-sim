@@ -55,6 +55,9 @@ export type SubBlockType =
   | 'arena-client-selector'
   | 'radio-input'
   | 'arena-project-selector'
+  | 'arena-group-selector'
+  | 'arena-assignee-selector'
+  | 'arena-task-selector'
 
 export type SubBlockLayout = 'full' | 'half'
 

@@ -5,7 +5,10 @@ import { Label, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
+  ArenaGroupSelector,
   ArenaClientsSelector,
+  ArenaAssigneeSelector,
+  ArenaTaskSelector,
   ArenaProjectSelector,
   DatePicker,
   ChannelSelectorInput,
@@ -282,6 +285,43 @@ export function SubBlock({
       case 'arena-client-selector':
         return (
           <ArenaClientsSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-task-selector':
+        return (
+          <ArenaTaskSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'arena-group-selector':
+        return (
+          <ArenaGroupSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-assignee-selector':
+        return (
+          <ArenaAssigneeSelector
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}

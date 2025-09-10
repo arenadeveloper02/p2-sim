@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
 import Cookies from 'js-cookie'
+import { Check, ChevronsUpDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -16,27 +16,26 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
+import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
-interface Project {
-  sysId: string
-  name: string
+interface Assignee {
+  value: string
+  label: string
 }
 
-interface ArenaProjectSelectorProps {
+interface ArenaAssigneeSelectorProps {
   blockId: string
   subBlockId: string
   title: string
-  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
 }
 
-export function ArenaProjectSelector({
+export function ArenaAssigneeSelector({
   blockId,
   subBlockId,
   title,
@@ -44,52 +43,64 @@ export function ArenaProjectSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaProjectSelectorProps) {
+}: ArenaAssigneeSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
   const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
+  const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [projects, setProjects] = React.useState<Project[]>([])
+  const [assignees, setAssignees] = React.useState<Assignee[]>([])
   const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
 
+  // Fetch assignees when clientId & projectId change
   React.useEffect(() => {
-    if (!clientId) return // No clientId, don't fetch projects
+    if (!clientId || !projectId) return
 
-    const fetchProjects = async () => {
-      setProjects([])
+    const fetchAssignees = async () => {
+      setLoading(true)
       try {
+        setAssignees([])
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
 
-        const url = `${baseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
+        const url = `${baseUrl}/sol/v1/users/list?cId=${clientId}&pId=${projectId}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
           },
         })
 
-        setProjects(response.data.projectList || [])
+        const users = response.data?.userList || []
+
+        const formattedAssignees: Assignee[] = users.map((user: any) => ({
+          value: user.sysId,
+          label: user.name,
+        }))
+
+        setAssignees(formattedAssignees)
       } catch (error) {
-        console.error('Error fetching projects:', error)
-        setProjects([])
+        console.error('Error fetching assignees:', error)
+        setAssignees([])
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchProjects()
-  }, [clientId, searchQuery])
+    fetchAssignees()
+  }, [clientId, projectId])
 
   const selectedLabel =
-    projects.find((proj) => proj.sysId === selectedValue)?.name || 'Select project...'
+    assignees.find((a) => a.value === selectedValue)?.label || 'Select assignee...'
 
-  const handleSelect = (projectId: string) => {
+  const handleSelect = (assigneeId: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(projectId)
+      setStoreValue(assigneeId)
       setOpen(false)
     }
   }
@@ -102,34 +113,38 @@ export function ArenaProjectSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`project-${subBlockId}`}
+            id={`assignee-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled || !clientId} // Disable if no client selected
+            disabled={disabled || !clientId || !projectId || loading}
           >
-            {selectedLabel}
+            {loading ? 'Loading...' : selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
         <PopoverContent className='w-full p-0'>
-          <Command>
-            <CommandInput
-              placeholder='Search projects...'
-              className='h-9'
-            />
+          <Command
+            filter={(value, search) => {
+              const assignee = assignees.find((a) => a.value === value)
+              if (!assignee) return 0
+              return assignee.label.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+            }}
+          >
+            <CommandInput placeholder='Search assignee...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No project found.</CommandEmpty>
+              <CommandEmpty>{loading ? 'Loading...' : 'No assignees found.'}</CommandEmpty>
               <CommandGroup>
-                {projects.map((project) => (
+                {assignees.map((assignee) => (
                   <CommandItem
-                    key={project.sysId}
-                    value={project.sysId}
-                    onSelect={() => handleSelect(project.sysId)}
+                    key={assignee.value}
+                    value={assignee.value}
+                    // ✅ FIX: Wrap in closure, don't pass param directly
+                    onSelect={() => handleSelect(assignee.value)}
                   >
-                    {project.name}
+                    {assignee.label}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === project.sysId ? 'opacity-100' : 'opacity-0'
+                        selectedValue === assignee.value ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>
