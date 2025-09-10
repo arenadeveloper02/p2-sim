@@ -86,7 +86,7 @@ export default function UserSearch({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className='absolute top-full right-0 left-0 z-50 mt-1 max-h-[200px] overflow-y-auto rounded-md border bg-popover shadow-md'>
+        <div className='absolute top-full right-0 left-0 z-50 mt-1 h-[100px] overflow-y-auto rounded-md border bg-popover shadow-md'>
           {loading ? (
             <div className='flex items-center justify-center p-4'>
               <RefreshCw className='h-4 w-4 animate-spin' />
