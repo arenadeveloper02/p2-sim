@@ -1231,3 +1231,42 @@ export const copilotFeedback = pgTable(
     createdAtIdx: index('copilot_feedback_created_at_idx').on(table.createdAt),
   })
 )
+
+export const copilotApiKeys = pgTable(
+  'copilot_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    apiKeyEncrypted: text('api_key_encrypted').notNull(),
+    apiKeyLookup: text('api_key_lookup').notNull(),
+  },
+  (table) => ({
+    apiKeyEncryptedHashIdx: index('copilot_api_keys_api_key_encrypted_hash_idx').using(
+      'hash',
+      table.apiKeyEncrypted
+    ),
+    apiKeyLookupHashIdx: index('copilot_api_keys_lookup_hash_idx').using(
+      'hash',
+      table.apiKeyLookup
+    ),
+  })
+)
+
+export const workflowStatus = pgTable('workflow_status', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  workflowId: text('workflow_id').notNull(),
+  mappedWorkflowId: text('mapped_workflow_id').notNull(),
+  status: text('status').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  comments: text('comments'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
