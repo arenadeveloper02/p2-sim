@@ -116,7 +116,7 @@ export function SettingsNavigation({
     if (item.requiresTeam && !hasOrganization) {
       return false
     }
-    if (item.id === 'environment' || item.id === 'apikeys') {
+    if (item.id === 'environment' || item.id === 'apikeys' || item.id === 'copilot') {
       return false
     }
 
