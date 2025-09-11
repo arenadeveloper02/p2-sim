@@ -7,7 +7,7 @@ import Image from 'next/image'
  * @param str - input string to check
  * @returns true if Base64, false otherwise
  */
-export function isBase64(str: string): boolean {
+export function isBase64(str: string | any): boolean {
   if (!str || str.trim() === '') {
     return false
   }
@@ -18,7 +18,7 @@ export function isBase64(str: string): boolean {
   }
 
   // Base64 regex (supports padding = or == at the end)
-  const base64Regex = /^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
   return base64Regex.test(str)
 }
@@ -47,7 +47,7 @@ export const renderBs64Img = ({
         className='h-auto w-full rounded-lg border'
         unoptimized
         onError={(e) => {
-          console.error('Image failed to load:......', imageSrc)
+          console.error('Image failed to load:......', imageSrc, e)
           //   setLoadError(true)
           //   onLoadError?.(true)
         }}

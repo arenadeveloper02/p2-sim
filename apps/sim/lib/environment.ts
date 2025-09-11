@@ -24,6 +24,9 @@ export const isTest = env.NODE_ENV === 'test'
 export const isHosted =
   env.NEXT_PUBLIC_APP_URL === 'https://www.sim.ai' ||
   env.NEXT_PUBLIC_APP_URL === 'https://www.staging.sim.ai'
+// ||
+// env.NEXT_PUBLIC_APP_URL === 'https://dev-agent.thearena.ai' ||
+// env.NEXT_PUBLIC_APP_URL === 'https://agent.thearena.ai'
 
 /**
  * Is billing enforcement enabled

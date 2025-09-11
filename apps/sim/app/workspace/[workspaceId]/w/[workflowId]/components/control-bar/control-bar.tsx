@@ -12,6 +12,7 @@ import {
   StepForward,
   Store,
   Trash2,
+  Webhook,
   WifiOff,
   X,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
+import { getEnv, isTruthy } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -38,6 +40,7 @@ import {
   DeploymentControls,
   ExportControls,
   TemplateModal,
+  WebhookSettings,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import {
@@ -45,6 +48,7 @@ import {
   useKeyboardShortcuts,
 } from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
 import { useFolderStore } from '@/stores/folders/store'
+import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useGeneralStore } from '@/stores/settings/general/store'
 import { useSubscriptionStore } from '@/stores/subscription/store'
@@ -94,7 +98,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     isLoading: isRegistryLoading,
   } = useWorkflowRegistry()
   const { isExecuting, handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
-  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentWorkflowId } = usePanelStore()
+  const { setActiveTab, togglePanel, isOpen, isFullScreen, parentTemplateId } = usePanelStore()
   const { getFolderTree, expandedFolders } = useFolderStore()
 
   // User permissions - use stable activeWorkspaceId from registry instead of deriving from currentWorkflow
@@ -110,6 +114,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const [, forceUpdate] = useState({})
   const [isExpanded, setIsExpanded] = useState(false)
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [isWebhookSettingsOpen, setIsWebhookSettingsOpen] = useState(false)
   const [isAutoLayouting, setIsAutoLayouting] = useState(false)
 
   // Delete workflow state - grouped for better organization
@@ -128,7 +133,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   // Change detection state
   const [changeDetected, setChangeDetected] = useState(false)
 
-  const isFullScreenExpanded = isFullScreen && parentWorkflowId && isOpen
+  const isFullScreenExpanded = isFullScreen && isOpen
   // Usage limit state
   const [usageExceeded, setUsageExceeded] = useState(false)
   const [usageData, setUsageData] = useState<{
@@ -259,17 +264,23 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
   // Get current store state for change detection
   const currentBlocks = useWorkflowStore((state) => state.blocks)
+  const currentEdges = useWorkflowStore((state) => state.edges)
   const subBlockValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
 
   useEffect(() => {
+    // Avoid off-by-one false positives: wait until operation queue is idle
+    const { operations, isProcessing } = useOperationQueueStore.getState()
+    const hasPendingOps =
+      isProcessing || operations.some((op) => op.status === 'pending' || op.status === 'processing')
+
     if (!activeWorkflowId || !deployedState) {
       setChangeDetected(false)
       return
     }
 
-    if (isLoadingDeployedState) {
+    if (isLoadingDeployedState || hasPendingOps) {
       return
     }
 
@@ -292,7 +303,16 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     }
 
     checkForChanges()
-  }, [activeWorkflowId, deployedState, currentBlocks, subBlockValues, isLoadingDeployedState])
+  }, [
+    activeWorkflowId,
+    deployedState,
+    currentBlocks,
+    currentEdges,
+    subBlockValues,
+    isLoadingDeployedState,
+    useOperationQueueStore.getState().isProcessing,
+    useOperationQueueStore.getState().operations.length,
+  ])
 
   useEffect(() => {
     if (session?.user?.id && !isRegistryLoading) {
@@ -689,6 +709,41 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       userPermissions={userPermissions}
     />
   )
+
+  /**
+   * Render webhook settings button
+   */
+  const renderWebhookButton = () => {
+    // Only show webhook button if Trigger.dev is enabled
+    const isTriggerEnabled = isTruthy(getEnv('NEXT_PUBLIC_TRIGGER_DEV_ENABLED'))
+    if (!isTriggerEnabled) return null
+
+    const canEdit = userPermissions.canEdit
+    const isDisabled = !canEdit
+
+    const getTooltipText = () => {
+      if (!canEdit) return 'Admin permission required to configure webhooks'
+      return 'Configure webhook notifications'
+    }
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant='outline'
+            size='icon'
+            disabled={isDisabled}
+            onClick={() => setIsWebhookSettingsOpen(true)}
+            className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary'
+          >
+            <Webhook className='h-5 w-5' />
+            <span className='sr-only'>Webhook Settings</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{getTooltipText()}</TooltipContent>
+      </Tooltip>
+    )
+  }
 
   /**
    * Render workflow duplicate button
@@ -1199,18 +1254,19 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   return (
     <div
       className={cn(
-        'fixed top-4 right-4 z-20 flex items-center gap-1 test-2',
-        isFullScreenExpanded && 'z-1 right-5'
+        'test-2 fixed top-4 right-4 z-20 flex items-center gap-1',
+        isFullScreenExpanded && 'right-5 z-1'
       )}
     >
       {renderDisconnectionNotice()}
       {renderToggleButton()}
+      {isExpanded && renderWebhookButton()}
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
-      {isExpanded && renderPublishButton()}
+      {/* {isExpanded && renderPublishButton()} */}
       {renderDeleteButton()}
       {renderDuplicateButton()}
-      {!isDebugging && renderDebugModeToggle()}
+      {/* {!isDebugging && renderDebugModeToggle()} */}
       {renderDeployButton()}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
 
@@ -1219,6 +1275,15 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         <TemplateModal
           open={isTemplateModalOpen}
           onOpenChange={setIsTemplateModalOpen}
+          workflowId={activeWorkflowId}
+        />
+      )}
+
+      {/* Webhook Settings */}
+      {activeWorkflowId && (
+        <WebhookSettings
+          open={isWebhookSettingsOpen}
+          onOpenChange={setIsWebhookSettingsOpen}
           workflowId={activeWorkflowId}
         />
       )}

@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@/lib/logs/console/logger'
-import { generateApiKey } from '@/lib/utils'
+import { generateApiKey, generateRequestId } from '@/lib/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const { id } = await params
 
   try {
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const { id } = await params
 
   try {
@@ -195,14 +195,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Process blocks
     blocks.forEach((block) => {
+      const parentId = block.parentId || null
+      const extent = block.extent || null
+      const blockData = {
+        ...(block.data || {}),
+        ...(parentId && { parentId }),
+        ...(extent && { extent }),
+      }
+
       blocksMap[block.id] = {
         id: block.id,
         type: block.type,
         name: block.name,
         position: { x: Number(block.positionX), y: Number(block.positionY) },
-        data: block.data,
+        data: blockData,
         enabled: block.enabled,
         subBlocks: block.subBlocks || {},
+        // Preserve execution-relevant flags so serializer behavior matches manual runs
+        isWide: block.isWide ?? false,
+        advancedMode: block.advancedMode ?? false,
+        triggerMode: block.triggerMode ?? false,
+        outputs: block.outputs || {},
+        horizontalHandles: block.horizontalHandles ?? true,
+        height: Number(block.height || 0),
+        parentId,
+        extent,
       }
     })
 
@@ -351,7 +368,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const { id } = await params
 
   try {

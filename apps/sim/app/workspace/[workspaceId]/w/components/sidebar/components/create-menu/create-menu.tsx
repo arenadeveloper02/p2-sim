@@ -10,6 +10,7 @@ import { generateFolderName } from '@/lib/naming'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useFolderStore } from '@/stores/folders/store'
+import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { parseWorkflowYaml } from '@/stores/workflows/yaml/importer'
@@ -42,6 +43,8 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const { createWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isOpenPanel = usePanelStore((state) => state.isOpen)
+  const togglePanel = usePanelStore((state) => state.togglePanel)
 
   // Timer management utilities
   const clearAllTimers = useCallback(() => {
@@ -83,7 +86,9 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
 
     setIsOpen(false)
-
+    if (isOpenPanel) {
+      togglePanel()
+    }
     try {
       const workflowId = await onCreateWorkflow()
       if (workflowId) {
