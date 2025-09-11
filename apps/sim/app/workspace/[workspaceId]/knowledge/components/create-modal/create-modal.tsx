@@ -13,11 +13,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
+import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { ACCEPT_ATTRIBUTE, ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/uploads/validation'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
+import { type UserType, useUserApprovalStore } from '@/stores/approver-list/store'
 import type { KnowledgeBaseData } from '@/stores/knowledge/store'
+import UserSearch from './components/user-list'
 
 const logger = createLogger('CreateModal')
 
@@ -76,6 +79,11 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
   const [isDragging, setIsDragging] = useState(false)
   const [dragCounter, setDragCounter] = useState(0) // Track drag events to handle nested elements
 
+  const { users, loading, error, fetchUsers } = useUserApprovalStore()
+  const { data: session } = useSession()
+  const userId = session?.user?.id
+  const [selectedUser, setSelectedUser] = useState<UserType | null>(null)
+
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
 
@@ -85,6 +93,10 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
       // Files uploaded and document records created - processing will continue in background
     },
   })
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   // Cleanup file preview URLs when component unmounts to prevent memory leaks
   useEffect(() => {
@@ -331,8 +343,12 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
     }
   }
 
+  const handleSelectUser = (user: UserType) => {
+    setSelectedUser(user)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={true} onOpenChange={onOpenChange}>
       <DialogContent
         className='flex h-[74vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]'
         hideCloseButton
@@ -381,6 +397,17 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
                     {errors.name && (
                       <p className='mt-1 text-red-500 text-sm'>{errors.name.message}</p>
                     )}
+                  </div>
+
+                  <div className='space-y-2'>
+                    <Label>Approver *</Label>
+                    <UserSearch
+                      users={users?.filter((u) => u.id !== userId) || []}
+                      selectedUser={selectedUser}
+                      onSelectUser={handleSelectUser}
+                      loading={loading}
+                      error={error}
+                    />
                   </div>
 
                   <div className='space-y-2'>
@@ -626,7 +653,7 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
                 </Button>
                 <Button
                   type='submit'
-                  disabled={isSubmitting || !nameValue?.trim()}
+                  disabled={isSubmitting || !nameValue?.trim() || !selectedUser}
                   className='bg-[var(--brand-primary-hex)] font-[480] text-primary-foreground shadow-[0_0_0_0_var(--brand-primary-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)] disabled:opacity-50 disabled:hover:shadow-none'
                 >
                   {isSubmitting

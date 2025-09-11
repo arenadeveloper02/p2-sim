@@ -1,15 +1,18 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
+import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { ACCEPT_ATTRIBUTE, ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/uploads/validation'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
+import { type UserType, useUserApprovalStore } from '@/stores/approver-list/store'
+import UserSearch from './components/user-list'
 
 const logger = createLogger('UploadModal')
 
@@ -36,11 +39,19 @@ export function UploadModal({
   chunkingConfig,
   onUploadComplete,
 }: UploadModalProps) {
+  const { data: session } = useSession()
+  const userId = session?.user?.id
+  const { users, loading, error, fetchUsers } = useUserApprovalStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<FileWithPreview[]>([])
+  const [selectedUser, setSelectedUser] = useState<UserType | null>(null)
 
   const [fileError, setFileError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   const { isUploading, uploadProgress, uploadFiles } = useKnowledgeUpload({
     onUploadComplete: () => {
@@ -50,12 +61,17 @@ export function UploadModal({
     },
   })
 
+  const handleSelectUser = (user: UserType) => {
+    setSelectedUser(user)
+  }
+
   const handleClose = () => {
     if (isUploading) return // Prevent closing during upload
 
     setFiles([])
     setFileError(null)
     setIsDragging(false)
+    setSelectedUser(null)
     onOpenChange(false)
   }
 
@@ -164,6 +180,16 @@ export function UploadModal({
         </DialogHeader>
 
         <div className='flex-1 space-y-6 overflow-auto'>
+          <div className='space-y-3'>
+            <Label>Select Approver</Label>
+            <UserSearch
+              users={users?.filter((u) => u.id !== userId) || []}
+              selectedUser={selectedUser}
+              onSelectUser={handleSelectUser}
+              loading={loading}
+              error={error}
+            />
+          </div>
           {/* File Upload Section */}
           <div className='space-y-3'>
             <Label>Select Files</Label>

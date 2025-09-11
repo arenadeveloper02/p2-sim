@@ -8,7 +8,7 @@ import type {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, knowledgeBase, permissions } from '@/db/schema'
+import { document, knowledgeBase, knowledgeBaseApproval, permissions } from '@/db/schema'
 
 const logger = createLogger('KnowledgeBaseService')
 
@@ -118,7 +118,33 @@ export async function createKnowledgeBase(
     deletedAt: null,
   }
 
-  await db.insert(knowledgeBase).values(newKnowledgeBase)
+  // Create knowledge base and approval record in a transaction
+  await db.transaction(async (tx) => {
+    // Insert knowledge base
+    await tx.insert(knowledgeBase).values(newKnowledgeBase)
+
+    // Create approval record if approver is specified
+    if (data.approverId) {
+      const approvalId = randomUUID()
+      const approvalRecord = {
+        id: approvalId,
+        knowledgeBaseId: kbId,
+        requesterId: data.userId,
+        approverId: data.approverId,
+        status: 'pending',
+        comments: null,
+        requestedAt: now,
+        respondedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      await tx.insert(knowledgeBaseApproval).values(approvalRecord)
+      logger.info(
+        `[${requestId}] Created approval request: ${approvalId} for knowledge base: ${kbId}`
+      )
+    }
+  })
 
   logger.info(`[${requestId}] Created knowledge base: ${data.name} (${kbId})`)
 

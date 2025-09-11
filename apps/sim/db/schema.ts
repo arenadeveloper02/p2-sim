@@ -1270,3 +1270,32 @@ export const workflowStatus = pgTable('workflow_status', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
+
+export const knowledgeBaseApproval = pgTable(
+  'knowledge_base_approval',
+  {
+    id: text('id').primaryKey(),
+    knowledgeBaseId: text('knowledge_base_id')
+      .notNull()
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    requesterId: text('requester_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    approverId: text('approver_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected'
+    comments: text('comments'),
+    requestedAt: timestamp('requested_at').notNull().defaultNow(),
+    respondedAt: timestamp('responded_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Primary access patterns
+    knowledgeBaseIdIdx: index('kb_approval_kb_id_idx').on(table.knowledgeBaseId),
+    approverIdIdx: index('kb_approval_approver_id_idx').on(table.approverId),
+    statusIdx: index('kb_approval_status_idx').on(table.status),
+    requesterIdIdx: index('kb_approval_requester_id_idx').on(table.requesterId),
+  })
+)

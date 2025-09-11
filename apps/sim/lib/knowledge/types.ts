@@ -26,6 +26,7 @@ export interface CreateKnowledgeBaseData {
   embeddingDimension: 1536
   chunkingConfig: ChunkingConfig
   userId: string
+  approverId?: string
 }
 
 export interface TagDefinition {
