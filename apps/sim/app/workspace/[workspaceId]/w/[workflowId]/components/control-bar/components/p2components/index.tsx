@@ -65,11 +65,6 @@ export const renderApprovalButton = (
         approval.id
       )
       if (aRWorkflow) {
-        if (action === 'APPROVED') {
-          alert(`Approved`)
-        } else {
-          alert(`Rejected`)
-        }
         setIsSubmitting(false)
         setIsRejectModalOpen(false)
         setGlobalActionsDisabled(true)

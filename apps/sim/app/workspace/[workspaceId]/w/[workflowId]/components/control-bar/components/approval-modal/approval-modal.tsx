@@ -58,12 +58,12 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
         //     <AlertDescription>Sent for Approval</AlertDescription>
         //   </Alert>
         // )
-        alert('Request Submitted: Sent for Approval')
+        // alert('Request Submitted: Sent for Approval')
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
       setIsSubmitting(false)
-      alert('Error: Something went wrong')
+      // alert('Error: Something went wrong')
       // return (
       //   <Alert>
       //     <AlertTitle>Error</AlertTitle>

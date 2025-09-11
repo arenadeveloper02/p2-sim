@@ -377,32 +377,31 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
             </span>
           </button>
 
-            {/* New Folder */}
-            <button
-              className={cn(menuItemClassName, isCreating && 'cursor-not-allowed opacity-50')}
-              onClick={handleCreateFolder}
-              disabled={isCreating}
-            >
-              <Folder className={iconClassName} />
-              <span className={textClassName}>{isCreating ? 'Creating...' : 'New folder'}</span>
-            </button>
+          {/* New Folder */}
+          <button
+            className={cn(menuItemClassName, isCreating && 'cursor-not-allowed opacity-50')}
+            onClick={handleCreateFolder}
+            disabled={isCreating}
+          >
+            <Folder className={iconClassName} />
+            <span className={textClassName}>{isCreating ? 'Creating...' : 'New folder'}</span>
+          </button>
 
-            {/* Import Workflow */}
-            {userPermissions.canEdit && (
-              <button
-                className={cn(menuItemClassName, isImporting && 'cursor-not-allowed opacity-50')}
-                onClick={handleImportWorkflow}
-                disabled={isImporting}
-              >
-                <Download className={iconClassName} />
-                <span className={textClassName}>
-                  {isImporting ? 'Importing...' : 'Import workflow'}
-                </span>
-              </button>
-            )}
-          </PopoverContent>
-        </Popover>
-      )}
+          {/* Import Workflow */}
+          {userPermissions.canEdit && (
+            <button
+              className={cn(menuItemClassName, isImporting && 'cursor-not-allowed opacity-50')}
+              onClick={handleImportWorkflow}
+              disabled={isImporting}
+            >
+              <Download className={iconClassName} />
+              <span className={textClassName}>
+                {isImporting ? 'Importing...' : 'Import workflow'}
+              </span>
+            </button>
+          )}
+        </PopoverContent>
+      </Popover>
 
       <input
         ref={fileInputRef}

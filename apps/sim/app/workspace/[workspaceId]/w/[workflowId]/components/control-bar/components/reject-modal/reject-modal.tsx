@@ -64,7 +64,7 @@ export function RejectApprovalModal({
           <Button
             disabled={reason.trim().length === 0 || isSubmitting}
             variant={'destructive'}
-            onClick={() => onConfirmReject('REJECTED')}
+            onClick={() => onConfirmReject(reason)}
           >
             {isSubmitting ? (
               <>
