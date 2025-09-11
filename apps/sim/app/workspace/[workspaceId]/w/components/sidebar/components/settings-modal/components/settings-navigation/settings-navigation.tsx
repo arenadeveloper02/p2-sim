@@ -106,7 +106,7 @@ export function SettingsNavigation({
   hasOrganization,
 }: SettingsNavigationProps) {
   const navigationItems = allNavigationItems.filter((item) => {
-    if (item.id === 'copilot' && !isHosted) {
+    if (item.id === 'copilot' && !isHosted && false) {
       return false
     }
     if (item.hideWhenBillingDisabled && !isBillingEnabled) {
