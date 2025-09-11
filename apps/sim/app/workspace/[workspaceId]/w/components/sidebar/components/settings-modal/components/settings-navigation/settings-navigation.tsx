@@ -11,7 +11,6 @@ import {
   Waypoints,
 } from 'lucide-react'
 import { getEnv, isTruthy } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import { cn } from '@/lib/utils'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
@@ -114,15 +113,18 @@ export function SettingsNavigation({
   hasOrganization,
 }: SettingsNavigationProps) {
   const navigationItems = allNavigationItems.filter((item) => {
-    if (item.id === 'copilot' && !isHosted) {
-      return false
-    }
+    // if (item.id === 'copilot' && !isHosted) {
+    //   return false
+    // }
     if (item.hideWhenBillingDisabled && !isBillingEnabled) {
       return false
     }
 
     // Hide team tab if user doesn't have an active organization
     if (item.requiresTeam && !hasOrganization) {
+      return false
+    }
+    if (item.id === 'environment' || item.id === 'apikeys' || item.id === 'copilot') {
       return false
     }
 
