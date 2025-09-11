@@ -406,7 +406,7 @@ export function Account(_props: AccountProps) {
                   <span className='sr-only'>Reset password</span>
                 </Button>
               </div>
-            </div> 
+            </div>
 
             {/* Sign Out Button */}
             {/* <div>
