@@ -90,11 +90,12 @@ export function ArenaGroupSelector({
     fetchGroups()
   }, [clientId, projectId])
 
-  const selectedLabel = groups.find((grp) => grp.id === selectedValue)?.name || 'Select group...'
+  const selectedLabel =
+    groups.find((grp) => grp.id === selectedValue?.id)?.name || 'Select group...'
 
-  const handleSelect = (groupId: string) => {
+  const handleSelect = (group: Group) => {
     if (!isPreview && !disabled) {
-      setStoreValue(groupId)
+      setStoreValue(group)
       setOpen(false)
     }
   }
@@ -136,7 +137,7 @@ export function ArenaGroupSelector({
                   <CommandItem
                     key={group.id}
                     value={group.name}
-                    onSelect={() => handleSelect(group.id)}
+                    onSelect={() => handleSelect(group)}
                   >
                     {group.name}
                     <Check

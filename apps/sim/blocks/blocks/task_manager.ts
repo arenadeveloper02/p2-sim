@@ -16,8 +16,8 @@ export const TaskManagerBlock: BlockConfig = {
       title: 'Operation',
       type: 'dropdown',
       layout: 'full',
-      options: [{ label: 'Create Task', id: 'create_task' }],
-      value: () => 'create_task',
+      options: [{ label: 'Create Task', id: 'arena_create_task' }],
+      value: () => 'arena_create_task',
     },
     {
       id: 'task-name',
@@ -112,12 +112,26 @@ export const TaskManagerBlock: BlockConfig = {
     operation: { type: 'string', description: 'Operation to perform' },
   },
   outputs: {
-    task_name: { type: 'string', description: 'Task name' },
-    task_description: { type: 'string', description: 'Task description' },
-    task_type: { type: 'string', description: 'Task type' },
+    ts: { type: 'string', description: 'Timestamp when response was transformed' },
+    name: { type: 'string', description: 'Task name' },
+    id: { type: 'string', description: 'Unique task identifier' },
+    success: { type: 'boolean', description: 'Indicates if transform was successful' },
   },
   tools: {
-    access: [],
+    access: ['arena_create_task'],
+    config: {
+      tool: (params) => {
+        switch (params.operation) {
+          case 'arena_create_task':
+            return 'arena_create_task'
+          default:
+            throw new Error(`Invalid Gmail operation: ${params.operation}`)
+        }
+      },
+      params: (params) => {
+        return params
+      },
+    },
   },
   //   subBlocks: [
   //     {

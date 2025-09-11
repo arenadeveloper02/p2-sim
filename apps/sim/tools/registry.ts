@@ -182,9 +182,11 @@ import {
 import { workflowExecutorTool } from '@/tools/workflow'
 import { xReadTool, xSearchTool, xUserTool, xWriteTool } from '@/tools/x'
 import { youtubeSearchTool } from '@/tools/youtube'
+import { arenaCreateTask } from './arena_task_manager'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
