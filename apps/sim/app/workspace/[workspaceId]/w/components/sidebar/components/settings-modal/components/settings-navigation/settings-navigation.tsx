@@ -3,6 +3,7 @@ import {
   // CreditCard,
   FileCode,
   Key,
+  Server,
   Settings,
   // Shield,
   User,
@@ -10,7 +11,6 @@ import {
   Waypoints,
 } from 'lucide-react'
 import { getEnv, isTruthy } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import { cn } from '@/lib/utils'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
@@ -28,6 +28,7 @@ interface SettingsNavigationProps {
       | 'team'
       | 'privacy'
       | 'copilot'
+      | 'mcp'
   ) => void
   hasOrganization: boolean
 }
@@ -43,6 +44,7 @@ type NavigationItem = {
     | 'team'
     | 'copilot'
     | 'privacy'
+    | 'mcp'
   label: string
   icon: React.ComponentType<{ className?: string }>
   hideWhenBillingDisabled?: boolean
@@ -59,6 +61,11 @@ const allNavigationItems: NavigationItem[] = [
     id: 'credentials',
     label: 'Integrations',
     icon: Waypoints,
+  },
+  {
+    id: 'mcp',
+    label: 'MCP Servers',
+    icon: Server,
   },
   {
     id: 'environment',
@@ -106,15 +113,18 @@ export function SettingsNavigation({
   hasOrganization,
 }: SettingsNavigationProps) {
   const navigationItems = allNavigationItems.filter((item) => {
-    if (item.id === 'copilot' && !isHosted) {
-      return false
-    }
+    // if (item.id === 'copilot' && !isHosted) {
+    //   return false
+    // }
     if (item.hideWhenBillingDisabled && !isBillingEnabled) {
       return false
     }
 
     // Hide team tab if user doesn't have an active organization
     if (item.requiresTeam && !hasOrganization) {
+      return false
+    }
+    if (item.id === 'environment' || item.id === 'apikeys' || item.id === 'copilot') {
       return false
     }
 

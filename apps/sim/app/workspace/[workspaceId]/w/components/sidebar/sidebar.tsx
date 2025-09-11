@@ -32,6 +32,7 @@ import {
   getKeyboardShortcutText,
   useGlobalShortcuts,
 } from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
+import { useWorkflowStore } from '@/stores'
 import { useSubscriptionStore } from '@/stores/subscription/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -137,6 +138,7 @@ export function Sidebar() {
   const routerRef = useRef<ReturnType<typeof useRouter>>(router)
   const isInitializedRef = useRef<boolean>(false)
   const activeWorkspaceRef = useRef<Workspace | null>(null)
+  const setUsedTemplatesList = useWorkflowStore((state) => state.setUsedTemplatesList)
 
   // Update refs when values change
   workspaceIdRef.current = workspaceId
@@ -875,6 +877,24 @@ export function Sidebar() {
       stopScroll() // Cleanup on unmount
     }
   }, [stopScroll])
+
+  useEffect(() => {
+    if (workspaceId) {
+      const fetchAllTemplatesUsed = async () => {
+        try {
+          const response = await fetch(`/api/workflows/template-mapper?workspaceId=${workspaceId}`)
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          const data = await response.json()
+          setUsedTemplatesList(data)
+        } catch (error) {
+          console.error('Error fetching templates:', error)
+        }
+      }
+      fetchAllTemplatesUsed()
+    }
+  }, [workspaceId])
 
   return (
     <>

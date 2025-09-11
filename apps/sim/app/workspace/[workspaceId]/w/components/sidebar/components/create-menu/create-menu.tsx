@@ -46,7 +46,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const userPermissions = useUserPermissionsContext()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isOpenPanel = usePanelStore((state) => state.isOpen)
-  const togglePanel = usePanelStore((state) => state.togglePanel)
+  const { setFullScreen, togglePanel, setParentTemplateId } = usePanelStore()
 
   // Timer management utilities
   const clearAllTimers = useCallback(() => {
@@ -88,9 +88,6 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
 
     setIsOpen(false)
-    if (isOpenPanel) {
-      togglePanel()
-    }
     try {
       const workflowId = await onCreateWorkflow()
       if (workflowId) {
@@ -308,6 +305,14 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     return () => clearAllTimers()
   }, [clearAllTimers])
 
+  const handleClosePanel = () => {
+    if (isOpenPanel) {
+      togglePanel()
+      setFullScreen(false)
+      setParentTemplateId('')
+    }
+  }
+
   // Styles
   const menuItemClassName =
     'group flex h-8 w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-2 font-medium font-sans text-muted-foreground text-sm outline-none hover:bg-muted focus:bg-muted'
@@ -325,50 +330,52 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
 
   return (
     <>
-      {!disableCreate && (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-              title='Create Workflow (Hover, right-click, or long press for more options)'
-              disabled={isCreatingWorkflow}
-              onClick={handleButtonClick}
-              onContextMenu={handleContextMenu}
-              onMouseDown={handleMouseDown}
-              onMouseUp={handleMouseUp}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            >
-              <Plus className='h-[18px] w-[18px] stroke-[2px]' />
-              <span className='sr-only'>Create Workflow</span>
-            </Button>
-          </PopoverTrigger>
-
-          <PopoverContent
-            align='end'
-            sideOffset={4}
-            className={popoverContentClassName}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onCloseAutoFocus={(e) => e.preventDefault()}
-            onMouseEnter={handlePopoverMouseEnter}
-            onMouseLeave={handlePopoverMouseLeave}
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+            title='Create Workflow (Hover, right-click, or long press for more options)'
+            disabled={isCreatingWorkflow}
+            onClick={(e) => {
+              handleClosePanel()
+              handleButtonClick(e)
+            }}
+            onContextMenu={handleContextMenu}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
           >
-            {/* New Workflow */}
-            <button
-              className={cn(
-                menuItemClassName,
-                isCreatingWorkflow && 'cursor-not-allowed opacity-50'
-              )}
-              onClick={handleCreateWorkflow}
-              disabled={isCreatingWorkflow}
-            >
-              <Plus className={iconClassName} />
-              <span className={textClassName}>
-                {isCreatingWorkflow ? 'Creating...' : 'New workflow'}
-              </span>
-            </button>
+            <Plus className='h-[18px] w-[18px] stroke-[2px]' />
+            <span className='sr-only'>Create Workflow</span>
+          </Button>
+        </PopoverTrigger>
+
+        <PopoverContent
+          align='end'
+          sideOffset={4}
+          className={popoverContentClassName}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onMouseEnter={handlePopoverMouseEnter}
+          onMouseLeave={handlePopoverMouseLeave}
+        >
+          {/* New Workflow */}
+          <button
+            className={cn(menuItemClassName, isCreatingWorkflow && 'cursor-not-allowed opacity-50')}
+            onClick={() => {
+              handleClosePanel()
+              handleCreateWorkflow()
+            }}
+            disabled={isCreatingWorkflow}
+          >
+            <Plus className={iconClassName} />
+            <span className={textClassName}>
+              {isCreatingWorkflow ? 'Creating...' : 'New workflow'}
+            </span>
+          </button>
 
             {/* New Folder */}
             <button
