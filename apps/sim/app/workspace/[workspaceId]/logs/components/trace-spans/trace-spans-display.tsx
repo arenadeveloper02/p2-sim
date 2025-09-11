@@ -404,7 +404,7 @@ function TraceSpanItem({
 
     // Block type specific icons
     if (type === 'agent') {
-      return <AgentIcon className='h-3 w-3 text-[#F3F8FE]' />
+      return <AgentIcon />
     }
 
     if (type === 'evaluator') {

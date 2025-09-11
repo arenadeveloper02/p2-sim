@@ -42,6 +42,7 @@ import {
   TemplateModal,
   WebhookSettings,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components'
+import { renderApprovalButton } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/p2components'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import {
   getKeyboardShortcutText,
@@ -56,6 +57,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { GetApprovalModal } from './components/approval-modal/approval-modal'
 
 const logger = createLogger('ControlBar')
 
@@ -116,6 +118,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
   const [isWebhookSettingsOpen, setIsWebhookSettingsOpen] = useState(false)
   const [isAutoLayouting, setIsAutoLayouting] = useState(false)
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false)
 
   // Delete workflow state - grouped for better organization
   const [deleteState, setDeleteState] = useState({
@@ -1251,6 +1254,10 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  const handleOpenApproval = () => {
+    setIsApprovalModalOpen(true)
+  }
+
   return (
     <div
       className={cn(
@@ -1264,6 +1271,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {/* {isExpanded && renderPublishButton()} */}
+      {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId, handleOpenApproval)}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {/* {!isDebugging && renderDebugModeToggle()} */}
@@ -1285,6 +1293,15 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           open={isWebhookSettingsOpen}
           onOpenChange={setIsWebhookSettingsOpen}
           workflowId={activeWorkflowId}
+        />
+      )}
+      {/* get approval Modal */}
+      {activeWorkflowId && (
+        <GetApprovalModal
+          open={isApprovalModalOpen}
+          onOpenChange={setIsApprovalModalOpen}
+          workflowId={activeWorkflowId}
+          canEdit={userPermissions.canEdit}
         />
       )}
     </div>

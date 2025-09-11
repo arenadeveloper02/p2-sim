@@ -97,7 +97,7 @@ export function BlockTypes() {
       title: 'Agent',
       description:
         'Create powerful AI agents using any LLM provider with customizable system prompts and tool integrations.',
-      icon: <AgentIcon className='h-6 w-6' />,
+      icon: <AgentIcon />,
       href: '/blocks/agent',
     },
     {
