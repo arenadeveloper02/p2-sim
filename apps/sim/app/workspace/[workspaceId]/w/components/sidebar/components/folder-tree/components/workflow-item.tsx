@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Pencil, Play } from 'lucide-react'
+import { MessageCircleMore, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { AgentIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -41,6 +42,7 @@ interface WorkflowItemProps {
   level: number
   isDragOver?: boolean
   isFirstItem?: boolean
+  isUsedTemplateObj?: any
 }
 
 export function WorkflowItem({
@@ -50,6 +52,7 @@ export function WorkflowItem({
   level,
   isDragOver = false,
   isFirstItem = false,
+  isUsedTemplateObj,
 }: WorkflowItemProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -64,11 +67,8 @@ export function WorkflowItem({
   const isSelected = useIsWorkflowSelected(workflow.id)
   const { updateWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
-  const setParentTemplateId = usePanelStore((state) => state.setParentTemplateId)
-  const togglePanel = usePanelStore((state) => state.togglePanel)
-  const isOpen = usePanelStore((state) => state.isOpen)
-  const setActiveTab = usePanelStore((state) => state.setActiveTab)
-  const setFullScreen = usePanelStore((state) => state.setFullScreen)
+  const { setParentTemplateId, togglePanel, isOpen, setActiveTab, setFullScreen } = usePanelStore()
+  const isTemplateId = isUsedTemplateObj?.[0]?.templateId
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -134,22 +134,7 @@ export function WorkflowItem({
     handleSaveEdit()
   }
 
-  const fetchTemplate = async (workflowId: string) => {
-    try {
-      const response = await fetch(`/api/workflows/template-mapper/${workflowId}`)
-      if (!response.ok) {
-        console.error(`Failed to fetch template: ${response.status}`)
-        return
-      }
-      const { templateId = '' } = await response.json()
-      setParentTemplateId(templateId)
-    } catch (error) {
-      console.error('Error fetching template:', error)
-    }
-  }
-
   const handleClick = (e: React.MouseEvent) => {
-    setParentTemplateId('')
     if (isDragging || isEditing) {
       e.preventDefault()
       return
@@ -189,6 +174,23 @@ export function WorkflowItem({
     })
   }
 
+  const handleClickWorkflowName = () => {
+    if (isOpen) {
+      togglePanel()
+    }
+    setFullScreen(false)
+    setParentTemplateId('')
+  }
+
+  const handleClickByChat = () => {
+    setActiveTab('chat')
+    setFullScreen(true)
+    if (!isOpen) {
+      togglePanel()
+    }
+    setParentTemplateId(isTemplateId || '')
+  }
+
   return (
     <div className='mb-1'>
       <div
@@ -197,7 +199,8 @@ export function WorkflowItem({
           active && !isDragOver ? 'bg-muted' : 'hover:bg-muted',
           isSelected && selectedWorkflows.size > 1 && !active && !isDragOver ? 'bg-muted' : '',
           isDragging ? 'opacity-50' : '',
-          isFirstItem ? 'mr-[36px]' : ''
+          isFirstItem ? 'mr-[36px]' : '',
+          isTemplateId && '!pl-1'
         )}
         style={{
           maxWidth: isFirstItem
@@ -215,26 +218,31 @@ export function WorkflowItem({
           href={`/workspace/${workspaceId}/w/${workflow.id}`}
           className='flex min-w-0 flex-1 items-center'
           onClick={(e) => {
-            if (isOpen) {
-              togglePanel()
-            }
             handleClick(e)
+            handleClickWorkflowName()
           }}
         >
           <div
-            className='mr-2 flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden'
+            className={cn(
+              'mr-2 flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden',
+              isTemplateId && '!h-[20px] !w-[20px]'
+            )}
             style={{
-              backgroundColor: lightenColor(workflow.color, 60),
+              backgroundColor: isTemplateId ? 'transparent' : lightenColor(workflow.color, 60),
               borderRadius: '4px',
             }}
           >
-            <div
-              className='h-[9px] w-[9px]'
-              style={{
-                backgroundColor: workflow.color,
-                borderRadius: '2.571px', // Maintains same ratio as outer div (4/14 = 2.571/9)
-              }}
-            />
+            {isTemplateId ? (
+              <AgentIcon className='h-5 w-5 text-[#F3F8FE]' />
+            ) : (
+              <div
+                className='h-[9px] w-[9px]'
+                style={{
+                  backgroundColor: workflow.color,
+                  borderRadius: '2.571px', // Maintains same ratio as outer div (4/14 = 2.571/9)
+                }}
+              />
+            )}
           </div>
           {isEditing ? (
             <input
@@ -314,17 +322,15 @@ export function WorkflowItem({
           <Link
             href={`/workspace/${workspaceId}/w/${workflow.id}`}
             onClick={(e) => {
-              setActiveTab('chat')
-              setFullScreen(true)
-              if (!isOpen) {
-                togglePanel()
-              }
-              fetchTemplate(workflow.id)
               handleClick(e)
+              handleClickByChat()
             }}
           >
-            <Play
-              className={cn('h-3.5 w-3.5', 'ml-1 cursor-pointer fill-current stroke-current')}
+            <MessageCircleMore
+              className={cn(
+                'h-3.5 w-3.5',
+                'ml-1 cursor-pointer p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+              )}
             />
           </Link>
         )}
