@@ -13,7 +13,7 @@ const logger = createLogger('KbApprovalAPI')
 const CreateKbApprovalSchema = z.object({
   kbId: z.string().min(1, 'Knowledge Base ID is required'),
   approverId: z.string().min(1, 'Approver ID is required'),
-  documentIds: z.array(z.string()).min(1, 'At least one document ID is required'),
+  documentIds: z.array(z.string()).optional(),
   workspaceId: z.string().min(1, 'Workspace ID is required'),
   groupingId: z.string().optional(),
 })
