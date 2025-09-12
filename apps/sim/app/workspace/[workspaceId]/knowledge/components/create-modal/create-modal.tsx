@@ -19,6 +19,7 @@ import { ACCEPT_ATTRIBUTE, ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/uplo
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
 import { type UserType, useUserApprovalStore } from '@/stores/approver-list/store'
+import { useKbApprovalStore } from '@/stores/kb-approval/store'
 import type { KnowledgeBaseData } from '@/stores/knowledge/store'
 import UserSearch from './components/user-list'
 
@@ -80,6 +81,7 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
   const [dragCounter, setDragCounter] = useState(0) // Track drag events to handle nested elements
 
   const { users, loading, error, fetchUsers } = useUserApprovalStore()
+  const { createApproval } = useKbApprovalStore()
   const { data: session } = useSession()
   const userId = session?.user?.id
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null)
@@ -322,6 +324,27 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
 
         logger.info(`Successfully uploaded ${uploadedFiles.length} files`)
         logger.info(`Started processing ${uploadedFiles.length} documents in the background`)
+
+        // Create approval request if approver is selected
+        if (selectedUser) {
+          try {
+            const documentIds = uploadedFiles.map(file => file.id).filter((id): id is string => !!id)
+            const approvalResult = await createApproval({
+              kbId: newKnowledgeBase.id,
+              approverId: selectedUser.id,
+              documentIds: documentIds,
+              workspaceId: workspaceId,
+            })
+
+            if (approvalResult) {
+              logger.info(`Created approval request with grouping ID: ${approvalResult.groupingId}`)
+              logger.info(`Approval request includes ${approvalResult.approvals.length} documents`)
+            }
+          } catch (approvalError) {
+            logger.error('Failed to create approval request:', approvalError)
+            // Don't fail the entire operation if approval creation fails
+          }
+        }
       } else {
         if (onKnowledgeBaseCreated) {
           onKnowledgeBaseCreated(newKnowledgeBase)
@@ -399,16 +422,6 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
                     )}
                   </div>
 
-                  <div className='space-y-2'>
-                    <Label>Approver *</Label>
-                    <UserSearch
-                      users={users?.filter((u) => u.id !== userId) || []}
-                      selectedUser={selectedUser}
-                      onSelectUser={handleSelectUser}
-                      loading={loading}
-                      error={error}
-                    />
-                  </div>
 
                   <div className='space-y-2'>
                     <Label htmlFor='description'>Description</Label>
@@ -640,6 +653,23 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
                         <AlertDescription>{fileError}</AlertDescription>
                       </Alert>
                     )}
+
+                    {/* Approver Selection - Only show when files are present */}
+                    {files.length > 0 && (
+                      <div className='mt-4 space-y-2'>
+                        <Label>Approver {files.length > 0 ? '*' : ''}</Label>
+                        <UserSearch
+                          users={users?.filter((u) => u.id !== userId) || []}
+                          selectedUser={selectedUser}
+                          onSelectUser={handleSelectUser}
+                          loading={loading}
+                          error={error}
+                        />
+                        <p className='text-muted-foreground text-xs'>
+                          Select an approver to review the uploaded documents before they become available.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -653,7 +683,7 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
                 </Button>
                 <Button
                   type='submit'
-                  disabled={isSubmitting || !nameValue?.trim() || !selectedUser}
+                  disabled={isSubmitting || !nameValue?.trim() || (files.length > 0 && !selectedUser)}
                   className='bg-[var(--brand-primary-hex)] font-[480] text-primary-foreground shadow-[0_0_0_0_var(--brand-primary-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)] disabled:opacity-50 disabled:hover:shadow-none'
                 >
                   {isSubmitting

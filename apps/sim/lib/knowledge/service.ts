@@ -8,7 +8,7 @@ import type {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, knowledgeBase, knowledgeBaseApproval, permissions } from '@/db/schema'
+import { document, knowledgeBase, permissions } from '@/db/schema'
 
 const logger = createLogger('KnowledgeBaseService')
 

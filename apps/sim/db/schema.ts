@@ -1271,31 +1271,34 @@ export const workflowStatus = pgTable('workflow_status', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
-export const knowledgeBaseApproval = pgTable(
-  'knowledge_base_approval',
+export const kbApprovalStatus = pgTable(
+  'kb_approval_status',
   {
     id: text('id').primaryKey(),
-    knowledgeBaseId: text('knowledge_base_id')
+    kbId: text('kb_id')
       .notNull()
       .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
-    requesterId: text('requester_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
     approverId: text('approver_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => document.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    groupingId: text('grouping_id').notNull(), // Groups multiple documents together
     status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected'
-    comments: text('comments'),
-    requestedAt: timestamp('requested_at').notNull().defaultNow(),
-    respondedAt: timestamp('responded_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
     // Primary access patterns
-    knowledgeBaseIdIdx: index('kb_approval_kb_id_idx').on(table.knowledgeBaseId),
-    approverIdIdx: index('kb_approval_approver_id_idx').on(table.approverId),
-    statusIdx: index('kb_approval_status_idx').on(table.status),
-    requesterIdIdx: index('kb_approval_requester_id_idx').on(table.requesterId),
+    kbIdIdx: index('kb_approval_status_kb_id_idx').on(table.kbId),
+    approverIdIdx: index('kb_approval_status_approver_id_idx').on(table.approverId),
+    documentIdIdx: index('kb_approval_status_document_id_idx').on(table.documentId),
+    workspaceIdIdx: index('kb_approval_status_workspace_id_idx').on(table.workspaceId),
+    groupingIdIdx: index('kb_approval_status_grouping_id_idx').on(table.groupingId),
+    statusIdx: index('kb_approval_status_status_idx').on(table.status),
   })
 )

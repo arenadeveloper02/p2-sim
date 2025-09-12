@@ -12,6 +12,7 @@ import { ACCEPT_ATTRIBUTE, ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/uplo
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
 import { type UserType, useUserApprovalStore } from '@/stores/approver-list/store'
+import { useKbApprovalStore } from '@/stores/kb-approval/store'
 import UserSearch from './components/user-list'
 
 const logger = createLogger('UploadModal')
@@ -24,6 +25,7 @@ interface UploadModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   knowledgeBaseId: string
+  workspaceId: string
   chunkingConfig?: {
     maxSize: number
     minSize: number
@@ -36,12 +38,14 @@ export function UploadModal({
   open,
   onOpenChange,
   knowledgeBaseId,
+  workspaceId,
   chunkingConfig,
   onUploadComplete,
 }: UploadModalProps) {
   const { data: session } = useSession()
   const userId = session?.user?.id
   const { users, loading, error, fetchUsers } = useUserApprovalStore()
+  const { createApproval } = useKbApprovalStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<FileWithPreview[]>([])
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null)
@@ -148,12 +152,37 @@ export function UploadModal({
     if (files.length === 0) return
 
     try {
-      await uploadFiles(files, knowledgeBaseId, {
+      const uploadedFiles = await uploadFiles(files, knowledgeBaseId, {
         chunkSize: chunkingConfig?.maxSize || 1024,
         minCharactersPerChunk: chunkingConfig?.minSize || 1,
         chunkOverlap: chunkingConfig?.overlap || 200,
         recipe: 'default',
       })
+
+      // Create approval request if approver is selected
+      if (selectedUser && uploadedFiles.length > 0) {
+        try {
+          const documentIds = uploadedFiles.map(file => file.id).filter((id): id is string => !!id)
+          const approvalResult = await createApproval({
+            kbId: knowledgeBaseId,
+            approverId: selectedUser.id,
+            documentIds: documentIds,
+            workspaceId: workspaceId,
+          })
+
+          if (approvalResult) {
+            logger.info(`Created approval request with grouping ID: ${approvalResult.groupingId}`)
+            logger.info(`Approval request includes ${approvalResult.approvals.length} documents`)
+          }
+        } catch (approvalError) {
+          logger.error('Failed to create approval request:', approvalError)
+          // Don't fail the entire operation if approval creation fails
+        }
+      }
+
+      if (onUploadComplete) {
+        onUploadComplete()
+      }
     } catch (error) {
       logger.error('Error uploading files:', error)
     }
@@ -303,6 +332,23 @@ export function UploadModal({
             )}
 
             {fileError && <p className='text-destructive text-sm'>{fileError}</p>}
+
+            {/* Approver Selection - Only show when files are present */}
+            {files.length > 0 && (
+              <div className='mt-4 space-y-2'>
+                <Label>Approver (Optional)</Label>
+                <UserSearch
+                  users={users?.filter((u) => u.id !== userId) || []}
+                  selectedUser={selectedUser}
+                  onSelectUser={setSelectedUser}
+                  loading={loading}
+                  error={error}
+                />
+                <p className='text-muted-foreground text-xs'>
+                  Select an approver to review the uploaded documents before they become available.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

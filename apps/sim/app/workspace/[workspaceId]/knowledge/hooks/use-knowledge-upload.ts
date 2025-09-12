@@ -4,6 +4,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 const logger = createLogger('KnowledgeUpload')
 
 export interface UploadedFile {
+  id?: string // Document ID from database (added after processing)
   filename: string
   fileUrl: string
   fileSize: number
@@ -794,10 +795,19 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       logger.info(`Successfully started processing ${uploadedFiles.length} documents`)
 
-      // Call success callback
-      options.onUploadComplete?.(uploadedFiles)
+      // Create enhanced uploaded files with document IDs
+      const enhancedUploadedFiles = uploadedFiles.map((file, index) => {
+        const createdDoc = processResult.data.documentsCreated[index]
+        return {
+          ...file,
+          id: createdDoc?.documentId || '', // Add document ID for approval system
+        }
+      })
 
-      return uploadedFiles
+      // Call success callback
+      options.onUploadComplete?.(enhancedUploadedFiles)
+
+      return enhancedUploadedFiles
     } catch (err) {
       logger.error('Error uploading documents:', err)
 

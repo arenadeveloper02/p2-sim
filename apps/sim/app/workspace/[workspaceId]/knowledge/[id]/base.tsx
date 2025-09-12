@@ -1189,6 +1189,7 @@ export function KnowledgeBase({
         open={showUploadModal}
         onOpenChange={setShowUploadModal}
         knowledgeBaseId={id}
+        workspaceId={workspaceId}
         chunkingConfig={knowledgeBase?.chunkingConfig}
         onUploadComplete={refreshDocuments}
       />
