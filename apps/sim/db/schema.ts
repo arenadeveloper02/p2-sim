@@ -1324,7 +1324,6 @@ export const chatPromptFeedback = pgTable(
     // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
     // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
     // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
-    
     // Ordering indexes
     createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
   })

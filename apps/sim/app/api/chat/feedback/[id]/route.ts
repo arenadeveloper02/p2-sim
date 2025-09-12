@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { workflowExecutionLogs, chatPromptFeedback } from '@/db/schema'
-import { NextResponse } from 'next/server'
+import { chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatFeedbackAPI')
 
@@ -24,7 +24,6 @@ const feedbackSchema = z.object({
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-
     const session = await getSession()
     const executionId = (await params).id
 
@@ -40,7 +39,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = feedbackSchema.parse(await request.json())
 
     try {
-
       // Check if subdomain is available
       const workflowExectution = await db
         .select()
@@ -48,7 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .where(eq(workflowExecutionLogs.executionId, executionId))
         .limit(1)
 
-      if (workflowExectution.length == 0) {
+      if (workflowExectution.length === 0) {
         return createErrorResponse('Invalid execution Id', 400)
       }
 

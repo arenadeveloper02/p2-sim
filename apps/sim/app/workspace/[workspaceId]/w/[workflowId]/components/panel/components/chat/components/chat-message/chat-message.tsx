@@ -1,4 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/components/ui/tooltip'
 import CopilotMarkdownRenderer from '../../../copilot/components/copilot-message/components/markdown-renderer'
 import { isBase64, renderBs64Img } from './constants'
 
@@ -48,6 +50,7 @@ const WordWrap = ({ text }: { text: string }) => {
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
+  const [isCopied, setIsCopied] = useState(false)
   // Format message content as text
   const formattedContent = useMemo(() => {
     if (typeof message.content === 'object' && message.content !== null) {
@@ -85,6 +88,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
   }
 
+  const handleCopy = () => {
+    const contentToCopy =
+      typeof formattedContent === 'string'
+        ? formattedContent
+        : JSON.stringify(formattedContent, null, 2)
+    navigator.clipboard.writeText(contentToCopy)
+    setIsCopied(true)
+    setTimeout(() => setIsCopied(false), 2000)
+  }
+
   // Render agent/workflow messages as full-width text
   return (
     <div className='w-full py-2 pl-[2px]'>
@@ -95,6 +108,60 @@ export function ChatMessage({ message }: ChatMessageProps) {
           {message.isStreaming && (
             <span className='ml-1 inline-block h-4 w-2 animate-pulse bg-primary' />
           )}
+        </div>
+        <div className='mt-2 mr-3 flex justify-end gap-3'>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  handleCopy()
+                }}
+                className='font-medium text-md leading-normal transition-[filter] hover:brightness-75 focus:outline-none focus-visible:outline-none active:outline-none dark:hover:brightness-125'
+                style={{ color: 'var(--base-muted-foreground)' }}
+              >
+                {!isBase64(message?.content) && (
+                  <>
+                    {isCopied ? (
+                      <Check className='h-4 w-4' strokeWidth={2} />
+                    ) : (
+                      <Copy className='h-4 w-4' strokeWidth={2} />
+                    )}
+                  </>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent side='bottom'>Copy</TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {}}
+                className='font-medium text-md leading-normal transition-[filter] hover:brightness-75 focus:outline-none focus-visible:outline-none active:outline-none dark:hover:brightness-125'
+                style={{ color: 'var(--base-muted-foreground)' }}
+              >
+                <ThumbsUp className='h-4 w-4' strokeWidth={2} />
+              </button>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent side='bottom'>Like</TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {}}
+                className='font-medium text-md leading-normal transition-[filter] hover:brightness-75 focus:outline-none focus-visible:outline-none active:outline-none dark:hover:brightness-125'
+                style={{ color: 'var(--base-muted-foreground)' }}
+              >
+                <ThumbsDown className='h-4 w-4' strokeWidth={2} />
+              </button>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent side='bottom'>Dislike</TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
         </div>
       </div>
     </div>
