@@ -13,7 +13,7 @@ const logger = createLogger('KbApprovalAPI')
 const CreateKbApprovalSchema = z.object({
   kbId: z.string().min(1, 'Knowledge Base ID is required'),
   approverId: z.string().min(1, 'Approver ID is required'),
-  documentIds: z.array(z.string()).optional(),
+  documentIds: z.array(z.string()).min(1, 'At least one document ID is required'),
   workspaceId: z.string().min(1, 'Workspace ID is required'),
   groupingId: z.string().optional(),
 })
@@ -56,32 +56,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    // Verify documents exist and belong to the knowledge base
-    const documents = await db
-      .select()
-      .from(document)
-      .where(
-        and(
-          eq(document.knowledgeBaseId, validatedData.kbId)
-          // Check if all document IDs exist in the knowledge base
-          // This is a simplified check - in production you might want to validate each ID individually
-        )
-      )
+    // // Verify documents exist and belong to the knowledge base
+    // const documents = await db
+    //   .select()
+    //   .from(document)
+    //   .where(
+    //     and(
+    //       eq(document.knowledgeBaseId, validatedData.kbId)
+    //       // Check if all document IDs exist in the knowledge base
+    //       // This is a simplified check - in production you might want to validate each ID individually
+    //     )
+    //   )
 
-    const validDocumentIds = documents.map((doc) => doc.id)
-    const invalidDocumentIds = validatedData.documentIds.filter(
-      (id) => !validDocumentIds.includes(id)
-    )
-
-    if (invalidDocumentIds.length > 0) {
-      return NextResponse.json(
-        {
-          error: 'Some documents not found or do not belong to this knowledge base',
-          invalidIds: invalidDocumentIds,
-        },
-        { status: 400 }
-      )
-    }
+    // const validDocumentIds = documents.map((doc) => doc.id)
 
     // Create individual approval requests for each document
     const now = new Date()
@@ -136,6 +123,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const currentUserId = session.user.id;
+
     const { searchParams } = new URL(req.url)
     const kbId = searchParams.get('kbId')
 
@@ -155,16 +144,13 @@ export async function GET(req: NextRequest) {
         status: kbApprovalStatus.status,
         createdAt: kbApprovalStatus.createdAt,
         updatedAt: kbApprovalStatus.updatedAt,
-        approverName: user.name,
-        approverEmail: user.email,
         knowledgeBaseName: knowledgeBase.name,
         documentName: document.filename,
       })
       .from(kbApprovalStatus)
-      .leftJoin(user, eq(kbApprovalStatus.approverId, user.id))
       .leftJoin(knowledgeBase, eq(kbApprovalStatus.kbId, knowledgeBase.id))
       .leftJoin(document, eq(kbApprovalStatus.documentId, document.id))
-      .where(eq(kbApprovalStatus.kbId, kbId))
+      .where(and(eq(kbApprovalStatus.kbId, kbId), eq(kbApprovalStatus.approverId, currentUserId)))
       .orderBy(kbApprovalStatus.createdAt)
 
     const approvalsWithDetails: KbApprovalWithDetails[] = approvals.map((approval) => ({
@@ -177,8 +163,6 @@ export async function GET(req: NextRequest) {
       status: approval.status as 'pending' | 'approved' | 'rejected',
       createdAt: approval.createdAt,
       updatedAt: approval.updatedAt,
-      approverName: approval.approverName || undefined,
-      approverEmail: approval.approverEmail || undefined,
       knowledgeBaseName: approval.knowledgeBaseName || undefined,
       documentName: approval.documentName || undefined,
     }))

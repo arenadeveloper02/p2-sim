@@ -18,7 +18,7 @@ const UpdateKbApprovalSchema = z.object({
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID().slice(0, 8)
-  const { id: approvalId } = await params
+  const { id: groupingId } = await params
 
   try {
     const session = await getSession()
@@ -39,13 +39,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         documentId: kbApprovalStatus.documentId,
         workspaceId: kbApprovalStatus.workspaceId,
         groupingId: kbApprovalStatus.groupingId,
-        status: kbApprovalStatus.status,
-        knowledgeBaseUserId: knowledgeBase.userId,
+        status: kbApprovalStatus.status
       })
       .from(kbApprovalStatus)
-      .leftJoin(knowledgeBase, eq(kbApprovalStatus.kbId, knowledgeBase.id))
-      .where(eq(kbApprovalStatus.id, approvalId))
-      .limit(1)
+      .where(eq(kbApprovalStatus.groupingId, groupingId))
 
     if (existingApproval.length === 0) {
       return NextResponse.json({ error: 'Approval request not found' }, { status: 404 })
@@ -55,11 +52,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Check if user is the approver or the KB owner
     const isApprover = approval.approverId === session.user.id
-    const isKbOwner = approval.knowledgeBaseUserId === session.user.id
 
-    if (!isApprover && !isKbOwner) {
+    if (!isApprover) {
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to update approval ${approvalId} without permission`
+        `[${requestId}] User ${session.user.id} attempted to update approval ${groupingId} without permission`
       )
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
@@ -80,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: validatedData.status,
         updatedAt: now,
       })
-      .where(eq(kbApprovalStatus.id, approvalId))
+      .where(eq(kbApprovalStatus.groupingId, groupingId))
 
     // Fetch updated approval with details
     const updatedApproval = await db
@@ -103,7 +99,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .leftJoin(user, eq(kbApprovalStatus.approverId, user.id))
       .leftJoin(knowledgeBase, eq(kbApprovalStatus.kbId, knowledgeBase.id))
       .leftJoin(document, eq(kbApprovalStatus.documentId, document.id))
-      .where(eq(kbApprovalStatus.id, approvalId))
+      .where(eq(kbApprovalStatus.id, groupingId))
       .limit(1)
 
     const approvalWithDetails: KbApprovalWithDetails = {
@@ -123,7 +119,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     logger.info(
-      `[${requestId}] Updated KB approval ${approvalId} to status: ${validatedData.status}`
+      `[${requestId}] Updated KB approval ${groupingId} to status: ${validatedData.status}`
     )
 
     return NextResponse.json({
@@ -139,7 +135,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       )
     }
 
-    logger.error(`[${requestId}] Error updating KB approval ${approvalId}`, error)
+    logger.error(`[${requestId}] Error updating KB approval ${groupingId}`, error)
     return NextResponse.json({ error: 'Failed to update approval request' }, { status: 500 })
   }
 }
