@@ -16,7 +16,13 @@ export const TaskManagerBlock: BlockConfig = {
       title: 'Operation',
       type: 'dropdown',
       layout: 'full',
-      options: [{ label: 'Create Task', id: 'arena_create_task' }],
+      options: [
+        { label: 'Create Task', id: 'arena_create_task' },
+        {
+          label: 'Create Sub Task',
+          id: 'arena_create_sub_task',
+        },
+      ],
       value: () => 'arena_create_task',
     },
     {
@@ -34,34 +40,6 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter task description',
-    },
-    {
-      id: 'planned-start-date',
-      title: 'Planned Start Date',
-      type: 'date-picker',
-      layout: 'full',
-      required: true,
-      placeholder: 'Select planned start date',
-    },
-    {
-      id: 'planned-end-date',
-      title: 'Planned End Date',
-      type: 'date-picker',
-      layout: 'full',
-      required: true,
-      placeholder: 'Select planned end date',
-    },
-    {
-      id: 'task-type',
-      title: 'Select Task Type',
-      type: 'radio-input',
-      layout: 'full',
-      required: true,
-      options: [
-        { label: 'Task', id: 'task' },
-        { label: 'Sub Task', id: 'subTask' },
-      ],
-      value: () => 'task',
     },
     {
       id: 'task-client',
@@ -86,8 +64,8 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter group name',
-      dependsOn: ['task-type'],
-      condition: { field: 'task-type', value: ['task'] },
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: ['arena_create_task'] },
     },
     {
       id: 'task-task',
@@ -96,8 +74,10 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter task name',
-      dependsOn: ['task-type'],
-      condition: { field: 'task-type', value: ['subTask'] },
+      condition: {
+        field: 'operation',
+        value: ['arena_create_sub_task'],
+      },
     },
     {
       id: 'task-assignee',
@@ -106,6 +86,7 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter assignee name',
+      dependsOn: ['task-client', 'task-project'],
     },
   ],
   inputs: {
@@ -123,6 +104,8 @@ export const TaskManagerBlock: BlockConfig = {
       tool: (params) => {
         switch (params.operation) {
           case 'arena_create_task':
+            return 'arena_create_task'
+          case 'arena_create_sub_task':
             return 'arena_create_task'
           default:
             throw new Error(`Invalid Gmail operation: ${params.operation}`)

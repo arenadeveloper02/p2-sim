@@ -5,6 +5,7 @@ import {
 } from '@/tools/arena_task_manager/types'
 import { getArenaServiceBaseUrl, startOfDayTimestamp, isValidDate } from '@/lib/arena-utils'
 import Cookies from 'js-cookie'
+import { plainTextSelectors } from '@react-email/components'
 
 export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskResponse> = {
   id: 'arena_create_task',
@@ -30,24 +31,6 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       required: true,
       visibility: 'user-or-llm',
       description: 'Detailed description of the task',
-    },
-    'planned-start-date': {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Planned start date in ISO 8601 format',
-    },
-    'planned-end-date': {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Planned end date in ISO 8601 format',
-    },
-    'task-type': {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Type of the task (e.g., milestone, deliverable)',
     },
     'task-client': {
       type: 'string',
@@ -98,14 +81,18 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
     },
     body: (params: ArenaCreateTaskParams) => {
       const today = new Date()
-      const isTask = params['task-type'] === 'task'
+      const nextWeekDay = new Date()
+      nextWeekDay.setDate(today.getDate() + 7)
+      const isTask = params['operation'] === 'arena_create_task'
       const body: Record<string, any> = {
         name: params['task-name'],
         taskHtmlDescription: params['task-description'],
-        plannedStartDate: startOfDayTimestamp(new Date(params['planned-start-date']) || today),
-        plannedEndDate: startOfDayTimestamp(
-          new Date(params['planned-end-date']) || new Date().setDate(today.getDate() + 7)
-        ),
+        // plannedStartDate: startOfDayTimestamp(new Date(params['planned-start-date']) || today),
+        // plannedEndDate: startOfDayTimestamp(
+        //   new Date(params['planned-end-date']) || new Date().setDate(today.getDate() + 7)
+        // ),
+        plannedStartDate: startOfDayTimestamp(today),
+        plannedEndDate: startOfDayTimestamp(nextWeekDay),
         taskType: isTask ? 'MILESTONE' : 'SHOW-ON-TIMELINE',
         clientId: params['task-client'],
         projectId: params['task-project'],
