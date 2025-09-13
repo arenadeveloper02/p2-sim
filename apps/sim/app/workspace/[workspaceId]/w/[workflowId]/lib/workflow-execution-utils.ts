@@ -81,6 +81,25 @@ export function getWorkflowExecutionContext(): WorkflowExecutionContext {
     setExecutor,
   }
 }
+/** Extract input fields from the starter block of the current workflow
+ */
+export function extractInputFields(): any[] {
+  const obj = getWorkflowExecutionContext();
+  const blocks = obj.currentWorkflow?.blocks;
+  if (!blocks) return [];
+
+  for (const blockId in blocks) {
+    const block = blocks[blockId];
+    if (block.type === "starter") {
+      const inputFormat = block.subBlocks?.inputFormat?.value;
+      if (Array.isArray(inputFormat)) {
+        return inputFormat;
+      }
+    }
+  }
+
+  return [];
+}
 
 /**
  * Execute a workflow with proper state management and logging

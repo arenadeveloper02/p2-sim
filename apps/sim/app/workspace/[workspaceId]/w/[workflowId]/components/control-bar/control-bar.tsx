@@ -1263,7 +1263,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && renderWebhookButton()}
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
-      {/* {isExpanded && renderPublishButton()} */}
+      {isExpanded && renderPublishButton()}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {/* {!isDebugging && renderDebugModeToggle()} */}

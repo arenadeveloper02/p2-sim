@@ -15,6 +15,7 @@ import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
+import { getWorkflowExecutionContext, extractInputFields } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
 
 const logger = createLogger('WorkflowItem')
 
@@ -175,11 +176,16 @@ export function WorkflowItem({
   }
 
   const handleClickWorkflowName = () => {
+    
+    console.log("the input fields are", extractInputFields());
+    
     if (isOpen) {
       togglePanel()
     }
     setFullScreen(false)
     setParentTemplateId('')
+    
+    
   }
 
   const handleClickByChat = () => {
