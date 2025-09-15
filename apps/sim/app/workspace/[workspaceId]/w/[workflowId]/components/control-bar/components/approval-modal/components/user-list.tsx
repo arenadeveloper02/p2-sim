@@ -75,7 +75,7 @@ export default function UserSearch({
             setHighlightedIndex(0)
           }}
           onKeyDown={handleKeyDown}
-          className='flex h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          className='flex h-10 w-full cursor-pointer rounded-[8px] border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
         />
         {isOpen ? (
           <ChevronUp className='absolute top-3 right-3 h-4 w-4 text-muted-foreground' />
