@@ -1,11 +1,12 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, RefreshCw, X, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Notice } from '@/components/ui/notice'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
   extractBlockIdFromOutputId,
@@ -26,6 +27,7 @@ import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { extractInputFields } from '../../../../lib/workflow-execution-utils'
 import { WorkflowInputForm } from './components/workflow-input-form'
+import { WorkflowInputOverlay } from './components/workflow-input-overlay'
 
 const logger = createLogger('ChatPanel')
 
@@ -85,32 +87,45 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Add this new state to track if the initial form has been submitted
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
 
+  // Add this new state to control form visibility
+  const [showInputForm, setShowInputForm] = useState(false)
+
   // Extract input fields for the workflow
   const inputFields = useMemo(() => extractInputFields(), [activeWorkflowId])
 
-  // Add default message when the Chat component loads
+  // Add handler to show the input form
+  const handleShowInputForm = useCallback(() => {
+    setShowInputForm(true)
+  }, [])
+
+  // Add handler to hide the input form
+  const handleHideInputForm = useCallback(() => {
+    setShowInputForm(false)
+  }, [])
+
+  // Initial form display effect
   useEffect(() => {
-    if (activeWorkflowId) {
-      // Extract input fields for the active workflow
-      const inputFields = extractInputFields()
-
-      // Construct the message based on the input fields
-      const inputFieldsMessage = inputFields
-        .map((field) => `${field.name} (${field.type})`)
-        .join(', ')
-
-      const messageContent = inputFields.length
-        ? `I expect the following input fields: ${inputFieldsMessage}`
-        : 'No specific input fields are required for this workflow.'
-
-      // Add the constructed message to the chat
-      addMessage({
-        content: messageContent,
-        workflowId: activeWorkflowId,
-        type: 'workflow', // Use 'system' or another type to differentiate this message
-      })
+    // Show the form automatically if workflow has input fields and they haven't been submitted yet
+    if (activeWorkflowId && inputFields.length > 0 && !initialInputsSubmitted) {
+      setShowInputForm(true)
     }
-  }, [activeWorkflowId, addMessage])
+  }, [activeWorkflowId, inputFields.length, initialInputsSubmitted])
+
+  // Clear chat messages for current workflow
+  const handleClearChat = useCallback(() => {
+    if (activeWorkflowId) {
+      // If you have a function to clear messages in your chat store, call it here
+      // For example: clearMessages(activeWorkflowId)
+      
+      // Reset initial inputs flag
+      setInitialInputsSubmitted(false)
+      
+      // Show input form if we have fields to collect
+      if (inputFields.length > 0) {
+        setShowInputForm(true)
+      }
+    }
+  }, [activeWorkflowId, inputFields.length])
 
   // Get output entries from console for the dropdown
   const outputEntries = useMemo(() => {
@@ -591,13 +606,16 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Add the inputs as a user message
       addMessage({
-        content: `Workflow inputs:\n\`\`\`\n${inputMessage}\n\`\`\``,
+        content: `Inputs received are:\n\`\n${inputMessage}\n\``,
         workflowId: activeWorkflowId,
-        type: 'user',
+        type: 'workflow',
       })
 
       // Mark the initial form as submitted
       setInitialInputsSubmitted(true)
+      
+      // Explicitly hide the form
+      setShowInputForm(false)
 
       // Get the conversationId for this workflow
       const conversationId = getConversationId(activeWorkflowId)
@@ -802,198 +820,249 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
       appendMessageContent,
       finalizeMessageStream,
       focusInput,
+      setShowInputForm, // Add this dependency
     ]
   )
 
   return (
-    <div className='flex h-full flex-col'>
-      {/* Show the input form if we have input fields and haven't submitted yet */}
-      {activeWorkflowId && inputFields.length > 0 && !initialInputsSubmitted ? (
-        <div className="flex-1 overflow-auto p-4">
-          <WorkflowInputForm 
-            fields={inputFields} 
-            onSubmit={handleInputFormSubmit}
-          />
-        </div>
-      ) : (
-        <>
-          {/* Output Source Dropdown */}
-          <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
-            <OutputSelect
-              workflowId={activeWorkflowId}
-              selectedOutputs={selectedOutputs}
-              onOutputSelect={handleOutputSelection}
-              disabled={!activeWorkflowId}
-              placeholder='Select output sources'
-            />
-          </div>
+    <div className='flex h-full flex-col relative'> {/* Add 'relative' here */}
+      {/* Input Form Overlay - contained within the chat component */}
+      <WorkflowInputOverlay
+        fields={inputFields}
+        onSubmit={handleInputFormSubmit}
+        onClose={handleHideInputForm}
+        isVisible={showInputForm}
+      />
 
-          {/* Main layout with fixed heights to ensure input stays visible */}
-          <div className='flex flex-1 flex-col overflow-hidden'>
-            {/* Chat messages section - Scrollable area */}
-            <div className='flex-1 overflow-hidden'>
-              {workflowMessages.length === 0 ? (
-                <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
-                  No messages yet
-                </div>
-              ) : (
-                <div ref={scrollAreaRef} className='h-full'>
-                  <ScrollArea className='h-full pb-2' hideScrollbar={true}>
-                    <div>
-                      {workflowMessages.map((message) => (
-                        <ChatMessage key={message.id} message={message} />
-                      ))}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </ScrollArea>
-                </div>
-              )}
-
-              {/* Scroll to bottom button */}
-              {showScrollButton && (
-                <div className='-translate-x-1/2 absolute bottom-20 left-1/2 z-10'>
-                  <Button
-                    onClick={scrollToBottom}
-                    size='sm'
-                    variant='outline'
-                    className='flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 shadow-lg transition-all hover:bg-gray-50'
-                  >
-                    <ArrowDown className='h-3.5 w-3.5' />
-                    <span className='sr-only'>Scroll to bottom</span>
-                  </Button>
-                </div>
-              )}
+      {/* Always render the chat UI */}
+      <>
+        {/* Header with actions */}
+        <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1">
+              <OutputSelect
+                workflowId={activeWorkflowId}
+                selectedOutputs={selectedOutputs}
+                onOutputSelect={handleOutputSelection}
+                disabled={!activeWorkflowId}
+                placeholder='Select output sources'
+              />
             </div>
 
-            {/* Input section - Fixed height */}
-            <div
-              className='-mt-[1px] relative flex-none pt-3 pb-4'
-              onDragEnter={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-                  setDragCounter((prev) => prev + 1)
-                }
-              }}
-              onDragOver={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-                  e.dataTransfer.dropEffect = 'copy'
-                }
-              }}
-              onDragLeave={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setDragCounter((prev) => Math.max(0, prev - 1))
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setDragCounter(0)
-                if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-                  const droppedFiles = Array.from(e.dataTransfer.files)
-                  if (droppedFiles.length > 0) {
-                    const remainingSlots = Math.max(0, 5 - chatFiles.length)
-                    const candidateFiles = droppedFiles.slice(0, remainingSlots)
-                    const errors: string[] = []
-                    const validNewFiles: ChatFile[] = []
+            {/* Action buttons */}
+            <div className="flex items-center space-x-2">
+              {/* Re-run workflow button - only show if inputs have been submitted at least once */}
+              {initialInputsSubmitted && inputFields && inputFields.length > 0 && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleShowInputForm}
+                        disabled={isExecuting}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        <span className="sr-only">Re-run with new inputs</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Re-run with new inputs</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
-                    for (const file of candidateFiles) {
-                      if (file.size > 10 * 1024 * 1024) {
-                        errors.push(`${file.name} is too large (max 10MB)`)
-                        continue
-                      }
+              {/* Clear chat button */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleClearChat}
+                      disabled={isExecuting || workflowMessages.length === 0}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Clear chat</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear chat</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
+        </div>
 
-                      const isDuplicate = chatFiles.some(
-                        (existingFile) =>
-                          existingFile.name === file.name && existingFile.size === file.size
-                      )
-                      if (isDuplicate) {
-                        errors.push(`${file.name} already added`)
-                        continue
-                      }
-
-                      validNewFiles.push({
-                        id: crypto.randomUUID(),
-                        name: file.name,
-                        size: file.size,
-                        type: file.type,
-                        file,
-                      })
-                    }
-
-                    if (errors.length > 0) {
-                      setUploadErrors(errors)
-                    }
-
-                    if (validNewFiles.length > 0) {
-                      setChatFiles([...chatFiles, ...validNewFiles])
-                    }
-                  }
-                }
-              }}
-            >
-              {/* File upload section */}
-              <div className='mb-2'>
-                {uploadErrors.length > 0 && (
-                  <div className='mb-2'>
-                    <Notice variant='error' title='File upload error'>
-                      <ul className='list-disc pl-5'>
-                        {uploadErrors.map((err, idx) => (
-                          <li key={idx}>{err}</li>
-                        ))}
-                      </ul>
-                    </Notice>
-                  </div>
-                )}
-                <ChatFileUpload
-                  files={chatFiles}
-                  onFilesChange={(files) => {
-                    setChatFiles(files)
-                  }}
-                  maxFiles={5}
-                  maxSize={10}
-                  disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
-                  onError={(errors) => setUploadErrors(errors)}
-                />
+        {/* Main chat layout */}
+        <div className='flex flex-1 flex-col overflow-hidden'>
+          {/* Chat messages section - Scrollable area */}
+          <div className='flex-1 overflow-hidden'>
+            {workflowMessages.length === 0 ? (
+              <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
+                No messages yet
               </div>
+            ) : (
+              <div ref={scrollAreaRef} className='h-full'>
+                <ScrollArea className='h-full pb-2' hideScrollbar={true}>
+                  <div>
+                    {workflowMessages.map((message) => (
+                      <ChatMessage key={message.id} message={message} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
 
-              <div className='flex gap-2'>
-                <Input
-                  ref={inputRef}
-                  value={chatMessage}
-                  onChange={(e) => {
-                    setChatMessage(e.target.value)
-                    setHistoryIndex(-1) // Reset history index when typing
-                  }}
-                  onKeyDown={handleKeyPress}
-                  placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
-                  className={`h-9 flex-1 rounded-lg border-[#E5E5E5] bg-[#FFFFFF] text-muted-foreground shadow-xs focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-[#414141] dark:bg-[var(--surface-elevated)] ${
-                    isDragOver
-                      ? 'border-[var(--brand-primary-hover-hex)] bg-purple-50/50 dark:border-[var(--brand-primary-hover-hex)] dark:bg-purple-950/20'
-                      : ''
-                  }`}
-                  disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
-                />
+            {/* Scroll to bottom button */}
+            {showScrollButton && (
+              <div className='-translate-x-1/2 absolute bottom-20 left-1/2 z-10'>
                 <Button
-                  onClick={handleSendMessage}
-                  size='icon'
-                  disabled={
-                    (!chatMessage.trim() && chatFiles.length === 0) ||
-                    !activeWorkflowId ||
-                    isExecuting ||
-                    isUploadingFiles
-                  }
-                  className='h-9 w-9 rounded-lg bg-[var(--brand-primary-hover-hex)] text-white shadow-[0_0_0_0_var(--brand-primary-hover-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
+                  onClick={scrollToBottom}
+                  size='sm'
+                  variant='outline'
+                  className='flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 shadow-lg transition-all hover:bg-gray-50'
                 >
-                  <ArrowUp className='h-4 w-4' />
+                  <ArrowDown className='h-3.5 w-3.5' />
+                  <span className='sr-only'>Scroll to bottom</span>
                 </Button>
               </div>
+            )}
+          </div>
+
+          {/* Input section - Fixed height */}
+          <div
+            className='-mt-[1px] relative flex-none pt-3 pb-4'
+            onDragEnter={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                setDragCounter((prev) => prev + 1)
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                e.dataTransfer.dropEffect = 'copy'
+              }
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragCounter((prev) => Math.max(0, prev - 1))
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragCounter(0)
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                const droppedFiles = Array.from(e.dataTransfer.files)
+                if (droppedFiles.length > 0) {
+                  const remainingSlots = Math.max(0, 5 - chatFiles.length)
+                  const candidateFiles = droppedFiles.slice(0, remainingSlots)
+                  const errors: string[] = []
+                  const validNewFiles: ChatFile[] = []
+
+                  for (const file of candidateFiles) {
+                    if (file.size > 10 * 1024 * 1024) {
+                      errors.push(`${file.name} is too large (max 10MB)`)
+                      continue
+                    }
+
+                    const isDuplicate = chatFiles.some(
+                      (existingFile) =>
+                        existingFile.name === file.name && existingFile.size === file.size
+                    )
+                    if (isDuplicate) {
+                      errors.push(`${file.name} already added`)
+                      continue
+                    }
+
+                    validNewFiles.push({
+                      id: crypto.randomUUID(),
+                      name: file.name,
+                      size: file.size,
+                      type: file.type,
+                      file,
+                    })
+                  }
+
+                  if (errors.length > 0) {
+                    setUploadErrors(errors)
+                  }
+
+                  if (validNewFiles.length > 0) {
+                    setChatFiles([...chatFiles, ...validNewFiles])
+                  }
+                }
+              }
+            }}
+          >
+            {/* File upload section */}
+            <div className='mb-2'>
+              {uploadErrors.length > 0 && (
+                <div className='mb-2'>
+                  <Notice variant='error' title='File upload error'>
+                    <ul className='list-disc pl-5'>
+                      {uploadErrors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </Notice>
+                </div>
+              )}
+              <ChatFileUpload
+                files={chatFiles}
+                onFilesChange={(files) => {
+                  setChatFiles(files)
+                }}
+                maxFiles={5}
+                maxSize={10}
+                disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+                onError={(errors) => setUploadErrors(errors)}
+              />
+            </div>
+
+            <div className='flex gap-2'>
+              <Input
+                ref={inputRef}
+                value={chatMessage}
+                onChange={(e) => {
+                  setChatMessage(e.target.value)
+                  setHistoryIndex(-1) // Reset history index when typing
+                }}
+                onKeyDown={handleKeyPress}
+                placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
+                className={`h-9 flex-1 rounded-lg border-[#E5E5E5] bg-[#FFFFFF] text-muted-foreground shadow-xs focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-[#414141] dark:bg-[var(--surface-elevated)] ${
+                  isDragOver
+                    ? 'border-[var(--brand-primary-hover-hex)] bg-purple-50/50 dark:border-[var(--brand-primary-hover-hex)] dark:bg-purple-950/20'
+                    : ''
+                }`}
+                disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+              />
+              <Button
+                onClick={handleSendMessage}
+                size='icon'
+                disabled={
+                  (!chatMessage.trim() && chatFiles.length === 0) ||
+                  !activeWorkflowId ||
+                  isExecuting ||
+                  isUploadingFiles
+                }
+                className='h-9 w-9 rounded-lg bg-[var(--brand-primary-hover-hex)] text-white shadow-[0_0_0_0_var(--brand-primary-hover-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
+              >
+                <ArrowUp className='h-4 w-4' />
+              </Button>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </>
     </div>
   )
 }
