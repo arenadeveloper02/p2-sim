@@ -142,29 +142,29 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
     () => ({
       // Paragraph
       p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
-        <p className='font-geist-sans my-2 text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
+        <p className='my-2 font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
           {children}
         </p>
       ),
 
       // Headings
       h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h1 className='font-geist-sans my-3 font-semibold text-2xl text-gray-900 dark:text-gray-100'>
+        <h1 className='my-3 font-geist-sans font-semibold text-2xl text-gray-900 dark:text-gray-100'>
           {children}
         </h1>
       ),
       h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h2 className='font-geist-sans my-3 font-semibold text-gray-900 text-xl dark:text-gray-100'>
+        <h2 className='my-3 font-geist-sans font-semibold text-gray-900 text-xl dark:text-gray-100'>
           {children}
         </h2>
       ),
       h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h3 className='font-geist-sans my-3 font-semibold text-gray-900 text-lg dark:text-gray-100'>
+        <h3 className='my-3 font-geist-sans font-semibold text-gray-900 text-lg dark:text-gray-100'>
           {children}
         </h3>
       ),
       h4: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h4 className='font-geist-sans my-3 font-semibold text-base text-gray-900 dark:text-gray-100'>
+        <h4 className='my-3 font-geist-sans font-semibold text-base text-gray-900 dark:text-gray-100'>
           {children}
         </h4>
       ),
