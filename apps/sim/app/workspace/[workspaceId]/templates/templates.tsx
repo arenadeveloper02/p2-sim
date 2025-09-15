@@ -50,10 +50,20 @@ interface TemplatesProps {
   currentUserId: string
 }
 
+interface Workspace {
+  id: string
+  name: string
+  ownerId: string
+  role?: string
+  membershipId?: string
+  permissions?: 'admin' | 'write' | 'read' | null
+}
+
 export default function Templates({ initialTemplates, currentUserId }: TemplatesProps) {
   const router = useRouter()
   const params = useParams()
   const [searchQuery, setSearchQuery] = useState('')
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const [activeTab, setActiveTab] = useState('your')
   const [templates, setTemplates] = useState<Template[]>(initialTemplates)
   const [loading, setLoading] = useState(false)
@@ -69,6 +79,28 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
     'artificial-intelligence': useRef<HTMLDivElement>(null),
     other: useRef<HTMLDivElement>(null),
   }
+
+  // Fetch current workspace information
+  useEffect(() => {
+    const fetchCurrentWorkspace = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        const data = await response.json()
+
+        if (data.workspaces && Array.isArray(data.workspaces)) {
+          const workspaceId = params.workspaceId as string
+          const workspace = data.workspaces.find((w: Workspace) => w.id === workspaceId)
+          if (workspace) {
+            setCurrentWorkspace(workspace)
+          }
+        }
+      } catch (error) {
+        logger.error('Error fetching workspace:', error)
+      }
+    }
+
+    fetchCurrentWorkspace()
+  }, [params.workspaceId])
 
   // Get your templates count (created by user OR starred by user)
   const yourTemplatesCount = templates.filter(
@@ -148,6 +180,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
       iconColor={template.color}
       state={template.state as { blocks?: Record<string, { type: string; name?: string }> }}
       isStarred={template.isStarred}
+      workspaceName={currentWorkspace?.name}
       onStarChange={handleStarChange}
     />
   )

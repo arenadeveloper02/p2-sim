@@ -89,6 +89,11 @@ export function WorkspaceSelector({
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
+  // Helper function to check if workspace is APPROVAL LIST
+  const isApproverListWorkspace = useCallback((workspace: Workspace) => {
+    return workspace.name === 'APPROVAL LIST'
+  }, [])
+
   // Focus input when editing starts
   useEffect(() => {
     if (editingWorkspaceId && editInputRef.current) {
@@ -119,15 +124,22 @@ export function WorkspaceSelector({
   /**
    * Handle start editing workspace name
    */
-  const handleStartEdit = useCallback((workspace: Workspace, e: React.MouseEvent) => {
-    // Only allow admins to rename workspace
-    if (workspace.permissions !== 'admin') {
-      return
-    }
-    e.stopPropagation()
-    setEditingWorkspaceId(workspace.id)
-    setEditingName(workspace.name)
-  }, [])
+  const handleStartEdit = useCallback(
+    (workspace: Workspace, e: React.MouseEvent) => {
+      // Only allow admins to rename workspace
+      if (workspace.permissions !== 'admin') {
+        return
+      }
+      // Prevent editing APPROVAL LIST workspace
+      if (isApproverListWorkspace(workspace)) {
+        return
+      }
+      e.stopPropagation()
+      setEditingWorkspaceId(workspace.id)
+      setEditingName(workspace.name)
+    },
+    [isApproverListWorkspace]
+  )
 
   /**
    * Handle save edit
@@ -385,7 +397,16 @@ export function WorkspaceSelector({
                     variant='ghost'
                     size='icon'
                     onClick={(e) => handleStartEdit(workspace, e)}
-                    className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+                    disabled={isApproverListWorkspace(workspace)}
+                    title={
+                      isApproverListWorkspace(workspace)
+                        ? 'Cannot edit APPROVAL LIST workspace'
+                        : 'Edit workspace name'
+                    }
+                    className={cn(
+                      'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
+                      isApproverListWorkspace(workspace) && 'cursor-not-allowed opacity-50'
+                    )}
                   >
                     <Pencil className='!h-3.5 !w-3.5' />
                   </Button>
@@ -461,12 +482,21 @@ export function WorkspaceSelector({
                     size='icon'
                     onClick={(e) => {
                       e.stopPropagation()
-                      setWorkspaceToDelete(workspace)
-                      setIsDeleteDialogOpen(true)
+                      if (!isApproverListWorkspace(workspace)) {
+                        setWorkspaceToDelete(workspace)
+                        setIsDeleteDialogOpen(true)
+                      }
                     }}
+                    disabled={isApproverListWorkspace(workspace)}
+                    title={
+                      isApproverListWorkspace(workspace)
+                        ? 'Cannot delete APPROVAL LIST workspace'
+                        : 'Delete workspace'
+                    }
                     className={cn(
                       'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                      !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
+                      !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0',
+                      isApproverListWorkspace(workspace) && 'cursor-not-allowed opacity-50'
                     )}
                   >
                     <Trash2 className='!h-3.5 !w-3.5' />

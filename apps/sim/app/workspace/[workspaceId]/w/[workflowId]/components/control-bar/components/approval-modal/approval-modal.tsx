@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  toastError,
+  toastSuccess,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -52,24 +60,16 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
         setIsSubmitting(false)
         setGlobalActionsDisabled(true)
         handleCloseModal()
-        // return (
-        //   <Alert>
-        //     <AlertTitle>Request Submitted</AlertTitle>
-        //     <AlertDescription>Sent for Approval</AlertDescription>
-        //   </Alert>
-        // )
-        // alert('Request Submitted: Sent for Approval')
+        toastSuccess('Request Submitted', {
+          description: `Workflow sent for approval to ${selectedUser.name || selectedUser.email}`,
+        })
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
       setIsSubmitting(false)
-      // alert('Error: Something went wrong')
-      // return (
-      //   <Alert>
-      //     <AlertTitle>Error</AlertTitle>
-      //     <AlertDescription>Something went wrong</AlertDescription>
-      //   </Alert>
-      // )
+      toastError('Approval Request Failed', {
+        description: 'Something went wrong while sending the approval request. Please try again.',
+      })
     }
   }
 

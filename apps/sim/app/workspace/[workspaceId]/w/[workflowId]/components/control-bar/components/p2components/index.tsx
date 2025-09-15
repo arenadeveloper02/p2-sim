@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, FileCheck, Hourglass } from 'lucide-react'
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  toastError,
+  toastSuccess,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -35,6 +42,10 @@ export const renderApprovalButton = (
       workFlowStatus
         .then((e: any) => {
           setApproval(e)
+          if (e?.userId === session?.user?.id) {
+            setGlobalActionsDisabled(true)
+            return
+          }
           if (
             (e?.status === 'APPROVED' || e?.status === 'REJECTED') &&
             e?.userId === session?.user?.id
@@ -68,9 +79,26 @@ export const renderApprovalButton = (
         setIsSubmitting(false)
         setIsRejectModalOpen(false)
         setGlobalActionsDisabled(true)
+
+        // Show success toast based on action
+        if (action === 'APPROVED') {
+          toastSuccess('Workflow Approved', {
+            description: 'The workflow has been successfully approved.',
+          })
+        } else {
+          toastSuccess('Workflow Rejected', {
+            description: reason
+              ? `Workflow rejected: ${reason}`
+              : 'The workflow has been rejected.',
+          })
+        }
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
+      setIsSubmitting(false)
+      toastError('Action Failed', {
+        description: `Failed to ${action.toLowerCase()} the workflow. Please try again.`,
+      })
     }
   }
 

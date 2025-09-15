@@ -336,8 +336,12 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
             variant='ghost'
             size='icon'
             className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-            title='Create Workflow (Hover, right-click, or long press for more options)'
-            disabled={isCreatingWorkflow}
+            title={
+              disableCreate
+                ? 'Create functionality is disabled in APPROVAL LIST workspace'
+                : 'Create Workflow (Hover, right-click, or long press for more options)'
+            }
+            disabled={isCreatingWorkflow || disableCreate}
             onClick={(e) => {
               handleClosePanel()
               handleButtonClick(e)
@@ -364,12 +368,15 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
         >
           {/* New Workflow */}
           <button
-            className={cn(menuItemClassName, isCreatingWorkflow && 'cursor-not-allowed opacity-50')}
+            className={cn(
+              menuItemClassName,
+              (isCreatingWorkflow || disableCreate) && 'cursor-not-allowed opacity-50'
+            )}
             onClick={() => {
               handleClosePanel()
               handleCreateWorkflow()
             }}
-            disabled={isCreatingWorkflow}
+            disabled={isCreatingWorkflow || disableCreate}
           >
             <Plus className={iconClassName} />
             <span className={textClassName}>
@@ -379,9 +386,12 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
 
           {/* New Folder */}
           <button
-            className={cn(menuItemClassName, isCreating && 'cursor-not-allowed opacity-50')}
+            className={cn(
+              menuItemClassName,
+              (isCreating || disableCreate) && 'cursor-not-allowed opacity-50'
+            )}
             onClick={handleCreateFolder}
-            disabled={isCreating}
+            disabled={isCreating || disableCreate}
           >
             <Folder className={iconClassName} />
             <span className={textClassName}>{isCreating ? 'Creating...' : 'New folder'}</span>
@@ -390,9 +400,12 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
           {/* Import Workflow */}
           {userPermissions.canEdit && (
             <button
-              className={cn(menuItemClassName, isImporting && 'cursor-not-allowed opacity-50')}
+              className={cn(
+                menuItemClassName,
+                (isImporting || disableCreate) && 'cursor-not-allowed opacity-50'
+              )}
               onClick={handleImportWorkflow}
-              disabled={isImporting}
+              disabled={isImporting || disableCreate}
             >
               <Download className={iconClassName} />
               <span className={textClassName}>

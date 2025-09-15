@@ -13,6 +13,7 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { Toaster } from '@/components/ui'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -1697,6 +1698,9 @@ const WorkflowContent = React.memo(() => {
         {/* Show DiffControls if diff is available (regardless of current view mode) */}
         <DiffControls />
       </div>
+
+      {/* Toast notifications */}
+      <Toaster position='top-right' />
     </div>
   )
 })
