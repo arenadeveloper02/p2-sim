@@ -23,7 +23,8 @@ export const renderApprovalButton = (
   userPermissions: any,
   isDebugging: boolean,
   activeWorkflowId: string | null,
-  handleOpenApproval: any
+  handleOpenApproval: any,
+  workspaceName?: string
 ) => {
   const [approval, setApproval] = useState<any>({})
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false)
@@ -107,7 +108,10 @@ export const renderApprovalButton = (
   }
 
   const canShowApprovalRequest =
-    !isDisabled && approval?.status !== 'PENDING' && approval?.ownerId === session?.user?.id
+    !isDisabled &&
+    approval?.status !== 'PENDING' &&
+    approval?.ownerId === session?.user?.id &&
+    workspaceName !== 'APPROVAL LIST'
 
   const canShowApproveReject =
     !isDisabled && approval?.status === 'PENDING' && approval?.userId === session?.user?.id

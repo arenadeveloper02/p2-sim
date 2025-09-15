@@ -87,6 +87,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
+  // State for workspace name
+  const [workspaceName, setWorkspaceName] = useState<string>('')
+
   // Store hooks
   const { history, revertToHistoryState, lastSaved, setNeedsRedeploymentFlag, blocks } =
     useWorkflowStore()
@@ -327,6 +330,28 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       })
     }
   }, [session?.user?.id, isRegistryLoading])
+
+  // Fetch workspace name
+  useEffect(() => {
+    const fetchWorkspaceName = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.workspaces && Array.isArray(data.workspaces)) {
+            const workspace = data.workspaces.find((w: any) => w.id === workspaceId)
+            if (workspace) {
+              setWorkspaceName(workspace.name)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching workspace name:', error)
+      }
+    }
+
+    fetchWorkspaceName()
+  }, [workspaceId])
 
   /**
    * Check user usage limits and cache results
@@ -1271,7 +1296,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {/* {isExpanded && renderPublishButton()} */}
-      {renderApprovalButton(userPermissions, isDebugging, activeWorkflowId, handleOpenApproval)}
+      {renderApprovalButton(
+        userPermissions,
+        isDebugging,
+        activeWorkflowId,
+        handleOpenApproval,
+        workspaceName
+      )}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {/* {!isDebugging && renderDebugModeToggle()} */}
