@@ -42,10 +42,6 @@ export const renderApprovalButton = (
       workFlowStatus
         .then((e: any) => {
           setApproval(e)
-          if (e?.userId === session?.user?.id) {
-            setGlobalActionsDisabled(true)
-            return
-          }
           if (
             (e?.status === 'APPROVED' || e?.status === 'REJECTED') &&
             e?.userId === session?.user?.id
@@ -139,7 +135,7 @@ export const renderApprovalButton = (
             </TooltipContent>
           </Tooltip>
         )}
-      {approval?.status === 'APPROVED' && !isDisabled && (
+      {approval?.status === 'APPROVED' && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -154,7 +150,9 @@ export const renderApprovalButton = (
         </Tooltip>
       )}
       {((approval?.userId !== session?.user?.id && approval?.status === 'PENDING') ||
-        (isDisabled && approval?.ownerId === session?.user?.id)) && (
+        (isDisabled &&
+          approval?.ownerId === session?.user?.id &&
+          approval?.status === 'PENDING')) && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
