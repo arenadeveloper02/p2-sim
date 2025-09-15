@@ -156,7 +156,7 @@ export const workflow = pgTable(
     isDeployed: boolean('is_deployed').notNull().default(false),
     deployedState: json('deployed_state'),
     deployedAt: timestamp('deployed_at'),
-    pinnedApiKey: text('pinned_api_key'),
+    pinnedApiKeyId: text('pinned_api_key_id').references(() => apiKey.id, { onDelete: 'set null' }),
     collaborators: json('collaborators').notNull().default('[]'),
     runCount: integer('run_count').notNull().default(0),
     lastRunAt: timestamp('last_run_at'),
@@ -513,18 +513,31 @@ export const workflowLogWebhookDelivery = pgTable(
   })
 )
 
-export const apiKey = pgTable('api_key', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  key: text('key').notNull().unique(),
-  lastUsed: timestamp('last_used'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  expiresAt: timestamp('expires_at'),
-})
+export const apiKey = pgTable(
+  'api_key',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }), // Only set for workspace keys
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }), // Who created the workspace key
+    name: text('name').notNull(),
+    key: text('key').notNull().unique(),
+    type: text('type').notNull().default('personal'), // 'personal' or 'workspace'
+    lastUsed: timestamp('last_used'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at'),
+  },
+  (table) => ({
+    // Ensure workspace keys have a workspace_id and personal keys don't
+    workspaceTypeCheck: check(
+      'workspace_type_check',
+      sql`(type = 'workspace' AND workspace_id IS NOT NULL) OR (type = 'personal' AND workspace_id IS NULL)`
+    ),
+  })
+)
 
 export const marketplace = pgTable('marketplace', {
   id: text('id').primaryKey(),
@@ -1302,30 +1315,31 @@ export const copilotFeedback = pgTable(
   })
 )
 
-export const chatPromptFeedback = pgTable(
-  'chat_prompt_feedback',
+// Tracks immutable deployment versions for each workflow
+export const workflowDeploymentVersion = pgTable(
+  'workflow_deployment_version',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
-    comment: text('comment'),
-    createdAt: timestamp('created_at').notNull(),
-    updatedAt: timestamp('updated_at').notNull(),
-    inComplete: boolean('in_complete').default(false),
-    inAccurate: boolean('in_accurate').default(false),
-    outOfDate: boolean('out_of_date').default(false),
-    tooLong: boolean('too_long').default(false),
-    tooShort: boolean('too_short').default(false),
-    liked: boolean('liked').default(false),
-    executionId: text('execution_id').notNull(),
-    workflowId: text('workflow_id').notNull(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    state: json('state').notNull(),
+    isActive: boolean('is_active').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdBy: text('created_by'),
   },
   (table) => ({
-    // Access patterns
-    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
-    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
-    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
-    // Ordering indexes
-    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
+    workflowIdIdx: index('workflow_deployment_version_workflow_id_idx').on(table.workflowId),
+    workflowVersionUnique: uniqueIndex('workflow_deployment_version_workflow_version_unique').on(
+      table.workflowId,
+      table.version
+    ),
+    workflowActiveIdx: index('workflow_deployment_version_workflow_active_idx').on(
+      table.workflowId,
+      table.isActive
+    ),
+    createdAtIdx: index('workflow_deployment_version_created_at_idx').on(table.createdAt),
   })
 )
 
@@ -1377,5 +1391,33 @@ export const mcpServers = pgTable(
       table.workspaceId,
       table.deletedAt
     ),
+  })
+)
+
+
+export const chatPromptFeedback = pgTable(
+  'chat_prompt_feedback',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    inComplete: boolean('in_complete').default(false),
+    inAccurate: boolean('in_accurate').default(false),
+    outOfDate: boolean('out_of_date').default(false),
+    tooLong: boolean('too_long').default(false),
+    tooShort: boolean('too_short').default(false),
+    liked: boolean('liked').default(false),
+    executionId: text('execution_id').notNull(),
+    workflowId: text('workflow_id').notNull(),
+  },
+  (table) => ({
+    // Access patterns
+    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
+    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
+    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
+    // Ordering indexes
+    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
   })
 )
