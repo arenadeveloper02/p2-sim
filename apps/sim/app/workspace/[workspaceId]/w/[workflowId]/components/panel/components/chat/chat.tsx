@@ -852,7 +852,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             {/* Action buttons */}
             <div className="flex items-center space-x-2">
               {/* Re-run workflow button - only show if inputs have been submitted at least once */}
-              {initialInputsSubmitted && inputFields && inputFields.length > 0 && (
+              { inputFields && inputFields.length > 0 && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -875,7 +875,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
               )}
 
               {/* Clear chat button */}
-              <TooltipProvider>
+              {/* <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -893,7 +893,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                     <p>Clear chat</p>
                   </TooltipContent>
                 </Tooltip>
-              </TooltipProvider>
+              </TooltipProvider> */}
             </div>
           </div>
         </div>
