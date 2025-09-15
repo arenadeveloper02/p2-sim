@@ -8,12 +8,18 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   toastError,
   toastSuccess,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
+import { categories } from '@/app/workspace/[workspaceId]/templates/templates'
 import { useWorkflowRegistry } from '@/stores'
 import { useUserApprovalStore } from '@/stores/approver-list/store'
 import { useUiFlagsStore } from '@/stores/feature-flag/store'
@@ -36,6 +42,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
   const { setGlobalActionsDisabled } = useUiFlagsStore()
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string>('marketing')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSelectUser = (user: any) => {
@@ -49,13 +56,14 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
   const handleCloseModal = () => {
     onOpenChange(false)
     setSelectedUser(null)
+    setSelectedCategory('marketing')
   }
 
   const handleSendForApproval = async () => {
     if (!workflowId || !canEdit) return
     setIsSubmitting(true)
     try {
-      const newWorkflow = await askApproveWorkflow(workflowId, selectedUser.id)
+      const newWorkflow = await askApproveWorkflow(workflowId, selectedUser.id, selectedCategory)
       if (newWorkflow) {
         setIsSubmitting(false)
         setGlobalActionsDisabled(true)
@@ -90,16 +98,37 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
         </DialogHeader>
 
         <div className='flex flex-1 flex-col overflow-hidden '>
-          <div className='h-[200px] overflow-y-auto p-6'>
-            <div className='flex flex-col gap-1'>
-              <p className='font-medium text-sm'>Select Approver</p>
-              <UserSearch
-                users={users?.filter((u) => u.id !== userId) || []}
-                selectedUser={selectedUser}
-                onSelectUser={handleSelectUser}
-                loading={loading}
-                error={error}
-              />
+          <div className='h-[300px] overflow-y-auto p-6'>
+            <div className='flex flex-col gap-4'>
+              <div className='flex flex-col gap-1'>
+                <p className='font-medium text-sm'>Select Approver</p>
+                <UserSearch
+                  users={users?.filter((u) => u.id !== userId) || []}
+                  selectedUser={selectedUser}
+                  onSelectUser={handleSelectUser}
+                  loading={loading}
+                  error={error}
+                />
+              </div>
+
+              <div className='flex flex-col gap-1'>
+                <p className='font-medium text-sm'>Select Category</p>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => setSelectedCategory(value)}
+                >
+                  <SelectTrigger className='h-10'>
+                    <SelectValue placeholder='Select category' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.value} value={category.value}>
+                        {category.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>

@@ -30,6 +30,7 @@ const ApprovalRequestSchema = z.object({
   workspaceId: z.string().optional(),
   folderId: z.string().nullable().optional(),
   approvalUserId: z.string().min(1, 'Approval user ID is required'),
+  category: z.string().optional().default('marketing'),
 })
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const body = await req.json()
-    const { name, description, color, workspaceId, folderId, approvalUserId } =
+    const { name, description, color, workspaceId, folderId, approvalUserId, category } =
       ApprovalRequestSchema.parse(body)
     let newWorkspaceId = crypto.randomUUID()
     const now = new Date()
@@ -395,6 +396,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ownerId: session.user.id,
         userId: approvalUserId,
         status: 'PENDING',
+        category: category || 'marketing',
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -806,6 +808,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
               name: userWorkflowStatus[0].name,
               description: 'Bot created the template',
               author: ownerData[0]?.name || session.user.name,
+              category: userWorkflowStatus[0].category || 'marketing',
               state: templateState,
               updatedAt: now,
             })
@@ -832,7 +835,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             stars: 0,
             color: '#3972F6',
             icon: 'FileText',
-            category: 'marketing',
+            category: userWorkflowStatus[0].category || 'marketing',
             state: templateState,
             createdAt: now,
             updatedAt: now,
