@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { and, eq, or } from 'drizzle-orm'
+import { and, desc, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -360,19 +360,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     logger.info(
       `[${requestId}] Successfully approved workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
     )
-    // Add the workflow status for maintaing the approval process
-    const workflowStatusId = crypto.randomUUID()
-    await db.insert(workflowStatus).values({
-      id: workflowStatusId,
-      name,
-      workflowId: newWorkflowId,
-      mappedWorkflowId: sourceWorkflowId,
-      ownerId: session.user.id,
-      userId: approvalUserId,
-      status: 'PENDING',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
+    // Check if there's an existing approval status for this workflow
+    const existingApprovalStatus = await db
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.workflowId, newWorkflowId),
+          eq(workflowStatus.mappedWorkflowId, sourceWorkflowId)
+        )
+      )
+      .orderBy(desc(workflowStatus.updatedAt))
+      .limit(1)
+
+    if (existingApprovalStatus.length > 0) {
+      // Update existing approval status
+      await db
+        .update(workflowStatus)
+        .set({
+          name,
+          userId: approvalUserId,
+          status: 'PENDING',
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowStatus.id, existingApprovalStatus[0].id))
+    } else {
+      // Create new approval status
+      const workflowStatusId = crypto.randomUUID()
+      await db.insert(workflowStatus).values({
+        id: workflowStatusId,
+        name,
+        workflowId: newWorkflowId,
+        mappedWorkflowId: sourceWorkflowId,
+        ownerId: session.user.id,
+        userId: approvalUserId,
+        status: 'PENDING',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+    }
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.log(error)
@@ -430,6 +456,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           )
         )
       )
+      .orderBy(desc(workflowStatus.updatedAt))
       .limit(1)
     if (userWorkspace.length === 0) {
       return { status: 'NO_APPROVAL_REQUEST', ownerId: session.user.id }
@@ -455,7 +482,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { statusId, action, reason } = body
     const now = new Date()
 
-    if (action === 'APPROVED') {
+    if (action === 'APPROVED' || action === 'REJECTED') {
       const result = await db.transaction(async (tx) => {
         // First verify the source workflow exists
         const sourceWorkflow = await tx
@@ -656,15 +683,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       })
     }
     const getWorkflowApproval = await db.transaction(async (tx) => {
-      await tx
-        .update(workflowStatus)
-        .set({
-          updatedAt: now,
-          status: action,
-          comments: reason,
-        })
-        .where(eq(workflowStatus.id, statusId))
-      const userWorkflowStatus = await tx
+      // Find the latest approval status by updatedAt
+      const latestApprovalStatus = await tx
         .select()
         .from(workflowStatus)
         .where(
@@ -673,46 +693,72 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             eq(workflowStatus.userId, session.user.id)
           )
         )
+        .orderBy(desc(workflowStatus.updatedAt))
         .limit(1)
-      /**
-       * Create the template for the approval workflow
-       */
-      const workflowData = await db
-        .select()
-        .from(workflow)
-        .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
-        .then((rows) => rows[0])
-      console.log('workflowData', workflowData)
-      const normalizedData = await loadWorkflowFromNormalizedTables(
-        userWorkflowStatus[0].mappedWorkflowId
-      )
-      console.log('workflowData', normalizedData)
 
-      const templateId = uuidv4()
-      const newTemplate = {
-        id: templateId,
-        workflowId: userWorkflowStatus[0].mappedWorkflowId,
-        userId: session.user.id,
-        name: userWorkflowStatus[0].name,
-        description: ' Bot created the template',
-        author: session.user.name,
-        views: 0,
-        stars: 0,
-        color: '#3972F6',
-        icon: 'FileText',
-        category: 'marketing',
-        state: {
-          blocks: normalizedData?.blocks,
-          edges: normalizedData?.edges,
-          loops: normalizedData?.loops,
-          parallels: normalizedData?.parallels,
-          lastSaved: now,
-        },
-        createdAt: now,
-        updatedAt: now,
+      if (latestApprovalStatus.length === 0) {
+        throw new Error('No approval status found for this workflow')
       }
-      console.log('newTemplate', newTemplate)
-      await db.insert(templates).values(newTemplate)
+
+      // Update the latest approval status
+      await tx
+        .update(workflowStatus)
+        .set({
+          updatedAt: now,
+          status: action,
+          comments: reason,
+        })
+        .where(eq(workflowStatus.id, latestApprovalStatus[0].id))
+
+      const userWorkflowStatus = await tx
+        .select()
+        .from(workflowStatus)
+        .where(eq(workflowStatus.id, latestApprovalStatus[0].id))
+        .limit(1)
+
+      // Only create template when approved, not when rejected
+      if (action === 'APPROVED') {
+        /**
+         * Create the template for the approval workflow
+         */
+        const workflowData = await db
+          .select()
+          .from(workflow)
+          .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
+          .then((rows) => rows[0])
+        console.log('workflowData', workflowData)
+        const normalizedData = await loadWorkflowFromNormalizedTables(
+          userWorkflowStatus[0].mappedWorkflowId
+        )
+        console.log('workflowData', normalizedData)
+
+        const templateId = uuidv4()
+        const newTemplate = {
+          id: templateId,
+          workflowId: userWorkflowStatus[0].mappedWorkflowId,
+          userId: session.user.id,
+          name: userWorkflowStatus[0].name,
+          description: ' Bot created the template',
+          author: session.user.name,
+          views: 0,
+          stars: 0,
+          color: '#3972F6',
+          icon: 'FileText',
+          category: 'marketing',
+          state: {
+            blocks: normalizedData?.blocks,
+            edges: normalizedData?.edges,
+            loops: normalizedData?.loops,
+            parallels: normalizedData?.parallels,
+            lastSaved: now,
+          },
+          createdAt: now,
+          updatedAt: now,
+        }
+        console.log('newTemplate', newTemplate)
+        await db.insert(templates).values(newTemplate)
+      }
+
       return userWorkflowStatus[0]
     })
     return NextResponse.json(getWorkflowApproval, { status: 201 })

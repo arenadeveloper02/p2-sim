@@ -111,7 +111,7 @@ export const renderApprovalButton = (
             </TooltipContent>
           </Tooltip>
         )}
-      {approval?.ownerId !== session?.user?.id && approval?.status === 'APPROVED' && (
+      {approval?.status === 'APPROVED' && !isDisabled && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -125,7 +125,8 @@ export const renderApprovalButton = (
           <TooltipContent>Approved</TooltipContent>
         </Tooltip>
       )}
-      {approval?.userId !== session?.user?.id && approval?.status === 'PENDING' && (
+      {((approval?.userId !== session?.user?.id && approval?.status === 'PENDING') ||
+        (isDisabled && approval?.ownerId === session?.user?.id)) && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
