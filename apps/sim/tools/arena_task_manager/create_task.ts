@@ -85,6 +85,7 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       nextWeekDay.setDate(today.getDate() + 7)
       const isTask = params['operation'] === 'arena_create_task'
       const body: Record<string, any> = {
+        workflowId: params._context.workflowId,
         name: params['task-name'],
         taskHtmlDescription: params['task-description'],
         // plannedStartDate: startOfDayTimestamp(new Date(params['planned-start-date']) || today),
@@ -116,19 +117,12 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
     const data = await response.json()
     return {
       success: true,
-      output: {
-        ts: new Date().toISOString(),
-        name: data.name,
-        id: data.id,
-        success: true,
-      },
+      output: data,
     }
   },
 
   outputs: {
-    ts: { type: 'string', description: 'Timestamp when response was transformed' },
-    name: { type: 'string', description: 'Task name' },
-    id: { type: 'string', description: 'Unique task identifier' },
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
+    output: { type: 'object', description: 'Output from Arena' },
   },
 }

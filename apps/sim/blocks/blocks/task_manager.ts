@@ -22,10 +22,10 @@ export const TaskManagerBlock: BlockConfig = {
           label: 'Create Sub Task',
           id: 'arena_create_sub_task',
         },
-        {
-          label: 'Search Task',
-          id: 'arena_search_task',
-        },
+        // {
+        //   label: 'Search Task',
+        //   id: 'arena_search_task',
+        // },
       ],
       value: () => 'arena_create_task',
     },
@@ -62,10 +62,7 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: true,
       placeholder: 'Enter client name',
-      condition: {
-        field: 'operation',
-        value: ['arena_create_task, arena_create_sub_task'],
-      },
+      condition: { field: 'operation', value: ['arena_create_task', 'arena_create_sub_task'] },
     },
     {
       id: 'task-project',
@@ -203,10 +200,8 @@ export const TaskManagerBlock: BlockConfig = {
     operation: { type: 'string', description: 'Operation to perform' },
   },
   outputs: {
-    ts: { type: 'string', description: 'Timestamp when response was transformed' },
-    name: { type: 'string', description: 'Task name' },
-    id: { type: 'string', description: 'Unique task identifier' },
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
+    output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
     access: ['arena_create_task'],

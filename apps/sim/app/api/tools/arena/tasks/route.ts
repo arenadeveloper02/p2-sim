@@ -1,18 +1,21 @@
 // app/api/create-task/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { env } from '@/lib/env'
 
 export async function POST(req: NextRequest) {
   const data = await req.json()
   const cookieStore = await cookies()
   const token = cookieStore.get('v2Token')?.value
+  const { workflowId, ...restData } = data
 
   const payload = {
-    ...data,
+    ...restData,
   }
 
   try {
-    const res = await fetch('https://dev-service.thearena.ai/sol/v1/tasks', {
+    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
+    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/tasks`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -74,7 +74,7 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedLabel =
-    clients.find((cl) => cl.clientId === selectedValue)?.name || 'Select client...'
+    clients?.find((cl) => cl.clientId === selectedValue)?.name || 'Select client...'
 
   const handleSelect = (clientId: string) => {
     console.log('Selected client:', clientId)

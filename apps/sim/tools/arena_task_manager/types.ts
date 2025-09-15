@@ -15,24 +15,14 @@ export type ArenaCreateTaskParams = {
   }
   'task-task'?: string
   'task-assignee': string
-}
-
-export interface ArenaCreateTaskResponse extends ToolResponse {
-  output: {
-    ts: string
-    name: string
-    id: string
-    success: boolean
+  _context: {
+    workflowId: string
   }
 }
 
-export interface SearchTaskResponse extends ToolResponse {
-  output: {
-    ts: string
-    response: SearchTaskApiResponse
-    success: boolean
-  }
-}
+export interface ArenaCreateTaskResponse extends ToolResponse {}
+
+export interface SearchTaskResponse extends ToolResponse {}
 
 export interface SearchTaskApiResponse {
   errors: string | null
