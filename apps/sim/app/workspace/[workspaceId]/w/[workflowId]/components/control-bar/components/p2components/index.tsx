@@ -41,7 +41,7 @@ export const renderApprovalButton = (
           ) {
             setGlobalActionsDisabled(true)
           } else if (e?.status === 'APPROVED' && e?.ownerId === session?.user?.id) {
-            setGlobalActionsDisabled(true)
+            setGlobalActionsDisabled(false)
           } else if (e?.status === 'PENDING' && e?.ownerId === session?.user?.id) {
             setGlobalActionsDisabled(true)
           } else {
@@ -83,34 +83,48 @@ export const renderApprovalButton = (
   }
 
   const canShowApprovalRequest =
-    !isDisabled &&
-    (approval?.status === 'NO_APPROVAL_REQUEST' || approval?.status === 'REJECTED') &&
-    approval?.userId !== session?.user?.id
+    !isDisabled && approval?.status !== 'PENDING' && approval?.ownerId === session?.user?.id
 
   const canShowApproveReject =
     !isDisabled && approval?.status === 'PENDING' && approval?.userId === session?.user?.id
 
   return (
     <>
-      {!isDisabled && approval?.status === 'REJECTED' && (
+      {!isDisabled &&
+        approval?.status === 'REJECTED' &&
+        approval?.ownerId === session?.user?.id && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='outline'
+                className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+              >
+                <CircleX className='h-5 w-5' />
+                <span className='sr-only'>Rejected</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className='max-w-[300px]'>
+              {approval?.comments
+                ? approval.comments.charAt(0).toUpperCase() +
+                  approval.comments.slice(1).toLowerCase()
+                : ''}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      {approval?.ownerId !== session?.user?.id && approval?.status === 'APPROVED' && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant='outline'
-              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-green-500 hover:text-white'
             >
-              <CircleX className='h-5 w-5' />
-              <span className='sr-only'>Rejected</span>
+              <CircleCheck className='h-5 w-5' />
+              <span className='sr-only'>Approved</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            {approval?.comments
-              ? approval.comments.charAt(0).toUpperCase() + approval.comments.slice(1).toLowerCase()
-              : ''}
-          </TooltipContent>
+          <TooltipContent>Approved</TooltipContent>
         </Tooltip>
       )}
-
       {approval?.userId !== session?.user?.id && approval?.status === 'PENDING' && (
         <Tooltip>
           <TooltipTrigger asChild>
