@@ -195,6 +195,43 @@ export const TaskManagerBlock: BlockConfig = {
         value: ['arena_search_task'],
       },
     },
+    {
+      id: 'search-task-due-date',
+      title: 'Due Date',
+      type: 'dropdown',
+      layout: 'full',
+      required: false,
+      placeholder: 'Enter due date',
+      options: [
+        { label: 'Today', id: 'today' },
+        { label: 'Tomorrow', id: 'tomorrow' },
+        { label: 'This Week', id: 'this-week' },
+        { label: 'Next Week', id: 'next-week' },
+        { label: 'Last Week', id: 'last-week' },
+        { label: 'This Month', id: 'this-month' },
+        { label: 'Next Month', id: 'next-month' },
+        { label: 'Past Dates', id: 'past-dates' },
+        { label: 'Future Dates', id: 'future-dates' },
+      ],
+      value: () => 'today',
+      condition: {
+        field: 'operation',
+        value: ['arena_search_task'],
+      },
+    },
+    {
+      id: 'search-task-assignee',
+      title: 'Search Assignee',
+      type: 'arena-assignee-selector',
+      layout: 'full',
+      required: false,
+      placeholder: 'Enter assignee name',
+      dependsOn: ['search-task-client', 'search-task-project'],
+      condition: {
+        field: 'operation',
+        value: ['arena_search_task'],
+      },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
@@ -212,6 +249,8 @@ export const TaskManagerBlock: BlockConfig = {
             return 'arena_create_task'
           case 'arena_create_sub_task':
             return 'arena_create_task'
+          case 'arena_search_task':
+            return 'arena_search_task'
           default:
             throw new Error(`Invalid Gmail operation: ${params.operation}`)
         }

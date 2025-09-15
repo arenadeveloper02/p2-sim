@@ -46,8 +46,10 @@ export interface SearchTaskQueryParams {
   'search-task-state': string
   'search-task-visibility': string
   'search-task-assignee': string
-  'search-task-from-date': string // ISO date string e.g. "2025-09-28"
-  'search-task-to-date': string // ISO date string e.g. "2025-10-01"
+  'search-task-due-date': string
+  _context: {
+    workflowId: string
+  }
 }
 
 export interface Task {

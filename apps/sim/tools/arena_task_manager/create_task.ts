@@ -3,7 +3,11 @@ import {
   type ArenaCreateTaskParams,
   type ArenaCreateTaskResponse,
 } from '@/tools/arena_task_manager/types'
-import { getArenaServiceBaseUrl, startOfDayTimestamp, isValidDate } from '@/lib/arena-utils'
+import {
+  getArenaServiceBaseUrl,
+  startOfDayTimestamp,
+  isValidDate,
+} from '@/lib/arena-utils/arena-utils'
 import Cookies from 'js-cookie'
 import { plainTextSelectors } from '@react-email/components'
 

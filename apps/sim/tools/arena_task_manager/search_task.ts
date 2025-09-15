@@ -3,9 +3,22 @@ import {
   type SearchTaskQueryParams,
   type SearchTaskResponse,
 } from '@/tools/arena_task_manager/types'
-import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
+import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
+import {
+  getToday,
+  getTomorrow,
+  getYesterday,
+  getCurrentMonth,
+  getCurrentWeek,
+  getFutureDate,
+  getPastDate,
+  getLastMonth,
+  getLastWeek,
+  getNextMonth,
+  getNextWeek,
+} from '@/lib/arena-utils/arena-date-utils'
 
-export const createTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> = {
+export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> = {
   id: 'arena_search_task',
   name: 'Arena Search Task',
   description: 'Search Tasks In Arena',
@@ -20,33 +33,45 @@ export const createTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
     },
     'search-task-name': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'Name of the task',
     },
     'search-task-client': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'Client associated with the task',
     },
     'search-task-project': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'Project under which the task belongs',
     },
     'search-task-assignee': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'User ID of the assignee',
     },
     'search-task-visbility': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'User ID of the assignee',
+    },
+    'search-task-state': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'State of the task',
+    },
+    'search-task-due-date': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Due date of the task',
     },
   },
 
@@ -74,11 +99,64 @@ export const createTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       if (params['search-task-assignee']) {
         url += `&assigneeId=${params['search-task-assignee']}`
       }
-      if (params['search-task-from-date']) {
-        url += `&fromDate=${params['search-task-from-date']}`
+      if (params._context?.workflowId) {
+        url += `&workflowId=${params._context?.workflowId}`
       }
-      if (params['search-task-to-date']) {
-        url += `&toDate=${params['search-task-to-date']}`
+
+      if (params['search-task-due-date'] === 'today') {
+        const { startDate, endDate } = getToday()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'tomorrow') {
+        const { startDate, endDate } = getTomorrow()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      //  if(params['search-task-due-date'] === 'yesterday') {
+      //     const { startDate, endDate } = getYesterday()
+      //     url += `&plannedEndDateFrom=${startDate}`
+      //     url += `&plannedEndDateTo=${endDate}`
+      //   }
+      if (params['search-task-due-date'] === 'this-week') {
+        const { startDate, endDate } = getCurrentWeek()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'next-week') {
+        const { startDate, endDate } = getNextWeek()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'last-week') {
+        const { startDate, endDate } = getLastWeek()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'this-month') {
+        const { startDate, endDate } = getCurrentMonth()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'next-month') {
+        const { startDate, endDate } = getNextMonth()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'last-month') {
+        const { startDate, endDate } = getLastMonth()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'past-date') {
+        const { startDate, endDate } = getPastDate()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
+      }
+      if (params['search-task-due-date'] === 'future-date') {
+        const { startDate, endDate } = getFutureDate()
+        url += `&plannedEndDateFrom=${startDate}`
+        url += `&plannedEndDateTo=${endDate}`
       }
 
       return url
