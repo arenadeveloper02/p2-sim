@@ -81,6 +81,11 @@ export function ArenaTaskSelector({
     }
 
     fetchTasks()
+
+    return () => {
+      setTasks([])
+      setStoreValue('')
+    }
   }, [projectId])
 
   const selectedLabel =

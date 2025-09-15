@@ -49,7 +49,8 @@ export function ArenaProjectSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
+  const clientKey = subBlockId === 'task-project' ? 'task-client' : 'search-task-client'
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
@@ -82,6 +83,11 @@ export function ArenaProjectSelector({
     }
 
     fetchProjects()
+
+    return () => {
+      setProjects([])
+      setStoreValue('')
+    }
   }, [clientId, searchQuery])
 
   const selectedLabel =

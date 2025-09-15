@@ -71,6 +71,11 @@ export function ArenaClientsSelector({
     }
 
     fetchClients()
+
+    return () => {
+      setClients([])
+      setStoreValue('')
+    }
   }, [])
 
   const selectedLabel =

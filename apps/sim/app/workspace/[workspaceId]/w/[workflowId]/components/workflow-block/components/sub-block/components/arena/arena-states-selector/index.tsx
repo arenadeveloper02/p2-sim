@@ -73,6 +73,11 @@ export function ArenaStatesSelector({
     }
 
     fetchStates()
+
+    return () => {
+      setStates([])
+      setStoreValue('')
+    }
   }, [])
 
   const selectedLabel =

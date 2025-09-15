@@ -48,8 +48,10 @@ export function ArenaAssigneeSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
-  const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
+  const clientKey = subBlockId === 'task-assignee' ? 'task-client' : 'search-task-client'
+  const projectKey = subBlockId === 'task-assignee' ? 'task-project' : 'search-task-project'
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]
+  const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue

@@ -88,6 +88,10 @@ export function ArenaGroupSelector({
     }
 
     fetchGroups()
+    return () => {
+      setGroups([])
+      setStoreValue(null)
+    }
   }, [clientId, projectId])
 
   const selectedLabel =

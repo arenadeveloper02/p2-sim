@@ -22,10 +22,10 @@ export const TaskManagerBlock: BlockConfig = {
           label: 'Create Sub Task',
           id: 'arena_create_sub_task',
         },
-        // {
-        //   label: 'Search Task',
-        //   id: 'arena_search_task',
-        // },
+        {
+          label: 'Search Task',
+          id: 'arena_search_task',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -84,7 +84,7 @@ export const TaskManagerBlock: BlockConfig = {
       required: true,
       placeholder: 'Enter group name',
       dependsOn: ['operation'],
-      condition: { field: 'operation', value: ['arena_create_task', 'arena_create_sub_task'] },
+      condition: { field: 'operation', value: ['arena_create_task'] },
     },
     {
       id: 'task-task',
@@ -184,12 +184,12 @@ export const TaskManagerBlock: BlockConfig = {
     },
     {
       id: 'search-task-assignee',
-      title: 'Assignee',
+      title: 'Search Assignee',
       type: 'arena-assignee-selector',
       layout: 'full',
       required: false,
       placeholder: 'Enter assignee name',
-      dependsOn: ['operation'],
+      dependsOn: ['search-task-client', 'search-task-project'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],

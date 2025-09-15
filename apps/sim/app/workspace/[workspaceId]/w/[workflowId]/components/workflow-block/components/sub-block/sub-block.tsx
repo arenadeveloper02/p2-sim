@@ -299,7 +299,7 @@ export function SubBlock({
       case 'arena-states-selector':
         return (
           <ArenaStatesSelector
-          blockId={blockId}
+            blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
             layout={config.layout}
