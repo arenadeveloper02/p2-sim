@@ -32,6 +32,7 @@ import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
+import { P2KnowledgeBlock } from '@/blocks/blocks/p2-knowledge'
 import { LinearBlock } from '@/blocks/blocks/linear'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
 import { McpBlock } from '@/blocks/blocks/mcp'
@@ -111,6 +112,7 @@ export const registry: Record<string, BlockConfig> = {
   jina: JinaBlock,
   jira: JiraBlock,
   knowledge: KnowledgeBlock,
+  'p2-knowledge': P2KnowledgeBlock,
   linear: LinearBlock,
   linkup: LinkupBlock,
   mcp: McpBlock,

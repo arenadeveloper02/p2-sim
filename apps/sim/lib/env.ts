@@ -35,6 +35,11 @@ export const env = createEnv({
     // Database & Storage
     POSTGRES_URL:                          z.string().url().optional(),            // Alternative PostgreSQL connection string
     REDIS_URL:                             z.string().url().optional(),            // Redis connection string for caching/sessions
+    MILVUS_HOST:                           z.string().optional(),                  // Milvus server host
+    MILVUS_PORT:                           z.number().optional(),                  // Milvus server port
+    MILVUS_USER:                           z.string().optional(),                  // Milvus username
+    MILVUS_PASSWORD:                       z.string().optional(),                  // Milvus password
+    MILVUS_DATABASE:                       z.string().optional(),                  // Milvus database name
 
     // Payment & Billing
     STRIPE_SECRET_KEY:                     z.string().min(1).optional(),           // Stripe secret key for payment processing

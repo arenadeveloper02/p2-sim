@@ -14,10 +14,10 @@ import {
   SearchInput,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { useKnowledgeBasesList } from '@/hooks/use-knowledge'
-import type { KnowledgeBaseData } from '@/stores/knowledge/store'
+import { useP2KnowledgeBasesList } from '@/hooks/use-p2-knowledge'
+import type { P2KnowledgeBaseData } from '@/hooks/use-p2-knowledge'
 
-interface KnowledgeBaseWithDocCount extends KnowledgeBaseData {
+interface KnowledgeBaseWithDocCount extends P2KnowledgeBaseData {
   docCount?: number
 }
 
@@ -26,13 +26,13 @@ export function Knowledge() {
   const workspaceId = params.workspaceId as string
 
   const { knowledgeBases, isLoading, error, addKnowledgeBase, refreshList } =
-    useKnowledgeBasesList(workspaceId)
+    useP2KnowledgeBasesList(workspaceId)
   const userPermissions = useUserPermissionsContext()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
-  const handleKnowledgeBaseCreated = (newKnowledgeBase: KnowledgeBaseData) => {
+  const handleKnowledgeBaseCreated = (newKnowledgeBase: P2KnowledgeBaseData) => {
     addKnowledgeBase(newKnowledgeBase)
   }
 

@@ -71,6 +71,12 @@ import {
   knowledgeSearchTool,
   knowledgeUploadChunkTool,
 } from '@/tools/knowledge'
+import {
+  p2KnowledgeCreateDocumentTool,
+  p2KnowledgeCreateKnowledgeBaseTool,
+  p2KnowledgeSearchTool,
+  p2KnowledgeUploadChunkTool,
+} from '@/tools/p2-knowledge'
 import { linearCreateIssueTool, linearReadIssuesTool } from '@/tools/linear'
 import { linkupSearchTool } from '@/tools/linkup'
 import { mem0AddMemoriesTool, mem0GetMemoriesTool, mem0SearchMemoriesTool } from '@/tools/mem0'
@@ -303,6 +309,10 @@ export const tools: Record<string, ToolConfig> = {
   knowledge_search: knowledgeSearchTool,
   knowledge_upload_chunk: knowledgeUploadChunkTool,
   knowledge_create_document: knowledgeCreateDocumentTool,
+  p2_knowledge_search: p2KnowledgeSearchTool,
+  p2_knowledge_upload_chunk: p2KnowledgeUploadChunkTool,
+  p2_knowledge_create_document: p2KnowledgeCreateDocumentTool,
+  p2_knowledge_create_knowledge_base: p2KnowledgeCreateKnowledgeBaseTool,
   elevenlabs_tts: elevenLabsTtsTool,
   s3_get_object: s3GetObjectTool,
   telegram_message: telegramMessageTool,

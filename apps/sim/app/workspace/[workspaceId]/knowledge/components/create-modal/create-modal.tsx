@@ -17,7 +17,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { ACCEPT_ATTRIBUTE, ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/uploads/validation'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
-import type { KnowledgeBaseData } from '@/stores/knowledge/store'
+import type { P2KnowledgeBaseData } from '@/hooks/use-p2-knowledge'
 
 const logger = createLogger('CreateModal')
 
@@ -28,7 +28,7 @@ interface FileWithPreview extends File {
 interface CreateModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onKnowledgeBaseCreated?: (knowledgeBase: KnowledgeBaseData) => void
+  onKnowledgeBaseCreated?: (knowledgeBase: P2KnowledgeBaseData) => void
 }
 
 const FormSchema = z
@@ -273,7 +273,7 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
         },
       }
 
-      const response = await fetch('/api/knowledge', {
+      const response = await fetch('/api/p2-knowledge', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
