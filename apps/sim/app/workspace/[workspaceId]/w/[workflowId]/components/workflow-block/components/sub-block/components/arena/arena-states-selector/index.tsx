@@ -18,25 +18,23 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils'
-import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
-interface Project {
-  sysId: string
+interface ArenaState {
+  id: string
   name: string
 }
 
-interface ArenaProjectSelectorProps {
+interface ArenaStatesSelectorProps {
   blockId: string
   subBlockId: string
   title: string
-  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
 }
 
-export function ArenaProjectSelector({
+export function ArenaStatesSelector({
   blockId,
   subBlockId,
   title,
@@ -44,52 +42,45 @@ export function ArenaProjectSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaProjectSelectorProps) {
+}: ArenaStatesSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
-
-  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-  const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [projects, setProjects] = React.useState<Project[]>([])
+  const [states, setStates] = React.useState<ArenaState[]>([])
   const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState('')
 
   React.useEffect(() => {
-    if (!clientId) return // No clientId, don't fetch projects
-
-    const fetchProjects = async () => {
-      setProjects([])
+    const fetchStates = async () => {
+      setStates([])
       try {
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
 
-        const url = `${baseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
+        const url = `${baseUrl}/sol/v1/state-management/state`
         const response = await axios.get(url, {
           headers: {
-            Authorisation: v2Token || '',
+            authorisation: v2Token || '',
           },
         })
 
-        setProjects(response.data.projectList || [])
+        setStates(response.data || [])
       } catch (error) {
-        console.error('Error fetching projects:', error)
-        setProjects([])
+        console.error('Error fetching states:', error)
+        setStates([])
       }
     }
 
-    fetchProjects()
-  }, [clientId, searchQuery])
+    fetchStates()
+  }, [])
 
   const selectedLabel =
-    projects.find((proj) => proj.sysId === selectedValue)?.name || 'Select project...'
+    states.find((state) => state.id === selectedValue)?.name || 'Select state...'
 
-  const handleSelect = (projectId: string) => {
+  const handleSelect = (stateId: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(projectId)
+      setStoreValue(stateId)
       setOpen(false)
     }
   }
@@ -102,9 +93,9 @@ export function ArenaProjectSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`project-${subBlockId}`}
+            id={`state-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled || !clientId} // Disable if no client selected
+            disabled={disabled}
           >
             {selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
@@ -113,30 +104,30 @@ export function ArenaProjectSelector({
         <PopoverContent className='w-full p-0'>
           <Command
             filter={(value, search) => {
-              // `value` is from CommandItem's "value" prop (sysId here)
-              // We want to match by project name too
-              const project = projects.find((p) => p.sysId === value)
-              if (!project) return 0
+              const state = states.find((s) => s.id === value || s.name === value)
+              if (!state) return 0
 
-              // Custom matching: case-insensitive substring
-              return project.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+              return state.name.toLowerCase().includes(search.toLowerCase()) ||
+                state.id.toLowerCase().includes(search.toLowerCase())
+                ? 1
+                : 0
             }}
           >
-            <CommandInput placeholder='Search projects...' className='h-9' />
+            <CommandInput placeholder='Search states...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No project found.</CommandEmpty>
+              <CommandEmpty>No state found.</CommandEmpty>
               <CommandGroup>
-                {projects.map((project) => (
+                {states.map((state) => (
                   <CommandItem
-                    key={project.sysId}
-                    value={project.sysId}
-                    onSelect={() => handleSelect(project.sysId)}
+                    key={state.id}
+                    value={state.name}
+                    onSelect={() => handleSelect(state.id)}
                   >
-                    {project.name}
+                    {state.name}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === project.sysId ? 'opacity-100' : 'opacity-0'
+                        selectedValue === state.id ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

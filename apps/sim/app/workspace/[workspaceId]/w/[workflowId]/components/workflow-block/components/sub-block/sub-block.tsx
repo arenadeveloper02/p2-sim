@@ -7,6 +7,7 @@ import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
   ArenaGroupSelector,
   ArenaClientsSelector,
+  ArenaStatesSelector,
   ArenaAssigneeSelector,
   ArenaTaskSelector,
   ArenaProjectSelector,
@@ -287,6 +288,18 @@ export function SubBlock({
         return (
           <ArenaClientsSelector
             blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-states-selector':
+        return (
+          <ArenaStatesSelector
+          blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
             layout={config.layout}

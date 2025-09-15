@@ -58,6 +58,7 @@ export type SubBlockType =
   | 'arena-group-selector'
   | 'arena-assignee-selector'
   | 'arena-task-selector'
+  | 'arena-states-selector'
 
 export type SubBlockLayout = 'full' | 'half'
 

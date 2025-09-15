@@ -1,5 +1,6 @@
 export { ArenaClientsSelector } from './arena/arena-clients-selector'
-export {ArenaTaskSelector} from './arena/arena-tasks-selector'
+export { ArenaStatesSelector } from './arena/arena-states-selector'
+export { ArenaTaskSelector } from './arena/arena-tasks-selector'
 export { ArenaGroupSelector } from './arena/arena-group-selector'
 export { ArenaProjectSelector } from './arena/arena-projects-selector'
 export { ArenaAssigneeSelector } from './arena/arena-assignee-selector'
