@@ -363,15 +363,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .from(workflow)
       .where(eq(workflow.id, sourceWorkflowId))
       .limit(1)
-    
+
     if (currentWorkflow.length > 0) {
-      const currentCollaborators = Array.isArray(currentWorkflow[0].collaborators) 
-        ? currentWorkflow[0].collaborators 
+      const currentCollaborators = Array.isArray(currentWorkflow[0].collaborators)
+        ? currentWorkflow[0].collaborators
         : []
-      const updatedCollaborators = currentCollaborators.includes(approvalUserId) 
-        ? currentCollaborators 
+      const updatedCollaborators = currentCollaborators.includes(approvalUserId)
+        ? currentCollaborators
         : [...currentCollaborators, approvalUserId]
-      
+
       await db
         .update(workflow)
         .set({
@@ -502,11 +502,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           )
         )
         .limit(1)
-        
+
       if (userWorkflowStatus.length === 0) {
         throw new Error('Workflow status not found')
       }
-      
+
       // Only create template for APPROVED actions
       if (action === 'APPROVED') {
         /**
