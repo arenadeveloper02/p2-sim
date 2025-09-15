@@ -440,16 +440,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     logger.warn(`Unauthorized workflow duplication attempt for ${workflowId}`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
   const getWorkflowApproval = await db.transaction(async (tx) => {
-    const userWorkspace = await tx
+    // First, check if this is a workflow in the APPROVAL LIST (copied workflow)
+    // by looking for a workflowStatus record where mappedWorkflowId = workflowId
+    const approvalListStatus = await tx
       .select()
       .from(workflowStatus)
       .where(
         and(
-          or(
-            eq(workflowStatus.workflowId, workflowId),
-            eq(workflowStatus.mappedWorkflowId, workflowId)
-          ),
+          eq(workflowStatus.workflowId, workflowId), // This is the approval list copy
           or(
             eq(workflowStatus.userId, session.user.id),
             eq(workflowStatus.ownerId, session.user.id)
@@ -458,11 +458,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       )
       .orderBy(desc(workflowStatus.updatedAt))
       .limit(1)
-    if (userWorkspace.length === 0) {
-      return { status: 'NO_APPROVAL_REQUEST', ownerId: session.user.id }
+
+    if (approvalListStatus.length > 0) {
+      // This is a workflow in the APPROVAL LIST, return its status
+      console.log('Found approval list workflow status:', approvalListStatus[0])
+      return approvalListStatus[0]
     }
-    return userWorkspace[0]
+
+    // If not found, check if this is an original workflow by looking for mappedWorkflowId
+    const originalWorkflowStatus = await tx
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.mappedWorkflowId, workflowId), // This is the original workflow
+          or(
+            eq(workflowStatus.userId, session.user.id),
+            eq(workflowStatus.ownerId, session.user.id)
+          )
+        )
+      )
+      .orderBy(desc(workflowStatus.updatedAt))
+      .limit(1)
+
+    if (originalWorkflowStatus.length > 0) {
+      console.log('Found original workflow status:', originalWorkflowStatus[0])
+      return originalWorkflowStatus[0]
+    }
+
+    // No approval status found
+    console.log('No approval status found for workflow:', workflowId)
+    return { status: 'NO_APPROVAL_REQUEST', ownerId: session.user.id }
   })
+
   return NextResponse.json(getWorkflowApproval, { status: 201 })
 }
 
@@ -741,38 +769,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
         // Load data from ORIGINAL workflow (not the APPROVAL LIST copy)
         const normalizedData = await loadWorkflowFromNormalizedTables(
-          userWorkflowStatus[0].mappedWorkflowId  // Original workflow ID
-        )
-
-        console.log('Loading template data from ORIGINAL workflow:', userWorkflowStatus[0].mappedWorkflowId)
-        console.log(
-          'original blocks count:',
-          normalizedData?.blocks ? Object.keys(normalizedData.blocks).length : 'no blocks'
+          userWorkflowStatus[0].mappedWorkflowId // Original workflow ID
         )
 
         // Check if a template already exists for this original workflow
         // Use userWorkflowStatus[0].workflowId which is the original owner's workflow ID
-        console.log(
-          'Looking for existing template with original workflowId:',
-          userWorkflowStatus[0].mappedWorkflowId
-        )
         const existingTemplate = await tx
           .select()
           .from(templates)
           .where(eq(templates.workflowId, userWorkflowStatus[0].mappedWorkflowId))
           .limit(1)
 
-        console.log('Found existing templates:', existingTemplate.length)
-        if (existingTemplate.length > 0) {
-          console.log('Existing template details:', existingTemplate[0])
-        }
-
         // Debug: Check all templates to see what's in the database
         const allTemplates = await tx.select().from(templates).limit(10)
-        console.log(
-          'All templates in database:',
-          allTemplates.map((t) => ({ id: t.id, workflowId: t.workflowId, name: t.name }))
-        )
 
         const templateState = {
           blocks: normalizedData?.blocks,
@@ -783,36 +792,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         if (existingTemplate.length > 0) {
-          // Delete existing template and create new one
-          console.log('🗑️ DELETING existing template with ID:', existingTemplate[0].id)
-          console.log('🗑️ Template to delete details:', {
-            id: existingTemplate[0].id,
-            workflowId: existingTemplate[0].workflowId,
-            name: existingTemplate[0].name
-          })
-          
           const deleteResult = await tx
             .delete(templates)
             .where(eq(templates.id, existingTemplate[0].id))
 
-          console.log('🗑️ Delete result:', deleteResult)
-          console.log('✅ Deleted existing template, creating new one...')
-          
           // Verify deletion
           const verifyDeletion = await tx
             .select()
             .from(templates)
             .where(eq(templates.workflowId, userWorkflowStatus[0].mappedWorkflowId))
             .limit(1)
-          
-          console.log('🔍 Verification - templates found after deletion:', verifyDeletion.length)
         }
 
         // Always create new template (either first time or after deletion)
         const templateId = uuidv4()
-        console.log('Creating new template with workflowId:', userWorkflowStatus[0].mappedWorkflowId)
-        console.log('Template ownerId (original owner):', userWorkflowStatus[0].ownerId)
-        
+
         const newTemplate = {
           id: templateId,
           workflowId: userWorkflowStatus[0].mappedWorkflowId, // Use original owner's workflow ID
@@ -829,18 +823,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           createdAt: now,
           updatedAt: now,
         }
-        
-        console.log('🆕 Creating new template for original workflow:', userWorkflowStatus[0].mappedWorkflowId)
+
         await tx.insert(templates).values(newTemplate)
-        
+
         // Final verification - count templates for this workflow
         const finalCount = await tx
           .select()
           .from(templates)
           .where(eq(templates.workflowId, userWorkflowStatus[0].mappedWorkflowId))
-        
-        console.log('📊 Final count of templates for workflow:', finalCount.length)
-        console.log('📊 Template IDs:', finalCount.map(t => t.id))
       }
 
       return userWorkflowStatus[0]

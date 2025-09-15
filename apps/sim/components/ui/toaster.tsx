@@ -51,7 +51,7 @@ const Toaster = ({
       closeButton={closeButton}
       toastOptions={{
         classNames: {
-          toast: '!bg-transparent !border-0 !shadow-none !p-0 !m-0 !w-full',
+          toast: '!bg-transparent !border-0 !shadow-none !p-0 !m-0 !w-80',
           description: '!text-current !opacity-90',
           actionButton: '!bg-white/20 !text-current hover:!bg-white/30 !border-0',
           cancelButton: '!bg-white/20 !text-current hover:!bg-white/30 !border-0',
