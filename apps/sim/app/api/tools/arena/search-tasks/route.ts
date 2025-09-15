@@ -13,9 +13,10 @@ export async function GET(req: NextRequest) {
 
     // Remove workflowId so it doesn't get sent to Arena
     searchParams.delete('workflowId')
+    const params = searchParams.toString()
 
     // Reconstruct Arena API URL with remaining params
-    const arenaUrl = `https://service.thearena.ai/sol/v1/tasks/users?${searchParams.toString()}`
+    const arenaUrl = `https://dev-service.thearena.ai/sol/v1/tasks/users?${params}`
 
     const response = await fetch(arenaUrl, {
       method: 'GET',

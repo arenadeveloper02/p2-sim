@@ -121,7 +121,10 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
     const data = await response.json()
     return {
       success: true,
-      output: data,
+      output: {
+        success: true,
+        output: data,
+      },
     }
   },
 

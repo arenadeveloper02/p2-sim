@@ -148,12 +148,12 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&plannedEndDateFrom=${startDate}`
         url += `&plannedEndDateTo=${endDate}`
       }
-      if (params['search-task-due-date'] === 'past-date') {
+      if (params['search-task-due-date'] === 'past-dates') {
         const { startDate, endDate } = getPastDate()
         url += `&plannedEndDateFrom=${startDate}`
         url += `&plannedEndDateTo=${endDate}`
       }
-      if (params['search-task-due-date'] === 'future-date') {
+      if (params['search-task-due-date'] === 'future-dates') {
         const { startDate, endDate } = getFutureDate()
         url += `&plannedEndDateFrom=${startDate}`
         url += `&plannedEndDateTo=${endDate}`
@@ -180,16 +180,18 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
     return {
       success: true,
       output: {
-        ts: new Date().toISOString(),
-        response: data,
         success: true,
+        output: data,
       },
     }
   },
 
+  //this output config will override block output config
   outputs: {
-    ts: { type: 'string', description: 'Timestamp when response was transformed' },
-    response: { type: 'object', description: 'Response from Arena' },
+    // ts: { type: 'string', description: 'Timestamp when response was transformed' },
+    // response: { type: 'object', description: 'Response from Arena' },
+    // success: { type: 'boolean', description: 'Indicates if transform was successful' },
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
+    output: { type: 'object', description: 'Output from Arena' },
   },
 }
