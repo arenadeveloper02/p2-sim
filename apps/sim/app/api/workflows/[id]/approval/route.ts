@@ -432,7 +432,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       )
       .limit(1)
     if (userWorkspace.length === 0) {
-      return { status: 'NO_APPROVAL_REQUEST' }
+      return { status: 'NO_APPROVAL_REQUEST', ownerId: session.user.id }
     }
     return userWorkspace[0]
   })
