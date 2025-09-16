@@ -3,13 +3,7 @@ import {
   type ArenaCreateTaskParams,
   type ArenaCreateTaskResponse,
 } from '@/tools/arena_task_manager/types'
-import {
-  getArenaServiceBaseUrl,
-  startOfDayTimestamp,
-  isValidDate,
-} from '@/lib/arena-utils/arena-utils'
-import Cookies from 'js-cookie'
-import { plainTextSelectors } from '@react-email/components'
+import { getArenaServiceBaseUrl, startOfDayTimestamp } from '@/lib/arena-utils/arena-utils'
 
 export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskResponse> = {
   id: 'arena_create_task',
@@ -76,11 +70,9 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
     },
     method: 'POST',
     headers: (params: ArenaCreateTaskParams) => {
-      //const v2Token = Cookies.get('v2Token')
       return {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        //Authorization: v2Token || '',
       }
     },
     body: (params: ArenaCreateTaskParams) => {

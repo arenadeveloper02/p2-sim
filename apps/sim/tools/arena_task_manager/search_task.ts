@@ -168,11 +168,9 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
     },
     method: 'GET',
     headers: (params: SearchTaskQueryParams) => {
-      //const v2Token = Cookies.get('v2Token')
       return {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        //Authorization: v2Token || '',
       }
     },
   },

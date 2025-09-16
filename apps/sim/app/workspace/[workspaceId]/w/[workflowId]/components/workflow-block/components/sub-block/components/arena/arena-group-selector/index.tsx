@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import Cookies from 'js-cookie'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
@@ -19,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
+import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 
 interface Group {
   id: string
@@ -64,7 +64,7 @@ export function ArenaGroupSelector({
     const fetchGroups = async () => {
       try {
         setGroups([])
-        const v2Token = Cookies.get('v2Token')
+        const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const url = `${arenaBackendBaseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
 

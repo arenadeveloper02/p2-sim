@@ -3,7 +3,6 @@
 import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
-import Cookies from 'js-cookie'
 import { env } from '@/lib/env'
 
 import { cn } from '@/lib/utils'
@@ -20,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Label } from '@/components/ui/label'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
+import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 
 interface Client {
   clientId: string
@@ -58,7 +58,7 @@ export function ArenaClientsSelector({
     const fetchClients = async () => {
       try {
         setClients([])
-        const v2Token = Cookies.get('v2Token')
+        const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const response = await axios.get(
           `${arenaBackendBaseUrl}/list/userservice/getclientbyuser`,

@@ -3,7 +3,6 @@
 import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
-import Cookies from 'js-cookie'
 import { env } from '@/lib/env'
 
 import { cn } from '@/lib/utils'
@@ -18,6 +17,7 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
+import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 
 interface ArenaState {
   id: string
@@ -55,7 +55,7 @@ export function ArenaStatesSelector({
     const fetchStates = async () => {
       setStates([])
       try {
-        const v2Token = Cookies.get('v2Token')
+        const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
         const url = `${arenaBackendBaseUrl}/sol/v1/state-management/state`

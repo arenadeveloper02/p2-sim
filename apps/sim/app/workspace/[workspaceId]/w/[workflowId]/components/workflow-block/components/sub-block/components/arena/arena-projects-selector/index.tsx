@@ -3,8 +3,6 @@
 import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
-import Cookies from 'js-cookie'
-
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,6 +18,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { env } from '@/lib/env'
+import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 
 interface Project {
   sysId: string
@@ -66,7 +65,7 @@ export function ArenaProjectSelector({
     const fetchProjects = async () => {
       setProjects([])
       try {
-        const v2Token = Cookies.get('v2Token')
+        const v2Token = await getArenaToken()
         const baseUrl = getArenaServiceBaseUrl()
 
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
