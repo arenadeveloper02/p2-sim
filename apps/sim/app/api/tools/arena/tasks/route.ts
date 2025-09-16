@@ -2,13 +2,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { env } from '@/lib/env'
+import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 
 export async function POST(req: NextRequest) {
   const data = await req.json()
   const cookieStore = await cookies()
   const token = cookieStore.get('v2Token')?.value
   const { workflowId, ...restData } = data
-
+  const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+  if (tokenObject.found === false) {
+    return NextResponse.json(
+      { error: 'Failed to create task', details: tokenObject.reason },
+      { status: 400 }
+    )
+  }
+  const { arenaToken } = tokenObject
   const payload = {
     ...restData,
   }
@@ -19,7 +27,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        authorisation: token || '', // ⬅️ Use env var for security
+        authorisation: arenaToken || '', // ⬅️ Use env var for security
       },
       body: JSON.stringify(payload),
     })
