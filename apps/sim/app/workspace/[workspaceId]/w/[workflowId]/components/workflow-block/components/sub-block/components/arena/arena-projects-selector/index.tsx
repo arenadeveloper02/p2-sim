@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
+import { env } from '@/lib/env'
 
 interface Project {
   sysId: string
@@ -68,7 +69,8 @@ export function ArenaProjectSelector({
         const v2Token = Cookies.get('v2Token')
         const baseUrl = getArenaServiceBaseUrl()
 
-        const url = `${baseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
+        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        const url = `${arenaBackendBaseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',

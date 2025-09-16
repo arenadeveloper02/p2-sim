@@ -198,6 +198,7 @@ export const TaskManagerBlock: BlockConfig = {
         { label: 'Last Week', id: 'last-week' },
         { label: 'This Month', id: 'this-month' },
         { label: 'Next Month', id: 'next-month' },
+        { label: 'Last Month', id: 'last-month' },
         // { label: 'Past Dates', id: 'past-dates' },
         // { label: 'Future Dates', id: 'future-dates' },
       ],

@@ -4,7 +4,7 @@ import * as React from 'react'
 import axios from 'axios'
 import Cookies from 'js-cookie'
 import { Check, ChevronsUpDown } from 'lucide-react'
-
+import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -65,8 +65,8 @@ export function ArenaGroupSelector({
       try {
         setGroups([])
         const v2Token = Cookies.get('v2Token')
-        const baseUrl = getArenaServiceBaseUrl()
-        const url = `${baseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
+        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        const url = `${arenaBackendBaseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
 
         const response = await axios.get(url, {
           headers: {

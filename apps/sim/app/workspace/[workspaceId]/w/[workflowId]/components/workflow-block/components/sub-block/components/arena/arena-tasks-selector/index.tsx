@@ -4,7 +4,7 @@ import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import Cookies from 'js-cookie'
-
+import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -64,9 +64,9 @@ export function ArenaTaskSelector({
       setTasks([])
       try {
         const v2Token = Cookies.get('v2Token')
-        const baseUrl = getArenaServiceBaseUrl()
+        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
-        const url = `${baseUrl}/sol/v1/tasks/deliverable/list?projectId=${projectId}`
+        const url = `${arenaBackendBaseUrl}/sol/v1/tasks/deliverable/list?projectId=${projectId}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',

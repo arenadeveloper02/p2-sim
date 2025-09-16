@@ -4,6 +4,7 @@ import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import Cookies from 'js-cookie'
+import { env } from '@/lib/env'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -58,12 +59,15 @@ export function ArenaClientsSelector({
       try {
         setClients([])
         const v2Token = Cookies.get('v2Token')
-        const baseUrl = getArenaServiceBaseUrl()
-        const response = await axios.get(`${baseUrl}/list/userservice/getclientbyuser`, {
-          headers: {
-            Authorisation: v2Token || '',
-          },
-        })
+        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        const response = await axios.get(
+          `${arenaBackendBaseUrl}/list/userservice/getclientbyuser`,
+          {
+            headers: {
+              Authorisation: v2Token || '',
+            },
+          }
+        )
         setClients(response.data.response || [])
       } catch (error) {
         console.error('Error fetching clients:', error)
