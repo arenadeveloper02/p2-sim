@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createKnowledgeBase, getKnowledgeBases } from '@/lib/knowledge/service'
 import { createLogger } from '@/lib/logs/console/logger'
+import { generateRequestId } from '@/lib/utils'
 
 const logger = createLogger('KnowledgeBaseAPI')
 
@@ -30,7 +31,7 @@ const CreateKnowledgeBaseSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
 
   try {
     const session = await getSession()
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
 
   try {
     const session = await getSession()

@@ -4,7 +4,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env, isTruthy } from '@/lib/env'
+import { IdempotencyService, webhookIdempotency } from '@/lib/idempotency/service'
 import { createLogger } from '@/lib/logs/console/logger'
+import { generateRequestId } from '@/lib/utils'
 import {
   handleSlackChallenge,
   handleWhatsAppVerification,
@@ -27,7 +29,7 @@ export const runtime = 'nodejs'
  * Handles verification requests from webhook providers and confirms endpoint exists.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string }> }) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
 
   try {
     const path = (await params).path
@@ -83,7 +85,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ path: string }> }
 ) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   let foundWorkflow: any = null
   let foundWebhook: any = null
 
@@ -327,7 +329,7 @@ export async function POST(
     // Continue processing - better to risk usage limit bypass than fail webhook
   }
 
-  // --- PHASE 5: Queue webhook execution (trigger.dev or direct based on env) ---
+  // --- PHASE 5: Idempotent webhook execution ---
   try {
     const payload = {
       webhookId: foundWebhook.id,
@@ -340,22 +342,44 @@ export async function POST(
       blockId: foundWebhook.blockId,
     }
 
-    const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+    const idempotencyKey = IdempotencyService.createWebhookIdempotencyKey(
+      foundWebhook.id,
+      body,
+      Object.fromEntries(request.headers.entries())
+    )
 
-    if (useTrigger) {
-      const handle = await tasks.trigger('webhook-execution', payload)
-      logger.info(
-        `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
-      )
-    } else {
-      // Fire-and-forget direct execution to avoid blocking webhook response
-      void executeWebhookJob(payload).catch((error) => {
-        logger.error(`[${requestId}] Direct webhook execution failed`, error)
-      })
-      logger.info(
-        `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
-      )
-    }
+    const result = await webhookIdempotency.executeWithIdempotency(
+      foundWebhook.provider,
+      idempotencyKey,
+      async () => {
+        const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+
+        if (useTrigger) {
+          const handle = await tasks.trigger('webhook-execution', payload)
+          logger.info(
+            `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
+          )
+          return {
+            method: 'trigger.dev',
+            taskId: handle.id,
+            status: 'queued',
+          }
+        }
+        // Fire-and-forget direct execution to avoid blocking webhook response
+        void executeWebhookJob(payload).catch((error) => {
+          logger.error(`[${requestId}] Direct webhook execution failed`, error)
+        })
+        logger.info(
+          `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
+        )
+        return {
+          method: 'direct',
+          status: 'queued',
+        }
+      }
+    )
+
+    logger.debug(`[${requestId}] Webhook execution result:`, result)
 
     // Return immediate acknowledgment with provider-specific format
     if (foundWebhook.provider === 'microsoftteams') {

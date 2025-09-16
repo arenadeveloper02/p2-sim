@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useChatStore } from '@/stores/panel/chat/store'
@@ -237,6 +237,7 @@ export function Panel() {
   const handleClosePanel = () => {
     togglePanel()
     setFullScreen(false)
+    setParentTemplateId('')
   }
 
   // Resize functionality
@@ -305,12 +306,12 @@ export function Panel() {
       <div
         className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
       >
-        {parentTemplateId && isOpen && isFullScreenExpanded && (
+        {parentTemplateId && isFullScreenExpanded && (
           <button
             onClick={() => {
               handleViewWorkflow()
             }}
-            className={`panel-tab-base !text-white absolute right-[102%] inline-flex w-[128px] flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-blue-500 py-1 font-[450] text-sm outline-none transition-colors duration-200`}
+            className={`panel-tab-base !text-white absolute right-[102%] inline-flex w-[128px] flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-[var(--brand-primary-hover-hex)] py-1 font-[450] text-sm outline-none transition-colors duration-200`}
           >
             View workflow
           </button>
@@ -323,6 +324,7 @@ export function Panel() {
         >
           Chat
         </button>
+
         <button
           onClick={() => handleTabClick('console')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
@@ -331,22 +333,26 @@ export function Panel() {
         >
           Console
         </button>
-        <button
-          onClick={() => handleTabClick('copilot')}
-          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-            isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
-          }`}
-        >
-          Copilot
-        </button>
-        {/* <button
-          onClick={() => handleTabClick('variables')}
-          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-            isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
-          }`}
-        >
-          Variables
-        </button> */}
+        {!isFullScreenExpanded && !parentTemplateId && (
+          <button
+            onClick={() => handleTabClick('copilot')}
+            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+              isOpen && activeTab === 'copilot' ? 'panel-tab-active' : 'panel-tab-inactive'
+            }`}
+          >
+            Copilot
+          </button>
+        )}
+        {false && (
+          <button
+            onClick={() => handleTabClick('variables')}
+            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+              isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+            }`}
+          >
+            Variables
+          </button>
+        )}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}
@@ -358,10 +364,12 @@ export function Panel() {
           }}
         >
           {/* Invisible resize handle */}
-          <div
-            className='-left-1 absolute top-0 bottom-0 w-2 cursor-col-resize'
-            onMouseDown={handleResizeStart}
-          />
+          {!isFullScreenExpanded && (
+            <div
+              className='-left-1 absolute top-0 bottom-0 w-2 cursor-col-resize'
+              onMouseDown={handleResizeStart}
+            />
+          )}
 
           {/* Header - Fixed width content */}
           <div className='flex items-center justify-between px-3 pt-3 pb-1'>
@@ -378,7 +386,9 @@ export function Panel() {
                       <ArrowDownToLine className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Export console data</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Export console data</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               {activeTab === 'chat' && (
@@ -392,7 +402,9 @@ export function Panel() {
                       <ArrowDownToLine className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Export chat data</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Export chat data</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               {activeTab === 'copilot' && (
@@ -408,7 +420,9 @@ export function Panel() {
                         <Plus className='h-4 w-4' strokeWidth={2} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side='bottom'>New chat</TooltipContent>
+                    <TooltipPortal>
+                      <TooltipContent side='bottom'>New chat</TooltipContent>
+                    </TooltipPortal>
                   </Tooltip>
 
                   {/* History Dropdown */}
@@ -427,7 +441,9 @@ export function Panel() {
                           </button>
                         </TooltipTrigger>
                       </DropdownMenuTrigger>
-                      <TooltipContent side='bottom'>Chat history</TooltipContent>
+                      <TooltipPortal>
+                        <TooltipContent side='bottom'>Chat history</TooltipContent>
+                      </TooltipPortal>
                     </Tooltip>
                     <DropdownMenuContent
                       align='end'
@@ -469,7 +485,10 @@ export function Panel() {
                                         ? 'bg-accent'
                                         : 'hover:bg-accent/50'
                                     }`}
-                                    style={{ width: '176px', maxWidth: '176px' }}
+                                    style={{
+                                      width: '176px',
+                                      maxWidth: '176px',
+                                    }}
                                   >
                                     <span
                                       className={`min-w-0 flex-1 truncate font-medium text-sm ${
@@ -508,7 +527,9 @@ export function Panel() {
                       <CircleSlash className='h-4 w-4' strokeWidth={2} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side='bottom'>Clear {activeTab}</TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent side='bottom'>Clear {activeTab}</TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
               <Tooltip>
@@ -521,7 +542,9 @@ export function Panel() {
                     <X className='h-4 w-4' strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side='bottom'>Close panel</TooltipContent>
+                <TooltipPortal>
+                  <TooltipContent side='bottom'>Close panel</TooltipContent>
+                </TooltipPortal>
               </Tooltip>
             </div>
           </div>
@@ -529,16 +552,36 @@ export function Panel() {
           {/* Panel Content Area - Resizable */}
           <div className='flex-1 overflow-hidden px-3'>
             {/* Keep all tabs mounted but hidden to preserve state and animations */}
-            <div style={{ display: activeTab === 'chat' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'chat' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Chat chatMessage={chatMessage} setChatMessage={setChatMessage} />
             </div>
-            <div style={{ display: activeTab === 'console' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'console' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Console panelWidth={panelWidth} />
             </div>
-            <div style={{ display: activeTab === 'copilot' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'copilot' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Copilot ref={copilotRef} panelWidth={panelWidth} />
             </div>
-            <div style={{ display: activeTab === 'variables' ? 'block' : 'none', height: '100%' }}>
+            <div
+              style={{
+                display: activeTab === 'variables' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
               <Variables />
             </div>
           </div>

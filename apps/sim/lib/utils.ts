@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 import { type ClassValue, clsx } from 'clsx'
-import { nanoid } from 'nanoid'
 import { twMerge } from 'tailwind-merge'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -266,11 +265,19 @@ export function formatDuration(durationMs: number): string {
 }
 
 /**
- * Generates a standardized API key with the 'sim_' prefix
- * @returns A new API key string
+ * Generates a secure random password
+ * @param length - The length of the password (default: 24)
+ * @returns A new secure password string
  */
-export function generateApiKey(): string {
-  return `sim_${nanoid(32)}`
+export function generatePassword(length = 24): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_-+='
+  let result = ''
+
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+
+  return result
 }
 
 /**
@@ -390,6 +397,13 @@ export function getAssetUrl(filename: string) {
     return `${cdnBaseUrl}/${filename}`
   }
   return `/${filename}`
+}
+
+/**
+ * Generate a short request ID for correlation
+ */
+export function generateRequestId(): string {
+  return crypto.randomUUID().slice(0, 8)
 }
 
 /**

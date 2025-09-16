@@ -1,8 +1,7 @@
-import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
 import { getSession } from '@/lib/auth'
-import { db } from '@/db'
-import { apiKey as apiKeyTable } from '@/db/schema'
+import { generateRequestId } from '@/lib/utils'
 
 export type { NotificationStatus } from '@/lib/copilot/types'
 
@@ -32,7 +31,7 @@ export function createRequestId(): string {
 }
 
 export function createShortRequestId(): string {
-  return crypto.randomUUID().slice(0, 8)
+  return generateRequestId()
 }
 
 export interface RequestTracker {
@@ -61,14 +60,10 @@ export async function authenticateCopilotRequest(req: NextRequest): Promise<Copi
   if (!userId) {
     const apiKeyHeader = req.headers.get('x-api-key')
     if (apiKeyHeader) {
-      const [apiKeyRecord] = await db
-        .select({ userId: apiKeyTable.userId })
-        .from(apiKeyTable)
-        .where(eq(apiKeyTable.key, apiKeyHeader))
-        .limit(1)
-
-      if (apiKeyRecord) {
-        userId = apiKeyRecord.userId
+      const result = await authenticateApiKeyFromHeader(apiKeyHeader)
+      if (result.success) {
+        userId = result.userId!
+        await updateApiKeyLastUsed(result.keyId!)
       }
     }
   }

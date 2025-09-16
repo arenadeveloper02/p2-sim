@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { createLogger } from '@/lib/logs/console/logger'
 import { FolderItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/folder-tree/components/folder-item'
 import { WorkflowItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/folder-tree/components/workflow-item'
+import { useWorkflowStore } from '@/stores'
 import { type FolderTreeNode, useFolderStore } from '@/stores/folders/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
@@ -394,6 +395,7 @@ export function FolderTree({
     setExpanded,
   } = useFolderStore()
   const { updateWorkflow } = useWorkflowRegistry()
+  const usedTemplatesList = useWorkflowStore((state) => state.usedTemplatesList)
 
   // Memoize the active workflow's folder ID to avoid unnecessary re-runs
   const activeWorkflowFolderId = useMemo(() => {
@@ -561,6 +563,9 @@ export function FolderTree({
               level={-1}
               isDragOver={rootDragOver}
               isFirstItem={folderTree.length === 0 && index === 0}
+              isUsedTemplateObj={usedTemplatesList?.filter(
+                (templateItem: any) => templateItem?.workflowId === workflow?.id
+              )}
             />
           ))}
 

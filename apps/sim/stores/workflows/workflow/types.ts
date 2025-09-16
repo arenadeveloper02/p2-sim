@@ -142,6 +142,7 @@ export interface WorkflowState {
   deploymentStatuses?: Record<string, DeploymentStatus>
   needsRedeployment?: boolean
   hasActiveWebhook?: boolean
+  usedTemplatesList?: string[]
 }
 
 // New interface for sync control
@@ -203,6 +204,7 @@ export interface WorkflowActions {
   revertToDeployedState: (deployedState: WorkflowState) => void
   toggleBlockAdvancedMode: (id: string) => void
   toggleBlockTriggerMode: (id: string) => void
+  setUsedTemplatesList: (usedTemplatesList: string[]) => void
 
   // Add the sync control methods to the WorkflowActions interface
   sync: SyncControl
