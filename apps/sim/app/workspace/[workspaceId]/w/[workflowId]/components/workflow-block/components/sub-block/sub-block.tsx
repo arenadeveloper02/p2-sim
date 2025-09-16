@@ -28,6 +28,9 @@ import {
   InputFormat,
   KnowledgeBaseSelector,
   LongInput,
+  McpDynamicArgs,
+  McpServerSelector,
+  McpToolSelector,
   ProjectSelectorInput,
   ResponseFormat,
   ScheduleConfig,
@@ -571,6 +574,36 @@ export function SubBlock({
           <ChannelSelectorInput
             blockId={blockId}
             subBlock={config}
+            disabled={isDisabled}
+            isPreview={isPreview}
+            previewValue={previewValue}
+          />
+        )
+      case 'mcp-server-selector':
+        return (
+          <McpServerSelector
+            blockId={blockId}
+            subBlock={config}
+            disabled={isDisabled}
+            isPreview={isPreview}
+            previewValue={previewValue}
+          />
+        )
+      case 'mcp-tool-selector':
+        return (
+          <McpToolSelector
+            blockId={blockId}
+            subBlock={config}
+            disabled={isDisabled}
+            isPreview={isPreview}
+            previewValue={previewValue}
+          />
+        )
+      case 'mcp-dynamic-args':
+        return (
+          <McpDynamicArgs
+            blockId={blockId}
+            subBlockId={config.id}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}

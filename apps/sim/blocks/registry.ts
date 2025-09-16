@@ -35,6 +35,7 @@ import { TaskManagerBlock } from '@/blocks/blocks/task_manager'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LinearBlock } from '@/blocks/blocks/linear'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
+import { McpBlock } from '@/blocks/blocks/mcp'
 import { Mem0Block } from '@/blocks/blocks/mem0'
 import { MemoryBlock } from '@/blocks/blocks/memory'
 import { MicrosoftExcelBlock } from '@/blocks/blocks/microsoft_excel'
@@ -113,6 +114,7 @@ export const registry: Record<string, BlockConfig> = {
   knowledge: KnowledgeBlock,
   linear: LinearBlock,
   linkup: LinkupBlock,
+  mcp: McpBlock,
   mem0: Mem0Block,
   microsoft_excel: MicrosoftExcelBlock,
   microsoft_planner: MicrosoftPlannerBlock,

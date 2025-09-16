@@ -7,7 +7,7 @@ export const ConfluenceBlock: BlockConfig<ConfluenceResponse> = {
   name: 'Confluence',
   description: 'Interact with Confluence',
   longDescription:
-    'Connect to Confluence workspaces to retrieve and search documentation. Access page content, metadata, and integrate Confluence documentation into your workflows.',
+    'Integrate Confluence into the workflow. Can read and update a page. Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/confluence',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -55,6 +55,7 @@ export const ConfluenceBlock: BlockConfig<ConfluenceResponse> = {
       title: 'Select Page',
       type: 'file-selector',
       layout: 'full',
+      canonicalParamId: 'pageId',
       provider: 'confluence',
       serviceId: 'confluence',
       placeholder: 'Select Confluence page',
@@ -67,6 +68,7 @@ export const ConfluenceBlock: BlockConfig<ConfluenceResponse> = {
       title: 'Page ID',
       type: 'short-input',
       layout: 'full',
+      canonicalParamId: 'pageId',
       placeholder: 'Enter Confluence page ID',
       mode: 'advanced',
     },
@@ -112,7 +114,7 @@ export const ConfluenceBlock: BlockConfig<ConfluenceResponse> = {
         }
 
         return {
-          accessToken: credential,
+          credential,
           pageId: effectivePageId,
           ...rest,
         }

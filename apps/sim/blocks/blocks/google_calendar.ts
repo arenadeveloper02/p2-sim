@@ -7,7 +7,7 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
   name: 'Google Calendar',
   description: 'Manage Google Calendar events',
   longDescription:
-    "Integrate Google Calendar functionality to create, read, update, and list calendar events within your workflow. Automate scheduling, check availability, and manage events using OAuth authentication. Email invitations are sent asynchronously and delivery depends on recipients' Google Calendar settings.",
+    'Integrate Google Calendar into the workflow. Can create, read, update, and list calendar events. Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/google_calendar',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -44,6 +44,7 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
       title: 'Calendar',
       type: 'file-selector',
       layout: 'full',
+      canonicalParamId: 'calendarId',
       provider: 'google-calendar',
       serviceId: 'google-calendar',
       requiredScopes: ['https://www.googleapis.com/auth/calendar'],
@@ -57,6 +58,7 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
       title: 'Calendar ID',
       type: 'short-input',
       layout: 'full',
+      canonicalParamId: 'calendarId',
       placeholder: 'Enter calendar ID (e.g., primary or calendar@gmail.com)',
       mode: 'advanced',
     },
@@ -269,7 +271,7 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
         }
 
         return {
-          accessToken: credential,
+          credential,
           ...processedParams,
         }
       },

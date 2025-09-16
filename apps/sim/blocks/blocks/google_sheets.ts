@@ -7,7 +7,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
   name: 'Google Sheets',
   description: 'Read, write, and update data',
   longDescription:
-    'Integrate Google Sheets functionality to manage spreadsheet data. Read data from specific ranges, write new data, update existing cells, and append data to the end of sheets using OAuth authentication. Supports various input and output formats for flexible data handling.',
+    'Integrate Google Sheets into the workflow. Can read, write, append, and update data. Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/google_sheets',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -45,6 +45,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       title: 'Select Sheet',
       type: 'file-selector',
       layout: 'full',
+      canonicalParamId: 'spreadsheetId',
       provider: 'google-drive',
       serviceId: 'google-drive',
       requiredScopes: [],
@@ -59,6 +60,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       title: 'Spreadsheet ID',
       type: 'short-input',
       layout: 'full',
+      canonicalParamId: 'spreadsheetId',
       placeholder: 'ID of the spreadsheet (from URL)',
       dependsOn: ['credential'],
       mode: 'advanced',
@@ -174,18 +176,13 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       params: (params) => {
         const { credential, values, spreadsheetId, manualSpreadsheetId, ...rest } = params
 
-        // Parse values from JSON string to array if it exists
         const parsedValues = values ? JSON.parse(values as string) : undefined
 
-        // Use the selected spreadsheet ID or the manually entered one
-        // If spreadsheetId is provided, it's from the file selector and contains the file ID
-        // If not, fall back to manually entered ID
+        // Handle both selector and manual input
         const effectiveSpreadsheetId = (spreadsheetId || manualSpreadsheetId || '').trim()
 
         if (!effectiveSpreadsheetId) {
-          throw new Error(
-            'Spreadsheet ID is required. Please select a spreadsheet or enter an ID manually.'
-          )
+          throw new Error('Spreadsheet ID is required.')
         }
 
         return {

@@ -7,7 +7,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   name: 'Google Docs',
   description: 'Read, write, and create documents',
   longDescription:
-    'Integrate Google Docs functionality to manage documents. Read content from existing documents, write to documents, and create new documents using OAuth authentication. Supports text content manipulation for document creation and editing.',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents. Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/google_docs',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -44,6 +44,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       title: 'Select Document',
       type: 'file-selector',
       layout: 'full',
+      canonicalParamId: 'documentId',
       provider: 'google-drive',
       serviceId: 'google-drive',
       requiredScopes: [],
@@ -59,6 +60,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       title: 'Document ID',
       type: 'short-input',
       layout: 'full',
+      canonicalParamId: 'documentId',
       placeholder: 'Enter document ID',
       dependsOn: ['credential'],
       mode: 'advanced',
@@ -80,6 +82,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       title: 'Select Parent Folder',
       type: 'file-selector',
       layout: 'full',
+      canonicalParamId: 'folderId',
       provider: 'google-drive',
       serviceId: 'google-drive',
       requiredScopes: [],
@@ -95,6 +98,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       title: 'Parent Folder ID',
       type: 'short-input',
       layout: 'full',
+      canonicalParamId: 'folderId',
       placeholder: 'Enter parent folder ID (leave empty for root folder)',
       dependsOn: ['credential'],
       mode: 'advanced',
@@ -139,13 +143,14 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
         const { credential, documentId, manualDocumentId, folderSelector, folderId, ...rest } =
           params
 
+        // Handle both selector and manual inputs
         const effectiveDocumentId = (documentId || manualDocumentId || '').trim()
         const effectiveFolderId = (folderSelector || folderId || '').trim()
 
         return {
           ...rest,
-          documentId: effectiveDocumentId,
-          folderId: effectiveFolderId,
+          documentId: effectiveDocumentId || undefined,
+          folderId: effectiveFolderId || undefined,
           credential,
         }
       },
