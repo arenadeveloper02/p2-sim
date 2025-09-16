@@ -982,6 +982,7 @@ export function Sidebar() {
                     marketplaceWorkflows={tempWorkflows}
                     isLoading={isLoading}
                     onCreateWorkflow={handleCreateWorkflow}
+                    activeWorkspace={activeWorkspace}
                   />
                 </div>
               </ScrollArea>

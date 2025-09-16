@@ -14,6 +14,11 @@ interface SlackChannel {
   is_private: boolean
   is_archived: boolean
   is_member: boolean
+  is_general?: boolean
+  is_channel?: boolean
+  is_group?: boolean
+  is_mpim?: boolean
+  is_im?: boolean
 }
 
 export async function POST(request: Request) {
@@ -93,27 +98,35 @@ export async function POST(request: Request) {
       }
     }
 
-    // Filter to channels the bot can access and format the response
-    const channels = (data || [])
+    // Filter to only active channels (not archived)
+    const channels = (data.channels || [])
       .filter((channel: SlackChannel) => {
-        const canAccess = !channel.is_archived && (channel.is_member || !channel.is_private)
+        // Only include active (non-archived) channels
+        const isActive = !channel.is_archived
 
-        if (!canAccess) {
+        if (!isActive) {
           logger.debug(
-            `Filtering out channel: ${channel.name} (archived: ${channel.is_archived}, private: ${channel.is_private}, member: ${channel.is_member})`
+            `Filtering out archived channel: ${channel.name} (archived: ${channel.is_archived})`
           )
         }
 
-        return canAccess
+        return isActive
       })
       .map((channel: SlackChannel) => ({
         id: channel.id,
         name: channel.name,
         isPrivate: channel.is_private,
+        isMember: channel.is_member,
+        isGeneral: channel.is_general,
+        isChannel: channel.is_channel,
+        isGroup: channel.is_group,
+        isMpim: channel.is_mpim,
+        isIm: channel.is_im,
       }))
 
-    logger.info(`Successfully fetched ${channels.length} Slack channels`, {
-      total: data.length || 0,
+    logger.info(`Successfully fetched ${channels.length} active Slack channels`, {
+      total: data.channels?.length || 0,
+      active: channels.length,
       private: channels.filter((c: { isPrivate: boolean }) => c.isPrivate).length,
       public: channels.filter((c: { isPrivate: boolean }) => !c.isPrivate).length,
       tokenType: isBotToken ? 'bot_token' : 'oauth',
@@ -130,9 +143,10 @@ export async function POST(request: Request) {
 
 async function fetchSlackChannels(accessToken: string, includePrivate = true) {
   const allChannels: any[] = []
-  let cursor: string | undefined
+  let cursor: string | undefined = undefined
+  let hasMore = true
 
-  do {
+  while (hasMore) {
     const url = new URL('https://slack.com/api/conversations.list')
 
     if (includePrivate) {
@@ -142,7 +156,8 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     url.searchParams.append('exclude_archived', 'true')
-    url.searchParams.append('limit', '1000') // max Slack allows
+    url.searchParams.append('limit', '200')
+
     if (cursor) {
       url.searchParams.append('cursor', cursor)
     }
@@ -165,12 +180,27 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
       throw new Error(data.error || 'Failed to fetch channels')
     }
 
-    if (data.channels) {
+    // Add channels from this page to our collection
+    if (data.channels && Array.isArray(data.channels)) {
       allChannels.push(...data.channels)
     }
 
-    cursor = data.response_metadata?.next_cursor || undefined
-  } while (cursor)
+    // Check if there are more pages
+    hasMore = data.response_metadata?.next_cursor ? true : false
+    cursor = data.response_metadata?.next_cursor
 
-  return allChannels
+    // Safety check to prevent infinite loops
+    if (allChannels.length > 10000) {
+      console.warn('Reached 10,000 channels limit, stopping pagination')
+      break
+    }
+  }
+
+  return {
+    ok: true,
+    channels: allChannels,
+    response_metadata: {
+      next_cursor: undefined,
+    },
+  }
 }
