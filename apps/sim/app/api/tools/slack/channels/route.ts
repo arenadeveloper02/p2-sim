@@ -68,19 +68,19 @@ export async function POST(request: Request) {
     try {
       logger.info('Attempting to fetch Slack channels (including private channels)', {
         tokenType: isBotToken ? 'bot_token' : 'oauth',
-        requestId
+        requestId,
       })
       data = await fetchSlackChannels(accessToken, true)
       logger.info('Successfully fetched channels including private channels', {
         totalChannels: data.channels?.length || 0,
-        requestId
+        requestId,
       })
     } catch (error) {
       const errorMessage = (error as Error).message
       logger.error('Failed to fetch channels with private channels included', {
         error: errorMessage,
         tokenType: isBotToken ? 'bot_token' : 'oauth',
-        requestId
+        requestId,
       })
 
       if (isBotToken) {
@@ -92,20 +92,21 @@ export async function POST(request: Request) {
           data = await fetchSlackChannels(accessToken, false)
           logger.info('Successfully fetched public channels only', {
             totalChannels: data.channels?.length || 0,
-            requestId
+            requestId,
           })
         } catch (fallbackError) {
           const fallbackErrorMessage = (fallbackError as Error).message
           logger.error('Failed to fetch channels even with public-only fallback', {
             error: fallbackErrorMessage,
             originalError: errorMessage,
-            requestId
+            requestId,
           })
           return NextResponse.json(
-            { 
+            {
               error: `Slack API error: ${fallbackErrorMessage}`,
-              details: 'Unable to fetch any channels. Please check your Slack app permissions and token validity.',
-              requestId
+              details:
+                'Unable to fetch any channels. Please check your Slack app permissions and token validity.',
+              requestId,
             },
             { status: 400 }
           )
@@ -113,13 +114,14 @@ export async function POST(request: Request) {
       } else {
         logger.error('OAuth token failed to fetch channels', {
           error: errorMessage,
-          requestId
+          requestId,
         })
         return NextResponse.json(
-          { 
+          {
             error: `Slack API error: ${errorMessage}`,
-            details: 'Please ensure your Slack app has the required permissions and the token is valid.',
-            requestId
+            details:
+              'Please ensure your Slack app has the required permissions and the token is valid.',
+            requestId,
           },
           { status: 400 }
         )
@@ -157,10 +159,10 @@ export async function POST(request: Request) {
     }))
 
     // Log detailed filtering information
-    const privateChannels = filteredChannels.filter(c => c.is_private).length
-    const publicChannels = filteredChannels.filter(c => !c.is_private).length
-    const archivedChannels = allChannels.filter(c => c.is_archived).length
-    const privateNotMember = allChannels.filter(c => c.is_private && !c.is_member).length
+    const privateChannels = filteredChannels.filter((c) => c.is_private).length
+    const publicChannels = filteredChannels.filter((c) => !c.is_private).length
+    const archivedChannels = allChannels.filter((c) => c.is_archived).length
+    const privateNotMember = allChannels.filter((c) => c.is_private && !c.is_member).length
 
     logger.info(`Channel filtering results:`, {
       total: allChannels.length,
@@ -170,7 +172,7 @@ export async function POST(request: Request) {
       excluded: {
         archived: archivedChannels,
         privateNotMember: privateNotMember,
-      }
+      },
     })
 
     logger.info(`Successfully fetched ${channels.length} Slack channels`, {
@@ -207,12 +209,14 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
 
     url.searchParams.append('exclude_archived', 'true')
     url.searchParams.append('limit', '1000') // Use maximum limit for fewer API calls
-    
+
     if (cursor) {
       url.searchParams.append('cursor', cursor)
     }
 
-    logger.debug(`Fetching Slack channels page ${pageCount + 1}${cursor ? ` with cursor: ${cursor}` : ''}`)
+    logger.debug(
+      `Fetching Slack channels page ${pageCount + 1}${cursor ? ` with cursor: ${cursor}` : ''}`
+    )
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -237,7 +241,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
       channelsCount: data.channels?.length || 0,
       hasResponseMetadata: !!data.response_metadata,
       nextCursor: data.response_metadata?.next_cursor || 'none',
-      totalChannelsSoFar: allChannels.length
+      totalChannelsSoFar: allChannels.length,
     })
 
     // Add channels from this page
@@ -253,11 +257,13 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     cursor = nextCursor
     pageCount++
 
-    logger.debug(`Page ${pageCount} complete. Has more pages: ${hasMore}, Next cursor: ${nextCursor || 'none'}`)
+    logger.debug(
+      `Page ${pageCount} complete. Has more pages: ${hasMore}, Next cursor: ${nextCursor || 'none'}`
+    )
 
     // Add a small delay to respect rate limits
     if (hasMore) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
     }
   }
 
@@ -265,22 +271,27 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     logger.warn(`Reached maximum page limit (${maxPages}) while fetching Slack channels`)
   }
 
-  logger.info(`Completed pagination: fetched ${allChannels.length} total channels across ${pageCount} pages`, {
-    finalPageCount: pageCount,
-    totalChannels: allChannels.length,
-    hasMore: hasMore,
-    finalCursor: cursor
-  })
+  logger.info(
+    `Completed pagination: fetched ${allChannels.length} total channels across ${pageCount} pages`,
+    {
+      finalPageCount: pageCount,
+      totalChannels: allChannels.length,
+      hasMore: hasMore,
+      finalCursor: cursor,
+    }
+  )
 
   if (hasMore && pageCount >= maxPages) {
-    logger.warn(`Pagination stopped at maximum page limit (${maxPages}) but more channels may be available`)
+    logger.warn(
+      `Pagination stopped at maximum page limit (${maxPages}) but more channels may be available`
+    )
   }
 
   return {
     channels: allChannels,
     ok: true,
     response_metadata: {
-      next_cursor: null // We've fetched all pages
-    }
+      next_cursor: null, // We've fetched all pages
+    },
   }
 }
