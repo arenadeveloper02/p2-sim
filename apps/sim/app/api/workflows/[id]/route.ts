@@ -1,14 +1,16 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
 import { getSession } from '@/lib/auth'
 import { verifyInternalToken } from '@/lib/auth/internal'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions, hasAdminPermission } from '@/lib/permissions/utils'
+import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { db } from '@/db'
-import { apiKey as apiKeyTable, templates, workflow } from '@/db/schema'
+import { templates, workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowByIdAPI')
 
@@ -25,12 +27,11 @@ const UpdateWorkflowSchema = z.object({
  * Uses hybrid approach: try normalized tables first, fallback to JSON blob
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const startTime = Date.now()
   const { id: workflowId } = await params
 
   try {
-    // Check for internal JWT token for server-side calls
     const authHeader = request.headers.get('authorization')
     let isInternalCall = false
 
@@ -42,26 +43,25 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     let userId: string | null = null
 
     if (isInternalCall) {
-      // For internal calls, we'll skip user-specific access checks
       logger.info(`[${requestId}] Internal API call for workflow ${workflowId}`)
     } else {
-      // Try session auth first (for web UI)
       const session = await getSession()
       let authenticatedUserId: string | null = session?.user?.id || null
 
-      // If no session, check for API key auth
       if (!authenticatedUserId) {
         const apiKeyHeader = request.headers.get('x-api-key')
         if (apiKeyHeader) {
-          // Verify API key
-          const [apiKeyRecord] = await db
-            .select({ userId: apiKeyTable.userId })
-            .from(apiKeyTable)
-            .where(eq(apiKeyTable.key, apiKeyHeader))
-            .limit(1)
-
-          if (apiKeyRecord) {
-            authenticatedUserId = apiKeyRecord.userId
+          const authResult = await authenticateApiKeyFromHeader(apiKeyHeader)
+          if (authResult.success && authResult.userId) {
+            authenticatedUserId = authResult.userId
+            if (authResult.keyId) {
+              await updateApiKeyLastUsed(authResult.keyId).catch((error) => {
+                logger.warn(`[${requestId}] Failed to update API key last used timestamp:`, {
+                  keyId: authResult.keyId,
+                  error,
+                })
+              })
+            }
           }
         }
       }
@@ -116,7 +116,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    // Try to load from normalized tables first
     logger.debug(`[${requestId}] Attempting to load workflow ${workflowId} from normalized tables`)
     const normalizedData = await loadWorkflowFromNormalizedTables(workflowId)
 
@@ -129,7 +128,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         loops: normalizedData.loops,
       })
 
-      // Construct response object with workflow data and state from normalized tables
       const finalWorkflowData = {
         ...workflowData,
         state: {
@@ -169,12 +167,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const startTime = Date.now()
   const { id: workflowId } = await params
 
   try {
-    // Get the session
     const session = await getSession()
     if (!session?.user?.id) {
       logger.warn(`[${requestId}] Unauthorized deletion attempt for workflow ${workflowId}`)
@@ -183,7 +180,6 @@ export async function DELETE(
 
     const userId = session.user.id
 
-    // Fetch the workflow to check ownership/access
     const workflowData = await db
       .select()
       .from(workflow)
@@ -306,7 +302,7 @@ export async function DELETE(
  * Update workflow metadata (name, description, color, folderId)
  */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = crypto.randomUUID().slice(0, 8)
+  const requestId = generateRequestId()
   const startTime = Date.now()
   const { id: workflowId } = await params
 

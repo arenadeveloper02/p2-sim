@@ -109,8 +109,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
   name: 'Router',
   description: 'Route workflow',
   longDescription:
-    'Intelligently direct workflow execution to different paths based on input analysis. Use AI to determine the most appropriate next step in your workflow based on content, intent, or specific criteria.',
-  docsLink: 'https://docs.sim.ai/blocks/router',
+    'This is a core workflow block. Intelligently direct workflow execution to different paths based on input analysis. Use natural language to instruct the router to route to certain blocks based on the input.',
   category: 'blocks',
   bgColor: '#28C43F',
   icon: ConnectIcon,
@@ -135,7 +134,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
         const baseModels = Object.keys(getBaseModelProviders())
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)

@@ -52,6 +52,7 @@ const initialState = {
     },
     future: [],
   },
+  usedTemplatesList: [],
 }
 
 // Create a consolidated sync control implementation
@@ -1172,6 +1173,9 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
       // Function to convert UI parallel blocks to execution format
       generateParallelBlocks: () => {
         return generateParallelBlocks(get().blocks)
+      },
+      setUsedTemplatesList: (usedTemplatesList: any) => {
+        set((state) => ({ ...state, usedTemplatesList }))
       },
     })),
     { name: 'workflow-store' }

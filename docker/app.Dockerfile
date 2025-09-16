@@ -26,13 +26,16 @@ FROM base AS builder
 WORKDIR /app
 
 # Install turbo globally in builder stage
-RUN bun install -g turbo
+RUN bun install -g turbo && bun install -g patch-package
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Installing with full context to prevent missing dependencies error
 RUN bun install --omit dev --ignore-scripts
+
+# Apply patches (e.g., pdf-parse debug disable) during Docker build
+RUN bunx patch-package
 
 # Required for standalone nextjs build
 WORKDIR /app/apps/sim
