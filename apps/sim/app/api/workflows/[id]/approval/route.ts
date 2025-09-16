@@ -795,41 +795,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
         if (existingTemplate.length > 0) {
           // Update existing template with new data
-          console.log('🔄 UPDATING existing template with ID:', existingTemplate[0].id)
-          console.log('🔄 Template to update details:', {
-            id: existingTemplate[0].id,
-            workflowId: existingTemplate[0].workflowId,
-            name: existingTemplate[0].name,
-          })
-
           const updateResult = await tx
             .update(templates)
             .set({
               name: userWorkflowStatus[0].name,
-              description: 'Bot created the template',
+              description: '',
               author: ownerData[0]?.name || session.user.name,
               category: userWorkflowStatus[0].category || 'marketing',
               state: templateState,
               updatedAt: now,
             })
             .where(eq(templates.id, existingTemplate[0].id))
-
-          console.log('✅ Update result:', updateResult)
-          console.log('✅ Updated existing template with new data...')
         } else {
           // Create new template if none exists
-          console.log(
-            '🆕 Creating new template for original workflow:',
-            userWorkflowStatus[0].mappedWorkflowId
-          )
-
           const templateId = uuidv4()
           const newTemplate = {
             id: templateId,
             workflowId: userWorkflowStatus[0].mappedWorkflowId, // Use original owner's workflow ID
             userId: userWorkflowStatus[0].ownerId, // Use original owner's userId
             name: userWorkflowStatus[0].name,
-            description: 'Bot created the template',
+            description: '',
             author: ownerData[0]?.name || session.user.name,
             views: 0,
             stars: 0,
