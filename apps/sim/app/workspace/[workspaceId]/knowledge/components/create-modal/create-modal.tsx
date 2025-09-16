@@ -371,7 +371,7 @@ export function CreateModal({ open, onOpenChange, onKnowledgeBaseCreated }: Crea
   }
 
   return (
-    <Dialog open={true} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className='flex h-[74vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]'
         hideCloseButton
