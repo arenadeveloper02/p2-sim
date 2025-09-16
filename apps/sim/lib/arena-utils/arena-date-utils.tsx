@@ -38,19 +38,19 @@ export const getLastWeek = (): DateRange => {
   const today = new Date()
   today.setHours(0, 0, 0, 0) // normalize to midnight
 
-  const todayDay = today.getDay() // Sunday = 0, Monday = 1, ..., Saturday = 6
+  const todayDay = today.getDay() // Sunday=0, Monday=1, ..., Saturday=6
 
-  // Go back to last week's Monday
-  const start = new Date(today)
-  start.setDate(today.getDate() - (todayDay + 6))
+  // Find last Sunday's date
+  const lastSunday = new Date(today)
+  lastSunday.setDate(today.getDate() - todayDay - 7)
 
-  // Last week's Friday
-  const end = new Date(start)
-  end.setDate(start.getDate() + 4)
+  // Last week's Saturday is 6 days after that Sunday
+  const lastSaturday = new Date(lastSunday)
+  lastSaturday.setDate(lastSunday.getDate() + 6)
 
   return {
-    startDate: toStartOfDayString(start),
-    endDate: toStartOfDayString(end),
+    startDate: toStartOfDayString(lastSunday),
+    endDate: toStartOfDayString(lastSaturday),
   }
 }
 
@@ -76,22 +76,25 @@ export const getLastMonth = (): DateRange => {
 // Next Week (Monday to Friday)
 export const getNextWeek = (): DateRangeWithTimestamps => {
   const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  today.setHours(0, 0, 0, 0) // normalize to midnight
 
-  const todayDay = today.getDay()
-  const daysUntilNextMonday = (7 - todayDay + 1) % 7 || 7
+  const todayDay = today.getDay() // Sunday=0 ... Saturday=6
 
-  const nextMonday = addDays(today, daysUntilNextMonday)
-  nextMonday.setHours(9, 0, 0, 0)
+  // Next Sunday's date (start of next week)
+  const nextSunday = new Date(today)
+  nextSunday.setDate(today.getDate() - todayDay + 7) // jump to next Sunday
+  nextSunday.setHours(0, 0, 0, 0)
 
-  const nextFriday = addDays(nextMonday, 4)
-  nextFriday.setHours(18, 0, 0, 0)
+  // Next Saturday (end of next week, 6 days later)
+  const nextSaturday = new Date(nextSunday)
+  nextSaturday.setDate(nextSunday.getDate() + 6)
+  nextSaturday.setHours(23, 59, 59, 999)
 
   return {
-    startDate: toStartOfDayString(nextMonday),
-    endDate: toStartOfDayString(nextFriday),
-    startTimeStamp: nextMonday.getTime(),
-    endTimeStamp: nextFriday.getTime(),
+    startDate: toStartOfDayString(nextSunday),
+    endDate: toStartOfDayString(nextSaturday),
+    startTimeStamp: nextSunday.getTime(),
+    endTimeStamp: nextSaturday.getTime(),
   }
 }
 
@@ -153,20 +156,25 @@ export const getTomorrow = (): DateRangeWithTimestamps => {
 // Current Week (Monday to Friday)
 export const getCurrentWeek = (): DateRangeWithTimestamps => {
   const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  today.setHours(0, 0, 0, 0) // normalize to midnight
 
-  const todayDay = today.getDay()
-  const currentMonday = addDays(today, -(todayDay - 1))
-  currentMonday.setHours(9, 0, 0, 0)
+  const todayDay = today.getDay() // Sunday=0 ... Saturday=6
 
-  const currentFriday = addDays(today, 5 - todayDay)
-  currentFriday.setHours(18, 0, 0, 0)
+  // Start of current week (Sunday)
+  const currentSunday = new Date(today)
+  currentSunday.setDate(today.getDate() - todayDay)
+  currentSunday.setHours(0, 0, 0, 0)
+
+  // End of current week (Saturday)
+  const currentSaturday = new Date(currentSunday)
+  currentSaturday.setDate(currentSunday.getDate() + 6)
+  currentSaturday.setHours(23, 59, 59, 999)
 
   return {
-    startDate: toStartOfDayString(currentMonday),
-    endDate: toStartOfDayString(currentFriday),
-    startTimeStamp: currentMonday.getTime(),
-    endTimeStamp: currentFriday.getTime(),
+    startDate: toStartOfDayString(currentSunday),
+    endDate: toStartOfDayString(currentSaturday),
+    startTimeStamp: currentSunday.getTime(),
+    endTimeStamp: currentSaturday.getTime(),
   }
 }
 

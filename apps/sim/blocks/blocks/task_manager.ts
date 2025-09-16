@@ -16,6 +16,7 @@ export const TaskManagerBlock: BlockConfig = {
       title: 'Operation',
       type: 'dropdown',
       layout: 'full',
+      required: true,
       options: [
         { label: 'Create Task', id: 'arena_create_task' },
         {
@@ -197,8 +198,8 @@ export const TaskManagerBlock: BlockConfig = {
         { label: 'Last Week', id: 'last-week' },
         { label: 'This Month', id: 'this-month' },
         { label: 'Next Month', id: 'next-month' },
-        { label: 'Past Dates', id: 'past-dates' },
-        { label: 'Future Dates', id: 'future-dates' },
+        // { label: 'Past Dates', id: 'past-dates' },
+        // { label: 'Future Dates', id: 'future-dates' },
       ],
       value: () => '',
       condition: {
