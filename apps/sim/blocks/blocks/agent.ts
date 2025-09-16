@@ -62,7 +62,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   name: 'Agent',
   description: 'Build an agent',
   longDescription:
-    'Create powerful AI agents using any LLM provider with customizable system prompts and tool integrations.',
+    'The Agent block is a core workflow block that is a wrapper around an LLM. It takes in system/user prompts and calls an LLM provider. It can also make tool calls by directly containing tools inside of its tool input. It can additionally return structured output.',
   docsLink: 'https://docs.sim.ai/blocks/agent',
   category: 'blocks',
   bgColor: '#F3F8FE',
@@ -160,7 +160,7 @@ Create a system prompt appropriately detailed for the request, using clear langu
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
         const baseModels = Object.keys(getBaseModelProviders())
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)
