@@ -168,7 +168,7 @@ export const TaskManagerBlock: BlockConfig = {
     {
       id: 'search-task-visibility',
       title: 'Task Visibility',
-      type: 'dropdown',
+      type: 'combobox',
       layout: 'full',
       required: false,
       placeholder: 'Enter visibility',
@@ -176,20 +176,7 @@ export const TaskManagerBlock: BlockConfig = {
         { label: 'Internal', id: 'INTERNAL' },
         { label: 'Client Facing', id: 'CLIENT-FACING' },
       ],
-      //value: () => 'CLIENT-FACING',
-      condition: {
-        field: 'operation',
-        value: ['arena_search_task'],
-      },
-    },
-    {
-      id: 'search-task-assignee',
-      title: 'Search Assignee',
-      type: 'arena-assignee-selector',
-      layout: 'full',
-      required: false,
-      placeholder: 'Enter assignee name',
-      dependsOn: ['search-task-client', 'search-task-project'],
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
@@ -198,7 +185,7 @@ export const TaskManagerBlock: BlockConfig = {
     {
       id: 'search-task-due-date',
       title: 'Due Date',
-      type: 'dropdown',
+      type: 'combobox',
       layout: 'full',
       required: false,
       placeholder: 'Enter due date',
@@ -213,7 +200,7 @@ export const TaskManagerBlock: BlockConfig = {
         { label: 'Past Dates', id: 'past-dates' },
         { label: 'Future Dates', id: 'future-dates' },
       ],
-      //value: () => 'today',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['arena_search_task'],

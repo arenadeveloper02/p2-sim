@@ -1,22 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { env } from '@/lib/env'
 
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const searchParams = new URLSearchParams(url.searchParams)
-    const cookieStore = await cookies()
-    const token = cookieStore.get('v2Token')?.value
-
     // Extract workflowId separately
     const workflowId = searchParams.get('workflowId')
+    if (!workflowId) {
+      return NextResponse.json({ error: 'workflowId is required' }, { status: 400 })
+    }
+    const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+    if (tokenObject.found === false) {
+      return NextResponse.json(
+        { error: 'Failed to create task', details: tokenObject.reason },
+        { status: 400 }
+      )
+    }
+    const { arenaToken } = tokenObject
 
     // Remove workflowId so it doesn't get sent to Arena
     searchParams.delete('workflowId')
     const params = searchParams.toString()
 
     // Reconstruct Arena API URL with remaining params
-    const arenaUrl = `https://dev-service.thearena.ai/sol/v1/tasks/users?${params}`
+    const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
+    const arenaUrl = `${arenaBackendBaseUrl}/sol/v1/tasks/users?${params}`
 
     const response = await fetch(arenaUrl, {
       method: 'GET',
@@ -24,7 +34,7 @@ export async function GET(req: NextRequest) {
         accept: '*/*',
         'accept-language': 'en-GB,en;q=0.9',
         //authorisation: process.env.ARENA_AUTH_TOKEN || '', // 🔑 from .env
-        authorisation: token || '', // ⬅️ Use env var for security
+        authorisation: arenaToken || '', // ⬅️ Use env var for security
       },
     })
 
