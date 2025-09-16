@@ -916,15 +916,15 @@ export function updateOllamaModels(models: string[]): void {
  * Update OpenRouter models dynamically
  */
 export function updateOpenRouterModels(models: string[]): void {
-  PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
-    id: modelId,
-    pricing: {
-      input: 0,
-      output: 0,
-      updatedAt: new Date().toISOString().split('T')[0],
-    },
-    capabilities: {},
-  }))
+  // PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
+  //   id: modelId,
+  //   pricing: {
+  //     input: 0,
+  //     output: 0,
+  //     updatedAt: new Date().toISOString().split('T')[0],
+  //   },
+  //   capabilities: {},
+  // }))
 }
 
 /**

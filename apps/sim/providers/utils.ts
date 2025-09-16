@@ -118,7 +118,7 @@ export function updateOllamaProviderModels(models: string[]): void {
 export async function updateOpenRouterProviderModels(models: string[]): Promise<void> {
   const { updateOpenRouterModels } = await import('@/providers/models')
   updateOpenRouterModels(models)
-  providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
+  // providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
 }
 
 export function getBaseModelProviders(): Record<string, ProviderId> {
