@@ -83,12 +83,12 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedLabel =
-    clients?.find((cl) => cl.clientId === selectedValue)?.name || 'Select client...'
+    clients?.find((cl) => cl.clientId === selectedValue?.clientId)?.name || 'Select client...'
 
-  const handleSelect = (clientId: string) => {
-    console.log('Selected client:', clientId)
+  const handleSelect = (client: Client) => {
+    console.log('Selected client:', client)
     if (!isPreview && !disabled) {
-      setStoreValue(clientId)
+      setStoreValue(client)
       setOpen(false)
     }
   }
@@ -129,13 +129,13 @@ export function ArenaClientsSelector({
                   <CommandItem
                     key={client.clientId}
                     value={client.clientId}
-                    onSelect={() => handleSelect(client.clientId)}
+                    onSelect={() => handleSelect(client)}
                   >
                     {client.name}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === client.clientId ? 'opacity-100' : 'opacity-0'
+                        selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

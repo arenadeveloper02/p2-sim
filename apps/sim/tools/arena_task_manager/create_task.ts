@@ -91,7 +91,7 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
         plannedStartDate: startOfDayTimestamp(today),
         plannedEndDate: startOfDayTimestamp(nextWeekDay),
         taskType: isTask ? 'MILESTONE' : 'SHOW-ON-TIMELINE',
-        clientId: params['task-client'],
+        clientId: params['task-client']?.clientId,
         projectId: params['task-project'],
         assignedToId: params['task-assignee'],
       }

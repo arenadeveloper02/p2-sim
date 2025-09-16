@@ -84,8 +84,8 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       if (isSearchTask) {
         url += `?name=${params['search-task-name']}`
       }
-      if (params['search-task-client']) {
-        url += `&account=${params['search-task-client']}`
+      if (params['search-task-client']?.name) {
+        url += `&account=${params['search-task-client'].name}`
       }
       if (params['search-task-project']) {
         url += `&projectSysId=${params['search-task-project']}`
@@ -94,7 +94,12 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&status=${params['search-task-state']}`
       }
       if (params['search-task-visibility']) {
-        url += `&taskType=${params['search-task-visibility']}`
+        if (params['search-task-visibility'] === 'Internal') {
+          url += `&taskType=INTERNAL`
+        }
+        if (params['search-task-visibility'] === 'Client Facing') {
+          url += `&taskType=CLIENT-FACING`
+        }
       }
       if (params['search-task-assignee']) {
         url += `&assigneeId=${params['search-task-assignee']}`
@@ -103,60 +108,60 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&workflowId=${params._context?.workflowId}`
       }
 
-      if (params['search-task-due-date'] === 'today') {
+      if (params['search-task-due-date'] === 'Today') {
         const { startDate, endDate } = getToday()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'tomorrow') {
+      if (params['search-task-due-date'] === 'Tomorrow') {
         const { startDate, endDate } = getTomorrow()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
       //  if(params['search-task-due-date'] === 'yesterday') {
       //     const { startDate, endDate } = getYesterday()
-      //     url += `&plannedEndDateFrom=${startDate}`
-      //     url += `&plannedEndDateTo=${endDate}`
+      //     url += `&fromDate=${startDate}`
+      //     url += `&toDate=${endDate}`
       //   }
-      if (params['search-task-due-date'] === 'this-week') {
+      if (params['search-task-due-date'] === 'This Week') {
         const { startDate, endDate } = getCurrentWeek()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'next-week') {
+      if (params['search-task-due-date'] === 'Next Week') {
         const { startDate, endDate } = getNextWeek()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'last-week') {
+      if (params['search-task-due-date'] === 'Last Week') {
         const { startDate, endDate } = getLastWeek()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'this-month') {
+      if (params['search-task-due-date'] === 'This Month') {
         const { startDate, endDate } = getCurrentMonth()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'next-month') {
+      if (params['search-task-due-date'] === 'Next Month') {
         const { startDate, endDate } = getNextMonth()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'last-month') {
+      if (params['search-task-due-date'] === 'Last Month') {
         const { startDate, endDate } = getLastMonth()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'past-dates') {
+      if (params['search-task-due-date'] === 'Past Dates') {
         const { startDate, endDate } = getPastDate()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
-      if (params['search-task-due-date'] === 'future-dates') {
+      if (params['search-task-due-date'] === 'Future Dates') {
         const { startDate, endDate } = getFutureDate()
-        url += `&plannedEndDateFrom=${startDate}`
-        url += `&plannedEndDateTo=${endDate}`
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
       }
       if (params['search-task-max-results']) {
         const pageSize = Number(params['search-task-max-results'])

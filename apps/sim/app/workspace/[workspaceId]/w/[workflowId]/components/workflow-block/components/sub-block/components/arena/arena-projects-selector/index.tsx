@@ -50,7 +50,7 @@ export function ArenaProjectSelector({
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
   const clientKey = subBlockId === 'task-project' ? 'task-client' : 'search-task-client'
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue

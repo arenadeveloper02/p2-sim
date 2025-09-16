@@ -7,7 +7,10 @@ export type ArenaCreateTaskParams = {
   'planned-start-date': Date
   'planned-end-date': Date
   'task-type': string
-  'task-client': string
+  'task-client': {
+    clientId: string
+    name: string
+  }
   'task-project': string
   'task-group'?: {
     id: string
@@ -41,7 +44,10 @@ export interface SearchTaskApiResponse {
 export interface SearchTaskQueryParams {
   operation: string
   'search-task-name': string
-  'search-task-client': string
+  'search-task-client': {
+    clientId: string
+    name: string
+  }
   'search-task-project': string
   'search-task-state': string
   'search-task-visibility': string

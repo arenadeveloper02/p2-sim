@@ -81,11 +81,11 @@ export function ArenaStatesSelector({
   }, [])
 
   const selectedLabel =
-    states.find((state) => state.id === selectedValue)?.name || 'Select state...'
+    states.find((state) => state.name === selectedValue)?.name || 'Select state...'
 
-  const handleSelect = (stateId: string) => {
+  const handleSelect = (stateName: string) => {
     if (!isPreview && !disabled) {
-      setStoreValue(stateId)
+      setStoreValue(stateName)
       setOpen(false)
     }
   }
@@ -126,13 +126,13 @@ export function ArenaStatesSelector({
                   <CommandItem
                     key={state.id}
                     value={state.name}
-                    onSelect={() => handleSelect(state.id)}
+                    onSelect={() => handleSelect(state.name)}
                   >
                     {state.name}
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
-                        selectedValue === state.id ? 'opacity-100' : 'opacity-0'
+                        selectedValue === state.name ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

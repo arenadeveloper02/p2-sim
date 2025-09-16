@@ -48,7 +48,7 @@ export function ArenaGroupSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']?.clientId
   const projectId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
