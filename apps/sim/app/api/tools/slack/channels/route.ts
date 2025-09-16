@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     }
 
     // Filter to channels the bot can access and format the response
-    const channels = (data.channels || [])
+    const channels = (data || [])
       .filter((channel: SlackChannel) => {
         const canAccess = !channel.is_archived && (channel.is_member || !channel.is_private)
 
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       }))
 
     logger.info(`Successfully fetched ${channels.length} Slack channels`, {
-      total: data.channels?.length || 0,
+      total: data.length || 0,
       private: channels.filter((c: { isPrivate: boolean }) => c.isPrivate).length,
       public: channels.filter((c: { isPrivate: boolean }) => !c.isPrivate).length,
       tokenType: isBotToken ? 'bot_token' : 'oauth',
@@ -129,34 +129,48 @@ export async function POST(request: Request) {
 }
 
 async function fetchSlackChannels(accessToken: string, includePrivate = true) {
-  const url = new URL('https://slack.com/api/conversations.list')
+  const allChannels: any[] = []
+  let cursor: string | undefined
 
-  if (includePrivate) {
-    url.searchParams.append('types', 'public_channel,private_channel')
-  } else {
-    url.searchParams.append('types', 'public_channel')
-  }
+  do {
+    const url = new URL('https://slack.com/api/conversations.list')
 
-  url.searchParams.append('exclude_archived', 'true')
-  url.searchParams.append('limit', '200')
+    if (includePrivate) {
+      url.searchParams.append('types', 'public_channel,private_channel')
+    } else {
+      url.searchParams.append('types', 'public_channel')
+    }
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
+    url.searchParams.append('exclude_archived', 'true')
+    url.searchParams.append('limit', '1000') // max Slack allows
+    if (cursor) {
+      url.searchParams.append('cursor', cursor)
+    }
 
-  if (!response.ok) {
-    throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
-  }
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-  const data = await response.json()
+    if (!response.ok) {
+      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+    }
 
-  if (!data.ok) {
-    throw new Error(data.error || 'Failed to fetch channels')
-  }
+    const data = await response.json()
 
-  return data
+    if (!data.ok) {
+      throw new Error(data.error || 'Failed to fetch channels')
+    }
+
+    if (data.channels) {
+      allChannels.push(...data.channels)
+    }
+
+    cursor = data.response_metadata?.next_cursor || undefined
+  } while (cursor)
+
+  return allChannels
 }
