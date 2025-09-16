@@ -91,7 +91,7 @@ export function WorkspaceSelector({
 
   // Helper function to check if workspace is APPROVAL LIST
   const isApproverListWorkspace = useCallback((workspace: Workspace) => {
-    return workspace.name === 'APPROVAL LIST'
+    return workspace?.name === 'APPROVAL LIST'
   }, [])
 
   // Focus input when editing starts
