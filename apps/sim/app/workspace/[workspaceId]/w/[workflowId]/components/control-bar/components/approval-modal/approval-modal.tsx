@@ -38,11 +38,12 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
   const { data: session } = useSession()
   const userId = session?.user?.id
   const { users, loading, error, fetchUsers } = useUserApprovalStore()
-  const { askApproveWorkflow } = useWorkflowRegistry()
+  const { askApproveWorkflow, getApprovalStatus } = useWorkflowRegistry()
   const { setGlobalActionsDisabled } = useUiFlagsStore()
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('marketing')
+  const [isCategoryDisabled, setIsCategoryDisabled] = useState<boolean>(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSelectUser = (user: any) => {
@@ -53,10 +54,44 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
     fetchUsers()
   }, [fetchUsers])
 
+  // Fetch approval data to get existing category and user
+  useEffect(() => {
+    if (workflowId && open) {
+      const fetchApprovalData = async () => {
+        try {
+          const approvalData = (await getApprovalStatus(workflowId)) as any
+
+          // Handle category
+          if (approvalData?.category) {
+            setSelectedCategory(approvalData.category)
+            setIsCategoryDisabled(true) // Disable category select if existing category found
+          } else {
+            setIsCategoryDisabled(false) // Enable category select if no existing category
+          }
+
+          // Handle user
+          if (approvalData?.userId) {
+            // Find the user in the users list by userId
+            const existingUser = users?.find((user) => user.id === approvalData.userId)
+            if (existingUser) {
+              setSelectedUser(existingUser)
+            }
+          }
+        } catch (error) {
+          logger.error('Error fetching approval data:', { error })
+          // Keep default values if fetch fails
+          setIsCategoryDisabled(false) // Enable category select on error
+        }
+      }
+      fetchApprovalData()
+    }
+  }, [workflowId, open, getApprovalStatus, users])
+
   const handleCloseModal = () => {
     onOpenChange(false)
     setSelectedUser(null)
     setSelectedCategory('marketing')
+    setIsCategoryDisabled(false) // Reset category disabled state
   }
 
   const handleSendForApproval = async () => {
@@ -116,6 +151,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
                 <Select
                   value={selectedCategory}
                   onValueChange={(value) => setSelectedCategory(value)}
+                  disabled={isCategoryDisabled}
                 >
                   <SelectTrigger className='h-10'>
                     <SelectValue placeholder='Select category' />
@@ -128,6 +164,11 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
                     ))}
                   </SelectContent>
                 </Select>
+                {/* {isCategoryDisabled && (
+                  <p className='text-muted-foreground text-xs'>
+                    Category is set from existing approval and cannot be changed
+                  </p>
+                )} */}
               </div>
             </div>
           </div>

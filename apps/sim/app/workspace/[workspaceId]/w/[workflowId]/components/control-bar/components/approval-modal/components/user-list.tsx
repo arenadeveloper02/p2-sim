@@ -10,6 +10,7 @@ interface UserSearchProps {
   onSelectUser: (user: UserType) => void
   loading?: boolean
   error?: string | null
+  disabled?: boolean
 }
 
 export default function UserSearch({
@@ -18,6 +19,7 @@ export default function UserSearch({
   onSelectUser,
   loading,
   error,
+  disabled = false,
 }: UserSearchProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
@@ -27,6 +29,12 @@ export default function UserSearch({
   const filteredUsers = users.filter((user) =>
     user.name.toLowerCase().includes(searchValue.toLowerCase())
   )
+  // Update search value when selectedUser changes (for disabled state)
+  useEffect(() => {
+    if (selectedUser && disabled) {
+      setSearchValue('')
+    }
+  }, [selectedUser, disabled])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -69,13 +77,18 @@ export default function UserSearch({
           type='text'
           placeholder='Search Approver...'
           value={isOpen ? searchValue : selectedUser ? selectedUser.name : ''}
-          onFocus={() => setIsOpen(true)}
+          onFocus={() => !disabled && setIsOpen(true)}
           onChange={(e) => {
-            setSearchValue(e.target.value)
-            setHighlightedIndex(0)
+            if (!disabled) {
+              setSearchValue(e.target.value)
+              setHighlightedIndex(0)
+            }
           }}
           onKeyDown={handleKeyDown}
-          className='flex h-10 w-full cursor-pointer rounded-[8px] border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          disabled={disabled}
+          className={`flex h-10 w-full rounded-[8px] border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+            disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+          }`}
         />
         {isOpen ? (
           <ChevronUp className='absolute top-3 right-3 h-4 w-4 text-muted-foreground' />
