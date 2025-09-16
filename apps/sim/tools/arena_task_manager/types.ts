@@ -47,6 +47,7 @@ export interface SearchTaskQueryParams {
   'search-task-visibility': string
   'search-task-assignee': string
   'search-task-due-date': string
+  'search-task-max-results': number
   _context: {
     workflowId: string
   }

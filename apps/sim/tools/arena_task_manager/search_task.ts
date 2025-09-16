@@ -158,7 +158,12 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&plannedEndDateFrom=${startDate}`
         url += `&plannedEndDateTo=${endDate}`
       }
-
+      if (params['search-task-max-results']) {
+        const pageSize = Number(params['search-task-max-results'])
+        if (Number.isInteger(pageSize)) {
+          url += `&pageSize=${pageSize}`
+        }
+      }
       return url
     },
     method: 'GET',

@@ -221,6 +221,14 @@ export const TaskManagerBlock: BlockConfig = {
         value: ['arena_search_task'],
       },
     },
+    {
+      id: 'search-task-max-results',
+      title: 'Max Results',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: '10',
+      condition: { field: 'operation', value: 'arena_search_task' },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
