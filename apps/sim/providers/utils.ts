@@ -89,11 +89,11 @@ export const providers: Record<
     models: getProviderModelsFromDefinitions('azure-openai'),
     modelPatterns: PROVIDER_DEFINITIONS['azure-openai'].modelPatterns,
   },
-  openrouter: {
-    ...openRouterProvider,
-    models: getProviderModelsFromDefinitions('openrouter'),
-    modelPatterns: PROVIDER_DEFINITIONS.openrouter.modelPatterns,
-  },
+  // openrouter: {
+  //   ...openRouterProvider,
+  //   models: getProviderModelsFromDefinitions('openrouter'),
+  //   modelPatterns: PROVIDER_DEFINITIONS.openrouter.modelPatterns,
+  // },
   ollama: {
     ...ollamaProvider,
     models: getProviderModelsFromDefinitions('ollama'),
@@ -119,7 +119,7 @@ export function updateOllamaProviderModels(models: string[]): void {
 export async function updateOpenRouterProviderModels(models: string[]): Promise<void> {
   const { updateOpenRouterModels } = await import('@/providers/models')
   updateOpenRouterModels(models)
-  providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
+  // providers.openrouter.models = getProviderModelsFromDefinitions('openrouter')
 }
 
 export function getBaseModelProviders(): Record<string, ProviderId> {
@@ -573,8 +573,8 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   // Use server key rotation for all OpenAI models and Anthropic's Claude models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
-
-  if (isHosted && (isOpenAIModel || isClaudeModel)) {
+  const isGoogleModel = provider === 'google'
+  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel)) {
     try {
       // Import the key rotation function
       const { getRotatingApiKey } = require('@/lib/utils')
