@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { workflow, userArenaDetails } from '@/db/schema'
+import { userArenaDetails, workflow } from '@/db/schema'
 import type { WorkflowTokenLookup } from './types'
 
 /**

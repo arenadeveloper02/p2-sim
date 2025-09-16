@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 import { env } from '@/lib/env'
+import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 
 export async function GET(req: NextRequest) {
   try {

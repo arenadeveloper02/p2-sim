@@ -1,9 +1,8 @@
-
+import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/db'
 import { userArenaDetails } from '@/db/schema'
-import { eq } from 'drizzle-orm'
 
 export async function GET() {
   try {

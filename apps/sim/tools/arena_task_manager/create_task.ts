@@ -1,9 +1,9 @@
-import type { ToolConfig } from '@/tools/types'
-import {
-  type ArenaCreateTaskParams,
-  type ArenaCreateTaskResponse,
-} from '@/tools/arena_task_manager/types'
 import { getArenaServiceBaseUrl, startOfDayTimestamp } from '@/lib/arena-utils/arena-utils'
+import type {
+  ArenaCreateTaskParams,
+  ArenaCreateTaskResponse,
+} from '@/tools/arena_task_manager/types'
+import type { ToolConfig } from '@/tools/types'
 
 export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskResponse> = {
   id: 'arena_create_task',

@@ -1,4 +1,5 @@
-import { type DateRange, type DateRangeWithTimestamps } from './types'
+import type { DateRange, DateRangeWithTimestamps } from './types'
+
 const toStartOfDayString = (date: Date) => {
   const yyyy = date.getFullYear()
   const mm = String(date.getMonth() + 1).padStart(2, '0')
