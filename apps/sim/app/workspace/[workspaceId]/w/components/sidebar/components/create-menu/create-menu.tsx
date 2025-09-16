@@ -290,7 +290,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
     const data = await response.json()
     data?.workspaces.forEach((work: any) => {
-      if (work.id === workspaceId && work.name === 'APPROVAL LIST') {
+      if (work?.id === workspaceId && work?.name === 'APPROVAL LIST') {
         setDisableCreate(true)
       }
     })
