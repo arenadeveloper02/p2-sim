@@ -1,5 +1,5 @@
 // app/api/create-task/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/env'
 import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 

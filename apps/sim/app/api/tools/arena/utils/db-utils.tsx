@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { workflow, userArenaDetails } from '@/db/schema'
-import { type WorkflowTokenLookup, type WorkflowTokenResult } from './types'
+import type { WorkflowTokenLookup } from './types'
 
 /**
  * Get the arenaToken associated with a workflow's user.

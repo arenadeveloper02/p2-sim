@@ -1,4 +1,4 @@
-// File: src/app/api/arena/token/route.ts
+
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { db } from '@/db'

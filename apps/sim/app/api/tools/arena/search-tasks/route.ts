@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 import { env } from '@/lib/env'
 

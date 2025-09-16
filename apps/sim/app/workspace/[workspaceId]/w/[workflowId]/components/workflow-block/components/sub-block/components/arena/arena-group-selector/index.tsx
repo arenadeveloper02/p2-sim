@@ -16,7 +16,6 @@ import {
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
-import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 
