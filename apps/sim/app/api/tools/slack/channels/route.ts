@@ -157,7 +157,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     url.searchParams.append('exclude_archived', 'true')
-    url.searchParams.append('limit', '200')
+    url.searchParams.append('limit', '300')
 
     if (cursor) {
       url.searchParams.append('cursor', cursor)
@@ -212,9 +212,12 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     hasMore = !!data.response_metadata?.next_cursor
     cursor = data.response_metadata?.next_cursor
 
-    // Safety check to prevent infinite loops
-    if (allChannels.length > 10000) {
-      console.warn('Reached 10,000 channels limit, stopping pagination')
+    // Safety check to prevent infinite loops and limit memory usage
+    if (allChannels.length >= 1000) {
+      logger.warn('Reached 1,000 channels limit, stopping pagination', {
+        channelsLoaded: allChannels.length,
+        hasMore: !!data.response_metadata?.next_cursor,
+      })
       break
     }
   }
