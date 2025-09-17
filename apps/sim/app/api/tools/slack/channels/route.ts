@@ -3,6 +3,7 @@ import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -162,16 +163,38 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
       url.searchParams.append('cursor', cursor)
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    })
+    const response = await SlackRateLimitHandler.executeWithRetry(
+      () =>
+        fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      {
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 30000,
+      }
+    )
 
     if (!response.ok) {
-      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+      // Extract rate limit info if available
+      const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
+      let errorMessage = `Slack API error: ${response.status} ${response.statusText}`
+
+      if (response.status === 429) {
+        if (rateLimitInfo.retryAfter) {
+          errorMessage += `. Rate limit exceeded. Retry after ${rateLimitInfo.retryAfter} seconds.`
+        } else if (rateLimitInfo.reset) {
+          errorMessage += `. Rate limit exceeded. Resets at ${rateLimitInfo.reset.toISOString()}.`
+        } else {
+          errorMessage += '. Rate limit exceeded. Please try again later.'
+        }
+      }
+
+      throw new Error(errorMessage)
     }
 
     const data = await response.json()
