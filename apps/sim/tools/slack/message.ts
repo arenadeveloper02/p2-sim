@@ -76,7 +76,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     if (response.status === 429) {
       const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
       let errorMessage = 'Slack API rate limit exceeded'
-      
+
       if (rateLimitInfo.retryAfter) {
         errorMessage += `. Retry after ${rateLimitInfo.retryAfter} seconds.`
       } else if (rateLimitInfo.reset) {
@@ -84,17 +84,18 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       } else {
         errorMessage += '. Please try again later.'
       }
-      
+
       throw new Error(errorMessage)
     }
 
     const data = await response.json()
-    
+
     if (!response.ok || !data.ok) {
-      const errorMessage = data.error || `Slack API error: ${response.status} ${response.statusText}`
+      const errorMessage =
+        data.error || `Slack API error: ${response.status} ${response.statusText}`
       throw new Error(errorMessage)
     }
-    
+
     return {
       success: true,
       output: {
