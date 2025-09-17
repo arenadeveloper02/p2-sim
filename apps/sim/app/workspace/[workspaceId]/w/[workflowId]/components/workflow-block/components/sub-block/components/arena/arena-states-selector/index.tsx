@@ -49,10 +49,10 @@ export function ArenaStatesSelector({
   const selectedValues: string[] = isPreview
     ? previewValue || []
     : Array.isArray(storeValue)
-    ? storeValue
-    : storeValue
-    ? storeValue.split(',') // fallback if stored as CSV
-    : []
+      ? storeValue
+      : storeValue
+        ? storeValue.split(',') // fallback if stored as CSV
+        : []
 
   const [states, setStates] = React.useState<ArenaState[]>([])
   const [open, setOpen] = React.useState(false)
@@ -99,26 +99,23 @@ export function ArenaStatesSelector({
     setStoreValue(newValues) // store as array (or newValues.join(",") if backend expects CSV)
   }
 
-  const selectedLabel =
-    selectedValues.length > 0 ? selectedValues.join(', ') : 'Select states...'
+  const selectedLabel = selectedValues.length > 0 ? selectedValues.join(', ') : 'Select states...'
 
   return (
     <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-        <Button
-  variant="outline"
-  role="combobox"
-  aria-expanded={open}
-  id={`state-${subBlockId}`}
-  className="w-full min-h-[2.5rem] h-auto flex justify-between items-start text-left whitespace-normal break-words py-2"
-  disabled={disabled}
->
-  <div className="flex-1 text-left whitespace-normal break-words">
-    {selectedLabel}
-  </div>
-  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 mt-1" />
-</Button>
+          <Button
+            variant='outline'
+            role='combobox'
+            aria-expanded={open}
+            id={`state-${subBlockId}`}
+            className='flex h-auto min-h-[2.5rem] w-full items-start justify-between whitespace-normal break-words py-2 text-left'
+            disabled={disabled}
+          >
+            <div className='flex-1 whitespace-normal break-words text-left'>{selectedLabel}</div>
+            <ChevronsUpDown className='mt-1 ml-2 h-4 w-4 shrink-0 opacity-50' />
+          </Button>
         </PopoverTrigger>
         <PopoverContent className='w-full p-0'>
           <Command

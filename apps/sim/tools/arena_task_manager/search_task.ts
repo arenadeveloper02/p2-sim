@@ -73,7 +73,6 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
 
   request: {
     url: (params: SearchTaskQueryParams) => {
-      debugger;
       const baseUrl = getArenaServiceBaseUrl()
       let url = `/api/tools/arena/search-tasks`
 
