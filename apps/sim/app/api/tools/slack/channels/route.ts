@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { createLogger } from '@/lib/logs/console/logger'
+import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import { generateRequestId } from '@/lib/utils'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
-import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
 
 async function fetchSlackChannels(accessToken: string, includePrivate = true) {
   const allChannels: any[] = []
-  let cursor: string | undefined = undefined
+  let cursor: string | undefined
   let hasMore = true
 
   while (hasMore) {
@@ -209,7 +209,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     // Check if there are more pages
-    hasMore = data.response_metadata?.next_cursor ? true : false
+    hasMore = !!data.response_metadata?.next_cursor
     cursor = data.response_metadata?.next_cursor
 
     // Safety check to prevent infinite loops
