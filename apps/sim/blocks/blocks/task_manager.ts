@@ -221,7 +221,7 @@ export const TaskManagerBlock: BlockConfig = {
       layout: 'full',
       required: false,
       placeholder: 'Enter assignee name',
-      dependsOn: ['search-task-client', 'search-task-project'],
+      dependsOn: ['search-task-client'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],

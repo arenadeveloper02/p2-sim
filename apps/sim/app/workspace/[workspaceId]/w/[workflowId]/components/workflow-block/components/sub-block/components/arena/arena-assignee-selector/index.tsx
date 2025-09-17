@@ -47,6 +47,8 @@ export function ArenaAssigneeSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
+  const isSearchTask = subBlockId === 'search-task-assignee'
+  const isCreateTask = subBlockId === 'task-assignee'
   const clientKey = subBlockId === 'task-assignee' ? 'task-client' : 'search-task-client'
   const projectKey = subBlockId === 'task-assignee' ? 'task-project' : 'search-task-project'
   const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
@@ -61,7 +63,7 @@ export function ArenaAssigneeSelector({
 
   // Fetch assignees when clientId & projectId change
   React.useEffect(() => {
-    if (!clientId || !projectId) return
+    if (!clientId || (isCreateTask && !projectId)) return
 
     const fetchAssignees = async () => {
       setLoading(true)
@@ -70,7 +72,10 @@ export function ArenaAssigneeSelector({
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
-        const url = `${arenaBackendBaseUrl}/sol/v1/users/list?cId=${clientId}&pId=${projectId}`
+        let url = `${arenaBackendBaseUrl}/sol/v1/users/list?cId=${clientId}&pId=${projectId}`
+        if (isSearchTask) {
+          url = `${url}&allUsers=true&includeClientUsers=true`
+        }
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
@@ -94,7 +99,7 @@ export function ArenaAssigneeSelector({
     }
 
     fetchAssignees()
-  }, [clientId, projectId])
+  }, [clientId, projectId,subBlockId])
 
   const selectedLabel =
     assignees.find((a) => a.value === selectedValue)?.label || 'Select assignee...'
@@ -116,7 +121,7 @@ export function ArenaAssigneeSelector({
             aria-expanded={open}
             id={`assignee-${subBlockId}`}
             className='w-full justify-between'
-            disabled={disabled || !clientId || !projectId || loading}
+            disabled={disabled || loading || !clientId || (isCreateTask && !projectId)}
           >
             {loading ? 'Loading...' : selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
