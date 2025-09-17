@@ -1,4 +1,3 @@
-import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import type { SlackMessageReaderParams, SlackMessageReaderResponse } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -93,22 +92,6 @@ export const slackMessageReaderTool: ToolConfig<
   },
 
   transformResponse: async (response: Response) => {
-    // Handle rate limiting
-    if (response.status === 429) {
-      const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
-      let errorMessage = 'Slack API rate limit exceeded'
-
-      if (rateLimitInfo.retryAfter) {
-        errorMessage += `. Retry after ${rateLimitInfo.retryAfter} seconds.`
-      } else if (rateLimitInfo.reset) {
-        errorMessage += `. Resets at ${rateLimitInfo.reset.toISOString()}.`
-      } else {
-        errorMessage += '. Please try again later.'
-      }
-
-      throw new Error(errorMessage)
-    }
-
     const data = await response.json()
 
     if (!response.ok || !data.ok) {
