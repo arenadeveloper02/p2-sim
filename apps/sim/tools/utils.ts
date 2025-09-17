@@ -82,7 +82,28 @@ export async function executeRequest(
   try {
     const { url, method, headers, body } = requestParams
 
-    const externalResponse = await fetch(url, { method, headers, body })
+    // Check if this is a Slack API call and use rate limiting handler
+    const isSlackApiCall = url.includes('slack.com/api/')
+
+    let externalResponse: Response
+
+    if (isSlackApiCall) {
+      // Import SlackRateLimitHandler dynamically to avoid circular dependencies
+      const { SlackRateLimitHandler } = await import('@/lib/slack/rate-limit-handler')
+
+      // Use the rate limiting handler for Slack API calls
+      externalResponse = await SlackRateLimitHandler.executeWithRetry(
+        () => fetch(url, { method, headers, body }),
+        {
+          maxRetries: 3,
+          baseDelay: 1000,
+          maxDelay: 30000,
+        }
+      )
+    } else {
+      // Regular fetch for non-Slack APIs
+      externalResponse = await fetch(url, { method, headers, body })
+    }
 
     if (!externalResponse.ok) {
       let errorContent
