@@ -49,7 +49,7 @@ export interface SearchTaskQueryParams {
     name: string
   }
   'search-task-project': string
-  'search-task-state': string
+  'search-task-state': string[]
   'search-task-visibility': string
   'search-task-assignee': string
   'search-task-due-date': string

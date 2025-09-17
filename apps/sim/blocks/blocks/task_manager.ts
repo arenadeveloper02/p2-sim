@@ -3,10 +3,10 @@ import type { BlockConfig } from '@/blocks/types'
 
 export const TaskManagerBlock: BlockConfig = {
   type: 'task_manager',
-  name: 'Task Manager',
-  description: 'Task Management',
-  longDescription: 'Task Management',
-  docsLink: 'https://docs.sim.ai/tools/jira',
+  name: 'Arena',
+  description: 'Arena',
+  longDescription: 'Arena',
+  docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
   icon: AgentIcon,

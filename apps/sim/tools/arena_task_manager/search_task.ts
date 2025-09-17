@@ -73,6 +73,7 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
 
   request: {
     url: (params: SearchTaskQueryParams) => {
+      debugger;
       const baseUrl = getArenaServiceBaseUrl()
       let url = `/api/tools/arena/search-tasks`
 
@@ -87,7 +88,7 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&projectSysId=${params['search-task-project']}`
       }
       if (params['search-task-state']) {
-        url += `&status=${params['search-task-state']}`
+        url += `&statusList=${params['search-task-state'].join(',')}`
       }
       if (params['search-task-visibility']) {
         if (params['search-task-visibility'] === 'Internal') {
