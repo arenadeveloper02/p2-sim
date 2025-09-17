@@ -195,6 +195,12 @@ export const env = createEnv({
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
     E2B_API_KEY:                           z.string().optional(),                  // E2B API key for sandbox creation
+    
+    // Google Ads API
+    GOOGLE_ADS_DEVELOPER_TOKEN:            z.string().optional(),                  // Google Ads API developer token
+    GOOGLE_ADS_CLIENT_ID:                  z.string().optional(),                  // Google Ads OAuth client ID
+    GOOGLE_ADS_CLIENT_SECRET:              z.string().optional(),                  // Google Ads OAuth client secret
+    GOOGLE_ADS_REFRESH_TOKEN:              z.string().optional(),                  // Google Ads OAuth refresh token
   },
 
   client: {
