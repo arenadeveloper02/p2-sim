@@ -16,6 +16,12 @@ export interface SlackChannelInfo {
   id: string
   name: string
   isPrivate: boolean
+  isMember?: boolean
+  isGeneral?: boolean
+  isChannel?: boolean
+  isGroup?: boolean
+  isMpim?: boolean
+  isIm?: boolean
 }
 
 interface SlackChannelSelectorProps {
