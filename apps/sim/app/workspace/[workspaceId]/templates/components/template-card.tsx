@@ -270,8 +270,8 @@ export function TemplateCard({
   // Get the icon component
   const iconComponent = getIconComponent(icon)
 
-  // Check if we should hide the Use button (when in APPROVAL LIST workspace)
-  const shouldHideUseButton = workspaceName === 'APPROVAL LIST'
+  // Check if we should hide the Use button (when in AGENTS APPROVAL workspace)
+  const shouldHideUseButton = workspaceName === 'AGENTS APPROVAL'
 
   // Handle star toggle with optimistic updates
   const handleStarClick = async (e: React.MouseEvent) => {

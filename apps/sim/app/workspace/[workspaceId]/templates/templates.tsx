@@ -16,12 +16,14 @@ const logger = createLogger('TemplatesPage')
 
 // Shared categories definition
 export const categories = [
-  { value: 'marketing', label: 'Marketing' },
+  { value: 'creative', label: 'Creative' },
+  { value: 'ma', label: 'MA' },
+  { value: 'ppc', label: 'PPC' },
   { value: 'sales', label: 'Sales' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'support', label: 'Support' },
-  { value: 'artificial-intelligence', label: 'Artificial Intelligence' },
-  { value: 'other', label: 'Other' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'waas', label: 'WAAS' },
+  { value: 'product', label: 'Product' },
 ] as const
 
 export type CategoryValue = (typeof categories)[number]['value']
@@ -72,12 +74,14 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
   const sectionRefs = {
     your: useRef<HTMLDivElement>(null),
     recent: useRef<HTMLDivElement>(null),
-    marketing: useRef<HTMLDivElement>(null),
+    creative: useRef<HTMLDivElement>(null),
+    ma: useRef<HTMLDivElement>(null),
+    ppc: useRef<HTMLDivElement>(null),
     sales: useRef<HTMLDivElement>(null),
-    finance: useRef<HTMLDivElement>(null),
-    support: useRef<HTMLDivElement>(null),
-    'artificial-intelligence': useRef<HTMLDivElement>(null),
-    other: useRef<HTMLDivElement>(null),
+    seo: useRef<HTMLDivElement>(null),
+    strategy: useRef<HTMLDivElement>(null),
+    waas: useRef<HTMLDivElement>(null),
+    product: useRef<HTMLDivElement>(null),
   }
 
   // Fetch current workspace information
@@ -215,27 +219,21 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
       count: loading ? 8 : getTemplatesByCategory('recent').length,
     },
     {
-      id: 'marketing',
-      label: 'Marketing',
-      count: loading ? 8 : getTemplatesByCategory('marketing').length,
+      id: 'creative',
+      label: 'Creative',
+      count: loading ? 8 : getTemplatesByCategory('creative').length,
     },
+    { id: 'ma', label: 'MA', count: loading ? 8 : getTemplatesByCategory('ma').length },
+    { id: 'ppc', label: 'PPC', count: loading ? 8 : getTemplatesByCategory('ppc').length },
     { id: 'sales', label: 'Sales', count: loading ? 8 : getTemplatesByCategory('sales').length },
+    { id: 'seo', label: 'SEO', count: loading ? 8 : getTemplatesByCategory('seo').length },
     {
-      id: 'finance',
-      label: 'Finance',
-      count: loading ? 8 : getTemplatesByCategory('finance').length,
+      id: 'strategy',
+      label: 'Strategy',
+      count: loading ? 8 : getTemplatesByCategory('strategy').length,
     },
-    {
-      id: 'support',
-      label: 'Support',
-      count: loading ? 8 : getTemplatesByCategory('support').length,
-    },
-    {
-      id: 'artificial-intelligence',
-      label: 'Artificial Intelligence',
-      count: loading ? 8 : getTemplatesByCategory('artificial-intelligence').length,
-    },
-    { id: 'other', label: 'Other', count: loading ? 8 : getTemplatesByCategory('other').length },
+    { id: 'waas', label: 'WAAS', count: loading ? 8 : getTemplatesByCategory('waas').length },
+    { id: 'product', label: 'Product', count: loading ? 8 : getTemplatesByCategory('product').length },
   ]
 
   return (
@@ -313,17 +311,49 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             </div>
           </div>
 
-          {/* Marketing Section */}
-          <div ref={sectionRefs.marketing} className='mb-8'>
+          {/* Creative Section */}
+          <div ref={sectionRefs.creative} className='mb-8'>
             <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Marketing</h2>
+              <h2 className='font-medium font-sans text-foreground text-lg'>Creative</h2>
               <ChevronRight className='h-4 w-4 text-muted-foreground' />
             </div>
 
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('marketing').map((template) =>
+                : getTemplatesByCategory('creative').map((template) =>
+                    renderTemplateCard(template)
+                  )}
+            </div>
+          </div>
+
+          {/* MA Section */}
+          <div ref={sectionRefs.ma} className='mb-8'>
+            <div className='mb-4 flex items-center gap-2'>
+              <h2 className='font-medium font-sans text-foreground text-lg'>MA</h2>
+              <ChevronRight className='h-4 w-4 text-muted-foreground' />
+            </div>
+
+            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+              {loading
+                ? renderSkeletonCards()
+                : getTemplatesByCategory('ma').map((template) =>
+                    renderTemplateCard(template)
+                  )}
+            </div>
+          </div>
+
+          {/* PPC Section */}
+          <div ref={sectionRefs.ppc} className='mb-8'>
+            <div className='mb-4 flex items-center gap-2'>
+              <h2 className='font-medium font-sans text-foreground text-lg'>PPC</h2>
+              <ChevronRight className='h-4 w-4 text-muted-foreground' />
+            </div>
+
+            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+              {loading
+                ? renderSkeletonCards()
+                : getTemplatesByCategory('ppc').map((template) =>
                     renderTemplateCard(template)
                   )}
             </div>
@@ -343,63 +373,61 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             </div>
           </div>
 
-          {/* Finance Section */}
-          <div ref={sectionRefs.finance} className='mb-8'>
+          {/* SEO Section */}
+          <div ref={sectionRefs.seo} className='mb-8'>
             <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Finance</h2>
+              <h2 className='font-medium font-sans text-foreground text-lg'>SEO</h2>
               <ChevronRight className='h-4 w-4 text-muted-foreground' />
             </div>
 
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('finance').map((template) => renderTemplateCard(template))}
+                : getTemplatesByCategory('seo').map((template) => renderTemplateCard(template))}
             </div>
           </div>
 
-          {/* Support Section */}
-          <div ref={sectionRefs.support} className='mb-8'>
+          {/* Strategy Section */}
+          <div ref={sectionRefs.strategy} className='mb-8'>
             <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Support</h2>
+              <h2 className='font-medium font-sans text-foreground text-lg'>Strategy</h2>
               <ChevronRight className='h-4 w-4 text-muted-foreground' />
             </div>
 
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('support').map((template) => renderTemplateCard(template))}
+                : getTemplatesByCategory('strategy').map((template) => renderTemplateCard(template))}
             </div>
           </div>
 
-          {/* Artificial Intelligence Section */}
-          <div ref={sectionRefs['artificial-intelligence']} className='mb-8'>
+          {/* WAAS Section */}
+          <div ref={sectionRefs.waas} className='mb-8'>
             <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>
-                Artificial Intelligence
-              </h2>
+              <h2 className='font-medium font-sans text-foreground text-lg'>WAAS</h2>
               <ChevronRight className='h-4 w-4 text-muted-foreground' />
             </div>
 
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('artificial-intelligence').map((template) =>
+                : getTemplatesByCategory('waas').map((template) =>
                     renderTemplateCard(template)
                   )}
             </div>
           </div>
 
-          {/* Other Section */}
-          <div ref={sectionRefs.other} className='mb-8'>
+          {/* Product Section */}
+          <div ref={sectionRefs.product} className='mb-8'>
             <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Other</h2>
+              <h2 className='font-medium font-sans text-foreground text-lg'>Product</h2>
               <ChevronRight className='h-4 w-4 text-muted-foreground' />
             </div>
 
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('other').map((template) => renderTemplateCard(template))}
+                : getTemplatesByCategory('product').map((template) => renderTemplateCard(template))}
             </div>
           </div>
         </div>

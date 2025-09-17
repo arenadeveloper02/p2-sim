@@ -42,7 +42,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
   const { setGlobalActionsDisabled } = useUiFlagsStore()
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
-  const [selectedCategory, setSelectedCategory] = useState<string>('marketing')
+  const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [isCategoryDisabled, setIsCategoryDisabled] = useState<boolean>(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -90,7 +90,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
   const handleCloseModal = () => {
     onOpenChange(false)
     setSelectedUser(null)
-    setSelectedCategory('marketing')
+    setSelectedCategory('')
     setIsCategoryDisabled(false) // Reset category disabled state
   }
 
@@ -181,7 +181,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
 
           <Button
             form='deploy-api-form'
-            disabled={isSubmitting || selectedUser === null}
+            disabled={isSubmitting || selectedUser === null || selectedCategory === ''}
             onClick={handleSendForApproval}
             className={cn(
               'gap-2 font-medium',

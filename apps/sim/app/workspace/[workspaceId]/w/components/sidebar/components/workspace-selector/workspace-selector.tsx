@@ -89,9 +89,9 @@ export function WorkspaceSelector({
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
-  // Helper function to check if workspace is APPROVAL LIST
+  // Helper function to check if workspace is AGENTS APPROVAL
   const isApproverListWorkspace = useCallback((workspace: Workspace) => {
-    return workspace?.name === 'APPROVAL LIST'
+    return workspace?.name === 'AGENTS APPROVAL'
   }, [])
 
   // Focus input when editing starts
@@ -130,7 +130,7 @@ export function WorkspaceSelector({
       if (workspace.permissions !== 'admin') {
         return
       }
-      // Prevent editing APPROVAL LIST workspace
+      // Prevent editing AGENTS APPROVAL workspace
       if (isApproverListWorkspace(workspace)) {
         return
       }
@@ -400,7 +400,7 @@ export function WorkspaceSelector({
                     disabled={isApproverListWorkspace(workspace)}
                     title={
                       isApproverListWorkspace(workspace)
-                        ? 'Cannot edit APPROVAL LIST workspace'
+                        ? 'Cannot edit AGENTS APPROVAL workspace'
                         : 'Edit workspace name'
                     }
                     className={cn(
@@ -490,7 +490,7 @@ export function WorkspaceSelector({
                     disabled={isApproverListWorkspace(workspace)}
                     title={
                       isApproverListWorkspace(workspace)
-                        ? 'Cannot delete APPROVAL LIST workspace'
+                        ? 'Cannot delete AGENTS APPROVAL workspace'
                         : 'Delete workspace'
                     }
                     className={cn(
@@ -523,7 +523,7 @@ export function WorkspaceSelector({
 
           {/* Bottom Actions */}
           <div className='mt-2 flex items-center gap-2 border-t pt-2'>
-            {/* Send Invite - Hide in development and APPROVAL LIST */}
+            {/* Send Invite - Hide in development and AGENTS APPROVAL */}
             {!isDev && !isApproverListWorkspace(activeWorkspace!) && (
               <Button
                 variant='secondary'

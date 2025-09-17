@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const userWorkspace = await tx
         .select()
         .from(workspace)
-        .where(and(eq(workspace.name, 'APPROVAL LIST'), eq(workspace.ownerId, arenaUser[0].id)))
+        .where(and(eq(workspace.name, 'AGENTS APPROVAL'), eq(workspace.ownerId, arenaUser[0].id)))
         .limit(1)
       if (userWorkspace.length === 0) {
         logger.warn(
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await tx.insert(workspace).values({
           id: newWorkspaceId,
           ownerId: arenaUser[0].id,
-          name: `APPROVAL LIST`,
+          name: `AGENTS APPROVAL`,
           createdAt: now,
           updatedAt: now,
         })
@@ -444,14 +444,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const getWorkflowApproval = await db.transaction(async (tx) => {
-    // First, check if this is a workflow in the APPROVAL LIST (copied workflow)
+    // First, check if this is a workflow in the AGENTS APPROVAL (copied workflow)
     // by looking for a workflowStatus record where mappedWorkflowId = workflowId
     const approvalListStatus = await tx
       .select()
       .from(workflowStatus)
       .where(
         and(
-          eq(workflowStatus.workflowId, workflowId), // This is the approval list copy
+          eq(workflowStatus.workflowId, workflowId), // This is the AGENTS APPROVAL copy
           or(
             eq(workflowStatus.userId, session.user.id),
             eq(workflowStatus.ownerId, session.user.id)
@@ -462,8 +462,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .limit(1)
 
     if (approvalListStatus.length > 0) {
-      // This is a workflow in the APPROVAL LIST, return its status
-      console.log('Found approval list workflow status:', approvalListStatus[0])
+      // This is a workflow in the AGENTS APPROVAL, return its status
+      console.log('Found AGENTS APPROVAL workflow status:', approvalListStatus[0])
       return approvalListStatus[0]
     }
 
@@ -769,7 +769,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           .where(eq(user.id, userWorkflowStatus[0].ownerId))
           .limit(1)
 
-        // Load data from ORIGINAL workflow (not the APPROVAL LIST copy)
+        // Load data from ORIGINAL workflow (not the AGENTS APPROVAL copy)
         const normalizedData = await loadWorkflowFromNormalizedTables(
           userWorkflowStatus[0].mappedWorkflowId // Original workflow ID
         )

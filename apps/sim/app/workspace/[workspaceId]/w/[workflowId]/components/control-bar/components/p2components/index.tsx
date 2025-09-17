@@ -111,7 +111,7 @@ export const renderApprovalButton = (
     !isDisabled &&
     approval?.status !== 'PENDING' &&
     approval?.ownerId === session?.user?.id &&
-    workspaceName !== 'APPROVAL LIST'
+    workspaceName !== 'AGENTS APPROVAL'
 
   console.log(approval)
 

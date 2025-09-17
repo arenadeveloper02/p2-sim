@@ -28,9 +28,9 @@ interface Workspace {
 
 const logger = createLogger('WorkflowItem')
 
-// Helper function to check if workspace is APPROVAL LIST
+// Helper function to check if workspace is AGENTS APPROVAL
 const isApproverListWorkspace = (workspace: Workspace | null | undefined): boolean => {
-  return workspace?.name === 'APPROVAL LIST'
+  return workspace?.name === 'AGENTS APPROVAL'
 }
 
 // Helper function to lighten a hex color

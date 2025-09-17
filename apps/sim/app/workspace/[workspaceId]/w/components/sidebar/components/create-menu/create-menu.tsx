@@ -290,7 +290,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
     const data = await response.json()
     data?.workspaces.forEach((work: any) => {
-      if (work?.id === workspaceId && work?.name === 'APPROVAL LIST') {
+      if (work?.id === workspaceId && work?.name === 'AGENTS APPROVAL') {
         setDisableCreate(true)
       }
     })
@@ -338,7 +338,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
             className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
             title={
               disableCreate
-                ? 'Create functionality is disabled in APPROVAL LIST workspace'
+                ? 'Create functionality is disabled in AGENTS APPROVAL workspace'
                 : 'Create Workflow (Hover, right-click, or long press for more options)'
             }
             disabled={isCreatingWorkflow || disableCreate}
