@@ -164,13 +164,14 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     const response = await SlackRateLimitHandler.executeWithRetry(
-      () => fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }),
+      () =>
+        fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }),
       {
         maxRetries: 3,
         baseDelay: 1000,
@@ -182,7 +183,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
       // Extract rate limit info if available
       const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
       let errorMessage = `Slack API error: ${response.status} ${response.statusText}`
-      
+
       if (response.status === 429) {
         if (rateLimitInfo.retryAfter) {
           errorMessage += `. Rate limit exceeded. Retry after ${rateLimitInfo.retryAfter} seconds.`
@@ -192,7 +193,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
           errorMessage += '. Rate limit exceeded. Please try again later.'
         }
       }
-      
+
       throw new Error(errorMessage)
     }
 
