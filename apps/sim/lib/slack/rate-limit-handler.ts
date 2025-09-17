@@ -54,19 +54,21 @@ export class SlackRateLimitHandler {
 
         // Calculate delay for next retry
         const delay = this.calculateRetryDelay(response, attempt, opts)
-        
-        logger.warn(`Slack API rate limit hit (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`, {
-          status: response.status,
-          attempt: attempt + 1,
-          maxRetries: opts.maxRetries + 1,
-        })
+
+        logger.warn(
+          `Slack API rate limit hit (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`,
+          {
+            status: response.status,
+            attempt: attempt + 1,
+            maxRetries: opts.maxRetries + 1,
+          }
+        )
 
         await this.sleep(delay)
-
       } catch (error) {
         const err = error as Error & { status?: number }
         lastError = err
-        
+
         // If it's not a rate limit error, don't retry
         if (!err.status || err.status !== 429) {
           throw error
@@ -82,11 +84,14 @@ export class SlackRateLimitHandler {
           opts.maxDelay
         )
 
-        logger.warn(`Slack API error (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`, {
-          error: err.message,
-          attempt: attempt + 1,
-          maxRetries: opts.maxRetries + 1,
-        })
+        logger.warn(
+          `Slack API error (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`,
+          {
+            error: err.message,
+            attempt: attempt + 1,
+            maxRetries: opts.maxRetries + 1,
+          }
+        )
 
         await this.sleep(delay)
       }
@@ -133,21 +138,21 @@ export class SlackRateLimitHandler {
   }> {
     try {
       const data = await response.json()
-      
+
       if (data.error) {
         return {
           message: data.error,
-          details: data
+          details: data,
         }
       }
-      
+
       return {
         message: `${response.status} ${response.statusText}`,
-        details: data
+        details: data,
       }
     } catch {
       return {
-        message: `${response.status} ${response.statusText}`
+        message: `${response.status} ${response.statusText}`,
       }
     }
   }
@@ -156,17 +161,19 @@ export class SlackRateLimitHandler {
    * Sleep for specified milliseconds
    */
   private static sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   /**
    * Check if an error is a rate limit error
    */
   static isRateLimitError(error: any): boolean {
-    return error?.status === 429 || 
-           error?.message?.includes('rate limit') ||
-           error?.message?.includes('Too Many Requests') ||
-           error?.message?.includes('429')
+    return (
+      error?.status === 429 ||
+      error?.message?.includes('rate limit') ||
+      error?.message?.includes('Too Many Requests') ||
+      error?.message?.includes('429')
+    )
   }
 
   /**
