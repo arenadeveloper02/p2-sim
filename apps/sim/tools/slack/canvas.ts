@@ -1,6 +1,6 @@
+import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import type { SlackCanvasParams, SlackCanvasResponse } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
-import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 
 export const slackCanvasTool: ToolConfig<SlackCanvasParams, SlackCanvasResponse> = {
   id: 'slack_canvas',

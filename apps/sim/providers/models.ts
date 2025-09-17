@@ -17,7 +17,6 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
-  OpenRouterIcon,
   xAIIcon,
 } from '@/components/icons'
 

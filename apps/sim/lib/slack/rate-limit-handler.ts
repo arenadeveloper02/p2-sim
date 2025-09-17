@@ -33,7 +33,7 @@ export class SlackRateLimitHandler {
     apiCall: () => Promise<Response>,
     options: RetryOptions = {}
   ): Promise<Response> {
-    const opts = { ...this.DEFAULT_OPTIONS, ...options }
+    const opts = { ...SlackRateLimitHandler.DEFAULT_OPTIONS, ...options }
     let lastError: Error | null = null
 
     for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
@@ -48,12 +48,12 @@ export class SlackRateLimitHandler {
         // Handle rate limit
         if (attempt === opts.maxRetries) {
           // Last attempt, throw error
-          const errorData = await this.extractErrorFromResponse(response.clone())
+          const errorData = await SlackRateLimitHandler.extractErrorFromResponse(response.clone())
           throw new Error(`Slack API rate limit exceeded: ${errorData.message}`)
         }
 
         // Calculate delay for next retry
-        const delay = this.calculateRetryDelay(response, attempt, opts)
+        const delay = SlackRateLimitHandler.calculateRetryDelay(response, attempt, opts)
 
         logger.warn(
           `Slack API rate limit hit (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`,
@@ -64,7 +64,7 @@ export class SlackRateLimitHandler {
           }
         )
 
-        await this.sleep(delay)
+        await SlackRateLimitHandler.sleep(delay)
       } catch (error) {
         const err = error as Error & { status?: number }
         lastError = err
@@ -79,10 +79,7 @@ export class SlackRateLimitHandler {
         }
 
         // Calculate delay for network/other errors
-        const delay = Math.min(
-          opts.baseDelay * Math.pow(opts.backoffMultiplier, attempt),
-          opts.maxDelay
-        )
+        const delay = Math.min(opts.baseDelay * opts.backoffMultiplier ** attempt, opts.maxDelay)
 
         logger.warn(
           `Slack API error (attempt ${attempt + 1}/${opts.maxRetries + 1}), retrying in ${delay}ms`,
@@ -93,7 +90,7 @@ export class SlackRateLimitHandler {
           }
         )
 
-        await this.sleep(delay)
+        await SlackRateLimitHandler.sleep(delay)
       }
     }
 
@@ -111,21 +108,21 @@ export class SlackRateLimitHandler {
     // Check for Retry-After header (in seconds)
     const retryAfter = response.headers.get('retry-after')
     if (retryAfter) {
-      const retryAfterMs = parseInt(retryAfter, 10) * 1000
+      const retryAfterMs = Number.parseInt(retryAfter, 10) * 1000
       return Math.min(retryAfterMs, options.maxDelay)
     }
 
     // Check for X-Rate-Limit-Reset header (Unix timestamp)
     const rateLimitReset = response.headers.get('x-rate-limit-reset')
     if (rateLimitReset) {
-      const resetTime = parseInt(rateLimitReset, 10) * 1000 // Convert to milliseconds
+      const resetTime = Number.parseInt(rateLimitReset, 10) * 1000 // Convert to milliseconds
       const now = Date.now()
       const delay = Math.max(resetTime - now, 0)
       return Math.min(delay, options.maxDelay)
     }
 
     // Fallback to exponential backoff
-    const exponentialDelay = options.baseDelay * Math.pow(options.backoffMultiplier, attempt)
+    const exponentialDelay = options.baseDelay * options.backoffMultiplier ** attempt
     return Math.min(exponentialDelay, options.maxDelay)
   }
 
@@ -189,9 +186,9 @@ export class SlackRateLimitHandler {
     const retryAfter = response.headers.get('retry-after')
 
     return {
-      remaining: remaining ? parseInt(remaining, 10) : undefined,
-      reset: reset ? new Date(parseInt(reset, 10) * 1000) : undefined,
-      retryAfter: retryAfter ? parseInt(retryAfter, 10) : undefined,
+      remaining: remaining ? Number.parseInt(remaining, 10) : undefined,
+      reset: reset ? new Date(Number.parseInt(reset, 10) * 1000) : undefined,
+      retryAfter: retryAfter ? Number.parseInt(retryAfter, 10) : undefined,
     }
   }
 }

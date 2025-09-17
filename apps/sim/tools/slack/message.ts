@@ -1,6 +1,6 @@
+import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import type { SlackMessageParams, SlackMessageResponse } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
-import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 
 export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageResponse> = {
   id: 'slack_message',
