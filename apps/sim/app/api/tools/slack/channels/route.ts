@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { createLogger } from '@/lib/logs/console/logger'
+import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import { generateRequestId } from '@/lib/utils'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
@@ -14,6 +15,11 @@ interface SlackChannel {
   is_private: boolean
   is_archived: boolean
   is_member: boolean
+  is_general?: boolean
+  is_channel?: boolean
+  is_group?: boolean
+  is_mpim?: boolean
+  is_im?: boolean
 }
 
 export async function POST(request: Request) {
@@ -93,27 +99,35 @@ export async function POST(request: Request) {
       }
     }
 
-    // Filter to channels the bot can access and format the response
+    // Filter to only active channels (not archived)
     const channels = (data.channels || [])
       .filter((channel: SlackChannel) => {
-        const canAccess = !channel.is_archived && (channel.is_member || !channel.is_private)
+        // Only include active (non-archived) channels
+        const isActive = !channel.is_archived
 
-        if (!canAccess) {
+        if (!isActive) {
           logger.debug(
-            `Filtering out channel: ${channel.name} (archived: ${channel.is_archived}, private: ${channel.is_private}, member: ${channel.is_member})`
+            `Filtering out archived channel: ${channel.name} (archived: ${channel.is_archived})`
           )
         }
 
-        return canAccess
+        return isActive
       })
       .map((channel: SlackChannel) => ({
         id: channel.id,
         name: channel.name,
         isPrivate: channel.is_private,
+        isMember: channel.is_member,
+        isGeneral: channel.is_general,
+        isChannel: channel.is_channel,
+        isGroup: channel.is_group,
+        isMpim: channel.is_mpim,
+        isIm: channel.is_im,
       }))
 
-    logger.info(`Successfully fetched ${channels.length} Slack channels`, {
+    logger.info(`Successfully fetched ${channels.length} active Slack channels`, {
       total: data.channels?.length || 0,
+      active: channels.length,
       private: channels.filter((c: { isPrivate: boolean }) => c.isPrivate).length,
       public: channels.filter((c: { isPrivate: boolean }) => !c.isPrivate).length,
       tokenType: isBotToken ? 'bot_token' : 'oauth',
@@ -129,34 +143,90 @@ export async function POST(request: Request) {
 }
 
 async function fetchSlackChannels(accessToken: string, includePrivate = true) {
-  const url = new URL('https://slack.com/api/conversations.list')
+  const allChannels: any[] = []
+  let cursor: string | undefined
+  let hasMore = true
 
-  if (includePrivate) {
-    url.searchParams.append('types', 'public_channel,private_channel')
-  } else {
-    url.searchParams.append('types', 'public_channel')
+  while (hasMore) {
+    const url = new URL('https://slack.com/api/conversations.list')
+
+    if (includePrivate) {
+      url.searchParams.append('types', 'public_channel,private_channel')
+    } else {
+      url.searchParams.append('types', 'public_channel')
+    }
+
+    url.searchParams.append('exclude_archived', 'true')
+    url.searchParams.append('limit', '400')
+
+    if (cursor) {
+      url.searchParams.append('cursor', cursor)
+    }
+
+    const response = await SlackRateLimitHandler.executeWithRetry(
+      () =>
+        fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      {
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 30000,
+      }
+    )
+
+    if (!response.ok) {
+      // Extract rate limit info if available
+      const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
+      let errorMessage = `Slack API error: ${response.status} ${response.statusText}`
+
+      if (response.status === 429) {
+        if (rateLimitInfo.retryAfter) {
+          errorMessage += `. Rate limit exceeded. Retry after ${rateLimitInfo.retryAfter} seconds.`
+        } else if (rateLimitInfo.reset) {
+          errorMessage += `. Rate limit exceeded. Resets at ${rateLimitInfo.reset.toISOString()}.`
+        } else {
+          errorMessage += '. Rate limit exceeded. Please try again later.'
+        }
+      }
+
+      throw new Error(errorMessage)
+    }
+
+    const data = await response.json()
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Failed to fetch channels')
+    }
+
+    // Add channels from this page to our collection
+    if (data.channels && Array.isArray(data.channels)) {
+      allChannels.push(...data.channels)
+    }
+
+    // Check if there are more pages
+    hasMore = !!data.response_metadata?.next_cursor
+    cursor = data.response_metadata?.next_cursor
+
+    // Safety check to prevent infinite loops and limit memory usage
+    if (allChannels.length >= 1000) {
+      logger.warn('Reached 1,000 channels limit, stopping pagination', {
+        channelsLoaded: allChannels.length,
+        hasMore: !!data.response_metadata?.next_cursor,
+      })
+      break
+    }
   }
 
-  url.searchParams.append('exclude_archived', 'true')
-  url.searchParams.append('limit', '200')
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
+  return {
+    ok: true,
+    channels: allChannels,
+    response_metadata: {
+      next_cursor: undefined,
     },
-  })
-
-  if (!response.ok) {
-    throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
   }
-
-  const data = await response.json()
-
-  if (!data.ok) {
-    throw new Error(data.error || 'Failed to fetch channels')
-  }
-
-  return data
 }

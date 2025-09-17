@@ -287,7 +287,7 @@ export function generatePassword(length = 24): string {
  * @throws Error if no API keys are configured for rotation
  */
 export function getRotatingApiKey(provider: string): string {
-  if (provider !== 'openai' && provider !== 'anthropic') {
+  if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google') {
     throw new Error(`No rotation implemented for provider: ${provider}`)
   }
 
@@ -301,9 +301,16 @@ export function getRotatingApiKey(provider: string): string {
     if (env.ANTHROPIC_API_KEY_1) keys.push(env.ANTHROPIC_API_KEY_1)
     if (env.ANTHROPIC_API_KEY_2) keys.push(env.ANTHROPIC_API_KEY_2)
     if (env.ANTHROPIC_API_KEY_3) keys.push(env.ANTHROPIC_API_KEY_3)
+  } else if (provider === 'google') {
+    keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
   }
 
   if (keys.length === 0) {
+    if (provider === 'google') {
+      throw new Error(
+        `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
+      )
+    }
     throw new Error(
       `No API keys configured for rotation. Please configure ${provider.toUpperCase()}_API_KEY_1, ${provider.toUpperCase()}_API_KEY_2, or ${provider.toUpperCase()}_API_KEY_3.`
     )

@@ -16,6 +16,12 @@ export interface SlackChannelInfo {
   id: string
   name: string
   isPrivate: boolean
+  isMember?: boolean
+  isGeneral?: boolean
+  isChannel?: boolean
+  isGroup?: boolean
+  isMpim?: boolean
+  isIm?: boolean
 }
 
 interface SlackChannelSelectorProps {
@@ -62,7 +68,16 @@ export function SlackChannelSelector({
 
       const data = await res.json()
       if (data.error) {
-        setError(data.error)
+        // Provide user-friendly error messages for rate limiting
+        let errorMessage = data.error
+        if (
+          data.error.includes('rate limit') ||
+          data.error.includes('429') ||
+          data.error.includes('Too Many Requests')
+        ) {
+          errorMessage = 'Slack API rate limit exceeded. Please wait a moment and try again.'
+        }
+        setError(errorMessage)
         setChannels([])
       } else {
         setChannels(data.channels)

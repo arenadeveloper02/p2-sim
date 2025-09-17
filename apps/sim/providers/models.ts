@@ -17,7 +17,6 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
-  OpenRouterIcon,
   xAIIcon,
 } from '@/components/icons'
 
@@ -64,19 +63,19 @@ export interface ProviderDefinition {
  * Comprehensive provider definitions, single source of truth
  */
 export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
-  openrouter: {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    description: 'Unified access to many models via OpenRouter',
-    defaultModel: '',
-    modelPatterns: [/^openrouter\//],
-    icon: OpenRouterIcon,
-    capabilities: {
-      temperature: { min: 0, max: 2 },
-      toolUsageControl: true,
-    },
-    models: [],
-  },
+  // openrouter: {
+  //   id: 'openrouter',
+  //   name: 'OpenRouter',
+  //   description: 'Unified access to many models via OpenRouter',
+  //   defaultModel: '',
+  //   modelPatterns: [/^openrouter\//],
+  //   icon: OpenRouterIcon,
+  //   capabilities: {
+  //     temperature: { min: 0, max: 2 },
+  //     toolUsageControl: true,
+  //   },
+  //   models: [],
+  // },
   openai: {
     id: 'openai',
     name: 'OpenAI',
@@ -252,119 +251,119 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     icon: AzureIcon,
     models: [
-      {
-        id: 'azure/gpt-4o',
-        pricing: {
-          input: 2.5,
-          cachedInput: 1.25,
-          output: 10.0,
-          updatedAt: '2025-06-15',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-      },
-      {
-        id: 'azure/gpt-5',
-        pricing: {
-          input: 1.25,
-          cachedInput: 0.125,
-          output: 10.0,
-          updatedAt: '2025-08-07',
-        },
-        capabilities: {
-          reasoningEffort: {
-            values: ['minimal', 'low', 'medium', 'high'],
-          },
-          verbosity: {
-            values: ['low', 'medium', 'high'],
-          },
-        },
-      },
-      {
-        id: 'azure/gpt-5-mini',
-        pricing: {
-          input: 0.25,
-          cachedInput: 0.025,
-          output: 2.0,
-          updatedAt: '2025-08-07',
-        },
-        capabilities: {
-          reasoningEffort: {
-            values: ['minimal', 'low', 'medium', 'high'],
-          },
-          verbosity: {
-            values: ['low', 'medium', 'high'],
-          },
-        },
-      },
-      {
-        id: 'azure/gpt-5-nano',
-        pricing: {
-          input: 0.05,
-          cachedInput: 0.005,
-          output: 0.4,
-          updatedAt: '2025-08-07',
-        },
-        capabilities: {
-          reasoningEffort: {
-            values: ['minimal', 'low', 'medium', 'high'],
-          },
-          verbosity: {
-            values: ['low', 'medium', 'high'],
-          },
-        },
-      },
-      {
-        id: 'azure/gpt-5-chat-latest',
-        pricing: {
-          input: 1.25,
-          cachedInput: 0.125,
-          output: 10.0,
-          updatedAt: '2025-08-07',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'azure/o3',
-        pricing: {
-          input: 10,
-          cachedInput: 2.5,
-          output: 40,
-          updatedAt: '2025-06-15',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'azure/o4-mini',
-        pricing: {
-          input: 1.1,
-          cachedInput: 0.275,
-          output: 4.4,
-          updatedAt: '2025-06-15',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'azure/gpt-4.1',
-        pricing: {
-          input: 2.0,
-          cachedInput: 0.5,
-          output: 8.0,
-          updatedAt: '2025-06-15',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'azure/model-router',
-        pricing: {
-          input: 2.0,
-          cachedInput: 0.5,
-          output: 8.0,
-          updatedAt: '2025-06-15',
-        },
-        capabilities: {},
-      },
+      // {
+      //   id: 'azure/gpt-4o',
+      //   pricing: {
+      //     input: 2.5,
+      //     cachedInput: 1.25,
+      //     output: 10.0,
+      //     updatedAt: '2025-06-15',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      // },
+      // {
+      //   id: 'azure/gpt-5',
+      //   pricing: {
+      //     input: 1.25,
+      //     cachedInput: 0.125,
+      //     output: 10.0,
+      //     updatedAt: '2025-08-07',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['minimal', 'low', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      // },
+      // {
+      //   id: 'azure/gpt-5-mini',
+      //   pricing: {
+      //     input: 0.25,
+      //     cachedInput: 0.025,
+      //     output: 2.0,
+      //     updatedAt: '2025-08-07',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['minimal', 'low', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      // },
+      // {
+      //   id: 'azure/gpt-5-nano',
+      //   pricing: {
+      //     input: 0.05,
+      //     cachedInput: 0.005,
+      //     output: 0.4,
+      //     updatedAt: '2025-08-07',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['minimal', 'low', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      // },
+      // {
+      //   id: 'azure/gpt-5-chat-latest',
+      //   pricing: {
+      //     input: 1.25,
+      //     cachedInput: 0.125,
+      //     output: 10.0,
+      //     updatedAt: '2025-08-07',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'azure/o3',
+      //   pricing: {
+      //     input: 10,
+      //     cachedInput: 2.5,
+      //     output: 40,
+      //     updatedAt: '2025-06-15',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'azure/o4-mini',
+      //   pricing: {
+      //     input: 1.1,
+      //     cachedInput: 0.275,
+      //     output: 4.4,
+      //     updatedAt: '2025-06-15',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'azure/gpt-4.1',
+      //   pricing: {
+      //     input: 2.0,
+      //     cachedInput: 0.5,
+      //     output: 8.0,
+      //     updatedAt: '2025-06-15',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'azure/model-router',
+      //   pricing: {
+      //     input: 2.0,
+      //     cachedInput: 0.5,
+      //     output: 8.0,
+      //     updatedAt: '2025-06-15',
+      //   },
+      //   capabilities: {},
+      // },
     ],
   },
   anthropic: {
@@ -465,6 +464,54 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 2 },
         },
       },
+      {
+        id: 'gemini-1.5-pro',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.625,
+          output: 5.0,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'gemini-1.5-flash',
+        pricing: {
+          input: 0.075,
+          cachedInput: 0.0375,
+          output: 0.3,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'gemini-1.5-flash-8b',
+        pricing: {
+          input: 0.0375,
+          cachedInput: 0.01875,
+          output: 0.15,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'gemini-1.0-pro',
+        pricing: {
+          input: 0.5,
+          cachedInput: 0.25,
+          output: 1.5,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
     ],
   },
   deepseek: {
@@ -478,38 +525,38 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
-      {
-        id: 'deepseek-chat',
-        pricing: {
-          input: 0.75,
-          cachedInput: 0.4,
-          output: 1.0,
-          updatedAt: '2025-03-21',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'deepseek-v3',
-        pricing: {
-          input: 0.75,
-          cachedInput: 0.4,
-          output: 1.0,
-          updatedAt: '2025-03-21',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-      },
-      {
-        id: 'deepseek-r1',
-        pricing: {
-          input: 1.0,
-          cachedInput: 0.5,
-          output: 1.5,
-          updatedAt: '2025-03-21',
-        },
-        capabilities: {},
-      },
+      // {
+      //   id: 'deepseek-chat',
+      //   pricing: {
+      //     input: 0.75,
+      //     cachedInput: 0.4,
+      //     output: 1.0,
+      //     updatedAt: '2025-03-21',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'deepseek-v3',
+      //   pricing: {
+      //     input: 0.75,
+      //     cachedInput: 0.4,
+      //     output: 1.0,
+      //     updatedAt: '2025-03-21',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      // },
+      // {
+      //   id: 'deepseek-r1',
+      //   pricing: {
+      //     input: 1.0,
+      //     cachedInput: 0.5,
+      //     output: 1.5,
+      //     updatedAt: '2025-03-21',
+      //   },
+      //   capabilities: {},
+      // },
     ],
   },
   xai: {
@@ -523,42 +570,42 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
-      {
-        id: 'grok-4-latest',
-        pricing: {
-          input: 5.0,
-          cachedInput: 2.5,
-          output: 25.0,
-          updatedAt: '2025-07-10',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-        },
-      },
-      {
-        id: 'grok-3-latest',
-        pricing: {
-          input: 3.0,
-          cachedInput: 1.5,
-          output: 15.0,
-          updatedAt: '2025-04-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-        },
-      },
-      {
-        id: 'grok-3-fast-latest',
-        pricing: {
-          input: 5.0,
-          cachedInput: 2.5,
-          output: 25.0,
-          updatedAt: '2025-04-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-        },
-      },
+      // {
+      //   id: 'grok-4-latest',
+      //   pricing: {
+      //     input: 5.0,
+      //     cachedInput: 2.5,
+      //     output: 25.0,
+      //     updatedAt: '2025-07-10',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //   },
+      // },
+      // {
+      //   id: 'grok-3-latest',
+      //   pricing: {
+      //     input: 3.0,
+      //     cachedInput: 1.5,
+      //     output: 15.0,
+      //     updatedAt: '2025-04-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //   },
+      // },
+      // {
+      //   id: 'grok-3-fast-latest',
+      //   pricing: {
+      //     input: 5.0,
+      //     cachedInput: 2.5,
+      //     output: 25.0,
+      //     updatedAt: '2025-04-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //   },
+      // },
     ],
   },
   cerebras: {
@@ -572,16 +619,16 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: false,
     },
     models: [
-      {
-        id: 'cerebras/llama-3.3-70b',
-        pricing: {
-          input: 0.94,
-          cachedInput: 0.47,
-          output: 0.94,
-          updatedAt: '2025-03-21',
-        },
-        capabilities: {},
-      },
+      // {
+      //   id: 'cerebras/llama-3.3-70b',
+      //   pricing: {
+      //     input: 0.94,
+      //     cachedInput: 0.47,
+      //     output: 0.94,
+      //     updatedAt: '2025-03-21',
+      //   },
+      //   capabilities: {},
+      // },
     ],
   },
   groq: {
@@ -595,86 +642,86 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: false,
     },
     models: [
-      {
-        id: 'groq/openai/gpt-oss-120b',
-        pricing: {
-          input: 0.15,
-          cachedInput: 0.075,
-          output: 0.75,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/openai/gpt-oss-20b',
-        pricing: {
-          input: 0.01,
-          cachedInput: 0.005,
-          output: 0.25,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/gemma2-9b-it',
-        pricing: {
-          input: 0.04,
-          cachedInput: 0.02,
-          output: 0.04,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/llama-3.1-8b-instant',
-        pricing: {
-          input: 0.05,
-          cachedInput: 0.025,
-          output: 0.08,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/llama-3.3-70b-versatile',
-        pricing: {
-          input: 0.35,
-          cachedInput: 0.175,
-          output: 0.61,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/meta-llama/llama-guard-4-12b',
-        pricing: {
-          input: 0.2,
-          cachedInput: 0.1,
-          output: 0.2,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/deepseek-r1-distill-llama-70b',
-        pricing: {
-          input: 0.58,
-          cachedInput: 0.29,
-          output: 0.99,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
-      {
-        id: 'groq/meta-llama/llama-4-maverick-17b-128e-instruct',
-        pricing: {
-          input: 0.2,
-          cachedInput: 0.1,
-          output: 0.6,
-          updatedAt: '2025-08-05',
-        },
-        capabilities: {},
-      },
+      // {
+      //   id: 'groq/openai/gpt-oss-120b',
+      //   pricing: {
+      //     input: 0.15,
+      //     cachedInput: 0.075,
+      //     output: 0.75,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/openai/gpt-oss-20b',
+      //   pricing: {
+      //     input: 0.01,
+      //     cachedInput: 0.005,
+      //     output: 0.25,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/gemma2-9b-it',
+      //   pricing: {
+      //     input: 0.04,
+      //     cachedInput: 0.02,
+      //     output: 0.04,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/llama-3.1-8b-instant',
+      //   pricing: {
+      //     input: 0.05,
+      //     cachedInput: 0.025,
+      //     output: 0.08,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/llama-3.3-70b-versatile',
+      //   pricing: {
+      //     input: 0.35,
+      //     cachedInput: 0.175,
+      //     output: 0.61,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/meta-llama/llama-guard-4-12b',
+      //   pricing: {
+      //     input: 0.2,
+      //     cachedInput: 0.1,
+      //     output: 0.2,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/deepseek-r1-distill-llama-70b',
+      //   pricing: {
+      //     input: 0.58,
+      //     cachedInput: 0.29,
+      //     output: 0.99,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
+      // {
+      //   id: 'groq/meta-llama/llama-4-maverick-17b-128e-instruct',
+      //   pricing: {
+      //     input: 0.2,
+      //     cachedInput: 0.1,
+      //     output: 0.6,
+      //     updatedAt: '2025-08-05',
+      //   },
+      //   capabilities: {},
+      // },
     ],
   },
   ollama: {
@@ -805,7 +852,11 @@ export function getProvidersWithToolUsageControl(): string[] {
  */
 export function getHostedModels(): string[] {
   // Currently, OpenAI and Anthropic models are hosted
-  return [...getProviderModels('openai'), ...getProviderModels('anthropic')]
+  return [
+    ...getProviderModels('openai'),
+    ...getProviderModels('anthropic'),
+    ...getProviderModels('google'),
+  ]
 }
 
 /**
@@ -865,15 +916,15 @@ export function updateOllamaModels(models: string[]): void {
  * Update OpenRouter models dynamically
  */
 export function updateOpenRouterModels(models: string[]): void {
-  PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
-    id: modelId,
-    pricing: {
-      input: 0,
-      output: 0,
-      updatedAt: new Date().toISOString().split('T')[0],
-    },
-    capabilities: {},
-  }))
+  // PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
+  //   id: modelId,
+  //   pricing: {
+  //     input: 0,
+  //     output: 0,
+  //     updatedAt: new Date().toISOString().split('T')[0],
+  //   },
+  //   capabilities: {},
+  // }))
 }
 
 /**
