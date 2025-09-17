@@ -1401,7 +1401,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
       askApproveWorkflow: async (
         sourceId: string,
         approvalUserId: string,
-        category = 'marketing'
+        category = 'creative',
+        description = ''
       ) => {
         const { workflows } = get()
         const sourceWorkflow = workflows[sourceId]
@@ -1422,7 +1423,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: `${sourceWorkflow.name}`,
-              description: sourceWorkflow.description,
+              description: description || sourceWorkflow.description,
               color: sourceWorkflow.color,
               workspaceId: workspaceId,
               folderId: sourceWorkflow.folderId,

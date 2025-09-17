@@ -43,6 +43,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('')
+  const [description, setDescription] = useState<string>('')
   const [isCategoryDisabled, setIsCategoryDisabled] = useState<boolean>(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -60,13 +61,17 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
       const fetchApprovalData = async () => {
         try {
           const approvalData = (await getApprovalStatus(workflowId)) as any
-
           // Handle category
           if (approvalData?.category) {
             setSelectedCategory(approvalData.category)
             setIsCategoryDisabled(true) // Disable category select if existing category found
           } else {
             setIsCategoryDisabled(false) // Enable category select if no existing category
+          }
+
+          // Handle description
+          if (approvalData?.description) {
+            setDescription(approvalData.description)
           }
 
           // Handle user
@@ -91,6 +96,7 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
     onOpenChange(false)
     setSelectedUser(null)
     setSelectedCategory('')
+    setDescription('')
     setIsCategoryDisabled(false) // Reset category disabled state
   }
 
@@ -98,7 +104,12 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
     if (!workflowId || !canEdit) return
     setIsSubmitting(true)
     try {
-      const newWorkflow = await askApproveWorkflow(workflowId, selectedUser.id, selectedCategory)
+      const newWorkflow = await askApproveWorkflow(
+        workflowId,
+        selectedUser.id,
+        selectedCategory,
+        description
+      )
       if (newWorkflow) {
         setIsSubmitting(false)
         setGlobalActionsDisabled(true)
@@ -164,11 +175,17 @@ export function GetApprovalModal({ open, onOpenChange, workflowId, canEdit }: Ap
                     ))}
                   </SelectContent>
                 </Select>
-                {/* {isCategoryDisabled && (
-                  <p className='text-muted-foreground text-xs'>
-                    Category is set from existing approval and cannot be changed
-                  </p>
-                )} */}
+              </div>
+
+              <div className='flex flex-col gap-1'>
+                <p className='font-medium text-sm'>Description</p>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder='Enter description for the agent...'
+                  className='flex min-h-[80px] w-full rounded-[8px] border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+                  rows={3}
+                />
               </div>
             </div>
           </div>

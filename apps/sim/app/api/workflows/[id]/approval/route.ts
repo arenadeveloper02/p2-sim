@@ -30,7 +30,7 @@ const ApprovalRequestSchema = z.object({
   workspaceId: z.string().optional(),
   folderId: z.string().nullable().optional(),
   approvalUserId: z.string().min(1, 'Approval user ID is required'),
-  category: z.string().optional().default('marketing'),
+  category: z.string().optional().default('creative'),
 })
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -396,7 +396,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ownerId: session.user.id,
         userId: approvalUserId,
         status: 'PENDING',
-        category: category || 'marketing',
+        description: description || null,
+        category: category || 'creative',
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -799,9 +800,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             .update(templates)
             .set({
               name: userWorkflowStatus[0].name,
-              description: '',
+              description: userWorkflowStatus[0].description || '',
               author: ownerData[0]?.name || session.user.name,
-              category: userWorkflowStatus[0].category || 'marketing',
+              category: userWorkflowStatus[0].category || 'creative',
               state: templateState,
               updatedAt: now,
             })
@@ -814,13 +815,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             workflowId: userWorkflowStatus[0].mappedWorkflowId, // Use original owner's workflow ID
             userId: userWorkflowStatus[0].ownerId, // Use original owner's userId
             name: userWorkflowStatus[0].name,
-            description: '',
+            description: userWorkflowStatus[0].description || '',
             author: ownerData[0]?.name || session.user.name,
             views: 0,
             stars: 0,
             color: '#3972F6',
             icon: 'FileText',
-            category: userWorkflowStatus[0].category || 'marketing',
+            category: userWorkflowStatus[0].category || 'creative',
             state: templateState,
             createdAt: now,
             updatedAt: now,

@@ -233,7 +233,11 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
       count: loading ? 8 : getTemplatesByCategory('strategy').length,
     },
     { id: 'waas', label: 'WAAS', count: loading ? 8 : getTemplatesByCategory('waas').length },
-    { id: 'product', label: 'Product', count: loading ? 8 : getTemplatesByCategory('product').length },
+    {
+      id: 'product',
+      label: 'Product',
+      count: loading ? 8 : getTemplatesByCategory('product').length,
+    },
   ]
 
   return (
@@ -337,9 +341,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('ma').map((template) =>
-                    renderTemplateCard(template)
-                  )}
+                : getTemplatesByCategory('ma').map((template) => renderTemplateCard(template))}
             </div>
           </div>
 
@@ -353,9 +355,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('ppc').map((template) =>
-                    renderTemplateCard(template)
-                  )}
+                : getTemplatesByCategory('ppc').map((template) => renderTemplateCard(template))}
             </div>
           </div>
 
@@ -397,7 +397,9 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('strategy').map((template) => renderTemplateCard(template))}
+                : getTemplatesByCategory('strategy').map((template) =>
+                    renderTemplateCard(template)
+                  )}
             </div>
           </div>
 
@@ -411,9 +413,7 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
             <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
               {loading
                 ? renderSkeletonCards()
-                : getTemplatesByCategory('waas').map((template) =>
-                    renderTemplateCard(template)
-                  )}
+                : getTemplatesByCategory('waas').map((template) => renderTemplateCard(template))}
             </div>
           </div>
 

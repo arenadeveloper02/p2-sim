@@ -1450,7 +1450,8 @@ export const workflowStatus = pgTable('workflow_status', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   comments: text('comments'),
-  category: text('category').default('marketing'),
+  description: text('description'),
+  category: text('category').default('creative'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })

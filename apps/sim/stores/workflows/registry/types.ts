@@ -63,7 +63,8 @@ export interface WorkflowRegistryActions {
   askApproveWorkflow: (
     sourceId: string,
     approvalUserId: string,
-    category?: string
+    category?: string,
+    description?: string
   ) => Promise<string | null>
   getApprovalStatus: (workflowId: string | null) => Promise<string>
   approveRejectWorkflow: (
