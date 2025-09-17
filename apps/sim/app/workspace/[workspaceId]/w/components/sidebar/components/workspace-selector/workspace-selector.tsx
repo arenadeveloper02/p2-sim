@@ -312,6 +312,42 @@ export function WorkspaceSelector({
     [onLeaveWorkspace]
   )
 
+  // Render AGENTS APPROVAL workspace separately
+  const renderAgentsApprovalWorkspace = () => {
+    const agentsApprovalWorkspace = workspaces.find(
+      (workspace) => workspace.name === 'AGENTS APPROVAL'
+    )
+
+    if (!agentsApprovalWorkspace) {
+      return null
+    }
+
+    return (
+      <div
+        key={agentsApprovalWorkspace.id}
+        className={cn(
+          'group flex h-8 cursor-pointer items-center rounded-[8px] p-2 text-left transition-colors',
+          activeWorkspace?.id === agentsApprovalWorkspace.id ? 'bg-muted' : 'hover:bg-muted'
+        )}
+        style={{ maxWidth: '206px' }}
+        onClick={() => onSwitchWorkspace(agentsApprovalWorkspace)}
+      >
+        <div className='flex min-w-0 flex-1 items-center text-left'>
+          <span
+            className={cn(
+              'min-w-0 flex-1 select-none truncate pr-1 font-medium text-sm',
+              activeWorkspace?.id === agentsApprovalWorkspace.id
+                ? 'text-foreground'
+                : 'text-muted-foreground group-hover:text-foreground'
+            )}
+          >
+            {agentsApprovalWorkspace.name}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   // Render workspace list
   const renderWorkspaceList = () => {
     if (isWorkspacesLoading) {
@@ -332,9 +368,12 @@ export function WorkspaceSelector({
       )
     }
 
+    // Filter out AGENTS APPROVAL workspace
+    const regularWorkspaces = workspaces.filter((workspace) => workspace.name !== 'AGENTS APPROVAL')
+
     return (
       <div className='space-y-1'>
-        {workspaces.map((workspace) => {
+        {regularWorkspaces.map((workspace) => {
           const isEditing = editingWorkspaceId === workspace.id
           const isHovered = hoveredWorkspaceId === workspace.id
 
@@ -516,10 +555,15 @@ export function WorkspaceSelector({
         <div className='flex h-full flex-col p-2'>
           {/* Workspace List */}
           <div className='min-h-0 flex-1'>
-            <ScrollArea ref={scrollAreaRef} className='h-[104px]' hideScrollbar={true}>
+            <ScrollArea ref={scrollAreaRef} className='h-[104px]' hideScrollbar={false}>
               {renderWorkspaceList()}
             </ScrollArea>
           </div>
+
+          {/* AGENTS APPROVAL Section */}
+          {workspaces.find((workspace) => workspace.name === 'AGENTS APPROVAL') && (
+            <div className='mt-2 border-t pt-2'>{renderAgentsApprovalWorkspace()}</div>
+          )}
 
           {/* Bottom Actions */}
           <div className='mt-2 flex items-center gap-2 border-t pt-2'>
