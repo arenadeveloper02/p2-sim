@@ -11,10 +11,7 @@ import {
   getTomorrow,
 } from '@/lib/arena-utils/arena-date-utils'
 import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
-import type {
-  SearchTaskQueryParams,
-  SearchTaskResponse,
-} from '@/tools/arena_task_manager/types'
+import type { SearchTaskQueryParams, SearchTaskResponse } from '@/tools/arena_task_manager/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> = {

@@ -99,7 +99,7 @@ export function ArenaAssigneeSelector({
     }
 
     fetchAssignees()
-  }, [clientId, projectId,subBlockId])
+  }, [clientId, projectId, subBlockId])
 
   const selectedLabel =
     assignees.find((a) => a.value === selectedValue)?.label || 'Select assignee...'

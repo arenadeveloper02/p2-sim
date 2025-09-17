@@ -79,7 +79,7 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       const today = new Date()
       const nextWeekDay = new Date()
       nextWeekDay.setDate(today.getDate() + 7)
-      const isTask = params['operation'] === 'arena_create_task'
+      const isTask = params.operation === 'arena_create_task'
       const body: Record<string, any> = {
         workflowId: params._context.workflowId,
         name: params['task-name'],
