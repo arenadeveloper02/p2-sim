@@ -157,7 +157,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
 
     url.searchParams.append('exclude_archived', 'true')
     url.searchParams.append('limit', '200')
-    
+
     if (cursor) {
       url.searchParams.append('cursor', cursor)
     }
@@ -200,7 +200,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     ok: true,
     channels: allChannels,
     response_metadata: {
-      next_cursor: undefined
-    }
+      next_cursor: undefined,
+    },
   }
 }
