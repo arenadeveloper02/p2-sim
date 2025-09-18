@@ -28,77 +28,81 @@ interface GoogleAdsAccount {
 
 // Google Ads accounts mapping
 const GOOGLE_ADS_ACCOUNTS: Record<string, GoogleAdsAccount> = {
-  "ami": { id: "7284380454", name: "AMI" },
-  "auhi": { id: "4482250764", name: "AUHI" },
-  "acalvio": { id: "9011732980", name: "Acalvio" },
-  "altula": { id: "1160331216", name: "Altula" },
-  "arenaplay": { id: "1830946644", name: "Arenaplay" },
-  "cpic": { id: "1757492986", name: "CPIC" },
-  "capitalcitynurses": { id: "8395621144", name: "CapitalCityNurses.com" },
-  "careadvantage": { id: "9059182052", name: "CareAdvantage" },
-  "chancey_reynolds": { id: "7098393346", name: "Chancey & Reynolds" },
-  "chevron_july": { id: "2654484646", name: "Chevron-July-01" },
-  "concentric_ai": { id: "4502095676", name: "Concentric AI" },
-  "connect_sell": { id: "5801651287", name: "Connect&Sell" },
-  "covalent": { id: "3548685960", name: "Covalent Metrology" },
-  "daniel_shapiro": { id: "7395576762", name: "Daniel I. Shapiro, M.D., P.C." },
-  "dental_care": { id: "2771541197", name: "Dental Care Associates" },
-  "digital_security": { id: "4917763878", name: "Digital Security" },
-  "dynamic_dental": { id: "4734954125", name: "Dynamic Dental" },
-  "epstein": { id: "1300586568", name: "EPSTEIN" },
-  "fii": { id: "6837520180", name: "FII" },
-  "fluidstack": { id: "2585157054", name: "Fluidstack" },
-  "foundation_hair": { id: "9515444472", name: "Foundation.Hair" },
-  "ft_jesse": { id: "4443836419", name: "Ft. Jesse" },
-  "gentle_dental": { id: "2497090182", name: "Gentle Dental" },
-  "great_hill_dental": { id: "6480839212", name: "Great Hill Dental" },
-  "hypercatalogue": { id: "9925296449", name: "HyperCatalogue" }
+  ami: { id: '7284380454', name: 'AMI' },
+  auhi: { id: '4482250764', name: 'AUHI' },
+  acalvio: { id: '9011732980', name: 'Acalvio' },
+  altula: { id: '1160331216', name: 'Altula' },
+  arenaplay: { id: '1830946644', name: 'Arenaplay' },
+  cpic: { id: '1757492986', name: 'CPIC' },
+  capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
+  careadvantage: { id: '9059182052', name: 'CareAdvantage' },
+  chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
+  chevron_july: { id: '2654484646', name: 'Chevron-July-01' },
+  concentric_ai: { id: '4502095676', name: 'Concentric AI' },
+  connect_sell: { id: '5801651287', name: 'Connect&Sell' },
+  covalent: { id: '3548685960', name: 'Covalent Metrology' },
+  daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
+  dental_care: { id: '2771541197', name: 'Dental Care Associates' },
+  digital_security: { id: '4917763878', name: 'Digital Security' },
+  dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
+  epstein: { id: '1300586568', name: 'EPSTEIN' },
+  fii: { id: '6837520180', name: 'FII' },
+  fluidstack: { id: '2585157054', name: 'Fluidstack' },
+  foundation_hair: { id: '9515444472', name: 'Foundation.Hair' },
+  ft_jesse: { id: '4443836419', name: 'Ft. Jesse' },
+  gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
+  great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
+  hypercatalogue: { id: '9925296449', name: 'HyperCatalogue' },
 }
 
 function buildQueryFromParams(params: GoogleAdsQueryParams): string {
-  logger.info('Building query from params', { 
-    params, 
+  logger.info('Building query from params', {
+    params,
     naturalQueryType: typeof params.natural_query,
     naturalQueryValue: params.natural_query,
-    accountsAvailable: Object.keys(GOOGLE_ADS_ACCOUNTS)
+    accountsAvailable: Object.keys(GOOGLE_ADS_ACCOUNTS),
   })
-  
+
   // If natural query is provided, use it as the primary query
-  if (params.natural_query && typeof params.natural_query === 'string' && params.natural_query.trim().length > 0) {
+  if (
+    params.natural_query &&
+    typeof params.natural_query === 'string' &&
+    params.natural_query.trim().length > 0
+  ) {
     const trimmedQuery = params.natural_query.trim()
     logger.info('Using natural query', { natural_query: trimmedQuery })
     return trimmedQuery
   }
-  
+
   logger.info('No valid natural query, building structured query')
 
   // Build query from structured parameters
   const accountName = GOOGLE_ADS_ACCOUNTS[params.accounts]?.name || params.accounts
-  logger.info('Building structured query', { 
-    accounts: params.accounts, 
-    accountName, 
-    query_type: params.query_type, 
-    period_type: params.period_type 
+  logger.info('Building structured query', {
+    accounts: params.accounts,
+    accountName,
+    query_type: params.query_type,
+    period_type: params.period_type,
   })
 
   const periodMap: Record<string, string> = {
-    'last_7_days': 'last 7 days',
-    'last_15_days': 'last 15 days', 
-    'last_30_days': 'last 30 days',
-    'this_month': 'this month',
-    'last_month': 'last month',
-    'this_week': 'this week',
-    'last_week': 'last week',
-    'custom': 'custom date range'
+    last_7_days: 'last 7 days',
+    last_15_days: 'last 15 days',
+    last_30_days: 'last 30 days',
+    this_month: 'this month',
+    last_month: 'last month',
+    this_week: 'this week',
+    last_week: 'last week',
+    custom: 'custom date range',
   }
 
   const queryTypeMap: Record<string, string> = {
-    'campaigns': 'campaign performance',
-    'performance': 'performance analysis',
-    'cost': 'cost analysis',
-    'keywords': 'keyword performance',
-    'week_comparison': `week ${params.week_number_1} vs week ${params.week_number_2} comparison`,
-    'projection': `projection analysis for ${params.projection_month}`
+    campaigns: 'campaign performance',
+    performance: 'performance analysis',
+    cost: 'cost analysis',
+    keywords: 'keyword performance',
+    week_comparison: `week ${params.week_number_1} vs week ${params.week_number_2} comparison`,
+    projection: `projection analysis for ${params.projection_month}`,
   }
 
   const queryType = queryTypeMap[params.query_type || 'campaigns'] || 'campaign performance'
@@ -125,16 +129,16 @@ function formatResults(data: any, outputFormat: string): any {
           query: data.query,
           accounts_found: data.accounts_found,
           date_range: data.date_range,
-          grand_totals: data.grand_totals
+          grand_totals: data.grand_totals,
         },
         account_summaries: data.results?.map((result: any) => ({
           account_name: result.account_name,
           total_campaigns: result.total_campaigns,
-          account_totals: result.account_totals
-        }))
+          account_totals: result.account_totals,
+        })),
       }
 
-    case 'csv':
+    case 'csv': {
       // Convert to CSV-like structure
       const csvData: any[] = []
       data.results?.forEach((account: any) => {
@@ -148,13 +152,14 @@ function formatResults(data: any, outputFormat: string): any {
             cost: campaign.cost,
             conversions: campaign.conversions,
             ctr: campaign.ctr,
-            avg_cpc: campaign.avg_cpc
+            avg_cpc: campaign.avg_cpc,
           })
         })
       })
       return { csv_data: csvData, original_data: data }
+    }
 
-    case 'chart':
+    case 'chart': {
       // Format for chart visualization
       const chartData = {
         accounts: data.results?.map((account: any) => ({
@@ -162,7 +167,7 @@ function formatResults(data: any, outputFormat: string): any {
           clicks: account.account_totals?.clicks || 0,
           impressions: account.account_totals?.impressions || 0,
           cost: account.account_totals?.cost || 0,
-          conversions: account.account_totals?.conversions || 0
+          conversions: account.account_totals?.conversions || 0,
         })),
         campaigns: data.results?.flatMap((account: any) =>
           account.campaigns?.map((campaign: any) => ({
@@ -170,12 +175,13 @@ function formatResults(data: any, outputFormat: string): any {
             campaign: campaign.name,
             clicks: campaign.clicks,
             cost: campaign.cost,
-            conversions: campaign.conversions
+            conversions: campaign.conversions,
           }))
         ),
-        totals: data.grand_totals
+        totals: data.grand_totals,
       }
       return { chart_data: chartData, original_data: data }
+    }
 
     case 'detailed':
     default:
@@ -235,39 +241,43 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
       'Content-Type': 'application/json',
     }),
     body: (params: GoogleAdsQueryParams) => ({
-      query: params.question || buildQueryFromParams({
-        ...params,
-        query_type: params.query_type || 'campaigns',
-        period_type: params.period_type || 'last_30_days',
-        output_format: params.output_format || 'detailed',
-        sort_by: params.sort_by || 'cost_desc'
-      }),
+      query:
+        params.question ||
+        buildQueryFromParams({
+          ...params,
+          query_type: params.query_type || 'campaigns',
+          period_type: params.period_type || 'last_30_days',
+          output_format: params.output_format || 'detailed',
+          sort_by: params.sort_by || 'cost_desc',
+        }),
       accounts: params.accounts,
       // Don't pass period_type - let AI detect it from the question
       output_format: params.output_format || 'detailed',
-      sort_by: params.sort_by || 'cost_desc'
+      sort_by: params.sort_by || 'cost_desc',
     }),
   },
 
   transformResponse: async (response: Response, params?: GoogleAdsQueryParams) => {
     try {
-      logger.info('Processing Google Ads response', { 
+      logger.info('Processing Google Ads response', {
         status: response.status,
         account: params?.accounts,
-        url: response.url
+        url: response.url,
       })
 
       if (!response.ok) {
         const errorText = await response.text()
         logger.error('Response not ok', { status: response.status, errorText })
-        throw new Error(`Google Ads API error: ${response.status} ${response.statusText} - ${errorText}`)
+        throw new Error(
+          `Google Ads API error: ${response.status} ${response.statusText} - ${errorText}`
+        )
       }
 
       const data = await response.json()
-      logger.info('Response data received', { 
+      logger.info('Response data received', {
         dataKeys: Object.keys(data),
         hasResults: !!data.results,
-        resultsLength: data.results?.length
+        resultsLength: data.results?.length,
       })
 
       // Check for API errors
@@ -278,31 +288,33 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
 
       logger.info('Google Ads query completed successfully', {
         accounts_found: data.accounts_found,
-        total_campaigns: data.results?.reduce((sum: number, account: any) => sum + (account.total_campaigns || 0), 0),
-        grand_total_cost: data.grand_totals?.cost
+        total_campaigns: data.results?.reduce(
+          (sum: number, account: any) => sum + (account.total_campaigns || 0),
+          0
+        ),
+        grand_total_cost: data.grand_totals?.cost,
       })
 
       const finalResult = {
         success: true,
-        output: data
+        output: data,
       }
-      
-      logger.info('Returning final result', { 
+
+      logger.info('Returning final result', {
         finalResultKeys: Object.keys(finalResult),
         success: finalResult.success,
         hasOutput: !!finalResult.output,
-        outputKeys: finalResult.output ? Object.keys(finalResult.output) : []
+        outputKeys: finalResult.output ? Object.keys(finalResult.output) : [],
       })
-      
-      return finalResult
 
+      return finalResult
     } catch (error) {
       logger.error('Google Ads query failed', { error })
-      
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       }
     }
-  }
+  },
 }

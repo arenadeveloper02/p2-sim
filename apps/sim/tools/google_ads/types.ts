@@ -129,4 +129,7 @@ export interface GoogleAdsResponse extends ToolResponse {
   output: GoogleAdsQueryResponse | GoogleAdsWeekComparison | GoogleAdsProjection
 }
 
-export type GoogleAdsApiResponse = GoogleAdsQueryResponse | GoogleAdsWeekComparison | GoogleAdsProjection
+export type GoogleAdsApiResponse =
+  | GoogleAdsQueryResponse
+  | GoogleAdsWeekComparison
+  | GoogleAdsProjection

@@ -4,38 +4,38 @@ import type { GoogleAdsResponse } from '@/tools/google_ads/types'
 
 // Google Ads accounts configuration
 const GOOGLE_ADS_ACCOUNTS = {
-  "ami": { id: "7284380454", name: "AMI" },
-  "auhi": { id: "4482250764", name: "AUHI" },
-  "acalvio": { id: "9011732980", name: "Acalvio" },
-  "altula": { id: "1160331216", name: "Altula" },
-  "arenaplay": { id: "1830946644", name: "Arenaplay" },
-  "cpic": { id: "1757492986", name: "CPIC" },
-  "capitalcitynurses": { id: "8395621144", name: "CapitalCityNurses.com" },
-  "careadvantage": { id: "9059182052", name: "CareAdvantage" },
-  "chancey_reynolds": { id: "7098393346", name: "Chancey & Reynolds" },
-  "chevron_july": { id: "2654484646", name: "Chevron-July-01" },
-  "concentric_ai": { id: "4502095676", name: "Concentric AI" },
-  "connect_sell": { id: "5801651287", name: "Connect&Sell" },
-  "covalent": { id: "3548685960", name: "Covalent Metrology" },
-  "daniel_shapiro": { id: "7395576762", name: "Daniel I. Shapiro, M.D., P.C." },
-  "dental_care": { id: "2771541197", name: "Dental Care Associates" },
-  "digital_security": { id: "4917763878", name: "Digital Security" },
-  "dynamic_dental": { id: "4734954125", name: "Dynamic Dental" },
-  "epstein": { id: "1300586568", name: "EPSTEIN" },
-  "fii": { id: "6837520180", name: "FII" },
-  "fluidstack": { id: "2585157054", name: "Fluidstack" },
-  "foundation_hair": { id: "9515444472", name: "Foundation.Hair" },
-  "ft_jesse": { id: "4443836419", name: "Ft. Jesse" },
-  "gentle_dental": { id: "2497090182", name: "Gentle Dental" },
-  "great_hill_dental": { id: "6480839212", name: "Great Hill Dental" },
-  "hypercatalogue": { id: "9925296449", name: "HyperCatalogue" }
+  ami: { id: '7284380454', name: 'AMI' },
+  auhi: { id: '4482250764', name: 'AUHI' },
+  acalvio: { id: '9011732980', name: 'Acalvio' },
+  altula: { id: '1160331216', name: 'Altula' },
+  arenaplay: { id: '1830946644', name: 'Arenaplay' },
+  cpic: { id: '1757492986', name: 'CPIC' },
+  capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
+  careadvantage: { id: '9059182052', name: 'CareAdvantage' },
+  chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
+  chevron_july: { id: '2654484646', name: 'Chevron-July-01' },
+  concentric_ai: { id: '4502095676', name: 'Concentric AI' },
+  connect_sell: { id: '5801651287', name: 'Connect&Sell' },
+  covalent: { id: '3548685960', name: 'Covalent Metrology' },
+  daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
+  dental_care: { id: '2771541197', name: 'Dental Care Associates' },
+  digital_security: { id: '4917763878', name: 'Digital Security' },
+  dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
+  epstein: { id: '1300586568', name: 'EPSTEIN' },
+  fii: { id: '6837520180', name: 'FII' },
+  fluidstack: { id: '2585157054', name: 'Fluidstack' },
+  foundation_hair: { id: '9515444472', name: 'Foundation.Hair' },
+  ft_jesse: { id: '4443836419', name: 'Ft. Jesse' },
+  gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
+  great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
+  hypercatalogue: { id: '9925296449', name: 'HyperCatalogue' },
 }
 
 export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
   type: 'google_ads',
   name: 'Google Ads',
   description: 'Query Google Ads campaign data and analytics',
-  longDescription: 
+  longDescription:
     'The Google Ads block allows you to query comprehensive campaign performance data including clicks, impressions, costs, conversions, and other key metrics. Supports flexible date ranges, account filtering, and various query types including campaigns, performance, and cost analysis.',
   docsLink: 'https://docs.sim.ai/tools/google-ads',
   category: 'tools',
@@ -60,7 +60,8 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       title: 'Question / Query',
       type: 'long-input',
       layout: 'full',
-      placeholder: 'Ask any question about Google Ads data, e.g., "Show me campaign performance for last 30 days", "What are my top spending campaigns this month?", "How many conversions did I get last week?"',
+      placeholder:
+        'Ask any question about Google Ads data, e.g., "Show me campaign performance for last 30 days", "What are my top spending campaigns this month?", "How many conversions did I get last week?"',
       rows: 3,
       required: true,
       wandConfig: {
@@ -93,7 +94,6 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
 Generate a clear, specific question about Google Ads performance based on the user's request.`,
       },
     },
-    
   ],
   tools: {
     access: ['google_ads_query'],
