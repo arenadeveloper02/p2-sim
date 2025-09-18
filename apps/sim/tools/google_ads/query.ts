@@ -4,18 +4,19 @@ import { createLogger } from '@/lib/logs/console/logger'
 const logger = createLogger('GoogleAdsQuery')
 
 interface GoogleAdsQueryParams {
-  query_type: string
   accounts: string
-  period_type: string
+  question?: string
+  query_type?: string
+  period_type?: string
   custom_start_date?: string
   custom_end_date?: string
-  natural_query?: string
+  natural_query?: string | null
   week_number_1?: string
   week_number_2?: string
   projection_month?: string
   include_metrics?: string[]
-  output_format: string
-  sort_by: string
+  output_format?: string
+  sort_by?: string
   developer_token?: string
   manager_customer_id?: string
 }
@@ -57,15 +58,19 @@ const GOOGLE_ADS_ACCOUNTS: Record<string, GoogleAdsAccount> = {
 function buildQueryFromParams(params: GoogleAdsQueryParams): string {
   logger.info('Building query from params', { 
     params, 
-    hasNaturalQuery: !!params.natural_query?.trim(),
+    naturalQueryType: typeof params.natural_query,
+    naturalQueryValue: params.natural_query,
     accountsAvailable: Object.keys(GOOGLE_ADS_ACCOUNTS)
   })
   
   // If natural query is provided, use it as the primary query
-  if (params.natural_query?.trim()) {
-    logger.info('Using natural query', { natural_query: params.natural_query.trim() })
-    return params.natural_query.trim()
+  if (params.natural_query && typeof params.natural_query === 'string' && params.natural_query.trim().length > 0) {
+    const trimmedQuery = params.natural_query.trim()
+    logger.info('Using natural query', { natural_query: trimmedQuery })
+    return trimmedQuery
   }
+  
+  logger.info('No valid natural query, building structured query')
 
   // Build query from structured parameters
   const accountName = GOOGLE_ADS_ACCOUNTS[params.accounts]?.name || params.accounts
@@ -96,8 +101,8 @@ function buildQueryFromParams(params: GoogleAdsQueryParams): string {
     'projection': `projection analysis for ${params.projection_month}`
   }
 
-  const queryType = queryTypeMap[params.query_type] || 'campaign performance'
-  const period = periodMap[params.period_type] || 'last 30 days'
+  const queryType = queryTypeMap[params.query_type || 'campaigns'] || 'campaign performance'
+  const period = periodMap[params.period_type || 'last_30_days'] || 'last 30 days'
 
   let query = `Show me ${queryType} for ${accountName} for ${period}`
 
@@ -185,39 +190,39 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
   version: '1.0.0',
 
   params: {
-    query_type: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Type of query to perform',
-    },
     accounts: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
       description: 'Google Ads account key to query',
     },
-    period_type: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Time period for the query',
-    },
-    natural_query: {
+    question: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Natural language query (overrides structured parameters)',
+      description: 'User question about Google Ads data',
+    },
+    query_type: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Type of query to perform',
+    },
+    period_type: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Time period for the query',
     },
     output_format: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Format for output data',
     },
     sort_by: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Sort results by specified metric',
     },
@@ -230,11 +235,17 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
       'Content-Type': 'application/json',
     }),
     body: (params: GoogleAdsQueryParams) => ({
-      query: buildQueryFromParams(params),
+      query: params.question || buildQueryFromParams({
+        ...params,
+        query_type: params.query_type || 'campaigns',
+        period_type: params.period_type || 'last_30_days',
+        output_format: params.output_format || 'detailed',
+        sort_by: params.sort_by || 'cost_desc'
+      }),
       accounts: params.accounts,
-      period_type: params.period_type,
-      output_format: params.output_format,
-      sort_by: params.sort_by
+      // Don't pass period_type - let AI detect it from the question
+      output_format: params.output_format || 'detailed',
+      sort_by: params.sort_by || 'cost_desc'
     }),
   },
 

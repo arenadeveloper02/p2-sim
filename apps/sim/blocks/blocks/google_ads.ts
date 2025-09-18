@@ -1,7 +1,6 @@
 import { GoogleIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import type { GoogleAdsResponse } from '@/tools/google_ads/types'
-import { env } from '@/lib/env'
 
 // Google Ads accounts configuration
 const GOOGLE_ADS_ACCOUNTS = {
@@ -44,40 +43,10 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
   icon: GoogleIcon,
   subBlocks: [
     {
-      id: 'query_type',
-      title: 'Query Type',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: 'Campaign Performance', id: 'campaigns' },
-        { label: 'Performance Analysis', id: 'performance' },
-        { label: 'Cost Analysis', id: 'cost' },
-        { label: 'Keyword Analysis', id: 'keywords' },
-      ],
-      value: () => 'campaigns',
-      required: true,
-    },
-    {
-      id: 'period_type',
-      title: 'Time Period',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: 'Last 7 Days', id: 'last_7_days' },
-        { label: 'Last 15 Days', id: 'last_15_days' },
-        { label: 'Last 30 Days', id: 'last_30_days' },
-        { label: 'This Month', id: 'this_month' },
-        { label: 'Last Month', id: 'last_month' },
-        { label: 'Custom Range', id: 'custom' },
-      ],
-      value: () => 'last_30_days',
-      required: true,
-    },
-    {
       id: 'accounts',
       title: 'Google Ads Account',
       type: 'dropdown',
-      layout: 'half',
+      layout: 'full',
       options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
         label: account.name,
         id: key,
@@ -87,62 +56,62 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       required: true,
     },
     {
-      id: 'natural_query',
-      title: 'Natural Language Query (Optional)',
+      id: 'question',
+      title: 'Question / Query',
       type: 'long-input',
       layout: 'full',
-      placeholder: 'e.g., "Show me CareAdvantage and Acalvio performance for last 30 days"',
+      placeholder: 'Ask any question about Google Ads data, e.g., "Show me campaign performance for last 30 days", "What are my top spending campaigns this month?", "How many conversions did I get last week?"',
       rows: 3,
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `You are a Google Ads query assistant. Help users create effective questions for Google Ads data analysis.
+
+### EXAMPLES OF GOOD QUESTIONS
+- "Show me campaign performance for last 30 days"
+- "What are my top spending campaigns this month?"
+- "How many conversions did I get last week?"
+- "Which campaigns have the highest CTR?"
+- "Show me cost analysis for the last 15 days"
+- "What's my impression share for active campaigns?"
+- "Compare this month vs last month performance"
+- "Show me keyword performance data"
+
+### AVAILABLE METRICS
+- Clicks, Impressions, Cost, Conversions
+- CTR (Click-through rate), CPC (Cost per click)
+- Conversion rate, Cost per conversion
+- Impression share, Budget lost share
+- ROAS (Return on ad spend)
+
+### TIME PERIODS
+- Last 7/15/30 days
+- This/Last month, This/Last week
+- Yesterday, Today
+- Specific date ranges
+
+Generate a clear, specific question about Google Ads performance based on the user's request.`,
+      },
     },
-    {
-      id: 'output_format',
-      title: 'Output Format',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: 'Detailed Report', id: 'detailed' },
-        { label: 'Summary Only', id: 'summary' },
-        { label: 'CSV Format', id: 'csv' },
-        { label: 'Chart Data', id: 'chart' },
-      ],
-      value: () => 'detailed',
-    },
-    {
-      id: 'sort_by',
-      title: 'Sort By',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: 'Cost (Highest First)', id: 'cost_desc' },
-        { label: 'Clicks (Highest First)', id: 'clicks_desc' },
-        { label: 'Impressions (Highest First)', id: 'impressions_desc' },
-        { label: 'Conversions (Highest First)', id: 'conversions_desc' },
-        { label: 'Campaign Name (A-Z)', id: 'name_asc' },
-      ],
-      value: () => 'cost_desc',
-    },
+    
   ],
   tools: {
     access: ['google_ads_query'],
     config: {
       tool: () => 'google_ads_query',
       params: (params) => ({
-        query_type: params.query_type,
         accounts: params.accounts,
-        period_type: params.period_type,
-        natural_query: params.natural_query,
-        output_format: params.output_format,
-        sort_by: params.sort_by,
+        question: params.question, // Pass the user's question
+        query_type: 'campaigns', // Default fallback
+        period_type: 'last_30_days', // Default fallback
+        output_format: 'detailed',
+        sort_by: 'cost_desc',
       }),
     },
   },
   inputs: {
-    query_type: { type: 'string', description: 'Type of Google Ads query to perform' },
+    question: { type: 'string', description: 'User question about Google Ads data' },
     accounts: { type: 'string', description: 'Selected Google Ads account' },
-    period_type: { type: 'string', description: 'Time period for the query' },
-    natural_query: { type: 'string', description: 'Optional natural language query' },
-    output_format: { type: 'string', description: 'Output format for results' },
-    sort_by: { type: 'string', description: 'Sort criteria for results' },
   },
   outputs: {
     query: { type: 'string', description: 'Executed query' },
