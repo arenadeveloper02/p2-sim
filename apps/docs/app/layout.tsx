@@ -7,7 +7,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 export const metadata = {
   metadataBase: new URL('https://docs.sim.ai'),
   title: {
-    default: 'Arena Agents - Visual Workflow Builder for AI Applications',
+    default: 'Agentic AI - Visual Workflow Builder for AI Applications',
     template: '%s',
   },
   description:
@@ -39,7 +39,7 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Arena Agents Docs',
+    title: 'Agentic AI Docs',
   },
   openGraph: {
     type: 'website',
