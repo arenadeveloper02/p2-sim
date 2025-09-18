@@ -25,7 +25,7 @@ export default function Landing() {
           {
             email: email ?? '',
             password: 'Position2!',
-            callbackURL: '/workspace/templates',
+            callbackURL: '/workspace',
           },
           {}
         )
