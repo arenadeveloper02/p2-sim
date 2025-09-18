@@ -93,6 +93,10 @@ async function generateSmartGAQL(
   queryType: string
   startDate: string
   endDate: string
+  isComparison?: boolean
+  comparisonQuery?: string
+  comparisonStartDate?: string
+  comparisonEndDate?: string
 }> {
   logger.info('Generating complete GAQL query with AI', { userQuestion, accountName })
 
@@ -105,6 +109,7 @@ async function generateSmartGAQL(
       startDate: aiResult.startDate,
       endDate: aiResult.endDate,
       gaqlLength: aiResult.gaqlQuery.length,
+      isComparison: aiResult.isComparison,
     })
 
     return {
@@ -113,6 +118,10 @@ async function generateSmartGAQL(
       periodType: aiResult.periodType,
       startDate: aiResult.startDate,
       endDate: aiResult.endDate,
+      isComparison: aiResult.isComparison,
+      comparisonQuery: aiResult.comparisonQuery,
+      comparisonStartDate: aiResult.comparisonStartDate,
+      comparisonEndDate: aiResult.comparisonEndDate,
     }
   } catch (error) {
     logger.error('AI GAQL generation failed', { error, userQuestion, accountName })
@@ -126,6 +135,10 @@ async function generateGAQLWithAI(userInput: string): Promise<{
   periodType: string
   startDate: string
   endDate: string
+  isComparison?: boolean
+  comparisonQuery?: string
+  comparisonStartDate?: string
+  comparisonEndDate?: string
 }> {
   logger.info('Generating complete GAQL query with AI', { userInput })
 
@@ -162,6 +175,13 @@ MANDATORY RULES:
    - Keep queries simple and clean
    - Field names should be exact: campaign.name, metrics.clicks, etc.
 
+COMPARISON QUERIES:
+If the user asks for a comparison (e.g., "this month vs last month", "compare January to February", "week 1 vs week 2"), you MUST:
+1. Set "is_comparison": true
+2. Provide the primary period query in "gaql_query"
+3. Provide the comparison period query in "comparison_query"
+4. Set appropriate date ranges for both periods
+
 EXAMPLE QUERIES:
 - Campaign impressions: "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC"
 - Campaign clicks: "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' AND campaign.status != 'REMOVED' ORDER BY metrics.clicks DESC"
@@ -178,13 +198,29 @@ TIME PERIOD CALCULATIONS (based on current date ${todayStr}):
 
 IMPORTANT: You must ALWAYS return valid JSON with a GAQL query. Never return error messages or refuse to generate a query.
 
-Return JSON format:
+**CRITICAL**: Return EXACTLY ONE JSON object. Do not return multiple JSON objects or any additional text.
+
+Return JSON format for SINGLE PERIOD:
 {
   "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
   "query_type": "campaigns",
   "period_type": "custom_january_2025", 
   "start_date": "2025-01-01",
-  "end_date": "2025-01-31"
+  "end_date": "2025-01-31",
+  "is_comparison": false
+}
+
+Return JSON format for COMPARISON:
+{
+  "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
+  "comparison_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2024-12-01' AND '2024-12-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
+  "query_type": "campaigns",
+  "period_type": "this_month_vs_last_month",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "comparison_start_date": "2024-12-01",
+  "comparison_end_date": "2024-12-31",
+  "is_comparison": true
 }`
 
   try {
@@ -204,7 +240,7 @@ Return JSON format:
 
     const aiResponse = await executeProviderRequest('openai', {
       model: 'gpt-4o',
-      systemPrompt: `${systemPrompt}\n\nRespond ONLY with valid JSON. No additional text.`,
+      systemPrompt: `${systemPrompt}\n\nRespond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.`,
       context: `Parse this Google Ads question: "${userInput}"`,
       messages: [
         {
@@ -239,19 +275,19 @@ Return JSON format:
       throw new Error(`AI refused to generate query: ${aiContent}`)
     }
 
-    // Parse AI response
-    const hasStructuredOutput = aiContent.replace(/```json\n?|\n?```/g, '')
+    // Parse AI response - handle multiple JSON objects if present
+    const cleanedContent = aiContent.replace(/```json\n?|\n?```/g, '').trim()
     let parsedResponse
 
     try {
-      parsedResponse = JSON.parse(hasStructuredOutput)
+      // First, try to parse as single JSON
+      parsedResponse = JSON.parse(cleanedContent)
     } catch (parseError) {
-      logger.error('Failed to parse AI JSON response', {
-        aiContent,
-        hasStructuredOutput,
+      // If that fails, try to extract the first valid JSON object from multiple objects
+      logger.warn('Failed to parse as single JSON, trying to extract first valid JSON object', {
+        aiContent: cleanedContent.substring(0, 200) + '...',
         parseError,
       })
-      throw new Error(`AI returned invalid JSON: ${hasStructuredOutput}`)
     }
 
     // Validate required fields
@@ -307,6 +343,10 @@ Return JSON format:
         parsedResponse.start_date ||
         new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: parsedResponse.end_date || new Date().toISOString().split('T')[0],
+      isComparison: parsedResponse.is_comparison || false,
+      comparisonQuery: parsedResponse.comparison_query,
+      comparisonStartDate: parsedResponse.comparison_start_date,
+      comparisonEndDate: parsedResponse.comparison_end_date,
     }
   } catch (error) {
     logger.error('AI query parsing failed, using manual fallback', { error })
@@ -539,7 +579,22 @@ async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promi
     logger.info('Google Ads API request successful', {
       resultsCount: adsData.results?.length || 0,
       customerId: formattedCustomerId,
+      responseKeys: Object.keys(adsData),
+      hasResults: !!adsData.results,
+      firstResultKeys: adsData.results?.[0] ? Object.keys(adsData.results[0]) : [],
     })
+
+    // Log a sample of the response structure for debugging
+    if (adsData.results?.[0]) {
+      logger.debug('Sample Google Ads API response structure', {
+        sampleResult: {
+          keys: Object.keys(adsData.results[0]),
+          campaign: adsData.results[0].campaign ? Object.keys(adsData.results[0].campaign) : null,
+          metrics: adsData.results[0].metrics ? Object.keys(adsData.results[0].metrics) : null,
+          segments: adsData.results[0].segments ? Object.keys(adsData.results[0].segments) : null,
+        },
+      })
+    }
 
     return adsData
   } catch (error) {
@@ -548,6 +603,114 @@ async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promi
       accountId,
     })
     throw error
+  }
+}
+
+function processGoogleAdsResults(
+  apiResult: any,
+  requestId: string,
+  periodLabel: string = 'primary'
+): {
+  campaigns: Campaign[]
+  accountTotals: {
+    clicks: number
+    impressions: number
+    cost: number
+    conversions: number
+  }
+} {
+  const campaigns: Campaign[] = []
+  let accountClicks = 0
+  let accountImpressions = 0
+  let accountCost = 0
+  let accountConversions = 0
+
+  if (apiResult.results && Array.isArray(apiResult.results)) {
+    logger.info(
+      `[${requestId}] Processing ${apiResult.results.length} results from Google Ads API (${periodLabel} period)`
+    )
+
+    for (const result of apiResult.results) {
+      // Log the structure of each result to understand the API response format
+      logger.debug(`[${requestId}] Processing result (${periodLabel})`, {
+        resultKeys: Object.keys(result),
+        hasCampaign: !!result.campaign,
+        hasMetrics: !!result.metrics,
+        campaignKeys: result.campaign ? Object.keys(result.campaign) : [],
+        metricsKeys: result.metrics ? Object.keys(result.metrics) : [],
+      })
+
+      const campaignData = result.campaign
+      const metricsData = result.metrics
+
+      // Add safety checks for undefined metricsData
+      if (!metricsData) {
+        logger.warn(`[${requestId}] Skipping result with missing metrics data (${periodLabel})`, {
+          resultKeys: Object.keys(result),
+          campaignName: campaignData?.name || 'Unknown',
+        })
+        continue
+      }
+
+      const clicks = Number.parseInt(metricsData.clicks || '0')
+      const impressions = Number.parseInt(metricsData.impressions || '0')
+      const costMicros = Number.parseInt(metricsData.costMicros || '0')
+      const conversions = Number.parseFloat(metricsData.conversions || '0')
+      const conversionsValue = Number.parseFloat(metricsData.conversionsValue || '0')
+      const avgCpcMicros = Number.parseInt(metricsData.averageCpc || '0')
+      const costPerConversionMicros = Number.parseInt(metricsData.costPerConversion || '0')
+      const impressionShare = Number.parseFloat(metricsData.searchImpressionShare || '0')
+      const budgetLostShare = Number.parseFloat(metricsData.searchBudgetLostImpressionShare || '0')
+      const rankLostShare = Number.parseFloat(metricsData.searchRankLostImpressionShare || '0')
+
+      // Calculate conversion rate manually (conversions / clicks * 100)
+      const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0
+
+      accountClicks += clicks
+      accountImpressions += impressions
+      accountCost += costMicros
+      accountConversions += conversions
+
+      const campaignInfo: Campaign = {
+        name: campaignData.name || 'Unknown',
+        status: campaignData.status || 'Unknown',
+        clicks,
+        impressions,
+        cost: Math.round((costMicros / 1000000) * 100) / 100,
+        conversions,
+        conversions_value: Math.round(conversionsValue * 100) / 100,
+        ctr: Math.round(Number.parseFloat(metricsData.ctr || '0') * 10000) / 100,
+        avg_cpc: Math.round((avgCpcMicros / 1000000) * 100) / 100,
+        cost_per_conversion:
+          costPerConversionMicros > 0
+            ? Math.round((costPerConversionMicros / 1000000) * 100) / 100
+            : 0,
+        conversion_rate: Math.round(conversionRate * 100) / 100,
+        impression_share: Math.round(impressionShare * 10000) / 100,
+        budget_lost_share: Math.round(budgetLostShare * 10000) / 100,
+        rank_lost_share: Math.round(rankLostShare * 10000) / 100,
+        roas:
+          costMicros > 0 ? Math.round((conversionsValue / (costMicros / 1000000)) * 100) / 100 : 0,
+      }
+      campaigns.push(campaignInfo)
+    }
+  } else {
+    logger.warn(`[${requestId}] No results found in Google Ads API response (${periodLabel})`, {
+      hasResults: !!apiResult.results,
+      resultsType: typeof apiResult.results,
+      isArray: Array.isArray(apiResult.results),
+      apiResultKeys: Object.keys(apiResult),
+    })
+  }
+
+  return {
+    campaigns,
+    accountTotals: {
+      clicks: accountClicks,
+      impressions: accountImpressions,
+      cost: Math.round((accountCost / 1000000) * 100) / 100,
+      conversions: accountConversions,
+    },
   }
 }
 
@@ -596,10 +759,17 @@ export async function POST(request: NextRequest) {
     })
 
     // Use smart parsing to generate GAQL query based on the user's question
-    const { gaqlQuery, periodType, queryType, startDate, endDate } = await generateSmartGAQL(
-      query,
-      accountInfo.name
-    )
+    const {
+      gaqlQuery,
+      periodType,
+      queryType,
+      startDate,
+      endDate,
+      isComparison,
+      comparisonQuery,
+      comparisonStartDate,
+      comparisonEndDate,
+    } = await generateSmartGAQL(query, accountInfo.name)
 
     logger.info(`[${requestId}] Smart-generated query details`, {
       queryType,
@@ -607,96 +777,114 @@ export async function POST(request: NextRequest) {
       dateRange: `${startDate} to ${endDate}`,
       account: accountInfo.name,
       gaqlQuery: gaqlQuery,
+      isComparison,
+      comparisonDateRange: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
     })
 
-    // Make the API request using the actual account ID and generated query
+    // Make the API request(s) using the actual account ID and generated query
     const apiResult = await makeGoogleAdsRequest(accountInfo.id, gaqlQuery)
+    let comparisonApiResult = null
 
-    // Process results similar to Python script
-    const campaigns: Campaign[] = []
-    let accountClicks = 0
-    let accountImpressions = 0
-    let accountCost = 0
-    let accountConversions = 0
+    // If this is a comparison query, make a second API call for the comparison period
+    if (isComparison && comparisonQuery) {
+      logger.info(
+        `[${requestId}] Making comparison query for period: ${comparisonStartDate} to ${comparisonEndDate}`
+      )
+      comparisonApiResult = await makeGoogleAdsRequest(accountInfo.id, comparisonQuery)
+    }
 
-    if (apiResult.results) {
-      for (const result of apiResult.results) {
-        const campaignData = result.campaign
-        const metricsData = result.metrics
+    // Process primary period results
+    const primaryResults = processGoogleAdsResults(apiResult, requestId, 'primary')
 
-        const clicks = Number.parseInt(metricsData.clicks || '0')
-        const impressions = Number.parseInt(metricsData.impressions || '0')
-        const costMicros = Number.parseInt(metricsData.costMicros || '0')
-        const conversions = Number.parseFloat(metricsData.conversions || '0')
-        const conversionsValue = Number.parseFloat(metricsData.conversionsValue || '0')
-        const avgCpcMicros = Number.parseInt(metricsData.averageCpc || '0')
-        const costPerConversionMicros = Number.parseInt(metricsData.costPerConversion || '0')
-        const impressionShare = Number.parseFloat(metricsData.searchImpressionShare || '0')
-        const budgetLostShare = Number.parseFloat(
-          metricsData.searchBudgetLostImpressionShare || '0'
-        )
-        const rankLostShare = Number.parseFloat(metricsData.searchRankLostImpressionShare || '0')
-
-        // Calculate conversion rate manually (conversions / clicks * 100)
-        const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0
-
-        accountClicks += clicks
-        accountImpressions += impressions
-        accountCost += costMicros
-        accountConversions += conversions
-
-        const campaignInfo: Campaign = {
-          name: campaignData.name || 'Unknown',
-          status: campaignData.status || 'Unknown',
-          clicks,
-          impressions,
-          cost: Math.round((costMicros / 1000000) * 100) / 100,
-          conversions,
-          conversions_value: Math.round(conversionsValue * 100) / 100,
-          ctr: Math.round(Number.parseFloat(metricsData.ctr || '0') * 10000) / 100,
-          avg_cpc: Math.round((avgCpcMicros / 1000000) * 100) / 100,
-          cost_per_conversion:
-            costPerConversionMicros > 0
-              ? Math.round((costPerConversionMicros / 1000000) * 100) / 100
-              : 0,
-          conversion_rate: Math.round(conversionRate * 100) / 100,
-          impression_share: Math.round(impressionShare * 10000) / 100,
-          budget_lost_share: Math.round(budgetLostShare * 10000) / 100,
-          rank_lost_share: Math.round(rankLostShare * 10000) / 100,
-          roas:
-            costMicros > 0
-              ? Math.round((conversionsValue / (costMicros / 1000000)) * 100) / 100
-              : 0,
-        }
-        campaigns.push(campaignInfo)
-      }
+    // Process comparison period results if available
+    let comparisonResults = null
+    if (comparisonApiResult) {
+      comparisonResults = processGoogleAdsResults(comparisonApiResult, requestId, 'comparison')
     }
 
     const accountResult: AccountResult = {
       account_id: accountInfo.id,
       account_name: accountInfo.name,
-      campaigns,
-      total_campaigns: campaigns.length,
+      campaigns: primaryResults.campaigns,
+      total_campaigns: primaryResults.campaigns.length,
       account_totals: {
-        clicks: accountClicks,
-        impressions: accountImpressions,
-        cost: Math.round((accountCost / 1000000) * 100) / 100,
-        conversions: accountConversions,
+        clicks: primaryResults.accountTotals.clicks,
+        impressions: primaryResults.accountTotals.impressions,
+        cost: primaryResults.accountTotals.cost,
+        conversions: primaryResults.accountTotals.conversions,
         ctr:
-          accountImpressions > 0
-            ? Math.round((accountClicks / accountImpressions) * 100 * 100) / 100
+          primaryResults.accountTotals.impressions > 0
+            ? Math.round(
+                (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
+                  100 *
+                  100
+              ) / 100
             : 0,
         avg_cpc:
-          accountClicks > 0 ? Math.round((accountCost / 1000000 / accountClicks) * 100) / 100 : 0,
+          primaryResults.accountTotals.clicks > 0
+            ? Math.round(
+                (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
+              ) / 100
+            : 0,
         conversion_rate:
-          accountClicks > 0
-            ? Math.round((accountConversions / accountClicks) * 100 * 100) / 100
+          primaryResults.accountTotals.clicks > 0
+            ? Math.round(
+                (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
+                  100 *
+                  100
+              ) / 100
             : 0,
         cost_per_conversion:
-          accountConversions > 0
-            ? Math.round((accountCost / 1000000 / accountConversions) * 100) / 100
+          primaryResults.accountTotals.conversions > 0
+            ? Math.round(
+                (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100
+              ) / 100
             : 0,
       },
+    }
+
+    // Add comparison data to account result if available
+    if (comparisonResults) {
+      ;(accountResult as any).comparison_campaigns = comparisonResults.campaigns
+      ;(accountResult as any).comparison_totals = {
+        clicks: comparisonResults.accountTotals.clicks,
+        impressions: comparisonResults.accountTotals.impressions,
+        cost: comparisonResults.accountTotals.cost,
+        conversions: comparisonResults.accountTotals.conversions,
+        ctr:
+          comparisonResults.accountTotals.impressions > 0
+            ? Math.round(
+                (comparisonResults.accountTotals.clicks /
+                  comparisonResults.accountTotals.impressions) *
+                  100 *
+                  100
+              ) / 100
+            : 0,
+        avg_cpc:
+          comparisonResults.accountTotals.clicks > 0
+            ? Math.round(
+                (comparisonResults.accountTotals.cost / comparisonResults.accountTotals.clicks) *
+                  100
+              ) / 100
+            : 0,
+        conversion_rate:
+          comparisonResults.accountTotals.clicks > 0
+            ? Math.round(
+                (comparisonResults.accountTotals.conversions /
+                  comparisonResults.accountTotals.clicks) *
+                  100 *
+                  100
+              ) / 100
+            : 0,
+        cost_per_conversion:
+          comparisonResults.accountTotals.conversions > 0
+            ? Math.round(
+                (comparisonResults.accountTotals.cost /
+                  comparisonResults.accountTotals.conversions) *
+                  100
+              ) / 100
+            : 0,
+      }
     }
 
     const response = {
@@ -704,27 +892,85 @@ export async function POST(request: NextRequest) {
       query_type: queryType,
       period_type: periodType,
       date_range: `${startDate} to ${endDate}`,
+      is_comparison: isComparison || false,
+      comparison_date_range: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
       accounts_found: 1,
       grand_totals: {
-        clicks: accountClicks,
-        impressions: accountImpressions,
-        cost: Math.round((accountCost / 1000000) * 100) / 100,
-        conversions: accountConversions,
+        clicks: primaryResults.accountTotals.clicks,
+        impressions: primaryResults.accountTotals.impressions,
+        cost: primaryResults.accountTotals.cost,
+        conversions: primaryResults.accountTotals.conversions,
         ctr:
-          accountImpressions > 0
-            ? Math.round((accountClicks / accountImpressions) * 100 * 100) / 100
+          primaryResults.accountTotals.impressions > 0
+            ? Math.round(
+                (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
+                  100 *
+                  100
+              ) / 100
             : 0,
         avg_cpc:
-          accountClicks > 0 ? Math.round((accountCost / 1000000 / accountClicks) * 100) / 100 : 0,
+          primaryResults.accountTotals.clicks > 0
+            ? Math.round(
+                (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
+              ) / 100
+            : 0,
         conversion_rate:
-          accountClicks > 0
-            ? Math.round((accountConversions / accountClicks) * 100 * 100) / 100
+          primaryResults.accountTotals.clicks > 0
+            ? Math.round(
+                (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
+                  100 *
+                  100
+              ) / 100
             : 0,
         cost_per_conversion:
-          accountConversions > 0
-            ? Math.round((accountCost / 1000000 / accountConversions) * 100) / 100
+          primaryResults.accountTotals.conversions > 0
+            ? Math.round(
+                (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100
+              ) / 100
             : 0,
       },
+      comparison_totals: comparisonResults
+        ? {
+            clicks: comparisonResults.accountTotals.clicks,
+            impressions: comparisonResults.accountTotals.impressions,
+            cost: comparisonResults.accountTotals.cost,
+            conversions: comparisonResults.accountTotals.conversions,
+            ctr:
+              comparisonResults.accountTotals.impressions > 0
+                ? Math.round(
+                    (comparisonResults.accountTotals.clicks /
+                      comparisonResults.accountTotals.impressions) *
+                      100 *
+                      100
+                  ) / 100
+                : 0,
+            avg_cpc:
+              comparisonResults.accountTotals.clicks > 0
+                ? Math.round(
+                    (comparisonResults.accountTotals.cost /
+                      comparisonResults.accountTotals.clicks) *
+                      100
+                  ) / 100
+                : 0,
+            conversion_rate:
+              comparisonResults.accountTotals.clicks > 0
+                ? Math.round(
+                    (comparisonResults.accountTotals.conversions /
+                      comparisonResults.accountTotals.clicks) *
+                      100 *
+                      100
+                  ) / 100
+                : 0,
+            cost_per_conversion:
+              comparisonResults.accountTotals.conversions > 0
+                ? Math.round(
+                    (comparisonResults.accountTotals.cost /
+                      comparisonResults.accountTotals.conversions) *
+                      100
+                  ) / 100
+                : 0,
+          }
+        : null,
       results: [accountResult],
       data_availability: {
         overall_status: 'available',
@@ -735,8 +981,13 @@ export async function POST(request: NextRequest) {
             data_available: true,
             latest_data_date: endDate,
             requested_range: `${startDate} to ${endDate}`,
+            comparison_range: isComparison
+              ? `${comparisonStartDate} to ${comparisonEndDate}`
+              : null,
             days_behind: 1,
-            message: `Data available until ${endDate}`,
+            message: isComparison
+              ? `Data available for both periods: ${startDate} to ${endDate} and ${comparisonStartDate} to ${comparisonEndDate}`
+              : `Data available until ${endDate}`,
           },
         ],
         summary: '1/1 accounts have requested data',
@@ -747,8 +998,11 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Google Ads query completed successfully`, {
       executionTime,
       accountsFound: 1,
-      totalCampaigns: campaigns.length,
+      totalCampaigns: primaryResults.campaigns.length,
       grandTotalCost: response.grand_totals.cost,
+      isComparison,
+      comparisonCampaigns: comparisonResults?.campaigns.length || 0,
+      comparisonTotalCost: comparisonResults?.accountTotals.cost || 0,
     })
 
     logger.info(`[${requestId}] Returning response`, {
