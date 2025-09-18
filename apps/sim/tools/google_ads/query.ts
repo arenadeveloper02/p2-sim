@@ -1,5 +1,5 @@
-import type { ToolConfig } from '@/tools/types'
 import { createLogger } from '@/lib/logs/console/logger'
+import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('GoogleAdsQuery')
 
@@ -183,7 +183,6 @@ function formatResults(data: any, outputFormat: string): any {
       return { chart_data: chartData, original_data: data }
     }
 
-    case 'detailed':
     default:
       return data
   }
