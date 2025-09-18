@@ -181,6 +181,13 @@ export function Sidebar() {
     return knowledgePageRegex.test(pathname)
   }, [pathname])
 
+  // Check if we're on the approvals page
+  const isOnApprovalsPage = useMemo(() => {
+    // Pattern: /workspace/[workspaceId]/approvals
+    const approvalsPageRegex = /^\/workspace\/[^/]+\/approvals$/
+    return approvalsPageRegex.test(pathname)
+  }, [pathname])
+
   // Extract knowledge base ID and document ID from the pathname
   const { knowledgeBaseId, documentId } = useMemo(() => {
     if (!isOnKnowledgePage) {
@@ -954,7 +961,7 @@ export function Sidebar() {
 
           {/* 3. Search */}
           <div
-            className={`pointer-events-auto flex-shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`}
+            className={`pointer-events-auto flex-shrink-0 ${isSidebarCollapsed || isOnApprovalsPage ? 'hidden' : ''}`}
           >
             <button
               onClick={() => setShowSearchModal(true)}
@@ -971,7 +978,7 @@ export function Sidebar() {
           {/* 4. Workflow Selector */}
           <div
             className={`pointer-events-auto relative h-[180px] flex-shrink-0 rounded-[10px] border bg-background shadow-xs ${
-              isSidebarCollapsed ? 'hidden' : ''
+              isSidebarCollapsed || isOnApprovalsPage ? 'hidden' : ''
             }`}
           >
             <div className='px-2'>

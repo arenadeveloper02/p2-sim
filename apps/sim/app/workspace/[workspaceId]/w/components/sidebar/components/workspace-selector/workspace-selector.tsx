@@ -330,7 +330,14 @@ export function WorkspaceSelector({
           activeWorkspace?.id === agentsApprovalWorkspace.id ? 'bg-muted' : 'hover:bg-muted'
         )}
         style={{ maxWidth: '206px' }}
-        onClick={() => onSwitchWorkspace(agentsApprovalWorkspace)}
+        onClick={() => {
+          if (agentsApprovalWorkspace.name === 'AGENTS APPROVAL') {
+            // Redirect to approvals dashboard instead of regular workspace view
+            window.location.href = `/workspace/${agentsApprovalWorkspace.id}/approvals`
+          } else {
+            onSwitchWorkspace(agentsApprovalWorkspace)
+          }
+        }}
       >
         <div className='flex min-w-0 flex-1 items-center text-left'>
           <span

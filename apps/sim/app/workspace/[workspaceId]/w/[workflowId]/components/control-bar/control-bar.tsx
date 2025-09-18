@@ -592,11 +592,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const renderDeleteButton = () => {
     const canEdit = userPermissions.canEdit
     const hasMultipleWorkflows = Object.keys(workflows).length > 1
-    const isDisabled = !canEdit || !hasMultipleWorkflows
+    const isAgentsApprovalWorkspace = workspaceName === 'AGENTS APPROVAL'
+    const isDisabled = !canEdit || !hasMultipleWorkflows || isAgentsApprovalWorkspace
 
     const getTooltipText = () => {
-      if (!canEdit) return 'Admin permission required to delete workflows'
+      if (!canEdit) return 'Cannot delete workflow'
       if (!hasMultipleWorkflows) return 'Cannot delete the last workflow'
+      if (isAgentsApprovalWorkspace) return 'Cannot delete workflow'
       return 'Delete workflow'
     }
 
