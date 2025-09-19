@@ -37,7 +37,7 @@ export function General() {
   )
   const isThemeLoading = useGeneralStore((state) => state.isThemeLoading)
 
-  const setTheme = useGeneralStore((state) => state.setTheme)
+  const setTheme = useGeneralStore((state) => 'light')
   const toggleAutoConnect = useGeneralStore((state) => state.toggleAutoConnect)
 
   const toggleAutoPan = useGeneralStore((state) => state.toggleAutoPan)
@@ -54,9 +54,9 @@ export function General() {
   //   }
   // }, [theme, isLoading])
 
-  const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
-    await setTheme(value)
-  }
+  // const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
+  //   await setTheme(value)
+  // }
 
   const handleAutoConnectChange = async (checked: boolean) => {
     if (checked !== isAutoConnectEnabled && !isAutoConnectLoading) {
@@ -246,3 +246,23 @@ export function General() {
     </div>
   )
 }
+
+const SettingRowSkeleton = ({
+  hasInfoButton = false,
+  isSwitch = false,
+}: {
+  hasInfoButton?: boolean
+  isSwitch?: boolean
+}) => (
+  <div className='flex items-center justify-between'>
+    <div className='flex items-center gap-2'>
+      <Skeleton className='h-5 w-32' />
+      {hasInfoButton && <Skeleton className='h-5 w-5 rounded' />}
+    </div>
+    {isSwitch ? (
+      <Skeleton className='h-6 w-11 rounded-full' />
+    ) : (
+      <Skeleton className='h-9 w-[180px]' />
+    )}
+  </div>
+)

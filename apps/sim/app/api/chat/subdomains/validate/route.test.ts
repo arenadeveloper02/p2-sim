@@ -27,14 +27,14 @@ describe('Subdomain Validation API Route', () => {
     mockWhere.mockReturnValue({ limit: mockLimit })
 
     // Mock the database
-    vi.doMock('@sim/db', () => ({
+    vi.doMock('@/db', () => ({
       db: {
         select: mockSelect,
       },
     }))
 
     // Mock the schema
-    vi.doMock('@sim/db/schema', () => ({
+    vi.doMock('@/db/schema', () => ({
       chat: {
         subdomain: 'subdomain',
       },

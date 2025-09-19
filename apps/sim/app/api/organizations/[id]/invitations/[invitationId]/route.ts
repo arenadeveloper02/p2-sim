@@ -1,5 +1,9 @@
 import { randomUUID } from 'crypto'
-import { db } from '@sim/db'
+import { and, eq } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
+import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
 import {
   invitation,
   member,
@@ -8,11 +12,7 @@ import {
   user,
   type WorkspaceInvitationStatus,
   workspaceInvitation,
-} from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
+} from '@/db/schema'
 
 const logger = createLogger('OrganizationInvitation')
 

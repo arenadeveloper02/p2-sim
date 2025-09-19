@@ -144,7 +144,8 @@ export function AuthSelector({
                   className={cn(
                     'group h-7 w-7 rounded-md p-0',
                     'text-muted-foreground/60 transition-all duration-200',
-                    'hover:bg-muted/50 hover:text-foreground',
+                    'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+                    'active:scale-95',
                     'disabled:cursor-not-allowed disabled:opacity-50',
                     'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                   )}
@@ -161,7 +162,8 @@ export function AuthSelector({
                   className={cn(
                     'group h-7 w-7 rounded-md p-0',
                     'text-muted-foreground/60 transition-all duration-200',
-                    'hover:bg-muted/50 hover:text-foreground',
+                    'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+                    'active:scale-95',
                     'disabled:cursor-not-allowed disabled:opacity-30',
                     'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                   )}
@@ -169,7 +171,7 @@ export function AuthSelector({
                   {copySuccess ? (
                     <Check className='h-3.5 w-3.5 text-foreground' />
                   ) : (
-                    <Copy className='h-3.5 w-3.5 ' />
+                    <Copy className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                   )}
                   <span className='sr-only'>Copy password</span>
                 </Button>
@@ -182,14 +184,15 @@ export function AuthSelector({
                   className={cn(
                     'group h-7 w-7 rounded-md p-0',
                     'text-muted-foreground/60 transition-all duration-200',
-                    'hover:bg-muted/50 hover:text-foreground',
+                    'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+                    'active:scale-95',
                     'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                   )}
                 >
                   {showPassword ? (
-                    <EyeOff className='h-3.5 w-3.5 ' />
+                    <EyeOff className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                   ) : (
-                    <Eye className='h-3.5 w-3.5 ' />
+                    <Eye className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                   )}
                   <span className='sr-only'>
                     {showPassword ? 'Hide password' : 'Show password'}

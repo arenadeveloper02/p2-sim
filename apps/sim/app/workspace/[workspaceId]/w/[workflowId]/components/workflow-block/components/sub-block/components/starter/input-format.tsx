@@ -471,7 +471,8 @@ export function FieldFormat({
                                 style={{ scrollbarWidth: 'none', minWidth: 'fit-content' }}
                               >
                                 {formatDisplayText(
-                                  (localValues[field.id] ?? field.value ?? '')?.toString()
+                                  (localValues[field.id] ?? field.value ?? '')?.toString(),
+                                  true
                                 )}
                               </div>
                             </div>

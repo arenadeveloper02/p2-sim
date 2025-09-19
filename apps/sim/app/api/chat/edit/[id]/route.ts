@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { chat } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
@@ -10,6 +8,8 @@ import { getEmailDomain } from '@/lib/urls/utils'
 import { encryptSecret } from '@/lib/utils'
 import { checkChatAccess } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import { db } from '@/db'
+import { chat } from '@/db/schema'
 
 export const dynamic = 'force-dynamic'
 

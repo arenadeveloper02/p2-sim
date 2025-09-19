@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { templates, workflow } from '@sim/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -7,6 +5,8 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { hasAdminPermission } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
+import { db } from '@/db'
+import { templates, workflow } from '@/db/schema'
 
 const logger = createLogger('TemplateByIdAPI')
 

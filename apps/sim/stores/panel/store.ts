@@ -32,9 +32,6 @@ export const usePanelStore = create<PanelStore>()(
         setParentTemplateId: (parentTemplateId: string) => {
           set({ parentTemplateId })
         },
-        openCopilotPanel: () => {
-          set({ isOpen: true, activeTab: 'copilot' })
-        },
       }),
       {
         name: 'panel-store',

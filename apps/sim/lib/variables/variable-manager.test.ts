@@ -215,4 +215,21 @@ describe('VariableManager', () => {
       expect(VariableManager.formatForCodeContext(undefined, 'number')).toBe('undefined')
     })
   })
+
+  describe('shouldStripQuotesForDisplay', () => {
+    it.concurrent('should identify strings that need quotes stripped', () => {
+      expect(VariableManager.shouldStripQuotesForDisplay('"hello world"')).toBe(true)
+      expect(VariableManager.shouldStripQuotesForDisplay("'hello world'")).toBe(true)
+      expect(VariableManager.shouldStripQuotesForDisplay('hello world')).toBe(false)
+      expect(VariableManager.shouldStripQuotesForDisplay('""')).toBe(false) // Too short
+      expect(VariableManager.shouldStripQuotesForDisplay("''")).toBe(false) // Too short
+    })
+
+    it.concurrent('should handle edge cases', () => {
+      expect(VariableManager.shouldStripQuotesForDisplay('')).toBe(false)
+      expect(VariableManager.shouldStripQuotesForDisplay(null as any)).toBe(false)
+      expect(VariableManager.shouldStripQuotesForDisplay(undefined as any)).toBe(false)
+      expect(VariableManager.shouldStripQuotesForDisplay(42 as any)).toBe(false)
+    })
+  })
 })

@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { copilotChats } from '@sim/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -20,6 +18,8 @@ import { generateChatTitle } from '@/lib/sim-agent/utils'
 import { createFileContent, isSupportedFileType } from '@/lib/uploads/file-utils'
 import { S3_COPILOT_CONFIG } from '@/lib/uploads/setup'
 import { downloadFile, getStorageProvider } from '@/lib/uploads/storage-client'
+import { db } from '@/db'
+import { copilotChats } from '@/db/schema'
 
 const logger = createLogger('CopilotChatAPI')
 

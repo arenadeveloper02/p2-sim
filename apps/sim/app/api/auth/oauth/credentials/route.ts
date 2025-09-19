@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { account, user, workflow } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { jwtDecode } from 'jwt-decode'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -9,6 +7,8 @@ import type { OAuthService } from '@/lib/oauth/oauth'
 import { parseProvider } from '@/lib/oauth/oauth'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
+import { db } from '@/db'
+import { account, user, workflow } from '@/db/schema'
 
 export const dynamic = 'force-dynamic'
 

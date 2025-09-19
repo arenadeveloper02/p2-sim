@@ -1,80 +1,49 @@
-import { Suspense } from 'react'
-import dynamic from 'next/dynamic'
-import { Background, Footer, Nav, StructuredData } from '@/app/(landing)/components'
+'use client'
 
-// Lazy load heavy components for better initial load performance
-const Hero = dynamic(() => import('@/app/(landing)/components/hero/hero'), {
-  loading: () => <div className='h-[600px] animate-pulse bg-gray-50' />,
-})
-
-const LandingPricing = dynamic(
-  () => import('@/app/(landing)/components/landing-pricing/landing-pricing'),
-  {
-    loading: () => <div className='h-[400px] animate-pulse bg-gray-50' />,
-  }
-)
-
-const Integrations = dynamic(() => import('@/app/(landing)/components/integrations/integrations'), {
-  loading: () => <div className='h-[300px] animate-pulse bg-gray-50' />,
-})
-
-const Testimonials = dynamic(() => import('@/app/(landing)/components/testimonials/testimonials'), {
-  loading: () => <div className='h-[150px] animate-pulse bg-gray-50' />,
-})
+import { useEffect, useState } from 'react'
+import Cookies from 'js-cookie'
+// import NavWrapper from '@/app/(landing)/components/nav-wrapper'
+// import Footer from '@/app/(landing)/components/sections/footer'
+// import Hero from '@/app/(landing)/components/sections/hero'
+// import Integrations from '@/app/(landing)/components/sections/integrations'}
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { client } from '@/lib/auth-client'
+// import Testimonials from '@/app/(landing)/components/sections/testimonials'
 
 export default function Landing() {
+  const handleOpenTypeformLink = () => {
+    window.open('https://form.typeform.com/to/jqCO12pF', '_blank')
+  }
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function onSubmit() {
+      const email = Cookies.get('email')
+      try {
+        setLoading(true)
+        const result = await client.signIn.email(
+          {
+            email: email ?? '',
+            password: 'Position2!',
+            callbackURL: '/workspace',
+          },
+          {}
+        )
+        document.cookie = 'has_logged_in_before=true; path=/; max-age=31536000; SameSite=Lax' // 1 year expiry
+      } catch (error) {
+      } finally {
+        setLoading(false)
+      }
+    }
+    onSubmit()
+  }, [])
+
   return (
-    <>
-      <StructuredData />
-      <Background>
-        <header>
-          <Nav />
-        </header>
-        <main className='relative'>
-          <Suspense
-            fallback={
-              <div
-                className='h-[600px] animate-pulse bg-gray-50'
-                aria-label='Loading hero section'
-              />
-            }
-          >
-            <Hero />
-          </Suspense>
-          <Suspense
-            fallback={
-              <div
-                className='h-[400px] animate-pulse bg-gray-50'
-                aria-label='Loading pricing section'
-              />
-            }
-          >
-            <LandingPricing />
-          </Suspense>
-          <Suspense
-            fallback={
-              <div
-                className='h-[300px] animate-pulse bg-gray-50'
-                aria-label='Loading integrations section'
-              />
-            }
-          >
-            <Integrations />
-          </Suspense>
-          <Suspense
-            fallback={
-              <div
-                className='h-[150px] animate-pulse bg-gray-50'
-                aria-label='Loading testimonials section'
-              />
-            }
-          >
-            <Testimonials />
-          </Suspense>
-        </main>
-        <Footer />
-      </Background>
-    </>
+    <div className='flex h-screen w-full items-center justify-center'>
+      <div className='flex flex-col items-center justify-center text-center align-middle'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    </div>
   )
 
   // return (

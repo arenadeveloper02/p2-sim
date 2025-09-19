@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { templateStars, templates, workflow } from '@sim/db/schema'
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
@@ -7,6 +5,8 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
+import { db } from '@/db'
+import { templateStars, templates, workflow } from '@/db/schema'
 
 const logger = createLogger('TemplatesAPI')
 

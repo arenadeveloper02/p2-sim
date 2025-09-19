@@ -605,7 +605,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                       {copySuccess[webhook.id] ? (
                                         <Check className='h-3.5 w-3.5 text-foreground' />
                                       ) : (
-                                        <Copy className='h-3.5 w-3.5' />
+                                        <Copy className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       )}
                                       <span className='sr-only'>Copy webhook URL</span>
                                     </Button>
@@ -643,7 +643,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                         'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                                       )}
                                     >
-                                      <Play className='h-3.5 w-3.5' />
+                                      <Play className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Test webhook</span>
                                     </Button>
                                   </TooltipTrigger>
@@ -665,7 +665,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                         'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                                       )}
                                     >
-                                      <Pencil className='h-3.5 w-3.5' />
+                                      <Pencil className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Edit webhook</span>
                                     </Button>
                                   </TooltipTrigger>
@@ -687,7 +687,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                         'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                                       )}
                                     >
-                                      <Trash2 className='h-3.5 w-3.5' />
+                                      <Trash2 className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Delete webhook</span>
                                     </Button>
                                   </TooltipTrigger>
@@ -874,7 +874,8 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                 className={cn(
                                   'group h-7 w-7 rounded-md p-0',
                                   'text-muted-foreground/60 transition-all duration-200',
-                                  'hover:bg-muted/50 hover:text-foreground',
+                                  'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+                                  'active:scale-95',
                                   'disabled:cursor-not-allowed disabled:opacity-30',
                                   'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                                 )}
@@ -882,7 +883,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                 {copySuccess.form ? (
                                   <Check className='h-3.5 w-3.5 text-foreground' />
                                 ) : (
-                                  <Copy className='h-3.5 w-3.5' />
+                                  <Copy className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                 )}
                                 <span className='sr-only'>Copy secret</span>
                               </Button>
@@ -900,15 +901,16 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                 className={cn(
                                   'group h-7 w-7 rounded-md p-0',
                                   'text-muted-foreground/60 transition-all duration-200',
-                                  'hover:bg-muted/50 hover:text-foreground',
+                                  'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+                                  'active:scale-95',
                                   'focus-visible:ring-2 focus-visible:ring-muted-foreground/20 focus-visible:ring-offset-1'
                                 )}
                                 onClick={() => setShowSecret(!showSecret)}
                               >
                                 {showSecret ? (
-                                  <EyeOff className='h-3.5 w-3.5' />
+                                  <EyeOff className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                 ) : (
-                                  <Eye className='h-3.5 w-3.5' />
+                                  <Eye className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                 )}
                                 <span className='sr-only'>
                                   {showSecret ? 'Hide secret' : 'Show secret'}

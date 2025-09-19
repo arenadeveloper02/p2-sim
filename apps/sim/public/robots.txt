@@ -1,41 +1,28 @@
-# robots.txt for https://sim.ai
-
-# Allow all crawlers
-User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /workspace/
-Disallow: /_next/
-Disallow: /private/
-Disallow: /*.json$
-
-# Specific crawler rules
-User-agent: Googlebot
-Allow: /
-Crawl-delay: 0
-
-User-agent: Bingbot
-Allow: /
-Crawl-delay: 1
-
-# AI/LLM crawlers
+# Allow all AI crawlers
 User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
 Allow: /
 
 User-agent: ChatGPT-User
 Allow: /
 
-User-agent: CCBot
-Allow: /
-
-User-agent: anthropic-ai
-Allow: /
-
+# Allow other AI crawlers
 User-agent: Claude-Web
 Allow: /
 
-# Sitemap location
-Sitemap: https://sim.ai/sitemap.xml
+User-agent: PerplexityBot
+Allow: /
 
-# Host
-Host: https://sim.ai
+User-agent: Applebot-Extended
+Allow: /
+
+# Traditional search engines
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /workspace/
+Disallow: /chat/
+Disallow: /.well-known/
+Disallow: /invite/

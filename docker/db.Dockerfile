@@ -1,25 +1,28 @@
 # ========================================
 # Dependencies Stage: Install Dependencies
 # ========================================
-FROM oven/bun:1.2.21-alpine AS deps
+FROM oven/bun:alpine AS deps
 WORKDIR /app
 
 # Copy only package files needed for migrations
 COPY package.json bun.lock turbo.json ./
-COPY packages/db/package.json ./packages/db/package.json
+COPY apps/sim/package.json ./apps/sim/db/
 
-# Install dependencies
-RUN bun install --ignore-scripts
+# Install minimal dependencies in one layer
+RUN bun install --omit dev --ignore-scripts && \
+    bun install --omit dev --ignore-scripts drizzle-kit drizzle-orm postgres next-runtime-env zod @t3-oss/env-nextjs
 
 # ========================================
 # Runner Stage: Production Environment
 # ========================================
-FROM oven/bun:1.2.21-alpine AS runner
+FROM oven/bun:alpine AS runner
 WORKDIR /app
 
 # Copy only the necessary files from deps
 COPY --from=deps /app/node_modules ./node_modules
-COPY packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
-COPY packages/db ./packages/db
+COPY apps/sim/drizzle.config.ts ./apps/sim/drizzle.config.ts
+COPY apps/sim/db ./apps/sim/db
+COPY apps/sim/package.json ./apps/sim/package.json
+COPY apps/sim/lib/env.ts ./apps/sim/lib/env.ts
 
-WORKDIR /app/packages/db
+WORKDIR /app/apps/sim

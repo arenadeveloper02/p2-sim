@@ -46,7 +46,7 @@ describe('Copilot Chat API Route', () => {
     mockUpdate.mockReturnValue({ set: mockSet })
     mockSet.mockReturnValue({ where: mockWhere })
 
-    vi.doMock('@sim/db', () => ({
+    vi.doMock('@/db', () => ({
       db: {
         select: mockSelect,
         insert: mockInsert,
@@ -54,7 +54,7 @@ describe('Copilot Chat API Route', () => {
       },
     }))
 
-    vi.doMock('@sim/db/schema', () => ({
+    vi.doMock('@/db/schema', () => ({
       copilotChats: {
         id: 'id',
         userId: 'userId',

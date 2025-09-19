@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { GithubIcon, GoogleIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { client } from '@/lib/auth-client'
-import { inter } from '@/app/fonts/inter'
 
 interface SocialLoginButtonsProps {
   githubAvailable: boolean
@@ -37,6 +36,12 @@ export function SocialLoginButtons({
     setIsGithubLoading(true)
     try {
       await client.signIn.social({ provider: 'github', callbackURL })
+
+      // Mark that the user has previously logged in
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('has_logged_in_before', 'true')
+        document.cookie = 'has_logged_in_before=true; path=/; max-age=31536000; SameSite=Lax' // 1 year expiry
+      }
     } catch (err: any) {
       let errorMessage = 'Failed to sign in with GitHub'
 
@@ -60,6 +65,13 @@ export function SocialLoginButtons({
     setIsGoogleLoading(true)
     try {
       await client.signIn.social({ provider: 'google', callbackURL })
+
+      // Mark that the user has previously logged in
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('has_logged_in_before', 'true')
+        // Also set a cookie to enable middleware to check login status
+        document.cookie = 'has_logged_in_before=true; path=/; max-age=31536000; SameSite=Lax' // 1 year expiry
+      }
     } catch (err: any) {
       let errorMessage = 'Failed to sign in with Google'
 
@@ -80,24 +92,24 @@ export function SocialLoginButtons({
   const githubButton = (
     <Button
       variant='outline'
-      className='w-full rounded-[10px] shadow-sm hover:bg-gray-50'
+      className='w-full border-neutral-700 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white'
       disabled={!githubAvailable || isGithubLoading}
       onClick={signInWithGithub}
     >
-      <GithubIcon className='!h-[18px] !w-[18px] mr-1' />
-      {isGithubLoading ? 'Connecting...' : 'GitHub'}
+      <GithubIcon className='mr-2 h-4 w-4' />
+      {isGithubLoading ? 'Connecting...' : 'Continue with GitHub'}
     </Button>
   )
 
   const googleButton = (
     <Button
       variant='outline'
-      className='w-full rounded-[10px] shadow-sm hover:bg-gray-50'
+      className='w-full border-neutral-700 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white'
       disabled={!googleAvailable || isGoogleLoading}
       onClick={signInWithGoogle}
     >
-      <GoogleIcon className='!h-[18px] !w-[18px] mr-1' />
-      {isGoogleLoading ? 'Connecting...' : 'Google'}
+      <GoogleIcon className='mr-2 h-4 w-4' />
+      {isGoogleLoading ? 'Connecting...' : 'Continue with Google'}
     </Button>
   )
 
@@ -108,9 +120,9 @@ export function SocialLoginButtons({
   }
 
   return (
-    <div className={`${inter.className} grid gap-3 font-light`}>
-      {googleAvailable && googleButton}
+    <div className='grid gap-3'>
       {githubAvailable && githubButton}
+      {googleAvailable && googleButton}
     </div>
   )
 }
