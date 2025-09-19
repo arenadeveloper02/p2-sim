@@ -13,6 +13,8 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { Toaster } from '@/components/ui'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ControlBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/control-bar'
@@ -1591,20 +1593,37 @@ const WorkflowContent = React.memo(() => {
   const showSkeletonUI = !isWorkflowReady
 
   if (showSkeletonUI) {
+    const skeletonBoxes = Array.from({ length: 6 })
+
     return (
-      <div className='flex h-screen w-full flex-col overflow-hidden'>
+      <div className='flex h-screen w-full flex-col items-center justify-center overflow-hidden'>
         <div className='relative h-full w-full flex-1 transition-all duration-200'>
-          <div className='fixed top-0 right-0 z-10'>
-            <Panel />
+          {/* Top fixed search placeholder */}
+          <div className='fixed top-[76px] right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs' />
+
+          {/* Top-right skeleton buttons */}
+          <div className='fixed top-4 right-4 z-20 flex items-center gap-2'>
+            {skeletonBoxes.map((_, idx) => (
+              <div
+                key={idx}
+                className='h-12 w-12 animate-pulse rounded-[11px] border bg-card shadow-xs'
+              />
+            ))}
           </div>
-          <ControlBar hasValidationErrors={nestedSubflowErrors.size > 0} />
-          <div className='workflow-container h-full'>
+
+          {/* Workflow skeleton background */}
+          <div className='workflow-container relative h-full'>
             <Background
               color='hsl(var(--workflow-dots))'
               size={4}
               gap={40}
               style={{ backgroundColor: 'hsl(var(--workflow-background))' }}
             />
+
+            {/* Loader overlay */}
+            <div className='absolute inset-0 z-20 flex items-center justify-center'>
+              <LoadingAgentP2 size='lg' />
+            </div>
           </div>
         </div>
       </div>
@@ -1679,6 +1698,9 @@ const WorkflowContent = React.memo(() => {
         {/* Show DiffControls if diff is available (regardless of current view mode) */}
         <DiffControls />
       </div>
+
+      {/* Toast notifications */}
+      <Toaster position='top-right' />
     </div>
   )
 })
