@@ -59,6 +59,10 @@ export function verifyCronAuth(request: NextRequest, context?: string): NextResp
   const expectedAuth = `Bearer ${env.CRON_SECRET}`
   const isVercelCron = request.headers.get('x-vercel-cron') === '1'
 
+  logger.info(`verifyCronAuth: ${isVercelCron}`)
+  logger.info(`authHeader: ${authHeader}`)
+  logger.info(`expectedAuth: ${expectedAuth}`)
+
   // Allow Vercel Cron requests (they include x-vercel-cron header instead of Authorization)
   if (!isVercelCron && authHeader !== expectedAuth) {
     const contextInfo = context ? ` for ${context}` : ''
