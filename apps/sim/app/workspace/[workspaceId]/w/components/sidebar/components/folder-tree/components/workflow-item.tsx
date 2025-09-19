@@ -26,6 +26,7 @@ interface Workspace {
   membershipId?: string
   permissions?: 'admin' | 'write' | 'read' | null
 }
+import { getWorkflowExecutionContext, extractInputFields } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
 
 const logger = createLogger('WorkflowItem')
 
@@ -199,11 +200,16 @@ export function WorkflowItem({
   }
 
   const handleClickWorkflowName = () => {
+    
+    console.log("the input fields are", extractInputFields());
+    
     if (isOpen) {
       togglePanel()
     }
     setFullScreen(false)
     setParentTemplateId('')
+    
+    
   }
 
   const handleClickByChat = async (e: React.MouseEvent) => {

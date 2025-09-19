@@ -1,11 +1,12 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, RefreshCw, X, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Notice } from '@/components/ui/notice'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
   extractBlockIdFromOutputId,
@@ -24,6 +25,9 @@ import { useChatStore } from '@/stores/panel/chat/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { extractInputFields } from '../../../../lib/workflow-execution-utils'
+import { WorkflowInputForm } from './components/workflow-input-form'
+import { WorkflowInputOverlay } from './components/workflow-input-overlay'
 
 const logger = createLogger('ChatPanel')
 
@@ -79,6 +83,49 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
   // Get workflow execution functionality
   const { handleRunWorkflow } = useWorkflowExecution()
+
+  // Add this new state to track if the initial form has been submitted
+  const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
+
+  // Add this new state to control form visibility
+  const [showInputForm, setShowInputForm] = useState(false)
+
+  // Extract input fields for the workflow
+  const inputFields = useMemo(() => extractInputFields(), [activeWorkflowId])
+
+  // Add handler to show the input form
+  const handleShowInputForm = useCallback(() => {
+    setShowInputForm(true)
+  }, [])
+
+  // Add handler to hide the input form
+  const handleHideInputForm = useCallback(() => {
+    setShowInputForm(false)
+  }, [])
+
+  // Initial form display effect
+  useEffect(() => {
+    // Show the form automatically if workflow has input fields and they haven't been submitted yet
+    if (activeWorkflowId && inputFields.length > 0 && !initialInputsSubmitted) {
+      setShowInputForm(true)
+    }
+  }, [activeWorkflowId, inputFields.length, initialInputsSubmitted])
+
+  // Clear chat messages for current workflow
+  const handleClearChat = useCallback(() => {
+    if (activeWorkflowId) {
+      // If you have a function to clear messages in your chat store, call it here
+      // For example: clearMessages(activeWorkflowId)
+      
+      // Reset initial inputs flag
+      setInitialInputsSubmitted(false)
+      
+      // Show input form if we have fields to collect
+      if (inputFields.length > 0) {
+        setShowInputForm(true)
+      }
+    }
+  }, [activeWorkflowId, inputFields.length])
 
   // Get output entries from console for the dropdown
   const outputEntries = useMemo(() => {
@@ -547,183 +594,475 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
 
-  return (
-    <div className='flex h-full flex-col'>
-      {/* Output Source Dropdown */}
-      <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
-        <OutputSelect
-          workflowId={activeWorkflowId}
-          selectedOutputs={selectedOutputs}
-          onOutputSelect={handleOutputSelection}
-          disabled={!activeWorkflowId}
-          placeholder='Select output sources'
-        />
-      </div>
+  // Handler for form submission
+  const handleInputFormSubmit = useCallback(
+    async (formInputs: Record<string, any>) => {
+      if (!activeWorkflowId) return
 
-      {/* Main layout with fixed heights to ensure input stays visible */}
-      <div className='flex flex-1 flex-col overflow-hidden'>
-        {/* Chat messages section - Scrollable area */}
-        <div className='flex-1 overflow-hidden'>
-          {workflowMessages.length === 0 ? (
-            <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
-              No messages yet
-            </div>
-          ) : (
-            <div ref={scrollAreaRef} className='h-full'>
-              <ScrollArea className='h-full pb-2' hideScrollbar={true}>
-                <div>
-                  {workflowMessages.map((message) => (
-                    <ChatMessage key={message.id} message={message} />
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-            </div>
-          )}
+      // Format the inputs as a message
+      const inputMessage = Object.entries(formInputs)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n')
 
-          {/* Scroll to bottom button */}
-          {showScrollButton && (
-            <div className='-translate-x-1/2 absolute bottom-20 left-1/2 z-10'>
-              <Button
-                onClick={scrollToBottom}
-                size='sm'
-                variant='outline'
-                className='flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 shadow-lg transition-all hover:bg-gray-50'
-              >
-                <ArrowDown className='h-3.5 w-3.5' />
-                <span className='sr-only'>Scroll to bottom</span>
-              </Button>
-            </div>
-          )}
-        </div>
+      // Add the inputs as a user message
+      addMessage({
+        content: `Inputs received are:\n\`\n${inputMessage}\n\``,
+        workflowId: activeWorkflowId,
+        type: 'workflow',
+      })
 
-        {/* Input section - Fixed height */}
-        <div
-          className='-mt-[1px] relative flex-none pt-3 pb-4'
-          onDragEnter={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-              setDragCounter((prev) => prev + 1)
-            }
-          }}
-          onDragOver={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-              e.dataTransfer.dropEffect = 'copy'
-            }
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setDragCounter((prev) => Math.max(0, prev - 1))
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            setDragCounter(0)
-            if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
-              const droppedFiles = Array.from(e.dataTransfer.files)
-              if (droppedFiles.length > 0) {
-                const remainingSlots = Math.max(0, 5 - chatFiles.length)
-                const candidateFiles = droppedFiles.slice(0, remainingSlots)
-                const errors: string[] = []
-                const validNewFiles: ChatFile[] = []
+      // Mark the initial form as submitted
+      setInitialInputsSubmitted(true)
+      
+      // Explicitly hide the form
+      setShowInputForm(false)
 
-                for (const file of candidateFiles) {
-                  if (file.size > 10 * 1024 * 1024) {
-                    errors.push(`${file.name} is too large (max 10MB)`)
-                    continue
+      // Get the conversationId for this workflow
+      const conversationId = getConversationId(activeWorkflowId)
+      let result: any = null
+
+      try {
+        // Execute the workflow with the form inputs
+        // Pass the inputs as structured data instead of a string
+        result = await handleRunWorkflow({
+          input: formInputs, // Pass as structured object instead of JSON string
+          conversationId: conversationId,
+        })
+
+        // Process the result similar to handleSendMessage
+        if (result && 'stream' in result && result.stream instanceof ReadableStream) {
+          const messageIdMap = new Map<string, string>()
+          const reader = result.stream.getReader()
+          const decoder = new TextDecoder()
+
+          const processStream = async () => {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) {
+                // Finalize all streaming messages
+                messageIdMap.forEach((id) => finalizeMessageStream(id))
+                break
+              }
+
+              const chunk = decoder.decode(value)
+              const lines = chunk.split('\n\n')
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const json = JSON.parse(line.substring(6))
+                    const { blockId, chunk: contentChunk, event, data } = json
+
+                    if (event === 'final' && data) {
+                      const result = data as ExecutionResult
+                      const nonStreamingLogs =
+                        result.logs?.filter((log) => !messageIdMap.has(log.blockId)) || []
+
+                      if (nonStreamingLogs.length > 0) {
+                        const outputsToRender = selectedOutputs.filter((outputId) => {
+                          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                          return nonStreamingLogs.some((log) => log.blockId === blockIdForOutput)
+                        })
+
+                        for (const outputId of outputsToRender) {
+                          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                          const path = extractPathFromOutputId(outputId, blockIdForOutput)
+                          const log = nonStreamingLogs.find((l) => l.blockId === blockIdForOutput)
+
+                          if (log) {
+                            let outputValue: any = log.output
+                            
+                            if (path) {
+                              // Parse JSON content safely
+                              outputValue = parseOutputContentSafely(outputValue)
+                              
+                              const pathParts = path.split('.')
+                              for (const part of pathParts) {
+                                if (
+                                  outputValue &&
+                                  typeof outputValue === 'object' &&
+                                  part in outputValue
+                                ) {
+                                  outputValue = outputValue[part]
+                                } else {
+                                  outputValue = undefined
+                                  break
+                                }
+                              }
+                            }
+                            
+                            if (outputValue !== undefined) {
+                              addMessage({
+                                content:
+                                  typeof outputValue === 'string'
+                                    ? outputValue
+                                    : `\`\`\`json\n${JSON.stringify(outputValue, null, 2)}\n\`\`\``,
+                                workflowId: activeWorkflowId,
+                                type: 'workflow',
+                              })
+                            }
+                          }
+                        }
+                      }
+                    } else if (blockId && contentChunk) {
+                      if (!messageIdMap.has(blockId)) {
+                        const newMessageId = crypto.randomUUID()
+                        messageIdMap.set(blockId, newMessageId)
+                        addMessage({
+                          id: newMessageId,
+                          content: contentChunk,
+                          workflowId: activeWorkflowId,
+                          type: 'workflow',
+                          isStreaming: true,
+                        })
+                      } else {
+                        const existingMessageId = messageIdMap.get(blockId)
+                        if (existingMessageId) {
+                          appendMessageContent(existingMessageId, contentChunk)
+                        }
+                      }
+                    } else if (blockId && event === 'end') {
+                      const existingMessageId = messageIdMap.get(blockId)
+                      if (existingMessageId) {
+                        finalizeMessageStream(existingMessageId)
+                      }
+                    }
+                  } catch (e) {
+                    logger.error('Error parsing stream data:', e)
                   }
-
-                  const isDuplicate = chatFiles.some(
-                    (existingFile) =>
-                      existingFile.name === file.name && existingFile.size === file.size
-                  )
-                  if (isDuplicate) {
-                    errors.push(`${file.name} already added`)
-                    continue
-                  }
-
-                  validNewFiles.push({
-                    id: crypto.randomUUID(),
-                    name: file.name,
-                    size: file.size,
-                    type: file.type,
-                    file,
-                  })
-                }
-
-                if (errors.length > 0) {
-                  setUploadErrors(errors)
-                }
-
-                if (validNewFiles.length > 0) {
-                  setChatFiles([...chatFiles, ...validNewFiles])
                 }
               }
             }
-          }}
-        >
-          {/* File upload section */}
-          <div className='mb-2'>
-            {uploadErrors.length > 0 && (
-              <div className='mb-2'>
-                <Notice variant='error' title='File upload error'>
-                  <ul className='list-disc pl-5'>
-                    {uploadErrors.map((err, idx) => (
-                      <li key={idx}>{err}</li>
+          }
+
+          processStream()
+            .catch((e) => logger.error('Error processing stream:', e))
+            .finally(() => {
+              // Restore focus after streaming completes
+              focusInput(100)
+            })
+        } else if (result && 'success' in result && result.success && 'logs' in result) {
+          const finalOutputs: any[] = []
+
+          if (selectedOutputs?.length > 0) {
+            for (const outputId of selectedOutputs) {
+              const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+              const path = extractPathFromOutputId(outputId, blockIdForOutput)
+              const log = result.logs?.find((l: BlockLog) => l.blockId === blockIdForOutput)
+
+              if (log) {
+                let output = log.output
+
+                if (path) {
+                  // Parse JSON content safely
+                  output = parseOutputContentSafely(output)
+
+                  const pathParts = path.split('.')
+                  let current = output
+                  for (const part of pathParts) {
+                    if (current && typeof current === 'object' && part in current) {
+                      current = current[part]
+                    } else {
+                      current = undefined
+                      break
+                    }
+                  }
+                  output = current
+                }
+                if (output !== undefined) {
+                  finalOutputs.push(output)
+                }
+              }
+            }
+          }
+
+          // Add a new message for each resolved output
+          finalOutputs.forEach((output) => {
+            let content = ''
+            if (typeof output === 'string') {
+              content = output
+            } else if (output && typeof output === 'object') {
+              // For structured responses, pretty print the JSON
+              content = `\`\`\`json\n${JSON.stringify(output, null, 2)}\n\`\`\``
+            }
+
+            if (content) {
+              addMessage({
+                content,
+                workflowId: activeWorkflowId,
+                type: 'workflow',
+              })
+            }
+          })
+        } else if (result && 'success' in result && !result.success) {
+          addMessage({
+            content: `Error: ${'error' in result ? result.error : 'Workflow execution failed.'}`,
+            workflowId: activeWorkflowId,
+            type: 'workflow',
+          })
+        }
+      } catch (error) {
+        logger.error('Error in handleInputFormSubmit:', error)
+        // Show error message to the user
+        addMessage({
+          content: `Error: Failed to process inputs. ${error instanceof Error ? error.message : 'Unknown error'}`,
+          workflowId: activeWorkflowId,
+          type: 'workflow',
+        })
+      }
+    },
+    [
+      activeWorkflowId,
+      addMessage,
+      getConversationId,
+      handleRunWorkflow,
+      selectedOutputs,
+      appendMessageContent,
+      finalizeMessageStream,
+      focusInput,
+      setShowInputForm, // Add this dependency
+    ]
+  )
+
+  return (
+    <div className='flex h-full flex-col relative'> {/* Add 'relative' here */}
+      {/* Input Form Overlay - contained within the chat component */}
+      <WorkflowInputOverlay
+        fields={inputFields}
+        onSubmit={handleInputFormSubmit}
+        onClose={handleHideInputForm}
+        isVisible={showInputForm}
+      />
+
+      {/* Always render the chat UI */}
+      <>
+        {/* Header with actions */}
+        <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1">
+              <OutputSelect
+                workflowId={activeWorkflowId}
+                selectedOutputs={selectedOutputs}
+                onOutputSelect={handleOutputSelection}
+                disabled={!activeWorkflowId}
+                placeholder='Select output sources'
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center space-x-2">
+              {/* Re-run workflow button - only show if inputs have been submitted at least once */}
+              { inputFields && inputFields.length > 0 && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleShowInputForm}
+                        disabled={isExecuting}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        <span className="sr-only">Re-run with new inputs</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Re-run with new inputs</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {/* Clear chat button */}
+              {/* <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleClearChat}
+                      disabled={isExecuting || workflowMessages.length === 0}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Clear chat</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear chat</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider> */}
+            </div>
+          </div>
+        </div>
+
+        {/* Main chat layout */}
+        <div className='flex flex-1 flex-col overflow-hidden'>
+          {/* Chat messages section - Scrollable area */}
+          <div className='flex-1 overflow-hidden'>
+            {workflowMessages.length === 0 ? (
+              <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
+                No messages yet
+              </div>
+            ) : (
+              <div ref={scrollAreaRef} className='h-full'>
+                <ScrollArea className='h-full pb-2' hideScrollbar={true}>
+                  <div>
+                    {workflowMessages.map((message) => (
+                      <ChatMessage key={message.id} message={message} />
                     ))}
-                  </ul>
-                </Notice>
+                    <div ref={messagesEndRef} />
+                  </div>
+                </ScrollArea>
               </div>
             )}
-            <ChatFileUpload
-              files={chatFiles}
-              onFilesChange={(files) => {
-                setChatFiles(files)
-              }}
-              maxFiles={5}
-              maxSize={10}
-              disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
-              onError={(errors) => setUploadErrors(errors)}
-            />
+
+            {/* Scroll to bottom button */}
+            {showScrollButton && (
+              <div className='-translate-x-1/2 absolute bottom-20 left-1/2 z-10'>
+                <Button
+                  onClick={scrollToBottom}
+                  size='sm'
+                  variant='outline'
+                  className='flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 shadow-lg transition-all hover:bg-gray-50'
+                >
+                  <ArrowDown className='h-3.5 w-3.5' />
+                  <span className='sr-only'>Scroll to bottom</span>
+                </Button>
+              </div>
+            )}
           </div>
 
-          <div className='flex gap-2'>
-            <Input
-              ref={inputRef}
-              value={chatMessage}
-              onChange={(e) => {
-                setChatMessage(e.target.value)
-                setHistoryIndex(-1) // Reset history index when typing
-              }}
-              onKeyDown={handleKeyPress}
-              placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
-              className={`h-9 flex-1 rounded-lg border-[#E5E5E5] bg-[#FFFFFF] text-muted-foreground shadow-xs focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-[#414141] dark:bg-[var(--surface-elevated)] ${
-                isDragOver
-                  ? 'border-[var(--brand-primary-hover-hex)] bg-purple-50/50 dark:border-[var(--brand-primary-hover-hex)] dark:bg-purple-950/20'
-                  : ''
-              }`}
-              disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
-            />
-            <Button
-              onClick={handleSendMessage}
-              size='icon'
-              disabled={
-                (!chatMessage.trim() && chatFiles.length === 0) ||
-                !activeWorkflowId ||
-                isExecuting ||
-                isUploadingFiles
+          {/* Input section - Fixed height */}
+          <div
+            className='-mt-[1px] relative flex-none pt-3 pb-4'
+            onDragEnter={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                setDragCounter((prev) => prev + 1)
               }
-              className='h-9 w-9 rounded-lg bg-[var(--brand-primary-hover-hex)] text-white shadow-[0_0_0_0_var(--brand-primary-hover-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
-            >
-              <ArrowUp className='h-4 w-4' />
-            </Button>
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                e.dataTransfer.dropEffect = 'copy'
+              }
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragCounter((prev) => Math.max(0, prev - 1))
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragCounter(0)
+              if (!(!activeWorkflowId || isExecuting || isUploadingFiles)) {
+                const droppedFiles = Array.from(e.dataTransfer.files)
+                if (droppedFiles.length > 0) {
+                  const remainingSlots = Math.max(0, 5 - chatFiles.length)
+                  const candidateFiles = droppedFiles.slice(0, remainingSlots)
+                  const errors: string[] = []
+                  const validNewFiles: ChatFile[] = []
+
+                  for (const file of candidateFiles) {
+                    if (file.size > 10 * 1024 * 1024) {
+                      errors.push(`${file.name} is too large (max 10MB)`)
+                      continue
+                    }
+
+                    const isDuplicate = chatFiles.some(
+                      (existingFile) =>
+                        existingFile.name === file.name && existingFile.size === file.size
+                    )
+                    if (isDuplicate) {
+                      errors.push(`${file.name} already added`)
+                      continue
+                    }
+
+                    validNewFiles.push({
+                      id: crypto.randomUUID(),
+                      name: file.name,
+                      size: file.size,
+                      type: file.type,
+                      file,
+                    })
+                  }
+
+                  if (errors.length > 0) {
+                    setUploadErrors(errors)
+                  }
+
+                  if (validNewFiles.length > 0) {
+                    setChatFiles([...chatFiles, ...validNewFiles])
+                  }
+                }
+              }
+            }}
+          >
+            {/* File upload section */}
+            <div className='mb-2'>
+              {uploadErrors.length > 0 && (
+                <div className='mb-2'>
+                  <Notice variant='error' title='File upload error'>
+                    <ul className='list-disc pl-5'>
+                      {uploadErrors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </Notice>
+                </div>
+              )}
+              <ChatFileUpload
+                files={chatFiles}
+                onFilesChange={(files) => {
+                  setChatFiles(files)
+                }}
+                maxFiles={5}
+                maxSize={10}
+                disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+                onError={(errors) => setUploadErrors(errors)}
+              />
+            </div>
+
+            <div className='flex gap-2'>
+              <Input
+                ref={inputRef}
+                value={chatMessage}
+                onChange={(e) => {
+                  setChatMessage(e.target.value)
+                  setHistoryIndex(-1) // Reset history index when typing
+                }}
+                onKeyDown={handleKeyPress}
+                placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
+                className={`h-9 flex-1 rounded-lg border-[#E5E5E5] bg-[#FFFFFF] text-muted-foreground shadow-xs focus-visible:ring-0 focus-visible:ring-offset-0 dark:border-[#414141] dark:bg-[var(--surface-elevated)] ${
+                  isDragOver
+                    ? 'border-[var(--brand-primary-hover-hex)] bg-purple-50/50 dark:border-[var(--brand-primary-hover-hex)] dark:bg-purple-950/20'
+                    : ''
+                }`}
+                disabled={!activeWorkflowId || isExecuting || isUploadingFiles}
+              />
+              <Button
+                onClick={handleSendMessage}
+                size='icon'
+                disabled={
+                  (!chatMessage.trim() && chatFiles.length === 0) ||
+                  !activeWorkflowId ||
+                  isExecuting ||
+                  isUploadingFiles
+                }
+                className='h-9 w-9 rounded-lg bg-[var(--brand-primary-hover-hex)] text-white shadow-[0_0_0_0_var(--brand-primary-hover-hex)] transition-all duration-200 hover:bg-[var(--brand-primary-hover-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
+              >
+                <ArrowUp className='h-4 w-4' />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     </div>
   )
 }
