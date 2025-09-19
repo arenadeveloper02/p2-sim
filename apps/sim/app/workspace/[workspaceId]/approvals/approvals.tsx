@@ -233,7 +233,7 @@ export function Approvals() {
                             {approval.description ? (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className='cursor-help'>
+                                  <div>
                                     <p className='line-clamp-4 text-sm leading-relaxed'>
                                       {approval.description}
                                     </p>
