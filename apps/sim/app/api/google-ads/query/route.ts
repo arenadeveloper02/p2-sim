@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { executeProviderRequest } from '@/providers'
@@ -347,7 +347,7 @@ function calculateDynamicDates(periodType: string): { startDate: string; endDate
       startDate = new Date(endDate)
       startDate.setDate(endDate.getDate() - 29) // 30 days total
       break
-    case 'this_week':
+    case 'this_week': {
       // Start of current week (Monday)
       const currentDay = today.getDay()
       const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
@@ -356,7 +356,8 @@ function calculateDynamicDates(periodType: string): { startDate: string; endDate
       endDate = new Date(today)
       endDate.setDate(today.getDate() - 1)
       break
-    case 'last_week':
+    }
+    case 'last_week': {
       // Previous week (Monday to Sunday)
       const lastWeekEnd = new Date(today)
       const daysToLastSunday = today.getDay() === 0 ? 7 : today.getDay()
@@ -365,17 +366,19 @@ function calculateDynamicDates(periodType: string): { startDate: string; endDate
       startDate = new Date(lastWeekEnd)
       startDate.setDate(lastWeekEnd.getDate() - 6)
       break
+    }
     case 'this_month':
       startDate = new Date(today.getFullYear(), today.getMonth(), 1)
       endDate = new Date(today)
       endDate.setDate(today.getDate() - 1)
       break
-    case 'last_month':
+    case 'last_month': {
       const firstThisMonth = new Date(today.getFullYear(), today.getMonth(), 1)
       endDate = new Date(firstThisMonth)
       endDate.setDate(firstThisMonth.getDate() - 1)
       startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1)
       break
+    }
     case 'last_90_days':
       endDate = new Date(today)
       endDate.setDate(today.getDate() - 1)

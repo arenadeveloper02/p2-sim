@@ -64,7 +64,15 @@ export function SlackChannelSelector({
         body: JSON.stringify({ credential, workflowId }),
       })
 
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+      if (!res.ok) {
+        const errorData = await res
+          .json()
+          .catch(() => ({ error: `HTTP error! status: ${res.status}` }))
+        setError(errorData.error || `HTTP error! status: ${res.status}`)
+        setChannels([])
+        setInitialFetchDone(true)
+        return
+      }
 
       const data = await res.json()
       if (data.error) {
@@ -79,6 +87,7 @@ export function SlackChannelSelector({
         }
         setError(errorMessage)
         setChannels([])
+        setInitialFetchDone(true)
       } else {
         setChannels(data.channels)
         setInitialFetchDone(true)
@@ -87,6 +96,7 @@ export function SlackChannelSelector({
       if ((err as Error).name === 'AbortError') return
       setError((err as Error).message)
       setChannels([])
+      setInitialFetchDone(true)
     } finally {
       setLoading(false)
     }

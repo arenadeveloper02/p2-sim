@@ -1,17 +1,17 @@
-import { eq, sql } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
-import { getSession } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
-import { generateRequestId } from '@/lib/utils'
-import { db } from '@/db'
+import { db } from '@sim/db'
 import {
   templates,
   workflow,
   workflowBlocks,
   workflowEdges,
   workflowTemplateMapper,
-} from '@/db/schema'
+} from '@sim/db/schema'
+import { eq, sql } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
+import { getSession } from '@/lib/auth'
+import { createLogger } from '@/lib/logs/console/logger'
+import { generateRequestId } from '@/lib/utils'
 
 const logger = createLogger('TemplateUseAPI')
 

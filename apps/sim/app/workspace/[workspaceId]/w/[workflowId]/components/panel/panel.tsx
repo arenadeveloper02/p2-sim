@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/components/ui/tooltip'
+import { LandingPromptStorage } from '@/lib/browser-storage'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useCopilotStore } from '@/stores/copilot/store'
 import { useChatStore } from '@/stores/panel/chat/store'
@@ -31,6 +32,7 @@ export function Panel() {
   const [resizeStartWidth, setResizeStartWidth] = useState(0)
   const copilotRef = useRef<{
     createNewChat: () => void
+    setInputValueAndFocus: (value: string) => void
   }>(null)
   const lastLoadedWorkflowRef = useRef<string | null>(null)
 
@@ -300,6 +302,29 @@ export function Panel() {
     }
   }, [activeWorkflowId, copilotWorkflowId, ensureCopilotDataLoaded])
 
+  useEffect(() => {
+    const storedPrompt = LandingPromptStorage.consume()
+
+    if (storedPrompt && storedPrompt.trim().length > 0) {
+      setActiveTab('copilot')
+      if (!isOpen) {
+        togglePanel()
+      }
+
+      setTimeout(() => {
+        if (copilotRef.current) {
+          copilotRef.current.setInputValueAndFocus(storedPrompt)
+        } else {
+          setTimeout(() => {
+            if (copilotRef.current) {
+              copilotRef.current.setInputValueAndFocus(storedPrompt)
+            }
+          }, 500)
+        }
+      }, 200)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- Run only on mount
+
   return (
     <>
       {/* Tab Selector - Always visible */}
@@ -316,7 +341,7 @@ export function Panel() {
             View workflow
           </button>
         )}
-        <button
+         <button
           onClick={() => handleTabClick('chat')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
             isOpen && activeTab === 'chat' ? 'panel-tab-active' : 'panel-tab-inactive'
@@ -324,7 +349,6 @@ export function Panel() {
         >
           Chat
         </button>
-
         <button
           onClick={() => handleTabClick('console')}
           className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
@@ -343,16 +367,16 @@ export function Panel() {
             Copilot
           </button>
         )}
+       
         {false && (
-          <button
-            onClick={() => handleTabClick('variables')}
-            className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
-              isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
-            }`}
-          >
-            Variables
-          </button>
-        )}
+        <button
+          onClick={() => handleTabClick('variables')}
+          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+            isOpen && activeTab === 'variables' ? 'panel-tab-active' : 'panel-tab-inactive'
+          }`}
+        >
+          Variables
+        </button>)}
       </div>
 
       {/* Panel Content - Only visible when isOpen is true */}

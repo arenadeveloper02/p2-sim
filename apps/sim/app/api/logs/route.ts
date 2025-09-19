@@ -1,11 +1,11 @@
+import { db } from '@sim/db'
+import { permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { and, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import { db } from '@/db'
-import { permissions, workflow, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('LogsAPI')
 
@@ -22,6 +22,8 @@ const QueryParamsSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   search: z.string().optional(),
+  workflowName: z.string().optional(),
+  folderName: z.string().optional(),
   workspaceId: z.string(),
 })
 
@@ -153,6 +155,18 @@ export async function GET(request: NextRequest) {
         const searchTerm = `%${params.search}%`
         // With message removed, restrict search to executionId only
         conditions = and(conditions, sql`${workflowExecutionLogs.executionId} ILIKE ${searchTerm}`)
+      }
+
+      // Filter by workflow name (from advanced search input)
+      if (params.workflowName) {
+        const nameTerm = `%${params.workflowName}%`
+        conditions = and(conditions, sql`${workflow.name} ILIKE ${nameTerm}`)
+      }
+
+      // Filter by folder name (best-effort text match when present on workflows)
+      if (params.folderName) {
+        const folderTerm = `%${params.folderName}%`
+        conditions = and(conditions, sql`${workflow.name} ILIKE ${folderTerm}`)
       }
 
       // Execute the query using the optimized join
