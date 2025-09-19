@@ -1,0 +1,76 @@
+{
+  "dialect": "postgresql",
+  "tables": [
+    {
+      "name": "workflow_status",
+      "schema": "public",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "notNull": true,
+          "primaryKey": true
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "owner_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "workflow_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "comments",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "notNull": false,
+          "default": "marketing"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "notNull": true
+        },
+        {
+          "name": "mapped_workflow_id",
+          "type": "text",
+          "notNull": true
+        }
+      ]
+    }
+  ],
+  "migrations": [
+    {
+      "sql": "-- Create workflow_status table if it doesn't exist\nCREATE TABLE IF NOT EXISTS public.workflow_status (\n\tid text NOT NULL,\n\tuser_id text NOT NULL,\n\towner_id text NOT NULL,\n\tworkflow_id text NOT NULL,\n\tstatus text NOT NULL,\n\t\"name\" text NOT NULL,\n\t\"comments\" text NULL,\n\tcreated_at timestamp NOT NULL,\n\tupdated_at timestamp NOT NULL,\n\tmapped_workflow_id text NOT NULL,\n\tcategory text DEFAULT 'marketing',\n\tCONSTRAINT workflow_status_pkey PRIMARY KEY (id)\n);\n\n-- Add category column if it doesn't exist\nDO $$ \nBEGIN\n    -- Check if category column exists, if not add it\n    IF NOT EXISTS (\n        SELECT 1 FROM information_schema.columns \n        WHERE table_name = 'workflow_status' \n        AND column_name = 'category'\n        AND table_schema = 'public'\n    ) THEN\n        ALTER TABLE public.workflow_status \n        ADD COLUMN category text DEFAULT 'marketing';\n    END IF;\nEND $$;\n\n-- Add foreign key constraints if they don't exist\nDO $$ \nBEGIN\n    -- Add foreign key constraint for user_id if it doesn't exist\n    IF NOT EXISTS (\n        SELECT 1 FROM information_schema.table_constraints \n        WHERE constraint_name = 'workflow_status_user_id_user_id_fk'\n        AND table_name = 'workflow_status'\n    ) THEN\n        ALTER TABLE public.workflow_status \n        ADD CONSTRAINT workflow_status_user_id_user_id_fk \n        FOREIGN KEY (user_id) REFERENCES public.user(id) ON DELETE cascade ON UPDATE no action;\n    END IF;\n\n    -- Add foreign key constraint for owner_id if it doesn't exist\n    IF NOT EXISTS (\n        SELECT 1 FROM information_schema.table_constraints \n        WHERE constraint_name = 'workflow_status_owner_id_user_id_fk'\n        AND table_name = 'workflow_status'\n    ) THEN\n        ALTER TABLE public.workflow_status \n        ADD CONSTRAINT workflow_status_owner_id_user_id_fk \n        FOREIGN KEY (owner_id) REFERENCES public.user(id) ON DELETE cascade ON UPDATE no action;\n    END IF;\nEND $$;",
+      "folderMillis": 1737123456789,
+      "hash": "workflow_status_with_category_complete",
+      "bps": 0.1
+    }
+  ]
+}

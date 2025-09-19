@@ -42,6 +42,7 @@ import {
   TemplateModal,
   WebhookSettings,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components'
+import { renderApprovalButton } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/p2components'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import {
   getKeyboardShortcutText,
@@ -56,6 +57,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { GetApprovalModal } from './components/approval-modal/approval-modal'
 
 const logger = createLogger('ControlBar')
 
@@ -84,6 +86,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const { data: session } = useSession()
   const params = useParams()
   const workspaceId = params.workspaceId as string
+
+  // State for workspace name
+  const [workspaceName, setWorkspaceName] = useState<string>('')
 
   // Store hooks
   const { history, revertToHistoryState, lastSaved, setNeedsRedeploymentFlag, blocks } =
@@ -116,6 +121,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
   const [isWebhookSettingsOpen, setIsWebhookSettingsOpen] = useState(false)
   const [isAutoLayouting, setIsAutoLayouting] = useState(false)
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false)
 
   // Delete workflow state - grouped for better organization
   const [deleteState, setDeleteState] = useState({
@@ -324,6 +330,28 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       })
     }
   }, [session?.user?.id, isRegistryLoading])
+
+  // Fetch workspace name
+  useEffect(() => {
+    const fetchWorkspaceName = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.workspaces && Array.isArray(data.workspaces)) {
+            const workspace = data.workspaces.find((w: any) => w.id === workspaceId)
+            if (workspace) {
+              setWorkspaceName(workspace.name)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching workspace name:', error)
+      }
+    }
+
+    fetchWorkspaceName()
+  }, [workspaceId])
 
   /**
    * Check user usage limits and cache results
@@ -564,11 +592,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const renderDeleteButton = () => {
     const canEdit = userPermissions.canEdit
     const hasMultipleWorkflows = Object.keys(workflows).length > 1
-    const isDisabled = !canEdit || !hasMultipleWorkflows
+    const isAgentsApprovalWorkspace = workspaceName === 'AGENTS APPROVAL'
+    const isDisabled = !canEdit || !hasMultipleWorkflows || isAgentsApprovalWorkspace
 
     const getTooltipText = () => {
-      if (!canEdit) return 'Admin permission required to delete workflows'
+      if (!canEdit) return 'Cannot delete workflow'
       if (!hasMultipleWorkflows) return 'Cannot delete the last workflow'
+      if (isAgentsApprovalWorkspace) return 'Cannot delete workflow'
       return 'Delete workflow'
     }
 
@@ -1251,6 +1281,10 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  const handleOpenApproval = () => {
+    setIsApprovalModalOpen(true)
+  }
+
   return (
     <div
       className={cn(
@@ -1264,6 +1298,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {/* {isExpanded && renderPublishButton()} */}
+      {renderApprovalButton(
+        userPermissions,
+        isDebugging,
+        activeWorkflowId,
+        handleOpenApproval,
+        workspaceName
+      )}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {/* {!isDebugging && renderDebugModeToggle()} */}
@@ -1285,6 +1326,15 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           open={isWebhookSettingsOpen}
           onOpenChange={setIsWebhookSettingsOpen}
           workflowId={activeWorkflowId}
+        />
+      )}
+      {/* get approval Modal */}
+      {activeWorkflowId && (
+        <GetApprovalModal
+          open={isApprovalModalOpen}
+          onOpenChange={setIsApprovalModalOpen}
+          workflowId={activeWorkflowId}
+          canEdit={userPermissions.canEdit}
         />
       )}
     </div>

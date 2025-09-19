@@ -80,7 +80,7 @@ export default function WorkspacePage() {
 
               if (newWorkspace?.id) {
                 logger.info(`Created default workspace: ${newWorkspace.id}`)
-                router.replace(`/workspace/${newWorkspace.id}/w`)
+                router.replace(`/workspace/${newWorkspace.id}/templates`)
                 return
               }
             }
@@ -96,11 +96,15 @@ export default function WorkspacePage() {
         }
 
         // Get the first workspace (they should be ordered by most recent)
-        const firstWorkspace = workspaces[0]
-        logger.info(`Redirecting to first workspace: ${firstWorkspace.id}`)
+        // Skip "AGENTS APPROVAL" workspace since users can't add templates there
+        const firstWorkspace =
+          workspaces.find((workspace: any) => workspace.name !== 'AGENTS APPROVAL') || workspaces[0]
+        logger.info(
+          `Redirecting to first available workspace: ${firstWorkspace.id} (${firstWorkspace.name})`
+        )
 
-        // Redirect to the first workspace
-        router.replace(`/workspace/${firstWorkspace.id}/w`)
+        // Redirect to the first workspace templates page
+        router.replace(`/workspace/${firstWorkspace.id}/templates`)
       } catch (error) {
         logger.error('Error fetching workspaces for redirect:', error)
         // Don't redirect if there's an error - let the user stay on the page

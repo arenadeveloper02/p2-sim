@@ -8,7 +8,7 @@
 
 <p align="center">
 <<<<<<< HEAD
-  <strong>P2 Agents</strong> is a lightweight, user-friendly platform for building AI agent workflows.
+  <strong>Agentic AI</strong> is a lightweight, user-friendly platform for building AI agent workflows.
 =======
   <a href="https://sim.ai" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/sim.ai-6F3DFA" alt="Sim.ai"></a>
   <a href="https://discord.gg/Hr4UWYEcTT" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="apps/sim/public/static/demo.gif" alt="P2 Agents Demo" width="800"/>
+  <img src="apps/sim/public/static/demo.gif" alt="Agentic AI Demo" width="800"/>
 </p>
 
 ## Quickstart
@@ -35,7 +35,7 @@
 <<<<<<< HEAD
 ### Option 1: NPM Package (Simplest)
 
-The easiest way to run P2 Agents locally is using our [NPM package](https://www.npmjs.com/package/simstudio?activeTab=readme):
+The easiest way to run Agentic AI locally is using our [NPM package](https://www.npmjs.com/package/simstudio?activeTab=readme):
 =======
 ### Self-hosted: NPM Package
 >>>>>>> f35dab9d31b585a02c80a9ca16ee344d2b80fee9
@@ -51,7 +51,7 @@ Docker must be installed and running on your machine.
 #### Options
 
 <<<<<<< HEAD
-- `-p, --port <port>`: Specify the port to run P2 Agents on (default: 3000)
+- `-p, --port <port>`: Specify the port to run Agentic AI on (default: 3000)
 - `--no-pull`: Skip pulling the latest Docker images
 =======
 | Flag | Description |
