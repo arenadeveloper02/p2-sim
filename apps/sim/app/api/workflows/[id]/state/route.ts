@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -9,6 +7,8 @@ import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/db-helpers'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/validation'
+import { db } from '@/db'
+import { workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowStateAPI')
 

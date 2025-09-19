@@ -406,7 +406,7 @@ export function LongInput({
             overflow: 'hidden',
           }}
         >
-          {formatDisplayText(value?.toString() ?? '')}
+          {formatDisplayText(value?.toString() ?? '', true)}
         </div>
 
         {/* Wand Button */}

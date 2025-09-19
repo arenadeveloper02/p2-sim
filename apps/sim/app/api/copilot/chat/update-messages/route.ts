@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { copilotChats } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -11,6 +9,8 @@ import {
   createUnauthorizedResponse,
 } from '@/lib/copilot/auth'
 import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
+import { copilotChats } from '@/db/schema'
 
 const logger = createLogger('CopilotChatUpdateAPI')
 

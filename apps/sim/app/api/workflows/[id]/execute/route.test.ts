@@ -78,7 +78,7 @@ describe('Workflow Execution API Route', () => {
       }),
     }))
 
-    vi.doMock('@sim/db/schema', () => ({
+    vi.doMock('@/db/schema', () => ({
       subscription: {
         plan: 'plan',
         referenceId: 'referenceId',
@@ -205,7 +205,7 @@ describe('Workflow Execution API Route', () => {
       }),
     }))
 
-    vi.doMock('@sim/db', () => {
+    vi.doMock('@/db', () => {
       const mockDb = {
         select: vi.fn().mockImplementation((columns) => ({
           from: vi.fn().mockImplementation((table) => ({

@@ -1,6 +1,4 @@
 import { randomUUID } from 'crypto'
-import { db } from '@sim/db'
-import { document, embedding, knowledgeBaseTagDefinitions } from '@sim/db/schema'
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import {
   getSlotsForFieldType,
@@ -14,6 +12,8 @@ import type {
   UpdateTagDefinitionData,
 } from '@/lib/knowledge/types'
 import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
+import { document, embedding, knowledgeBaseTagDefinitions } from '@/db/schema'
 
 const logger = createLogger('TagsService')
 

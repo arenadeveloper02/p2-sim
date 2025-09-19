@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { member, organization } from '@sim/db/schema'
 import { and, eq, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
@@ -9,6 +7,8 @@ import {
   updateOrganizationSeats,
 } from '@/lib/billing/validation/seat-management'
 import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
+import { member, organization } from '@/db/schema'
 
 const logger = createLogger('OrganizationAPI')
 

@@ -64,30 +64,12 @@ export function SlackChannelSelector({
         body: JSON.stringify({ credential, workflowId }),
       })
 
-      if (!res.ok) {
-        const errorData = await res
-          .json()
-          .catch(() => ({ error: `HTTP error! status: ${res.status}` }))
-        setError(errorData.error || `HTTP error! status: ${res.status}`)
-        setChannels([])
-        setInitialFetchDone(true)
-        return
-      }
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
 
       const data = await res.json()
       if (data.error) {
-        // Provide user-friendly error messages for rate limiting
-        let errorMessage = data.error
-        if (
-          data.error.includes('rate limit') ||
-          data.error.includes('429') ||
-          data.error.includes('Too Many Requests')
-        ) {
-          errorMessage = 'Slack API rate limit exceeded. Please wait a moment and try again.'
-        }
-        setError(errorMessage)
+        setError(data.error)
         setChannels([])
-        setInitialFetchDone(true)
       } else {
         setChannels(data.channels)
         setInitialFetchDone(true)
@@ -96,7 +78,6 @@ export function SlackChannelSelector({
       if ((err as Error).name === 'AbortError') return
       setError((err as Error).message)
       setChannels([])
-      setInitialFetchDone(true)
     } finally {
       setLoading(false)
     }

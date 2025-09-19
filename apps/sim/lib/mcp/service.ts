@@ -2,8 +2,6 @@
  * MCP Service - Clean stateless service for MCP operations
  */
 
-import { db } from '@sim/db'
-import { mcpServers } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { isTest } from '@/lib/environment'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
@@ -19,6 +17,8 @@ import type {
 } from '@/lib/mcp/types'
 import { MCP_CONSTANTS } from '@/lib/mcp/utils'
 import { generateRequestId } from '@/lib/utils'
+import { db } from '@/db'
+import { mcpServers } from '@/db/schema'
 
 const logger = createLogger('McpService')
 

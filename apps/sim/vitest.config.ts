@@ -1,7 +1,6 @@
 import path, { resolve } from 'path'
 /// <reference types="vitest" />
 import react from '@vitejs/plugin-react'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 const nextEnv = require('@next/env')
@@ -11,7 +10,7 @@ const projectDir = process.cwd()
 loadEnvConfig(projectDir)
 
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  plugins: [react()],
   test: {
     globals: true,
     environment: 'node',
@@ -19,15 +18,11 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, '**/node_modules/**', '**/dist/**'],
     setupFiles: ['./vitest.setup.ts'],
     alias: {
-      '@sim/db': resolve(__dirname, '../../packages/db'),
+      '@': resolve(__dirname, './'),
     },
   },
   resolve: {
     alias: [
-      {
-        find: '@sim/db',
-        replacement: path.resolve(__dirname, '../../packages/db'),
-      },
       {
         find: '@/lib/logs/console/logger',
         replacement: path.resolve(__dirname, 'lib/logs/console/logger.ts'),

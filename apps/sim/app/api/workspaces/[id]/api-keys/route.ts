@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { apiKey, workspace } from '@sim/db/schema'
 import { and, eq, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -9,6 +7,8 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
+import { db } from '@/db'
+import { apiKey, workspace } from '@/db/schema'
 
 const logger = createLogger('WorkspaceApiKeysAPI')
 

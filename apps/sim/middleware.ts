@@ -108,25 +108,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL(`/chat/${subdomain}${url.pathname}`, request.url))
   }
 
-  // Handle root path redirects based on session status and hosting type
+  // For self-hosted deployments, redirect root path based on session status
   // Only apply redirects to the main domain, not subdomains
-  if (!isCustomDomain && (url.pathname === '/' || url.pathname === '/homepage')) {
-    if (!isHosted) {
-      // Self-hosted: Always redirect based on session
-      if (hasActiveSession) {
-        return NextResponse.redirect(new URL('/workspace', request.url))
-      }
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-    // Hosted: Allow access to /homepage route even for authenticated users
-    if (url.pathname === '/homepage') {
-      return NextResponse.rewrite(new URL('/', request.url))
-    }
-
-    // For root path, redirect authenticated users to workspace
-    if (hasActiveSession && url.pathname === '/') {
+  if (!isHosted && !isCustomDomain && url.pathname === '/') {
+    if (hasActiveSession) {
+      // User has active session, redirect to workspace
       return NextResponse.redirect(new URL('/workspace', request.url))
     }
+    // User doesn't have active session, redirect to login
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // Handle whitelabel redirects for terms and privacy pages
@@ -160,21 +150,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/workspace', request.url))
   }
 
-  // Handle login page - redirect authenticated users to workspace
-  if (url.pathname === '/login' || url.pathname === '/signup') {
-    if (hasActiveSession) {
-      return NextResponse.redirect(new URL('/workspace', request.url))
-    }
-    return NextResponse.next()
-  }
-
   // Handle protected routes that require authentication
   if (url.pathname.startsWith('/workspace')) {
     if (!hasActiveSession) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    // Email verification is enforced by Better Auth (server-side). No cookie gating here.
+    // Check if user needs email verification
+    const requiresVerification = request.cookies.get('requiresEmailVerification')
+    if (requiresVerification?.value === 'true') {
+      return NextResponse.redirect(new URL('/verify', request.url))
+    }
+
     return NextResponse.next()
   }
 
@@ -267,7 +254,6 @@ export const config = {
     '/login',
     '/signup',
     '/invite/:path*', // Match invitation routes
-    // Catch-all for other pages, excluding static assets and public directories
-    '/((?!_next/static|_next/image|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }

@@ -86,7 +86,6 @@ const nextConfig: NextConfig = {
     '@react-email/render',
     '@t3-oss/env-nextjs',
     '@t3-oss/env-core',
-    '@sim/db',
   ],
   async headers() {
     return [

@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { webhook, workflow } from '@sim/db/schema'
 import { tasks } from '@trigger.dev/sdk'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -15,6 +13,8 @@ import {
   validateMicrosoftTeamsSignature,
 } from '@/lib/webhooks/utils'
 import { executeWebhookJob } from '@/background/webhook-execution'
+import { db } from '@/db'
+import { webhook, workflow } from '@/db/schema'
 import { RateLimiter } from '@/services/queue'
 
 const logger = createLogger('WebhookTriggerAPI')
@@ -198,37 +198,6 @@ export async function POST(
       }
 
       logger.debug(`[${requestId}] Microsoft Teams HMAC signature verified successfully`)
-    }
-  }
-
-  // Handle Google Forms shared-secret authentication (Apps Script forwarder)
-  if (foundWebhook.provider === 'google_forms') {
-    const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
-    const expectedToken = providerConfig.token as string | undefined
-    const secretHeaderName = providerConfig.secretHeaderName as string | undefined
-
-    if (expectedToken) {
-      let isTokenValid = false
-
-      if (secretHeaderName) {
-        const headerValue = request.headers.get(secretHeaderName.toLowerCase())
-        if (headerValue === expectedToken) {
-          isTokenValid = true
-        }
-      } else {
-        const authHeader = request.headers.get('authorization')
-        if (authHeader?.toLowerCase().startsWith('bearer ')) {
-          const token = authHeader.substring(7)
-          if (token === expectedToken) {
-            isTokenValid = true
-          }
-        }
-      }
-
-      if (!isTokenValid) {
-        logger.warn(`[${requestId}] Google Forms webhook authentication failed for path: ${path}`)
-        return new NextResponse('Unauthorized - Invalid secret', { status: 401 })
-      }
     }
   }
 

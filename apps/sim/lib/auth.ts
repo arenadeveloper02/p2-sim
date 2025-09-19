@@ -1,6 +1,4 @@
 import { stripe } from '@better-auth/stripe'
-import { db } from '@sim/db'
-import * as schema from '@sim/db/schema'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { nextCookies } from 'better-auth/next-js'
@@ -38,6 +36,8 @@ import { quickValidateEmail } from '@/lib/email/validation'
 import { env, isTruthy } from '@/lib/env'
 import { isBillingEnabled, isProd } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
+import * as schema from '@/db/schema'
 
 const logger = createLogger('Auth')
 
@@ -147,7 +147,7 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: isProd,
+    requireEmailVerification: false,
     sendVerificationOnSignUp: false,
     throwOnMissingCredentials: true,
     throwOnInvalidCredentials: true,
@@ -174,6 +174,7 @@ export const auth = betterAuth({
       if (ctx.path.startsWith('/sign-up') && isTruthy(env.DISABLE_REGISTRATION))
         throw new Error('Registration is disabled, please contact your admin.')
 
+      // Check email and domain whitelist for sign-in and sign-up
       if (
         (ctx.path.startsWith('/sign-in') || ctx.path.startsWith('/sign-up')) &&
         (env.ALLOWED_LOGIN_EMAILS || env.ALLOWED_LOGIN_DOMAINS)
@@ -183,6 +184,7 @@ export const auth = betterAuth({
         if (requestEmail) {
           let isAllowed = false
 
+          // Check specific email whitelist
           if (env.ALLOWED_LOGIN_EMAILS) {
             const allowedEmails = env.ALLOWED_LOGIN_EMAILS.split(',').map((email) =>
               email.trim().toLowerCase()
@@ -190,6 +192,7 @@ export const auth = betterAuth({
             isAllowed = allowedEmails.includes(requestEmail)
           }
 
+          // Check domain whitelist if not already allowed
           if (!isAllowed && env.ALLOWED_LOGIN_DOMAINS) {
             const allowedDomains = env.ALLOWED_LOGIN_DOMAINS.split(',').map((domain) =>
               domain.trim().toLowerCase()
@@ -231,6 +234,7 @@ export const auth = betterAuth({
             throw new Error('Email is required')
           }
 
+          // Validate email before sending OTP
           const validation = quickValidateEmail(data.email)
           if (!validation.isValid) {
             logger.warn('Email validation failed', {
@@ -246,6 +250,7 @@ export const auth = betterAuth({
 
           const html = await renderOTPEmail(data.otp, data.email, data.type)
 
+          // Send email via consolidated mailer (supports Resend, Azure, or logging fallback)
           const result = await sendEmail({
             to: data.email,
             subject: getEmailSubject(data.type),
@@ -254,6 +259,7 @@ export const auth = betterAuth({
             emailType: 'transactional',
           })
 
+          // If no email service is configured, log verification code for development
           if (!result.success && result.message.includes('no email service configured')) {
             logger.info('🔑 VERIFICATION CODE FOR LOGIN/SIGNUP', {
               email: data.email,
@@ -294,6 +300,7 @@ export const auth = betterAuth({
           redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/github-repo`,
           getUserInfo: async (tokens) => {
             try {
+              // Fetch user profile
               const profileResponse = await fetch('https://api.github.com/user', {
                 headers: {
                   Authorization: `Bearer ${tokens.accessToken}`,
@@ -311,6 +318,7 @@ export const auth = betterAuth({
 
               const profile = await profileResponse.json()
 
+              // If email is null, fetch emails separately
               if (!profile.email) {
                 const emailsResponse = await fetch('https://api.github.com/user/emails', {
                   headers: {
@@ -322,6 +330,7 @@ export const auth = betterAuth({
                 if (emailsResponse.ok) {
                   const emails = await emailsResponse.json()
 
+                  // Find primary email or use the first one
                   const primaryEmail =
                     emails.find(
                       (email: { primary: boolean; email: string; verified: boolean }) =>
@@ -357,7 +366,7 @@ export const auth = betterAuth({
           },
         },
 
-        // Google providers
+        // Google providers for different purposes
         {
           providerId: 'google-email',
           clientId: env.GOOGLE_CLIENT_ID as string,
@@ -369,6 +378,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/gmail.send',
             'https://www.googleapis.com/auth/gmail.modify',
+            // 'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.labels',
           ],
           prompt: 'consent',
@@ -433,21 +443,6 @@ export const auth = betterAuth({
           ],
           prompt: 'consent',
           redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-sheets`,
-        },
-
-        {
-          providerId: 'google-forms',
-          clientId: env.GOOGLE_CLIENT_ID as string,
-          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
-          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
-          accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/forms.responses.readonly',
-          ],
-          prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-forms`,
         },
 
         {
@@ -569,7 +564,6 @@ export const auth = betterAuth({
             'email',
             'Sites.Read.All',
             'Sites.ReadWrite.All',
-            'Sites.Manage.All',
             'offline_access',
           ],
           responseType: 'code',
@@ -593,9 +587,11 @@ export const auth = betterAuth({
             try {
               logger.info('Creating Wealthbox user profile from token data')
 
+              // Generate a unique identifier since we can't fetch user info
               const uniqueId = `wealthbox-${Date.now()}`
               const now = new Date()
 
+              // Create a synthetic user profile
               return {
                 id: uniqueId,
                 name: 'Wealthbox User',
@@ -618,6 +614,8 @@ export const auth = betterAuth({
           clientSecret: env.SUPABASE_CLIENT_SECRET as string,
           authorizationUrl: 'https://api.supabase.com/v1/oauth/authorize',
           tokenUrl: 'https://api.supabase.com/v1/oauth/token',
+          // Supabase doesn't have a standard userInfo endpoint that works with our flow,
+          // so we use a dummy URL and rely on our custom getUserInfo implementation
           userInfoUrl: 'https://dummy-not-used.supabase.co',
           scopes: ['database.read', 'database.write', 'projects.read'],
           responseType: 'code',
@@ -627,9 +625,11 @@ export const auth = betterAuth({
             try {
               logger.info('Creating Supabase user profile from token data')
 
+              // Extract user identifier from tokens if possible
               let userId = 'supabase-user'
               if (tokens.idToken) {
                 try {
+                  // Try to decode the JWT to get user information
                   const decodedToken = JSON.parse(
                     Buffer.from(tokens.idToken.split('.')[1], 'base64').toString()
                   )
@@ -643,9 +643,12 @@ export const auth = betterAuth({
                 }
               }
 
+              // Generate a unique enough identifier
               const uniqueId = `${userId}-${Date.now()}`
+
               const now = new Date()
 
+              // Create a synthetic user profile since we can't fetch one
               return {
                 id: uniqueId,
                 name: 'Supabase User',
@@ -707,7 +710,7 @@ export const auth = betterAuth({
               return {
                 id: profile.data.id,
                 name: profile.data.name || 'X User',
-                email: `${profile.data.username}@x.com`,
+                email: `${profile.data.username}@x.com`, // Create synthetic email with username
                 image: profile.data.profile_image_url,
                 emailVerified: profile.data.verified || false,
                 createdAt: now,
@@ -760,7 +763,7 @@ export const auth = betterAuth({
                 name: profile.name || profile.display_name || 'Confluence User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
                 image: profile.picture || undefined,
-                emailVerified: true,
+                emailVerified: true, // Assume verified since it's an Atlassian account
                 createdAt: now,
                 updatedAt: now,
               }
@@ -881,7 +884,7 @@ export const auth = betterAuth({
                 name: profile.name || profile.display_name || 'Jira User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
                 image: profile.picture || undefined,
-                emailVerified: true,
+                emailVerified: true, // Assume verified since it's an Atlassian account
                 createdAt: now,
                 updatedAt: now,
               }
@@ -919,7 +922,7 @@ export const auth = betterAuth({
           userInfoUrl: 'https://api.notion.com/v1/users/me',
           scopes: ['workspace.content', 'workspace.name', 'page.read', 'page.write'],
           responseType: 'code',
-          pkce: false,
+          pkce: false, // Notion doesn't support PKCE
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
@@ -929,7 +932,7 @@ export const auth = betterAuth({
               const response = await fetch('https://api.notion.com/v1/users/me', {
                 headers: {
                   Authorization: `Bearer ${tokens.accessToken}`,
-                  'Notion-Version': '2022-06-28',
+                  'Notion-Version': '2022-06-28', // Specify the Notion API version
                 },
               })
 
@@ -997,7 +1000,7 @@ export const auth = betterAuth({
               return {
                 id: data.id,
                 name: data.name || 'Reddit User',
-                email: `${data.name}@reddit.user`,
+                email: `${data.name}@reddit.user`, // Reddit doesn't provide email in identity scope
                 image: data.icon_img || undefined,
                 emailVerified: false,
                 createdAt: now,
@@ -1114,6 +1117,7 @@ export const auth = betterAuth({
               let userId = 'slack-bot'
               if (tokens.idToken) {
                 try {
+                  // Try to decode the JWT to get user information
                   const decodedToken = JSON.parse(
                     Buffer.from(tokens.idToken.split('.')[1], 'base64').toString()
                   )
@@ -1125,9 +1129,12 @@ export const auth = betterAuth({
                 }
               }
 
+              // Generate a unique enough identifier
               const uniqueId = `${userId}-${Date.now()}`
+
               const now = new Date()
 
+              // Create a synthetic user profile since we can't fetch one
               return {
                 id: uniqueId,
                 name: 'Slack Bot',
@@ -1212,6 +1219,7 @@ export const auth = betterAuth({
                   status: subscription.status,
                 })
 
+                // Sync usage limits for the new subscription
                 try {
                   await syncSubscriptionUsageLimits(subscription)
                 } catch (error) {
@@ -1222,6 +1230,7 @@ export const auth = betterAuth({
                   })
                 }
 
+                // Send welcome email for Pro and Team plans
                 try {
                   const { sendPlanWelcomeEmail } = await import('@/lib/billing')
                   await sendPlanWelcomeEmail(subscription)
@@ -1266,7 +1275,9 @@ export const auth = betterAuth({
                   referenceId: subscription.referenceId,
                 })
 
+                // Reset usage limits back to free tier defaults
                 try {
+                  // This will sync limits based on the now-inactive subscription (defaulting to free tier)
                   await syncSubscriptionUsageLimits(subscription)
 
                   logger.info('[onSubscriptionDeleted] Reset usage limits to free tier', {
@@ -1289,6 +1300,7 @@ export const auth = betterAuth({
               })
 
               try {
+                // Handle invoice events
                 switch (event.type) {
                   case 'invoice.payment_succeeded': {
                     await handleInvoicePaymentSucceeded(event)
@@ -1324,11 +1336,13 @@ export const auth = betterAuth({
                   eventType: event.type,
                   error,
                 })
-                throw error
+                throw error // Re-throw to signal webhook failure to Stripe
               }
             },
           }),
+          // Add organization plugin as a separate entry in the plugins array
           organization({
+            // Allow team plan subscribers to create organizations
             allowUserToCreateOrganization: async (user) => {
               const dbSubscriptions = await db
                 .select()
@@ -1432,9 +1446,11 @@ export const auth = betterAuth({
     signUp: '/signup',
     error: '/error',
     verify: '/verify',
+    verifyRequest: '/verify-request',
   },
 })
 
+// Server-side auth helpers
 export async function getSession() {
   const hdrs = await headers()
   return await auth.api.getSession({

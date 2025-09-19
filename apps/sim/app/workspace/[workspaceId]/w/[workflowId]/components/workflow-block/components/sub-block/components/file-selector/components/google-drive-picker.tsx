@@ -100,9 +100,7 @@ export function GoogleDrivePicker({
       if (response.ok) {
         const data = await response.json()
         setCredentials(data.credentials)
-        if (credentialId && !data.credentials.some((c: any) => c.id === credentialId)) {
-          setSelectedCredentialId('')
-        }
+        // Do not auto-select. Respect persisted credential via prop when provided.
       }
     } catch (error) {
       logger.error('Error fetching credentials:', { error })
@@ -152,14 +150,6 @@ export function GoogleDrivePicker({
             setSelectedFileId('')
             onChange('')
             onFileInfoChange?.(null)
-          }
-
-          if (response.status === 401) {
-            logger.info('Credential unauthorized (401), clearing selection and prompting re-auth')
-            setSelectedFileId('')
-            onChange('')
-            onFileInfoChange?.(null)
-            setShowOAuthModal(true)
           }
         }
         return null

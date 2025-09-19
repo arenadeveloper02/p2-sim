@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -27,27 +26,20 @@ interface WorkflowOption {
 }
 
 export default function Workflow() {
-  const { workflowIds, toggleWorkflowId, setWorkflowIds, folderIds } = useFilterStore()
-  const params = useParams()
-  const workspaceId = params?.workspaceId as string | undefined
+  const { workflowIds, toggleWorkflowId, setWorkflowIds } = useFilterStore()
   const [workflows, setWorkflows] = useState<WorkflowOption[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
+  // Fetch all available workflows from the API
   useEffect(() => {
     const fetchWorkflows = async () => {
       try {
         setLoading(true)
-        const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
-        const response = await fetch(`/api/workflows${query}`)
+        const response = await fetch('/api/workflows')
         if (response.ok) {
           const { data } = await response.json()
-          const scoped = Array.isArray(data)
-            ? folderIds.length > 0
-              ? data.filter((w: any) => (w.folderId ? folderIds.includes(w.folderId) : false))
-              : data
-            : []
-          const workflowOptions: WorkflowOption[] = scoped.map((workflow: any) => ({
+          const workflowOptions: WorkflowOption[] = data.map((workflow: any) => ({
             id: workflow.id,
             name: workflow.name,
             color: workflow.color || '#3972F6',
@@ -62,7 +54,7 @@ export default function Workflow() {
     }
 
     fetchWorkflows()
-  }, [workspaceId, folderIds])
+  }, [])
 
   const getSelectedWorkflowsText = () => {
     if (workflowIds.length === 0) return 'All workflows'

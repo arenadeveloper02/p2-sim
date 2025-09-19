@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { createLogger } from '@/lib/logs/console/logger'
-import { SlackRateLimitHandler } from '@/lib/slack/rate-limit-handler'
 import { generateRequestId } from '@/lib/utils'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
@@ -157,44 +156,22 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     url.searchParams.append('exclude_archived', 'true')
-    url.searchParams.append('limit', '400')
+    url.searchParams.append('limit', '200')
 
     if (cursor) {
       url.searchParams.append('cursor', cursor)
     }
 
-    const response = await SlackRateLimitHandler.executeWithRetry(
-      () =>
-        fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-      {
-        maxRetries: 3,
-        baseDelay: 1000,
-        maxDelay: 30000,
-      }
-    )
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
     if (!response.ok) {
-      // Extract rate limit info if available
-      const rateLimitInfo = SlackRateLimitHandler.extractRateLimitInfo(response)
-      let errorMessage = `Slack API error: ${response.status} ${response.statusText}`
-
-      if (response.status === 429) {
-        if (rateLimitInfo.retryAfter) {
-          errorMessage += `. Rate limit exceeded. Retry after ${rateLimitInfo.retryAfter} seconds.`
-        } else if (rateLimitInfo.reset) {
-          errorMessage += `. Rate limit exceeded. Resets at ${rateLimitInfo.reset.toISOString()}.`
-        } else {
-          errorMessage += '. Rate limit exceeded. Please try again later.'
-        }
-      }
-
-      throw new Error(errorMessage)
+      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
@@ -212,12 +189,9 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     hasMore = !!data.response_metadata?.next_cursor
     cursor = data.response_metadata?.next_cursor
 
-    // Safety check to prevent infinite loops and limit memory usage
-    if (allChannels.length >= 1000) {
-      logger.warn('Reached 1,000 channels limit, stopping pagination', {
-        channelsLoaded: allChannels.length,
-        hasMore: !!data.response_metadata?.next_cursor,
-      })
+    // Safety check to prevent infinite loops
+    if (allChannels.length > 10000) {
+      console.warn('Reached 10,000 channels limit, stopping pagination')
       break
     }
   }

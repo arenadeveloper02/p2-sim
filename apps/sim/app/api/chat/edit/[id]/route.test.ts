@@ -30,7 +30,7 @@ describe('Chat Edit API Route', () => {
     mockSet.mockReturnValue({ where: mockWhere })
     mockDelete.mockReturnValue({ where: mockWhere })
 
-    vi.doMock('@sim/db', () => ({
+    vi.doMock('@/db', () => ({
       db: {
         select: mockSelect,
         update: mockUpdate,
@@ -38,7 +38,7 @@ describe('Chat Edit API Route', () => {
       },
     }))
 
-    vi.doMock('@sim/db/schema', () => ({
+    vi.doMock('@/db/schema', () => ({
       chat: { id: 'id', subdomain: 'subdomain', userId: 'userId' },
     }))
 

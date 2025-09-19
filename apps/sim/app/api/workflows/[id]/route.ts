@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { templates, workflow } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -11,6 +9,8 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions, hasAdminPermission } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import { db } from '@/db'
+import { templates, workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowByIdAPI')
 

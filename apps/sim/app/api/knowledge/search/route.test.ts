@@ -128,7 +128,7 @@ describe('Knowledge Search API Route', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
 
-    vi.doMock('@sim/db', () => ({
+    vi.doMock('@/db', () => ({
       db: mockDbChain,
     }))
 
