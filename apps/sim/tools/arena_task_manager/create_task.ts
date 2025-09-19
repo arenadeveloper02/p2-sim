@@ -1,4 +1,4 @@
-import { getArenaServiceBaseUrl, startOfDayTimestamp } from '@/lib/arena-utils/arena-utils'
+import { startOfDayTimestamp } from '@/lib/arena-utils/arena-utils'
 import type {
   ArenaCreateTaskParams,
   ArenaCreateTaskResponse,
@@ -64,7 +64,6 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
 
   request: {
     url: (params: ArenaCreateTaskParams) => {
-      const baseUrl = getArenaServiceBaseUrl()
       const url = `/api/tools/arena/tasks`
       return url
     },
@@ -80,14 +79,27 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       const nextWeekDay = new Date()
       nextWeekDay.setDate(today.getDate() + 7)
       const isTask = params.operation === 'arena_create_task'
+
+      // ✅ Validation checks
+      if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
+      if (!params['task-name']) throw new Error('Missing required field: task-name')
+      if (!params['task-description']) throw new Error('Missing required field: task-description')
+      if (!params['task-client']?.clientId)
+        throw new Error('Missing required field: task-client.clientId')
+      if (!params['task-project']) throw new Error('Missing required field: task-project')
+      if (!params['task-assignee']) throw new Error('Missing required field: task-assignee')
+
+      if (isTask) {
+        if (!params['task-group']?.id) throw new Error('Missing required field: task-group.id')
+        if (!params['task-group']?.name) throw new Error('Missing required field: task-group.name')
+      } else {
+        if (!params['task-task']) throw new Error('Missing required field: task-task')
+      }
+
       const body: Record<string, any> = {
         workflowId: params._context.workflowId,
         name: params['task-name'],
         taskHtmlDescription: params['task-description'],
-        // plannedStartDate: startOfDayTimestamp(new Date(params['planned-start-date']) || today),
-        // plannedEndDate: startOfDayTimestamp(
-        //   new Date(params['planned-end-date']) || new Date().setDate(today.getDate() + 7)
-        // ),
         plannedStartDate: startOfDayTimestamp(today),
         plannedEndDate: startOfDayTimestamp(nextWeekDay),
         taskType: isTask ? 'MILESTONE' : 'SHOW-ON-TIMELINE',
@@ -102,6 +114,7 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       } else {
         body.deliverableId = params['task-task']
       }
+
       return body
     },
   },

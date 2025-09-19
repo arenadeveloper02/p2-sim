@@ -13,7 +13,6 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/env'
 import { cn } from '@/lib/utils'
@@ -66,7 +65,6 @@ export function ArenaProjectSelector({
       setProjects([])
       try {
         const v2Token = await getArenaToken()
-        const baseUrl = getArenaServiceBaseUrl()
 
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const url = `${arenaBackendBaseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
@@ -110,22 +108,20 @@ export function ArenaProjectSelector({
             role='combobox'
             aria-expanded={open}
             id={`project-${subBlockId}`}
-            className='w-full justify-between'
+            className='w-full max-w-[420px] justify-between'
             disabled={disabled || !clientId} // Disable if no client selected
           >
-            {selectedLabel}
+            <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
+              {selectedLabel}
+            </span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className='w-full p-0'>
+        <PopoverContent className='w-full max-w-[420px] p-0'>
           <Command
             filter={(value, search) => {
-              // `value` is from CommandItem's "value" prop (sysId here)
-              // We want to match by project name too
               const project = projects.find((p) => p.sysId === value)
               if (!project) return 0
-
-              // Custom matching: case-insensitive substring
               return project.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
             }}
           >
@@ -138,8 +134,9 @@ export function ArenaProjectSelector({
                     key={project.sysId}
                     value={project.sysId}
                     onSelect={() => handleSelect(project.sysId)}
+                    className='whitespace-normal break-words max-w-[420px]'
                   >
-                    {project.name}
+                    <span className='whitespace-normal break-words flex-1'>{project.name}</span>
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',

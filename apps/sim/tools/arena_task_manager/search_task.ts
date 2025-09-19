@@ -10,7 +10,6 @@ import {
   getToday,
   getTomorrow,
 } from '@/lib/arena-utils/arena-date-utils'
-import { getArenaServiceBaseUrl } from '@/lib/arena-utils/arena-utils'
 import type { SearchTaskQueryParams, SearchTaskResponse } from '@/tools/arena_task_manager/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -73,7 +72,6 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
 
   request: {
     url: (params: SearchTaskQueryParams) => {
-      const baseUrl = getArenaServiceBaseUrl()
       let url = `/api/tools/arena/search-tasks`
 
       const isSearchTask = params.operation === 'arena_search_task'

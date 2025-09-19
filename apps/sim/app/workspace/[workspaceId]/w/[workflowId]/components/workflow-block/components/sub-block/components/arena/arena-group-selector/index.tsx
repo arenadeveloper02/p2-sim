@@ -112,14 +112,14 @@ export function ArenaGroupSelector({
             role='combobox'
             aria-expanded={open}
             id={`group-${subBlockId}`}
-            className='w-full justify-between'
+            className='w-full max-w-[420px] justify-between'
             disabled={disabled || !clientId || !projectId}
           >
-            {selectedLabel}
+            <span className='max-w-[400px] truncate'>{selectedLabel}</span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className='w-full p-0'>
+        <PopoverContent className='w-full max-w-[420px] p-0'>
           <Command
             filter={(value, search) => {
               const group = groups.find((g) => g.id === value || g.name === value)
@@ -131,7 +131,6 @@ export function ArenaGroupSelector({
                 : 0
             }}
           >
-            {/* ✅ Internal filtering handled automatically */}
             <CommandInput placeholder='Search groups...' className='h-9' />
             <CommandList>
               <CommandEmpty>No groups found.</CommandEmpty>
@@ -139,14 +138,15 @@ export function ArenaGroupSelector({
                 {groups.map((group) => (
                   <CommandItem
                     key={group.id}
-                    value={group.name}
+                    value={group.id}
                     onSelect={() => handleSelect(group)}
+                    className='max-w-full whitespace-normal break-words'
                   >
-                    {group.name}
+                    <span className='max-w-[400px] truncate'>{group.name}</span>
                     <Check
                       className={cn(
-                        'ml-auto',
-                        selectedValue === group.id ? 'opacity-100' : 'opacity-0'
+                        'ml-auto h-4 w-4',
+                        selectedValue?.id === group.id ? 'opacity-100' : 'opacity-0'
                       )}
                     />
                   </CommandItem>

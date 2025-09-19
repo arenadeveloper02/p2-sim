@@ -107,15 +107,27 @@ export function ArenaTaskSelector({
             role='combobox'
             aria-expanded={open}
             id={`task-${subBlockId}`}
-            className='w-full justify-between'
+            className='w-full max-w-[420px] justify-between'
             disabled={disabled || !projectId}
           >
-            {selectedLabel}
+            <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
+              {selectedLabel}
+            </span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className='w-full p-0'>
-          <Command>
+        <PopoverContent className='w-full max-w-[420px] p-0'>
+          <Command
+            filter={(value, search) => {
+              // `value` is from CommandItem's "value" prop (sysId or id here)
+              // We want to match by task name too
+              const task = tasks.find((t) => t.sysId === value || t.id === value)
+              if (!task) return 0
+
+              // Custom matching: case-insensitive substring
+              return task.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+            }}
+          >
             <CommandInput placeholder='Search tasks...' className='h-9' />
             <CommandList>
               <CommandEmpty>No task found.</CommandEmpty>
@@ -123,10 +135,11 @@ export function ArenaTaskSelector({
                 {tasks.map((task) => (
                   <CommandItem
                     key={task.sysId || task.id}
-                    value={task.name} // <-- IMPORTANT for Command filter
+                    value={task.sysId || task.id}
                     onSelect={() => handleSelect(task.sysId)}
+                    className='max-w-full whitespace-normal break-words' // ✅ allow wrapping
                   >
-                    {task.name}
+                    <span className='whitespace-normal break-words'>{task.name}</span>
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',

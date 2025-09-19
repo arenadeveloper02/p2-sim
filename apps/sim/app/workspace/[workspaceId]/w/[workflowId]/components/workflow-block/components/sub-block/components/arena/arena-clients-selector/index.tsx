@@ -99,14 +99,14 @@ export function ArenaClientsSelector({
             role='combobox'
             aria-expanded={open}
             id={`client-${subBlockId}`}
-            className='w-full justify-between'
+            className='w-full max-w-[420px] justify-between'
             disabled={disabled}
           >
-            {selectedLabel}
+            <span className='max-w-[400px] truncate'>{selectedLabel}</span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className='w-full p-0'>
+        <PopoverContent className='w-full max-w-[420px] p-0'>
           <Command
             filter={(value, search) => {
               const client = clients.find((cl) => cl.clientId === value || cl.name === value)
@@ -127,8 +127,9 @@ export function ArenaClientsSelector({
                     key={client.clientId}
                     value={client.clientId}
                     onSelect={() => handleSelect(client)}
+                    className='max-w-full whitespace-normal break-words'
                   >
-                    {client.name}
+                    <span className='max-w-[400px] truncate'>{client.name}</span>
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
