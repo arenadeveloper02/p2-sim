@@ -1,7 +1,8 @@
 'use client'
 
+import { LogOut } from 'lucide-react'
 import Image from 'next/image'
-import { GithubIcon } from '@/components/icons'
+import { Button } from '@/components/ui'
 
 interface ChatHeaderProps {
   chatConfig: {
@@ -37,6 +38,20 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
         </h2>
       </div>
       <div className='flex items-center gap-2'>
+        <Button
+          variant='ghost'
+          size='icon'
+          className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+          onClick={(e) => {
+            e.stopPropagation()
+            window.location.href = '/'
+          }}
+        >
+          <LogOut className='h-5 w-5' />
+          <span className='font-medium text-lg'>Exit</span>
+        </Button>
+      </div>
+      {/*<div className='flex items-center gap-2'>
         <a
           href='https://github.com/simstudioai/sim'
           className='flex items-center gap-1 text-foreground'
@@ -91,7 +106,7 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
             </svg>
           </div>
         </a>
-      </div>
+      </div>*/}
     </div>
   )
 }

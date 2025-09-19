@@ -20,9 +20,16 @@ interface SuccessViewProps {
   existingChat: ExistingChat | null
   onDelete?: () => void
   onUpdate?: () => void
+  workflowId?: string | null
 }
 
-export function SuccessView({ deployedUrl, existingChat, onDelete, onUpdate }: SuccessViewProps) {
+export function SuccessView({
+  deployedUrl,
+  existingChat,
+  onDelete,
+  onUpdate,
+  workflowId,
+}: SuccessViewProps) {
   const url = new URL(deployedUrl)
   const hostname = url.hostname
   const isDevelopmentUrl = hostname.includes('localhost')
@@ -32,9 +39,9 @@ export function SuccessView({ deployedUrl, existingChat, onDelete, onUpdate }: S
     const baseDomain = getBaseDomain()
     const baseHost = baseDomain.split(':')[0]
     const port = url.port || (baseDomain.includes(':') ? baseDomain.split(':')[1] : '3000')
-    domainSuffix = `.${baseHost}:${port}`
+    domainSuffix = `${baseHost}:${port}`
   } else {
-    domainSuffix = `.${getEmailDomain()}`
+    domainSuffix = `${getEmailDomain()}`
   }
 
   const baseDomainForSplit = getEmailDomain()
@@ -49,22 +56,24 @@ export function SuccessView({ deployedUrl, existingChat, onDelete, onUpdate }: S
           Chat {existingChat ? 'Update' : 'Deployment'} Successful
         </Label>
         <div className='relative flex items-center rounded-md ring-offset-background'>
+          <div className='flex h-10 items-center whitespace-nowrap rounded-r-md border border-l-0 bg-muted px-3 font-medium text-muted-foreground text-sm'>
+            {domainSuffix}
+          </div>
           <a
-            href={deployedUrl}
+            // href={deployedUrl}
+            href={`/chat/${workflowId}`}
             target='_blank'
             rel='noopener noreferrer'
             className='flex h-10 flex-1 items-center break-all rounded-l-md border border-r-0 p-2 font-medium text-foreground text-sm'
           >
             {subdomainPart}
           </a>
-          <div className='flex h-10 items-center whitespace-nowrap rounded-r-md border border-l-0 bg-muted px-3 font-medium text-muted-foreground text-sm'>
-            {domainSuffix}
-          </div>
         </div>
         <p className='text-muted-foreground text-xs'>
           Your chat is now live at{' '}
           <a
-            href={deployedUrl}
+            // href={deployedUrl}
+            href={`/chat/${workflowId}`}
             target='_blank'
             rel='noopener noreferrer'
             className='text-foreground hover:underline'

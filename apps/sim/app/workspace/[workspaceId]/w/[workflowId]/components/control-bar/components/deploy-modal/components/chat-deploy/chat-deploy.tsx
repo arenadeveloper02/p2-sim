@@ -24,7 +24,6 @@ import {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/auth-selector'
-import { SubdomainInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/subdomain-input'
 import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
@@ -94,7 +93,7 @@ export function ChatDeploy({
   const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
-  const [isSubdomainValid, setIsSubdomainValid] = useState(false)
+  const [isSubdomainValid, setIsSubdomainValid] = useState(true)
   const isFormValid =
     isSubdomainValid &&
     Boolean(formData.title.trim()) &&
@@ -176,6 +175,7 @@ export function ChatDeploy({
     setChatSubmitting(true)
 
     try {
+      updateField('subdomain', workflowId)
       await onPreDeployWorkflow?.()
 
       if (!validateForm()) {
@@ -249,6 +249,7 @@ export function ChatDeploy({
       <>
         <div id='chat-deploy-form'>
           <SuccessView
+            workflowId={workflowId}
             deployedUrl={deployedUrl}
             existingChat={existingChat}
             onDelete={() => setShowDeleteConfirmation(true)}
@@ -313,14 +314,14 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-4'>
-          <SubdomainInput
+          {/* <SubdomainInput
             value={formData.subdomain}
             onChange={(value) => updateField('subdomain', value)}
             originalSubdomain={existingChat?.subdomain || undefined}
             disabled={chatSubmitting}
             onValidationChange={setIsSubdomainValid}
             isEditingExisting={!!existingChat}
-          />
+          /> */}
           <div className='space-y-2'>
             <Label htmlFor='title' className='font-medium text-sm'>
               Chat Title

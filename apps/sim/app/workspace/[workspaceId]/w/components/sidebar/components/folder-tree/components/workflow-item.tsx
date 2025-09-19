@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { MessageCircleMore, Pencil } from 'lucide-react'
+import { Loader2, MessageCircleMore, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { AgentIcon } from '@/components/icons'
@@ -15,6 +15,7 @@ import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
+import { useWorkflowChatDeployment } from './hooks/use-workflow-chat-deployment'
 
 // Workspace entity interface
 interface Workspace {
@@ -85,7 +86,13 @@ export function WorkflowItem({
   const { updateWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
   const { setParentTemplateId, togglePanel, isOpen, setActiveTab, setFullScreen } = usePanelStore()
+  const {
+    isLoading: isChatDeploying,
+    handleChatDeployment,
+    error: chatDeployError,
+  } = useWorkflowChatDeployment()
   const isTemplateId = isUsedTemplateObj?.[0]?.templateId
+  const workflowId = workflow.id
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -199,13 +206,23 @@ export function WorkflowItem({
     setParentTemplateId('')
   }
 
-  const handleClickByChat = () => {
-    setActiveTab('chat')
-    setFullScreen(true)
-    if (!isOpen) {
-      togglePanel()
+  const handleClickByChat = async (e: React.MouseEvent) => {
+    // setActiveTab('chat')
+    // setFullScreen(true)
+    // if (!isOpen) {
+    //   togglePanel()
+    // }
+    // setParentTemplateId(isTemplateId || '')
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (isChatDeploying) return
+
+    try {
+      await handleChatDeployment(workflowId)
+    } catch (error) {
+      logger.error('Failed to deploy/open chat:', error)
     }
-    setParentTemplateId(isTemplateId || '')
   }
 
   return (
@@ -340,20 +357,34 @@ export function WorkflowItem({
             </div>
           )}
         {isHovered && (
-          <Link
-            href={`/workspace/${workspaceId}/w/${workflow.id}`}
-            onClick={(e) => {
-              handleClick(e)
-              handleClickByChat()
-            }}
-          >
-            <MessageCircleMore
-              className={cn(
-                'h-3.5 w-3.5',
-                'ml-1 cursor-pointer p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
-              )}
-            />
-          </Link>
+          <Tooltip delayDuration={500}>
+            <TooltipTrigger asChild>
+              <Button
+                type='button'
+                variant='ghost'
+                onClick={handleClickByChat}
+                disabled={isChatDeploying}
+                className={cn(
+                  'ml-1 flex h-4 w-4 items-center justify-center rounded p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
+                  isChatDeploying && 'cursor-not-allowed opacity-50'
+                )}
+              >
+                {isChatDeploying ? (
+                  <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                ) : (
+                  <MessageCircleMore className='h-3.5 w-3.5' />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side='top' align='center' sideOffset={10}>
+              <p>
+                {isChatDeploying ? 'Deploying chat...' : 'Open chat interface'}
+                {chatDeployError && (
+                  <span className='mt-1 block text-red-400 text-xs'>{chatDeployError}</span>
+                )}
+              </p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     </div>
