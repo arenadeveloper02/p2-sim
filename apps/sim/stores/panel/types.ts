@@ -11,4 +11,5 @@ export interface PanelStore {
   isFullScreen: boolean
   parentTemplateId: string
   setParentTemplateId: (parentTemplateId: string) => void
+  openCopilotPanel: () => void
 }
