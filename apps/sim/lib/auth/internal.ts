@@ -1,5 +1,5 @@
 import { jwtVerify, SignJWT } from 'jose'
-import { type NextRequest, NextResponse } from 'next/server'
+import type { NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 

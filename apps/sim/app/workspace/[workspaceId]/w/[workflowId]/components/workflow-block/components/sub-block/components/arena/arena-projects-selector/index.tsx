@@ -134,9 +134,9 @@ export function ArenaProjectSelector({
                     key={project.sysId}
                     value={project.sysId}
                     onSelect={() => handleSelect(project.sysId)}
-                    className='whitespace-normal break-words max-w-[420px]'
+                    className='max-w-[420px] whitespace-normal break-words'
                   >
-                    <span className='whitespace-normal break-words flex-1'>{project.name}</span>
+                    <span className='flex-1 whitespace-normal break-words'>{project.name}</span>
                     <Check
                       className={cn(
                         'ml-auto h-4 w-4',
