@@ -146,7 +146,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
   let cursor: string | undefined
   let hasMore = true
 
-  while (hasMore) {
+  // while (hasMore) {
     const url = new URL('https://slack.com/api/conversations.list')
 
     if (includePrivate) {
@@ -156,7 +156,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     }
 
     url.searchParams.append('exclude_archived', 'true')
-    url.searchParams.append('limit', '200')
+    url.searchParams.append('limit', '2000')
 
     if (cursor) {
       url.searchParams.append('cursor', cursor)
@@ -190,11 +190,11 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
     cursor = data.response_metadata?.next_cursor
 
     // Safety check to prevent infinite loops
-    if (allChannels.length > 10000) {
-      console.warn('Reached 10,000 channels limit, stopping pagination')
-      break
-    }
-  }
+    // if (allChannels.length > 10000) {
+    //   console.warn('Reached 10,000 channels limit, stopping pagination')
+    //   break
+    // }
+  // }
 
   return {
     ok: true,
