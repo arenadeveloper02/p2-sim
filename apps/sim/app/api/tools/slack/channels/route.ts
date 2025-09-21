@@ -147,53 +147,53 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
   let hasMore = true
 
   // while (hasMore) {
-    const url = new URL('https://slack.com/api/conversations.list')
+  const url = new URL('https://slack.com/api/conversations.list')
 
-    if (includePrivate) {
-      url.searchParams.append('types', 'public_channel,private_channel')
-    } else {
-      url.searchParams.append('types', 'public_channel')
-    }
+  if (includePrivate) {
+    url.searchParams.append('types', 'public_channel,private_channel')
+  } else {
+    url.searchParams.append('types', 'public_channel')
+  }
 
-    url.searchParams.append('exclude_archived', 'true')
-    url.searchParams.append('limit', '2000')
+  url.searchParams.append('exclude_archived', 'true')
+  url.searchParams.append('limit', '2000')
 
-    if (cursor) {
-      url.searchParams.append('cursor', cursor)
-    }
+  if (cursor) {
+    url.searchParams.append('cursor', cursor)
+  }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    })
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
 
-    if (!response.ok) {
-      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
-    }
+  if (!response.ok) {
+    throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+  }
 
-    const data = await response.json()
+  const data = await response.json()
 
-    if (!data.ok) {
-      throw new Error(data.error || 'Failed to fetch channels')
-    }
+  if (!data.ok) {
+    throw new Error(data.error || 'Failed to fetch channels')
+  }
 
-    // Add channels from this page to our collection
-    if (data.channels && Array.isArray(data.channels)) {
-      allChannels.push(...data.channels)
-    }
+  // Add channels from this page to our collection
+  if (data.channels && Array.isArray(data.channels)) {
+    allChannels.push(...data.channels)
+  }
 
-    // Check if there are more pages
-    hasMore = !!data.response_metadata?.next_cursor
-    cursor = data.response_metadata?.next_cursor
+  // Check if there are more pages
+  hasMore = !!data.response_metadata?.next_cursor
+  cursor = data.response_metadata?.next_cursor
 
-    // Safety check to prevent infinite loops
-    // if (allChannels.length > 10000) {
-    //   console.warn('Reached 10,000 channels limit, stopping pagination')
-    //   break
-    // }
+  // Safety check to prevent infinite loops
+  // if (allChannels.length > 10000) {
+  //   console.warn('Reached 10,000 channels limit, stopping pagination')
+  //   break
+  // }
   // }
 
   return {
