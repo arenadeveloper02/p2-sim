@@ -8,14 +8,11 @@ import { generateRequestId } from '@/lib/utils'
 import { getUserId } from '@/app/api/auth/oauth/utils'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
 import { calculateCost } from '@/providers/utils'
+import { searchKnowledgeBases, type SearchResult } from '@/lib/milvus/search'
 import {
   generateSearchEmbedding,
   getDocumentNamesByIds,
   getQueryStrategy,
-  handleTagAndVectorSearch,
-  handleTagOnlySearch,
-  handleVectorOnlySearch,
-  type SearchResult,
 } from './utils'
 
 const logger = createLogger('VectorSearchAPI')
@@ -160,7 +157,7 @@ export async function POST(request: NextRequest) {
       if (!hasQuery && hasFilters) {
         // Tag-only search without vector similarity
         logger.debug(`[${requestId}] Executing tag-only search with filters:`, mappedFilters)
-        results = await handleTagOnlySearch({
+        results = await searchKnowledgeBases({
           knowledgeBaseIds: accessibleKbIds,
           topK: validatedData.topK,
           filters: mappedFilters,
@@ -169,25 +166,23 @@ export async function POST(request: NextRequest) {
         // Tag + Vector search
         logger.debug(`[${requestId}] Executing tag + vector search with filters:`, mappedFilters)
         const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryVector = JSON.stringify(await queryEmbeddingPromise)
 
-        results = await handleTagAndVectorSearch({
+        results = await searchKnowledgeBases({
           knowledgeBaseIds: accessibleKbIds,
+          query: validatedData.query,
           topK: validatedData.topK,
           filters: mappedFilters,
-          queryVector,
           distanceThreshold: strategy.distanceThreshold,
         })
       } else if (hasQuery && !hasFilters) {
         // Vector-only search
         logger.debug(`[${requestId}] Executing vector-only search`)
         const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryVector = JSON.stringify(await queryEmbeddingPromise)
 
-        results = await handleVectorOnlySearch({
+        results = await searchKnowledgeBases({
           knowledgeBaseIds: accessibleKbIds,
+          query: validatedData.query,
           topK: validatedData.topK,
-          queryVector,
           distanceThreshold: strategy.distanceThreshold,
         })
       } else {

@@ -3,6 +3,8 @@ import { db } from '@sim/db'
 import { document, embedding, knowledgeBaseTagDefinitions } from '@sim/db/schema'
 import { tasks } from '@trigger.dev/sdk'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { insertDocuments } from '@/lib/milvus/operations'
+import type { MilvusDocument } from '@/lib/milvus/collections'
 import { generateEmbeddings } from '@/lib/embeddings/utils'
 import { env } from '@/lib/env'
 import { getSlotsForFieldType, type TAG_SLOT_CONFIG } from '@/lib/knowledge/consts'
@@ -475,9 +477,10 @@ export async function processDocumentAsync(
 
         const documentTags = documentRecord[0] || {}
 
-        logger.info(`[${documentId}] Creating embedding records with tags`)
+        logger.info(`[${documentId}] Creating embedding records for Milvus storage`)
 
-        const embeddingRecords = processed.chunks.map((chunk, chunkIndex) => ({
+        // Prepare documents for Milvus insertion
+        const milvusDocuments: MilvusDocument[] = processed.chunks.map((chunk, chunkIndex) => ({
           id: crypto.randomUUID(),
           knowledgeBaseId,
           documentId,
@@ -486,7 +489,7 @@ export async function processDocumentAsync(
           content: chunk.text,
           contentLength: chunk.text.length,
           tokenCount: Math.ceil(chunk.text.length / 4),
-          embedding: embeddings[chunkIndex] || null,
+          embedding: embeddings[chunkIndex] || [],
           embeddingModel: 'text-embedding-3-small',
           startOffset: chunk.metadata.startIndex,
           endOffset: chunk.metadata.endIndex,
@@ -498,27 +501,31 @@ export async function processDocumentAsync(
           tag5: documentTags.tag5,
           tag6: documentTags.tag6,
           tag7: documentTags.tag7,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: now.getTime(),
+          updatedAt: now.getTime(),
         }))
 
-        await db.transaction(async (tx) => {
-          if (embeddingRecords.length > 0) {
-            await tx.insert(embedding).values(embeddingRecords)
-          }
+        // Store embeddings in Milvus instead of PostgreSQL
+        if (milvusDocuments.length > 0) {
+          await insertDocuments({
+            knowledgeBaseId,
+            documents: milvusDocuments,
+          })
+          logger.info(`[${documentId}] Stored ${milvusDocuments.length} chunks in Milvus`)
+        }
 
-          await tx
-            .update(document)
-            .set({
-              chunkCount: processed.metadata.chunkCount,
-              tokenCount: processed.metadata.tokenCount,
-              characterCount: processed.metadata.characterCount,
-              processingStatus: 'completed',
-              processingCompletedAt: now,
-              processingError: null,
-            })
-            .where(eq(document.id, documentId))
-        })
+        // Update document metadata in PostgreSQL (without embeddings)
+        await db
+          .update(document)
+          .set({
+            chunkCount: processed.metadata.chunkCount,
+            tokenCount: processed.metadata.tokenCount,
+            characterCount: processed.metadata.characterCount,
+            processingStatus: 'completed',
+            processingCompletedAt: now,
+            processingError: null,
+          })
+          .where(eq(document.id, documentId))
       })(),
       TIMEOUTS.OVERALL_PROCESSING,
       'Document processing'

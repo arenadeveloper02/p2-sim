@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { document, knowledgeBase, permissions } from '@sim/db/schema'
 import { and, count, eq, isNotNull, isNull, or } from 'drizzle-orm'
+import { createKnowledgeBaseCollection } from '@/lib/milvus/collections'
 import type {
   ChunkingConfig,
   CreateKnowledgeBaseData,
@@ -119,6 +120,16 @@ export async function createKnowledgeBase(
   }
 
   await db.insert(knowledgeBase).values(newKnowledgeBase)
+
+  // Create Milvus collection for the knowledge base
+  try {
+    await createKnowledgeBaseCollection(kbId)
+    logger.info(`[${requestId}] Created Milvus collection for knowledge base: ${data.name} (${kbId})`)
+  } catch (error) {
+    logger.error(`[${requestId}] Failed to create Milvus collection for knowledge base ${kbId}:`, error)
+    // Don't fail the knowledge base creation if Milvus collection creation fails
+    // The collection can be created later when documents are added
+  }
 
   logger.info(`[${requestId}] Created knowledge base: ${data.name} (${kbId})`)
 
