@@ -994,23 +994,6 @@ export function ToolInput({
           />
         )
 
-      case 'mention-input':
-        return (
-          <MentionInput
-            blockId={uniqueBlockId}
-            subBlock={{
-              id: `${subBlockId}-param`,
-              type: 'mention-input' as const,
-              title: param.id,
-              provider: uiComponent.provider || 'slack',
-              placeholder: uiComponent.placeholder || param.description,
-            }}
-            disabled={disabled}
-            isPreview={true}
-            previewValue={value}
-          />
-        )
-
       case 'short-input':
         return (
           <ShortInput

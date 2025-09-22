@@ -484,16 +484,6 @@ export function SubBlock({
             previewValue={previewValue}
           />
         )
-      case 'mention-input':
-        return (
-          <MentionInput
-            blockId={blockId}
-            subBlock={config}
-            disabled={isDisabled}
-            isPreview={isPreview}
-            previewValue={previewValue}
-          />
-        )
       case 'mcp-server-selector':
         return (
           <McpServerSelector

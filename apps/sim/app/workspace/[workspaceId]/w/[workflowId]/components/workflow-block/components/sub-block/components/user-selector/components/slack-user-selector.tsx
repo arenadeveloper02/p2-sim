@@ -226,7 +226,7 @@ export function SlackUserSelector({
                               {user.displayName || user.realName || user.name}
                             </span>
                             <span className='text-xs text-muted-foreground'>
-                              @{user.name} • {user.id}
+                              @{user.name}
                             </span>
                           </div>
                         </div>

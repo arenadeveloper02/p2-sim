@@ -13,7 +13,6 @@ export { FolderSelectorInput } from './folder-selector/components/folder-selecto
 export { KnowledgeBaseSelector } from './knowledge-base-selector/knowledge-base-selector'
 export { LongInput } from './long-input'
 export { McpDynamicArgs } from './mcp-dynamic-args/mcp-dynamic-args'
-export { MentionInput } from './mention-input/mention-input'
 export { McpServerSelector } from './mcp-server-modal/mcp-server-selector'
 export { McpToolSelector } from './mcp-server-modal/mcp-tool-selector'
 export { ProjectSelectorInput } from './project-selector/project-selector-input'
