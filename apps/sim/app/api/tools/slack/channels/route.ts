@@ -138,7 +138,7 @@ async function fetchSlackChannels(accessToken: string, includePrivate = true) {
   }
 
   url.searchParams.append('exclude_archived', 'true')
-  url.searchParams.append('limit', '200')
+  url.searchParams.append('limit', '20000')
 
   const response = await fetch(url.toString(), {
     method: 'GET',
