@@ -788,10 +788,17 @@ export class Executor {
               // Get the field value from workflow input if available
               // First try to access via input.field, then directly from field
               // This handles both input formats: { input: { field: value } } and { field: value }
-              let inputValue =
-                this.workflowInput?.input?.[field.name] !== undefined
-                  ? this.workflowInput.input[field.name] // Try to get from input.field
-                  : this.workflowInput?.[field.name] // Fallback to direct field access
+              const inputFieldValue = this.workflowInput?.input?.[field.name]
+              const directFieldValue = this.workflowInput?.[field.name]
+              
+              console.log(`[Executor] Processing field ${field.name}:`, {
+                inputFieldValue,
+                directFieldValue,
+                workflowInput: this.workflowInput,
+                fieldType: field.type
+              })
+              
+              let inputValue = inputFieldValue !== undefined ? inputFieldValue : directFieldValue
 
               if (inputValue === undefined || inputValue === null) {
                 if (Object.hasOwn(field, 'value')) {
