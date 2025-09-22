@@ -421,5 +421,6 @@ export function useWorkflowChatDeployment() {
   return {
     ...state,
     handleChatDeployment,
+    checkChatStatus,
   }
 }

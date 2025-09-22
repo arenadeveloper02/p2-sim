@@ -11,10 +11,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/deploy-modal'
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useWorkflowChatDeployment } from './hooks/use-workflow-chat-deployment'
 
 // Workspace entity interface
@@ -77,22 +80,45 @@ export function WorkflowItem({
   const [editValue, setEditValue] = useState(workflow.name)
   const [isRenaming, setIsRenaming] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  // State for controlling the deploy modal visibility
+  const [showDeployModal, setShowDeployModal] = useState(false)
+  // State to track if the workflow has changes that require redeployment
+  const [workflowHasChanges, setWorkflowHasChanges] = useState(false)
   const dragStartedRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const { selectedWorkflows, selectOnly, toggleWorkflowSelection } = useFolderStore()
   const isSelected = useIsWorkflowSelected(workflow.id)
-  const { updateWorkflow } = useWorkflowRegistry()
+  const { updateWorkflow, getWorkflowDeploymentStatus } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
   const { setParentTemplateId, togglePanel, isOpen, setActiveTab, setFullScreen } = usePanelStore()
   const {
     isLoading: isChatDeploying,
     handleChatDeployment,
     error: chatDeployError,
+    checkChatStatus,
   } = useWorkflowChatDeployment()
   const isTemplateId = isUsedTemplateObj?.[0]?.templateId
   const workflowId = workflow.id
+
+  // Get deployment status for the modal
+  const deploymentStatus = getWorkflowDeploymentStatus(workflowId)
+  const needsRedeployment = deploymentStatus?.needsRedeployment || false
+
+  // Get active workflow ID to check if this workflow is currently active
+  const { activeWorkflowId } = useWorkflowRegistry()
+
+  // Monitor workflow state changes to trigger change detection (only for active workflow)
+  // This optimization prevents unnecessary change detection for workflows not being edited
+  const currentBlocks = useWorkflowStore((state) =>
+    activeWorkflowId === workflowId ? state.blocks : null
+  )
+  const currentEdges = useWorkflowStore((state) =>
+    activeWorkflowId === workflowId ? state.edges : null
+  )
+  // Monitor sub-block values for this specific workflow
+  const subBlockValues = useSubBlockStore((state) => state.workflowValues[workflowId])
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -106,6 +132,60 @@ export function WorkflowItem({
       inputRef.current.select()
     }
   }, [isEditing])
+
+  /**
+   * Effect to detect workflow changes for deployed workflows
+   * This effect monitors workflow state and compares it with the deployed version
+   * to determine if redeployment is needed.
+   */
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout
+
+    const checkForWorkflowChanges = async () => {
+      // Only check for changes if workflow is deployed
+      if (!deploymentStatus?.isDeployed) {
+        setWorkflowHasChanges(false)
+        return
+      }
+
+      try {
+        // Call the same status API used by the control bar for consistency
+        const response = await fetch(`/api/workflows/${workflowId}/status`)
+        if (response.ok) {
+          const data = await response.json()
+          setWorkflowHasChanges(data.needsRedeployment || false)
+        } else {
+          setWorkflowHasChanges(false)
+        }
+      } catch (error) {
+        logger.error('Error checking workflow changes:', error)
+        setWorkflowHasChanges(false)
+      }
+    }
+
+    // Debounce the check to avoid too many API calls during rapid workflow editing
+    const debouncedCheck = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(checkForWorkflowChanges, 500)
+    }
+
+    // Only perform change detection for deployed workflows
+    if (deploymentStatus?.isDeployed) {
+      debouncedCheck()
+    } else {
+      setWorkflowHasChanges(false)
+    }
+
+    return () => clearTimeout(timeoutId)
+  }, [
+    workflowId,
+    deploymentStatus?.isDeployed,
+    deploymentStatus?.deployedAt,
+    // Trigger change detection when workflow structure or values change
+    currentBlocks, // Workflow blocks (nodes)
+    currentEdges, // Workflow connections
+    subBlockValues, // Block configuration values
+  ])
 
   const handleStartEdit = () => {
     if (isMarketplace) return
@@ -207,21 +287,58 @@ export function WorkflowItem({
   }
 
   const handleClickByChat = async (e: React.MouseEvent) => {
-    // setActiveTab('chat')
-    // setFullScreen(true)
-    // if (!isOpen) {
-    //   togglePanel()
-    // }
-    // setParentTemplateId(isTemplateId || '')
     e.preventDefault()
     e.stopPropagation()
 
+    // Prevent multiple concurrent deployments
     if (isChatDeploying) return
 
+    // OPTIMIZATION: If this is not the active workflow, skip change detection
+    // and redirect directly to chat.
+    if (activeWorkflowId !== workflowId) {
+      logger.info('Opening chat for non-active workflow, redirecting directly')
+      const chatUrl = `/chat/${workflowId}`
+      window.location.href = chatUrl
+      return
+    }
+
     try {
-      await handleChatDeployment(workflowId)
+      // STEP 1: Check if chat interface already exists for this workflow
+      const chatStatus = await checkChatStatus(workflowId)
+
+      if (chatStatus.isDeployed) {
+        // STEP 2: Chat exists - check if workflow needs redeployment
+        // Uses the same API endpoint as the control bar for consistent change detection
+        // This compares current workflow state with the deployed state in the database
+        const statusResponse = await fetch(`/api/workflows/${workflowId}/status`)
+        let hasChanges = false
+
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json()
+          hasChanges = statusData.needsRedeployment || false
+        }
+
+        if (hasChanges) {
+          // STEP 3A: Changes detected - show deploy modal for redeployment
+          // This will trigger the existing redeploy functionality when user clicks "Update"
+          logger.info('Chat exists but workflow has changes, showing deploy modal for redeployment')
+          setWorkflowHasChanges(true) // Update local state for UI feedback
+          setShowDeployModal(true) // Open modal with chat tab active
+        } else {
+          // STEP 3B: No changes - redirect directly to existing chat
+          logger.info('Chat already deployed with no changes, opening existing chat')
+          setWorkflowHasChanges(false) // Update local state
+          const chatUrl = `/chat/${workflowId}`
+          window.location.href = chatUrl
+        }
+      } else {
+        // STEP 2: Chat doesn't exist - show deploy modal for initial deployment
+        setShowDeployModal(true)
+      }
     } catch (error) {
-      logger.error('Failed to deploy/open chat:', error)
+      logger.error('Failed to check chat status:', error)
+      // FALLBACK: Show deploy modal on any error to ensure user can still deploy
+      setShowDeployModal(true)
     }
   }
 
@@ -378,7 +495,11 @@ export function WorkflowItem({
             </TooltipTrigger>
             <TooltipContent side='top' align='center' sideOffset={10}>
               <p>
-                {isChatDeploying ? 'Deploying chat...' : 'Open chat interface'}
+                {isChatDeploying
+                  ? 'Deploying chat...'
+                  : workflowHasChanges && activeWorkflowId === workflowId
+                    ? 'Update & deploy chat (workflow has changes)'
+                    : 'Open chat interface'}
                 {chatDeployError && (
                   <span className='mt-1 block text-red-400 text-xs'>{chatDeployError}</span>
                 )}
@@ -387,6 +508,19 @@ export function WorkflowItem({
           </Tooltip>
         )}
       </div>
+
+      <DeployModal
+        open={showDeployModal}
+        onOpenChange={setShowDeployModal}
+        workflowId={workflowId}
+        needsRedeployment={workflowHasChanges} // Pass change detection state
+        setNeedsRedeployment={setWorkflowHasChanges} // Allow modal to clear flag
+        deployedState={{} as any} // Not needed for chat-only deployment from sidebar
+        isLoadingDeployedState={false}
+        refetchDeployedState={async () => {}} // Not needed for this use case
+        initialTab='chat'
+        isSidebar={true}
+      />
     </div>
   )
 }

@@ -43,7 +43,7 @@ export const ClientChatMessage = memo(
       if (!content) {
         return null
       }
-      
+
       try {
         if (isBase64(content)) {
           return renderBs64Img({ isBase64: true, imageData: content })
@@ -55,9 +55,7 @@ export const ClientChatMessage = memo(
         console.error('Error rendering message content:', error)
         return (
           <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
-            <p className='text-sm'>
-              ⚠️ Error displaying content. Please try refreshing the chat.
-            </p>
+            <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
           </div>
         )
       }
@@ -102,40 +100,43 @@ export const ClientChatMessage = memo(
                 )} */}
               </div>
             </div>
-            {message.type === 'assistant' && !isJsonObject && !message.isInitialMessage && !isBase64(cleanTextContent) && (
-              <div className='flex items-center justify-start space-x-2'>
-                {/* Copy Button - Only show when not streaming */}
-                {!message.isStreaming && (
-                  <TooltipProvider>
-                    <Tooltip delayDuration={300}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className='text-muted-foreground transition-colors hover:bg-muted'
-                          onClick={() => {
-                            const contentToCopy =
-                              typeof cleanTextContent === 'string'
-                                ? cleanTextContent
-                                : JSON.stringify(cleanTextContent, null, 2)
-                            navigator.clipboard.writeText(contentToCopy)
-                            setIsCopied(true)
-                            setTimeout(() => setIsCopied(false), 2000)
-                          }}
-                        >
-                          {isCopied ? (
-                            <Check className='h-3 w-3' strokeWidth={2} />
-                          ) : (
-                            <Copy className='h-3 w-3' strokeWidth={2} />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side='top' align='center' sideOffset={5}>
-                        {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </div>
-            )}
+            {message.type === 'assistant' &&
+              !isJsonObject &&
+              !message.isInitialMessage &&
+              !isBase64(cleanTextContent) && (
+                <div className='flex items-center justify-start space-x-2'>
+                  {/* Copy Button - Only show when not streaming */}
+                  {!message.isStreaming && (
+                    <TooltipProvider>
+                      <Tooltip delayDuration={300}>
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              const contentToCopy =
+                                typeof cleanTextContent === 'string'
+                                  ? cleanTextContent
+                                  : JSON.stringify(cleanTextContent, null, 2)
+                              navigator.clipboard.writeText(contentToCopy)
+                              setIsCopied(true)
+                              setTimeout(() => setIsCopied(false), 2000)
+                            }}
+                          >
+                            {isCopied ? (
+                              <Check className='h-3 w-3' strokeWidth={2} />
+                            ) : (
+                              <Copy className='h-3 w-3' strokeWidth={2} />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side='top' align='center' sideOffset={5}>
+                          {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+              )}
           </div>
         </div>
       </div>

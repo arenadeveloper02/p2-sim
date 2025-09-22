@@ -40,10 +40,17 @@ interface ChatDeployProps {
   chatSubmitting: boolean
   setChatSubmitting: (submitting: boolean) => void
   onValidationChange?: (isValid: boolean) => void
+  /** Callback for initial workflow deployment (new chats) */
   onPreDeployWorkflow?: () => Promise<void>
+  /** Callback for workflow redeployment (existing chats with changes) */
+  onRedeployWorkflow?: () => Promise<void>
   showDeleteConfirmation?: boolean
   setShowDeleteConfirmation?: (show: boolean) => void
   onDeploymentComplete?: () => void
+  /** Indicates if workflow has changes requiring redeployment */
+  needsRedeployment?: boolean
+  /** Callback fired after successful redeployment */
+  onRedeploymentComplete?: () => void
 }
 
 interface ExistingChat {
@@ -68,9 +75,12 @@ export function ChatDeploy({
   setChatSubmitting,
   onValidationChange,
   onPreDeployWorkflow,
+  onRedeployWorkflow,
   showDeleteConfirmation: externalShowDeleteConfirmation,
   setShowDeleteConfirmation: externalSetShowDeleteConfirmation,
   onDeploymentComplete,
+  needsRedeployment = false,
+  onRedeploymentComplete,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -158,6 +168,18 @@ export function ChatDeploy({
           setImageUrl(null)
           setImageUploadError(null)
           onChatExistsChange?.(false)
+
+          // Initialize form with default values for new chat deployment
+          setFormData({
+            subdomain: workflowId,
+            title: formData.title || 'Chat Assistant', // Keep existing title or use default
+            description: formData.description || '',
+            authType: 'public',
+            password: '',
+            emails: [],
+            welcomeMessage: formData.welcomeMessage || 'Hi there! How can I help you today?',
+            selectedOutputBlocks: formData.selectedOutputBlocks || [], // Keep existing selections
+          })
         }
       }
     } catch (error) {
@@ -176,23 +198,44 @@ export function ChatDeploy({
 
     try {
       updateField('subdomain', workflowId)
-      await onPreDeployWorkflow?.()
+      if (needsRedeployment && existingChat) {
+        await onRedeployWorkflow?.()
+      } else {
+        await onPreDeployWorkflow?.()
+      }
 
+      // Validate form data before proceeding with chat deployment
       if (!validateForm()) {
         setChatSubmitting(false)
         return
       }
 
+      // Check subdomain validation status
       if (!isSubdomainValid && formData.subdomain !== existingChat?.subdomain) {
         setError('subdomain', 'Please wait for subdomain validation to complete')
         setChatSubmitting(false)
         return
       }
 
-      await deployChat(workflowId, formData, deploymentInfo, existingChat?.id, imageUrl)
+      // Deploy or update the chat interface
+      // Pass needsRedeployment flag to ensure API is redeployed if needed
+      await deployChat(
+        workflowId,
+        formData,
+        deploymentInfo,
+        existingChat?.id,
+        imageUrl,
+        needsRedeployment
+      )
 
+      // Update parent component state
       onChatExistsChange?.(true)
       setShowSuccessView(true)
+
+      // If this was a redeployment, notify parent to clear the needsRedeployment flag
+      if (needsRedeployment && existingChat) {
+        onRedeploymentComplete?.()
+      }
 
       // Fetch the updated chat data immediately after deployment
       // This ensures existingChat is available when switching back to edit mode

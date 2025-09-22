@@ -14,7 +14,7 @@ export function isBase64(str: string | any): boolean {
 
   // Trim whitespace and newlines that might be present in streamed data
   const trimmedStr = str.trim()
-  
+
   if (trimmedStr === '') {
     return false
   }
@@ -48,7 +48,7 @@ export const renderBs64Img = ({
   try {
     // Trim the base64 data to remove any whitespace/newlines from streaming
     const cleanImageData = imageData?.trim() || ''
-    
+
     const imageSrc =
       isBase64 && cleanImageData && cleanImageData.length > 0
         ? `data:image/png;base64,${cleanImageData}`
@@ -69,7 +69,7 @@ export const renderBs64Img = ({
           className='h-auto w-full rounded-lg border'
           unoptimized
           onError={(e) => {
-            console.error('Image failed to load:', imageSrc.substring(0, 100) + '...', e)
+            console.error('Image failed to load:', `${imageSrc.substring(0, 100)}...`, e)
             //   setLoadError(true)
             //   onLoadError?.(true)
           }}
@@ -81,7 +81,7 @@ export const renderBs64Img = ({
     )
   } catch (error) {
     console.error('Error rendering base64 image:', error)
-    
+
     // Return a fallback error message instead of crashing
     return (
       <div className='my-2 w-1/2'>
