@@ -128,7 +128,7 @@ export function SlackUserSelector({
 
   return (
     <div className='space-y-2'>
-      <label className='text-sm font-medium text-foreground'>{label}</label>
+      {/* <label className='text-sm font-medium text-foreground'>{label}</label> */}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -225,9 +225,7 @@ export function SlackUserSelector({
                             <span className='font-medium'>
                               {user.displayName || user.realName || user.name}
                             </span>
-                            <span className='text-xs text-muted-foreground'>
-                              @{user.name}
-                            </span>
+                            <span className='text-xs text-muted-foreground'>@{user.name}</span>
                           </div>
                         </div>
                       </CommandItem>
