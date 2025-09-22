@@ -104,7 +104,22 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         field: 'operation',
         value: 'send',
       },
+      dependsOn: ['credential', 'authMethod'],
       required: true,
+    },
+    {
+      id: 'mentionUser',
+      title: 'Mention Users',
+      type: 'user-selector',
+      layout: 'full',
+      provider: 'slack',
+      multiple: true,
+      condition: {
+        field: 'operation',
+        value: 'send',
+      },
+      dependsOn: ['credential', 'authMethod'],
+      required: false,
     },
     // Canvas specific fields
     {
@@ -191,6 +206,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           content,
           limit,
           oldest,
+          mentionUser,
           ...rest
         } = params
 
@@ -225,7 +241,16 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             if (!rest.text) {
               throw new Error('Message text is required for send operation')
             }
-            baseParams.text = rest.text
+
+            // Handle user mentions
+            let messageText = rest.text
+            if (mentionUser) {
+              const mentions = Array.isArray(mentionUser) ? mentionUser : [mentionUser]
+              const mentionText = mentions.map((userId) => `<@${userId}>`).join(' ')
+              messageText = `${mentionText} ${rest.text}`
+            }
+
+            baseParams.text = messageText
             break
 
           case 'canvas':
@@ -260,7 +285,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     botToken: { type: 'string', description: 'Bot token' },
     channel: { type: 'string', description: 'Channel identifier' },
     manualChannel: { type: 'string', description: 'Manual channel identifier' },
-    text: { type: 'string', description: 'Message text' },
+    text: { type: 'string', description: 'Message text with embedded mentions' },
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },

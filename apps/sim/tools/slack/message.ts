@@ -63,7 +63,12 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     body: (params: SlackMessageParams) => {
       const body: any = {
         channel: params.channel,
-        markdown_text: params.text,
+        text: params.text,
+        // Enable link parsing for proper mention handling
+        link_names: true,
+        // Enable unfurling of links
+        unfurl_links: true,
+        unfurl_media: true,
       }
 
       return body
