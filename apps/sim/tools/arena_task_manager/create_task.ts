@@ -84,8 +84,7 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
       if (!params['task-name']) throw new Error('Missing required field: Task Name')
       if (!params['task-description']) throw new Error('Missing required field: Task Description')
-      if (!params['task-client']?.clientId)
-        throw new Error('Missing required field: Task Client')
+      if (!params['task-client']?.clientId) throw new Error('Missing required field: Task Client')
       if (!params['task-project']) throw new Error('Missing required field: Project')
       if (!params['task-assignee']) throw new Error('Missing required field: Assignee')
 
