@@ -16,6 +16,9 @@ const SlackSendMessageSchema = z.object({
   text: z.string().min(1, 'Message text is required'),
   thread_ts: z.string().optional().nullable(),
   files: z.array(z.any()).optional().nullable(),
+  link_names: z.boolean().optional(),
+  unfurl_links: z.boolean().optional(),
+  unfurl_media: z.boolean().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -61,6 +64,11 @@ export async function POST(request: NextRequest) {
           channel: validatedData.channel,
           text: validatedData.text,
           ...(validatedData.thread_ts && { thread_ts: validatedData.thread_ts }),
+          // Enable link parsing for proper mention handling
+          link_names: validatedData.link_names ?? true,
+          // Enable unfurling of links
+          unfurl_links: validatedData.unfurl_links ?? true,
+          unfurl_media: validatedData.unfurl_media ?? true,
         }),
       })
 
@@ -110,6 +118,11 @@ export async function POST(request: NextRequest) {
           channel: validatedData.channel,
           text: validatedData.text,
           ...(validatedData.thread_ts && { thread_ts: validatedData.thread_ts }),
+          // Enable link parsing for proper mention handling
+          link_names: validatedData.link_names ?? true,
+          // Enable unfurling of links
+          unfurl_links: validatedData.unfurl_links ?? true,
+          unfurl_media: validatedData.unfurl_media ?? true,
         }),
       })
 
@@ -184,6 +197,11 @@ export async function POST(request: NextRequest) {
           channel: validatedData.channel,
           text: validatedData.text,
           ...(validatedData.thread_ts && { thread_ts: validatedData.thread_ts }),
+          // Enable link parsing for proper mention handling
+          link_names: validatedData.link_names ?? true,
+          // Enable unfurling of links
+          unfurl_links: validatedData.unfurl_links ?? true,
+          unfurl_media: validatedData.unfurl_media ?? true,
         }),
       })
 

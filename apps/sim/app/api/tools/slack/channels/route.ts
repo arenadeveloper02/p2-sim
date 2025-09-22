@@ -95,17 +95,17 @@ export async function POST(request: Request) {
 
     // Filter to channels the bot can access and format the response
     const channels = (data.channels || [])
-      .filter((channel: SlackChannel) => {
-        const canAccess = !channel.is_archived && (channel.is_member || !channel.is_private)
+      // .filter((channel: SlackChannel) => {
+      //   const canAccess = !channel.is_archived && (channel.is_member || !channel.is_private)
 
-        if (!canAccess) {
-          logger.debug(
-            `Filtering out channel: ${channel.name} (archived: ${channel.is_archived}, private: ${channel.is_private}, member: ${channel.is_member})`
-          )
-        }
+      //   if (!canAccess) {
+      //     logger.debug(
+      //       `Filtering out channel: ${channel.name} (archived: ${channel.is_archived}, private: ${channel.is_private}, member: ${channel.is_member})`
+      //     )
+      //   }
 
-        return canAccess
-      })
+      //   return canAccess
+      // })
       .map((channel: SlackChannel) => ({
         id: channel.id,
         name: channel.name,
