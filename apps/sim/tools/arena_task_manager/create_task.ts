@@ -82,18 +82,17 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
 
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
-      if (!params['task-name']) throw new Error('Missing required field: task-name')
-      if (!params['task-description']) throw new Error('Missing required field: task-description')
+      if (!params['task-name']) throw new Error('Missing required field: Task Name')
+      if (!params['task-description']) throw new Error('Missing required field: Task Description')
       if (!params['task-client']?.clientId)
-        throw new Error('Missing required field: task-client.clientId')
-      if (!params['task-project']) throw new Error('Missing required field: task-project')
-      if (!params['task-assignee']) throw new Error('Missing required field: task-assignee')
+        throw new Error('Missing required field: Task Client')
+      if (!params['task-project']) throw new Error('Missing required field: Project')
+      if (!params['task-assignee']) throw new Error('Missing required field: Assignee')
 
       if (isTask) {
-        if (!params['task-group']?.id) throw new Error('Missing required field: task-group.id')
-        if (!params['task-group']?.name) throw new Error('Missing required field: task-group.name')
+        if (!params['task-group']?.id) throw new Error('Missing required field: Task Group')
       } else {
-        if (!params['task-task']) throw new Error('Missing required field: task-task')
+        if (!params['task-task']) throw new Error('Missing required field: Task')
       }
 
       const body: Record<string, any> = {
