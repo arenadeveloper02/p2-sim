@@ -195,6 +195,10 @@ export const env = createEnv({
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
     E2B_API_KEY:                           z.string().optional(),                  // E2B API key for sandbox creation
+
+     // Arena
+    ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
   },
 
   client: {
@@ -242,6 +246,11 @@ export const env = createEnv({
 
     // Feature Flags
     NEXT_PUBLIC_TRIGGER_DEV_ENABLED:       z.boolean().optional(),                 // Client-side gate for async executions UI
+
+
+    // Arena
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
   },
 
   // Variables available on both server and client
@@ -251,6 +260,8 @@ export const env = createEnv({
   },
 
   experimental__runtimeEnv: {
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL: process.env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL,
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL: process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_VERCEL_URL: process.env.NEXT_PUBLIC_VERCEL_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,

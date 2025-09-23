@@ -64,6 +64,7 @@ import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StarterBlock } from '@/blocks/blocks/starter'
 import { SupabaseBlock } from '@/blocks/blocks/supabase'
+import { TaskManagerBlock } from '@/blocks/blocks/task_manager'
 import { TavilyBlock } from '@/blocks/blocks/tavily'
 import { TelegramBlock } from '@/blocks/blocks/telegram'
 import { ThinkingBlock } from '@/blocks/blocks/thinking'
@@ -143,6 +144,7 @@ export const registry: Record<string, BlockConfig> = {
   slack: SlackBlock,
   starter: StarterBlock,
   supabase: SupabaseBlock,
+  task_manager: TaskManagerBlock,
   tavily: TavilyBlock,
   telegram: TelegramBlock,
   thinking: ThinkingBlock,
