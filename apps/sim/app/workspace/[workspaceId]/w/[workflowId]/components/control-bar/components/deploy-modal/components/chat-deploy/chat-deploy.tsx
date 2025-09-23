@@ -28,6 +28,7 @@ import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
+import { useRouter } from 'next/navigation'
 
 const logger = createLogger('ChatDeploy')
 
@@ -51,6 +52,7 @@ interface ChatDeployProps {
   needsRedeployment?: boolean
   /** Callback fired after successful redeployment */
   onRedeploymentComplete?: () => void
+  isSidebar?: boolean
 }
 
 interface ExistingChat {
@@ -81,6 +83,7 @@ export function ChatDeploy({
   onDeploymentComplete,
   needsRedeployment = false,
   onRedeploymentComplete,
+  isSidebar
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -112,6 +115,7 @@ export function ChatDeploy({
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
     (formData.authType !== 'email' || formData.emails.length > 0)
+  const route = useRouter()
 
   useEffect(() => {
     onValidationChange?.(isFormValid)
@@ -248,6 +252,9 @@ export function ChatDeploy({
       }
     } finally {
       setChatSubmitting(false)
+      if(isSidebar){
+        route.push(`/chat/${workflowId}`)
+      }
     }
   }
 
@@ -287,7 +294,7 @@ export function ChatDeploy({
     return <LoadingSkeleton />
   }
 
-  if (deployedUrl && showSuccessView) {
+  if (deployedUrl && showSuccessView && !isSidebar) {
     return (
       <>
         <div id='chat-deploy-form'>

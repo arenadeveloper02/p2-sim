@@ -24,15 +24,15 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
   return (
     <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
       <div className='flex items-center gap-4'>
-        <Image
-          src={customImage || '/default-logo.png'}
+        {customImage && <Image
+          src={customImage}
           alt={`${chatConfig?.title || 'Chat'} logo`}
           width={32}
           height={32}
           className='h-8 w-8 rounded-md object-cover'
           style={{ objectFit: 'cover' }}
           unoptimized
-        />
+        />}
         <h2 className='font-medium text-foreground text-lg'>
           {chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
         </h2>

@@ -133,54 +133,6 @@ export function WorkflowItem({
     }
   }, [isEditing])
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout
-
-    const checkForWorkflowChanges = async () => {
-      // Only check for changes if workflow is deployed
-      if (!deploymentStatus?.isDeployed) {
-        setWorkflowHasChanges(false)
-        return
-      }
-
-      try {
-        // Call the same status API used by the control bar for consistency
-        const response = await fetch(`/api/workflows/${workflowId}/status`)
-        if (response.ok) {
-          const data = await response.json()
-          setWorkflowHasChanges(data.needsRedeployment || false)
-        } else {
-          setWorkflowHasChanges(false)
-        }
-      } catch (error) {
-        logger.error('Error checking workflow changes:', error)
-        setWorkflowHasChanges(false)
-      }
-    }
-
-    // Debounce the check to avoid too many API calls during rapid workflow editing
-    const debouncedCheck = () => {
-      clearTimeout(timeoutId)
-      timeoutId = setTimeout(checkForWorkflowChanges, 500)
-    }
-
-    // Only perform change detection for deployed workflows
-    if (deploymentStatus?.isDeployed) {
-      debouncedCheck()
-    } else {
-      setWorkflowHasChanges(false)
-    }
-
-    return () => clearTimeout(timeoutId)
-  }, [
-    workflowId,
-    deploymentStatus?.isDeployed,
-    deploymentStatus?.deployedAt,
-    // Trigger change detection when workflow structure or values change
-    currentBlocks, // Workflow blocks (nodes)
-    currentEdges, // Workflow connections
-    subBlockValues, // Block configuration values
-  ])
 
   const handleStartEdit = () => {
     if (isMarketplace) return
@@ -490,8 +442,6 @@ export function WorkflowItem({
               <p>
                 {isChatDeploying
                   ? 'Deploying chat...'
-                  : workflowHasChanges && activeWorkflowId === workflowId
-                    ? 'Update & deploy chat (workflow has changes)'
                     : 'Open chat interface'}
                 {chatDeployError && (
                   <span className='mt-1 block text-red-400 text-xs'>{chatDeployError}</span>

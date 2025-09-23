@@ -515,6 +515,7 @@ export function DeployModal({
                     // Also trigger a refetch of deployed state to ensure consistency
                     refetchDeployedState()
                   }}
+                  isSidebar={isSidebar}
                 />
               )}
             </div>
