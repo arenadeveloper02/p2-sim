@@ -138,7 +138,7 @@ export function UserSelectorInput({
   // Default fallback for unsupported providers
   return (
     <div className='w-full'>
-      <div className='text-sm text-muted-foreground'>
+      <div className='text-muted-foreground text-sm'>
         User selection not supported for {provider}
       </div>
     </div>

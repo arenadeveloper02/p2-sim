@@ -1,8 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronsUpDown, Wand2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { useReactFlow } from 'reactflow'
-import { Button } from '@/components/ui/button'
 import { checkEnvVarTrigger, EnvVarDropdown } from '@/components/ui/env-var-dropdown'
 import { formatDisplayText } from '@/components/ui/formatted-text'
 import { checkTagTrigger, TagDropdown } from '@/components/ui/tag-dropdown'
@@ -59,7 +56,7 @@ export function MentionInput({
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const workflowId = params.workflowId as string
-  
+
   // Local state for immediate UI updates during streaming
   const [localContent, setLocalContent] = useState<string>('')
 
@@ -102,7 +99,7 @@ export function MentionInput({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
   const [users, setUsers] = useState<SlackUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
-  
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const mentionDropdownRef = useRef<HTMLDivElement>(null)
@@ -131,7 +128,10 @@ export function MentionInput({
 
   const fetchSlackUsers = async () => {
     if (!effectiveCredential || !workflowId) {
-      console.log('MentionInput: Missing credential or workflowId', { effectiveCredential, workflowId })
+      console.log('MentionInput: Missing credential or workflowId', {
+        effectiveCredential,
+        workflowId,
+      })
       return
     }
 
@@ -180,17 +180,18 @@ export function MentionInput({
 
   // Filter users based on search term
   const filteredUsers = users
-    .filter(user => 
-      user.name.toLowerCase().includes(mentionSearchTerm.toLowerCase()) ||
-      user.realName.toLowerCase().includes(mentionSearchTerm.toLowerCase()) ||
-      user.displayName.toLowerCase().includes(mentionSearchTerm.toLowerCase())
+    .filter(
+      (user) =>
+        user.name.toLowerCase().includes(mentionSearchTerm.toLowerCase()) ||
+        user.realName.toLowerCase().includes(mentionSearchTerm.toLowerCase()) ||
+        user.displayName.toLowerCase().includes(mentionSearchTerm.toLowerCase())
     )
     .slice(0, 10) // Limit to 10 results
 
   // Handle user selection
   const handleUserSelect = (user: SlackUser) => {
     console.log('MentionInput: handleUserSelect called', user.name)
-    
+
     if (!textareaRef.current) {
       console.log('MentionInput: No textarea ref')
       return
@@ -219,7 +220,7 @@ export function MentionInput({
 
     // Update the textarea value
     textarea.value = newValue
-    
+
     // Set cursor position after the mention
     const newCursorPosition = lastAt + user.name.length + 2
     textarea.setSelectionRange(newCursorPosition, newCursorPosition)
@@ -231,7 +232,7 @@ export function MentionInput({
     // Hide mentions
     setShowMentions(false)
     setMentionSearchTerm('')
-    
+
     // Focus back to textarea
     textarea.focus()
   }
@@ -243,7 +244,7 @@ export function MentionInput({
 
     // Check for @ mention trigger
     const { show: showMention, searchTerm: mentionTerm } = checkMentionTrigger(newValue, cursorPos)
-    
+
     if (showMention) {
       console.log('MentionInput: @ mention triggered', { mentionTerm, usersCount: users.length })
       setShowMentions(true)
@@ -265,13 +266,11 @@ export function MentionInput({
     }
 
     // Check for tag trigger
-    const { show: showTag, searchTerm: tagTerm } = checkTagTrigger(newValue, cursorPos)
+    const { show: showTag } = checkTagTrigger(newValue, cursorPos)
     if (showTag) {
       setShowTags(true)
-      setSearchTerm(tagTerm)
     } else {
       setShowTags(false)
-      setSearchTerm('')
     }
 
     // Update cursor position
@@ -295,15 +294,11 @@ export function MentionInput({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedMentionIndex(prev => 
-            prev < filteredUsers.length - 1 ? prev + 1 : 0
-          )
+          setSelectedMentionIndex((prev) => (prev < filteredUsers.length - 1 ? prev + 1 : 0))
           return
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedMentionIndex(prev => 
-            prev > 0 ? prev - 1 : filteredUsers.length - 1
-          )
+          setSelectedMentionIndex((prev) => (prev > 0 ? prev - 1 : filteredUsers.length - 1))
           return
         case 'Enter':
         case 'Tab':
@@ -399,7 +394,7 @@ export function MentionInput({
   }, [showMentions])
 
   return (
-    <div className="relative">
+    <div className='relative'>
       <div
         className={cn(
           'relative overflow-hidden rounded-md border border-input bg-background',
@@ -460,11 +455,20 @@ export function MentionInput({
 
         {/* Wand Button */}
         {wandHook && !isPreview && (
-          <div className="absolute bottom-2 right-2">
+          <div className='absolute right-2 bottom-2'>
             <WandPromptBar
-              onGenerate={wandHook.generate}
-              isGenerating={wandHook.isStreaming}
-              disabled={wandHook.isStreaming}
+              isVisible={wandHook.isPromptVisible}
+              isLoading={wandHook.isLoading}
+              isStreaming={wandHook.isStreaming}
+              promptValue={wandHook.promptInputValue}
+              onSubmit={(prompt: string) => wandHook.generateStream({ prompt })}
+              onCancel={
+                wandHook.isStreaming ? wandHook.cancelGeneration : wandHook.hidePromptInline
+              }
+              onChange={wandHook.updatePromptValue}
+              placeholder={
+                config.wandConfig?.placeholder || 'Describe what you want to generate...'
+              }
             />
           </div>
         )}
@@ -495,7 +499,7 @@ export function MentionInput({
             const textBeforeCursor = newValue.slice(0, cursorPosition)
             const textAfterCursor = newValue.slice(cursorPosition)
             const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
-            
+
             if (lastOpenBracket !== -1) {
               const startText = textBeforeCursor.slice(0, lastOpenBracket)
               const newText = `${startText}<${tag}>${textAfterCursor}`
@@ -517,7 +521,7 @@ export function MentionInput({
       {showMentions && (
         <div
           ref={mentionDropdownRef}
-          className="absolute z-50 w-64 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md"
+          className='absolute z-50 max-h-48 w-64 overflow-y-auto rounded-md border bg-popover shadow-md'
           style={{
             top: '100%',
             left: 0,
@@ -525,15 +529,11 @@ export function MentionInput({
           }}
         >
           {loadingUsers ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              Loading users...
-            </div>
+            <div className='px-3 py-2 text-muted-foreground text-sm'>Loading users...</div>
           ) : filteredUsers.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              No users found
-            </div>
+            <div className='px-3 py-2 text-muted-foreground text-sm'>No users found</div>
           ) : (
-            <div className="py-1">
+            <div className='py-1'>
               {filteredUsers.map((user, index) => (
                 <button
                   key={user.id}
@@ -549,10 +549,8 @@ export function MentionInput({
                     handleUserSelect(user)
                   }}
                 >
-                  <div className="font-medium">@{user.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {user.displayName}
-                  </div>
+                  <div className='font-medium'>@{user.name}</div>
+                  <div className='text-muted-foreground text-xs'>{user.displayName}</div>
                 </button>
               ))}
             </div>

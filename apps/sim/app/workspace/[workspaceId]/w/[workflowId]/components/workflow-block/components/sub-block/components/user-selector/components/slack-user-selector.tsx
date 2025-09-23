@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Check, ChevronDown, User, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
   CommandEmpty,
@@ -12,8 +12,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { Badge } from '@/components/ui/badge'
-import { Check, ChevronDown, User, X } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 export interface SlackUserInfo {
@@ -135,10 +134,10 @@ export function SlackUserSelector({
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            className='w-full justify-between min-h-[40px] h-auto'
+            className='h-auto min-h-[40px] w-full justify-between'
             disabled={disabled || !credential}
           >
-            <div className='flex flex-wrap items-center gap-1 flex-1'>
+            <div className='flex flex-1 flex-wrap items-center gap-1'>
               {selectedUsers.length > 0 ? (
                 selectedUsers.map((user) => (
                   <Badge key={user.id} variant='secondary' className='flex items-center gap-1'>
@@ -152,7 +151,7 @@ export function SlackUserSelector({
                         e.stopPropagation()
                         handleRemoveUser(user.id)
                       }}
-                      className='ml-1 hover:bg-destructive/20 rounded-full p-0.5'
+                      className='ml-1 rounded-full p-0.5 hover:bg-destructive/20'
                     >
                       <X className='h-3 w-3' />
                     </button>
@@ -168,7 +167,7 @@ export function SlackUserSelector({
                 </span>
               )}
             </div>
-            <div className='flex items-center gap-1 ml-2'>
+            <div className='ml-2 flex items-center gap-1'>
               {selectedUsers.length > 0 && (
                 <button
                   type='button'
@@ -176,7 +175,7 @@ export function SlackUserSelector({
                     e.stopPropagation()
                     handleClear()
                   }}
-                  className='hover:bg-destructive/20 rounded-full p-1'
+                  className='rounded-full p-1 hover:bg-destructive/20'
                 >
                   <X className='h-3 w-3' />
                 </button>
@@ -192,14 +191,14 @@ export function SlackUserSelector({
               {loading && (
                 <CommandEmpty>
                   <div className='flex items-center justify-center py-4'>
-                    <div className='text-sm text-muted-foreground'>Loading users...</div>
+                    <div className='text-muted-foreground text-sm'>Loading users...</div>
                   </div>
                 </CommandEmpty>
               )}
               {error && (
                 <CommandEmpty>
                   <div className='flex items-center justify-center py-4'>
-                    <div className='text-sm text-destructive'>{error}</div>
+                    <div className='text-destructive text-sm'>{error}</div>
                   </div>
                 </CommandEmpty>
               )}
@@ -225,7 +224,7 @@ export function SlackUserSelector({
                             <span className='font-medium'>
                               {user.displayName || user.realName || user.name}
                             </span>
-                            <span className='text-xs text-muted-foreground'>@{user.name}</span>
+                            <span className='text-muted-foreground text-xs'>@{user.name}</span>
                           </div>
                         </div>
                       </CommandItem>

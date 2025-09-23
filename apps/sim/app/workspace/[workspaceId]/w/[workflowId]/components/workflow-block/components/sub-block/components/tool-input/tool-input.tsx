@@ -24,7 +24,6 @@ import {
   FileSelectorInput,
   FileUpload,
   LongInput,
-  MentionInput,
   ProjectSelectorInput,
   ShortInput,
   SliderInput,
