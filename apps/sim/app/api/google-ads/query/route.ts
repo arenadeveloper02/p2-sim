@@ -285,7 +285,7 @@ Return JSON format for COMPARISON:
     } catch (parseError) {
       // If that fails, try to extract the first valid JSON object from multiple objects
       logger.warn('Failed to parse as single JSON, trying to extract first valid JSON object', {
-        aiContent: cleanedContent.substring(0, 200) + '...',
+        aiContent: `${cleanedContent.substring(0, 200)}...`,
         parseError,
       })
     }
@@ -609,7 +609,7 @@ async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promi
 function processGoogleAdsResults(
   apiResult: any,
   requestId: string,
-  periodLabel: string = 'primary'
+  periodLabel = 'primary'
 ): {
   campaigns: Campaign[]
   accountTotals: {

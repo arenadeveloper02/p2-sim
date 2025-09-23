@@ -34,6 +34,7 @@ import {
 } from '@/tools/github'
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -142,7 +143,6 @@ import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdr
 import { redditGetCommentsTool, redditGetPostsTool, redditHotPostsTool } from '@/tools/reddit'
 import { s3GetObjectTool } from '@/tools/s3'
 import { searchTool as serperSearch } from '@/tools/serper'
-import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   sharepointCreatePageTool,
   sharepointListSitesTool,
