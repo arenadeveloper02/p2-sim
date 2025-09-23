@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     })
 
     const responseData = await res.json()
+    responseData.redirectUrl = `${env.ARENA_FRONTEND_APP_URL}/arn/home?sysId=${responseData.sysId}`
 
     return NextResponse.json(responseData, { status: res.status })
   } catch (error) {

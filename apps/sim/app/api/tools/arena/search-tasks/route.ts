@@ -47,9 +47,13 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await response.json()
+    const formattedData = data.tasks.map((task: any) => ({
+      ...task,
+      redirectUrl: `${env.ARENA_FRONTEND_APP_URL}/arn/home?sysId=${task.sysId}`,
+    }))
 
     // Optionally attach workflowId to response if you need it
-    return NextResponse.json(data)
+    return NextResponse.json(formattedData)
   } catch (err: any) {
     return NextResponse.json({ error: 'Unexpected error', details: err.message }, { status: 500 })
   }
