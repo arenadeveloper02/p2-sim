@@ -28,6 +28,7 @@ import {
   KnowledgeBaseSelector,
   LongInput,
   McpDynamicArgs,
+  MentionInput,
   McpServerSelector,
   McpToolSelector,
   ProjectSelectorInput,
@@ -36,6 +37,7 @@ import {
   ScheduleConfig,
   ShortInput,
   SliderInput,
+  UserSelectorInput,
   Switch,
   Table,
   TimeInput,
@@ -121,6 +123,20 @@ export function SubBlock({
       case 'long-input':
         return (
           <LongInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isConnecting={isConnecting}
+            rows={config.rows}
+            config={config}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
+          />
+        )
+      case 'mention-input':
+        return (
+          <MentionInput
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
@@ -572,6 +588,16 @@ export function SubBlock({
       case 'channel-selector':
         return (
           <ChannelSelectorInput
+            blockId={blockId}
+            subBlock={config}
+            disabled={isDisabled}
+            isPreview={isPreview}
+            previewValue={previewValue}
+          />
+        )
+      case 'user-selector':
+        return (
+          <UserSelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}

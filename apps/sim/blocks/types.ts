@@ -28,6 +28,7 @@ export type GenerationType =
 export type SubBlockType =
   | 'short-input' // Single line input
   | 'long-input' // Multi-line input
+  | 'mention-input' // Multi-line input with @ mention autocomplete
   | 'dropdown' // Select menu
   | 'combobox' // Searchable dropdown with text input
   | 'slider' // Range input
@@ -46,6 +47,7 @@ export type SubBlockType =
   | 'file-selector' // File selector for Google Drive, etc.
   | 'project-selector' // Project selector for Jira, Discord, etc.
   | 'channel-selector' // Channel selector for Slack, Discord, etc.
+  | 'user-selector' // User selector for Slack, Discord, etc.
   | 'folder-selector' // Folder selector for Gmail, etc.
   | 'knowledge-base-selector' // Knowledge base selector
   | 'knowledge-tag-filters' // Multiple tag filters for knowledge bases
