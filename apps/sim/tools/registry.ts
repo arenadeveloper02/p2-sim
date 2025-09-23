@@ -142,6 +142,7 @@ import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdr
 import { redditGetCommentsTool, redditGetPostsTool, redditHotPostsTool } from '@/tools/reddit'
 import { s3GetObjectTool } from '@/tools/s3'
 import { searchTool as serperSearch } from '@/tools/serper'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   sharepointCreatePageTool,
   sharepointListSitesTool,
@@ -284,6 +285,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,
