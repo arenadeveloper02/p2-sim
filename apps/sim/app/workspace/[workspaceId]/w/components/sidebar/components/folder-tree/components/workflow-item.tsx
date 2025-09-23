@@ -133,7 +133,6 @@ export function WorkflowItem({
     }
   }, [isEditing])
 
-
   const handleStartEdit = () => {
     if (isMarketplace) return
     setIsEditing(true)
@@ -440,9 +439,7 @@ export function WorkflowItem({
             </TooltipTrigger>
             <TooltipContent side='top' align='center' sideOffset={10}>
               <p>
-                {isChatDeploying
-                  ? 'Deploying chat...'
-                    : 'Open chat interface'}
+                {isChatDeploying ? 'Deploying chat...' : 'Open chat interface'}
                 {chatDeployError && (
                   <span className='mt-1 block text-red-400 text-xs'>{chatDeployError}</span>
                 )}

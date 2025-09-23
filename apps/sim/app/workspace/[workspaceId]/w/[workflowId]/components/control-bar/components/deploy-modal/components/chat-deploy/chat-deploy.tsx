@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import {
   Alert,
   AlertDescription,
@@ -28,7 +29,6 @@ import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
-import { useRouter } from 'next/navigation'
 
 const logger = createLogger('ChatDeploy')
 
@@ -83,7 +83,7 @@ export function ChatDeploy({
   onDeploymentComplete,
   needsRedeployment = false,
   onRedeploymentComplete,
-  isSidebar
+  isSidebar,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -252,7 +252,7 @@ export function ChatDeploy({
       }
     } finally {
       setChatSubmitting(false)
-      if(isSidebar){
+      if (isSidebar) {
         route.push(`/chat/${workflowId}`)
       }
     }
