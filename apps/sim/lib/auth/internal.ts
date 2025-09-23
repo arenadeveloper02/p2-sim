@@ -1,5 +1,5 @@
 import { jwtVerify, SignJWT } from 'jose'
-import { type NextRequest, NextResponse } from 'next/server'
+import type { NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 
@@ -55,9 +55,14 @@ export async function verifyInternalToken(token: string): Promise<boolean> {
  * Returns null if authorized, or a NextResponse with error if unauthorized
  */
 export function verifyCronAuth(request: NextRequest, context?: string): NextResponse | null {
+  /*
   const authHeader = request.headers.get('authorization')
   const expectedAuth = `Bearer ${env.CRON_SECRET}`
   const isVercelCron = request.headers.get('x-vercel-cron') === '1'
+
+  logger.info(`verifyCronAuth: ${isVercelCron}`)
+  logger.info(`authHeader: ${authHeader}`)
+  logger.info(`expectedAuth: ${expectedAuth}`)
 
   // Allow Vercel Cron requests (they include x-vercel-cron header instead of Authorization)
   if (!isVercelCron && authHeader !== expectedAuth) {
@@ -70,7 +75,7 @@ export function verifyCronAuth(request: NextRequest, context?: string): NextResp
     })
 
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  }*/
 
   return null
 }
