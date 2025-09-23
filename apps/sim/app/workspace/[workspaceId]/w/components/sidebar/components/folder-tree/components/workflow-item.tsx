@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Loader2, MessageCircleMore, Pencil } from 'lucide-react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { AgentIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -104,12 +104,10 @@ export function WorkflowItem({
 
   // Get deployment status for the modal
   const deploymentStatus = getWorkflowDeploymentStatus(workflowId)
-  const needsRedeployment = deploymentStatus?.needsRedeployment || false
 
   // Get active workflow ID to check if this workflow is currently active
   const { activeWorkflowId } = useWorkflowRegistry()
 
-  // Monitor workflow state changes to trigger change detection (only for active workflow)
   // This optimization prevents unnecessary change detection for workflows not being edited
   const currentBlocks = useWorkflowStore((state) =>
     activeWorkflowId === workflowId ? state.blocks : null
@@ -119,6 +117,8 @@ export function WorkflowItem({
   )
   // Monitor sub-block values for this specific workflow
   const subBlockValues = useSubBlockStore((state) => state.workflowValues[workflowId])
+  const route = useRouter()
+  const [isLoadingChatDeploy, setIsLoadingChatDeploy] = useState<boolean>(false)
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -133,11 +133,6 @@ export function WorkflowItem({
     }
   }, [isEditing])
 
-  /**
-   * Effect to detect workflow changes for deployed workflows
-   * This effect monitors workflow state and compares it with the deployed version
-   * to determine if redeployment is needed.
-   */
   useEffect(() => {
     let timeoutId: NodeJS.Timeout
 
@@ -291,14 +286,14 @@ export function WorkflowItem({
     e.stopPropagation()
 
     // Prevent multiple concurrent deployments
-    if (isChatDeploying) return
+    if (isChatDeploying || isLoadingChatDeploy) return
 
-    // OPTIMIZATION: If this is not the active workflow, skip change detection
-    // and redirect directly to chat.
+    setIsLoadingChatDeploy(true)
+
+    // OPTIMIZATION: If this is not the active workflow, skip change detection and redirect directly to chat.
     if (activeWorkflowId !== workflowId) {
       logger.info('Opening chat for non-active workflow, redirecting directly')
-      const chatUrl = `/chat/${workflowId}`
-      window.location.href = chatUrl
+      route.push(`/chat/${workflowId}`)
       return
     }
 
@@ -307,9 +302,7 @@ export function WorkflowItem({
       const chatStatus = await checkChatStatus(workflowId)
 
       if (chatStatus.isDeployed) {
-        // STEP 2: Chat exists - check if workflow needs redeployment
-        // Uses the same API endpoint as the control bar for consistent change detection
-        // This compares current workflow state with the deployed state in the database
+        // STEP 2: Chat exists - check if workflow needs redeployment. This compares current workflow state with the deployed state in the database
         const statusResponse = await fetch(`/api/workflows/${workflowId}/status`)
         let hasChanges = false
 
@@ -319,7 +312,6 @@ export function WorkflowItem({
         }
 
         if (hasChanges) {
-          // STEP 3A: Changes detected - show deploy modal for redeployment
           // This will trigger the existing redeploy functionality when user clicks "Update"
           logger.info('Chat exists but workflow has changes, showing deploy modal for redeployment')
           setWorkflowHasChanges(true) // Update local state for UI feedback
@@ -328,8 +320,7 @@ export function WorkflowItem({
           // STEP 3B: No changes - redirect directly to existing chat
           logger.info('Chat already deployed with no changes, opening existing chat')
           setWorkflowHasChanges(false) // Update local state
-          const chatUrl = `/chat/${workflowId}`
-          window.location.href = chatUrl
+          route.push(`/chat/${workflowId}`)
         }
       } else {
         // STEP 2: Chat doesn't exist - show deploy modal for initial deployment
@@ -339,6 +330,8 @@ export function WorkflowItem({
       logger.error('Failed to check chat status:', error)
       // FALLBACK: Show deploy modal on any error to ensure user can still deploy
       setShowDeployModal(true)
+    } finally {
+      setIsLoadingChatDeploy(false)
     }
   }
 
@@ -480,13 +473,13 @@ export function WorkflowItem({
                 type='button'
                 variant='ghost'
                 onClick={handleClickByChat}
-                disabled={isChatDeploying}
+                disabled={isChatDeploying || isLoadingChatDeploy}
                 className={cn(
                   'ml-1 flex h-4 w-4 items-center justify-center rounded p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                  isChatDeploying && 'cursor-not-allowed opacity-50'
+                  isChatDeploying || (isLoadingChatDeploy && 'cursor-not-allowed opacity-50')
                 )}
               >
-                {isChatDeploying ? (
+                {isChatDeploying || isLoadingChatDeploy ? (
                   <Loader2 className='h-3.5 w-3.5 animate-spin' />
                 ) : (
                   <MessageCircleMore className='h-3.5 w-3.5' />

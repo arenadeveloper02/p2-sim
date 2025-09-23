@@ -94,3 +94,43 @@ export const renderBs64Img = ({
     )
   }
 }
+
+export const downloadImage = async (isBase64?: boolean, imageData?: string, imageUrl?: string) => {
+  try {
+    let blob: Blob
+    if (isBase64 && imageData && imageData.length > 0) {
+      // Convert base64 to blob
+      const byteString = atob(imageData)
+      const arrayBuffer = new ArrayBuffer(byteString.length)
+      const uint8Array = new Uint8Array(arrayBuffer)
+      for (let i = 0; i < byteString.length; i++) {
+        uint8Array[i] = byteString.charCodeAt(i)
+      }
+      blob = new Blob([arrayBuffer], { type: 'image/png' })
+    } else if (imageUrl && imageUrl.length > 0) {
+      // Use proxy endpoint to fetch image
+      const proxyUrl = `/api/proxy/image?url=${encodeURIComponent(imageUrl)}`
+      const response = await fetch(proxyUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.statusText}`)
+      }
+      blob = await response.blob()
+    } else {
+      throw new Error('No image data or URL provided')
+    }
+
+    // Create object URL and trigger download
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `generated-image-${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    // Clean up the URL
+    setTimeout(() => URL.revokeObjectURL(url), 100)
+  } catch (error) {
+    alert('Failed to download image. Please try again later.')
+  }
+}

@@ -1,9 +1,10 @@
 'use client'
 
 import { memo, useMemo, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Download } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  downloadImage,
   isBase64,
   renderBs64Img,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/constants'
@@ -123,9 +124,9 @@ export const ClientChatMessage = memo(
                             }}
                           >
                             {isCopied ? (
-                              <Check className='h-3 w-3' strokeWidth={2} />
+                              <Check className='h-4 w-4' strokeWidth={2} />
                             ) : (
-                              <Copy className='h-3 w-3' strokeWidth={2} />
+                              <Copy className='h-4 w-4' strokeWidth={2} />
                             )}
                           </button>
                         </TooltipTrigger>
@@ -137,6 +138,27 @@ export const ClientChatMessage = memo(
                   )}
                 </div>
               )}
+            {isBase64(cleanTextContent) && message.type === 'assistant' && !message.isStreaming && (
+              <div className='flex items-center justify-start space-x-2'>
+                <TooltipProvider>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger asChild>
+                      <button
+                        className='text-muted-foreground transition-colors hover:bg-muted'
+                        onClick={() => {
+                          downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
+                        }}
+                      >
+                        <Download className='h-4 w-4' strokeWidth={2} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side='top' align='center' sideOffset={5}>
+                      Download
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
           </div>
         </div>
       </div>
