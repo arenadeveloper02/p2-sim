@@ -1,7 +1,8 @@
 'use client'
 
+import { LogOut } from 'lucide-react'
 import Image from 'next/image'
-import { GithubIcon } from '@/components/icons'
+import { Button } from '@/components/ui'
 
 interface ChatHeaderProps {
   chatConfig: {
@@ -23,20 +24,34 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
   return (
     <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
       <div className='flex items-center gap-4'>
-        <Image
-          src={customImage || '/default-logo.png'}
+        {customImage && <Image
+          src={customImage}
           alt={`${chatConfig?.title || 'Chat'} logo`}
           width={32}
           height={32}
           className='h-8 w-8 rounded-md object-cover'
           style={{ objectFit: 'cover' }}
           unoptimized
-        />
+        />}
         <h2 className='font-medium text-foreground text-lg'>
           {chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
         </h2>
       </div>
       <div className='flex items-center gap-2'>
+        <Button
+          variant='ghost'
+          size='icon'
+          className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+          onClick={(e) => {
+            e.stopPropagation()
+            window.location.href = '/'
+          }}
+        >
+          <LogOut className='h-5 w-5' />
+          <span className='font-medium text-lg'>Exit</span>
+        </Button>
+      </div>
+      {/*<div className='flex items-center gap-2'>
         <a
           href='https://github.com/simstudioai/sim'
           className='flex items-center gap-1 text-foreground'
@@ -91,7 +106,7 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
             </svg>
           </div>
         </a>
-      </div>
+      </div>*/}
     </div>
   )
 }

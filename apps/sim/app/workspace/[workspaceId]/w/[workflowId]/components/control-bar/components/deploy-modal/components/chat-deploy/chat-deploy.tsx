@@ -24,11 +24,11 @@ import {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/auth-selector'
-import { SubdomainInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/subdomain-input'
 import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
+import { useRouter } from 'next/navigation'
 
 const logger = createLogger('ChatDeploy')
 
@@ -41,10 +41,18 @@ interface ChatDeployProps {
   chatSubmitting: boolean
   setChatSubmitting: (submitting: boolean) => void
   onValidationChange?: (isValid: boolean) => void
+  /** Callback for initial workflow deployment (new chats) */
   onPreDeployWorkflow?: () => Promise<void>
+  /** Callback for workflow redeployment (existing chats with changes) */
+  onRedeployWorkflow?: () => Promise<void>
   showDeleteConfirmation?: boolean
   setShowDeleteConfirmation?: (show: boolean) => void
   onDeploymentComplete?: () => void
+  /** Indicates if workflow has changes requiring redeployment */
+  needsRedeployment?: boolean
+  /** Callback fired after successful redeployment */
+  onRedeploymentComplete?: () => void
+  isSidebar?: boolean
 }
 
 interface ExistingChat {
@@ -69,9 +77,13 @@ export function ChatDeploy({
   setChatSubmitting,
   onValidationChange,
   onPreDeployWorkflow,
+  onRedeployWorkflow,
   showDeleteConfirmation: externalShowDeleteConfirmation,
   setShowDeleteConfirmation: externalSetShowDeleteConfirmation,
   onDeploymentComplete,
+  needsRedeployment = false,
+  onRedeploymentComplete,
+  isSidebar
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -94,7 +106,7 @@ export function ChatDeploy({
   const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
-  const [isSubdomainValid, setIsSubdomainValid] = useState(false)
+  const [isSubdomainValid, setIsSubdomainValid] = useState(true)
   const isFormValid =
     isSubdomainValid &&
     Boolean(formData.title.trim()) &&
@@ -103,6 +115,7 @@ export function ChatDeploy({
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
     (formData.authType !== 'email' || formData.emails.length > 0)
+  const route = useRouter()
 
   useEffect(() => {
     onValidationChange?.(isFormValid)
@@ -159,6 +172,18 @@ export function ChatDeploy({
           setImageUrl(null)
           setImageUploadError(null)
           onChatExistsChange?.(false)
+
+          // Initialize form with default values for new chat deployment
+          setFormData({
+            subdomain: workflowId,
+            title: formData.title || 'Chat Assistant', // Keep existing title or use default
+            description: formData.description || '',
+            authType: 'public',
+            password: '',
+            emails: [],
+            welcomeMessage: formData.welcomeMessage || 'Hi there! How can I help you today?',
+            selectedOutputBlocks: formData.selectedOutputBlocks || [], // Keep existing selections
+          })
         }
       }
     } catch (error) {
@@ -176,23 +201,45 @@ export function ChatDeploy({
     setChatSubmitting(true)
 
     try {
-      await onPreDeployWorkflow?.()
+      updateField('subdomain', workflowId)
+      if (needsRedeployment && existingChat) {
+        await onRedeployWorkflow?.()
+      } else {
+        await onPreDeployWorkflow?.()
+      }
 
+      // Validate form data before proceeding with chat deployment
       if (!validateForm()) {
         setChatSubmitting(false)
         return
       }
 
+      // Check subdomain validation status
       if (!isSubdomainValid && formData.subdomain !== existingChat?.subdomain) {
         setError('subdomain', 'Please wait for subdomain validation to complete')
         setChatSubmitting(false)
         return
       }
 
-      await deployChat(workflowId, formData, deploymentInfo, existingChat?.id, imageUrl)
+      // Deploy or update the chat interface
+      // Pass needsRedeployment flag to ensure API is redeployed if needed
+      await deployChat(
+        workflowId,
+        formData,
+        deploymentInfo,
+        existingChat?.id,
+        imageUrl,
+        needsRedeployment
+      )
 
+      // Update parent component state
       onChatExistsChange?.(true)
       setShowSuccessView(true)
+
+      // If this was a redeployment, notify parent to clear the needsRedeployment flag
+      if (needsRedeployment && existingChat) {
+        onRedeploymentComplete?.()
+      }
 
       // Fetch the updated chat data immediately after deployment
       // This ensures existingChat is available when switching back to edit mode
@@ -205,6 +252,9 @@ export function ChatDeploy({
       }
     } finally {
       setChatSubmitting(false)
+      if(isSidebar){
+        route.push(`/chat/${workflowId}`)
+      }
     }
   }
 
@@ -244,11 +294,12 @@ export function ChatDeploy({
     return <LoadingSkeleton />
   }
 
-  if (deployedUrl && showSuccessView) {
+  if (deployedUrl && showSuccessView && !isSidebar) {
     return (
       <>
         <div id='chat-deploy-form'>
           <SuccessView
+            workflowId={workflowId}
             deployedUrl={deployedUrl}
             existingChat={existingChat}
             onDelete={() => setShowDeleteConfirmation(true)}
@@ -313,14 +364,14 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-4'>
-          <SubdomainInput
+          {/* <SubdomainInput
             value={formData.subdomain}
             onChange={(value) => updateField('subdomain', value)}
             originalSubdomain={existingChat?.subdomain || undefined}
             disabled={chatSubmitting}
             onValidationChange={setIsSubdomainValid}
             isEditingExisting={!!existingChat}
-          />
+          /> */}
           <div className='space-y-2'>
             <Label htmlFor='title' className='font-medium text-sm'>
               Chat Title
