@@ -94,32 +94,45 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
       mode: 'advanced',
     },
+    // {
+    //   id: 'text',
+    //   title: 'Message',
+    //   type: 'long-input',
+    //   layout: 'full',
+    //   placeholder: 'Enter your message (supports Slack mrkdwn)',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'send',
+    //   },
+    //   dependsOn: ['credential', 'authMethod'],
+    //   required: true,
+    // },
+    // {
+    //   id: 'mentionUser',
+    //   title: 'Mention Users',
+    //   type: 'user-selector',
+    //   layout: 'full',
+    //   provider: 'slack',
+    //   multiple: true,
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'send',
+    //   },
+    //   dependsOn: ['credential', 'authMethod'],
+    //   required: false,
+    // },
     {
       id: 'text',
       title: 'Message',
-      type: 'long-input',
+      type: 'mention-input',
       layout: 'full',
-      placeholder: 'Enter your message (supports Slack mrkdwn)',
+      placeholder: 'Enter the message to send to the channel',
       condition: {
         field: 'operation',
         value: 'send',
       },
       dependsOn: ['credential', 'authMethod'],
       required: true,
-    },
-    {
-      id: 'mentionUser',
-      title: 'Mention Users',
-      type: 'user-selector',
-      layout: 'full',
-      provider: 'slack',
-      multiple: true,
-      condition: {
-        field: 'operation',
-        value: 'send',
-      },
-      dependsOn: ['credential', 'authMethod'],
-      required: false,
     },
     // Canvas specific fields
     {
@@ -207,6 +220,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           limit,
           oldest,
           mentionUser,
+          mergeMessages,
+          additionalMessages,
           ...rest
         } = params
 
@@ -242,15 +257,29 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               throw new Error('Message text is required for send operation')
             }
 
-            // Handle user mentions
-            let messageText = rest.text
-            if (mentionUser) {
-              const mentions = Array.isArray(mentionUser) ? mentionUser : [mentionUser]
-              const mentionText = mentions.map((userId) => `<@${userId}>`).join(' ')
-              messageText = `${mentionText} ${rest.text}`
+            baseParams.text = rest.text
+
+            // Add message merging parameters
+            if (mergeMessages) {
+              baseParams.mergeMessages = true
             }
 
-            baseParams.text = messageText
+            if (additionalMessages) {
+              // Split additional messages by newlines and filter out empty lines
+              const messages = additionalMessages
+                .split('\n')
+                .map((msg: string) => msg.trim())
+                .filter((msg: string) => msg.length > 0)
+              if (messages.length > 0) {
+                baseParams.additionalMessages = messages
+              }
+            }
+
+            // Add user mentions
+            if (mentionUser) {
+              const mentions = Array.isArray(mentionUser) ? mentionUser : [mentionUser]
+              baseParams.mentionUsers = mentions
+            }
             break
 
           case 'canvas':

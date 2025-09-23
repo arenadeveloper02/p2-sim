@@ -126,6 +126,20 @@ export function SubBlock({
             disabled={isDisabled}
           />
         )
+      case 'mention-input':
+        return (
+          <MentionInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isConnecting={isConnecting}
+            rows={config.rows}
+            config={config}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
+          />
+        )
       case 'dropdown':
         return (
           <div onMouseDown={handleMouseDown}>

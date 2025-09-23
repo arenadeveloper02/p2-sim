@@ -28,6 +28,7 @@ export type GenerationType =
 export type SubBlockType =
   | 'short-input' // Single line input
   | 'long-input' // Multi-line input
+  | 'mention-input' // Multi-line input with @ mention autocomplete
   | 'dropdown' // Select menu
   | 'combobox' // Searchable dropdown with text input
   | 'slider' // Range input
