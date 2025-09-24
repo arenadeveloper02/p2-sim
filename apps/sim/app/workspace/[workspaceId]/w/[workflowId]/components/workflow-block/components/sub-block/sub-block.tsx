@@ -5,12 +5,19 @@ import { Label, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
+  ArenaAssigneeSelector,
+  ArenaClientsSelector,
+  ArenaGroupSelector,
+  ArenaProjectSelector,
+  ArenaStatesSelector,
+  ArenaTaskSelector,
   ChannelSelectorInput,
   CheckboxList,
   Code,
   ComboBox,
   ConditionInput,
   CredentialSelector,
+  DatePicker,
   DocumentSelector,
   Dropdown,
   EvalInput,
@@ -24,6 +31,7 @@ import {
   McpServerSelector,
   McpToolSelector,
   ProjectSelectorInput,
+  RadioInput,
   ResponseFormat,
   ScheduleConfig,
   ShortInput,
@@ -247,6 +255,105 @@ export function SubBlock({
             subBlockId={config.id}
             title={config.title ?? ''}
             options={config.options as { label: string; id: string }[]}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'radio-input':
+        return (
+          <RadioInput
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            options={config.options as { label: string; id: string }[]}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+            defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
+          />
+        )
+      case 'date-picker':
+        return (
+          <DatePicker
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-client-selector':
+        return (
+          <ArenaClientsSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-states-selector':
+        return (
+          <ArenaStatesSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-task-selector':
+        return (
+          <ArenaTaskSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'arena-group-selector':
+        return (
+          <ArenaGroupSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-assignee-selector':
+        return (
+          <ArenaAssigneeSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            layout={config.layout}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'arena-project-selector':
+        return (
+          <ArenaProjectSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
             layout={config.layout}
             isPreview={isPreview}
             subBlockValues={subBlockValues}
