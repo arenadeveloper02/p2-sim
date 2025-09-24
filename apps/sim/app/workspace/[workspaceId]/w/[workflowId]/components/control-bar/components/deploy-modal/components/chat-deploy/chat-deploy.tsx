@@ -25,7 +25,6 @@ import {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/auth-selector'
-import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
@@ -53,6 +52,8 @@ interface ChatDeployProps {
   /** Callback fired after successful redeployment */
   onRedeploymentComplete?: () => void
   isSidebar?: boolean
+  workspaceId?: string
+  onOpenChange?: any
 }
 
 interface ExistingChat {
@@ -84,6 +85,8 @@ export function ChatDeploy({
   needsRedeployment = false,
   onRedeploymentComplete,
   isSidebar,
+  workspaceId,
+  onOpenChange,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -295,57 +298,59 @@ export function ChatDeploy({
   }
 
   if (deployedUrl && showSuccessView && !isSidebar) {
-    return (
-      <>
-        <div id='chat-deploy-form'>
-          <SuccessView
-            workflowId={workflowId}
-            deployedUrl={deployedUrl}
-            existingChat={existingChat}
-            onDelete={() => setShowDeleteConfirmation(true)}
-            onUpdate={() => setShowSuccessView(false)}
-          />
-        </div>
+    onOpenChange?.(false)
+    // return (
+    //   <>
+    //     <div id='chat-deploy-form'>
+    //       <SuccessView
+    //         workflowId={workflowId}
+    //         deployedUrl={deployedUrl}
+    //         existingChat={existingChat}
+    //         onDelete={() => setShowDeleteConfirmation(true)}
+    //         onUpdate={() => setShowSuccessView(false)}
+    //         workspaceId={workspaceId}
+    //       />
+    //     </div>
 
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Chat?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete your chat deployment at{' '}
-                <span className='font-mono text-destructive'>
-                  {existingChat?.subdomain}.{getEmailDomain()}
-                </span>
-                .
-                <span className='mt-2 block'>
-                  All users will lose access immediately, and this action cannot be undone.
-                </span>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className='flex'>
-              <AlertDialogCancel className='h-9 w-full rounded-[8px]' disabled={isDeleting}>
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className='h-9 w-full rounded-[8px] bg-red-500 text-white transition-all duration-200 hover:bg-red-600 dark:bg-red-500 dark:hover:bg-red-600'
-              >
-                {isDeleting ? (
-                  <span className='flex items-center'>
-                    <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                    Deleting...
-                  </span>
-                ) : (
-                  'Delete'
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </>
-    )
+    //     {/* Delete Confirmation Dialog */}
+    //     <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+    //       <AlertDialogContent>
+    //         <AlertDialogHeader>
+    //           <AlertDialogTitle>Delete Chat?</AlertDialogTitle>
+    //           <AlertDialogDescription>
+    //             This will permanently delete your chat deployment at{' '}
+    //             <span className='font-mono text-destructive'>
+    //               {existingChat?.subdomain}.{getEmailDomain()}
+    //             </span>
+    //             .
+    //             <span className='mt-2 block'>
+    //               All users will lose access immediately, and this action cannot be undone.
+    //             </span>
+    //           </AlertDialogDescription>
+    //         </AlertDialogHeader>
+    //         <AlertDialogFooter className='flex'>
+    //           <AlertDialogCancel className='h-9 w-full rounded-[8px]' disabled={isDeleting}>
+    //             Cancel
+    //           </AlertDialogCancel>
+    //           <AlertDialogAction
+    //             onClick={handleDelete}
+    //             disabled={isDeleting}
+    //             className='h-9 w-full rounded-[8px] bg-red-500 text-white transition-all duration-200 hover:bg-red-600 dark:bg-red-500 dark:hover:bg-red-600'
+    //           >
+    //             {isDeleting ? (
+    //               <span className='flex items-center'>
+    //                 <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+    //                 Deleting...
+    //               </span>
+    //             ) : (
+    //               'Delete'
+    //             )}
+    //           </AlertDialogAction>
+    //         </AlertDialogFooter>
+    //       </AlertDialogContent>
+    //     </AlertDialog>
+    //   </>
+    // )
   }
 
   return (
@@ -387,20 +392,22 @@ export function ChatDeploy({
             />
             {errors.title && <p className='text-destructive text-sm'>{errors.title}</p>}
           </div>
-          <div className='space-y-2'>
-            <Label htmlFor='description' className='font-medium text-sm'>
-              Description (Optional)
-            </Label>
-            <Textarea
-              id='description'
-              placeholder='A brief description of what this chat does'
-              value={formData.description}
-              onChange={(e) => updateField('description', e.target.value)}
-              rows={3}
-              disabled={chatSubmitting}
-              className='min-h-[80px] resize-none rounded-[8px]'
-            />
-          </div>
+          {false && (
+            <div className='space-y-2'>
+              <Label htmlFor='description' className='font-medium text-sm'>
+                Description (Optional)
+              </Label>
+              <Textarea
+                id='description'
+                placeholder='A brief description of what this chat does'
+                value={formData.description}
+                onChange={(e) => updateField('description', e.target.value)}
+                rows={3}
+                disabled={chatSubmitting}
+                className='min-h-[80px] resize-none rounded-[8px]'
+              />
+            </div>
+          )}
           <div className='space-y-2'>
             <Label className='font-medium text-sm'>Chat Output</Label>
             <Card className='rounded-[8px] border-input shadow-none'>
@@ -422,17 +429,19 @@ export function ChatDeploy({
             </p>
           </div>
 
-          <AuthSelector
-            authType={formData.authType}
-            password={formData.password}
-            emails={formData.emails}
-            onAuthTypeChange={(type) => updateField('authType', type)}
-            onPasswordChange={(password) => updateField('password', password)}
-            onEmailsChange={(emails) => updateField('emails', emails)}
-            disabled={chatSubmitting}
-            isExistingChat={!!existingChat}
-            error={errors.password || errors.emails}
-          />
+          {false && (
+            <AuthSelector
+              authType={formData.authType}
+              password={formData.password}
+              emails={formData.emails}
+              onAuthTypeChange={(type) => updateField('authType', type)}
+              onPasswordChange={(password) => updateField('password', password)}
+              onEmailsChange={(emails) => updateField('emails', emails)}
+              disabled={chatSubmitting}
+              isExistingChat={!!existingChat}
+              error={errors.password || errors.emails}
+            />
+          )}
           <div className='space-y-2'>
             <Label htmlFor='welcomeMessage' className='font-medium text-sm'>
               Welcome Message
@@ -452,28 +461,30 @@ export function ChatDeploy({
           </div>
 
           {/* Image Upload Section */}
-          <div className='space-y-2'>
-            <Label className='font-medium text-sm'>Chat Logo</Label>
-            <ImageUpload
-              value={imageUrl}
-              onUpload={(url) => {
-                setImageUrl(url)
-                setImageUploadError(null) // Clear error on successful upload
-              }}
-              onError={setImageUploadError}
-              onUploadStart={setIsImageUploading}
-              disabled={chatSubmitting}
-              uploadToServer={true}
-              height='h-32'
-              hideHeader={true}
-            />
-            {imageUploadError && <p className='text-destructive text-sm'>{imageUploadError}</p>}
-            {!imageUrl && !isImageUploading && (
-              <p className='text-muted-foreground text-xs'>
-                Upload a logo for your chat (PNG, JPEG - max 5MB)
-              </p>
-            )}
-          </div>
+          {false && (
+            <div className='space-y-2'>
+              <Label className='font-medium text-sm'>Chat Logo</Label>
+              <ImageUpload
+                value={imageUrl}
+                onUpload={(url) => {
+                  setImageUrl(url)
+                  setImageUploadError(null) // Clear error on successful upload
+                }}
+                onError={setImageUploadError}
+                onUploadStart={setIsImageUploading}
+                disabled={chatSubmitting}
+                uploadToServer={true}
+                height='h-32'
+                hideHeader={true}
+              />
+              {imageUploadError && <p className='text-destructive text-sm'>{imageUploadError}</p>}
+              {!imageUrl && !isImageUploading && (
+                <p className='text-muted-foreground text-xs'>
+                  Upload a logo for your chat (PNG, JPEG - max 5MB)
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Hidden delete trigger button for modal footer */}
           <button

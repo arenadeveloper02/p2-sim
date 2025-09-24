@@ -15,15 +15,28 @@ interface ChatHeaderProps {
     }
   } | null
   starCount: string
+  workflowId?: string
 }
 
-export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
+export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProps) {
   const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
+  const params = new URLSearchParams(window.location.search)
+  const workspaceId = params.get('workspaceId')
 
   return (
     <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
       <div className='flex items-center gap-4'>
+        {
+          <div className='flex h-[56px] w-[56px] flex-col items-center justify-center rounded-2xl bg-[linear-gradient(to_bottom,#8F50AC,#0086AB)]'>
+            <Image
+              src={'https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'}
+              alt='vimi-sparkle'
+              width={32}
+              height={32}
+            />
+          </div>
+        }
         {customImage && (
           <Image
             src={customImage}
@@ -46,7 +59,13 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
           className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
           onClick={(e) => {
             e.stopPropagation()
-            window.location.href = '/'
+            let url = '/'
+            if (workspaceId && workflowId) {
+              url = `/workspace/${workspaceId}/w/${workflowId}`
+              window.location.href = url
+            } else {
+              window.location.href = url
+            }
           }}
         >
           <LogOut className='h-5 w-5' />

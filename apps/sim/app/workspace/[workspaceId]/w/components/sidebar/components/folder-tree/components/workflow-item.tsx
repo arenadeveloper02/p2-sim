@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Loader2, MessageCircleMore, Pencil } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { AgentIcon } from '@/components/icons'
@@ -11,13 +11,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/deploy-modal'
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useWorkflowChatDeployment } from './hooks/use-workflow-chat-deployment'
 
 // Workspace entity interface
@@ -107,16 +104,6 @@ export function WorkflowItem({
 
   // Get active workflow ID to check if this workflow is currently active
   const { activeWorkflowId } = useWorkflowRegistry()
-
-  // This optimization prevents unnecessary change detection for workflows not being edited
-  const currentBlocks = useWorkflowStore((state) =>
-    activeWorkflowId === workflowId ? state.blocks : null
-  )
-  const currentEdges = useWorkflowStore((state) =>
-    activeWorkflowId === workflowId ? state.edges : null
-  )
-  // Monitor sub-block values for this specific workflow
-  const subBlockValues = useSubBlockStore((state) => state.workflowValues[workflowId])
   const route = useRouter()
   const [isLoadingChatDeploy, setIsLoadingChatDeploy] = useState<boolean>(false)
 
@@ -417,7 +404,7 @@ export function WorkflowItem({
               </Button>
             </div>
           )}
-        {isHovered && (
+        {/* {isHovered && (
           <Tooltip delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
@@ -446,10 +433,10 @@ export function WorkflowItem({
               </p>
             </TooltipContent>
           </Tooltip>
-        )}
+        )} */}
       </div>
 
-      <DeployModal
+      {/* <DeployModal
         open={showDeployModal}
         onOpenChange={setShowDeployModal}
         workflowId={workflowId}
@@ -460,7 +447,7 @@ export function WorkflowItem({
         refetchDeployedState={async () => {}} // Not needed for this use case
         initialTab='chat'
         isSidebar={true}
-      />
+      /> */}
     </div>
   )
 }

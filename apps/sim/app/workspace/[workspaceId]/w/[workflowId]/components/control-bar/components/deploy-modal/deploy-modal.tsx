@@ -34,6 +34,7 @@ interface DeployModalProps {
    */
   initialTab?: TabView
   isSidebar?: boolean
+  workspaceId?: string
 }
 
 interface ApiKey {
@@ -70,8 +71,9 @@ export function DeployModal({
   deployedState,
   isLoadingDeployedState,
   refetchDeployedState,
-  initialTab = 'api', // Default to API tab unless overridden (e.g., from sidebar chat icon)
+  initialTab = 'chat', // Default to API tab unless overridden (e.g., from sidebar chat icon)
   isSidebar = false,
+  workspaceId,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
@@ -430,16 +432,6 @@ export function DeployModal({
             <div className='flex h-14 flex-none items-center border-b px-6'>
               <div className='flex gap-2'>
                 <button
-                  onClick={() => setActiveTab('api')}
-                  className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                    activeTab === 'api'
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                  }`}
-                >
-                  API
-                </button>
-                <button
                   onClick={() => setActiveTab('chat')}
                   className={`rounded-md px-3 py-1 text-sm transition-colors ${
                     activeTab === 'chat'
@@ -448,6 +440,16 @@ export function DeployModal({
                   }`}
                 >
                   Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('api')}
+                  className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                    activeTab === 'api'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                  }`}
+                >
+                  API
                 </button>
               </div>
             </div>
@@ -516,6 +518,8 @@ export function DeployModal({
                     refetchDeployedState()
                   }}
                   isSidebar={isSidebar}
+                  workspaceId={workspaceId}
+                  onOpenChange={onOpenChange}
                 />
               )}
             </div>
