@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -150,6 +150,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     limit: number
   } | null>(null)
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
   // Helper function to open console panel
   const openConsolePanel = useCallback(() => {
     setActiveTab('console')
@@ -276,7 +277,6 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   )
 
   useEffect(() => {
-    // Avoid off-by-one false positives: wait until operation queue is idle
     const { operations, isProcessing } = useOperationQueueStore.getState()
     const hasPendingOps =
       isProcessing || operations.some((op) => op.status === 'pending' || op.status === 'processing')
@@ -290,9 +290,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       return
     }
 
-    // Use the workflow status API to get accurate change detection
-    // This uses the same logic as the deployment API (reading from normalized tables)
-    const checkForChanges = async () => {
+    // Debounce API calls
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    //due more dependences this will call so many times.
+    //for detecting changes debouncing is the better solution so when ever user changes anything insted of calling the status api everytime it will call within certian time
+    debounceRef.current = setTimeout(async () => {
       try {
         const response = await fetch(`/api/workflows/${activeWorkflowId}/status`)
         if (response.ok) {
@@ -306,9 +310,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         logger.error('Error fetching workflow status:', error)
         setChangeDetected(false)
       }
-    }
+    }, 1000)
 
-    checkForChanges()
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current)
+      }
+    }
   }, [
     activeWorkflowId,
     deployedState,
