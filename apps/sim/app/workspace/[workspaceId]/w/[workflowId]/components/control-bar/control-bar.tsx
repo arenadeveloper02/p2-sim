@@ -1301,7 +1301,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           <Button
             variant='outline'
             onClick={() => {
-              router.push(`/chat/${activeWorkflowId}?workspaceId=${workspaceId}`)
+              window.location.href = `/chat/${activeWorkflowId}?workspaceId=${workspaceId}`
             }}
             className={cn(
               'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',

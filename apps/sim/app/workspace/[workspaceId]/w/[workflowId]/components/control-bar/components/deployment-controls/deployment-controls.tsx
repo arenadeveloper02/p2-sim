@@ -76,10 +76,10 @@ export function DeploymentControls({
     if (isDeployed && workflowNeedsRedeployment) {
       return 'Workflow changes detected'
     }
-    if (isDeployed) {
-      return 'Deploy agent'
-    }
-    return 'Deploy as API'
+    // if (isDeployed) {
+    //   return 'Deploy agent'
+    // }
+    return 'Deploy agent'
   }
 
   return (
