@@ -17,7 +17,6 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
-  OpenRouterIcon,
   xAIIcon,
 } from '@/components/icons'
 
@@ -571,42 +570,42 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
-      // {
-      //   id: 'grok-4-latest',
-      //   pricing: {
-      //     input: 5.0,
-      //     cachedInput: 2.5,
-      //     output: 25.0,
-      //     updatedAt: '2025-07-10',
-      //   },
-      //   capabilities: {
-      //     temperature: { min: 0, max: 1 },
-      //   },
-      // },
-      // {
-      //   id: 'grok-3-latest',
-      //   pricing: {
-      //     input: 3.0,
-      //     cachedInput: 1.5,
-      //     output: 15.0,
-      //     updatedAt: '2025-04-17',
-      //   },
-      //   capabilities: {
-      //     temperature: { min: 0, max: 1 },
-      //   },
-      // },
-      // {
-      //   id: 'grok-3-fast-latest',
-      //   pricing: {
-      //     input: 5.0,
-      //     cachedInput: 2.5,
-      //     output: 25.0,
-      //     updatedAt: '2025-04-17',
-      //   },
-      //   capabilities: {
-      //     temperature: { min: 0, max: 1 },
-      //   },
-      // },
+      {
+        id: 'grok-4-latest',
+        pricing: {
+          input: 5.0,
+          cachedInput: 2.5,
+          output: 25.0,
+          updatedAt: '2025-07-10',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'grok-3-latest',
+        pricing: {
+          input: 3.0,
+          cachedInput: 1.5,
+          output: 15.0,
+          updatedAt: '2025-04-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'grok-3-fast-latest',
+        pricing: {
+          input: 5.0,
+          cachedInput: 2.5,
+          output: 25.0,
+          updatedAt: '2025-04-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
     ],
   },
   cerebras: {
@@ -917,15 +916,15 @@ export function updateOllamaModels(models: string[]): void {
  * Update OpenRouter models dynamically
  */
 export function updateOpenRouterModels(models: string[]): void {
-  PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
-    id: modelId,
-    pricing: {
-      input: 0,
-      output: 0,
-      updatedAt: new Date().toISOString().split('T')[0],
-    },
-    capabilities: {},
-  }))
+  // PROVIDER_DEFINITIONS.openrouter.models = models.map((modelId) => ({
+  //   id: modelId,
+  //   pricing: {
+  //     input: 0,
+  //     output: 0,
+  //     updatedAt: new Date().toISOString().split('T')[0],
+  //   },
+  //   capabilities: {},
+  // }))
 }
 
 /**

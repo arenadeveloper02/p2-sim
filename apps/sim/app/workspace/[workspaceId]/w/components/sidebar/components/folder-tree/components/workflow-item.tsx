@@ -16,7 +16,22 @@ import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
+// Workspace entity interface
+interface Workspace {
+  id: string
+  name: string
+  ownerId: string
+  role?: string
+  membershipId?: string
+  permissions?: 'admin' | 'write' | 'read' | null
+}
+
 const logger = createLogger('WorkflowItem')
+
+// Helper function to check if workspace is AGENTS APPROVAL
+const isApproverListWorkspace = (workspace: Workspace | null | undefined): boolean => {
+  return workspace?.name === 'AGENTS APPROVAL'
+}
 
 // Helper function to lighten a hex color
 function lightenColor(hex: string, percent = 30): string {
@@ -43,6 +58,7 @@ interface WorkflowItemProps {
   isDragOver?: boolean
   isFirstItem?: boolean
   isUsedTemplateObj?: any
+  activeWorkspace?: Workspace | null
 }
 
 export function WorkflowItem({
@@ -53,6 +69,7 @@ export function WorkflowItem({
   isDragOver = false,
   isFirstItem = false,
   isUsedTemplateObj,
+  activeWorkspace,
 }: WorkflowItemProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -302,22 +319,26 @@ export function WorkflowItem({
           )}
         </Link>
 
-        {!isMarketplace && !isEditing && isHovered && userPermissions.canEdit && (
-          <div className='flex items-center justify-center' onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
-              onClick={(e) => {
-                e.stopPropagation()
-                handleStartEdit()
-              }}
-            >
-              <Pencil className='!h-3.5 !w-3.5' />
-              <span className='sr-only'>Rename workflow</span>
-            </Button>
-          </div>
-        )}
+        {!isMarketplace &&
+          !isEditing &&
+          isHovered &&
+          userPermissions.canEdit &&
+          !isApproverListWorkspace(activeWorkspace) && (
+            <div className='flex items-center justify-center' onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleStartEdit()
+                }}
+              >
+                <Pencil className='!h-3.5 !w-3.5' />
+                <span className='sr-only'>Rename workflow</span>
+              </Button>
+            </div>
+          )}
         {isHovered && (
           <Link
             href={`/workspace/${workspaceId}/w/${workflow.id}`}
