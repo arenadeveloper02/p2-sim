@@ -26,6 +26,7 @@ import {
 } from '@/providers/models'
 import { ollamaProvider } from '@/providers/ollama'
 import { openaiProvider } from '@/providers/openai'
+import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderConfig, ProviderId, ProviderToolConfig } from '@/providers/types'
 import { xAIProvider } from '@/providers/xai'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
@@ -97,6 +98,11 @@ export const providers: Record<
     ...ollamaProvider,
     models: getProviderModelsFromDefinitions('ollama'),
     modelPatterns: PROVIDER_DEFINITIONS.ollama.modelPatterns,
+  },
+  sambanova: {
+    ...sambanovaProvider,
+    models: getProviderModelsFromDefinitions('sambanova'),
+    modelPatterns: PROVIDER_DEFINITIONS.sambanova.modelPatterns,
   },
 }
 
@@ -569,11 +575,12 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
 
-  // Use server key rotation for all OpenAI models and Anthropic's Claude models on the hosted platform
+  // Use server key rotation for all OpenAI models, Anthropic's Claude models, Google models, and SambaNova models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGoogleModel = provider === 'google'
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel)) {
+  const isSambaNovaModel = provider === 'sambanova'
+  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel || isSambaNovaModel)) {
     try {
       // Import the key rotation function
       const { getRotatingApiKey } = require('@/lib/utils')

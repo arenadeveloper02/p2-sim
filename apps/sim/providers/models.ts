@@ -9,6 +9,7 @@
 
 import type React from 'react'
 import {
+  AgentIcon,
   AnthropicIcon,
   AzureIcon,
   CerebrasIcon,
@@ -17,6 +18,7 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
+  SambaNovaIcon,
   xAIIcon,
 } from '@/components/icons'
 
@@ -733,6 +735,182 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     icon: OllamaIcon,
     models: [], // Populated dynamically
   },
+  sambanova: {
+    id: 'sambanova',
+    name: 'SambaNova',
+    description: "SambaNova's AI models",
+    defaultModel: 'DeepSeek-R1-Distill-Llama-70B',
+    modelPatterns: [
+      /^Meta-Llama/,
+      /^Llama-/,
+      /^Qwen/,
+      /^DeepSeek/,
+      /^gpt-oss/,
+      /^E5-Mistral/,
+      /^Whisper/,
+      /^sambanova/,
+    ],
+    icon: OllamaIcon,
+    capabilities: {
+      toolUsageControl: false,
+    },
+    models: [
+      {
+        id: 'DeepSeek-R1-0528',
+        pricing: {
+          input: 0.5,
+          output: 0.7,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'DeepSeek-R1-Distill-Llama-70B',
+        pricing: {
+          input: 0.07,
+          output: 0.14,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'DeepSeek-V3-0324',
+        pricing: {
+          input: 0.3,
+          output: 0.45,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'DeepSeek-V3.1',
+        pricing: {
+          input: 0.3,
+          output: 0.45,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'E5-Mistral-7B-Instruct',
+        pricing: {
+          input: 0.013,
+          output: 0.0,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'gpt-oss-120b',
+        pricing: {
+          input: 0.022,
+          output: 0.059,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Llama-3.3-Swallow-70B-Instruct-v0.4',
+        pricing: {
+          input: 0.06,
+          output: 0.12,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Llama-4-Maverick-17B-128E-Instruct',
+        pricing: {
+          input: 0.063,
+          output: 0.18,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Meta-Llama-3.1-8B-Instruct',
+        pricing: {
+          input: 0.01,
+          output: 0.02,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Meta-Llama-3.1-70B-Instruct',
+        pricing: {
+          input: 0.65,
+          output: 0.65,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Meta-Llama-3.1-405B-Instruct',
+        pricing: {
+          input: 2.65,
+          output: 2.65,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Meta-Llama-3.3-70B-Instruct',
+        pricing: {
+          input: 0.06,
+          output: 0.12,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Qwen3-32B',
+        pricing: {
+          input: 0.04,
+          output: 0.08,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'Whisper-Large-v3',
+        pricing: {
+          input: 0.0,
+          output: 0.0,
+          updatedAt: '2025-01-15',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+      },
+    ],
+  },
 }
 
 /**
@@ -851,11 +1029,12 @@ export function getProvidersWithToolUsageControl(): string[] {
  * Get all models that are hosted (don't require user API keys)
  */
 export function getHostedModels(): string[] {
-  // Currently, OpenAI and Anthropic models are hosted
+  // Currently, OpenAI, Anthropic, Google, and SambaNova models are hosted
   return [
     ...getProviderModels('openai'),
     ...getProviderModels('anthropic'),
     ...getProviderModels('google'),
+    ...getProviderModels('sambanova'),
   ]
 }
 
