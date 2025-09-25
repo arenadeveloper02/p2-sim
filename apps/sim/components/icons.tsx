@@ -92,6 +92,21 @@ export function Spinner() {
 
 export function AgentIcon(props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
+    <div className='relative flex h-full w-full items-center justify-center rounded-md bg-[linear-gradient(to_bottom,#8F50AC,#0086AB)]'>
+      <Image
+        src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
+        alt='vimi-sparkle'
+        width={23} // scale image relative to container
+        height={23}
+        className='object-contain'
+        {...props}
+      />
+    </div>
+  )
+}
+
+export function ArenaIcon(props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
+  return (
     <div className='relative h-full w-full'>
       <Image
         src='https://arenav2image.s3.us-west-1.amazonaws.com/arenaLogoWhiteBg.svg'

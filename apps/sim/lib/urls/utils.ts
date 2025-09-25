@@ -7,6 +7,10 @@ import { isProd } from '@/lib/environment'
  */
 export function getBaseUrl(): string {
   if (typeof window !== 'undefined') {
+    // Special handling for agent.thearena.ai domain - use app.thearena.ai for static assets
+    if (window.location.hostname === 'agent.thearena.ai') {
+      return 'https://app.thearena.ai'
+    }
     return window.location.origin
   }
 
