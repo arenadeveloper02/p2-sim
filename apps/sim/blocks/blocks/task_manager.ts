@@ -1,4 +1,4 @@
-import { AgentIcon } from '@/components/icons'
+import { ArenaIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 
 export const TaskManagerBlock: BlockConfig = {
@@ -9,7 +9,7 @@ export const TaskManagerBlock: BlockConfig = {
   docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
-  icon: AgentIcon,
+  icon: ArenaIcon,
   subBlocks: [
     {
       id: 'operation',
