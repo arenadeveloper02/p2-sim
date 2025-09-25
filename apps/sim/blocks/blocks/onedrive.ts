@@ -138,7 +138,7 @@ export const OneDriveBlock: BlockConfig<OneDriveResponse> = {
     },
     // List Fields - Folder Selector (basic mode)
     {
-      id: 'folderSelector',
+      id: 'listFolderSelector',
       title: 'Select Folder',
       type: 'file-selector',
       layout: 'full',
@@ -204,18 +204,24 @@ export const OneDriveBlock: BlockConfig<OneDriveResponse> = {
         }
       },
       params: (params) => {
-        const { credential, folderSelector, manualFolderId, mimeType, ...rest } = params
+        const { credential, folderSelector, listFolderSelector, manualFolderId, mimeType, operation, ...rest } = params
 
-        // Use folderSelector if provided, otherwise use manualFolderId
-        const effectiveFolderId = (folderSelector || manualFolderId || '').trim()
+        // Use the appropriate folder selector based on operation, otherwise use manualFolderId
+        const effectiveFolderId = (folderSelector || listFolderSelector || manualFolderId || '').trim()
 
-        return {
+        const baseParams: any = {
           credential,
           ...rest,
           folderId: effectiveFolderId || undefined,
           pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
-          mimeType: mimeType,
         }
+
+        // Only pass mimeType for operations that need it (not for list operation)
+        if (operation !== 'list' && mimeType) {
+          baseParams.mimeType = mimeType
+        }
+
+        return baseParams
       },
     },
   },
