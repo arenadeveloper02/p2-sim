@@ -282,15 +282,6 @@ export function GoogleDrivePicker({
         return 'DOCS' // Default view
       }
 
-      // Debug logging
-      console.log('Google Drive Picker Debug:', {
-        clientId: clientId ? `${clientId.substring(0, 10)}...` : 'MISSING',
-        apiKey: apiKey ? `${apiKey.substring(0, 10)}...` : 'MISSING',
-        projectNumber: getEnv('NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER') ? `${getEnv('NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER')?.substring(0, 10)}...` : 'MISSING',
-        accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : 'MISSING',
-        mimeTypeFilter
-      })
-
       openPicker({
         clientId,
         developerKey: apiKey,
@@ -326,27 +317,12 @@ export function GoogleDrivePicker({
               onChange(file.id, fileInfo)
               onFileInfoChange?.(fileInfo)
             }
-          } else if (data.action === 'cancel') {
-            console.log('Google Drive Picker cancelled by user')
-          } else {
-            console.log('Google Drive Picker unknown action:', data.action)
           }
         },
       })
     } catch (error) {
       console.error('Error opening Google Drive Picker:', error)
       logger.error('Error opening Google Drive Picker:', { error })
-      
-      // Show user-friendly error message
-      if (error instanceof Error) {
-        if (error.message.includes('API developer key is invalid')) {
-          alert('Google API key is invalid. Please contact your administrator to configure the NEXT_PUBLIC_GOOGLE_API_KEY environment variable.')
-        } else if (error.message.includes('client_id')) {
-          alert('Google OAuth client ID is invalid. Please contact your administrator to configure the NEXT_PUBLIC_GOOGLE_CLIENT_ID environment variable.')
-        } else {
-          alert(`Error opening Google Drive picker: ${error.message}`)
-        }
-      }
     }
   }
 
