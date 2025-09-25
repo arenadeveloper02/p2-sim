@@ -69,6 +69,9 @@ export const env = createEnv({
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
+    SAMBANOVA_API_KEY_1:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
+    SAMBANOVA_API_KEY_2:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
+    SAMBANOVA_API_KEY_3:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
 
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint

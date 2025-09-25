@@ -574,7 +574,9 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   if (isOllamaModel) {
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
-
+  console.log(
+    `Getting API key for provider: ${provider}, model: ${model}, hasUserKey: ${hasUserKey}`
+  )
   // Use server key rotation for all OpenAI models, Anthropic's Claude models, Google models, and SambaNova models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'

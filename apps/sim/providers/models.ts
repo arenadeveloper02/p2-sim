@@ -9,7 +9,6 @@
 
 import type React from 'react'
 import {
-  AgentIcon,
   AnthropicIcon,
   AzureIcon,
   CerebrasIcon,
@@ -18,7 +17,6 @@ import {
   GroqIcon,
   OllamaIcon,
   OpenAIIcon,
-  SambaNovaIcon,
   xAIIcon,
 } from '@/components/icons'
 
@@ -741,18 +739,17 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     description: "SambaNova's AI models",
     defaultModel: 'DeepSeek-R1-Distill-Llama-70B',
     modelPatterns: [
-      /^Meta-Llama/,
-      /^Llama-/,
-      /^Qwen/,
       /^DeepSeek/,
+      /^E5-/,
       /^gpt-oss/,
-      /^E5-Mistral/,
+      /^Llama-/,
+      /^Meta-Llama/,
+      /^Qwen3/,
       /^Whisper/,
-      /^sambanova/,
     ],
-    icon: OllamaIcon,
+    icon: CerebrasIcon,
     capabilities: {
-      toolUsageControl: false,
+      toolUsageControl: true,
     },
     models: [
       {

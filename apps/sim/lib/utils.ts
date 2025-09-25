@@ -287,7 +287,13 @@ export function generatePassword(length = 24): string {
  * @throws Error if no API keys are configured for rotation
  */
 export function getRotatingApiKey(provider: string): string {
-  if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'google' && provider !== 'sambanova') {
+  console
+  if (
+    provider !== 'openai' &&
+    provider !== 'anthropic' &&
+    provider !== 'google' &&
+    provider !== 'sambanova'
+  ) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
   }
 
@@ -304,7 +310,10 @@ export function getRotatingApiKey(provider: string): string {
   } else if (provider === 'google') {
     keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
   } else if (provider === 'sambanova') {
-    if (env.SAMBANOVA_API_KEY) keys.push(env.SAMBANOVA_API_KEY)
+    console.log('SambaNova Key Rotation Invoked')
+    if (env.SAMBANOVA_API_KEY_1) keys.push(env.SAMBANOVA_API_KEY_1)
+    if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
+    if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
   }
 
   if (keys.length === 0) {
@@ -313,11 +322,7 @@ export function getRotatingApiKey(provider: string): string {
         `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
       )
     }
-    if (provider === 'sambanova') {
-      throw new Error(
-        `No API keys configured for rotation. Please configure SAMBANOVA_API_KEY.`
-      )
-    }
+
     throw new Error(
       `No API keys configured for rotation. Please configure ${provider.toUpperCase()}_API_KEY_1, ${provider.toUpperCase()}_API_KEY_2, or ${provider.toUpperCase()}_API_KEY_3.`
     )

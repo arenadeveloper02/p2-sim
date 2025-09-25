@@ -2961,14 +2961,14 @@ export const OllamaIcon = (props: SVGProps<SVGSVGElement>) => (
 
 export const SambaNovaIcon = (props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => (
   <div className='relative h-full w-full'>
-      <Image
-        src='https://sambanova.ai/hs-fs/hubfs/sambanova_favicon.png?width=100&height=90&name=sambanova_favicon.png'
-        alt='Sambanova Icon'
-        fill
-        className='object-contain'
-        {...props}
-      />
-    </div>
+    <Image
+      src='https://sambanova.ai/hs-fs/hubfs/sambanova_favicon.png?width=100&height=90&name=sambanova_favicon.png'
+      alt='Sambanova Icon'
+      fill
+      className='object-contain'
+      {...props}
+    />
+  </div>
 )
 
 export function WealthboxIcon(props: SVGProps<SVGSVGElement>) {
