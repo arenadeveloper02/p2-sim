@@ -3,54 +3,53 @@ import { encode } from 'entities'
 import { marked } from 'marked'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import sanitizeHtml from 'sanitize-html' // Optional, for sanitizing HTML
 
 // Utility to escape HTML content for safe inclusion (used for Markdown code blocks and plain text)
 const escapeHtml = (text: string): string => encode(text)
 
 // Utility to sanitize HTML content (optional, for untrusted HTML)
-const sanitizeHtmlContent = (html: string): string =>
-  sanitizeHtml(html, {
-    allowedTags: [
-      'html',
-      'head',
-      'meta',
-      'title',
-      'style',
-      'body',
-      'header',
-      'footer',
-      'section',
-      'p',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'ul',
-      'ol',
-      'li',
-      'pre',
-      'code',
-      'strong',
-      'em',
-      'blockquote',
-      'hr',
-      'a',
-      'table',
-      'thead',
-      'tbody',
-      'tr',
-      'th',
-      'td',
-      'img',
-    ],
-    allowedAttributes: {
-      '*': ['style'],
-      a: ['href', 'target', 'rel'],
-      img: ['src', 'alt'],
-      table: ['border', 'cellpadding'],
-    },
-  })
+// const sanitizeHtmlContent = (html: string): string =>
+//   sanitizeHtml(html, {
+//     allowedTags: [
+//       'html',
+//       'head',
+//       'meta',
+//       'title',
+//       'style',
+//       'body',
+//       'header',
+//       'footer',
+//       'section',
+//       'p',
+//       'h1',
+//       'h2',
+//       'h3',
+//       'h4',
+//       'ul',
+//       'ol',
+//       'li',
+//       'pre',
+//       'code',
+//       'strong',
+//       'em',
+//       'blockquote',
+//       'hr',
+//       'a',
+//       'table',
+//       'thead',
+//       'tbody',
+//       'tr',
+//       'th',
+//       'td',
+//       'img',
+//     ],
+//     allowedAttributes: {
+//       '*': ['style'],
+//       a: ['href', 'target', 'rel'],
+//       img: ['src', 'alt'],
+//       table: ['border', 'cellpadding'],
+//     },
+//   })
 
 // Extract content from Markdown code fences or return raw content
 export function extractContentFromAgentResponse(response: string): string {
@@ -71,8 +70,7 @@ export function renderAgentResponse({ content }: { content: string }) {
     extractedContent.trim().startsWith('<!DOCTYPE html>') ||
     extractedContent.trim().startsWith('<html')
   ) {
-    const htmlContent =
-      typeof sanitizeHtml === 'function' ? sanitizeHtmlContent(extractedContent) : extractedContent
+    const htmlContent = extractedContent
     return <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
   }
 
@@ -329,9 +327,7 @@ export function renderAgentResponseToString(content: string): string {
     extractedContent.trim().startsWith('<!DOCTYPE html>') ||
     extractedContent.trim().startsWith('<html')
   ) {
-    return typeof sanitizeHtml === 'function'
-      ? sanitizeHtmlContent(extractedContent)
-      : extractedContent
+    return extractedContent
   }
 
   // Configure marked with custom renderer for styling
