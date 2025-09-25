@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -15,6 +15,7 @@ import {
   Webhook,
   WifiOff,
   X,
+  Zap,
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import {
@@ -44,10 +45,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components'
 import { renderApprovalButton } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/p2components'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
-import {
-  getKeyboardShortcutText,
-  useKeyboardShortcuts,
-} from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
+import { useKeyboardShortcuts } from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
 import { useFolderStore } from '@/stores/folders/store'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { usePanelStore } from '@/stores/panel/store'
@@ -150,6 +148,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     limit: number
   } | null>(null)
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
   // Helper function to open console panel
   const openConsolePanel = useCallback(() => {
     setActiveTab('console')
@@ -276,7 +275,6 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   )
 
   useEffect(() => {
-    // Avoid off-by-one false positives: wait until operation queue is idle
     const { operations, isProcessing } = useOperationQueueStore.getState()
     const hasPendingOps =
       isProcessing || operations.some((op) => op.status === 'pending' || op.status === 'processing')
@@ -290,9 +288,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       return
     }
 
-    // Use the workflow status API to get accurate change detection
-    // This uses the same logic as the deployment API (reading from normalized tables)
-    const checkForChanges = async () => {
+    // Debounce API calls
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    //due more dependences this will call so many times.
+    //for detecting changes debouncing is the better solution so when ever user changes anything insted of calling the status api everytime it will call within certian time
+    debounceRef.current = setTimeout(async () => {
       try {
         const response = await fetch(`/api/workflows/${activeWorkflowId}/status`)
         if (response.ok) {
@@ -306,9 +308,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         logger.error('Error fetching workflow status:', error)
         setChangeDetected(false)
       }
-    }
+    }, 1000)
 
-    checkForChanges()
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current)
+      }
+    }
   }, [
     activeWorkflowId,
     deployedState,
@@ -737,6 +743,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       isLoadingDeployedState={isLoadingDeployedState}
       refetchDeployedState={fetchDeployedState}
       userPermissions={userPermissions}
+      workspaceId={workspaceId}
     />
   )
 
@@ -1145,7 +1152,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         )
       }
 
-      return 'Run'
+      return 'Test agent'
     }
 
     const handleRunClick = () => {
@@ -1162,21 +1169,27 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            // className={cn(
+            //   'gap-2 font-medium',
+            //   'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
+            //   'shadow-[0_0_0_0_var(--brand-primary-hex)]',
+            //   'text-white transition-all duration-200',
+            //   'disabled:opacity-50 disabled:hover:bg-[var(--brand-primary-hex)] disabled:hover:shadow-none',
+            //   'h-12 rounded-[11px] px-4 py-2'
+            // )}
             className={cn(
-              'gap-2 font-medium',
-              'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
-              'shadow-[0_0_0_0_var(--brand-primary-hex)]',
-              'text-white transition-all duration-200',
-              'disabled:opacity-50 disabled:hover:bg-[var(--brand-primary-hex)] disabled:hover:shadow-none',
-              'h-12 rounded-[11px] px-4 py-2'
+              'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+              'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
             )}
             onClick={handleRunClick}
             disabled={isButtonDisabled}
           >
-            <Play className={cn('h-3.5 w-3.5', 'fill-current stroke-current')} />
+            <Play className={cn('h-3.5 w-3.5')} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent command={getKeyboardShortcutText('Enter', true)}>
+        <TooltipContent
+        // command={getKeyboardShortcutText('Enter', true)}
+        >
           {getTooltipContent()}
         </TooltipContent>
       </Tooltip>
@@ -1281,6 +1294,28 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  const renderRunAgentWorkflow = () => {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant='outline'
+            onClick={() => {
+              window.location.href = `/chat/${activeWorkflowId}?workspaceId=${workspaceId}`
+            }}
+            className={cn(
+              'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+              'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
+            )}
+          >
+            <Zap className={cn('h-5 w-5')} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Run Agent</TooltipContent>
+      </Tooltip>
+    )
+  }
+
   const handleOpenApproval = () => {
     setIsApprovalModalOpen(true)
   }
@@ -1310,6 +1345,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {/* {!isDebugging && renderDebugModeToggle()} */}
       {renderDeployButton()}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
+      {Object.keys(deployedState || {})?.length > 0 && renderRunAgentWorkflow()}
 
       {/* Template Modal */}
       {activeWorkflowId && (

@@ -483,7 +483,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
       {/* Header component */}
-      <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+      <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
       {/* Message Container component */}
       <ChatMessageContainer
