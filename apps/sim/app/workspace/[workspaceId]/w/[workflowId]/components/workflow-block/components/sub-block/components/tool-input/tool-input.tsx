@@ -29,6 +29,7 @@ import {
   SliderInput,
   Table,
   TimeInput,
+  UserSelectorInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components'
 import {
   type CustomTool,
