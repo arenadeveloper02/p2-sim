@@ -311,6 +311,7 @@ export function getRotatingApiKey(provider: string): string {
     keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
   } else if (provider === 'sambanova') {
     console.log('SambaNova Key Rotation Invoked')
+    if (env.SAMBANOVA_API_KEY) keys.push(env.SAMBANOVA_API_KEY)
     if (env.SAMBANOVA_API_KEY_1) keys.push(env.SAMBANOVA_API_KEY_1)
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)

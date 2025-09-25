@@ -546,7 +546,8 @@ export function formatCost(cost: number): string {
  * These are the models for which we hide the API key field in the hosted environment
  */
 export function getHostedModels(): string[] {
-  return getHostedModelsFromDefinitions()
+  // Normalize to lowercase because UI model selections are lowercased
+  return getHostedModelsFromDefinitions().map((model) => model.toLowerCase())
 }
 
 /**

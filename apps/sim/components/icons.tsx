@@ -2974,18 +2974,6 @@ export const OllamaIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
-export const SambaNovaIcon = (props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => (
-  <div className='relative h-full w-full'>
-    <Image
-      src='https://sambanova.ai/hs-fs/hubfs/sambanova_favicon.png?width=100&height=90&name=sambanova_favicon.png'
-      alt='Sambanova Icon'
-      fill
-      className='object-contain'
-      {...props}
-    />
-  </div>
-)
-
 export function WealthboxIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -3581,5 +3569,22 @@ export function ServerIcon(props: SVGProps<SVGSVGElement>) {
       <line x1='6' x2='6.01' y1='6' y2='6' />
       <line x1='6' x2='6.01' y1='18' y2='18' />
     </svg>
+  )
+}
+
+export const SambaNovaIcon: React.FC<{ className?: string }> = ({ className }) => {
+  return (
+    <div className={`relative ${className || 'h-4 w-4'}`}>
+      <Image
+        src={
+          'https://sambanova.ai/hs-fs/hubfs/sambanova_favicon.png?width=200&name=sambanova_favicon.png'
+        }
+        alt='SambaNova'
+        fill
+        className='rounded-sm object-contain'
+        sizes='(max-width: 768px) 16px, 20px'
+        priority={false}
+      />
+    </div>
   )
 }
