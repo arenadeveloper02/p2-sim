@@ -338,7 +338,9 @@ export function renderAgentResponseToString(content: string): string {
   const renderer = new marked.Renderer()
   renderer.paragraph = (text) =>
     `<p style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.5; margin: 0 0 16px 0;">${text}</p>`
-  renderer.heading = (text, level) => {
+  renderer.heading = ({ tokens, depth }) => {
+    const level = depth + 1
+    const text = tokens.map((token) => token.raw).join('')
     const sizes = { 1: '24px', 2: '20px', 3: '18px', 4: '16px' }
     return `<h${level} style="font-family: Arial, sans-serif; font-size: ${
       sizes[level as keyof typeof sizes] || '16px'
@@ -346,11 +348,11 @@ export function renderAgentResponseToString(content: string): string {
       level === 1 ? '16px' : level === 2 ? '12px' : '10px'
     } 0;">${text}</h${level}>`
   }
-  renderer.list = (body, ordered) =>
+  renderer.list = (tokens: any[], ordered: boolean, start: number) =>
     ordered
-      ? `<ol style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: decimal; padding-left: 20px; margin: 0 0 16px 0;">${body}</ol>`
-      : `<ul style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: disc; padding-left: 20px; margin: 0 0 16px 0;">${body}</ul>`
-  renderer.listitem = (text) =>
+      ? `<ol style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: decimal; padding-left: 20px; margin: 0 0 16px 0;">${tokens.map((token) => renderer.listitem(token.text)).join('')}</ol>`
+      : `<ul style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: disc; padding-left: 20px; margin: 0 0 16px 0;">${tokens.map((token) => renderer.listitem(token.text)).join('')}</ul>`
+  renderer.listitem = (text: string) =>
     `<li style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; margin-bottom: 8px;">${text}</li>`
   renderer.code = (code) =>
     `<pre style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; color: #333333; margin: 0 0 16px 0;"><code style="font-family: monospace; font-size: 14px; color: #333333;">${escapeHtml(
