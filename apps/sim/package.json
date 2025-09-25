@@ -104,6 +104,7 @@
     "lenis": "^1.2.3",
     "lucide-react": "^0.479.0",
     "mammoth": "^1.9.0",
+    "marked": "16.3.0",
     "mysql2": "3.14.3",
     "next": "^15.4.1",
     "next-runtime-env": "3.3.0",
