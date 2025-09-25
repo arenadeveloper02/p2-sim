@@ -1,6 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { Check, Copy, Download } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import CopilotMarkdownRenderer from '../../../copilot/components/copilot-message/components/markdown-renderer'
-import { isBase64, renderBs64Img } from './constants'
+import { downloadImage, isBase64, renderBs64Img } from './constants'
 
 interface ChatMessageProps {
   message: {
@@ -48,6 +50,7 @@ const WordWrap = ({ text }: { text: string }) => {
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
+  const [isCopied, setIsCopied] = useState<boolean>(false)
   // Format message content as text
   const formattedContent = useMemo(() => {
     if (typeof message.content === 'object' && message.content !== null) {
@@ -96,6 +99,59 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span className='ml-1 inline-block h-4 w-2 animate-pulse bg-primary' />
           )}
         </div>
+        {!message.isStreaming && !isBase64(message?.content) && (
+          <div className='mt-2 flex items-center justify-end'>
+            <TooltipProvider>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      const contentToCopy =
+                        typeof formattedContent === 'string'
+                          ? formattedContent
+                          : JSON.stringify(formattedContent, null, 2)
+                      navigator.clipboard.writeText(contentToCopy)
+                      setIsCopied(true)
+                      setTimeout(() => setIsCopied(false), 2000)
+                    }}
+                  >
+                    {isCopied ? (
+                      <Check className='h-4 w-4' strokeWidth={2} />
+                    ) : (
+                      <Copy className='h-4 w-4' strokeWidth={2} />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side='top' align='center' sideOffset={5}>
+                  {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {/* here forthere we can add feedback buttons */}
+          </div>
+        )}
+        {!message.isStreaming && isBase64(message?.content) && (
+          <div className='mt-2 flex items-center justify-end'>
+            <TooltipProvider>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      downloadImage(isBase64(message?.content), message.content)
+                    }}
+                  >
+                    <Download className='h-4 w-4' strokeWidth={2} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side='top' align='center' sideOffset={5}>
+                  Download
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
       </div>
     </div>
   )

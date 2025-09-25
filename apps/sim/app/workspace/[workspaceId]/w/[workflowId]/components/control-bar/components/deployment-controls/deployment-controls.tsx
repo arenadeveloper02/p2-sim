@@ -18,6 +18,7 @@ interface DeploymentControlsProps {
   isLoadingDeployedState: boolean
   refetchDeployedState: () => Promise<void>
   userPermissions: WorkspaceUserPermissions
+  workspaceId?: string
 }
 
 export function DeploymentControls({
@@ -28,6 +29,7 @@ export function DeploymentControls({
   isLoadingDeployedState,
   refetchDeployedState,
   userPermissions,
+  workspaceId,
 }: DeploymentControlsProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(activeWorkflowId)
@@ -74,10 +76,10 @@ export function DeploymentControls({
     if (isDeployed && workflowNeedsRedeployment) {
       return 'Workflow changes detected'
     }
-    if (isDeployed) {
-      return 'Deployment Settings'
-    }
-    return 'Deploy as API'
+    // if (isDeployed) {
+    //   return 'Deploy agent'
+    // }
+    return 'Deploy agent'
   }
 
   return (
@@ -129,6 +131,7 @@ export function DeploymentControls({
         deployedState={deployedState as WorkflowState}
         isLoadingDeployedState={isLoadingDeployedState}
         refetchDeployedState={refetchWithErrorHandling}
+        workspaceId={workspaceId}
       />
     </>
   )

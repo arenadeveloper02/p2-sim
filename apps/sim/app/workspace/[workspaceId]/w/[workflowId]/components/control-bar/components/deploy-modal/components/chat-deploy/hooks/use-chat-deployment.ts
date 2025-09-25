@@ -46,13 +46,20 @@ export function useChatDeployment() {
     deployedUrl: null,
   })
 
+  /**
+   * Deploy or update a chat interface
+   *
+   * @param needsRedeployment - Indicates if workflow has changes requiring API redeployment
+   *                           This ensures workflow changes are reflected in the chat
+   */
   const deployChat = useCallback(
     async (
       workflowId: string,
       formData: ChatFormData,
       deploymentInfo: { apiKey: string } | null,
       existingChatId?: string,
-      imageUrl?: string | null
+      imageUrl?: string | null,
+      needsRedeployment = false // Flag to force API redeployment for existing chats
     ) => {
       setState({ isLoading: true, error: null, deployedUrl: null })
 
@@ -88,7 +95,9 @@ export function useChatDeployment() {
           allowedEmails: formData.authType === 'email' ? formData.emails : [],
           outputConfigs,
           apiKey: deploymentInfo?.apiKey,
-          deployApiEnabled: !existingChatId, // Only deploy API for new chats
+          // CRITICAL: Deploy API for new chats OR when workflow has changes
+          // This ensures workflow changes are reflected in existing chat deployments
+          deployApiEnabled: !existingChatId || needsRedeployment,
         }
 
         // Validate with Zod

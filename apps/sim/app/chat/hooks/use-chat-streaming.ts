@@ -146,17 +146,17 @@ export function useChatStreaming() {
         const chunk = decoder.decode(value, { stream: true })
         // Append to partial data buffer
         partialData += chunk
-        
+
         // Split by double newlines to separate complete messages
         const parts = partialData.split('\n\n')
-        
+
         // Keep the last part as it might be incomplete
         partialData = parts.pop() || ''
-        
+
         // Process complete parts
         for (const part of parts) {
           const lines = part.split('\n')
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
@@ -168,30 +168,33 @@ export function useChatStreaming() {
                   // Final event received - check if we need to add additional content
                   const result = json.data as ExecutionResult
 
-                  logger.info('Final event received:', { 
+                  logger.info('Final event received:', {
                     hasDirectOutput: !!result.output?.content,
                     hasLogs: !!result.logs,
                     outputType: typeof result.output?.content,
                     outputLength: result.output?.content?.length || 0,
-                    accumulatedTextLength: accumulatedText.length
+                    accumulatedTextLength: accumulatedText.length,
                   })
 
                   // Check if there's additional content that wasn't streamed
                   let additionalContent = ''
-                  
+
                   // For base64 images or other direct output content that wasn't streamed
                   if (result.output?.content && typeof result.output.content === 'string') {
                     // Only use direct output if it's different from accumulated text (e.g., base64 images)
                     if (result.output.content !== accumulatedText.trim()) {
                       additionalContent = result.output.content
-                      logger.info('Found additional direct output content, length:', additionalContent.length)
+                      logger.info(
+                        'Found additional direct output content, length:',
+                        additionalContent.length
+                      )
                     }
                   }
-                  
+
                   // Check for additional content in logs that wasn't streamed
                   if (!additionalContent && result.logs) {
                     const contentParts: string[] = []
-                    
+
                     result.logs.forEach((log) => {
                       if (log.output?.content && typeof log.output.content === 'string') {
                         // Only add if it's different from what was already streamed
@@ -200,7 +203,7 @@ export function useChatStreaming() {
                         }
                       }
                     })
-                    
+
                     if (contentParts.length > 0) {
                       additionalContent = contentParts.join('')
                     }
@@ -210,7 +213,7 @@ export function useChatStreaming() {
                   let finalContent = accumulatedText
                   if (additionalContent) {
                     // Only append additional content if it's truly different
-                    finalContent = accumulatedText + '\n\n' + additionalContent
+                    finalContent = `${accumulatedText}\n\n${additionalContent}`
                     logger.info('Appending additional content to streamed content')
                   }
 
@@ -277,9 +280,9 @@ export function useChatStreaming() {
                   // Handle error events from the server
                   const errorData = json.data || {}
                   const errorMessage = errorData.error || 'An error occurred during processing'
-                  
+
                   logger.error('Server error event received:', errorData)
-                  
+
                   setMessages((prev) =>
                     prev.map((msg) =>
                       msg.id === messageId
@@ -291,17 +294,17 @@ export function useChatStreaming() {
                         : msg
                     )
                   )
-                  
+
                   // Stop streaming on error
                   setIsStreamingResponse(false)
                   return
                 }
               } catch (parseError) {
-                logger.error('Error parsing stream data:', { 
+                logger.error('Error parsing stream data:', {
                   error: parseError,
                   lineLength: line.length,
                   lineStart: line.substring(0, 100),
-                  lineEnd: line.substring(Math.max(0, line.length - 100))
+                  lineEnd: line.substring(Math.max(0, line.length - 100)),
                 })
               }
             }

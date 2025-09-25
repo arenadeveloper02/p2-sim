@@ -180,7 +180,9 @@ export const ChatInput: React.FC<{
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      handleSubmit()
+                      if (!isStreaming) {
+                        handleSubmit()
+                      }
                     }
                   }}
                 />

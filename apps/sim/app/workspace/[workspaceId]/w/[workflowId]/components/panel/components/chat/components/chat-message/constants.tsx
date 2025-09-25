@@ -14,7 +14,7 @@ export function isBase64(str: string | any): boolean {
 
   // Trim whitespace and newlines that might be present in streamed data
   const trimmedStr = str.trim()
-  
+
   if (trimmedStr === '') {
     return false
   }
@@ -48,7 +48,7 @@ export const renderBs64Img = ({
   try {
     // Trim the base64 data to remove any whitespace/newlines from streaming
     const cleanImageData = imageData?.trim() || ''
-    
+
     const imageSrc =
       isBase64 && cleanImageData && cleanImageData.length > 0
         ? `data:image/png;base64,${cleanImageData}`
@@ -69,7 +69,7 @@ export const renderBs64Img = ({
           className='h-auto w-full rounded-lg border'
           unoptimized
           onError={(e) => {
-            console.error('Image failed to load:', imageSrc.substring(0, 100) + '...', e)
+            console.error('Image failed to load:', `${imageSrc.substring(0, 100)}...`, e)
             //   setLoadError(true)
             //   onLoadError?.(true)
           }}
@@ -81,7 +81,7 @@ export const renderBs64Img = ({
     )
   } catch (error) {
     console.error('Error rendering base64 image:', error)
-    
+
     // Return a fallback error message instead of crashing
     return (
       <div className='my-2 w-1/2'>
@@ -92,5 +92,45 @@ export const renderBs64Img = ({
         </div>
       </div>
     )
+  }
+}
+
+export const downloadImage = async (isBase64?: boolean, imageData?: string, imageUrl?: string) => {
+  try {
+    let blob: Blob
+    if (isBase64 && imageData && imageData.length > 0) {
+      // Convert base64 to blob
+      const byteString = atob(imageData)
+      const arrayBuffer = new ArrayBuffer(byteString.length)
+      const uint8Array = new Uint8Array(arrayBuffer)
+      for (let i = 0; i < byteString.length; i++) {
+        uint8Array[i] = byteString.charCodeAt(i)
+      }
+      blob = new Blob([arrayBuffer], { type: 'image/png' })
+    } else if (imageUrl && imageUrl.length > 0) {
+      // Use proxy endpoint to fetch image
+      const proxyUrl = `/api/proxy/image?url=${encodeURIComponent(imageUrl)}`
+      const response = await fetch(proxyUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.statusText}`)
+      }
+      blob = await response.blob()
+    } else {
+      throw new Error('No image data or URL provided')
+    }
+
+    // Create object URL and trigger download
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `generated-image-${Date.now()}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    // Clean up the URL
+    setTimeout(() => URL.revokeObjectURL(url), 100)
+  } catch (error) {
+    alert('Failed to download image. Please try again later.')
   }
 }

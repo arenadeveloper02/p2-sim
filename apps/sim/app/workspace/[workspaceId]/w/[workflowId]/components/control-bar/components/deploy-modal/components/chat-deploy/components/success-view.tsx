@@ -21,6 +21,7 @@ interface SuccessViewProps {
   onDelete?: () => void
   onUpdate?: () => void
   workflowId?: string | null
+  workspaceId?: string
 }
 
 export function SuccessView({
@@ -29,10 +30,12 @@ export function SuccessView({
   onDelete,
   onUpdate,
   workflowId,
+  workspaceId,
 }: SuccessViewProps) {
   const url = new URL(deployedUrl)
   const hostname = url.hostname
   const isDevelopmentUrl = hostname.includes('localhost')
+  const chatUrl = `/chat/${workflowId}?workspaceId=${workspaceId}`
 
   let domainSuffix
   if (isDevelopmentUrl) {
@@ -61,7 +64,7 @@ export function SuccessView({
           </div>
           <a
             // href={deployedUrl}
-            href={`/chat/${workflowId}`}
+            href={chatUrl}
             target='_blank'
             rel='noopener noreferrer'
             className='flex h-10 flex-1 items-center break-all rounded-l-md border border-r-0 p-2 font-medium text-foreground text-sm'
@@ -73,7 +76,7 @@ export function SuccessView({
           Your chat is now live at{' '}
           <a
             // href={deployedUrl}
-            href={`/chat/${workflowId}`}
+            href={chatUrl}
             target='_blank'
             rel='noopener noreferrer'
             className='text-foreground hover:underline'

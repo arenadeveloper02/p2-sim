@@ -34,6 +34,7 @@ import {
 } from '@/tools/github'
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -182,9 +183,12 @@ import {
 import { workflowExecutorTool } from '@/tools/workflow'
 import { xReadTool, xSearchTool, xUserTool, xWriteTool } from '@/tools/x'
 import { youtubeSearchTool } from '@/tools/youtube'
+import { arenaCreateTask, arenaSearchTask } from './arena_task_manager'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
+  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -281,6 +285,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,

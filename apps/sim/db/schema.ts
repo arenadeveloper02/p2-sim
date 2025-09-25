@@ -1,5 +1,6 @@
 import { type SQL, sql } from 'drizzle-orm'
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -1455,3 +1456,24 @@ export const workflowStatus = pgTable('workflow_status', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
+
+export const userArenaDetails = pgTable(
+  'user_arena_details',
+  {
+    id: text('id'), // nullable
+    userType: text('user_type'), // nullable
+    createdAt: timestamp('created_at', { withTimezone: false }), // nullable
+    department: text('department'), // nullable
+    updatedAt: timestamp('updated_at', { withTimezone: false }), // nullable
+    userIdRef: text('user_id_ref'), // nullable
+    arenaUserIdRef: text('arena_user_id_ref'), // nullable
+    airbyteRawId: text('_airbyte_raw_id').$type<string>(), // varchar(36) in SQL, mapped to text
+    airbyteExtractedAt: timestamp('_airbyte_extracted_at', { withTimezone: true }), // timestamptz
+    airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
+    airbyteMeta: jsonb('_airbyte_meta'), // jsonb
+    arenaToken: text('arena_token'), // text
+  },
+  (table) => ({
+    airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
+  })
+)
