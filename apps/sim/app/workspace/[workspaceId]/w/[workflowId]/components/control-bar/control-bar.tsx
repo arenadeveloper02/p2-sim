@@ -31,6 +31,7 @@ import {
   Button,
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -1297,22 +1298,24 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
   const renderRunAgentWorkflow = () => {
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link href={`/chat/${activeWorkflowId}?workspaceId=${workspaceId}`}>
-            <Button
-              variant='outline'
-              className={cn(
-                'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
-                'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
-              )}
-            >
-              <Zap className={cn('h-5 w-5')} />
-            </Button>
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent>Run Agent</TooltipContent>
-      </Tooltip>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href={`/chat/${activeWorkflowId}?workspaceId=${workspaceId}`}>
+              <Button
+                variant='outline'
+                className={cn(
+                  'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+                  'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
+                )}
+              >
+                <Zap className={cn('h-5 w-5')} />
+              </Button>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>Run Agent</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
 
