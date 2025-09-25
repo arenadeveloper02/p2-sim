@@ -2,6 +2,7 @@
 
 import { LogOut } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { Button } from '@/components/ui'
 
 interface ChatHeaderProps {
@@ -53,24 +54,16 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
         </h2>
       </div>
       <div className='flex items-center gap-2'>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
-          onClick={(e) => {
-            e.stopPropagation()
-            let url = '/'
-            if (workspaceId && workflowId) {
-              url = `/workspace/${workspaceId}/w/${workflowId}`
-              window.location.href = url
-            } else {
-              window.location.href = url
-            }
-          }}
-        >
-          <LogOut className='h-5 w-5' />
-          <span className='font-medium text-lg'>Exit</span>
-        </Button>
+        <Link href={workspaceId && workflowId ? `/workspace/${workspaceId}/w/${workflowId}` : '/'}>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+          >
+            <LogOut className='h-5 w-5' />
+            <span className='font-medium text-lg'>Exit</span>
+          </Button>
+        </Link>
       </div>
       {/*<div className='flex items-center gap-2'>
         <a
