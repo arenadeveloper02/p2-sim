@@ -302,7 +302,9 @@ export function getRotatingApiKey(provider: string): string {
     if (env.ANTHROPIC_API_KEY_2) keys.push(env.ANTHROPIC_API_KEY_2)
     if (env.ANTHROPIC_API_KEY_3) keys.push(env.ANTHROPIC_API_KEY_3)
   } else if (provider === 'google') {
-    keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
+    if (env.NEXT_PUBLIC_GOOGLE_API_KEY) {
+      keys.push(env.NEXT_PUBLIC_GOOGLE_API_KEY)
+    }
   }
 
   if (keys.length === 0) {
