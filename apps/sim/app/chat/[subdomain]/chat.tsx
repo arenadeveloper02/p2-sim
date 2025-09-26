@@ -565,54 +565,58 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Voice-first mode interface
   if (isVoiceFirstMode) {
     return (
-      <VoiceInterface
-        onCallEnd={handleExitVoiceMode}
-        onVoiceTranscript={handleVoiceTranscript}
-        onVoiceStart={noop}
-        onVoiceEnd={noop}
-        onInterrupt={handleVoiceInterruption}
-        isStreaming={isStreamingResponse}
-        isPlayingAudio={isPlayingAudio}
-        audioContextRef={audioContextRef}
-        messages={messages.map((msg) => ({
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          type: msg.type,
-        }))}
-      />
+      <TooltipProvider>
+        <VoiceInterface
+          onCallEnd={handleExitVoiceMode}
+          onVoiceTranscript={handleVoiceTranscript}
+          onVoiceStart={noop}
+          onVoiceEnd={noop}
+          onInterrupt={handleVoiceInterruption}
+          isStreaming={isStreamingResponse}
+          isPlayingAudio={isPlayingAudio}
+          audioContextRef={audioContextRef}
+          messages={messages.map((msg) => ({
+            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+            type: msg.type,
+          }))}
+        />
+      </TooltipProvider>
     )
   }
 
   // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      {/* Header component */}
-      <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
+    <TooltipProvider>
+      <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+        {/* Header component */}
+        <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
-      {/* Message Container component */}
-      <ChatMessageContainer
-        messages={messages}
-        isLoading={isLoading}
-        showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-        messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
-        chatConfig={chatConfig}
-      />
+        {/* Message Container component */}
+        <ChatMessageContainer
+          messages={messages}
+          isLoading={isLoading}
+          showScrollButton={showScrollButton}
+          messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+          messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+          scrollToBottom={scrollToBottom}
+          scrollToMessage={scrollToMessage}
+          chatConfig={chatConfig}
+        />
 
-      {/* Input area (free-standing at the bottom) */}
-      <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(value, isVoiceInput) => {
-              void handleSendMessage(value, isVoiceInput, false)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
-          />
+        {/* Input area (free-standing at the bottom) */}
+        <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+          <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+            <ChatInput
+              onSubmit={(value, isVoiceInput) => {
+                void handleSendMessage(value, isVoiceInput, false)
+              }}
+              isStreaming={isStreamingResponse}
+              onStopStreaming={() => stopStreaming(setMessages)}
+              onVoiceStart={handleVoiceStart}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
