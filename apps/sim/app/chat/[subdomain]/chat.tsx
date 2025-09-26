@@ -304,10 +304,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   }
 
   // Handle sending a message
-  const handleSendMessage = async (messageParam?: string, isVoiceInput = false, isFormSubmission = false, formInputs?: Record<string, any>) => {
+  const handleSendMessage = async (messageParam?: string, isVoiceInput = false, isFormSubmission = false) => {
     const messageToSend = messageParam ?? inputValue
     
-    // Allow empty messages only if it's a form submission with workflow inputs
+    // Allow empty messages only if it's a form submission
     if (!messageToSend.trim() && !isFormSubmission && isLoading) return
     
     // For form submissions, use a default message if no message is provided
@@ -344,19 +344,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
-      // Send structured payload to maintain chat context
+      // Send the message as the main input to the workflow
       const payload = {
-        input:
-          typeof finalMessage === 'string'
-            ? finalMessage
-            : JSON.stringify(finalMessage),
+        input: finalMessage,
         conversationId,
-        workflowInputs: formInputs || (Object.keys(workflowInputs).length > 0 ? workflowInputs : undefined),
       }
 
       logger.info('API payload:', payload)
-      logger.info('Form inputs being sent:', formInputs)
-      logger.info('Workflow inputs from state:', workflowInputs)
 
       const response = await fetch(`/api/chat/${subdomain}`, {
         method: 'POST',
@@ -430,10 +424,17 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Handle workflow input form submission
   const handleWorkflowInputSubmit = useCallback(async (inputs: Record<string, any>) => {
     logger.info('Workflow inputs submitted:', inputs)
-    // Construct a string from the input keys and values
-    let workflowInputs = Object.entries(inputs)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', \n')
+    // Stringify the form inputs to use as the main workflow input
+    const stringifiedInputs = Object.entries(inputs)
+      .map(([key, value]) => {
+        const formattedKey = key
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (char, index) => 
+            index === 0 ? char.toUpperCase() : char.toLowerCase()
+          )
+        return `${formattedKey}: ${value}`
+      })
+      .join('\n')
     setWorkflowInputs(inputs)
     setShowInputForm(false)
     setInitialInputsSubmitted(true)
@@ -441,14 +442,14 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     // Add a message indicating the workflow is starting
     const workflowStartMessage: ChatMessage = {
       id: crypto.randomUUID(),
-      content: "Here are the inputs you provided:\n\n" + workflowInputs,
+      content: "Starting workflow with the provided inputs...",
       type: 'assistant',
       timestamp: new Date(),
     }
     setMessages((prev) => [...prev, workflowStartMessage])
     
-    // Trigger the workflow execution immediately
-    await handleSendMessage("", false, true, inputs) // Empty message, not voice input, is form submission, pass inputs directly
+    // Trigger the workflow execution with stringified inputs as the main input
+    await handleSendMessage(stringifiedInputs, false, true) // Use stringified inputs as the main message
   }, [handleSendMessage])
 
   // Stop audio when component unmounts or when streaming is stopped
