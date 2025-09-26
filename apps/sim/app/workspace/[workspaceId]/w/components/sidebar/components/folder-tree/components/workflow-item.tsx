@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { AgentIcon } from '@/components/icons'
+import { ArenaIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -321,7 +321,7 @@ export function WorkflowItem({
             }}
           >
             {isTemplateId ? (
-              <AgentIcon className='h-5 w-5 text-[#F3F8FE]' />
+              <ArenaIcon className='h-5 w-5 text-[#F3F8FE]' />
             ) : (
               <div
                 className='h-[9px] w-[9px]'
