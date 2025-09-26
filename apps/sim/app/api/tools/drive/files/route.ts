@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       qParts.push(`name contains '${query.replace(/'/g, "\\'")}'`)
     }
     const q = encodeURIComponent(qParts.join(' and '))
-
+    console.log('accessToken - ', accessToken)
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${q}&supportsAllDrives=true&includeItemsFromAllDrives=true&spaces=drive&fields=files(id,name,mimeType,iconLink,webViewLink,thumbnailLink,createdTime,modifiedTime,size,owners,parents)`,
       {

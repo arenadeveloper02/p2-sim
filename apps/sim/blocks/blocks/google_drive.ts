@@ -158,10 +158,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       canonicalParamId: 'folderId',
       provider: 'google-drive',
       serviceId: 'google-drive',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.metadata.readonly',
-        'https://www.googleapis.com/auth/drive.readonly',
-      ],
+      requiredScopes: ['https://www.googleapis.com/auth/drive.file'],
       mimeType: 'application/vnd.google-apps.folder',
       placeholder: 'Select a parent folder',
       mode: 'basic',
@@ -188,10 +185,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       canonicalParamId: 'folderId',
       provider: 'google-drive',
       serviceId: 'google-drive',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.metadata.readonly',
-        'https://www.googleapis.com/auth/drive.readonly',
-      ],
+      requiredScopes: ['https://www.googleapis.com/auth/drive.file'],
       mimeType: 'application/vnd.google-apps.folder',
       placeholder: 'Select a folder to list files from',
       mode: 'basic',
