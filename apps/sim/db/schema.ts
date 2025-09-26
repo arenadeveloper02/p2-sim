@@ -312,6 +312,7 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
+    isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
