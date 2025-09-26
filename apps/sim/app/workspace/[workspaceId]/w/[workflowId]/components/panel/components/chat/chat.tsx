@@ -594,7 +594,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
 
-  // Handler for form submission
+  // Handler for form submission vijay
   const handleInputFormSubmit = useCallback(
     async (formInputs: Record<string, any>) => {
       if (!activeWorkflowId) return
