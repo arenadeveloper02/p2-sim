@@ -110,8 +110,8 @@ export function FileSelectorInput({
   const value = isPreview ? previewValue : storeValue
 
   // For Google Drive
-  const clientId = getEnv('NEXT_PUBLIC_GOOGLE_CLIENT_ID') || ''
-  const apiKey = getEnv('NEXT_PUBLIC_GOOGLE_API_KEY') || ''
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '' 
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || ''
   console.log('clientId - ', clientId)
   console.log('apiKey - ', apiKey)
   // Render Google Calendar selector
