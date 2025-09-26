@@ -1,7 +1,10 @@
+import { createLogger } from '@/lib/logs/console/logger'
 import type { GmailSendParams, GmailToolResponse } from '@/tools/gmail/types'
 import { GMAIL_API_BASE } from '@/tools/gmail/utils'
 import type { ToolConfig } from '@/tools/types'
 import { extractContentFromAgentResponse, renderAgentResponseToString } from './markUpRenderUtil'
+
+const logger = createLogger('GmailSendTool')
 
 export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   id: 'gmail_send',
@@ -73,6 +76,8 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
         emailHeaders.push('Content-Type: text/html; charset="UTF-8"')
         let emailHtml: string
         if (!params.body || typeof params.body !== 'string') {
+          logger.error('Invalid content provided for email.')
+          logger.error('params.body', params.body)
           emailHtml = `
             <!DOCTYPE html>
             <html lang="en">
@@ -88,8 +93,11 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
           `
         } else {
           try {
+            logger.info('Rendering agent response to HTML...')
             const rawContent = extractContentFromAgentResponse(params.body)
+            logger.info('Raw content:', rawContent)
             emailHtml = renderAgentResponseToString(rawContent)
+            logger.info('Rendered HTML:', emailHtml)
           } catch (error) {
             console.error('HTML rendering failed:', error)
             emailHtml = `
@@ -108,6 +116,7 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
             `
           }
         }
+        logger.info('Final Email HTML:', emailHtml)
         emailHeaders.push(`Subject: ${params.subject}`, '', emailHtml)
       } else {
         emailHeaders.push('Content-Type: text/plain; charset="UTF-8"')
