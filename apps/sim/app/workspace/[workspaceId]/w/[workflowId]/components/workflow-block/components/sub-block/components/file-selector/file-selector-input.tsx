@@ -2,7 +2,6 @@
 
 import { useParams } from 'next/navigation'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { getEnv } from '@/lib/env'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import {
   ConfluenceFileSelector,
@@ -110,7 +109,7 @@ export function FileSelectorInput({
   const value = isPreview ? previewValue : storeValue
 
   // For Google Drive
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '' 
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || ''
   console.log('clientId - ', clientId)
   console.log('apiKey - ', apiKey)
