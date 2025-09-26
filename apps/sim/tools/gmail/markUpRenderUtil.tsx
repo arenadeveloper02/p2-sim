@@ -1,5 +1,5 @@
 import { encode } from 'entities'
-import { marked, type Slugger } from 'marked'
+import { marked, type Token, type Tokens } from 'marked'
 import sanitizeHtml from 'sanitize-html'
 
 // Utility to escape HTML content
@@ -58,6 +58,17 @@ export function extractContentFromAgentResponse(response: string): string {
   return response
 }
 
+// Helper function to safely extract text from a token
+function getTokenText(token: Token): string {
+  if (token.type === 'br') {
+    return '' // Ignore <br> tokens (or return '\n' for newline if desired)
+  }
+  if ('text' in token) {
+    return (token as Tokens.Text | Tokens.Strong | Tokens.Em | Tokens.Link | Tokens.Codespan).text
+  }
+  return token.raw || ''
+}
+
 // Function to render content to HTML string (server or client)
 export function renderAgentResponseToString(content: string): string {
   // Extract content if wrapped in Markdown code fences
@@ -75,9 +86,13 @@ export function renderAgentResponseToString(content: string): string {
 
   // Configure marked with custom renderer for styling
   const renderer = new marked.Renderer()
-  renderer.paragraph = (text) =>
-    `<p style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.5; margin: 0 0 16px 0;">${text}</p>`
-  renderer.heading = (text: string, level: number, raw: string, slugger: Slugger) => {
+  renderer.paragraph = ({ tokens }: Tokens.Paragraph): string => {
+    const text = tokens.map(getTokenText).join('')
+    return `<p style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; line-height: 1.5; margin: 0 0 16px 0;">${text}</p>`
+  }
+  renderer.heading = ({ tokens, depth }: Tokens.Heading): string => {
+    const level = depth
+    const text = tokens.map(getTokenText).join('')
     const sizes = { 1: '24px', 2: '20px', 3: '18px', 4: '16px' }
     return `<h${level} style="font-family: Arial, sans-serif; font-size: ${
       sizes[level as keyof typeof sizes] || '16px'
@@ -85,40 +100,59 @@ export function renderAgentResponseToString(content: string): string {
       level === 1 ? '16px' : level === 2 ? '12px' : '10px'
     } 0;">${text}</h${level}>`
   }
-  renderer.list = (body: string, ordered: boolean, start: number | '') =>
-    ordered
+  renderer.list = ({ items, ordered, start }: Tokens.List): string => {
+    const body = items.map((item) => renderer.listitem(item)).join('')
+    return ordered
       ? `<ol style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: decimal; padding-left: 20px; margin: 0 0 16px 0;">${body}</ol>`
       : `<ul style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; list-style-type: disc; padding-left: 20px; margin: 0 0 16px 0;">${body}</ul>`
-  renderer.listitem = (text: string) =>
-    `<li style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; margin-bottom: 8px;">${text}</li>`
-  renderer.code = (code: string) =>
-    `<pre style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; color: #333333; margin: 0 0 16px 0;"><code style="font-family: monospace; font-size: 14px; color: #333333;">${escapeHtml(
-      code
-    )}</code></pre>`
-  renderer.codespan = (code: string) =>
+  }
+  renderer.listitem = ({ tokens }: Tokens.ListItem): string => {
+    const content = tokens.map(getTokenText).join('')
+    return `<li style="font-family: Arial, sans-serif; font-size: 16px; color: #333333; margin-bottom: 8px;">${content}</li>`
+  }
+  renderer.code = ({ text, lang, escaped }: Tokens.Code): string =>
+    `<pre style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; color: #333333; margin: 0 0 16px 0;"><code style="font-family: monospace; font-size: 14px; color: #333333;">${
+      escaped ? text : escapeHtml(text)
+    }</code></pre>`
+  renderer.codespan = ({ text }: Tokens.Codespan): string =>
     `<code style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; color: #333333;">${escapeHtml(
-      code
+      text
     )}</code>`
-  renderer.strong = (text: string) =>
-    `<strong style="font-weight: 600; color: #111111;">${text}</strong>`
-  renderer.em = (text: string) => `<em style="font-style: italic; color: #333333;">${text}</em>`
-  renderer.blockquote = (quote: string) =>
-    `<blockquote style="font-family: Arial, sans-serif; font-size: 16px; color: #555555; border-left: 4px solid #cccccc; padding-left: 12px; margin: 0 0 16px 0; font-style: italic;">${quote}</blockquote>`
-  renderer.hr = () => `<hr style="border: 1px solid #e5e7eb; margin: 16px 0;" />`
-  renderer.link = (href: string, title: string | null | undefined, text: string) =>
-    `<a href="${href || '#'}" style="color: #1a73e8; text-decoration: underline; word-break: break-all;" target="_blank" rel="noopener noreferrer">${text}</a>`
-  renderer.table = (header: string, body: string) =>
-    `<table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; margin: 16px 0; font-family: Arial, sans-serif; font-size: 14px;"><thead style="background-color: #f4f4f4; text-align: left;">${header}</thead><tbody style="border-top: 1px solid #e5e7eb;">${body}</tbody></table>`
-  renderer.tablerow = (content: string) =>
-    `<tr style="border-bottom: 1px solid #e5e7eb;">${content}</tr>`
-  renderer.tablecell = (
-    content: string,
-    flags: { header: boolean; align: 'center' | 'left' | 'right' | null }
-  ) =>
-    flags.header
-      ? `<th style="border: 1px solid #e5e7eb; padding: 8px; font-weight: 500; color: #333333;">${content}</th>`
-      : `<td style="border: 1px solid #e5e7eb; padding: 8px; color: #333333; word-break: break-word;">${content}</td>`
-  renderer.image = (href: string, title: string | null, text: string) =>
+  renderer.strong = ({ tokens }: Tokens.Strong): string => {
+    const text = tokens.map(getTokenText).join('')
+    return `<strong style="font-weight: 600; color: #111111;">${text}</strong>`
+  }
+  renderer.em = ({ tokens }: Tokens.Em): string => {
+    const text = tokens.map(getTokenText).join('')
+    return `<em style="font-style: italic; color: #333333;">${text}</em>`
+  }
+  renderer.blockquote = ({ tokens }: Tokens.Blockquote): string => {
+    const quote = tokens.map(getTokenText).join('')
+    return `<blockquote style="font-family: Arial, sans-serif; font-size: 16px; color: #555555; border-left: 4px solid #cccccc; padding-left: 12px; margin: 0 0 16px 0; font-style: italic;">${quote}</blockquote>`
+  }
+  renderer.hr = (): string => `<hr style="border: 1px solid #e5e7eb; margin: 16px 0;" />`
+  renderer.link = ({ href, title, tokens }: Tokens.Link): string => {
+    const text = tokens.map(getTokenText).join('')
+    return `<a href="${href || '#'}" style="color: #1a73e8; text-decoration: underline; word-break: break-all;" target="_blank" rel="noopener noreferrer">${text}</a>`
+  }
+  renderer.table = ({ header, rows }: Tokens.Table): string => {
+    const headerContent = header.map((cell) => renderer.tablecell(cell)).join('')
+    const bodyContent = rows
+      .map((row) =>
+        renderer.tablerow({ text: row.map((cell) => renderer.tablecell(cell)).join('') })
+      )
+      .join('')
+    return `<table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; margin: 16px 0; font-family: Arial, sans-serif; font-size: 14px;"><thead style="background-color: #f4f4f4; text-align: left;">${headerContent}</thead><tbody style="border-top: 1px solid #e5e7eb;">${bodyContent}</tbody></table>`
+  }
+  renderer.tablerow = ({ text }: Tokens.TableRow<string>): string =>
+    `<tr style="border-bottom: 1px solid #e5e7eb;">${text}</tr>`
+  renderer.tablecell = ({ text, header, align }: Tokens.TableCell): string => {
+    const style = `border: 1px solid #e5e7eb; padding: 8px; color: #333333; ${
+      align ? `text-align: ${align};` : ''
+    } ${header ? 'font-weight: 500;' : 'word-break: break-word;'}`
+    return header ? `<th style="${style}">${text}</th>` : `<td style="${style}">${text}</td>`
+  }
+  renderer.image = ({ href, title, text }: Tokens.Image): string =>
     `<img src="${href || ''}" alt="${text || 'Image'}" style="max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px;" />`
 
   marked.use({ renderer, gfm: true })
