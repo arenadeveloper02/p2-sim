@@ -856,6 +856,7 @@ export function getHostedModels(): string[] {
     ...getProviderModels('openai'),
     ...getProviderModels('anthropic'),
     ...getProviderModels('google'),
+    ...getProviderModels('xai'),
   ]
 }
 

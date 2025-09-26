@@ -6,6 +6,11 @@ import { getMainCSPPolicy, getWorkflowExecutionCSPPolicy } from './lib/security/
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Configure asset prefix to use relative paths for static assets
+  assetPrefix: '',
+  // Use relative paths for static assets
+  trailingSlash: false,
+  basePath: '',
   images: {
     remotePatterns: [
       {
