@@ -1,7 +1,7 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, RefreshCw, X, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Notice } from '@/components/ui/notice'
@@ -26,7 +26,6 @@ import { useConsoleStore } from '@/stores/panel/console/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { extractInputFields } from '../../../../lib/workflow-execution-utils'
-import { WorkflowInputForm } from './components/workflow-input-form'
 import { WorkflowInputOverlay } from './components/workflow-input-overlay'
 
 const logger = createLogger('ChatPanel')
@@ -116,10 +115,10 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     if (activeWorkflowId) {
       // If you have a function to clear messages in your chat store, call it here
       // For example: clearMessages(activeWorkflowId)
-      
+
       // Reset initial inputs flag
       setInitialInputsSubmitted(false)
-      
+
       // Show input form if we have fields to collect
       if (inputFields.length > 0) {
         setShowInputForm(true)
@@ -613,7 +612,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Mark the initial form as submitted
       setInitialInputsSubmitted(true)
-      
+
       // Explicitly hide the form
       setShowInputForm(false)
 
@@ -671,11 +670,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
                           if (log) {
                             let outputValue: any = log.output
-                            
+
                             if (path) {
                               // Parse JSON content safely
                               outputValue = parseOutputContentSafely(outputValue)
-                              
+
                               const pathParts = path.split('.')
                               for (const part of pathParts) {
                                 if (
@@ -690,7 +689,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                                 }
                               }
                             }
-                            
+
                             if (outputValue !== undefined) {
                               addMessage({
                                 content:
@@ -825,7 +824,9 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   )
 
   return (
-    <div className='flex h-full flex-col relative'> {/* Add 'relative' here */}
+    <div className='relative flex h-full flex-col'>
+      {' '}
+      {/* Add 'relative' here */}
       {/* Input Form Overlay - contained within the chat component */}
       <WorkflowInputOverlay
         fields={inputFields}
@@ -833,13 +834,12 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         onClose={handleHideInputForm}
         isVisible={showInputForm}
       />
-
       {/* Always render the chat UI */}
       <>
         {/* Header with actions */}
         <div className={`flex-none py-2 ${isFullScreen ? 'w-[60%]' : ''}`}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1">
+          <div className='flex items-center justify-between gap-2'>
+            <div className='flex-1'>
               <OutputSelect
                 workflowId={activeWorkflowId}
                 selectedOutputs={selectedOutputs}
@@ -850,21 +850,21 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             </div>
 
             {/* Action buttons */}
-            <div className="flex items-center space-x-2">
+            <div className='flex items-center space-x-2'>
               {/* Re-run workflow button - only show if inputs have been submitted at least once */}
-              { inputFields && inputFields.length > 0 && (
+              {inputFields && inputFields.length > 0 && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        variant='ghost'
+                        size='icon'
+                        className='h-8 w-8'
                         onClick={handleShowInputForm}
                         disabled={isExecuting}
                       >
-                        <RefreshCw className="h-4 w-4" />
-                        <span className="sr-only">Re-run with new inputs</span>
+                        <RefreshCw className='h-4 w-4' />
+                        <span className='sr-only'>Re-run with new inputs</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>

@@ -84,21 +84,21 @@ export function getWorkflowExecutionContext(): WorkflowExecutionContext {
 /** Extract input fields from the starter block of the current workflow
  */
 export function extractInputFields(): any[] {
-  const obj = getWorkflowExecutionContext();
-  const blocks = obj.currentWorkflow?.blocks;
-  if (!blocks) return [];
+  const obj = getWorkflowExecutionContext()
+  const blocks = obj.currentWorkflow?.blocks
+  if (!blocks) return []
 
   for (const blockId in blocks) {
-    const block = blocks[blockId];
-    if (block.type === "starter") {
-      const inputFormat = block.subBlocks?.inputFormat?.value;
+    const block = blocks[blockId]
+    if (block.type === 'starter') {
+      const inputFormat = block.subBlocks?.inputFormat?.value
       if (Array.isArray(inputFormat)) {
-        return inputFormat;
+        return inputFormat
       }
     }
   }
 
-  return [];
+  return []
 }
 
 /**
@@ -110,67 +110,67 @@ export function extractInputFields(): any[] {
 export async function extractInputFieldsByWorkflowId(workflowId: string): Promise<any[]> {
   try {
     // First, try to get workflow from the registry (for active workflow)
-    const { workflows } = useWorkflowRegistry.getState();
-    const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId;
-    
+    const { workflows } = useWorkflowRegistry.getState()
+    const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+
     // If this is the active workflow, use the current workflow state
     if (workflowId === activeWorkflowId) {
-      const workflowState = useWorkflowStore.getState().getWorkflowState();
-      const blocks = workflowState?.blocks;
-      
+      const workflowState = useWorkflowStore.getState().getWorkflowState()
+      const blocks = workflowState?.blocks
+
       if (blocks) {
         for (const blockId in blocks) {
-          const block = blocks[blockId];
-          if (block.type === "starter") {
-            const inputFormat = block.subBlocks?.inputFormat?.value;
+          const block = blocks[blockId]
+          if (block.type === 'starter') {
+            const inputFormat = block.subBlocks?.inputFormat?.value
             if (Array.isArray(inputFormat)) {
-              return inputFormat;
+              return inputFormat
             }
           }
         }
       }
     }
-    
+
     // If not the active workflow or not found in registry, fetch from database
     if (!workflows[workflowId]) {
-      logger.warn(`Workflow ${workflowId} not found in registry, fetching from database`);
+      logger.warn(`Workflow ${workflowId} not found in registry, fetching from database`)
     }
-    
+
     // Fetch workflow data from database
     const response = await fetch(`/api/workflows/${workflowId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-    });
-    
+    })
+
     if (!response.ok) {
-      throw new Error(`Failed to fetch workflow: ${response.statusText}`);
+      throw new Error(`Failed to fetch workflow: ${response.statusText}`)
     }
-    
-    const result = await response.json();
-    const blocks = result?.data?.state?.blocks;
-    
+
+    const result = await response.json()
+    const blocks = result?.data?.state?.blocks
+
     if (!blocks) {
-      logger.warn(`No blocks found for workflow ${workflowId}`);
-      return [];
+      logger.warn(`No blocks found for workflow ${workflowId}`)
+      return []
     }
-    
+
     // Find the starter block and extract input fields
     for (const blockId in blocks) {
-      const block = blocks[blockId];
-      if (block.type === "starter") {
-        const inputFormat = block.subBlocks?.inputFormat?.value;
+      const block = blocks[blockId]
+      if (block.type === 'starter') {
+        const inputFormat = block.subBlocks?.inputFormat?.value
         if (Array.isArray(inputFormat)) {
-          return inputFormat;
+          return inputFormat
         }
       }
     }
-    
-    return [];
+
+    return []
   } catch (error) {
-    logger.error(`Error extracting input fields for workflow ${workflowId}:`, error);
-    return [];
+    logger.error(`Error extracting input fields for workflow ${workflowId}:`, error)
+    return []
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/utils'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -17,7 +18,6 @@ import {
   VoiceInterface,
   WorkflowInputForm,
 } from '@/app/chat/components'
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { extractInputFieldsByWorkflowId } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
 
@@ -115,7 +115,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | null>(null)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
-  
+
   // Workflow input form state
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
@@ -257,9 +257,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setIsLoadingInputFields(true)
       // The subdomain is actually the workflow ID in this case
       const fields = await extractInputFieldsByWorkflowId(subdomain)
-      console.log('<><><>Input fields', fields);
+      console.log('<><><>Input fields', fields)
       setInputFields(fields)
-      
+
       // If there are input fields, show the form
       if (fields && fields.length > 0) {
         setShowInputForm(true)
@@ -275,7 +275,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setIsLoadingInputFields(false)
     }
   }
-
 
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
@@ -304,18 +303,28 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   }
 
   // Handle sending a message
-  const handleSendMessage = async (messageParam?: string, isVoiceInput = false, isFormSubmission = false) => {
+  const handleSendMessage = async (
+    messageParam?: string,
+    isVoiceInput = false,
+    isFormSubmission = false
+  ) => {
     const messageToSend = messageParam ?? inputValue
-    
+
     // Allow empty messages only if it's a form submission
     if (!messageToSend.trim() && !isFormSubmission && isLoading) return
-    
-    // For form submissions, use a default message if no message is provided
-    const finalMessage = isFormSubmission && !messageToSend.trim() 
-      ? "Starting workflow with provided inputs..." 
-      : messageToSend
 
-    logger.info('Sending message:', { messageToSend: finalMessage, isVoiceInput, conversationId, isFormSubmission })
+    // For form submissions, use a default message if no message is provided
+    const finalMessage =
+      isFormSubmission && !messageToSend.trim()
+        ? 'Starting workflow with provided inputs...'
+        : messageToSend
+
+    logger.info('Sending message:', {
+      messageToSend: finalMessage,
+      isVoiceInput,
+      conversationId,
+      isFormSubmission,
+    })
 
     // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
@@ -422,35 +431,38 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   }
 
   // Handle workflow input form submission
-  const handleWorkflowInputSubmit = useCallback(async (inputs: Record<string, any>) => {
-    logger.info('Workflow inputs submitted:', inputs)
-    // Stringify the form inputs to use as the main workflow input
-    const stringifiedInputs = Object.entries(inputs)
-      .map(([key, value]) => {
-        const formattedKey = key
-          .replace(/_/g, ' ')
-          .replace(/\b\w/g, (char, index) => 
-            index === 0 ? char.toUpperCase() : char.toLowerCase()
-          )
-        return `${formattedKey}: ${value}`
-      })
-      .join('\n')
-    setWorkflowInputs(inputs)
-    setShowInputForm(false)
-    setInitialInputsSubmitted(true)
-    
-    // Add a message indicating the workflow is starting
-    const workflowStartMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      content: "Starting workflow with the provided inputs...",
-      type: 'assistant',
-      timestamp: new Date(),
-    }
-    setMessages((prev) => [...prev, workflowStartMessage])
-    
-    // Trigger the workflow execution with stringified inputs as the main input
-    await handleSendMessage(stringifiedInputs, false, true) // Use stringified inputs as the main message
-  }, [handleSendMessage])
+  const handleWorkflowInputSubmit = useCallback(
+    async (inputs: Record<string, any>) => {
+      logger.info('Workflow inputs submitted:', inputs)
+      // Stringify the form inputs to use as the main workflow input
+      const stringifiedInputs = Object.entries(inputs)
+        .map(([key, value]) => {
+          const formattedKey = key
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char, index) =>
+              index === 0 ? char.toUpperCase() : char.toLowerCase()
+            )
+          return `${formattedKey}: ${value}`
+        })
+        .join('\n')
+      setWorkflowInputs(inputs)
+      setShowInputForm(false)
+      setInitialInputsSubmitted(true)
+
+      // Add a message indicating the workflow is starting
+      const workflowStartMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: 'Starting workflow with the provided inputs...',
+        type: 'assistant',
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, workflowStartMessage])
+
+      // Trigger the workflow execution with stringified inputs as the main input
+      await handleSendMessage(stringifiedInputs, false, true) // Use stringified inputs as the main message
+    },
+    [handleSendMessage]
+  )
 
   // Stop audio when component unmounts or when streaming is stopped
   useEffect(() => {
@@ -510,11 +522,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         <ChatHeader chatConfig={chatConfig} starCount={starCount} />
 
         {/* Input form container */}
-        <div className='flex-1 flex items-center justify-center p-4'>
-          <div className='w-full max-w-2xl mx-auto'>
-            <div className='bg-card border rounded-lg p-6 shadow-sm'>
+        <div className='flex flex-1 items-center justify-center p-4'>
+          <div className='mx-auto w-full max-w-2xl'>
+            <div className='rounded-lg border bg-card p-6 shadow-sm'>
               <div className='mb-6'>
-                <h2 className='text-2xl font-semibold mb-2'>Workflow Inputs</h2>
+                <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
                 <p className='text-muted-foreground'>
                   Please provide the required inputs to start the workflow chat.
                 </p>

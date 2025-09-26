@@ -450,8 +450,7 @@ export async function executeWorkflowForChat(
         },
         {} as Record<string, any>
       )
-      
-      
+
       return acc
     },
     {} as Record<string, Record<string, any>>

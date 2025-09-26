@@ -782,7 +782,7 @@ export class Executor {
           // Check if this is a chat workflow by looking at the startWorkflow value
           const startWorkflowValue = blockParams?.startWorkflow
           const isChatWorkflow = startWorkflowValue === 'chat'
-          
+
           // Create structured input based on input format
           const structuredInput: Record<string, any> = {}
 
@@ -794,15 +794,15 @@ export class Executor {
               // This handles both input formats: { input: { field: value } } and { field: value }
               const inputFieldValue = this.workflowInput?.input?.[field.name]
               const directFieldValue = this.workflowInput?.[field.name]
-              
+
               console.log(`[Executor] Processing field ${field.name}:`, {
                 inputFieldValue,
                 directFieldValue,
                 workflowInput: this.workflowInput,
                 fieldType: field.type,
-                isChatWorkflow
+                isChatWorkflow,
               })
-              
+
               let inputValue = inputFieldValue !== undefined ? inputFieldValue : directFieldValue
 
               if (inputValue === undefined || inputValue === null) {

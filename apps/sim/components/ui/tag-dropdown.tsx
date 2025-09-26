@@ -386,33 +386,36 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
           // Helper function to process inputFormatValue and generate blockTags
           const processInputFormat = (appendExtraTags: boolean) => {
-            const inputFormatValue = getSubBlockValue(activeSourceBlockId, 'inputFormat');
-      
-            if (inputFormatValue && Array.isArray(inputFormatValue) && inputFormatValue.length > 0) {
+            const inputFormatValue = getSubBlockValue(activeSourceBlockId, 'inputFormat')
+
+            if (
+              inputFormatValue &&
+              Array.isArray(inputFormatValue) &&
+              inputFormatValue.length > 0
+            ) {
               blockTags = inputFormatValue
                 .filter((field: { name?: string }) => field.name && field.name.trim() !== '')
-                .map((field: { name: string }) => `${normalizedBlockName}.${field.name}`);
+                .map((field: { name: string }) => `${normalizedBlockName}.${field.name}`)
             } else {
-              blockTags = [normalizedBlockName];
+              blockTags = [normalizedBlockName]
             }
-      
+
             if (appendExtraTags) {
               blockTags.push(
                 `${normalizedBlockName}.input`,
                 `${normalizedBlockName}.conversationId`,
                 `${normalizedBlockName}.files`
-              );
+              )
             }
-          };
-      
+          }
+
           if (startWorkflowValue === 'chat') {
             // For chat mode, append extra tags
-            processInputFormat(true);
+            processInputFormat(true)
           } else {
             // For other modes, do not append extra tags
-            processInputFormat(false);
+            processInputFormat(false)
           }
-          
         } else {
           blockTags = [normalizedBlockName]
         }
@@ -660,37 +663,40 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       } else if (!blockConfig.outputs || Object.keys(blockConfig.outputs).length === 0) {
         if (accessibleBlock.type === 'starter') {
           const startWorkflowValue = getSubBlockValue(accessibleBlockId, 'startWorkflow')
-          
+
           //console.log('<><><><><><><><><> Starter block value :', startWorkflowValue);
           // Helper function to process inputFormatValue and generate blockTags
           const processInputFormat = (appendExtraTags: boolean) => {
-            const inputFormatValue = getSubBlockValue(accessibleBlockId, 'inputFormat');
-      
-            if (inputFormatValue && Array.isArray(inputFormatValue) && inputFormatValue.length > 0) {
+            const inputFormatValue = getSubBlockValue(accessibleBlockId, 'inputFormat')
+
+            if (
+              inputFormatValue &&
+              Array.isArray(inputFormatValue) &&
+              inputFormatValue.length > 0
+            ) {
               blockTags = inputFormatValue
                 .filter((field: { name?: string }) => field.name && field.name.trim() !== '')
-                .map((field: { name: string }) => `${normalizedBlockName}.${field.name}`);
+                .map((field: { name: string }) => `${normalizedBlockName}.${field.name}`)
             } else {
-              blockTags = [normalizedBlockName];
+              blockTags = [normalizedBlockName]
             }
-      
+
             if (appendExtraTags) {
               blockTags.push(
                 `${normalizedBlockName}.input`,
                 `${normalizedBlockName}.conversationId`,
                 `${normalizedBlockName}.files`
-              );
+              )
             }
-          };
-      
+          }
+
           if (startWorkflowValue === 'chat') {
             // For chat mode, append extra tags
-            processInputFormat(true);
+            processInputFormat(true)
           } else {
             // For other modes, do not append extra tags
-            processInputFormat(false);
+            processInputFormat(false)
           }
-          
         } else {
           blockTags = [normalizedBlockName]
         }

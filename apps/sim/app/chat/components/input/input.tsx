@@ -144,11 +144,7 @@ export const ChatInput: React.FC<{
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div>
-                      <VoiceInput
-                        onVoiceStart={handleVoiceStart}
-                        disabled={isStreaming}
-                        minimal
-                      />
+                      <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} minimal />
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side='top'>

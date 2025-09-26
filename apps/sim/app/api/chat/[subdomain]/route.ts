@@ -107,7 +107,12 @@ export async function POST(
 
     try {
       // Execute workflow with structured input (input + conversationId for context)
-      const result = await executeWorkflowForChat(deployment.id, input, conversationId, workflowInputs)
+      const result = await executeWorkflowForChat(
+        deployment.id,
+        input,
+        conversationId,
+        workflowInputs
+      )
 
       // The result is always a ReadableStream that we can pipe to the client
       const streamResponse = new NextResponse(result, {
