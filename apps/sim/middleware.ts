@@ -18,18 +18,24 @@ const SUSPICIOUS_UA_PATTERNS = [
 const BASE_DOMAIN = getBaseDomain()
 
 export async function middleware(request: NextRequest) {
-  const email = request.cookies.get('email')?.value
-  console.log(request.cookies)
-  // Check for active session
-  const sessionCookie = getSessionCookie(request)
-  const hasActiveSession = !!sessionCookie
+  try {
+    // Prevent infinite redirects by checking if we're already in an error state
+    const url = request.nextUrl
+    if (url.pathname.includes('/error') || url.pathname.includes('/500')) {
+      return NextResponse.next()
+    }
 
-  const url = request.nextUrl
-  const hostname = request.headers.get('host') || ''
-  const isLocal = hostname === 'localhost:3000'
-  logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
-  logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
-  logger.info(`url: ${url}`)
+    const email = request.cookies.get('email')?.value
+    console.log(request.cookies)
+    // Check for active session
+    const sessionCookie = getSessionCookie(request)
+    const hasActiveSession = !!sessionCookie
+
+    const hostname = request.headers.get('host') || ''
+    const isLocal = hostname === 'localhost:3000'
+    logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
+    logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
+    logger.info(`url: ${url}`)
 
   if (url.pathname.startsWith('/api/')) {
     return NextResponse.next()
@@ -240,6 +246,36 @@ export async function middleware(request: NextRequest) {
   }
 
   return response
+  } catch (error) {
+    logger.error('Middleware error:', error)
+    
+    // For API routes, return JSON error
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Internal Server Error', message: 'Middleware processing failed' },
+        { status: 500 }
+      )
+    }
+    
+    // For other routes, return HTML error page
+    return new NextResponse(
+      `<!DOCTYPE html>
+      <html>
+        <head><title>Error</title></head>
+        <body>
+          <h1>Something went wrong</h1>
+          <p>Please try refreshing the page or contact support if the problem persists.</p>
+          <script>setTimeout(() => window.location.href = '/', 3000)</script>
+        </body>
+      </html>`,
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'text/html',
+        }
+      }
+    )
+  }
 }
 
 // Update matcher to include invitation routes and root path

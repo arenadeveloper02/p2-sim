@@ -61,8 +61,13 @@ COPY --from=builder /app/apps/sim/public ./apps/sim/public
 COPY --from=builder /app/apps/sim/.next/standalone ./
 COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
 
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
 EXPOSE 3000
 ENV PORT=3000 \
-    HOSTNAME="0.0.0.0"
+    HOSTNAME="0.0.0.0" \
+    NODE_ENV=production
 
 CMD ["bun", "apps/sim/server.js"]
