@@ -218,6 +218,7 @@ export function hasWorkflowChanged(
     return true
   }
 
+
   // 3. Build normalized representations of blocks for comparison
   const normalizedCurrentBlocks: Record<string, any> = {}
   const normalizedDeployedBlocks: Record<string, any> = {}
@@ -267,8 +268,19 @@ export function hasWorkflowChanged(
       }
 
       // Get values with special handling for null/undefined
-      const currentValue = currentSubBlocks[subBlockId].value ?? null
-      const deployedValue = deployedSubBlocks[subBlockId].value ?? null
+      let currentValue = currentSubBlocks[subBlockId].value ?? null
+      let deployedValue = deployedSubBlocks[subBlockId].value ?? null
+
+      // Normalize empty arrays to null for tools field (empty tools array is equivalent to null)
+      // This prevents false positives when comparing [] vs null for the tools field
+      if (subBlockId === 'tools') {
+        if (Array.isArray(currentValue) && currentValue.length === 0) {
+          currentValue = null
+        }
+        if (Array.isArray(deployedValue) && deployedValue.length === 0) {
+          deployedValue = null
+        }
+      }
 
       // For string values, compare directly to catch even small text changes
       if (typeof currentValue === 'string' && typeof deployedValue === 'string') {
@@ -364,6 +376,7 @@ export function hasWorkflowChanged(
     }
   }
 
+  // If we get here, no meaningful changes were detected
   return false
 }
 
