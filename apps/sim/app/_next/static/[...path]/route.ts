@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { serveStaticAsset } from '@/lib/static-assets'
 
 export async function GET(
@@ -7,6 +7,6 @@ export async function GET(
 ) {
   const { path } = await params
   const assetPath = path.join('/')
-  
+
   return serveStaticAsset(request, assetPath)
 }
