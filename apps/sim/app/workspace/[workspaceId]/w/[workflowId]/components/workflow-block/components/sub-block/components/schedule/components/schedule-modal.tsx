@@ -534,6 +534,7 @@ export function ScheduleModal({
                     <SelectItem value='America/Los_Angeles'>US Pacific (UTC-7)</SelectItem>
                     <SelectItem value='Europe/London'>London (UTC+1)</SelectItem>
                     <SelectItem value='Europe/Paris'>Paris (UTC+2)</SelectItem>
+                    <SelectItem value='Asia/Kolkata'>IST (UTC+5:30)</SelectItem>
                     <SelectItem value='Asia/Singapore'>Singapore (UTC+8)</SelectItem>
                     <SelectItem value='Asia/Tokyo'>Tokyo (UTC+9)</SelectItem>
                     <SelectItem value='Australia/Sydney'>Sydney (UTC+10)</SelectItem>
