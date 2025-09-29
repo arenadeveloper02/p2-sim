@@ -275,6 +275,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const subBlockValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
+  const starterBlock = Object.values(currentBlocks).find(block => block.type === 'starter')
+  const initialTab = starterBlock?.subBlocks?.startWorkflow?.value === 'manual' ? 'api' : 'chat'
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
@@ -746,6 +748,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       refetchDeployedState={fetchDeployedState}
       userPermissions={userPermissions}
       workspaceId={workspaceId}
+      initialTab={initialTab}
     />
   )
 
