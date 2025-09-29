@@ -30,11 +30,11 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000']
-      interval: 90s
-      timeout: 5s
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   realtime:
     image: ghcr.io/simstudioai/realtime:latest

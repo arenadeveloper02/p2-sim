@@ -61,6 +61,9 @@ COPY --from=builder /app/apps/sim/public ./apps/sim/public
 COPY --from=builder /app/apps/sim/.next/standalone ./
 COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
 
+# Ensure static assets are properly accessible
+RUN chmod -R 755 ./apps/sim/.next/static
+
 EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"

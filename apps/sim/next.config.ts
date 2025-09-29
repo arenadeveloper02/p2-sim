@@ -11,6 +11,13 @@ const nextConfig: NextConfig = {
   // Use relative paths for static assets
   trailingSlash: false,
   basePath: '',
+  // Optimize for multi-instance deployment
+  experimental: {
+    optimizeCss: true,
+    turbopackSourceMaps: false,
+    // Ensure static assets are properly handled
+    staticGenerationRetryCount: 3,
+  },
   images: {
     remotePatterns: [
       {
@@ -66,10 +73,6 @@ const nextConfig: NextConfig = {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
   serverExternalPackages: ['pdf-parse'],
-  experimental: {
-    optimizeCss: true,
-    turbopackSourceMaps: false,
-  },
   ...(isDev && {
     allowedDevOrigins: [
       ...(env.NEXT_PUBLIC_APP_URL
@@ -161,6 +164,33 @@ const nextConfig: NextConfig = {
           {
             key: 'Cross-Origin-Opener-Policy',
             value: 'same-origin-allow-popups',
+          },
+        ],
+      },
+      // Static assets caching and MIME type headers
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+          {
+            key: 'Content-Type',
+            value: 'application/javascript; charset=utf-8',
+          },
+        ],
+      },
+      {
+        source: '/_next/static/chunks/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+          {
+            key: 'Content-Type',
+            value: 'application/javascript; charset=utf-8',
           },
         ],
       },
