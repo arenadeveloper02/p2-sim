@@ -218,7 +218,6 @@ export function hasWorkflowChanged(
     return true
   }
 
-
   // 3. Build normalized representations of blocks for comparison
   const normalizedCurrentBlocks: Record<string, any> = {}
   const normalizedDeployedBlocks: Record<string, any> = {}
