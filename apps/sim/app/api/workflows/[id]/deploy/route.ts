@@ -115,20 +115,66 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const { loadWorkflowFromNormalizedTables } = await import('@/lib/workflows/db-helpers')
       const normalizedData = await loadWorkflowFromNormalizedTables(id)
 
-      if (normalizedData) {
-        // Convert normalized data to WorkflowState format for comparison
+      if (!normalizedData) {
+        // If no normalized data found, assume changes exist
+        needsRedeployment = true
+      } else {
+        // Normalize current state from normalized tables
+        const normalizedCurrentBlocks: Record<string, any> = {}
+        if (normalizedData.blocks) {
+          for (const [blockId, block] of Object.entries(normalizedData.blocks)) {
+            // Remove fields that don't exist in deployed state
+            const { isFromNormalizedTables, ...blockWithoutExtraFields } = block as any
+            normalizedCurrentBlocks[blockId] = {
+              ...blockWithoutExtraFields,
+              // Normalize triggerMode: null and false should be treated as the same
+              triggerMode: block.triggerMode === null ? false : block.triggerMode,
+            }
+          }
+        }
+
         const currentState = {
-          blocks: normalizedData.blocks,
-          edges: normalizedData.edges,
-          loops: normalizedData.loops,
-          parallels: normalizedData.parallels,
+          blocks: normalizedCurrentBlocks,
+          edges: normalizedData.edges || [],
+          loops: normalizedData.loops || {},
+          parallels: normalizedData.parallels || {},
+        }
+
+        // Normalize deployed state to match current state structure
+        const deployedState = workflowData.deployedState as any
+
+        // Normalize edges to match current state structure (remove type and data fields)
+        const normalizedDeployedEdges = (deployedState.edges || []).map((edge: any) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          // Remove type and data fields that are added during deployment
+        }))
+
+        // Normalize deployed blocks to handle triggerMode differences
+        const normalizedDeployedBlocks: Record<string, any> = {}
+        if (deployedState.blocks) {
+          for (const [blockId, block] of Object.entries(deployedState.blocks)) {
+            const blockData = block as any
+            normalizedDeployedBlocks[blockId] = {
+              ...blockData,
+              // Normalize triggerMode: null and false should be treated as the same
+              triggerMode: blockData.triggerMode === null ? false : blockData.triggerMode,
+            }
+          }
+        }
+
+        const normalizedDeployedState = {
+          blocks: normalizedDeployedBlocks,
+          edges: normalizedDeployedEdges,
+          loops: deployedState.loops || {},
+          parallels: deployedState.parallels || {},
         }
 
         const { hasWorkflowChanged } = await import('@/lib/workflows/utils')
-        needsRedeployment = hasWorkflowChanged(
-          currentState as any,
-          workflowData.deployedState as any
-        )
+        needsRedeployment = hasWorkflowChanged(currentState as any, normalizedDeployedState as any)
       }
     }
 
