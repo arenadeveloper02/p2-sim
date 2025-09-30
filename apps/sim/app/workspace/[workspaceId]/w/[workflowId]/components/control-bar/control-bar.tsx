@@ -1299,38 +1299,40 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
-  const renderRunAgentWorkflow = () => {
-    const [chatDeployment, setChatDeployment] = useState<{
-      isDeployed: boolean
-      subdomain?: string
-    } | null>(null)
-    const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
+  // Chat deployment state - moved to component level
+  const [chatDeployment, setChatDeployment] = useState<{
+    isDeployed: boolean
+    subdomain?: string
+  } | null>(null)
+  const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
 
-    // Check if workflow has chat deployment
-    useEffect(() => {
-      const checkChatDeployment = async () => {
-        if (!activeWorkflowId) return
+  // Check if workflow has chat deployment
+  useEffect(() => {
+    const checkChatDeployment = async () => {
+      if (!activeWorkflowId) return
 
-        setIsLoadingChatStatus(true)
-        try {
-          const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
-          if (response.ok) {
-            const data = await response.json()
-            setChatDeployment(data.data)
-          } else {
-            setChatDeployment({ isDeployed: false })
-          }
-        } catch (error) {
-          logger.error('Error checking chat deployment status:', error)
+      setIsLoadingChatStatus(true)
+      try {
+        const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
+        if (response.ok) {
+          const data = await response.json()
+          data.subdomain = activeWorkflowId
+          setChatDeployment(data)
+        } else {
           setChatDeployment({ isDeployed: false })
-        } finally {
-          setIsLoadingChatStatus(false)
         }
+      } catch (error) {
+        logger.error('Error checking chat deployment status:', error)
+        setChatDeployment({ isDeployed: false })
+      } finally {
+        setIsLoadingChatStatus(false)
       }
+    }
 
-      checkChatDeployment()
-    }, [activeWorkflowId])
+    checkChatDeployment()
+  }, [activeWorkflowId])
 
+  const renderRunAgentWorkflow = () => {
     // Don't render if no chat deployment or still loading
     if (!chatDeployment?.isDeployed || !chatDeployment?.subdomain || isLoadingChatStatus) {
       return null
