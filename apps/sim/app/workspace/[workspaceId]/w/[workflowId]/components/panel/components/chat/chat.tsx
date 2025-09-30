@@ -25,8 +25,8 @@ import { useChatStore } from '@/stores/panel/chat/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { extractInputFields } from '../../../../lib/workflow-execution-utils'
 import { WorkflowInputOverlay } from './components/workflow-input-overlay'
 
@@ -97,11 +97,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     useCallback(
       (state) => {
         if (!activeWorkflowId) return null
-        
+
         // Get all starter blocks and their inputFormat values
         const workflowValues = state.workflowValues[activeWorkflowId]
         if (!workflowValues) return null
-        
+
         // Find starter blocks and get their inputFormat values
         for (const [blockId, blockValues] of Object.entries(workflowValues)) {
           const inputFormat = blockValues.inputFormat
@@ -109,12 +109,12 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             logger.info('Detected input format change in subblock store:', {
               blockId,
               inputFormat,
-              fieldCount: inputFormat.length
+              fieldCount: inputFormat.length,
             })
             return inputFormat
           }
         }
-        
+
         return null
       },
       [activeWorkflowId]
@@ -125,7 +125,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   const inputFields = useMemo(() => {
     try {
       // First try the subblock store (real-time updates)
-      if (subBlockInputFormat && Array.isArray(subBlockInputFormat) && subBlockInputFormat.length > 0) {
+      if (
+        subBlockInputFormat &&
+        Array.isArray(subBlockInputFormat) &&
+        subBlockInputFormat.length > 0
+      ) {
         logger.info('Found input fields from subblock store:', subBlockInputFormat)
         return subBlockInputFormat
       }
@@ -180,14 +184,14 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
       logger.info('Showing input form for workflow with input fields:', {
         activeWorkflowId,
         inputFieldsCount: inputFields.length,
-        initialInputsSubmitted
+        initialInputsSubmitted,
       })
       setShowInputForm(true)
     } else {
       logger.info('Not showing input form:', {
         activeWorkflowId,
         inputFieldsCount: inputFields.length,
-        initialInputsSubmitted
+        initialInputsSubmitted,
       })
     }
   }, [activeWorkflowId, inputFields.length, initialInputsSubmitted])
@@ -208,11 +212,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
       logger.info('Input fields changed dynamically:', {
         activeWorkflowId,
         fieldCount: inputFields.length,
-        fields: inputFields.map(f => f.name),
+        fields: inputFields.map((f) => f.name),
         showInputForm,
-        initialInputsSubmitted
+        initialInputsSubmitted,
       })
-      
+
       // If we have input fields and they haven't been submitted yet, show the form
       if (!initialInputsSubmitted) {
         setShowInputForm(true)
