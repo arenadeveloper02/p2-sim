@@ -806,10 +806,14 @@ async function generateHTMLWithEmbeddedCSS(
     // Prepare enhanced Figma data for AI processing
     const optimizedData = optimizeFigmaDataForAI(targetNode, context)
 
+    // Validate that we have all major sections
+    const sectionNames = extractSectionNames(optimizedData)
     logger.info('Enhanced HTML+CSS conversion data prepared:', {
       nodeType: targetNode.type,
       nodeName: targetNode.name,
       childrenCount: targetNode.children?.length || 0,
+      detectedSections: sectionNames,
+      totalSections: sectionNames.length,
     })
 
     // Create comprehensive AI prompt for HTML with embedded CSS
@@ -1486,6 +1490,42 @@ function countAllChildren(node: any): number {
   return count
 }
 
+function extractSectionNames(node: any): string[] {
+  const sections: string[] = []
+
+  function traverse(n: any) {
+    if (!n) return
+
+    // Add section names that indicate major design sections
+    if (
+      n.name &&
+      (n.name.toLowerCase().includes('banner') ||
+        n.name.toLowerCase().includes('hero') ||
+        n.name.toLowerCase().includes('section') ||
+        n.name.toLowerCase().includes('statistics') ||
+        n.name.toLowerCase().includes('feature') ||
+        n.name.toLowerCase().includes('table') ||
+        n.name.toLowerCase().includes('form') ||
+        n.name.toLowerCase().includes('footer') ||
+        n.name.toLowerCase().includes('header') ||
+        n.name.toLowerCase().includes('nav') ||
+        n.name.toLowerCase().includes('grid') ||
+        n.name.toLowerCase().includes('container'))
+    ) {
+      sections.push(n.name)
+    }
+
+    if (n.children) {
+      for (const child of n.children) {
+        traverse(child)
+      }
+    }
+  }
+
+  traverse(node)
+  return sections
+}
+
 function hasTextElements(node: any): boolean {
   if (!node) return false
   if (node.type === 'TEXT' && node.characters) return true
@@ -1663,15 +1703,17 @@ function createHTMLWithCSSPrompt(optimizedData: any, context: ConversionContext)
 
 CRITICAL REQUIREMENT: You must process ALL sections and components in the Figma design. The design contains multiple major sections that must ALL be included in your HTML output:
 
-1. Hero/Banner sections (may have multiple variants)
-2. Statistics/Features sections with percentages and metrics  
-3. Feature grids with problem/solution items
+1. Hero/Banner sections (may have multiple variants like "banner-new", "banner-old")
+2. Statistics/Features sections with percentages and metrics (like "statistics" section)
+3. Feature grids with problem/solution items (like "Section-feature-grid")
 4. Data tables with multiple columns
 5. Expert/Team sections with profiles
 6. Form sections with input fields
 7. Footer sections
+8. Navigation and header elements
+9. All text content, buttons, and interactive elements
 
-Do NOT skip any sections. Include every text element, button, input field, image, and layout component you find in the design.
+MANDATORY: You MUST include EVERY section found in the design. Do NOT skip any sections, even if they seem similar. Each section serves a different purpose and must be included.
 
 Figma Design Data:
 ${figmaData}
@@ -1702,6 +1744,11 @@ Requirements:
 - Preserve ALL text content exactly as shown in the design
 - Include ALL visual elements, shapes, and components from the design
 - Maintain the exact layout structure and positioning from Figma
+- Process ALL children recursively - do not truncate or skip any part of the design
+- Include all text elements with their exact content and styling
+- Include all buttons, inputs, and interactive elements
+- Include all images and visual elements
+- Include all layout containers and their contents
 
 IMPORTANT: Return a complete HTML document with embedded CSS. Format your response as:
 
@@ -1807,27 +1854,70 @@ Return only the Angular component and CSS code without any explanations or markd
 
 // Response parsing functions
 function parseHTMLCSSResponse(response: string): { html: string; css: string } {
+  // First try to find explicit HTML and CSS sections
   const htmlMatch = response.match(/HTML:\s*([\s\S]*?)(?=CSS:|$)/i)
   const cssMatch = response.match(/CSS:\s*([\s\S]*?)$/i)
 
-  let html = htmlMatch ? htmlMatch[1].trim() : response
+  let html = htmlMatch ? htmlMatch[1].trim() : ''
   let css = cssMatch ? cssMatch[1].trim() : ''
 
   // If no explicit sections found, try to extract HTML and CSS from the response
   if (!htmlMatch && !cssMatch) {
-    // Look for HTML structure
-    const htmlStart = response.search(/<!DOCTYPE|<html|<body/i)
+    // Look for complete HTML document structure
+    const htmlStart = response.search(/<!DOCTYPE|<html/i)
     if (htmlStart !== -1) {
-      html = response.substring(htmlStart).trim()
+      // Find the end of the HTML document
+      const htmlEnd = response.lastIndexOf('</html>')
+      if (htmlEnd !== -1) {
+        html = response.substring(htmlStart, htmlEnd + 7).trim()
+      } else {
+        html = response.substring(htmlStart).trim()
+      }
     } else {
-      html = response
+      // Look for body content
+      const bodyStart = response.search(/<body/i)
+      if (bodyStart !== -1) {
+        const bodyEnd = response.lastIndexOf('</body>')
+        if (bodyEnd !== -1) {
+          html = response.substring(bodyStart, bodyEnd + 7).trim()
+        } else {
+          html = response.substring(bodyStart).trim()
+        }
+      } else {
+        html = response
+      }
     }
 
-    // Look for CSS in style tags or standalone
+    // Look for CSS in style tags
     const styleMatch = response.match(/<style[^>]*>([\s\S]*?)<\/style>/i)
     if (styleMatch) {
       css = styleMatch[1].trim()
+    } else {
+      // Look for standalone CSS
+      const cssStart = response.search(/\*[\s\S]*?\{|\.\w+|#\w+/)
+      if (cssStart !== -1) {
+        css = response.substring(cssStart).trim()
+      }
     }
+  }
+
+  // Ensure we have valid HTML structure
+  if (html && !html.includes('<!DOCTYPE') && !html.includes('<html')) {
+    html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Design</title>
+    <style>
+        ${css}
+    </style>
+</head>
+<body>
+    ${html}
+</body>
+</html>`
+    css = ''
   }
 
   return { html, css }
