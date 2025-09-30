@@ -1,5 +1,6 @@
 import type { GoogleDocsToolParams, GoogleDocsWriteResponse } from '@/tools/google_docs/types'
 import type { ToolConfig } from '@/tools/types'
+import { convertMarkdownToGoogleDocsRequests } from './formatterUtil'
 
 export const writeTool: ToolConfig<GoogleDocsToolParams, GoogleDocsWriteResponse> = {
   id: 'google_docs_write',
@@ -60,15 +61,10 @@ export const writeTool: ToolConfig<GoogleDocsToolParams, GoogleDocsWriteResponse
       // Following the exact format from the Google Docs API examples
       // Always insert at the end of the document to avoid duplication
       // See: https://developers.google.com/docs/api/reference/rest/v1/documents/request#InsertTextRequest
+
+      const requests = convertMarkdownToGoogleDocsRequests(params.content)
       const requestBody = {
-        requests: [
-          {
-            insertText: {
-              endOfSegmentLocation: {},
-              text: params.content,
-            },
-          },
-        ],
+        requests,
       }
 
       return requestBody
