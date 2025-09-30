@@ -86,6 +86,8 @@ interface AccountResult {
   account_id: string
   account_name: string
   campaigns: Campaign[]
+  result: any[]
+  gaqlQuery: string
   total_campaigns: number
   account_totals: {
     clicks: number
@@ -161,274 +163,111 @@ async function generateGAQLWithAI(userInput: string): Promise<{
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
 
-  const systemPrompt = `You are an expert Google Ads Query Language (GAQL) generator. You MUST always generate a valid GAQL query from ANY Google Ads related question.
+  const systemPrompt = `You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries for ANY Google Ads question.
 
-========================================
-SECTION 1: AVAILABLE RESOURCES & METRICS
-========================================
+## RESOURCES & METRICS
 
-AVAILABLE RESOURCES:
-- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
-- ad_group (ad_group.id, ad_group.name, ad_group.status) - MUST include campaign.id in SELECT
-- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.status) - MUST include campaign.id in SELECT
-- ad_group_criterion (ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_score)
-- keyword_view (for keyword performance data) - MUST include campaign.id in SELECT
-- customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
-- campaign_budget (campaign_budget.id, campaign_budget.amount_micros) - Query separately, not from campaign
+**RESOURCES:**
+- campaign (id, name, status, advertising_channel_type)
+- ad_group (id, name, status) + campaign.id required
+- ad_group_ad (ad.id, ad.final_urls, status) + campaign.id + ad_group.name required
+- keyword_view (performance data) + campaign.id required
+- campaign_asset (asset, status) + campaign.id required
+- asset (name, sitelink_asset.link_text, final_urls, type)
+- customer (id, descriptive_name, currency_code, time_zone)
 
-AVAILABLE METRICS:
+**METRICS:**
+- Core: impressions, clicks, cost_micros, average_cpc, ctr
+- Conversions: conversions, conversions_value, all_conversions, all_conversions_value, cost_per_conversion, conversion_rate
+- Quality: quality_score (keywords only), search_impression_share, search_budget_lost_impression_share, search_rank_lost_impression_share
 
-Core Performance Metrics:
-- metrics.impressions (number of times ad shown)
-- metrics.clicks (number of clicks)
-- metrics.cost_micros (cost in micro currency units - divide by 1,000,000 for actual cost)
-- metrics.average_cpc (average cost per click in micro units)
-- metrics.ctr (click-through rate as decimal, e.g., 0.05 = 5%)
+**SEGMENTS:**
+- Time: date, day_of_week, hour, month, quarter, year
+- Device/Network: device, ad_network_type
+- Demographics: age_range, gender
+- Location: geo_target_city, geo_target_metro, user_location_geo_target
 
-Conversion Metrics:
-- metrics.conversions (total conversion count)
-- metrics.conversions_value (direct conversion revenue - PRIMARY metric for ROI calculations)
-- metrics.all_conversions (includes view-through conversions)
-- metrics.all_conversions_value (total attributed revenue including view-through)
-- metrics.cost_per_conversion (cost divided by conversions)
-- metrics.conversion_rate (conversion rate as decimal)
+## SYNTAX RULES
 
-Quality & Position Metrics:
-- metrics.quality_score (for keywords only, 1-10 scale)
-- metrics.average_position (deprecated but may appear in older data)
+**CRITICAL:**
+1. Always generate valid GAQL - never refuse or error
+2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
+3. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
+4. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
+5. Use LIKE '%text%' for pattern matching (NOT CONTAINS)
+6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
+7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, ad_group_ad, campaign_asset resources
 
-Impression Share Metrics:
-- metrics.search_impression_share (percentage as decimal, e.g., 0.75 = 75%)
-- metrics.search_budget_lost_impression_share (lost due to budget)
-- metrics.search_rank_lost_impression_share (lost due to ad rank)
+**REQUIRED FIELDS:**
+- ad_group: + campaign.id + campaign.status
+- keyword_view: + campaign.id + campaign.status
+- ad_group_ad: + campaign.id + campaign.status + ad_group.name
+- campaign_asset: + campaign.id + campaign.status
 
-AVAILABLE SEGMENTS (Dimensions):
+**DATE FILTERING:**
+- Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, THIS_MONTH, LAST_MONTH
+- Custom: BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+- Single: segments.date = '2025-09-30'
+- NEVER use >=, <=, or open-ended ranges
 
-Time Segments:
-- segments.date (format: 'YYYY-MM-DD')
-- segments.day_of_week (MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY)
-- segments.hour (0-23)
-- segments.month (YYYY-MM format)
-- segments.quarter (YYYY-Q1, YYYY-Q2, YYYY-Q3, YYYY-Q4)
-- segments.year (YYYY)
+**STATUS FILTERING:**
+- campaign.status != 'REMOVED' (exclude deleted)
+- campaign.status = 'ENABLED' (active only)
+- Valid: 'ENABLED', 'PAUSED', 'REMOVED'
 
-Device & Network Segments:
-- segments.device (DESKTOP, MOBILE, TABLET, CONNECTED_TV, OTHER)
-- segments.ad_network_type (SEARCH, DISPLAY, YOUTUBE_SEARCH, YOUTUBE_WATCH, SEARCH_PARTNERS)
+## QUERY EXAMPLES
 
-========================================
-SECTION 2: MANDATORY SYNTAX RULES
-========================================
+**Basic Campaign Performance:**
+SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
 
-CRITICAL GAQL SYNTAX RULES:
-1. ALWAYS generate a valid GAQL query - never return error messages or refuse
-2. Basic structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
-3. **NO GROUP BY** - GAQL automatically aggregates metrics by the dimensions in SELECT
-4. **NO FUNCTIONS** - No SUM(), AVG(), COUNT(), or any SQL functions
-5. **NO CALCULATIONS** - No arithmetic operations in SELECT or WHERE
-6. **NO PARENTHESES** except in BETWEEN clauses: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
-7. **NO BRACKETS** [], **NO BRACES** {}, **NO ANGLE BRACKETS** <>
-8. Use LIKE '%keyword%' for pattern matching - **CONTAINS is NOT supported**
-9. Field names must be exact: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
+**Keyword Analysis:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC
 
-REQUIRED FIELDS BY RESOURCE:
-- campaign: No additional requirements
-- ad_group: MUST include campaign.id in SELECT
-- keyword_view: MUST include campaign.id in SELECT
-- ad_group_ad: MUST include campaign.id in SELECT
-- ad_group_criterion: Used within keyword_view with campaign.id
+**Device Performance:**
+SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-DATE FILTERING RULES:
-1. ALWAYS use finite date ranges - open-ended ranges NOT supported
-2. Predefined periods: DURING LAST_7_DAYS, DURING LAST_30_DAYS, DURING LAST_90_DAYS
-3. Custom ranges: BETWEEN '2025-01-01' AND '2025-01-31'
-4. Single day: segments.date = '2025-09-30'
-5. **NEVER use >= or <=** with dates - NOT supported
-6. **NEVER use open-ended ranges** like > or <
+**Campaign Assets:**
+SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
 
-CAMPAIGN STATUS FILTERING:
-- Always include campaign.status != 'REMOVED' to exclude deleted campaigns
-- OR use campaign.status = 'ENABLED' for active campaigns only
-- Valid statuses: 'ENABLED', 'PAUSED', 'REMOVED'
+## ANALYSIS USE CASES
 
-========================================
-SECTION 3: DATE CALCULATIONS
-========================================
+**1. PERFORMANCE HIGHLIGHTS (CPL Monitoring)**
+- Multi-account CPL analysis with month-by-month breakdown
+- Include: campaign.name, segments.date, metrics.cost_micros, metrics.conversions
+- Date range: May-July 2025 for comprehensive analysis
 
-TIME PERIOD CALCULATIONS (based on current date ${todayStr}):
+**2. ASSET GAP ANALYSIS**  
+- Responsive search ads: ad_group_ad resource + ad_group.name
+- Ad extensions: campaign_asset resource
+- Check optimal counts: 15 headlines, 4 descriptions
 
-Predefined Periods (Use DURING):
-- "last 7 days" = segments.date DURING LAST_7_DAYS
-- "last 30 days" = segments.date DURING LAST_30_DAYS
-- "last 90 days" = segments.date DURING LAST_90_DAYS
-- "this month" = segments.date DURING THIS_MONTH
-- "last month" = segments.date DURING LAST_MONTH
-- "this year" = segments.date DURING THIS_YEAR
+**3. SEARCH QUERY REPORTS (SQR)**
+- Keyword discovery: search_term_view resource
+- Filter: cost > $0, CPA ≤ $80, business-relevant terms
+- Cross-reference existing keywords for new opportunities
 
-Custom Date Ranges (Use BETWEEN):
-- "today" = segments.date = '${todayStr}'
-- "yesterday" = segments.date = '[calculate yesterday date]'
-- "January 2025" = segments.date BETWEEN '2025-01-01' AND '2025-01-31'
-- "this month" = segments.date BETWEEN '[first_day_of_month]' AND '${todayStr}'
-- "last month" = segments.date BETWEEN '[first_day_of_last_month]' AND '[last_day_of_last_month]'
-- "Q1 2025" = segments.date BETWEEN '2025-01-01' AND '2025-03-31'
-- Custom range = segments.date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+**4. TOP SPENDING KEYWORDS**
+- Week-on-week analysis: segments.week
+- Pivot tables: Keyword, Week, Cost, CPC, Leads, Cost/Conversion, Impression Share
+- Status tracking: Yes/No for top 30 keywords
 
-========================================
-SECTION 4: COMPLETE EXAMPLE QUERIES
-========================================
+**5. SEGMENT ANALYSIS**
+- Demographics: segments.device, age_range, gender, hour, day_of_week
+- Location: segments.geo_target_city
+- Campaign types: Brand Search, Non-Brand Search, PMax
 
-EXAMPLE 1: Basic Campaign Performance (Last 30 Days)
-SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 20
+**6. GEO PERFORMANCE**
+- Location targeting: segments.geo_target_city vs segments.user_location_geo_target
+- Calculate: CPL (Cost/Conversions), ROAS (Conversion Value/Cost)
+- Identify: "Spending outside target location" vs "Good"
 
-EXAMPLE 2: Campaign Performance (Specific Date Range)
-SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC
+**7. BRAND vs NON-BRAND vs PMAX**
+- Search: campaign.advertising_channel_type = 'SEARCH'
+- Brand: campaign.name LIKE '%Brand%'
+- Non-Brand: campaign.name NOT LIKE '%Brand%'  
+- PMax: campaign.advertising_channel_type = 'MULTI_CHANNEL'
 
-EXAMPLE 3: Active Campaigns Only
-SELECT campaign.id, campaign.name, metrics.clicks, metrics.conversions FROM campaign WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
-
-EXAMPLE 4: Campaign Conversion Data with Revenue
-SELECT campaign.id, campaign.name, metrics.conversions, metrics.conversions_value, metrics.all_conversions_value, metrics.cost_micros, metrics.cost_per_conversion FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.conversions > 0 ORDER BY metrics.conversions_value DESC
-
-EXAMPLE 5: Keyword Performance Analysis (MUST include campaign.id)
-SELECT campaign.id, campaign.name, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_score, metrics.clicks, metrics.impressions, metrics.ctr, metrics.average_cpc, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' AND metrics.impressions > 100 ORDER BY metrics.conversions DESC LIMIT 50
-
-EXAMPLE 6: High-Performing Keywords with Quality Score
-SELECT campaign.id, campaign.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.ctr, metrics.quality_score, metrics.conversions, metrics.cost_per_conversion FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.clicks > 50 AND metrics.conversions > 0 ORDER BY metrics.conversions DESC LIMIT 20
-
-EXAMPLE 7: Device Performance Breakdown
-SELECT campaign.id, campaign.name, segments.device, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.ctr FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
-
-EXAMPLE 8: Ad Group Performance (MUST include campaign.id)
-SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM ad_group WHERE segments.date DURING LAST_7_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
-
-EXAMPLE 9: Search Impression Share Analysis
-SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks, metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.search_impression_share ASC
-
-EXAMPLE 10: Daily Performance Trend with Date Segmentation
-SELECT campaign.id, campaign.name, segments.date, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-09-01' AND '2025-09-30' AND campaign.status = 'ENABLED' AND campaign.name LIKE '%Brand%' ORDER BY segments.date DESC
-
-EXAMPLE 11: Day of Week Performance Analysis
-SELECT campaign.id, campaign.name, segments.day_of_week, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY segments.day_of_week ASC
-
-EXAMPLE 12: Hourly Performance Breakdown
-SELECT campaign.id, campaign.name, segments.hour, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' ORDER BY segments.hour ASC
-
-EXAMPLE 13: Campaign Performance by Ad Network
-SELECT campaign.id, campaign.name, segments.ad_network_type, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.clicks DESC
-
-EXAMPLE 14: Keywords Filtered by Match Type
-SELECT campaign.id, campaign.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.impressions, metrics.ctr FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND ad_group_criterion.keyword.match_type = 'EXACT' ORDER BY metrics.clicks DESC
-
-EXAMPLE 15: Campaigns Filtered by Name Pattern
-SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.name LIKE '%Brand%' ORDER BY metrics.cost_micros DESC
-
-========================================
-SECTION 5: WHERE CLAUSE PATTERNS
-========================================
-
-Campaign Status Filtering:
-- WHERE campaign.status = 'ENABLED' (active campaigns only)
-- WHERE campaign.status != 'REMOVED' (exclude deleted campaigns)
-- WHERE campaign.status IN ('ENABLED', 'PAUSED') (multiple statuses)
-
-Metric Filtering:
-- WHERE metrics.impressions > 100 (minimum impressions)
-- WHERE metrics.clicks > 10 (minimum clicks)
-- WHERE metrics.conversions > 0 (only campaigns with conversions)
-- WHERE metrics.cost_micros > 10000000 (cost > $10)
-- WHERE metrics.ctr > 0.05 (CTR > 5%)
-
-String Matching (Use LIKE, NOT CONTAINS):
-- WHERE campaign.name LIKE '%Brand%' (contains "Brand")
-- WHERE campaign.name LIKE 'Brand%' (starts with "Brand")
-- WHERE campaign.name LIKE '%Brand' (ends with "Brand")
-- WHERE ad_group_criterion.keyword.text LIKE '%shoes%' (keyword contains "shoes")
-
-Combining Conditions (Use AND):
-- WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED'
-- WHERE metrics.impressions > 100 AND metrics.clicks > 10
-- WHERE campaign.name LIKE '%Brand%' AND metrics.conversions > 0
-- WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' AND metrics.cost_micros > 1000000
-
-Match Type Filtering:
-- WHERE ad_group_criterion.keyword.match_type = 'EXACT'
-- WHERE ad_group_criterion.keyword.match_type = 'PHRASE'
-- WHERE ad_group_criterion.keyword.match_type = 'BROAD'
-- WHERE ad_group_criterion.keyword.match_type IN ('EXACT', 'PHRASE')
-
-Device Filtering:
-- WHERE segments.device = 'MOBILE'
-- WHERE segments.device = 'DESKTOP'
-- WHERE segments.device IN ('MOBILE', 'TABLET')
-
-## COMMON ANALYSIS SCENARIOS & QUERY PATTERNS:
-
-### 1. PERFORMANCE HIGHLIGHTS (CPL Analysis)
-For CPL monitoring and performance analysis:
-- Use campaign resource for account-level metrics
-- Include segments.date for month-by-month breakdown
-- Always include metrics.conversions and metrics.cost_micros for CPL calculation
-- Example: "SELECT campaign.name, segments.date, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-05-01' AND '2025-07-31' AND campaign.status != 'REMOVED' ORDER BY segments.date, metrics.cost_micros DESC"
-
-### 2. ASSET GAP ANALYSIS
-For ad asset analysis:
-- Use ad_group_ad resource for responsive search ads
-- Include ad_group_ad.ad.responsive_search_ad.headlines and descriptions
-- Query ad extensions separately using extension_feed_item resource
-- Example: "SELECT campaign.name, ad_group.name, ad_group_ad.ad.responsive_search_ad.headlines FROM ad_group_ad WHERE campaign.status != 'REMOVED'"
-
-### 3. SEARCH QUERY REPORTS (SQR)
-For keyword and search term analysis:
-- Use search_term_view resource for search query reports
-- Include segments.date for date filtering
-- Always include campaign.id and ad_group.id for context
-- Example: "SELECT campaign.id, ad_group.id, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC"
-
-### 4. TOP SPENDING KEYWORDS
-For keyword performance analysis:
-- Use keyword_view resource for keyword-level data
-- Include segments.week for week-on-week analysis
-- Always include match type and impression share data
-- Example: "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, segments.week, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.search_impression_share FROM keyword_view WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC"
-
-### 5. SEGMENT ANALYSIS
-For demographic and device analysis:
-- Use segments.device, segments.age_range, segments.gender for demographics
-- Include segments.hour for hour-of-day analysis
-- Use segments.day_of_week for day analysis
-- Example: "SELECT segments.device, segments.age_range, segments.gender, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED'"
-
-### 6. GEO PERFORMANCE
-For location-based analysis:
-- Use segments.geo_target_city, segments.geo_target_metro for location data
-- Include user_location_geo_target for user location analysis
-- Example: "SELECT segments.geo_target_city, segments.user_location_geo_target, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED'"
-
-### 7. BRAND vs NON-BRAND ANALYSIS
-For branded vs non-branded performance:
-- Use campaign.name with LIKE '%Brand%' or campaign.name NOT LIKE '%Brand%'
-- Or use segments.campaign_name for more detailed analysis
-- Example: "SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED' AND (campaign.name LIKE '%Brand%' OR campaign.name NOT LIKE '%Brand%')"
-
-### 8. WEEK-ON-WEEK ANALYSIS
-For weekly performance tracking:
-- Use segments.week for week segmentation
-- Always include segments.date for date context
-- Example: "SELECT segments.week, segments.date, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED' ORDER BY segments.week"
-
-### 9. CAMPAIGN TYPE ANALYSIS
-For different campaign types (Search, PMax, Display):
-- Use campaign.advertising_channel_type for campaign type
-- Filter by 'SEARCH', 'DISPLAY', 'SHOPPING', 'VIDEO', 'MULTI_CHANNEL'
-- Example: "SELECT campaign.advertising_channel_type, campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED'"
-
-### 10. CONVERSION TRACKING
-For lead/conversion analysis:
-- Always include metrics.conversions for lead count
-- Use metrics.conversions_value for revenue tracking
-- Include metrics.cost_per_conversion for efficiency analysis
-- Example: "SELECT campaign.name, metrics.conversions, metrics.conversions_value, metrics.cost_per_conversion, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '2025-07-01' AND '2025-07-31' AND campaign.status != 'REMOVED' AND metrics.conversions > 0"
+**NOTE: Include ad_group.name for all ad-related queries**
 }`
 
   try {
@@ -822,9 +661,12 @@ async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promi
 function processGoogleAdsResults(
   apiResult: any,
   requestId: string,
+  gaqlQuery: string,
   periodLabel = 'primary'
 ): {
+  result: any[]
   campaigns: Campaign[]
+  gaqlQuery: string
   accountTotals: {
     clicks: number
     impressions: number
@@ -833,6 +675,7 @@ function processGoogleAdsResults(
   }
 } {
   const campaigns: Campaign[] = []
+  const result: any[] = []
   let accountClicks = 0
   let accountImpressions = 0
   let accountCost = 0
@@ -843,23 +686,56 @@ function processGoogleAdsResults(
       `[${requestId}] Processing ${apiResult.results.length} results from Google Ads API (${periodLabel} period)`
     )
 
-    for (const result of apiResult.results) {
+    for (const gaqlResult of apiResult.results) {
       // Log the structure of each result to understand the API response format
       logger.debug(`[${requestId}] Processing result (${periodLabel})`, {
-        resultKeys: Object.keys(result),
-        hasCampaign: !!result.campaign,
-        hasMetrics: !!result.metrics,
-        campaignKeys: result.campaign ? Object.keys(result.campaign) : [],
-        metricsKeys: result.metrics ? Object.keys(result.metrics) : [],
+        resultKeys: Object.keys(gaqlResult),
+        hasCampaign: !!gaqlResult.campaign,
+        hasMetrics: !!gaqlResult.metrics,
+        campaignKeys: gaqlResult.campaign ? Object.keys(gaqlResult.campaign) : [],
+        metricsKeys: gaqlResult.metrics ? Object.keys(gaqlResult.metrics) : [],
       })
 
-      const campaignData = result.campaign
-      const metricsData = result.metrics
+      // Map the raw GAQL result to the result array
+      const mappedResult: any = {
+        // Include all original GAQL result fields
+        ...gaqlResult,
+        // Add processed/calculated fields for easier access
+        // processed: {
+        //   clicks: Number.parseInt(gaqlResult.metrics?.clicks || '0'),
+        //   impressions: Number.parseInt(gaqlResult.metrics?.impressions || '0'),
+        //   cost_micros: Number.parseInt(gaqlResult.metrics?.costMicros || '0'),
+        //   cost: Math.round((Number.parseInt(gaqlResult.metrics?.costMicros || '0') / 1000000) * 100) / 100,
+        //   conversions: Number.parseFloat(gaqlResult.metrics?.conversions || '0'),
+        //   conversions_value: Number.parseFloat(gaqlResult.metrics?.conversionsValue || '0'),
+        //   ctr: Number.parseFloat(gaqlResult.metrics?.ctr || '0'),
+        //   avg_cpc_micros: Number.parseInt(gaqlResult.metrics?.averageCpc || '0'),
+        //   avg_cpc: Math.round((Number.parseInt(gaqlResult.metrics?.averageCpc || '0') / 1000000) * 100) / 100,
+        //   cost_per_conversion_micros: Number.parseInt(gaqlResult.metrics?.costPerConversion || '0'),
+        //   cost_per_conversion: Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') > 0
+        //     ? Math.round((Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') / 1000000) * 100) / 100
+        //     : 0,
+        //   conversion_rate: (Number.parseInt(gaqlResult.metrics?.clicks || '0') > 0) 
+        //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversions || '0') / Number.parseInt(gaqlResult.metrics?.clicks || '0')) * 10000) / 100
+        //     : 0,
+        //   impression_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchImpressionShare || '0') * 10000) / 100,
+        //   budget_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchBudgetLostImpressionShare || '0') * 10000) / 100,
+        //   rank_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchRankLostImpressionShare || '0') * 10000) / 100,
+        //   roas: (Number.parseInt(gaqlResult.metrics?.costMicros || '0') > 0) 
+        //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversionsValue || '0') / (Number.parseInt(gaqlResult.metrics?.costMicros || '0') / 1000000)) * 100) / 100
+        //     : 0,
+        // }
+      }
+      
+      result.push(mappedResult)
+
+      const campaignData = gaqlResult.campaign
+      const metricsData = gaqlResult.metrics
 
       // Add safety checks for undefined metricsData
       if (!metricsData) {
         logger.warn(`[${requestId}] Skipping result with missing metrics data (${periodLabel})`, {
-          resultKeys: Object.keys(result),
+          resultKeys: Object.keys(gaqlResult),
           campaignName: campaignData?.name || 'Unknown',
         })
         continue
@@ -917,7 +793,9 @@ function processGoogleAdsResults(
   }
 
   return {
+    result,
     campaigns,
+    gaqlQuery,
     accountTotals: {
       clicks: accountClicks,
       impressions: accountImpressions,
@@ -1007,18 +885,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Process primary period results
-    const primaryResults = processGoogleAdsResults(apiResult, requestId, 'primary')
+    const primaryResults = processGoogleAdsResults(apiResult, requestId, gaqlQuery, 'primary')
 
     // Process comparison period results if available
     let comparisonResults = null
-    if (comparisonApiResult) {
-      comparisonResults = processGoogleAdsResults(comparisonApiResult, requestId, 'comparison')
+    if (comparisonApiResult && comparisonQuery) {
+      comparisonResults = processGoogleAdsResults(comparisonApiResult, requestId, comparisonQuery, 'comparison')
     }
 
     const accountResult: AccountResult = {
       account_id: accountInfo.id,
       account_name: accountInfo.name,
       campaigns: primaryResults.campaigns,
+      result: primaryResults.result,
+      gaqlQuery: primaryResults.gaqlQuery,
       total_campaigns: primaryResults.campaigns.length,
       account_totals: {
         clicks: primaryResults.accountTotals.clicks,
