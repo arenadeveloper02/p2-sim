@@ -26,6 +26,34 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
     setInputs((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Utility function to format text: replace underscores with spaces and capitalize first letter
+  const formatText = (text: string) => {
+    return text
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+
+  // Check if at least one input field has a meaningful value
+  const hasValidInput = () => {
+    return fields.some((field) => {
+      const value = inputs[field.name]
+      if (value === undefined || value === null) return false
+      
+      // For different field types, check if they have meaningful values
+      switch (field.type.toLowerCase()) {
+        case 'string':
+        case 'text':
+          return typeof value === 'string' && value.trim().length > 0
+        case 'number':
+          return typeof value === 'number' && !Number.isNaN(value)
+        case 'boolean':
+          return typeof value === 'boolean'
+        default:
+          return typeof value === 'string' && value.trim().length > 0
+      }
+    })
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -42,13 +70,13 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
         return (
           <div key={name} className='mb-4'>
             <Label htmlFor={name} className='mb-2 block'>
-              {name}
+              {formatText(name)}
             </Label>
             <Input
               id={name}
               value={inputs[name] || ''}
               onChange={(e) => handleInputChange(name, e.target.value)}
-              placeholder={description || `Enter ${name}`}
+              placeholder={description || `Enter ${formatText(name)}`}
             />
             {description && <p className='mt-1 text-muted-foreground text-sm'>{description}</p>}
           </div>
@@ -57,13 +85,13 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
         return (
           <div key={name} className='mb-4'>
             <Label htmlFor={name} className='mb-2 block'>
-              {name}
+              {formatText(name)}
             </Label>
             <Textarea
               id={name}
               value={inputs[name] || ''}
               onChange={(e) => handleInputChange(name, e.target.value)}
-              placeholder={description || `Enter ${name}`}
+              placeholder={description || `Enter ${formatText(name)}`}
               rows={4}
             />
             {description && <p className='mt-1 text-muted-foreground text-sm'>{description}</p>}
@@ -79,7 +107,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
             />
             <div className='space-y-1 leading-none'>
               <Label htmlFor={name} className='cursor-pointer'>
-                {name}
+                {formatText(name)}
               </Label>
               {description && <p className='text-muted-foreground text-sm'>{description}</p>}
             </div>
@@ -89,7 +117,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
         return (
           <div key={name} className='mb-4'>
             <Label htmlFor={name} className='mb-2 block'>
-              {name}
+              {formatText(name)}
             </Label>
             <Input
               id={name}
@@ -98,7 +126,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
               onChange={(e) =>
                 handleInputChange(name, e.target.value ? Number(e.target.value) : '')
               }
-              placeholder={description || `Enter ${name}`}
+              placeholder={description || `Enter ${formatText(name)}`}
             />
             {description && <p className='mt-1 text-muted-foreground text-sm'>{description}</p>}
           </div>
@@ -107,13 +135,13 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
         return (
           <div key={name} className='mb-4'>
             <Label htmlFor={name} className='mb-2 block'>
-              {name} ({type})
+              {formatText(name)} ({type})
             </Label>
             <Input
               id={name}
               value={inputs[name] || ''}
               onChange={(e) => handleInputChange(name, e.target.value)}
-              placeholder={description || `Enter ${name}`}
+              placeholder={description || `Enter ${formatText(name)}`}
             />
             {description && <p className='mt-1 text-muted-foreground text-sm'>{description}</p>}
           </div>
@@ -128,7 +156,11 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
       ) : (
         <>
           {fields.map(renderInputField)}
-          <Button type='submit' className='w-full' disabled={isSubmitting}>
+          <Button 
+            type='submit' 
+            className='w-full' 
+            disabled={isSubmitting || !hasValidInput()}
+          >
             {isSubmitting ? (
               <>
                 <div className='mr-2 h-4 w-4'>
