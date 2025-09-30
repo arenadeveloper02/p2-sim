@@ -168,24 +168,30 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 ## RESOURCES & METRICS
 
 **RESOURCES:**
-- campaign (id, name, status, advertising_channel_type)
-- ad_group (id, name, status) + campaign.id required
-- ad_group_ad (ad.id, ad.final_urls, status) + campaign.id + ad_group.name required
-- keyword_view (performance data) + campaign.id required
-- campaign_asset (asset, status) + campaign.id required
-- asset (name, sitelink_asset.link_text, final_urls, type)
-- customer (id, descriptive_name, currency_code, time_zone)
+- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
+- ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
+- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
+- keyword_view (performance data) + campaign.id + campaign.status required
+- search_term_view (search query reports) + campaign.id + campaign.status required
+- campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
+- asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
+- customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
+- gender_view (demographic performance by gender)
+- ad_group_criterion (criterion details including gender, location targeting)
+- geo_target_constant (location targeting constants and details)
+- geographic_view (geographic performance data) + campaign.id + campaign.status required
+- campaign_criterion (campaign-level targeting criteria)
 
 **METRICS:**
-- Core: impressions, clicks, cost_micros, average_cpc, ctr
-- Conversions: conversions, conversions_value, all_conversions, all_conversions_value, cost_per_conversion, conversion_rate
-- Quality: quality_score (keywords only), search_impression_share, search_budget_lost_impression_share, search_rank_lost_impression_share
+- Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
+- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion, metrics.conversion_rate
+- Quality: metrics.quality_score (keywords only), metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
 
 **SEGMENTS:**
-- Time: date, day_of_week, hour, month, quarter, year
-- Device/Network: device, ad_network_type
-- Demographics: age_range, gender
-- Location: geo_target_city, geo_target_metro, user_location_geo_target
+- Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
+- Device/Network: segments.device, segments.ad_network_type
+- Demographics: segments.age_range, segments.gender
+- Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
 ## SYNTAX RULES
 
@@ -196,13 +202,15 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 4. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
 5. Use LIKE '%text%' for pattern matching (NOT CONTAINS)
 6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
-7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, ad_group_ad, campaign_asset resources
+7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
 
 **REQUIRED FIELDS:**
 - ad_group: + campaign.id + campaign.status
 - keyword_view: + campaign.id + campaign.status
+- search_term_view: + campaign.id + campaign.status
 - ad_group_ad: + campaign.id + campaign.status + ad_group.name
 - campaign_asset: + campaign.id + campaign.status
+- geographic_view: + campaign.id + campaign.status
 
 **DATE FILTERING:**
 - Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, THIS_MONTH, LAST_MONTH
@@ -228,6 +236,18 @@ SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.cli
 
 **Campaign Assets:**
 SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
+
+**Search Terms:**
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+
+**Gender Demographics:**
+SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
+
+**Geographic Performance:**
+SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_country, segments.geo_target_region, segments.geo_target_city, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
+
+**Location Targeting:**
+SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
 
 ## ANALYSIS USE CASES
 
