@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -276,7 +276,18 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
   const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
-  const initialTab = starterBlock?.subBlocks?.startWorkflow?.value === 'manual' ? 'api' : 'chat'
+
+  // Get the actual startWorkflow value from the sub-block store
+  const startWorkflowValue = useSubBlockStore((state) => {
+    if (!activeWorkflowId || !starterBlock) return null
+    return state.workflowValues[activeWorkflowId]?.[starterBlock.id]?.startWorkflow ?? null
+  })
+
+  // Make initialTab reactive to starter block changes using useMemo
+  const initialTab = useMemo(() => {
+    const tab = startWorkflowValue === 'manual' ? 'api' : 'chat'
+    return tab
+  }, [startWorkflowValue])
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
