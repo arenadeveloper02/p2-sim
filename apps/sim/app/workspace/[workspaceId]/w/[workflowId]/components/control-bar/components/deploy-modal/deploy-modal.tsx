@@ -35,6 +35,7 @@ interface DeployModalProps {
   initialTab?: TabView
   isSidebar?: boolean
   workspaceId?: string
+  onDeploymentComplete?: () => void
 }
 
 interface ApiKey {
@@ -74,6 +75,7 @@ export function DeployModal({
   initialTab = 'chat', // Default to API tab unless overridden (e.g., from sidebar chat icon)
   isSidebar = false,
   workspaceId,
+  onDeploymentComplete,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
@@ -506,7 +508,10 @@ export function DeployModal({
                   onValidationChange={setIsChatFormValid}
                   onPreDeployWorkflow={handleWorkflowPreDeploy} // For initial deployments
                   onRedeployWorkflow={handleRedeploy} // For updating existing deployments
-                  onDeploymentComplete={handleCloseModal}
+                  onDeploymentComplete={() => {
+                    handleCloseModal()
+                    onDeploymentComplete?.()
+                  }}
                   needsRedeployment={needsRedeployment} // Indicates if workflow has changes
                   onRedeploymentComplete={() => {
                     // Clear the needsRedeployment flag after successful redeployment
@@ -516,6 +521,8 @@ export function DeployModal({
                     }
                     // Also trigger a refetch of deployed state to ensure consistency
                     refetchDeployedState()
+                    // Trigger chat deployment refresh
+                    onDeploymentComplete?.()
                   }}
                   isSidebar={isSidebar}
                   workspaceId={workspaceId}
