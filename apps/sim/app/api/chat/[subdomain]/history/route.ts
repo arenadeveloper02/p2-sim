@@ -116,7 +116,7 @@ export async function GET(
       })
       .from(workflowExecutionLogs)
       .where(conditions)
-      .orderBy(workflowExecutionLogs.createdAt)
+      .orderBy(workflowExecutionLogs.startedAt)
       .limit(limit)
       .offset(offset)
 
