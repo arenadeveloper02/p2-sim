@@ -715,18 +715,18 @@ function processGoogleAdsResults(
         //   cost_per_conversion: Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') > 0
         //     ? Math.round((Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') / 1000000) * 100) / 100
         //     : 0,
-        //   conversion_rate: (Number.parseInt(gaqlResult.metrics?.clicks || '0') > 0) 
+        //   conversion_rate: (Number.parseInt(gaqlResult.metrics?.clicks || '0') > 0)
         //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversions || '0') / Number.parseInt(gaqlResult.metrics?.clicks || '0')) * 10000) / 100
         //     : 0,
         //   impression_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchImpressionShare || '0') * 10000) / 100,
         //   budget_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchBudgetLostImpressionShare || '0') * 10000) / 100,
         //   rank_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchRankLostImpressionShare || '0') * 10000) / 100,
-        //   roas: (Number.parseInt(gaqlResult.metrics?.costMicros || '0') > 0) 
+        //   roas: (Number.parseInt(gaqlResult.metrics?.costMicros || '0') > 0)
         //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversionsValue || '0') / (Number.parseInt(gaqlResult.metrics?.costMicros || '0') / 1000000)) * 100) / 100
         //     : 0,
         // }
       }
-      
+
       result.push(mappedResult)
 
       const campaignData = gaqlResult.campaign
@@ -890,7 +890,12 @@ export async function POST(request: NextRequest) {
     // Process comparison period results if available
     let comparisonResults = null
     if (comparisonApiResult && comparisonQuery) {
-      comparisonResults = processGoogleAdsResults(comparisonApiResult, requestId, comparisonQuery, 'comparison')
+      comparisonResults = processGoogleAdsResults(
+        comparisonApiResult,
+        requestId,
+        comparisonQuery,
+        'comparison'
+      )
     }
 
     const accountResult: AccountResult = {
