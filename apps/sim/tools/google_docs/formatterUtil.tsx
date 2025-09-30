@@ -10,6 +10,12 @@ interface FormatRange {
   type: 'bold' | 'italic' | 'strikethrough' | 'code'
 }
 
+interface TableData {
+  headers: string[]
+  rows: string[][]
+  endIndex: number
+}
+
 export function convertMarkdownToGoogleDocsRequests(
   markdown: string,
   title?: string,
@@ -42,6 +48,16 @@ export function convertMarkdownToGoogleDocsRequests(
   let i = 0
   while (i < lines.length) {
     const line = lines[i]
+
+    // Check for markdown tables
+    if (line.trim().startsWith('|') && i + 1 < lines.length) {
+      const tableResult = processMarkdownTable(lines, i)
+      if (tableResult) {
+        currentIndex = addTableRequest(requests, tableResult, currentIndex)
+        i = tableResult.endIndex + 1
+        continue
+      }
+    }
 
     // Check for code blocks
     if (line.startsWith('```')) {
@@ -129,6 +145,95 @@ function processCodeBlock(
     language,
     endIndex: i,
   }
+}
+
+function processMarkdownTable(lines: string[], startIndex: number): TableData | null {
+  const firstLine = lines[startIndex].trim()
+  if (!firstLine.startsWith('|') || !firstLine.endsWith('|')) {
+    return null
+  }
+
+  // Check if next line is separator
+  if (startIndex + 1 >= lines.length) {
+    return null
+  }
+
+  const separatorLine = lines[startIndex + 1].trim()
+  if (!/^\|(?:\s*:?-+:?\s*\|)+$/.test(separatorLine)) {
+    return null
+  }
+
+  // Collect all table lines (header + separator + data rows)
+  const tableLines: string[] = [firstLine, separatorLine]
+  let i = startIndex + 2
+
+  while (i < lines.length) {
+    const line = lines[i].trim()
+    if (!line.startsWith('|') || !line.endsWith('|')) {
+      break
+    }
+    tableLines.push(line)
+    i++
+  }
+
+  // Format the table with proper spacing
+  const formattedTable = formatTableWithSpacing(tableLines)
+
+  return {
+    headers: [], // Not used in new approach
+    rows: [[formattedTable]], // Store formatted table as single cell
+    endIndex: i - 1,
+  }
+}
+
+function formatTableWithSpacing(tableLines: string[]): string {
+  // Parse all rows to find column widths
+  const allRows = tableLines.map((line) =>
+    line
+      .split('|')
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+  )
+
+  // Calculate max width for each column
+  const numCols = allRows[0].length
+  const colWidths: number[] = []
+
+  for (let col = 0; col < numCols; col++) {
+    let maxWidth = 0
+    for (const row of allRows) {
+      if (col < row.length && row[col] !== '') {
+        // Check if it's the separator row (contains only dashes, colons, and spaces)
+        if (!/^:?-+:?$/.test(row[col])) {
+          maxWidth = Math.max(maxWidth, row[col].length)
+        }
+      }
+    }
+    colWidths.push(maxWidth)
+  }
+
+  // Format each row with proper spacing
+  const formattedLines: string[] = []
+
+  for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
+    const row = allRows[rowIdx]
+    const cells: string[] = []
+
+    for (let col = 0; col < numCols; col++) {
+      const cellContent = col < row.length ? row[col] : ''
+
+      // Check if this is the separator row
+      if (rowIdx === 1 && /^:?-+:?$/.test(cellContent)) {
+        cells.push('-'.repeat(colWidths[col]))
+      } else {
+        cells.push(cellContent.padEnd(colWidths[col], ' '))
+      }
+    }
+
+    formattedLines.push('| ' + cells.join(' | ') + ' |')
+  }
+
+  return formattedLines.join('\n')
 }
 
 function addCodeBlockRequest(
@@ -465,6 +570,41 @@ function addEmptyLineRequest(requests: Array<Record<string, any>>, index: number
   }
   requests.push(insertText)
   return index + 1
+}
+
+function addTableRequest(
+  requests: Array<Record<string, any>>,
+  tableData: TableData,
+  index: number
+): number {
+  // The formatted table is stored in rows[0][0]
+  const formattedTable = tableData.rows[0][0]
+
+  // Insert the formatted table as a code block
+  requests.push({
+    insertText: {
+      location: { index },
+      text: formattedTable + '\n',
+    },
+  })
+
+  // Apply code block styling (monospace font and gray background)
+  requests.push({
+    updateTextStyle: {
+      range: {
+        startIndex: index,
+        endIndex: index + formattedTable.length,
+      },
+      textStyle: {
+        weightedFontFamily: { fontFamily: 'Courier New' },
+        fontSize: { magnitude: 10, unit: 'PT' },
+        backgroundColor: { color: { rgbColor: { red: 0.95, green: 0.95, blue: 0.95 } } },
+      },
+      fields: 'weightedFontFamily,fontSize,backgroundColor',
+    },
+  })
+
+  return index + formattedTable.length + 1
 }
 
 function parseInlineFormatting(
