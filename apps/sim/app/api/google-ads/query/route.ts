@@ -478,7 +478,7 @@ For lead/conversion analysis:
     logger.info('AI Content', { aiContent })
 
     // Check if AI returned an error message instead of JSON
-    if (aiContent.includes('"error"') && !aiContent.includes('"gaql_query"')) {
+    if (aiContent.includes('"error"') && !aiContent.includes('"gaql_query"') && !aiContent.includes('"query"')) {
       logger.error('AI returned error instead of GAQL query', { aiContent })
       throw new Error(`AI refused to generate query: ${aiContent}`)
     }
@@ -498,14 +498,15 @@ For lead/conversion analysis:
       })
     }
 
-    // Validate required fields
-    if (!parsedResponse.gaql_query) {
-      logger.error('AI response missing gaql_query field', { parsedResponse })
+    // Validate required fields - check for both possible field names
+    const gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
+    if (!gaqlQuery) {
+      logger.error('AI response missing GAQL query field', { parsedResponse })
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
     }
 
     // Clean and validate the AI-generated GAQL query
-    let cleanedGaqlQuery = parsedResponse.gaql_query || ''
+    let cleanedGaqlQuery = gaqlQuery || ''
 
     // Remove any malformed characters or syntax
     cleanedGaqlQuery = cleanedGaqlQuery
@@ -525,13 +526,13 @@ For lead/conversion analysis:
 
     if (hasInvalidChars || hasGroupBy || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
       logger.error('AI generated invalid GAQL query', {
-        originalQuery: parsedResponse.gaql_query,
+        originalQuery: gaqlQuery,
         cleanedQuery: cleanedGaqlQuery,
         hasInvalidChars,
         hasGroupBy,
         hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
       })
-      throw new Error(`AI generated invalid GAQL query: ${parsedResponse.gaql_query}`)
+      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}`)
     }
 
     logger.info('AI generated GAQL successfully', {
@@ -539,7 +540,7 @@ For lead/conversion analysis:
       period_type: parsedResponse.period_type,
       start_date: parsedResponse.start_date,
       end_date: parsedResponse.end_date,
-      original_gaql: parsedResponse.gaql_query,
+      original_gaql: gaqlQuery,
       cleaned_gaql: cleanedGaqlQuery,
     })
 

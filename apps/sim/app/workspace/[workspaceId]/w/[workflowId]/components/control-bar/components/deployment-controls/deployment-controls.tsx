@@ -20,6 +20,7 @@ interface DeploymentControlsProps {
   userPermissions: WorkspaceUserPermissions
   workspaceId?: string
   initialTab: 'api' | 'chat'
+  onDeploymentComplete?: () => void
 }
 
 export function DeploymentControls({
@@ -32,6 +33,7 @@ export function DeploymentControls({
   userPermissions,
   workspaceId,
   initialTab,
+  onDeploymentComplete,
 }: DeploymentControlsProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(activeWorkflowId)
