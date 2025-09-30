@@ -478,7 +478,11 @@ For lead/conversion analysis:
     logger.info('AI Content', { aiContent })
 
     // Check if AI returned an error message instead of JSON
-    if (aiContent.includes('"error"') && !aiContent.includes('"gaql_query"') && !aiContent.includes('"query"')) {
+    if (
+      aiContent.includes('"error"') &&
+      !aiContent.includes('"gaql_query"') &&
+      !aiContent.includes('"query"')
+    ) {
       logger.error('AI returned error instead of GAQL query', { aiContent })
       throw new Error(`AI refused to generate query: ${aiContent}`)
     }
