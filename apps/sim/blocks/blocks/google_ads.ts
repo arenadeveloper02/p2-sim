@@ -72,6 +72,19 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       required: true,
     },
     {
+      id: 'view_mode',
+      title: 'Analysis Type',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Detailed Analytics', id: 'detailed' },
+        { label: 'GTM Metrics', id: 'gtm_metrics' }
+      ],
+      placeholder: 'Select analysis type...',
+      defaultValue: 'detailed',
+      required: true,
+    },
+    {
       id: 'question',
       title: 'Question / Query',
       type: 'long-input',
@@ -117,11 +130,10 @@ Generate a clear, specific question about Google Ads performance based on the us
       tool: () => 'google_ads_query',
       params: (params) => ({
         accounts: params.accounts,
-        question: params.question, // Pass the user's question
-        query_type: 'campaigns', // Default fallback
-        period_type: 'last_30_days', // Default fallback
+        query: params.question, // Use 'query' instead of 'question' to match API
         output_format: 'detailed',
         sort_by: 'cost_desc',
+        // Remove hardcoded query_type and period_type to allow dynamic detection
       }),
     },
   },

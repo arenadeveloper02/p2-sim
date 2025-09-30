@@ -6,6 +6,7 @@ import useDrivePicker from 'react-google-drive-picker'
 import { GoogleDriveIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { GoogleAdsDashboard } from '@/components/ui/tool-call'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/base-tool'
 import { getClientTool } from '@/lib/copilot/tools/client/manager'
 import { getRegisteredTools } from '@/lib/copilot/tools/client/registry'
@@ -486,6 +487,14 @@ export function InlineToolCall({
         ) : null}
       </div>
       {isExpandableTool && expanded && <div className='pr-1 pl-5'>{renderPendingDetails()}</div>}
+      
+      {/* Google Ads Dashboard - Show for completed Google Ads queries */}
+      {toolCall.state === 'success' && 
+       toolCall.name === 'google_ads_query' && (
+        <div className='mt-2'>
+          <GoogleAdsDashboard data={(toolCall as any).result || (toolCall as any).output} />
+        </div>
+      )}
     </div>
   )
 }

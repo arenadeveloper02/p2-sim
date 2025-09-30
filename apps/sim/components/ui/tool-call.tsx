@@ -1,10 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle, ChevronDown, ChevronRight, Loader2, Settings, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronRight, Loader2, Settings, XCircle, BarChart3, TrendingUp, DollarSign } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import type { ToolCallGroup, ToolCallState } from '@/lib/copilot/types'
 import { cn } from '@/lib/utils'
 
@@ -339,6 +342,31 @@ export function ToolCallCompletion({ toolCall, isCompact = false }: ToolCallProp
                 </div>
               )}
 
+            {/* Google Ads Dashboard - NEW: Show enhanced visualization for Google Ads data */}
+            {toolCall.result && (
+              // Check for all possible data structures
+              (toolCall.result.output && toolCall.result.output.results && Array.isArray(toolCall.result.output.results) && toolCall.result.output.grand_totals) ||
+              (toolCall.result.results && Array.isArray(toolCall.result.results) && toolCall.result.grand_totals) ||
+              (Array.isArray(toolCall.result) && toolCall.result[0] && toolCall.result[0].campaigns && toolCall.result[0].account_totals)
+            ) && (
+              <GoogleAdsDashboard data={toolCall.result} />
+            )}
+
+            {/* Default result display for non-Google Ads data */}
+            {toolCall.result && 
+             !((toolCall.result.output && toolCall.result.output.results && Array.isArray(toolCall.result.output.results) && toolCall.result.output.grand_totals) ||
+               (toolCall.result.results && Array.isArray(toolCall.result.results) && toolCall.result.grand_totals) ||
+               (Array.isArray(toolCall.result) && toolCall.result[0] && toolCall.result[0].campaigns && toolCall.result[0].account_totals)) && (
+              <div className='min-w-0 max-w-full rounded bg-green-100 p-2 dark:bg-green-900'>
+                <div className='mb-1 font-medium text-green-800 text-xs dark:text-green-200'>
+                  Result:
+                </div>
+                <div className='min-w-0 max-w-full break-all font-mono text-green-700 text-xs dark:text-green-300'>
+                  {typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)}
+                </div>
+              </div>
+            )}
+
             {toolCall.error && (
               <div className='min-w-0 max-w-full rounded bg-red-100 p-2 dark:bg-red-900'>
                 <div className='mb-1 font-medium text-red-800 text-xs dark:text-red-200'>
@@ -436,6 +464,198 @@ export function ToolCallIndicator({ type, content, toolNames }: ToolCallIndicato
     <div className='flex min-w-0 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-800 dark:bg-blue-950'>
       <Loader2 className='h-4 w-4 shrink-0 animate-spin text-blue-600 dark:text-blue-400' />
       <span className='min-w-0 truncate text-blue-800 dark:text-blue-200'>{content}</span>
+    </div>
+  )
+}
+
+// Google Ads Dashboard Component (NEW - Won't affect existing functionality)
+export function GoogleAdsDashboard({ data }: { data: any }) {
+  const [activeTab, setActiveTab] = useState('overview')
+  
+  console.log('📊 GoogleAdsDashboard received data:', data)
+  
+  // Handle all data structures
+  let account, campaigns, totals
+  
+  if (data.output && data.output.results && Array.isArray(data.output.results)) {
+    // Structure: {success: true, output: {results: [...], grand_totals: {...}}}
+    account = data.output.results[0]
+    campaigns = account?.campaigns || []
+    totals = data.output.grand_totals || {}
+  } else if (Array.isArray(data) && data[0] && data[0].campaigns) {
+    // Structure: Array with account data
+    account = data[0]
+    campaigns = account.campaigns || []
+    totals = account.account_totals || {}
+  } else if (data.results && Array.isArray(data.results)) {
+    // Structure: Object with results array
+    account = data.results[0]
+    campaigns = account?.campaigns || []
+    totals = data.grand_totals || {}
+  } else {
+    return null // Return null if not Google Ads data
+  }
+
+  // Prepare chart data
+  const chartData = campaigns.slice(0, 5).map((campaign: any) => ({
+    name: campaign.name.replace('P2_AMI_', ''),
+    cost: campaign.cost,
+    conversions: campaign.conversions,
+    clicks: campaign.clicks,
+    roas: campaign.roas
+  }))
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8']
+
+  return (
+    <div className="w-full space-y-6 p-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <BarChart3 className="h-6 w-6 text-blue-600" />
+        <h2 className="text-xl font-semibold">Google Ads Performance Dashboard</h2>
+        <Badge variant="secondary">{account?.account_name}</Badge>
+      </div>
+
+      {/* Key Metrics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Spend</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${totals.cost?.toFixed(2) || '0'}</div>
+            <p className="text-xs text-muted-foreground">
+              March 2025
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Conversions</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totals.conversions?.toFixed(0) || '0'}</div>
+            <p className="text-xs text-muted-foreground">
+              {totals.conversion_rate?.toFixed(1) || '0'}% conversion rate
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Clicks</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totals.clicks?.toLocaleString() || '0'}</div>
+            <p className="text-xs text-muted-foreground">
+              {totals.ctr?.toFixed(2) || '0'}% CTR
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg CPC</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${totals.avg_cpc?.toFixed(2) || '0'}</div>
+            <p className="text-xs text-muted-foreground">
+              Cost per click
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Campaign Performance Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Campaign Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value, name) => [
+                  name === 'cost' ? `$${value}` : value,
+                  name === 'cost' ? 'Spend' : name === 'conversions' ? 'Conversions' : 'Clicks'
+                ]} />
+                <Bar dataKey="cost" fill="#0088FE" name="cost" />
+                <Bar dataKey="conversions" fill="#00C49F" name="conversions" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Campaign Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Spend Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="cost"
+                >
+                  {chartData.map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => [`$${value}`, 'Spend']} />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Campaign Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Campaign Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Campaign</TableHead>
+                <TableHead>Clicks</TableHead>
+                <TableHead>Impressions</TableHead>
+                <TableHead>Cost</TableHead>
+                <TableHead>Conversions</TableHead>
+                <TableHead>ROAS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {campaigns.map((campaign: any, index: number) => (
+                <TableRow key={index}>
+                  <TableCell className="font-medium">{campaign.name}</TableCell>
+                  <TableCell>{campaign.clicks?.toLocaleString()}</TableCell>
+                  <TableCell>{campaign.impressions?.toLocaleString()}</TableCell>
+                  <TableCell>${campaign.cost?.toFixed(2)}</TableCell>
+                  <TableCell>{campaign.conversions?.toFixed(1)}</TableCell>
+                  <TableCell>{campaign.roas?.toFixed(2)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   )
 }

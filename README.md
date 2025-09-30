@@ -200,6 +200,28 @@ Copilot is a Sim-managed service. To use Copilot on a self-hosted instance:
 
 We welcome contributions! Please see our [Contributing Guide](.github/CONTRIBUTING.md) for details.
 
+## Google Ads AI Analysis System
+
+### 🎯 Deep Dive Analysis Feature
+
+The system now supports AI-powered deep analysis of Google Ads performance data across multiple months.
+
+**New Files:**
+- `/apps/sim/app/api/google-ads/helpers/ai-analysis.ts` - Core AI analysis logic
+- `/apps/sim/app/api/google-ads/analyze/route.ts` - Analysis API endpoint
+
+**How it works:**
+1. User enters complex analysis prompt (e.g., "Deep dive into CPL for May-July 2025")
+2. System detects deep analysis request automatically
+3. AI (GPT-4) generates multiple GAQL queries for each month
+4. Executes queries against Google Ads API
+5. Aggregates data and generates insights
+6. Returns structured analysis with recommendations
+
+**Detection Keywords:** deep dive, analysis, investigate, compare, month-by-month, breakdown, CPL, cost per lead
+
+**Existing functionality preserved:** Simple queries, sitelink queries, and PPC template queries continue to work as before.
+
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

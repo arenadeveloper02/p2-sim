@@ -3,53 +3,15 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
+import { detectSitelinkQuery, extractSitelinkComponents, generateSitelinkGAQL, processSitelinkData } from '../helpers/sitelinks'
+import { detectPPCTemplate, extractPPCParameters, isPPCTemplateQuery } from '../helpers/ppc-detection'
+import { PPCTemplateProcessor } from '../helpers/template-processor'
+import { getAccountId, GOOGLE_ADS_ACCOUNTS } from '../helpers/utils'
+import { isDeepAnalysisRequest } from '../helpers/ai-analysis'
 
 const logger = createLogger('GoogleAdsAPI')
 
-// Google Ads accounts configuration - matching Python script
-const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
-  ami: { id: '7284380454', name: 'AMI' },
-  heartland: { id: '4479015711', name: 'Heartland' },
-  nhi: { id: '2998186794', name: 'NHI' },
-  oic_culpeper: { id: '8226685899', name: 'OIC-Culpeper' },
-  odc_al: { id: '1749359003', name: 'ODC-AL' },
-  cpic: { id: '1757492986', name: 'CPIC' },
-  idi_fl: { id: '1890773395', name: 'IDI-FL' },
-  smi: { id: '9960845284', name: 'SMI' },
-  holmdel_nj: { id: '3507263995', name: 'Holmdel-NJ' },
-  ft_jesse: { id: '4443836419', name: 'Ft. Jesse' },
-  ud: { id: '8270553905', name: 'UD' },
-  wolf_river: { id: '6445143850', name: 'Wolf River' },
-  phoenix_rehab: { id: '4723354550', name: 'Phoenix Rehab (NEW - WM Invoices)' },
-  au_eventgroove_products: { id: '3365918329', name: 'AU - Eventgroove Products' },
-  us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
-  ca_eventgroove_products: { id: '5197514377', name: 'CA - Eventgroove Products' },
-  perforated_paper: { id: '8909188371', name: 'Perforated Paper' },
-  uk_eventgroove_products: { id: '7662673578', name: 'UK - Eventgroove Products' },
-  monster_transmission: { id: '2680354698', name: 'Monster Transmission' },
-  careadvantage: { id: '9059182052', name: 'CareAdvantage' },
-  capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
-  silverlininghealthcare: { id: '4042307092', name: 'Silverlininghealthcare.com' },
-  youngshc: { id: '3240333229', name: 'Youngshc.com' },
-  nova_hhc: { id: '9279793056', name: 'Nova HHC' },
-  inspire_aesthetics: { id: '1887900641', name: 'Inspire Aesthetics' },
-  mosca_plastic_surgery: { id: '8687457378', name: 'Mosca Plastic Surgery' },
-  marietta_plastic_surgery: { id: '6374556990', name: 'Marietta Plastic Surgery' },
-  daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
-  southern_coastal: { id: '2048733325', name: 'Southern Coastal' },
-  plastic_surgery_center_hr: { id: '1105892184', name: 'Plastic Surgery Center of Hampton Roads' },
-  epstein: { id: '1300586568', name: 'EPSTEIN' },
-  covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
-  gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
-  great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
-  dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
-  great_lakes: { id: '9925296449', name: 'Great Lakes' },
-  southern_ct_dental: { id: '7842729643', name: 'Southern Connecticut Dental Group' },
-  dental_care_associates: { id: '2771541197', name: 'Dental Care Associates' },
-  service_air_eastern_shore: { id: '8139983849', name: 'Service Air Eastern Shore' },
-  chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
-  howell_chase: { id: '1890712343', name: 'Howell Chase' },
-}
+// Accounts are now imported from helpers/utils
 
 // Position2 Manager MCC for login
 const POSITION2_MANAGER = '4455285084'
@@ -243,7 +205,9 @@ Return JSON format for COMPARISON:
     // Get API key for OpenAI hosted provider
     let apiKey: string
     try {
-      apiKey = getApiKey('openai', 'gpt-4o')
+      // Pass the OpenAI API key from environment for local development
+      const openaiKey = process.env.OPENAI_API_KEY_1 || process.env.OPENAI_API_KEY
+      apiKey = getApiKey('openai', 'gpt-4o', openaiKey)
     } catch (keyError) {
       logger.error('Failed to get OpenAI API key', { keyError })
       throw new Error('OpenAI API key not available')
@@ -730,6 +694,118 @@ function processGoogleAdsResults(
   }
 }
 
+/**
+ * Handle sitelink-specific queries
+ */
+async function handlePPCTemplateQuery(
+  query: string,
+  templateId: string,
+  accountInfo: { id: string; name: string },
+  requestId: string
+) {
+  try {
+    logger.info(`[${requestId}] Processing PPC template query`, { 
+      templateId, 
+      query, 
+      accountName: accountInfo.name 
+    })
+
+    // Extract parameters from the query
+    const params = extractPPCParameters(query, templateId)
+    
+    // Add the current account to params if not already specified
+    if (!params.accounts) {
+      // Map account name to key
+      const accountKey = Object.keys(GOOGLE_ADS_ACCOUNTS).find(
+        key => GOOGLE_ADS_ACCOUNTS[key].name === accountInfo.name
+      )
+      params.accounts = accountKey || accountInfo.name.toLowerCase().replace(/\s+/g, '_')
+    }
+
+    logger.info(`[${requestId}] Extracted PPC parameters`, { templateId, params })
+
+    // Process the template
+    const result = await PPCTemplateProcessor.processTemplate(templateId, params)
+    
+    logger.info(`[${requestId}] PPC template processing completed`, { 
+      templateId,
+      accountCount: result.accounts.length,
+      hasData: result.data.length > 0
+    })
+
+    return NextResponse.json(result)
+
+  } catch (error) {
+    logger.error(`[${requestId}] PPC template processing failed`, { 
+      templateId,
+      error: error instanceof Error ? error.message : String(error)
+    })
+
+    return NextResponse.json(
+      { 
+        error: 'PPC template processing failed',
+        details: error instanceof Error ? error.message : String(error),
+        templateId
+      },
+      { status: 500 }
+    )
+  }
+}
+
+async function handleSitelinkQuery(
+  query: string, 
+  accountInfo: { id: string; name: string }, 
+  requestId: string
+) {
+  try {
+    logger.info(`[${requestId}] Processing sitelink query`, { query, accountName: accountInfo.name })
+
+    // Extract sitelink query components
+    const components = extractSitelinkComponents(query)
+    logger.info(`[${requestId}] Extracted sitelink components`, { components })
+
+    // Generate sitelink GAQL query
+    const gaqlQuery = generateSitelinkGAQL(components, accountInfo.id)
+    logger.info(`[${requestId}] Generated sitelink GAQL`, { gaqlQuery })
+
+    // Make Google Ads API request
+    const apiResponse = await makeGoogleAdsRequest(accountInfo.id, gaqlQuery)
+    logger.info(`[${requestId}] Received sitelink API response`, { 
+      apiResponse: apiResponse,
+      dataType: typeof apiResponse,
+      isArray: Array.isArray(apiResponse),
+      dataLength: apiResponse?.length || 0,
+      keys: typeof apiResponse === 'object' ? Object.keys(apiResponse || {}) : 'Not object'
+    })
+
+    // Process sitelink data
+    const sitelinkResponse = processSitelinkData(
+      apiResponse || [], 
+      accountInfo.name, 
+      components.campaign
+    )
+
+    logger.info(`[${requestId}] Processed sitelink data`, { 
+      sitelinksCount: sitelinkResponse.sitelinks.length 
+    })
+
+    return NextResponse.json(sitelinkResponse)
+
+  } catch (error) {
+    logger.error(`[${requestId}] Sitelink query failed`, { 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    })
+
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        details: 'Failed to process sitelink query',
+      },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
   const startTime = Date.now()
@@ -773,6 +849,39 @@ export async function POST(request: NextRequest) {
       accountId: accountInfo.id,
       accountName: accountInfo.name,
     })
+
+    // NEW: Check if this is a deep analysis request (multi-month, CPL analysis, etc.)
+    if (isDeepAnalysisRequest(query)) {
+      logger.info(`[${requestId}] Detected deep analysis request, redirecting to analysis endpoint`)
+      return NextResponse.json({
+        success: true,
+        message: 'Deep analysis request detected. Use /api/google-ads/analyze endpoint for this type of request.',
+        analysisType: 'deep_dive',
+        suggestion: 'This request requires multi-query orchestration and AI analysis. Please use the analyze endpoint.',
+        accountId: accountInfo.id,
+        accountName: accountInfo.name
+      })
+    }
+
+    // Check if this is a sitelink query
+    const isSitelinkQuery = detectSitelinkQuery(query)
+    logger.info(`[${requestId}] Sitelink detection check`, { 
+      query, 
+      isSitelinkQuery,
+      queryLower: query.toLowerCase()
+    })
+    
+    if (isSitelinkQuery) {
+      logger.info(`[${requestId}] Detected sitelink query, processing with sitelink handler`)
+      return await handleSitelinkQuery(query, accountInfo, requestId)
+    }
+
+    // Check if this is a PPC template query
+    const ppcTemplateId = detectPPCTemplate(query)
+    if (ppcTemplateId) {
+      logger.info(`[${requestId}] Detected PPC template query`, { templateId: ppcTemplateId })
+      return await handlePPCTemplateQuery(query, ppcTemplateId, accountInfo, requestId)
+    }
 
     // Use smart parsing to generate GAQL query based on the user's question
     const {
