@@ -137,6 +137,7 @@ export function DeploymentControls({
         refetchDeployedState={refetchWithErrorHandling}
         initialTab={initialTab}
         workspaceId={workspaceId}
+        onDeploymentComplete={onDeploymentComplete}
       />
     </>
   )
