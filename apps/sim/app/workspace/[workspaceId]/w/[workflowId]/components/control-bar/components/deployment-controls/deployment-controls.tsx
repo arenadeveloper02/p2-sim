@@ -19,6 +19,7 @@ interface DeploymentControlsProps {
   refetchDeployedState: () => Promise<void>
   userPermissions: WorkspaceUserPermissions
   workspaceId?: string
+  initialTab: 'api' | 'chat'
 }
 
 export function DeploymentControls({
@@ -30,6 +31,7 @@ export function DeploymentControls({
   refetchDeployedState,
   userPermissions,
   workspaceId,
+  initialTab,
 }: DeploymentControlsProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(activeWorkflowId)
@@ -131,6 +133,7 @@ export function DeploymentControls({
         deployedState={deployedState as WorkflowState}
         isLoadingDeployedState={isLoadingDeployedState}
         refetchDeployedState={refetchWithErrorHandling}
+        initialTab={initialTab}
         workspaceId={workspaceId}
       />
     </>

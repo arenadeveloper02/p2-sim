@@ -275,6 +275,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const subBlockValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
+  const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
+  const initialTab = starterBlock?.subBlocks?.startWorkflow?.value === 'manual' ? 'api' : 'chat'
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
@@ -746,6 +748,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       refetchDeployedState={fetchDeployedState}
       userPermissions={userPermissions}
       workspaceId={workspaceId}
+      initialTab={initialTab}
     />
   )
 
@@ -1297,11 +1300,47 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   }
 
   const renderRunAgentWorkflow = () => {
+    const [chatDeployment, setChatDeployment] = useState<{
+      isDeployed: boolean
+      subdomain?: string
+    } | null>(null)
+    const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
+
+    // Check if workflow has chat deployment
+    useEffect(() => {
+      const checkChatDeployment = async () => {
+        if (!activeWorkflowId) return
+
+        setIsLoadingChatStatus(true)
+        try {
+          const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
+          if (response.ok) {
+            const data = await response.json()
+            setChatDeployment(data.data)
+          } else {
+            setChatDeployment({ isDeployed: false })
+          }
+        } catch (error) {
+          logger.error('Error checking chat deployment status:', error)
+          setChatDeployment({ isDeployed: false })
+        } finally {
+          setIsLoadingChatStatus(false)
+        }
+      }
+
+      checkChatDeployment()
+    }, [activeWorkflowId])
+
+    // Don't render if no chat deployment or still loading
+    if (!chatDeployment?.isDeployed || !chatDeployment?.subdomain || isLoadingChatStatus) {
+      return null
+    }
+
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link href={`/chat/${activeWorkflowId}?workspaceId=${workspaceId}`}>
+            <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}>
               <Button
                 variant='outline'
                 className={cn(
