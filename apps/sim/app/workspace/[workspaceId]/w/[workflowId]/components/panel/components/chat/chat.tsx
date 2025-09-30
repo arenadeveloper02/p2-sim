@@ -25,6 +25,8 @@ import { useChatStore } from '@/stores/panel/chat/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { extractInputFields } from '../../../../lib/workflow-execution-utils'
 import { WorkflowInputOverlay } from './components/workflow-input-overlay'
 
@@ -45,6 +47,7 @@ interface ChatProps {
 
 export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   const { activeWorkflowId } = useWorkflowRegistry()
+  const { getWorkflowState } = useWorkflowStore()
 
   const {
     messages,
@@ -89,11 +92,79 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Add this new state to control form visibility
   const [showInputForm, setShowInputForm] = useState(false)
 
-  // Extract input fields for the workflow
-  const inputFields = useMemo(() => extractInputFields(), [activeWorkflowId])
+  // Listen to subblock store changes for input format fields from starter blocks
+  const subBlockInputFormat = useSubBlockStore(
+    useCallback(
+      (state) => {
+        if (!activeWorkflowId) return null
+        
+        // Get all starter blocks and their inputFormat values
+        const workflowValues = state.workflowValues[activeWorkflowId]
+        if (!workflowValues) return null
+        
+        // Find starter blocks and get their inputFormat values
+        for (const [blockId, blockValues] of Object.entries(workflowValues)) {
+          const inputFormat = blockValues.inputFormat
+          if (Array.isArray(inputFormat) && inputFormat.length > 0) {
+            logger.info('Detected input format change in subblock store:', {
+              blockId,
+              inputFormat,
+              fieldCount: inputFormat.length
+            })
+            return inputFormat
+          }
+        }
+        
+        return null
+      },
+      [activeWorkflowId]
+    )
+  )
+
+  // Extract input fields for the workflow - improved logic with real-time updates
+  const inputFields = useMemo(() => {
+    try {
+      // First try the subblock store (real-time updates)
+      if (subBlockInputFormat && Array.isArray(subBlockInputFormat) && subBlockInputFormat.length > 0) {
+        logger.info('Found input fields from subblock store:', subBlockInputFormat)
+        return subBlockInputFormat
+      }
+
+      // Fallback to standard extraction method
+      const fields = extractInputFields()
+      if (fields && fields.length > 0) {
+        return fields
+      }
+
+      // If that fails, try to get input fields directly from the workflow store
+      if (activeWorkflowId) {
+        const workflowState = getWorkflowState()
+        const blocks = workflowState?.blocks
+
+        if (blocks) {
+          for (const blockId in blocks) {
+            const block = blocks[blockId]
+            if (block.type === 'starter') {
+              const inputFormat = block.subBlocks?.inputFormat?.value
+              if (Array.isArray(inputFormat) && inputFormat.length > 0) {
+                logger.info('Found input fields from workflow store:', inputFormat)
+                return inputFormat
+              }
+            }
+          }
+        }
+      }
+
+      return []
+    } catch (error) {
+      logger.error('Error extracting input fields:', error)
+      return []
+    }
+  }, [activeWorkflowId, subBlockInputFormat, getWorkflowState])
 
   // Add handler to show the input form
   const handleShowInputForm = useCallback(() => {
+    logger.info('Manually showing input form')
     setShowInputForm(true)
   }, [])
 
@@ -106,9 +177,52 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   useEffect(() => {
     // Show the form automatically if workflow has input fields and they haven't been submitted yet
     if (activeWorkflowId && inputFields.length > 0 && !initialInputsSubmitted) {
+      logger.info('Showing input form for workflow with input fields:', {
+        activeWorkflowId,
+        inputFieldsCount: inputFields.length,
+        initialInputsSubmitted
+      })
       setShowInputForm(true)
+    } else {
+      logger.info('Not showing input form:', {
+        activeWorkflowId,
+        inputFieldsCount: inputFields.length,
+        initialInputsSubmitted
+      })
     }
   }, [activeWorkflowId, inputFields.length, initialInputsSubmitted])
+
+  // Additional effect to ensure form is shown when input fields are detected
+  useEffect(() => {
+    // If we have input fields but the form is not showing and inputs haven't been submitted,
+    // force show the form
+    if (activeWorkflowId && inputFields.length > 0 && !showInputForm && !initialInputsSubmitted) {
+      logger.info('Force showing input form - input fields detected but form not visible')
+      setShowInputForm(true)
+    }
+  }, [activeWorkflowId, inputFields.length, showInputForm, initialInputsSubmitted])
+
+  // Effect to handle dynamic changes to input fields (when user adds/removes fields)
+  useEffect(() => {
+    if (activeWorkflowId && inputFields.length > 0) {
+      logger.info('Input fields changed dynamically:', {
+        activeWorkflowId,
+        fieldCount: inputFields.length,
+        fields: inputFields.map(f => f.name),
+        showInputForm,
+        initialInputsSubmitted
+      })
+      
+      // If we have input fields and they haven't been submitted yet, show the form
+      if (!initialInputsSubmitted) {
+        setShowInputForm(true)
+      }
+    } else if (activeWorkflowId && inputFields.length === 0) {
+      logger.info('No input fields detected, hiding form if visible')
+      // If no input fields, hide the form
+      setShowInputForm(false)
+    }
+  }, [activeWorkflowId, inputFields.length, initialInputsSubmitted, showInputForm])
 
   // Clear chat messages for current workflow
   const handleClearChat = useCallback(() => {
