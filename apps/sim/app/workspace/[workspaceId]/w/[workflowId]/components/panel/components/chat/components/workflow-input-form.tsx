@@ -28,9 +28,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
 
   // Utility function to format text: replace underscores with spaces and capitalize first letter
   const formatText = (text: string) => {
-    return text
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+    return text.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
   }
 
   // Check if at least one input field has a meaningful value
@@ -38,7 +36,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
     return fields.some((field) => {
       const value = inputs[field.name]
       if (value === undefined || value === null) return false
-      
+
       // For different field types, check if they have meaningful values
       switch (field.type.toLowerCase()) {
         case 'string':
@@ -156,11 +154,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
       ) : (
         <>
           {fields.map(renderInputField)}
-          <Button 
-            type='submit' 
-            className='w-full' 
-            disabled={isSubmitting || !hasValidInput()}
-          >
+          <Button type='submit' className='w-full' disabled={isSubmitting || !hasValidInput()}>
             {isSubmitting ? (
               <>
                 <div className='mr-2 h-4 w-4'>

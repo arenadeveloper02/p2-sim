@@ -358,7 +358,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const responseFormatValue = getSubBlockValue(activeSourceBlockId, 'responseFormat')
       const responseFormat = parseResponseFormatSafely(responseFormatValue, activeSourceBlockId)
 
-      let blockTags: string[]
+      let blockTags: string[] = []
 
       if (sourceBlock.type === 'evaluator') {
         const metricsValue = getSubBlockValue(activeSourceBlockId, 'metrics')
@@ -638,7 +638,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const responseFormatValue = getSubBlockValue(accessibleBlockId, 'responseFormat')
       const responseFormat = parseResponseFormatSafely(responseFormatValue, accessibleBlockId)
 
-      let blockTags: string[]
+      let blockTags: string[] = []
 
       if (accessibleBlock.type === 'evaluator') {
         const metricsValue = getSubBlockValue(accessibleBlockId, 'metrics')
