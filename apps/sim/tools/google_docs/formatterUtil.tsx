@@ -12,20 +12,24 @@ interface FormatRange {
 
 export function convertMarkdownToGoogleDocsRequests(
   markdown: string,
-  title?: string
+  title?: string,
+  startIndex?: number
 ): Array<Record<string, any>> {
   const requests: Array<Record<string, any>> = []
-  let currentIndex = 1 // Start at index 1 (after the first character in the document)
+  // If startIndex is provided, use it; otherwise default to 1 for new documents
+  let currentIndex = startIndex ?? 1
 
-  // Add a newline at the beginning
-  const insertNewline: Record<string, any> = {
-    insertText: {
-      location: { index: currentIndex },
-      text: '\n',
-    },
+  // Only add initial newline if starting at the beginning of the document
+  if (!startIndex || startIndex === 1) {
+    const insertNewline: Record<string, any> = {
+      insertText: {
+        location: { index: currentIndex },
+        text: '\n',
+      },
+    }
+    requests.push(insertNewline)
+    currentIndex += 1
   }
-  requests.push(insertNewline)
-  currentIndex += 1
 
   // Split content into lines
   const lines = markdown.split('\n')
@@ -42,7 +46,12 @@ export function convertMarkdownToGoogleDocsRequests(
     // Check for code blocks
     if (line.startsWith('```')) {
       const codeBlockResult = processCodeBlock(lines, i)
-      currentIndex = addCodeBlockRequest(requests, codeBlockResult.code, codeBlockResult.language, currentIndex)
+      currentIndex = addCodeBlockRequest(
+        requests,
+        codeBlockResult.code,
+        codeBlockResult.language,
+        currentIndex
+      )
       i = codeBlockResult.endIndex + 1
       continue
     }
@@ -82,7 +91,7 @@ export function convertMarkdownToGoogleDocsRequests(
       currentIndex = addTaskListRequest(requests, taskText, checked, currentIndex)
     }
     // Check for bullet points with '- ' or '* ' (but not '**' which is bold)
-    else if ((line.startsWith('- ') || (line.startsWith('* ') && !line.startsWith('** ')))) {
+    else if (line.startsWith('- ') || (line.startsWith('* ') && !line.startsWith('** '))) {
       const bulletText = line.substring(2)
       currentIndex = addBulletPointRequest(requests, bulletText, currentIndex)
     }
@@ -101,7 +110,10 @@ export function convertMarkdownToGoogleDocsRequests(
   return requests
 }
 
-function processCodeBlock(lines: string[], startIndex: number): { code: string, language: string, endIndex: number } {
+function processCodeBlock(
+  lines: string[],
+  startIndex: number
+): { code: string; language: string; endIndex: number } {
   const firstLine = lines[startIndex]
   const language = firstLine.substring(3).trim() || 'plain'
   const codeLines: string[] = []
@@ -115,7 +127,7 @@ function processCodeBlock(lines: string[], startIndex: number): { code: string, 
   return {
     code: codeLines.join('\n'),
     language,
-    endIndex: i
+    endIndex: i,
   }
 }
 
@@ -368,7 +380,8 @@ function addHeadingRequest(
 function addBulletPointRequest(
   requests: Array<Record<string, any>>,
   text: string,
-  index: number
+  index: number,
+  indentLevel = 0
 ): number {
   const cleanTextBuilder: string[] = []
   const formatRanges: FormatRange[] = []
@@ -397,6 +410,23 @@ function addBulletPointRequest(
     },
   }
   requests.push(bulletRequest)
+
+  // Apply indentation if nested
+  if (indentLevel > 0) {
+    const indentRequest: Record<string, any> = {
+      updateParagraphStyle: {
+        range: {
+          startIndex: index,
+          endIndex: index + cleanText.length + 1,
+        },
+        paragraphStyle: {
+          indentStart: { magnitude: 36 * indentLevel, unit: 'PT' },
+        },
+        fields: 'indentStart',
+      },
+    }
+    requests.push(indentRequest)
+  }
 
   return index + cleanText.length + 1
 }
