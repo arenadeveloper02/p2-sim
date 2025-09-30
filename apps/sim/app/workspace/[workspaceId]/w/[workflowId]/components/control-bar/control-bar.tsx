@@ -1341,7 +1341,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       const timeoutId = setTimeout(() => {
         checkChatDeployment()
       }, 1000)
-      
+
       return () => clearTimeout(timeoutId)
     }
   }, [isDeployed, activeWorkflowId, checkChatDeployment])
