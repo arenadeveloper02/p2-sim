@@ -749,6 +749,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       userPermissions={userPermissions}
       workspaceId={workspaceId}
       initialTab={initialTab}
+      onDeploymentComplete={refreshChatDeployment}
     />
   )
 
@@ -1381,6 +1382,11 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       </TooltipProvider>
     )
   }
+
+  // Expose refresh function for external use (e.g., from deployment modals)
+  const refreshChatDeployment = useCallback(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
 
   const handleOpenApproval = () => {
     setIsApprovalModalOpen(true)
