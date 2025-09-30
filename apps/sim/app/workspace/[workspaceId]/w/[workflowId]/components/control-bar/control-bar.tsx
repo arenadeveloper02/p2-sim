@@ -1315,7 +1315,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       try {
         const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
         if (response.ok) {
-          let data = await response.json()
+          const data = await response.json()
           data.subdomain = activeWorkflowId
           setChatDeployment(data)
         } else {
