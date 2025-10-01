@@ -166,7 +166,6 @@ AVAILABLE METRICS:
 MANDATORY RULES:
 1. ALWAYS generate a valid GAQL query - never return error messages
 2. Use segments.date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD' for date filtering
-3. Always include campaign.status != 'REMOVED' in WHERE clause
 4. For keywords, use keyword_view resource
 5. For campaigns, use campaign resource
 6. Calculate actual dates based on current date: ${todayStr}
@@ -179,9 +178,9 @@ MANDATORY RULES:
    - Field names should be exact: campaign.name, metrics.clicks, etc.
 
 EXAMPLE QUERIES:
-- Campaign impressions: "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC"
-- Campaign clicks: "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' AND campaign.status != 'REMOVED' ORDER BY metrics.clicks DESC"
-- Keyword performance: "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, metrics.clicks FROM keyword_view WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' AND campaign.status != 'REMOVED' ORDER BY metrics.clicks DESC"
+- Campaign impressions: "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31'  ORDER BY metrics.impressions DESC"
+- Campaign clicks: "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17'  ORDER BY metrics.clicks DESC"
+- Keyword performance: "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, metrics.clicks FROM keyword_view WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' ORDER BY metrics.clicks DESC"
 
 TIME PERIOD CALCULATIONS (based on current date ${todayStr}):
 - "January 2025" = '2025-01-01' to '2025-01-31'
@@ -196,7 +195,7 @@ IMPORTANT: You must ALWAYS return valid JSON with a GAQL query. Never return err
 
 Return JSON format:
 {
-  "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
+  "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' ORDER BY metrics.impressions DESC",
   "query_type": "campaigns",
   "period_type": "custom_january_2025", 
   "start_date": "2025-01-01",
@@ -270,14 +269,31 @@ Return JSON format:
       throw new Error(`AI returned invalid JSON: ${hasStructuredOutput}`)
     }
 
-    // Validate required fields
-    if (!parsedResponse.gaql_query) {
-      logger.error('AI response missing gaql_query field', { parsedResponse })
+    // Validate required fields - check for multiple possible formats
+    let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
+
+    // Handle queries array format
+    if (
+      !gaqlQuery &&
+      parsedResponse.queries &&
+      Array.isArray(parsedResponse.queries) &&
+      parsedResponse.queries.length > 0
+    ) {
+      // Use the first query from the array
+      gaqlQuery = parsedResponse.queries[0].query || parsedResponse.queries[0].gaql_query
+      logger.info('Using first query from queries array', {
+        totalQueries: parsedResponse.queries.length,
+        selectedQuery: gaqlQuery,
+      })
+    }
+
+    if (!gaqlQuery) {
+      logger.error('AI response missing GAQL query field', { parsedResponse })
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
     }
 
     // Clean and validate the AI-generated GAQL query
-    let cleanedGaqlQuery = parsedResponse.gaql_query || ''
+    let cleanedGaqlQuery = gaqlQuery || ''
 
     // Remove any malformed characters or syntax
     cleanedGaqlQuery = cleanedGaqlQuery

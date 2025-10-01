@@ -449,7 +449,7 @@ async function handleInternalRequest(
   const requestId = generateRequestId()
 
   // Format the request parameters
-  const requestParams = formatRequestParams(tool, params)
+  const requestParams = await formatRequestParams(tool, params)
 
   try {
     const baseUrl = getBaseUrl()

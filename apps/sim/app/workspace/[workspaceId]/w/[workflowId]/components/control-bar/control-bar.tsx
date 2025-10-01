@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -17,7 +17,6 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
   AlertDialog,
@@ -276,7 +275,18 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
   const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
-  const initialTab = starterBlock?.subBlocks?.startWorkflow?.value === 'manual' ? 'api' : 'chat'
+
+  // Get the actual startWorkflow value from the sub-block store
+  const startWorkflowValue = useSubBlockStore((state) => {
+    if (!activeWorkflowId || !starterBlock) return null
+    return state.workflowValues[activeWorkflowId]?.[starterBlock.id]?.startWorkflow ?? null
+  })
+
+  // Make initialTab reactive to starter block changes using useMemo
+  const initialTab = useMemo(() => {
+    const tab = startWorkflowValue === 'manual' ? 'api' : 'chat'
+    return tab
+  }, [startWorkflowValue])
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
@@ -1365,17 +1375,22 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}>
-              <Button
-                variant='outline'
-                className={cn(
-                  'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
-                  'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
-                )}
-              >
-                <Zap className={cn('h-5 w-5')} />
-              </Button>
-            </Link>
+            {/* <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}> */}
+            <Button
+              variant='outline'
+              className={cn(
+                'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+                'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
+              )}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                router.push(`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`)
+              }}
+            >
+              <Zap className={cn('h-5 w-5')} />
+            </Button>
+            {/* </Link> */}
           </TooltipTrigger>
           <TooltipContent>Run Agent</TooltipContent>
         </Tooltip>
