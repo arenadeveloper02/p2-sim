@@ -82,7 +82,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
       try {
         const baseUrl = getBaseUrl()
         const fullUrl = new URL(`/api/tools/firecrawl/crawl/${jobId}`, baseUrl).toString()
-        
+
         const statusResponse = await fetch(fullUrl, {
           method: 'GET',
           headers: {
