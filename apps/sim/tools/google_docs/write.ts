@@ -1,5 +1,29 @@
 import type { GoogleDocsToolParams, GoogleDocsWriteResponse } from '@/tools/google_docs/types'
 import type { ToolConfig } from '@/tools/types'
+import { convertMarkdownToGoogleDocsRequests } from './formatterUtil'
+
+// Helper function to get the current document end index
+async function getDocumentEndIndex(documentId: string, accessToken: string): Promise<number> {
+  const response = await fetch(`https://docs.googleapis.com/v1/documents/${documentId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch document: ${response.statusText}`)
+  }
+
+  const document = await response.json()
+
+  // The endIndex of the last content element is a structural boundary
+  // We need to subtract 1 to get the last insertable position
+  const content = document.body.content
+  const lastElement = content[content.length - 1]
+
+  return lastElement.endIndex - 1 // Changed this line
+}
 
 export const writeTool: ToolConfig<GoogleDocsToolParams, GoogleDocsWriteResponse> = {
   id: 'google_docs_write',
@@ -51,24 +75,30 @@ export const writeTool: ToolConfig<GoogleDocsToolParams, GoogleDocsWriteResponse
         'Content-Type': 'application/json',
       }
     },
-    body: (params) => {
+    body: async (params) => {
       // Validate content
       if (!params.content) {
         throw new Error('Content is required')
       }
 
-      // Following the exact format from the Google Docs API examples
-      // Always insert at the end of the document to avoid duplication
-      // See: https://developers.google.com/docs/api/reference/rest/v1/documents/request#InsertTextRequest
+      // Validate access token and document ID
+      if (!params.accessToken) {
+        throw new Error('Access token is required')
+      }
+
+      const documentId = params.documentId?.trim() || params.manualDocumentId?.trim()
+      if (!documentId) {
+        throw new Error('Document ID is required')
+      }
+
+      // Get the current end index of the document
+      const endIndex = await getDocumentEndIndex(documentId, params.accessToken)
+
+      // Generate requests starting from the end of the document
+      const requests = convertMarkdownToGoogleDocsRequests(params.content, undefined, endIndex)
+
       const requestBody = {
-        requests: [
-          {
-            insertText: {
-              endOfSegmentLocation: {},
-              text: params.content,
-            },
-          },
-        ],
+        requests,
       }
 
       return requestBody
