@@ -25,6 +25,9 @@ RUN bun install --omit dev --ignore-scripts
 FROM base AS builder
 WORKDIR /app
 
+# Accept BUILD_ID as build argument
+ARG BUILD_ID=production-build
+
 # Install turbo globally in builder stage
 RUN bun install -g turbo && bun install -g patch-package
 
@@ -43,7 +46,8 @@ RUN bun install sharp
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \
-    DOCKER_BUILD=1
+    DOCKER_BUILD=1 \
+    BUILD_ID=$BUILD_ID
 
 WORKDIR /app
 RUN bun run build

@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   // Use relative paths for static assets
   trailingSlash: false,
   basePath: '',
+  // Production optimizations for Docker deployment
+  generateBuildId: async () => {
+    // Use a consistent build ID for production to prevent chunk mismatches
+    return process.env.BUILD_ID || 'production-build'
+  },
+  // Disable static optimization for dynamic routes to prevent chunk issues
   images: {
     remotePatterns: [
       {

@@ -25,8 +25,14 @@ RUN bun install --omit dev --ignore-scripts
 FROM base AS builder
 WORKDIR /app
 
+# Accept BUILD_ID as build argument
+ARG BUILD_ID=production-build
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Set BUILD_ID environment variable
+ENV BUILD_ID=$BUILD_ID
 
 # ========================================
 # Runner Stage: Run the Socket Server
