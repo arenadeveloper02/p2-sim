@@ -81,11 +81,6 @@ export function convertMarkdownToGoogleDocsRequests(
     else if (line.trim() === '---' || line.trim() === '***' || line.trim() === '___') {
       currentIndex = addHorizontalRuleRequest(requests, currentIndex)
     }
-    // Check for ordered lists
-    else if (/^\d+\.\s/.test(line)) {
-      const listText = line.replace(/^\d+\.\s/, '')
-      currentIndex = addNumberedListRequest(requests, listText, currentIndex)
-    }
     // Check for headings
     else if (line.startsWith('#### ')) {
       const headingText = line.substring(5)
@@ -106,10 +101,25 @@ export function convertMarkdownToGoogleDocsRequests(
       const taskText = line.substring(5).trim()
       currentIndex = addTaskListRequest(requests, taskText, checked, currentIndex)
     }
+    // ADD THIS NEW CONDITION HERE - Check for indented bullet points
+    else if (/^\s+[-*]\s/.test(line)) {
+      const bulletText = line.trim().substring(2)
+      currentIndex = addBulletPointRequest(requests, bulletText, currentIndex)
+    }
+    // Check for numbered list items with bold (treat as formatted paragraphs)
+    else if (/^\d+\.\s\*\*/.test(line)) {
+      const text = line.replace(/^\d+\.\s/, '')
+      currentIndex = addParagraphWithFormattingRequest(requests, text, currentIndex)
+    }
     // Check for bullet points with '- ' or '* ' (but not '**' which is bold)
     else if (line.startsWith('- ') || (line.startsWith('* ') && !line.startsWith('** '))) {
       const bulletText = line.substring(2)
       currentIndex = addBulletPointRequest(requests, bulletText, currentIndex)
+    }
+    // Check for ordered lists (regular numbered items without bold)
+    else if (/^\d+\.\s/.test(line)) {
+      const listText = line.replace(/^\d+\.\s/, '')
+      currentIndex = addNumberedListRequest(requests, listText, currentIndex)
     }
     // Empty line
     else if (line.trim().length === 0) {
