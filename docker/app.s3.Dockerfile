@@ -48,18 +48,31 @@ RUN bun install sharp
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \
     DOCKER_BUILD=1 \
-    NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
-    S3_BUCKET_NAME=${S3_BUCKET_NAME} \
-    AWS_REGION=${AWS_REGION} \
-    AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-    AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+    NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000} \
+    S3_BUCKET_NAME=${S3_BUCKET_NAME:-placeholder} \
+    AWS_REGION=${AWS_REGION:-us-east-1} \
+    AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-placeholder} \
+    AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-placeholder} \
     TURBOPACK=0
 
 WORKDIR /app
 # Temporarily modify the sim app's build script to not use turbopack
 RUN sed -i 's/next build --turbopack/next build/g' apps/sim/package.json
-# Build using turbo
-RUN bun run build
+
+# Debug: Show environment variables and package.json
+RUN echo "Environment variables:" && env | grep -E "(NEXT_|S3_|AWS_)" || true
+RUN echo "Package.json build script:" && cat apps/sim/package.json | grep -A 2 -B 2 '"build"'
+RUN echo "Current working directory:" && pwd
+RUN echo "Contents of /app:" && ls -la
+RUN echo "Contents of /app/apps/sim:" && ls -la apps/sim/
+
+# Try building the sim app directly first to isolate the issue
+WORKDIR /app/apps/sim
+RUN echo "Building sim app directly..." && bun run build
+
+# Go back to root and run turbo build
+WORKDIR /app
+RUN echo "Running turbo build..." && bun run build
 
 # ========================================
 # S3 Assets Upload Stage
