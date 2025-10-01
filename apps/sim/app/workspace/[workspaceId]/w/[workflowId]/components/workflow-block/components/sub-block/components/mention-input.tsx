@@ -269,8 +269,10 @@ export function MentionInput({
     const { show: showTag } = checkTagTrigger(newValue, cursorPos)
     if (showTag) {
       setShowTags(true)
+      setSearchTerm('')
     } else {
       setShowTags(false)
+      setSearchTerm('')
     }
 
     // Update cursor position
