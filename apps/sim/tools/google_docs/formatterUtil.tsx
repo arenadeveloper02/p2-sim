@@ -230,7 +230,7 @@ function formatTableWithSpacing(tableLines: string[]): string {
       }
     }
 
-    formattedLines.push('| ' + cells.join(' | ') + ' |')
+    formattedLines.push(`|·${cells.join('·|·')}·|`)
   }
 
   return formattedLines.join('\n')
@@ -245,7 +245,7 @@ function addCodeBlockRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: code + '\n',
+      text: `${code}\n`,
     },
   }
   requests.push(insertText)
@@ -278,7 +278,7 @@ function addBlockquoteRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: text + '\n',
+      text: `${text}\n`,
     },
   }
   requests.push(insertText)
@@ -324,7 +324,7 @@ function addHorizontalRuleRequest(requests: Array<Record<string, any>>, index: n
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: ruleText + '\n',
+      text: `${ruleText}\n`,
     },
   }
   requests.push(insertText)
@@ -365,7 +365,7 @@ function addNumberedListRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: cleanText + '\n',
+      text: `${cleanText}\n`,
     },
   }
   requests.push(insertText)
@@ -398,7 +398,7 @@ function addTaskListRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: fullText + '\n',
+      text: `${fullText}\n`,
     },
   }
   requests.push(insertText)
@@ -428,7 +428,7 @@ function addCenteredTitle(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: '\n' + title + '\n\n',
+      text: `${title}\n\n`,
     },
   }
   requests.push(insertText)
@@ -460,7 +460,7 @@ function addHeadingRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: text + '\n',
+      text: `${text}\n`,
     },
   }
   requests.push(insertText)
@@ -498,7 +498,7 @@ function addBulletPointRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index },
-      text: cleanText + '\n',
+      text: `${cleanText}\n`,
     },
   }
   requests.push(insertText)
@@ -551,7 +551,7 @@ function addParagraphWithFormattingRequest(
   const insertText: Record<string, any> = {
     insertText: {
       location: { index: startIndex },
-      text: cleanText + '\n',
+      text: `${cleanText}\n`,
     },
   }
   requests.push(insertText)
@@ -584,7 +584,7 @@ function addTableRequest(
   requests.push({
     insertText: {
       location: { index },
-      text: formattedTable + '\n',
+      text: `${formattedTable}\n`,
     },
   })
 
@@ -617,7 +617,7 @@ function parseInlineFormatting(
 
   while (i < text.length) {
     // Check for links [text](url)
-    const linkMatch = text.substring(i).match(/^\[([^\]]+)\]\(([^\)]+)\)/)
+    const linkMatch = text.substring(i).match(/^\[([^\]]+)\]\(([^)]+)\)/)
     if (linkMatch) {
       const linkText = linkMatch[1]
       const linkUrl = linkMatch[2]
