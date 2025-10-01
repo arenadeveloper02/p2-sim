@@ -181,7 +181,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Insert blocks and edges
         if (blockEntries.length > 0) {
           // Filter out any entries where id is undefined before inserting
-          const validBlockEntries = blockEntries.filter(entry => entry.id !== undefined)
+          const validBlockEntries = blockEntries.filter((entry) => entry.id !== undefined)
           if (validBlockEntries.length > 0) {
             await tx.insert(workflowBlocks).values(validBlockEntries as any)
           }
