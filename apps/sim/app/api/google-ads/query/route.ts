@@ -86,6 +86,8 @@ interface AccountResult {
   account_id: string
   account_name: string
   campaigns: Campaign[]
+  result: any[]
+  gaqlQuery: string
   total_campaigns: number
   account_totals: {
     clicks: number
@@ -161,82 +163,131 @@ async function generateGAQLWithAI(userInput: string): Promise<{
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
 
-  const systemPrompt = `You are an expert Google Ads Query Language (GAQL) generator. You MUST always generate a valid GAQL query from ANY Google Ads related question.
+  const systemPrompt = `You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries for ANY Google Ads question.
 
-AVAILABLE RESOURCES:
-- campaign (campaign.name, campaign.status, campaign.id)
-- ad_group (ad_group.name, ad_group.status, ad_group.id)  
-- ad_group_criterion (for keywords: ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type)
-- keyword_view (for keyword performance data)
+## RESOURCES & METRICS
 
-AVAILABLE METRICS:
-- metrics.clicks, metrics.impressions, metrics.cost_micros
-- metrics.conversions, metrics.conversions_value
-- metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
-- metrics.search_impression_share, metrics.search_budget_lost_impression_share
-- metrics.search_rank_lost_impression_share
+**RESOURCES:**
+- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
+- ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
+- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
+- keyword_view (performance data) + campaign.id + campaign.status required
+- search_term_view (search query reports) + campaign.id + campaign.status required
+- campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
+- asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
+- customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
+- gender_view (demographic performance by gender)
+- ad_group_criterion (criterion details including gender, location targeting)
+- geo_target_constant (location targeting constants and details)
+- geographic_view (geographic performance data) + campaign.id + campaign.status required
+- campaign_criterion (campaign-level targeting criteria)
 
-MANDATORY RULES:
-1. ALWAYS generate a valid GAQL query - never return error messages
-2. Use segments.date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD' for date filtering
-3. Always include campaign.status != 'REMOVED' in WHERE clause
-4. For keywords, use keyword_view resource
-5. For campaigns, use campaign resource
-6. Calculate actual dates based on current date: ${todayStr}
-7. **CRITICAL**: DO NOT use GROUP BY - GAQL automatically aggregates metrics by selected dimensions
-8. **SYNTAX RULES**:
-   - DO NOT use parentheses () except in BETWEEN clauses
-   - DO NOT use brackets [], braces {}, or angle brackets <>
-   - Use only valid GAQL field names (no functions, no calculations)
-   - Keep queries simple and clean
-   - Field names should be exact: campaign.name, metrics.clicks, etc.
+**METRICS:**
+- Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
+- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion, metrics.conversion_rate
+- Quality: metrics.quality_score (keywords only), metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
 
-COMPARISON QUERIES:
-If the user asks for a comparison (e.g., "this month vs last month", "compare January to February", "week 1 vs week 2"), you MUST:
-1. Set "is_comparison": true
-2. Provide the primary period query in "gaql_query"
-3. Provide the comparison period query in "comparison_query"
-4. Set appropriate date ranges for both periods
+**SEGMENTS:**
+- Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
+- Device/Network: segments.device, segments.ad_network_type
+- Demographics: segments.age_range, segments.gender
+- Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
-EXAMPLE QUERIES:
-- Campaign impressions: "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC"
-- Campaign clicks: "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' AND campaign.status != 'REMOVED' ORDER BY metrics.clicks DESC"
-- Keyword performance: "SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text, metrics.clicks FROM keyword_view WHERE segments.date BETWEEN '2024-09-01' AND '2024-09-17' AND campaign.status != 'REMOVED' ORDER BY metrics.clicks DESC"
+## SYNTAX RULES
 
-TIME PERIOD CALCULATIONS (based on current date ${todayStr}):
-- "January 2025" = '2025-01-01' to '2025-01-31'
-- "today" = '${todayStr}' to '${todayStr}'
-- "yesterday" = previous day to previous day
-- "last 7 days" = 7 days ago to yesterday  
-- "last 30 days" = 30 days ago to yesterday
-- "this month" = first day of current month to today
-- "last month" = first day to last day of previous month
+**CRITICAL:**
+1. Always generate valid GAQL - never refuse or error
+2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
+3. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
+4. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
+5. Use LIKE '%text%' for pattern matching (NOT CONTAINS)
+6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
+7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
 
-IMPORTANT: You must ALWAYS return valid JSON with a GAQL query. Never return error messages or refuse to generate a query.
+**REQUIRED FIELDS:**
+- ad_group: + campaign.id + campaign.status
+- keyword_view: + campaign.id + campaign.status
+- search_term_view: + campaign.id + campaign.status
+- ad_group_ad: + campaign.id + campaign.status + ad_group.name
+- campaign_asset: + campaign.id + campaign.status
+- geographic_view: + campaign.id + campaign.status
 
-**CRITICAL**: Return EXACTLY ONE JSON object. Do not return multiple JSON objects or any additional text.
+**DATE FILTERING:**
+- Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, THIS_MONTH, LAST_MONTH
+- Custom: BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+- Single: segments.date = '2025-09-30'
+- NEVER use >=, <=, or open-ended ranges
 
-Return JSON format for SINGLE PERIOD:
-{
-  "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
-  "query_type": "campaigns",
-  "period_type": "custom_january_2025", 
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "is_comparison": false
-}
+**STATUS FILTERING:**
+- campaign.status != 'REMOVED' (exclude deleted)
+- campaign.status = 'ENABLED' (active only)
+- Valid: 'ENABLED', 'PAUSED', 'REMOVED'
 
-Return JSON format for COMPARISON:
-{
-  "gaql_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2025-01-01' AND '2025-01-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
-  "comparison_query": "SELECT campaign.name, metrics.impressions FROM campaign WHERE segments.date BETWEEN '2024-12-01' AND '2024-12-31' AND campaign.status != 'REMOVED' ORDER BY metrics.impressions DESC",
-  "query_type": "campaigns",
-  "period_type": "this_month_vs_last_month",
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "comparison_start_date": "2024-12-01",
-  "comparison_end_date": "2024-12-31",
-  "is_comparison": true
+## QUERY EXAMPLES
+
+**Basic Campaign Performance:**
+SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+
+**Keyword Analysis:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC
+
+**Device Performance:**
+SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
+
+**Campaign Assets:**
+SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
+
+**Search Terms:**
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+
+**Gender Demographics:**
+SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
+
+**Geographic Performance:**
+SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_country, segments.geo_target_region, segments.geo_target_city, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
+
+**Location Targeting:**
+SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
+
+## ANALYSIS USE CASES
+
+**1. PERFORMANCE HIGHLIGHTS (CPL Monitoring)**
+- Multi-account CPL analysis with month-by-month breakdown
+- Include: campaign.name, segments.date, metrics.cost_micros, metrics.conversions
+- Date range: May-July 2025 for comprehensive analysis
+
+**2. ASSET GAP ANALYSIS**  
+- Responsive search ads: ad_group_ad resource + ad_group.name
+- Ad extensions: campaign_asset resource
+- Check optimal counts: 15 headlines, 4 descriptions
+
+**3. SEARCH QUERY REPORTS (SQR)**
+- Keyword discovery: search_term_view resource
+- Filter: cost > $0, CPA ≤ $80, business-relevant terms
+- Cross-reference existing keywords for new opportunities
+
+**4. TOP SPENDING KEYWORDS**
+- Week-on-week analysis: segments.week
+- Pivot tables: Keyword, Week, Cost, CPC, Leads, Cost/Conversion, Impression Share
+- Status tracking: Yes/No for top 30 keywords
+
+**5. SEGMENT ANALYSIS**
+- Demographics: segments.device, age_range, gender, hour, day_of_week
+- Location: segments.geo_target_city
+- Campaign types: Brand Search, Non-Brand Search, PMax
+
+**6. GEO PERFORMANCE**
+- Location targeting: segments.geo_target_city vs segments.user_location_geo_target
+- Calculate: CPL (Cost/Conversions), ROAS (Conversion Value/Cost)
+- Identify: "Spending outside target location" vs "Good"
+
+**7. BRAND vs NON-BRAND vs PMAX**
+- Search: campaign.advertising_channel_type = 'SEARCH'
+- Brand: campaign.name LIKE '%Brand%'
+- Non-Brand: campaign.name NOT LIKE '%Brand%'  
+- PMax: campaign.advertising_channel_type = 'MULTI_CHANNEL'
+
+**NOTE: Include ad_group.name for all ad-related queries**
 }`
 
   try {
@@ -286,7 +337,11 @@ Return JSON format for COMPARISON:
     logger.info('AI Content', { aiContent })
 
     // Check if AI returned an error message instead of JSON
-    if (aiContent.includes('"error"') && !aiContent.includes('"gaql_query"')) {
+    if (
+      aiContent.includes('"error"') &&
+      !aiContent.includes('"gaql_query"') &&
+      !aiContent.includes('"query"')
+    ) {
       logger.error('AI returned error instead of GAQL query', { aiContent })
       throw new Error(`AI refused to generate query: ${aiContent}`)
     }
@@ -306,14 +361,31 @@ Return JSON format for COMPARISON:
       })
     }
 
-    // Validate required fields
-    if (!parsedResponse.gaql_query) {
-      logger.error('AI response missing gaql_query field', { parsedResponse })
+    // Validate required fields - check for multiple possible formats
+    let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
+
+    // Handle queries array format
+    if (
+      !gaqlQuery &&
+      parsedResponse.queries &&
+      Array.isArray(parsedResponse.queries) &&
+      parsedResponse.queries.length > 0
+    ) {
+      // Use the first query from the array
+      gaqlQuery = parsedResponse.queries[0].query || parsedResponse.queries[0].gaql_query
+      logger.info('Using first query from queries array', {
+        totalQueries: parsedResponse.queries.length,
+        selectedQuery: gaqlQuery,
+      })
+    }
+
+    if (!gaqlQuery) {
+      logger.error('AI response missing GAQL query field', { parsedResponse })
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
     }
 
     // Clean and validate the AI-generated GAQL query
-    let cleanedGaqlQuery = parsedResponse.gaql_query || ''
+    let cleanedGaqlQuery = gaqlQuery || ''
 
     // Remove any malformed characters or syntax
     cleanedGaqlQuery = cleanedGaqlQuery
@@ -333,13 +405,13 @@ Return JSON format for COMPARISON:
 
     if (hasInvalidChars || hasGroupBy || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
       logger.error('AI generated invalid GAQL query', {
-        originalQuery: parsedResponse.gaql_query,
+        originalQuery: gaqlQuery,
         cleanedQuery: cleanedGaqlQuery,
         hasInvalidChars,
         hasGroupBy,
         hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
       })
-      throw new Error(`AI generated invalid GAQL query: ${parsedResponse.gaql_query}`)
+      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}`)
     }
 
     logger.info('AI generated GAQL successfully', {
@@ -347,7 +419,7 @@ Return JSON format for COMPARISON:
       period_type: parsedResponse.period_type,
       start_date: parsedResponse.start_date,
       end_date: parsedResponse.end_date,
-      original_gaql: parsedResponse.gaql_query,
+      original_gaql: gaqlQuery,
       cleaned_gaql: cleanedGaqlQuery,
     })
 
@@ -625,9 +697,12 @@ async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promi
 function processGoogleAdsResults(
   apiResult: any,
   requestId: string,
+  gaqlQuery: string,
   periodLabel = 'primary'
 ): {
+  result: any[]
   campaigns: Campaign[]
+  gaqlQuery: string
   accountTotals: {
     clicks: number
     impressions: number
@@ -636,6 +711,7 @@ function processGoogleAdsResults(
   }
 } {
   const campaigns: Campaign[] = []
+  const result: any[] = []
   let accountClicks = 0
   let accountImpressions = 0
   let accountCost = 0
@@ -646,23 +722,56 @@ function processGoogleAdsResults(
       `[${requestId}] Processing ${apiResult.results.length} results from Google Ads API (${periodLabel} period)`
     )
 
-    for (const result of apiResult.results) {
+    for (const gaqlResult of apiResult.results) {
       // Log the structure of each result to understand the API response format
       logger.debug(`[${requestId}] Processing result (${periodLabel})`, {
-        resultKeys: Object.keys(result),
-        hasCampaign: !!result.campaign,
-        hasMetrics: !!result.metrics,
-        campaignKeys: result.campaign ? Object.keys(result.campaign) : [],
-        metricsKeys: result.metrics ? Object.keys(result.metrics) : [],
+        resultKeys: Object.keys(gaqlResult),
+        hasCampaign: !!gaqlResult.campaign,
+        hasMetrics: !!gaqlResult.metrics,
+        campaignKeys: gaqlResult.campaign ? Object.keys(gaqlResult.campaign) : [],
+        metricsKeys: gaqlResult.metrics ? Object.keys(gaqlResult.metrics) : [],
       })
 
-      const campaignData = result.campaign
-      const metricsData = result.metrics
+      // Map the raw GAQL result to the result array
+      const mappedResult: any = {
+        // Include all original GAQL result fields
+        ...gaqlResult,
+        // Add processed/calculated fields for easier access
+        // processed: {
+        //   clicks: Number.parseInt(gaqlResult.metrics?.clicks || '0'),
+        //   impressions: Number.parseInt(gaqlResult.metrics?.impressions || '0'),
+        //   cost_micros: Number.parseInt(gaqlResult.metrics?.costMicros || '0'),
+        //   cost: Math.round((Number.parseInt(gaqlResult.metrics?.costMicros || '0') / 1000000) * 100) / 100,
+        //   conversions: Number.parseFloat(gaqlResult.metrics?.conversions || '0'),
+        //   conversions_value: Number.parseFloat(gaqlResult.metrics?.conversionsValue || '0'),
+        //   ctr: Number.parseFloat(gaqlResult.metrics?.ctr || '0'),
+        //   avg_cpc_micros: Number.parseInt(gaqlResult.metrics?.averageCpc || '0'),
+        //   avg_cpc: Math.round((Number.parseInt(gaqlResult.metrics?.averageCpc || '0') / 1000000) * 100) / 100,
+        //   cost_per_conversion_micros: Number.parseInt(gaqlResult.metrics?.costPerConversion || '0'),
+        //   cost_per_conversion: Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') > 0
+        //     ? Math.round((Number.parseInt(gaqlResult.metrics?.costPerConversion || '0') / 1000000) * 100) / 100
+        //     : 0,
+        //   conversion_rate: (Number.parseInt(gaqlResult.metrics?.clicks || '0') > 0)
+        //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversions || '0') / Number.parseInt(gaqlResult.metrics?.clicks || '0')) * 10000) / 100
+        //     : 0,
+        //   impression_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchImpressionShare || '0') * 10000) / 100,
+        //   budget_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchBudgetLostImpressionShare || '0') * 10000) / 100,
+        //   rank_lost_share: Math.round(Number.parseFloat(gaqlResult.metrics?.searchRankLostImpressionShare || '0') * 10000) / 100,
+        //   roas: (Number.parseInt(gaqlResult.metrics?.costMicros || '0') > 0)
+        //     ? Math.round((Number.parseFloat(gaqlResult.metrics?.conversionsValue || '0') / (Number.parseInt(gaqlResult.metrics?.costMicros || '0') / 1000000)) * 100) / 100
+        //     : 0,
+        // }
+      }
+
+      result.push(mappedResult)
+
+      const campaignData = gaqlResult.campaign
+      const metricsData = gaqlResult.metrics
 
       // Add safety checks for undefined metricsData
       if (!metricsData) {
         logger.warn(`[${requestId}] Skipping result with missing metrics data (${periodLabel})`, {
-          resultKeys: Object.keys(result),
+          resultKeys: Object.keys(gaqlResult),
           campaignName: campaignData?.name || 'Unknown',
         })
         continue
@@ -720,7 +829,9 @@ function processGoogleAdsResults(
   }
 
   return {
+    result,
     campaigns,
+    gaqlQuery,
     accountTotals: {
       clicks: accountClicks,
       impressions: accountImpressions,
@@ -810,18 +921,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Process primary period results
-    const primaryResults = processGoogleAdsResults(apiResult, requestId, 'primary')
+    const primaryResults = processGoogleAdsResults(apiResult, requestId, gaqlQuery, 'primary')
 
     // Process comparison period results if available
     let comparisonResults = null
-    if (comparisonApiResult) {
-      comparisonResults = processGoogleAdsResults(comparisonApiResult, requestId, 'comparison')
+    if (comparisonApiResult && comparisonQuery) {
+      comparisonResults = processGoogleAdsResults(
+        comparisonApiResult,
+        requestId,
+        comparisonQuery,
+        'comparison'
+      )
     }
 
     const accountResult: AccountResult = {
       account_id: accountInfo.id,
       account_name: accountInfo.name,
       campaigns: primaryResults.campaigns,
+      result: primaryResults.result,
+      gaqlQuery: primaryResults.gaqlQuery,
       total_campaigns: primaryResults.campaigns.length,
       account_totals: {
         clicks: primaryResults.accountTotals.clicks,

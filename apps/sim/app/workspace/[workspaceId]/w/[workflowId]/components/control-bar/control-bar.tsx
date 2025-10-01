@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -276,7 +276,18 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
   const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
-  const initialTab = starterBlock?.subBlocks?.startWorkflow?.value === 'manual' ? 'api' : 'chat'
+
+  // Get the actual startWorkflow value from the sub-block store
+  const startWorkflowValue = useSubBlockStore((state) => {
+    if (!activeWorkflowId || !starterBlock) return null
+    return state.workflowValues[activeWorkflowId]?.[starterBlock.id]?.startWorkflow ?? null
+  })
+
+  // Make initialTab reactive to starter block changes using useMemo
+  const initialTab = useMemo(() => {
+    const tab = startWorkflowValue === 'manual' ? 'api' : 'chat'
+    return tab
+  }, [startWorkflowValue])
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
@@ -749,6 +760,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       userPermissions={userPermissions}
       workspaceId={workspaceId}
       initialTab={initialTab}
+      onDeploymentComplete={refreshChatDeployment}
     />
   )
 
@@ -1299,38 +1311,62 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
-  const renderRunAgentWorkflow = () => {
-    const [chatDeployment, setChatDeployment] = useState<{
-      isDeployed: boolean
-      subdomain?: string
-    } | null>(null)
-    const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
+  // Chat deployment state - moved to component level
+  const [chatDeployment, setChatDeployment] = useState<{
+    isDeployed: boolean
+    subdomain?: string
+  } | null>(null)
+  const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
 
-    // Check if workflow has chat deployment
-    useEffect(() => {
-      const checkChatDeployment = async () => {
-        if (!activeWorkflowId) return
+  // Check if workflow has chat deployment
+  const checkChatDeployment = useCallback(async () => {
+    if (!activeWorkflowId) return
 
-        setIsLoadingChatStatus(true)
-        try {
-          const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
-          if (response.ok) {
-            const data = await response.json()
-            setChatDeployment(data.data)
-          } else {
-            setChatDeployment({ isDeployed: false })
-          }
-        } catch (error) {
-          logger.error('Error checking chat deployment status:', error)
-          setChatDeployment({ isDeployed: false })
-        } finally {
-          setIsLoadingChatStatus(false)
-        }
+    setIsLoadingChatStatus(true)
+    try {
+      const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
+      if (response.ok) {
+        const data = await response.json()
+        data.subdomain = activeWorkflowId
+        setChatDeployment(data)
+      } else {
+        setChatDeployment({ isDeployed: false })
       }
+    } catch (error) {
+      logger.error('Error checking chat deployment status:', error)
+      setChatDeployment({ isDeployed: false })
+    } finally {
+      setIsLoadingChatStatus(false)
+    }
+  }, [activeWorkflowId])
 
+  // Initial check when activeWorkflowId changes
+  useEffect(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
+
+  // Refresh chat deployment status when deployment status changes
+  useEffect(() => {
+    if (isDeployed && activeWorkflowId) {
+      // Small delay to ensure deployment is fully processed
+      const timeoutId = setTimeout(() => {
+        checkChatDeployment()
+      }, 1000)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [isDeployed, activeWorkflowId, checkChatDeployment])
+
+  // Refresh chat deployment status when workflow execution completes
+  useEffect(() => {
+    if (!isExecuting && activeWorkflowId && isDeployed) {
+      // Refresh chat deployment status after execution completes
+      // This ensures the "Run Agent" button appears if chat was deployed during execution
       checkChatDeployment()
-    }, [activeWorkflowId])
+    }
+  }, [isExecuting, activeWorkflowId, isDeployed, checkChatDeployment])
 
+  const renderRunAgentWorkflow = () => {
     // Don't render if no chat deployment or still loading
     if (!chatDeployment?.isDeployed || !chatDeployment?.subdomain || isLoadingChatStatus) {
       return null
@@ -1357,6 +1393,11 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       </TooltipProvider>
     )
   }
+
+  // Expose refresh function for external use (e.g., from deployment modals)
+  const refreshChatDeployment = useCallback(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
 
   const handleOpenApproval = () => {
     setIsApprovalModalOpen(true)
