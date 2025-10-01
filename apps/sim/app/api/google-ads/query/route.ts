@@ -175,6 +175,7 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - search_term_view (search query reports) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
+- asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
 - customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
 - gender_view (demographic performance by gender)
 - ad_group_criterion (criterion details including gender, location targeting)
@@ -200,9 +201,16 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
 3. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
 4. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
-5. Use LIKE '%text%' for pattern matching (NOT CONTAINS)
+5. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
 6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
 7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
+
+**FIELD-SPECIFIC OPERATORS:**
+- STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
+- ENUM fields (campaign.status, asset_group_asset.status, etc.): =, !=, IN, NOT IN, IS NULL, IS NOT NULL
+- ID fields (campaign.id, asset_group_asset.asset_group, etc.): =, !=, IN, NOT IN, IS NULL, IS NOT NULL
+- **CRITICAL**: NEVER use LIKE on ENUM or ID fields - use = or IN instead
+- **SPECIFIC WARNING**: asset_group_asset.asset_group is an ID field - only use =, !=, IN, NOT IN, IS NULL, IS NOT NULL
 
 **REQUIRED FIELDS:**
 - ad_group: + campaign.id + campaign.status
@@ -236,6 +244,15 @@ SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.cli
 
 **Campaign Assets:**
 SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
+
+**Asset Group Assets:**
+SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
+
+**Asset Group Assets with Filtering:**
+SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.field_type = 'HEADLINE'
+
+**Asset Group Assets by Specific Asset Group:**
+SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.asset_group = '1234567890'
 
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
@@ -286,6 +303,58 @@ SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_cri
 - Brand: campaign.name LIKE '%Brand%'
 - Non-Brand: campaign.name NOT LIKE '%Brand%'  
 - PMax: campaign.advertising_channel_type = 'MULTI_CHANNEL'
+
+AdvertisingChannelTypeEnum.AdvertisingChannelType
+
+UNSPECIFIED
+→ Not specified.
+
+UNKNOWN
+→ Value unknown in this version.
+
+SEARCH
+→ Standard Google search campaigns (text ads, dynamic search, etc.).
+
+DISPLAY
+→ Google Display Network campaigns.
+
+SHOPPING
+→ Shopping campaigns (Product Listing Ads, Performance Max product feeds).
+
+HOTEL
+→ Hotel Ads campaigns.
+
+VIDEO
+→ YouTube/Video campaigns.
+
+MULTI_CHANNEL (Deprecated)
+→ Old mixed channel campaigns (not used anymore).
+
+LOCAL
+→ Local campaigns (ads optimized for local store visits).
+
+SMART
+→ Smart campaigns (simplified automated campaigns).
+
+PERFORMANCE_MAX
+→ Performance Max campaigns (all-in-one, across Search, Display, YouTube, Gmail, Discover).
+
+LOCAL_SERVICES
+→ Local Services Ads campaigns (region-limited categories like plumbers, electricians).
+
+DISCOVERY
+→ Discovery campaigns (YouTube feed, Gmail Promotions/Social tabs, Discover feed).
+
+TRAVEL
+→ Travel campaigns (newer, structured for travel ads).
+
+**COMMON MISTAKES TO AVOID:**
+- ❌ WRONG: asset_group_asset.asset_group LIKE '%123%' (ID field cannot use LIKE)
+- ✅ CORRECT: asset_group_asset.asset_group = '1234567890' (use exact match for ID)
+- ❌ WRONG: campaign.status LIKE '%ENABLED%' (ENUM field cannot use LIKE)
+- ✅ CORRECT: campaign.status = 'ENABLED' (use exact match for ENUM)
+- ❌ WRONG: campaign.name = 'Brand Campaign' (STRING field should use LIKE for partial matches)
+- ✅ CORRECT: campaign.name LIKE '%Brand%' (use LIKE for STRING pattern matching)
 
 **NOTE: Include ad_group.name for all ad-related queries**
 }`
