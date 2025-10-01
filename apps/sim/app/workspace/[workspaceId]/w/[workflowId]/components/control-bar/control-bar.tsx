@@ -1382,7 +1382,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
                 'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
                 'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
               )}
-              onClick={(e) =>{
+              onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 router.push(`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`)
