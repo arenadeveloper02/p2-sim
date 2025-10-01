@@ -212,28 +212,71 @@ function formatTableWithSpacing(tableLines: string[]): string {
     colWidths.push(maxWidth)
   }
 
-  // Format each row with proper spacing
-  const formattedLines: string[] = []
+  // Calculate maximum line width (roughly 80 characters to be safe)
+  const MAX_LINE_WIDTH = 80
+  const SEPARATOR_WIDTH = 4 // '·|·' between columns
 
-  for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
-    const row = allRows[rowIdx]
-    const cells: string[] = []
+  // Determine how many columns can fit in one segment
+  const segments: number[][] = []
+  let currentSegment: number[] = []
+  let currentWidth = 2 // Starting '|·'
 
-    for (let col = 0; col < numCols; col++) {
-      const cellContent = col < row.length ? row[col] : ''
+  for (let col = 0; col < numCols; col++) {
+    const colWidth = colWidths[col]
+    const neededWidth = colWidth + (currentSegment.length > 0 ? SEPARATOR_WIDTH : 0)
 
-      // Check if this is the separator row
-      if (rowIdx === 1 && /^:?-+:?$/.test(cellContent)) {
-        cells.push('-'.repeat(colWidths[col]))
-      } else {
-        cells.push(cellContent.padEnd(colWidths[col], ' '))
-      }
+    if (currentWidth + neededWidth + 2 > MAX_LINE_WIDTH && currentSegment.length > 0) {
+      // Start a new segment
+      segments.push([...currentSegment])
+      currentSegment = [col]
+      currentWidth = 2 + colWidth
+    } else {
+      currentSegment.push(col)
+      currentWidth += neededWidth
     }
-
-    formattedLines.push(`|·${cells.join('·|·')}·|`)
   }
 
-  return formattedLines.join('\n')
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment)
+  }
+
+  // Format each segment
+  const allFormattedLines: string[] = []
+
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const segment = segments[segIdx]
+    const segmentLines: string[] = []
+
+    for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
+      const row = allRows[rowIdx]
+      const cells: string[] = []
+
+      for (const col of segment) {
+        const cellContent = col < row.length ? row[col] : ''
+
+        // Check if this is the separator row
+        if (rowIdx === 1 && /^:?-+:?$/.test(cellContent)) {
+          cells.push('-'.repeat(colWidths[col]))
+        } else {
+          cells.push(cellContent.padEnd(colWidths[col], ' '))
+        }
+      }
+
+      segmentLines.push(`| ${cells.join(' | ')} |`)
+    }
+
+    // Add segment header if this is not the first segment
+    if (segIdx > 0) {
+      allFormattedLines.push('') // Empty line between segments
+      allFormattedLines.push(
+        `(continued - columns ${segment[0] + 1}-${segment[segment.length - 1] + 1})`
+      )
+    }
+
+    allFormattedLines.push(...segmentLines)
+  }
+
+  return allFormattedLines.join('\n')
 }
 
 function addCodeBlockRequest(
