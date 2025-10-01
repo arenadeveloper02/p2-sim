@@ -363,17 +363,22 @@ SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_cri
 
     // Validate required fields - check for multiple possible formats
     let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
-    
+
     // Handle queries array format
-    if (!gaqlQuery && parsedResponse.queries && Array.isArray(parsedResponse.queries) && parsedResponse.queries.length > 0) {
+    if (
+      !gaqlQuery &&
+      parsedResponse.queries &&
+      Array.isArray(parsedResponse.queries) &&
+      parsedResponse.queries.length > 0
+    ) {
       // Use the first query from the array
       gaqlQuery = parsedResponse.queries[0].query || parsedResponse.queries[0].gaql_query
-      logger.info('Using first query from queries array', { 
+      logger.info('Using first query from queries array', {
         totalQueries: parsedResponse.queries.length,
-        selectedQuery: gaqlQuery 
+        selectedQuery: gaqlQuery,
       })
     }
-    
+
     if (!gaqlQuery) {
       logger.error('AI response missing GAQL query field', { parsedResponse })
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
