@@ -18,7 +18,7 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
   name: 'Image Generator',
   description: 'Generate images',
   longDescription:
-    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, or Google Imagen. Requires API Key.',
+    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana. Requires API Key.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   bgColor: '#4D5FFF',
@@ -33,6 +33,7 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
         { label: 'DALL-E 3', id: 'dall-e-3' },
         { label: 'GPT Image', id: 'gpt-image-1' },
         { label: 'Google Imagen', id: 'imagen-4.0-generate-001' },
+        { label: 'Google Nano Banana', id: 'gemini-2.5-flash-image' },
       ],
       value: () => 'dall-e-3',
     },
@@ -136,20 +137,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       condition: { field: 'model', value: 'imagen-4.0-generate-001' },
     },
     {
-      id: 'numberOfImages',
-      title: 'Number of Images',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: '1', id: '1' },
-        { label: '2', id: '2' },
-        { label: '3', id: '3' },
-        { label: '4', id: '4' },
-      ],
-      value: () => '1',
-      condition: { field: 'model', value: 'imagen-4.0-generate-001' },
-    },
-    {
       id: 'personGeneration',
       title: 'Person Generation',
       type: 'dropdown',
@@ -163,6 +150,26 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       condition: { field: 'model', value: 'imagen-4.0-generate-001' },
     },
     {
+      id: 'aspectRatio',
+      title: 'Aspect Ratio',
+      type: 'dropdown',
+      layout: 'half',
+      options: [
+        { label: '1:1', id: '1:1' },
+        { label: '2:3', id: '2:3' },
+        { label: '3:2', id: '3:2' },
+        { label: '3:4', id: '3:4' },
+        { label: '4:3', id: '4:3' },
+        { label: '4:5', id: '4:5' },
+        { label: '5:4', id: '5:4' },
+        { label: '9:16', id: '9:16' },
+        { label: '16:9', id: '16:9' },
+        { label: '21:9', id: '21:9' },
+      ],
+      value: () => '1:1',
+      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+    },
+    {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
@@ -174,12 +181,15 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     },
   ],
   tools: {
-    access: ['openai_image', 'google_imagen'],
+    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
     config: {
       tool: (params) => {
         // Select tool based on model
         if (params.model?.startsWith('imagen-')) {
           return 'google_imagen'
+        }
+        if (params.model?.startsWith('gemini-')) {
+          return 'google_nano_banana'
         }
         return 'openai_image'
       },
@@ -196,10 +206,19 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
           return {
             model: params.model,
             prompt: params.prompt,
-            numberOfImages: params.numberOfImages ? parseInt(params.numberOfImages) : 1,
             imageSize: params.imageSize || '1K',
             aspectRatio: params.aspectRatio || '1:1',
             personGeneration: params.personGeneration || 'allow_adult',
+            apiKey: params.apiKey,
+          }
+        }
+
+        // Handle Google Nano Banana models
+        if (params.model?.startsWith('gemini-')) {
+          return {
+            model: params.model,
+            prompt: params.prompt,
+            aspectRatio: params.aspectRatio || '1:1',
             apiKey: params.apiKey,
           }
         }
@@ -239,7 +258,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     style: { type: 'string', description: 'Image style' },
     background: { type: 'string', description: 'Background type' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
-    numberOfImages: { type: 'string', description: 'Number of images to generate' },
     personGeneration: { type: 'string', description: 'Person generation setting' },
     apiKey: { type: 'string', description: 'API key (OpenAI or Google)' },
   },

@@ -43,12 +43,6 @@ export const imagenTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'A text description of the desired image (max 480 tokens)',
     },
-    numberOfImages: {
-      type: 'number',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'The number of images to generate (1-4)',
-    },
     imageSize: {
       type: 'string',
       required: false,
@@ -89,14 +83,14 @@ export const imagenTool: ToolConfig = {
     }),
     body: (params) => {
       // Try a simpler request format first
-      const body = {
+      const body: ImagenRequestBody = {
         instances: [
           {
             prompt: params.prompt,
           },
         ],
         parameters: {
-          sampleCount: params.numberOfImages || 1,
+          sampleCount: 1,
         },
       }
 
