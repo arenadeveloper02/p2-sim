@@ -33,7 +33,7 @@ import {
   githubRepoInfoTool,
 } from '@/tools/github'
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
-import { searchTool as googleSearchTool } from '@/tools/google'
+import { searchTool as googleSearchTool, imagenTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
@@ -203,6 +203,7 @@ export const tools: Record<string, ToolConfig> = {
   firecrawl_search: searchTool,
   firecrawl_crawl: crawlTool,
   google_search: googleSearchTool,
+  google_imagen: imagenTool,
   jina_read_url: readUrlTool,
   linkup_search: linkupSearchTool,
   jira_retrieve: jiraRetrieveTool,
