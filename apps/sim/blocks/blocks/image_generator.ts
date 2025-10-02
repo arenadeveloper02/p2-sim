@@ -170,6 +170,14 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       condition: { field: 'model', value: 'gemini-2.5-flash-image' },
     },
     {
+      id: 'inputImage',
+      title: 'Input Image to Edit',
+      type: 'file-upload',
+      layout: 'full',
+      acceptedTypes: 'image/*',
+      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+    },
+    {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
@@ -219,6 +227,8 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
             model: params.model,
             prompt: params.prompt,
             aspectRatio: params.aspectRatio || '1:1',
+            inputImage: params.inputImage,
+            inputImageMimeType: params.inputImageMimeType,
             apiKey: params.apiKey,
           }
         }
@@ -250,7 +260,7 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     },
   },
   inputs: {
-    prompt: { type: 'string', description: 'Image description prompt' },
+    prompt: { type: 'string', description: 'Image description prompt or editing instruction' },
     model: { type: 'string', description: 'Image generation model' },
     size: { type: 'string', description: 'Image dimensions (OpenAI models)' },
     imageSize: { type: 'string', description: 'Image size (Google Imagen models)' },
@@ -259,6 +269,8 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     background: { type: 'string', description: 'Background type' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
     personGeneration: { type: 'string', description: 'Person generation setting' },
+    inputImage: { type: 'string', description: 'Base64 encoded input image for editing (Google Nano Banana)' },
+    inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
     apiKey: { type: 'string', description: 'API key (OpenAI or Google)' },
   },
   outputs: {
