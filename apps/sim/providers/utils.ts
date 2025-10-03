@@ -582,8 +582,12 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGoogleModel = provider === 'google'
+  const isXAIModel = provider === 'xai'
   const isSambaNovaModel = provider === 'sambanova'
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel || isSambaNovaModel)) {
+  if (
+    isHosted &&
+    (isOpenAIModel || isClaudeModel || isGoogleModel || isXAIModel || isSambaNovaModel)
+  ) {
     try {
       // Import the key rotation function
       const { getRotatingApiKey } = require('@/lib/utils')

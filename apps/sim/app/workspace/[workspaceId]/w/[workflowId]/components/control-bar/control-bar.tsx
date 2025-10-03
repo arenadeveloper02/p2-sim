@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -17,7 +17,6 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
   AlertDialog,
@@ -31,6 +30,7 @@ import {
   Button,
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -274,6 +274,19 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const subBlockValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
+  const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
+
+  // Get the actual startWorkflow value from the sub-block store
+  const startWorkflowValue = useSubBlockStore((state) => {
+    if (!activeWorkflowId || !starterBlock) return null
+    return state.workflowValues[activeWorkflowId]?.[starterBlock.id]?.startWorkflow ?? null
+  })
+
+  // Make initialTab reactive to starter block changes using useMemo
+  const initialTab = useMemo(() => {
+    const tab = startWorkflowValue === 'manual' ? 'api' : 'chat'
+    return tab
+  }, [startWorkflowValue])
 
   useEffect(() => {
     const { operations, isProcessing } = useOperationQueueStore.getState()
@@ -745,6 +758,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       refetchDeployedState={fetchDeployedState}
       userPermissions={userPermissions}
       workspaceId={workspaceId}
+      initialTab={initialTab}
+      onDeploymentComplete={refreshChatDeployment}
     />
   )
 
@@ -1295,26 +1310,98 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  // Chat deployment state - moved to component level
+  const [chatDeployment, setChatDeployment] = useState<{
+    isDeployed: boolean
+    subdomain?: string
+  } | null>(null)
+  const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
+
+  // Check if workflow has chat deployment
+  const checkChatDeployment = useCallback(async () => {
+    if (!activeWorkflowId) return
+
+    setIsLoadingChatStatus(true)
+    try {
+      const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
+      if (response.ok) {
+        const data = await response.json()
+        data.subdomain = activeWorkflowId
+        setChatDeployment(data)
+      } else {
+        setChatDeployment({ isDeployed: false })
+      }
+    } catch (error) {
+      logger.error('Error checking chat deployment status:', error)
+      setChatDeployment({ isDeployed: false })
+    } finally {
+      setIsLoadingChatStatus(false)
+    }
+  }, [activeWorkflowId])
+
+  // Initial check when activeWorkflowId changes
+  useEffect(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
+
+  // Refresh chat deployment status when deployment status changes
+  useEffect(() => {
+    if (isDeployed && activeWorkflowId) {
+      // Small delay to ensure deployment is fully processed
+      const timeoutId = setTimeout(() => {
+        checkChatDeployment()
+      }, 1000)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [isDeployed, activeWorkflowId, checkChatDeployment])
+
+  // Refresh chat deployment status when workflow execution completes
+  useEffect(() => {
+    if (!isExecuting && activeWorkflowId && isDeployed) {
+      // Refresh chat deployment status after execution completes
+      // This ensures the "Run Agent" button appears if chat was deployed during execution
+      checkChatDeployment()
+    }
+  }, [isExecuting, activeWorkflowId, isDeployed, checkChatDeployment])
+
   const renderRunAgentWorkflow = () => {
+    // Don't render if no chat deployment or still loading
+    if (!chatDeployment?.isDeployed || !chatDeployment?.subdomain || isLoadingChatStatus) {
+      return null
+    }
+
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link href={`/chat/${activeWorkflowId}?workspaceId=${workspaceId}`}>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {/* <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}> */}
             <Button
               variant='outline'
               className={cn(
                 'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
                 'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
               )}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                router.push(`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`)
+              }}
             >
               <Zap className={cn('h-5 w-5')} />
             </Button>
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent>Run Agent</TooltipContent>
-      </Tooltip>
+            {/* </Link> */}
+          </TooltipTrigger>
+          <TooltipContent>Run Agent</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
+
+  // Expose refresh function for external use (e.g., from deployment modals)
+  const refreshChatDeployment = useCallback(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
 
   const handleOpenApproval = () => {
     setIsApprovalModalOpen(true)

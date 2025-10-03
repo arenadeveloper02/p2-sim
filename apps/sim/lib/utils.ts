@@ -292,6 +292,7 @@ export function getRotatingApiKey(provider: string): string {
     provider !== 'openai' &&
     provider !== 'anthropic' &&
     provider !== 'google' &&
+    provider !== 'xai' &&
     provider !== 'sambanova'
   ) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
@@ -307,6 +308,11 @@ export function getRotatingApiKey(provider: string): string {
     if (env.ANTHROPIC_API_KEY_1) keys.push(env.ANTHROPIC_API_KEY_1)
     if (env.ANTHROPIC_API_KEY_2) keys.push(env.ANTHROPIC_API_KEY_2)
     if (env.ANTHROPIC_API_KEY_3) keys.push(env.ANTHROPIC_API_KEY_3)
+  } else if (provider === 'xai') {
+    if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
+    if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
+    if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
+    if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
   } else if (provider === 'google') {
     keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
   } else if (provider === 'sambanova') {

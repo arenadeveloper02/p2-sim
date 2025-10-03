@@ -4,7 +4,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Send, Square } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const PLACEHOLDER_MOBILE = 'Enter a message'
@@ -111,18 +111,16 @@ export const ChatInput: React.FC<{
       <div className='flex items-center justify-center'>
         {/* Voice Input Only */}
         {isSttAvailable && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} large={true} />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side='top'>
-                <p>Start voice conversation</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} large={true} />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side='top'>
+              <p>Start voice conversation</p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     )
@@ -143,23 +141,17 @@ export const ChatInput: React.FC<{
             <div className='flex items-center gap-2 p-3 md:p-4'>
               {/* Voice Input */}
               {isSttAvailable && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <VoiceInput
-                          onVoiceStart={handleVoiceStart}
-                          disabled={isStreaming}
-                          minimal
-                        />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side='top'>
-                      <p>Start voice conversation</p>
-                      <span className='text-gray-500 text-xs'>Click to enter voice mode</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} minimal />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side='top'>
+                    <p>Start voice conversation</p>
+                    <span className='text-gray-500 text-xs'>Click to enter voice mode</span>
+                  </TooltipContent>
+                </Tooltip>
               )}
 
               {/* Text Input Container */}
