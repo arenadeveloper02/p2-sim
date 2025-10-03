@@ -312,6 +312,7 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
+    chatId: text('chat_id'), // Chat ID for chat-triggered executions
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
@@ -327,6 +328,7 @@ export const workflowExecutionLogs = pgTable(
     executionIdIdx: index('workflow_execution_logs_execution_id_idx').on(table.executionId),
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
+    chatIdIdx: index('workflow_execution_logs_chat_id_idx').on(table.chatId),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
     executionIdUnique: uniqueIndex('workflow_execution_logs_execution_id_unique').on(
       table.executionId

@@ -443,10 +443,11 @@ describe('Chat Subdomain API Route', () => {
       expect(data).toHaveProperty('message', 'Invalid request body')
     })
 
-    it('should pass conversationId to executeWorkflowForChat when provided', async () => {
+    it('should pass conversationId and chat_id to executeWorkflowForChat when provided', async () => {
       const req = createMockRequest('POST', {
         input: 'Hello world',
         conversationId: 'test-conversation-123',
+        chat_id: 'test-chat-456',
       })
       const params = Promise.resolve({ subdomain: 'test-chat' })
 
@@ -457,11 +458,12 @@ describe('Chat Subdomain API Route', () => {
       expect(mockExecuteWorkflowForChat).toHaveBeenCalledWith(
         'chat-id',
         'Hello world',
-        'test-conversation-123'
+        'test-conversation-123',
+        'test-chat-456'
       )
     })
 
-    it('should handle missing conversationId gracefully', async () => {
+    it('should handle missing conversationId and chat_id gracefully', async () => {
       const req = createMockRequest('POST', { input: 'Hello world' })
       const params = Promise.resolve({ subdomain: 'test-chat' })
 
@@ -469,7 +471,7 @@ describe('Chat Subdomain API Route', () => {
 
       await POST(req, { params })
 
-      expect(mockExecuteWorkflowForChat).toHaveBeenCalledWith('chat-id', 'Hello world', undefined)
+      expect(mockExecuteWorkflowForChat).toHaveBeenCalledWith('chat-id', 'Hello world', undefined, undefined)
     })
   })
 })

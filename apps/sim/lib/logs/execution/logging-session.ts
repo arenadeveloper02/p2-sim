@@ -44,6 +44,7 @@ export class LoggingSession {
   private executionId: string
   private triggerType: ExecutionTrigger['type']
   private requestId?: string
+  private chatId?: string
   private trigger?: ExecutionTrigger
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
@@ -52,12 +53,14 @@ export class LoggingSession {
     workflowId: string,
     executionId: string,
     triggerType: ExecutionTrigger['type'],
-    requestId?: string
+    requestId?: string,
+    chatId?: string
   ) {
     this.workflowId = workflowId
     this.executionId = executionId
     this.triggerType = triggerType
     this.requestId = requestId
+    this.chatId = chatId
   }
 
   async start(params: SessionStartParams = {}): Promise<void> {
@@ -80,6 +83,7 @@ export class LoggingSession {
         trigger: this.trigger,
         environment: this.environment,
         workflowState: this.workflowState,
+        chatId: this.chatId,
       })
 
       if (this.requestId) {
