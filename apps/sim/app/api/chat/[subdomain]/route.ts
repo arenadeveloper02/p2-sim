@@ -73,7 +73,7 @@ export async function POST(
     }
 
     // Use the already parsed body
-    const { input, password, email, conversationId, workflowInputs } = parsedBody
+    const { input, password, email, conversationId, workflowInputs, chat_id } = parsedBody
 
     // If this is an authentication request (has password or email but no input),
     // set auth cookie and return success
@@ -111,7 +111,8 @@ export async function POST(
         deployment.id,
         input,
         conversationId,
-        workflowInputs
+        workflowInputs,
+        chat_id
       )
 
       // The result is always a ReadableStream that we can pipe to the client

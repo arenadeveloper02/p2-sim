@@ -296,13 +296,15 @@ export async function validateChatAuth(
  * @param chatId - Chat deployment identifier
  * @param input - User's chat input
  * @param conversationId - Optional ID for maintaining conversation context
+ * @param chat_id - Optional chat ID for tracking execution logs
  * @returns Workflow execution result formatted for the chat interface
  */
 export async function executeWorkflowForChat(
   chatId: string,
   input: string,
   conversationId?: string,
-  workflowInputs?: Record<string, any>
+  workflowInputs?: Record<string, any>,
+  chat_id?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
@@ -351,7 +353,7 @@ export async function executeWorkflowForChat(
   }
 
   // Set up logging for chat execution
-  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId, true)
+  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId, chat_id)
 
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>

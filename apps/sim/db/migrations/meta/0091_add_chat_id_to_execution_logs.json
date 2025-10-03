@@ -1,0 +1,13 @@
+{
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "sql": "ALTER TABLE \"workflow_execution_logs\" ADD COLUMN \"chat_id\" text;",
+      "folderMillis": 1704067200000
+    },
+    {
+      "sql": "CREATE INDEX \"workflow_execution_logs_chat_id_idx\" ON \"workflow_execution_logs\" USING btree (\"chat_id\");",
+      "folderMillis": 1704067200000
+    }
+  ]
+}

@@ -83,7 +83,7 @@ export interface WorkflowExecutionLog {
   stateSnapshotId: string
   level: 'info' | 'error'
   trigger: ExecutionTrigger['type']
-  isExternalChat: boolean
+  chatId?: string
   startedAt: string
   endedAt: string
   totalDurationMs: number
