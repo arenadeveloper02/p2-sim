@@ -770,7 +770,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: { temperature: { min: 0, max: 2 } },
       },
       {
-        id: 'Meta-Llama-3.1-70B-Instruct',
+        id: 'Meta-Llama-3.3-70B-Instruct',
         pricing: {
           input: 0.65,
           output: 0.65,
