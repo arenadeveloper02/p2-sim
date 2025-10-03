@@ -54,7 +54,7 @@ export class LoggingSession {
     executionId: string,
     triggerType: ExecutionTrigger['type'],
     requestId?: string,
-    isExternalChat: boolean = false
+    isExternalChat = false
   ) {
     this.workflowId = workflowId
     this.executionId = executionId

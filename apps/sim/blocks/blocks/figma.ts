@@ -19,8 +19,8 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       type: 'dropdown',
       layout: 'full',
       options: [
-        { label: 'Generate Figma Design', id: 'figma_create' },
-        { label: 'Convert to Code with AI', id: 'figma_convert' },
+        // { label: 'Generate Figma Design', id: 'figma_create' },
+        // { label: 'Convert to Code with AI', id: 'figma_convert' },
         { label: 'Get Comments', id: 'figma_get_comments' },
         { label: 'Post Comment', id: 'figma_post_comment' },
         { label: 'Delete Comment', id: 'figma_delete_comment' },
@@ -30,7 +30,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
         { label: 'Get File Images', id: 'figma_get_file_images' },
         { label: 'Get Project Files', id: 'figma_get_project_files' },
       ],
-      value: () => 'figma_create',
+      value: () => 'figma_get_comments',
     },
     // Create Figma File parameters
     {
