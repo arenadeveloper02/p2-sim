@@ -47,6 +47,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     environment: ExecutionEnvironment
     workflowState: WorkflowState
     isExternalChat?: boolean
+    chatId?: string
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
@@ -58,6 +59,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       environment,
       workflowState,
       isExternalChat = false,
+      chatId,
     } = params
 
     logger.debug(`Starting workflow execution ${executionId} for workflow ${workflowId}`)
@@ -79,6 +81,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         level: 'info',
         trigger: trigger.type,
         isExternalChat,
+        chatId,
         startedAt: startTime,
         endedAt: null,
         totalDurationMs: null,
