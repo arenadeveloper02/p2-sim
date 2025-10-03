@@ -1,0 +1,524 @@
+import OpenAI from 'openai'
+import { createLogger } from '@/lib/logs/console/logger'
+import type { StreamingExecution } from '@/executor/types'
+import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
+import type {
+  ProviderConfig,
+  ProviderRequest,
+  ProviderResponse,
+  TimeSegment,
+} from '@/providers/types'
+import {
+  prepareToolExecution,
+  prepareToolsWithUsageControl,
+  trackForcedToolUsage,
+} from '@/providers/utils'
+import { executeTool } from '@/tools'
+
+const logger = createLogger('SambaNovaProvider')
+
+/**
+ * Helper to convert OpenAI stream to ReadableStream and collect usage
+ */
+function createReadableStreamFromOpenAIStream(
+  openaiStream: any,
+  onComplete?: (content: string, usage?: any) => void
+): ReadableStream {
+  let fullContent = ''
+  let usageData: any = null
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of openaiStream) {
+          if (chunk.usage) usageData = chunk.usage
+          const content = chunk.choices[0]?.delta?.content || ''
+          if (content) {
+            fullContent += content
+            controller.enqueue(new TextEncoder().encode(content))
+          }
+        }
+
+        if (onComplete) onComplete(fullContent, usageData)
+        controller.close()
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+  })
+}
+
+/**
+ * SambaNova provider configuration
+ */
+export const sambanovaProvider: ProviderConfig = {
+  id: 'sambanova',
+  name: 'SambaNova',
+  description: "SambaNova's AI models",
+  version: '1.0.0',
+  models: getProviderModels('sambanova'),
+  defaultModel: getProviderDefaultModel('sambanova'),
+
+  executeRequest: async (
+    request: ProviderRequest
+  ): Promise<ProviderResponse | ReadableStream | StreamingExecution> => {
+    logger.info('Preparing SambaNova request', {
+      model: request.model || getProviderDefaultModel('sambanova'),
+      hasSystemPrompt: !!request.systemPrompt,
+      hasMessages: !!request.messages?.length,
+      hasTools: !!request.tools?.length,
+      toolCount: request.tools?.length || 0,
+      hasResponseFormat: !!request.responseFormat,
+      stream: !!request.stream,
+    })
+
+    // SambaNova uses OpenAI-compatible API
+    const sambanova = new OpenAI({
+      apiKey: request.apiKey,
+      baseURL: 'https://api.sambanova.ai/v1',
+    })
+
+    // Start with an empty array for all messages
+    const allMessages = []
+
+    // Add system prompt if present
+    if (request.systemPrompt) {
+      allMessages.push({
+        role: 'system',
+        content: request.systemPrompt,
+      })
+    }
+
+    // Add context if present
+    if (request.context) {
+      allMessages.push({
+        role: 'user',
+        content: request.context,
+      })
+    }
+
+    // Add remaining messages
+    if (request.messages) {
+      allMessages.push(...request.messages)
+    }
+
+    // Transform tools to OpenAI format if provided
+    const tools = request.tools?.length
+      ? request.tools.map((tool) => ({
+          type: 'function',
+          function: {
+            name: tool.id,
+            description: tool.description,
+            parameters: tool.parameters,
+          },
+        }))
+      : undefined
+
+    // Resolve model ID to canonical SambaNova spelling (case-insensitive)
+    const availableModels = getProviderModels('sambanova')
+    const knownCanonical: string[] = [
+      // Include commented/alias models for robust resolution
+      'DeepSeek-R1-Distill-Llama-70B',
+      'DeepSeek-R1-0528',
+      'DeepSeek-V3-0324',
+      'DeepSeek-V3.1',
+      'Meta-Llama-3.1-70B-Instruct',
+      'Meta-Llama-3.1-8B-Instruct',
+      'Meta-Llama-3.1-405B-Instruct',
+      'Meta-Llama-3.3-70B-Instruct',
+      'Llama-3.3-Swallow-70B-Instruct-v0.4',
+      'Llama-4-Maverick-17B-128E-Instruct',
+      'gpt-oss-120b',
+      'E5-Mistral-7B-Instruct',
+      'Qwen3-32B',
+      // Whisper ASR
+      'Whisper-Large-v3',
+    ]
+
+    function resolveModelId(requested?: string): string {
+      const defModel = getProviderDefaultModel('sambanova')
+      if (!requested) return defModel
+      const req = requested.toString().trim()
+      const lower = req.toLowerCase()
+      // Prefer currently available models
+      const matchAvailable = availableModels.find((m) => m.toLowerCase() === lower)
+      if (matchAvailable) return matchAvailable
+      // Then check known canonical aliases (including commented ones)
+      const matchKnown = knownCanonical.find((m) => m.toLowerCase() === lower)
+      if (matchKnown) return matchKnown
+      // Special normalization for common inputs
+      if (lower === 'deepseek-r1-distill-llama-70b') return 'DeepSeek-R1-Distill-Llama-70B'
+      if (lower === 'deepseek-v3.1' || lower === 'deepseek-v3-1') return 'DeepSeek-V3.1'
+      return req
+    }
+
+    const resolvedModel = resolveModelId(request.model)
+
+    // Build the request payload
+    const payload: any = {
+      model: resolvedModel,
+      messages: allMessages,
+    }
+
+    // Ensure we always have at least one user message
+    if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+      payload.messages = [
+        {
+          role: 'user',
+          content: request.context || ' ',
+        },
+      ]
+    }
+
+    // Optional params
+    if (request.temperature !== undefined) payload.temperature = request.temperature
+    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+
+    // Structured output
+    if (request.responseFormat) {
+      payload.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: request.responseFormat.name || 'response_schema',
+          schema: request.responseFormat.schema || request.responseFormat,
+          strict: request.responseFormat.strict !== false,
+        },
+      }
+    }
+
+    // Handle tools and tool usage control similar to OpenAI
+    let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
+    if (tools?.length) {
+      preparedTools = prepareToolsWithUsageControl(tools, request.tools, logger, 'sambanova')
+      const { tools: filteredTools, toolChoice } = preparedTools
+      if (filteredTools?.length && toolChoice) {
+        payload.tools = filteredTools
+        payload.tool_choice = toolChoice
+      }
+    }
+
+    logger.info('Sending request to SambaNova', {
+      model: payload.model,
+      messageCount: payload.messages.length,
+      hasTools: !!payload.tools,
+      toolCount: payload.tools?.length || 0,
+      stream: request.stream,
+      hasResponseFormat: !!payload.response_format,
+      hasTemperature: payload.temperature !== undefined,
+      hasMaxTokens: payload.max_tokens !== undefined,
+      baseURL: 'https://api.sambanova.ai/v1',
+      endpoint: '/chat/completions',
+    })
+
+    // Timing
+    const providerStartTime = Date.now()
+    const providerStartTimeISO = new Date(providerStartTime).toISOString()
+
+    try {
+      // Streaming path when no tools
+      if (request.stream && (!tools || tools.length === 0)) {
+        logger.info('Using streaming response for SambaNova request')
+        const streamResponse = await sambanova.chat.completions.create({
+          ...payload,
+          stream: true,
+          stream_options: { include_usage: true },
+        })
+
+        const tokenUsage = { prompt: 0, completion: 0, total: 0 }
+        const streamingResult = {
+          stream: createReadableStreamFromOpenAIStream(streamResponse, (content, usage) => {
+            streamingResult.execution.output.content = content
+            if (usage) {
+              streamingResult.execution.output.tokens = {
+                prompt: usage.prompt_tokens || tokenUsage.prompt,
+                completion: usage.completion_tokens || tokenUsage.completion,
+                total: usage.total_tokens || tokenUsage.total,
+              }
+            }
+          }),
+          execution: {
+            success: true,
+            output: {
+              content: '',
+              model: request.model,
+              tokens: tokenUsage,
+              providerTiming: {
+                startTime: providerStartTimeISO,
+                endTime: new Date().toISOString(),
+                duration: Date.now() - providerStartTime,
+                timeSegments: [
+                  {
+                    type: 'model',
+                    name: 'Streaming response',
+                    startTime: providerStartTime,
+                    endTime: Date.now(),
+                    duration: Date.now() - providerStartTime,
+                  },
+                ],
+              },
+            },
+            logs: [],
+            metadata: {
+              startTime: providerStartTimeISO,
+              endTime: new Date().toISOString(),
+              duration: Date.now() - providerStartTime,
+            },
+          },
+        } as StreamingExecution
+
+        return streamingResult as StreamingExecution
+      }
+
+      // Non-streaming and/or tools path — iterative tool handling
+      const initialCallTime = Date.now()
+      const originalToolChoice = payload.tool_choice
+      const forcedTools = preparedTools?.forcedTools || []
+      let usedForcedTools: string[] = []
+
+      const checkForForcedToolUsage = (
+        response: any,
+        toolChoice: string | { type: string; function?: { name: string }; name?: string; any?: any }
+      ) => {
+        if (typeof toolChoice === 'object' && response.choices[0]?.message?.tool_calls) {
+          const toolCallsResponse = response.choices[0].message.tool_calls
+          const result = trackForcedToolUsage(
+            toolCallsResponse,
+            toolChoice,
+            logger,
+            'sambanova',
+            forcedTools,
+            usedForcedTools
+          )
+          hasUsedForcedTool = result.hasUsedForcedTool
+          usedForcedTools = result.usedForcedTools
+        }
+      }
+
+      let currentResponse = await sambanova.chat.completions.create(payload)
+      const firstResponseTime = Date.now() - initialCallTime
+
+      let content = currentResponse.choices[0]?.message?.content || ''
+      const tokens = {
+        prompt: currentResponse.usage?.prompt_tokens || 0,
+        completion: currentResponse.usage?.completion_tokens || 0,
+        total: currentResponse.usage?.total_tokens || 0,
+      }
+      const toolCalls: any[] = []
+      const toolResults: any[] = []
+      const currentMessages = [...allMessages]
+      let iterationCount = 0
+      const MAX_ITERATIONS = 10
+      let modelTime = firstResponseTime
+      let toolsTime = 0
+      let hasUsedForcedTool = false
+      const timeSegments: TimeSegment[] = [
+        {
+          type: 'model',
+          name: 'Initial response',
+          startTime: initialCallTime,
+          endTime: initialCallTime + firstResponseTime,
+          duration: firstResponseTime,
+        },
+      ]
+
+      checkForForcedToolUsage(currentResponse, originalToolChoice)
+
+      while (iterationCount < MAX_ITERATIONS) {
+        const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+        if (!toolCallsInResponse?.length) break
+
+        const toolsStartTime = Date.now()
+        for (const toolCall of toolCallsInResponse) {
+          try {
+            const toolName = toolCall.function.name
+            const toolArgs = JSON.parse(toolCall.function.arguments)
+            const tool = request.tools?.find((t) => t.id === toolName)
+            if (!tool) continue
+
+            const toolCallStartTime = Date.now()
+            const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
+            const result = await executeTool(toolName, executionParams, true)
+            const toolCallEndTime = Date.now()
+            const toolCallDuration = toolCallEndTime - toolCallStartTime
+
+            timeSegments.push({
+              type: 'tool',
+              name: toolName,
+              startTime: toolCallStartTime,
+              endTime: toolCallEndTime,
+              duration: toolCallDuration,
+            })
+
+            let resultContent: any
+            if (result.success) {
+              toolResults.push(result.output)
+              resultContent = result.output
+            } else {
+              resultContent = {
+                error: true,
+                message: result.error || 'Tool execution failed',
+                tool: toolName,
+              }
+            }
+
+            toolCalls.push({
+              name: toolName,
+              arguments: toolParams,
+              startTime: new Date(toolCallStartTime).toISOString(),
+              endTime: new Date(toolCallEndTime).toISOString(),
+              duration: toolCallDuration,
+              result: resultContent,
+              success: result.success,
+            })
+
+            currentMessages.push({
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: toolCall.id,
+                  type: 'function',
+                  function: { name: toolName, arguments: toolCall.function.arguments },
+                },
+              ],
+            })
+            currentMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(resultContent),
+            })
+          } catch (error) {
+            logger.error('Error processing SambaNova tool call:', {
+              error,
+              toolName: toolCall?.function?.name,
+            })
+          }
+        }
+        const thisToolsTime = Date.now() - toolsStartTime
+        toolsTime += thisToolsTime
+
+        const nextPayload = { ...payload, messages: currentMessages }
+        if (typeof originalToolChoice === 'object' && hasUsedForcedTool && forcedTools.length > 0) {
+          const remainingTools = forcedTools.filter((tool) => !usedForcedTools.includes(tool))
+          if (remainingTools.length > 0) {
+            nextPayload.tool_choice = { type: 'function', function: { name: remainingTools[0] } }
+            logger.info(`Forcing next tool: ${remainingTools[0]}`)
+          } else {
+            nextPayload.tool_choice = 'auto'
+            logger.info('All forced tools used, switching to auto tool_choice')
+          }
+        }
+
+        const nextModelStartTime = Date.now()
+        currentResponse = await sambanova.chat.completions.create(nextPayload)
+        checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
+        const nextModelEndTime = Date.now()
+        const thisModelTime = nextModelEndTime - nextModelStartTime
+        timeSegments.push({
+          type: 'model',
+          name: `Model response (iteration ${iterationCount + 1})`,
+          startTime: nextModelStartTime,
+          endTime: nextModelEndTime,
+          duration: thisModelTime,
+        })
+        modelTime += thisModelTime
+        if (currentResponse.choices[0]?.message?.content)
+          content = currentResponse.choices[0].message.content
+        if (currentResponse.usage) {
+          tokens.prompt += currentResponse.usage.prompt_tokens || 0
+          tokens.completion += currentResponse.usage.completion_tokens || 0
+          tokens.total += currentResponse.usage.total_tokens || 0
+        }
+        iterationCount++
+      }
+
+      // Optional final streaming after tools (keep parity with OpenAI)
+      if (request.stream && iterationCount > 0) {
+        logger.info('Using streaming for final SambaNova response after tool calls')
+        const streamingPayload = {
+          ...payload,
+          messages: currentMessages,
+          tool_choice: 'auto',
+          stream: true,
+          stream_options: { include_usage: true },
+        }
+        const streamResponse = await sambanova.chat.completions.create(streamingPayload)
+
+        const streamingResult = {
+          stream: createReadableStreamFromOpenAIStream(streamResponse, (finalContent, usage) => {
+            streamingResult.execution.output.content = finalContent
+            if (usage) {
+              streamingResult.execution.output.tokens = {
+                prompt: usage.prompt_tokens || tokens.prompt,
+                completion: usage.completion_tokens || tokens.completion,
+                total: usage.total_tokens || tokens.total,
+              }
+            }
+          }),
+          execution: {
+            success: true,
+            output: {
+              content: '',
+              model: request.model,
+              tokens: { ...tokens },
+              toolCalls:
+                toolCalls.length > 0 ? { list: toolCalls, count: toolCalls.length } : undefined,
+              providerTiming: {
+                startTime: providerStartTimeISO,
+                endTime: new Date().toISOString(),
+                duration: Date.now() - providerStartTime,
+                modelTime,
+                toolsTime,
+                firstResponseTime,
+                iterations: iterationCount + 1,
+                timeSegments,
+              },
+            },
+            logs: [],
+            metadata: {
+              startTime: providerStartTimeISO,
+              endTime: new Date().toISOString(),
+              duration: Date.now() - providerStartTime,
+            },
+          },
+        } as StreamingExecution
+
+        return streamingResult as StreamingExecution
+      }
+
+      const providerEndTime = Date.now()
+      const providerEndTimeISO = new Date(providerEndTime).toISOString()
+
+      return {
+        content,
+        model: request.model,
+        tokens,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        toolResults: toolResults.length > 0 ? toolResults : undefined,
+        timing: {
+          startTime: providerStartTimeISO,
+          endTime: providerEndTimeISO,
+          duration: providerEndTime - providerStartTime,
+          modelTime,
+          toolsTime,
+          firstResponseTime,
+          iterations: iterationCount + 1,
+          timeSegments,
+        },
+      }
+    } catch (error: any) {
+      const providerEndTime = Date.now()
+      const providerEndTimeISO = new Date(providerEndTime).toISOString()
+      const totalDuration = providerEndTime - providerStartTime
+      logger.error('Error in SambaNova request:', { error, duration: totalDuration })
+      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
+      // @ts-ignore
+      enhancedError.timing = {
+        startTime: providerStartTimeISO,
+        endTime: providerEndTimeISO,
+        duration: totalDuration,
+      }
+      throw enhancedError
+    }
+  },
+}

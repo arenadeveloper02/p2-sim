@@ -44,6 +44,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'via.placeholder.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'sambanova.ai',
+      },
       // Custom domain for file storage if configured
       ...(env.NEXT_PUBLIC_BLOB_BASE_URL
         ? [
