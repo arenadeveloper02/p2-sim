@@ -18,7 +18,7 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
   name: 'Image Generator',
   description: 'Generate images',
   longDescription:
-    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana. Requires API Key.',
+    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   bgColor: '#4D5FFF',
@@ -31,9 +31,9 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       layout: 'half',
       options: [
         { label: 'DALL-E 3', id: 'dall-e-3' },
-        { label: 'GPT Image', id: 'gpt-image-1' },
-        { label: 'Google Imagen', id: 'imagen-4.0-generate-001' },
-        { label: 'Google Nano Banana', id: 'gemini-2.5-flash-image' },
+        // { label: 'GPT Image', id: 'gpt-image-1' },
+        { label: 'Imagen 4.0', id: 'imagen-4.0-generate-001' },
+        { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
       ],
       value: () => 'dall-e-3',
     },
@@ -177,16 +177,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       acceptedTypes: 'image/*',
       condition: { field: 'model', value: 'gemini-2.5-flash-image' },
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      layout: 'full',
-      required: true,
-      placeholder: 'Enter your API key (OpenAI or Google)',
-      password: true,
-      connectionDroppable: false,
-    },
   ],
   tools: {
     access: ['openai_image', 'google_imagen', 'google_nano_banana'],
@@ -202,9 +192,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
         return 'openai_image'
       },
       params: (params) => {
-        if (!params.apiKey) {
-          throw new Error('API key is required')
-        }
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
@@ -217,7 +204,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
             imageSize: params.imageSize || '1K',
             aspectRatio: params.aspectRatio || '1:1',
             personGeneration: params.personGeneration || 'allow_adult',
-            apiKey: params.apiKey,
           }
         }
 
@@ -229,7 +215,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
             aspectRatio: params.aspectRatio || '1:1',
             inputImage: params.inputImage,
             inputImageMimeType: params.inputImageMimeType,
-            apiKey: params.apiKey,
           }
         }
 
@@ -238,7 +223,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
           prompt: params.prompt,
           model: params.model || 'dall-e-3',
           size: params.size || '1024x1024',
-          apiKey: params.apiKey,
         }
 
         if (params.model === 'dall-e-3') {
@@ -274,7 +258,6 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       description: 'Base64 encoded input image for editing (Google Nano Banana)',
     },
     inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
-    apiKey: { type: 'string', description: 'API key (OpenAI or Google)' },
   },
   outputs: {
     content: { type: 'string', description: 'Generation response' },
