@@ -1,5 +1,4 @@
 import { createLogger } from '@/lib/logs/console/logger'
-import { getBaseUrl } from '@/lib/urls/utils'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
@@ -35,7 +34,8 @@ export const imagenTool: ToolConfig = {
       type: 'string',
       required: true,
       visibility: 'user-only',
-      description: 'The Imagen model to use (imagen-4.0-generate-001, imagen-4.0-ultra-generate-001, imagen-4.0-fast-generate-001, or imagen-3.0-generate-002)',
+      description:
+        'The Imagen model to use (imagen-4.0-generate-001, imagen-4.0-ultra-generate-001, imagen-4.0-fast-generate-001, or imagen-3.0-generate-002)',
     },
     prompt: {
       type: 'string',
@@ -118,18 +118,20 @@ export const imagenTool: ToolConfig = {
         logger.error('Imagen API error response:', {
           status: response.status,
           statusText: response.statusText,
-          body: errorText
+          body: errorText,
         })
-        throw new Error(`Imagen API error: ${response.status} ${response.statusText} - ${errorText}`)
+        throw new Error(
+          `Imagen API error: ${response.status} ${response.statusText} - ${errorText}`
+        )
       }
 
       const data = await response.json()
-      
+
       logger.info('Raw Imagen API response:', JSON.stringify(data, null, 2))
 
       // Handle different possible response structures
       let generatedImages = []
-      
+
       if (data.predictions && data.predictions.length > 0) {
         // REST API format - predictions array contains the images directly
         generatedImages = data.predictions
@@ -156,7 +158,7 @@ export const imagenTool: ToolConfig = {
           predictions: data.predictions,
           generatedImages: data.generatedImages,
           images: data.images,
-          data: data.data
+          data: data.data,
         })
         throw new Error('No generated images found in response')
       }
@@ -164,7 +166,7 @@ export const imagenTool: ToolConfig = {
       // Get the first generated image
       const generatedImage = generatedImages[0]
       logger.info('First generated image structure:', JSON.stringify(generatedImage, null, 2))
-      
+
       let base64Image = null
 
       // Handle different image data formats

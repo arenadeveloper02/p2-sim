@@ -269,7 +269,10 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     background: { type: 'string', description: 'Background type' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
     personGeneration: { type: 'string', description: 'Person generation setting' },
-    inputImage: { type: 'string', description: 'Base64 encoded input image for editing (Google Nano Banana)' },
+    inputImage: {
+      type: 'string',
+      description: 'Base64 encoded input image for editing (Google Nano Banana)',
+    },
     inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
     apiKey: { type: 'string', description: 'API key (OpenAI or Google)' },
   },
