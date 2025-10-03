@@ -35,10 +35,10 @@ export function WorkflowInputOverlay({
       <Card className='max-h-[80vh] w-[90%] max-w-md overflow-auto shadow-lg'>
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
           <CardTitle className='font-medium text-xl'>Workflow Inputs</CardTitle>
-          <Button variant='ghost' size='icon' className='h-8 w-8 rounded-full' onClick={onClose}>
+          {/* <Button variant='ghost' size='icon' className='h-8 w-8 rounded-full' onClick={onClose}>
             <X className='h-4 w-4' />
             <span className='sr-only'>Close</span>
-          </Button>
+          </Button> */}
         </CardHeader>
         <CardContent>
           <WorkflowInputForm fields={fields} onSubmit={handleSubmit} />
