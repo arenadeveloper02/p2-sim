@@ -1,5 +1,7 @@
 import { createLogger } from '@/lib/logs/console/logger'
+import { getRotatingApiKey } from '@/lib/utils'
 import type { ToolConfig } from '@/tools/types'
+import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('NanoBananaTool')
 
@@ -73,12 +75,6 @@ export const nanoBananaTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'MIME type of the input image (image/png, image/jpeg, etc.)',
     },
-    apiKey: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Your Google AI API key',
-    },
   },
 
   request: {
@@ -88,10 +84,13 @@ export const nanoBananaTool: ToolConfig = {
       return url
     },
     method: 'POST',
-    headers: (params) => ({
-      'Content-Type': 'application/json',
-      'x-goog-api-key': params.apiKey,
-    }),
+    headers: () => {
+      const apiKey = getRotatingApiKey('google')
+      return {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      }
+    },
     body: async (params) => {
       const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
         {

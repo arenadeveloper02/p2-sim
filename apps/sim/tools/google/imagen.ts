@@ -1,4 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
+import { getRotatingApiKey } from '@/lib/utils'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
@@ -61,12 +62,6 @@ export const imagenTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'Person generation setting (dont_allow, allow_adult, allow_all)',
     },
-    apiKey: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Your Google AI API key',
-    },
   },
 
   request: {
@@ -77,10 +72,13 @@ export const imagenTool: ToolConfig = {
       return url
     },
     method: 'POST',
-    headers: (params) => ({
-      'Content-Type': 'application/json',
-      'x-goog-api-key': params.apiKey,
-    }),
+    headers: () => {
+      const apiKey = getRotatingApiKey('google')
+      return {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      }
+    },
     body: (params) => {
       // Try a simpler request format first
       const body: ImagenRequestBody = {
