@@ -2,6 +2,7 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/utils'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -15,8 +16,10 @@ import {
   EmailAuth,
   PasswordAuth,
   VoiceInterface,
+  WorkflowInputForm,
 } from '@/app/chat/components'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+import { extractInputFieldsByWorkflowId } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
 
 const logger = createLogger('ChatClient')
 
@@ -112,6 +115,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | null>(null)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
+
+  // Workflow input form state
+  const [inputFields, setInputFields] = useState<any[]>([])
+  const [showInputForm, setShowInputForm] = useState(false)
+  const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
+  const [workflowInputs, setWorkflowInputs] = useState<Record<string, any>>({})
+  const [isLoadingInputFields, setIsLoadingInputFields] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -267,7 +277,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setAuthRequired(null)
 
       const data = await response.json()
-
+      console.log('<><><>Chat config data', data)
       setChatConfig(data)
 
       if (data?.customizations?.welcomeMessage) {
@@ -287,9 +297,35 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     }
   }
 
+  // Fetch input fields for the workflow
+  const fetchInputFields = async () => {
+    try {
+      setIsLoadingInputFields(true)
+      // The subdomain is actually the workflow ID in this case
+      const fields = await extractInputFieldsByWorkflowId(subdomain)
+      console.log('<><><>Input fields', fields)
+      setInputFields(fields)
+
+      // If there are input fields, show the form
+      if (fields && fields.length > 0) {
+        setShowInputForm(true)
+      } else {
+        // No input fields needed, proceed directly to chat
+        setInitialInputsSubmitted(true)
+      }
+    } catch (error) {
+      logger.error('Error fetching input fields:', error)
+      // On error, proceed to chat anyway
+      setInitialInputsSubmitted(true)
+    } finally {
+      setIsLoadingInputFields(false)
+    }
+  }
+
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
+    fetchInputFields() // Fetch input fields for the workflow
     setConversationId(uuidv4())
 
     getFormattedGitHubStars()
@@ -313,18 +349,35 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   }
 
   // Handle sending a message
-  const handleSendMessage = async (messageParam?: string, isVoiceInput = false) => {
+  const handleSendMessage = async (
+    messageParam?: string,
+    isVoiceInput = false,
+    isFormSubmission = false
+  ) => {
     const messageToSend = messageParam ?? inputValue
-    if (!messageToSend.trim() || isLoading) return
 
-    logger.info('Sending message:', { messageToSend, isVoiceInput, conversationId })
+    // Allow empty messages only if it's a form submission
+    if (!messageToSend.trim() && !isFormSubmission && isLoading) return
+
+    // For form submissions, use a default message if no message is provided
+    const finalMessage =
+      isFormSubmission && !messageToSend.trim()
+        ? 'Starting workflow with provided inputs...'
+        : messageToSend
+
+    logger.info('Sending message:', {
+      messageToSend: finalMessage,
+      isVoiceInput,
+      conversationId,
+      isFormSubmission,
+    })
 
     // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
-      content: messageToSend,
+      content: finalMessage,
       type: 'user',
       timestamp: new Date(),
     }
@@ -346,12 +399,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
-      // Send structured payload to maintain chat context
+      // Send the message as the main input to the workflow
       const payload = {
-        input:
-          typeof userMessage.content === 'string'
-            ? userMessage.content
-            : JSON.stringify(userMessage.content),
+        input: finalMessage,
         conversationId,
       }
 
@@ -426,6 +476,40 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     }
   }
 
+  // Handle workflow input form submission
+  const handleWorkflowInputSubmit = useCallback(
+    async (inputs: Record<string, any>) => {
+      logger.info('Workflow inputs submitted:', inputs)
+      // Stringify the form inputs to use as the main workflow input
+      const stringifiedInputs = Object.entries(inputs)
+        .map(([key, value]) => {
+          const formattedKey = key
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char, index) =>
+              index === 0 ? char.toUpperCase() : char.toLowerCase()
+            )
+          return `${formattedKey}: ${value}`
+        })
+        .join('\n')
+      setWorkflowInputs(inputs)
+      setShowInputForm(false)
+      setInitialInputsSubmitted(true)
+
+      // Add a message indicating the workflow is starting
+      const workflowStartMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: 'Starting workflow with the provided inputs...',
+        type: 'assistant',
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, workflowStartMessage])
+
+      // Trigger the workflow execution with stringified inputs as the main input
+      await handleSendMessage(stringifiedInputs, false, true) // Use stringified inputs as the main message
+    },
+    [handleSendMessage]
+  )
+
   // Stop audio when component unmounts or when streaming is stopped
   useEffect(() => {
     return () => {
@@ -461,7 +545,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const handleVoiceTranscript = useCallback(
     (transcript: string) => {
       logger.info('Received voice transcript:', transcript)
-      handleSendMessage(transcript, true)
+      handleSendMessage(transcript, true, false)
     },
     [handleSendMessage]
   )
@@ -469,6 +553,38 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // If error, show error message using the extracted component
   if (error) {
     return <ChatErrorState error={error} starCount={starCount} />
+  }
+
+  // Show loading state while fetching input fields
+  if (isLoadingInputFields) {
+    return <ChatLoadingState />
+  }
+
+  // Show workflow input form if needed and not yet submitted
+  if (showInputForm && !initialInputsSubmitted) {
+    return (
+      <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+        {/* Header component */}
+        <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+
+        {/* Input form container */}
+        <div className='flex flex-1 items-center justify-center p-4'>
+          <div className='mx-auto w-full max-w-2xl'>
+            <div className='rounded-lg border bg-card p-6 shadow-sm'>
+              <div className='mb-6'>
+                <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
+                <p className='text-muted-foreground'>
+                  Please provide the required inputs to start the workflow chat.
+                </p>
+              </div>
+              <TooltipProvider>
+                <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
+              </TooltipProvider>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // If authentication is required, use the extracted components
@@ -508,54 +624,58 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Voice-first mode interface
   if (isVoiceFirstMode) {
     return (
-      <VoiceInterface
-        onCallEnd={handleExitVoiceMode}
-        onVoiceTranscript={handleVoiceTranscript}
-        onVoiceStart={noop}
-        onVoiceEnd={noop}
-        onInterrupt={handleVoiceInterruption}
-        isStreaming={isStreamingResponse}
-        isPlayingAudio={isPlayingAudio}
-        audioContextRef={audioContextRef}
-        messages={messages.map((msg) => ({
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          type: msg.type,
-        }))}
-      />
+      <TooltipProvider>
+        <VoiceInterface
+          onCallEnd={handleExitVoiceMode}
+          onVoiceTranscript={handleVoiceTranscript}
+          onVoiceStart={noop}
+          onVoiceEnd={noop}
+          onInterrupt={handleVoiceInterruption}
+          isStreaming={isStreamingResponse}
+          isPlayingAudio={isPlayingAudio}
+          audioContextRef={audioContextRef}
+          messages={messages.map((msg) => ({
+            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+            type: msg.type,
+          }))}
+        />
+      </TooltipProvider>
     )
   }
 
   // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      {/* Header component */}
-      <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
+    <TooltipProvider>
+      <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+        {/* Header component */}
+        <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
-      {/* Message Container component */}
-      <ChatMessageContainer
-        messages={messages}
-        isLoading={isLoading}
-        showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-        messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
-        chatConfig={chatConfig}
-      />
+        {/* Message Container component */}
+        <ChatMessageContainer
+          messages={messages}
+          isLoading={isLoading}
+          showScrollButton={showScrollButton}
+          messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+          messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+          scrollToBottom={scrollToBottom}
+          scrollToMessage={scrollToMessage}
+          chatConfig={chatConfig}
+        />
 
-      {/* Input area (free-standing at the bottom) */}
-      <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(value, isVoiceInput) => {
-              void handleSendMessage(value, isVoiceInput)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
-          />
+        {/* Input area (free-standing at the bottom) */}
+        <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+          <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+            <ChatInput
+              onSubmit={(value, isVoiceInput) => {
+                void handleSendMessage(value, isVoiceInput, false)
+              }}
+              isStreaming={isStreamingResponse}
+              onStopStreaming={() => stopStreaming(setMessages)}
+              onVoiceStart={handleVoiceStart}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
