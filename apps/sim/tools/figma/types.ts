@@ -1,7 +1,7 @@
 import type { ToolResponse } from '@/tools/types'
 
 // Base parameters shared by all Figma operations
-export type BaseFigmaParams = Record<string, never>
+export type BaseFigmaParams = object
 
 // Create Figma file parameters
 export interface CreateFigmaParams extends BaseFigmaParams {
