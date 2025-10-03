@@ -350,7 +350,7 @@ export async function executeWorkflowForChat(
   }
 
   // Set up logging for chat execution
-  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId)
+  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId, true)
 
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>

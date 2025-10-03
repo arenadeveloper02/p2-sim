@@ -167,6 +167,52 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     }, 100),
     [isStreamingResponse]
   )
+  // Fetch history messages
+  useEffect(() => {
+    const workflowId = subdomain
+    const fetchHistory = async (workflowId: string) => {
+      const response = await fetch(`/api/chat/${workflowId}/history`)
+      if(response.ok){
+        const data = await response.json()
+        const formatData = data.logs.flatMap((log: any) => {
+          const messages = []
+          
+          // Add user message if userInput exists
+          if (log.userInput) {
+            messages.push({
+              id: `${log.id}-user`,
+              content: log.userInput,
+              type: 'user',
+              timestamp: new Date(log.startedAt),
+            })
+          }
+          
+          // Add assistant message if modelOutput exists
+          if (log.modelOutput) {
+            messages.push({
+              id: `${log.id}-assistant`,
+              content: log.modelOutput,
+              type: 'assistant',
+              timestamp: new Date(log.endedAt || log.startedAt),
+              isStreaming: false,
+            })
+          }
+          
+          return messages
+        })
+        setTimeout(() => {
+        setMessages((prev) => [...prev, ...formatData])
+        // Scroll to bottom after setting history messages
+        setTimeout(() => {
+          scrollToBottom()
+        }, 100)
+      },500)
+      }
+    }
+    if(workflowId && Object.keys(chatConfig || {}).length > 0){
+      fetchHistory(workflowId)
+    }
+  }, [subdomain, chatConfig])
 
   useEffect(() => {
     const container = messagesContainerRef.current
