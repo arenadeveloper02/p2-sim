@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import CopilotMarkdownRenderer from '../../../copilot/components/copilot-message/components/markdown-renderer'
 import { GoogleAdsDashboard } from '@/components/ui/tool-call'
+import { GTMDashboard } from '@/components/ui/gtm-dashboard'
 import { isBase64, renderBs64Img } from './constants'
 
 interface ChatMessageProps {
@@ -86,7 +87,25 @@ export function ChatMessage({ message }: ChatMessageProps) {
       if (jsonMatch) {
         try {
           const parsedData = JSON.parse(jsonMatch[1])
-          console.log('🎯 PARSED GOOGLE ADS DATA:', parsedData)
+          console.log('🎯 PARSED JSON DATA:', parsedData)
+          
+          // Handle array-wrapped responses
+          const actualData = Array.isArray(parsedData) && parsedData.length > 0 ? parsedData[0] : parsedData
+          
+          // PRIORITY: Check for GTM/CEO Metrics FIRST
+          if (actualData && actualData.success && actualData.metrics && typeof actualData.metrics === 'object') {
+            const hasGTMMetrics = 
+              'totalRevenue' in actualData.metrics || 
+              'roas' in actualData.metrics || 
+              'cac' in actualData.metrics || 
+              'mer' in actualData.metrics ||
+              'topPerformingAccounts' in actualData.metrics
+            
+            if (hasGTMMetrics) {
+              console.log('✅ RENDERING GTM DASHBOARD FROM PARSED JSON! Metrics:', Object.keys(actualData.metrics))
+              return <GTMDashboard data={actualData} />
+            }
+          }
           
           // NEW: Check if this is deep dive analysis data
           if (parsedData && parsedData.analysisType === 'deep_dive_complete' && parsedData.monthlyData) {
@@ -130,10 +149,74 @@ export function ChatMessage({ message }: ChatMessageProps) {
     
     // Check if this is Google Ads data as object (fallback)
     if (content && typeof content === 'object') {
+      // Debug logging for GTM data
+      console.log('🔍 Checking content structure:', {
+        hasSuccess: 'success' in content,
+        hasMetrics: 'metrics' in content,
+        hasOutput: 'output' in content,
+        hasResult: 'result' in content,
+        contentKeys: Object.keys(content),
+        contentType: typeof content,
+        metricsKeys: content.metrics ? Object.keys(content.metrics) : 'no metrics',
+        fullContent: content
+      })
+      
       // Check for deep dive summary
       if (content.type === 'deep_dive_summary' && content.summary) {
         console.log('✅ RENDERING DEEP DIVE SUMMARY!')
         return <CopilotMarkdownRenderer content={content.summary} />
+      }
+      
+      // PRIORITY: Check for GTM Metrics Dashboard data FIRST (before Google Ads check)
+      // GTM metrics have specific fields like totalRevenue, roas, cac, mer
+      if (content.success && content.metrics && typeof content.metrics === 'object') {
+        const hasGTMMetrics = 
+          'totalRevenue' in content.metrics || 
+          'roas' in content.metrics || 
+          'cac' in content.metrics || 
+          'mer' in content.metrics ||
+          'topPerformingAccounts' in content.metrics
+        
+        if (hasGTMMetrics) {
+          console.log('✅ RENDERING GTM METRICS DASHBOARD! Detected GTM-specific metrics:', Object.keys(content.metrics))
+          return <GTMDashboard data={content} />
+        }
+      }
+      
+      // Also check for GTM metrics without success flag (fallback)
+      if (content.metrics && typeof content.metrics === 'object' && content.output) {
+        const hasGTMMetrics = 
+          'totalRevenue' in content.metrics || 
+          'roas' in content.metrics || 
+          'cac' in content.metrics || 
+          'mer' in content.metrics ||
+          'topPerformingAccounts' in content.metrics
+        
+        if (hasGTMMetrics) {
+          console.log('✅ RENDERING GTM METRICS DASHBOARD! (Fallback detection)', Object.keys(content.metrics))
+          return <GTMDashboard data={{ success: true, ...content }} />
+        }
+      }
+      
+      // Check for GTM data in output object (nested)
+      if (content.output && typeof content.output === 'object') {
+        if (typeof content.output === 'string') {
+          // Output is a string (markdown), check if we have metrics separately
+          if (content.metrics && typeof content.metrics === 'object') {
+            const hasGTMMetrics = 
+              'totalRevenue' in content.metrics || 
+              'roas' in content.metrics || 
+              'cac' in content.metrics
+            
+            if (hasGTMMetrics) {
+              console.log('✅ RENDERING GTM METRICS DASHBOARD FROM STRING OUTPUT!')
+              return <GTMDashboard data={{ success: true, output: content.output, metrics: content.metrics }} />
+            }
+          }
+        } else if (content.output.metrics) {
+          console.log('✅ RENDERING GTM METRICS DASHBOARD FROM NESTED OUTPUT!')
+          return <GTMDashboard data={{ success: true, output: content.output.content || content.output, metrics: content.output.metrics }} />
+        }
       }
       
       // Check for deep dive analysis data

@@ -35,6 +35,7 @@ import {
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
+import { gtmMetricsAgentTool } from '@/tools/gtm_metrics/agent'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -283,6 +284,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
+  gtm_metrics_agent: gtmMetricsAgentTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,

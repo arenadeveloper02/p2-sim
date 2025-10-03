@@ -368,10 +368,21 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                           }
                         }
                         if (outputValue !== undefined) {
+                          // Check if this is GTM/CEO metrics data - pass as object instead of JSON string
+                          const isGTMMetrics = 
+                            typeof outputValue === 'object' && 
+                            outputValue !== null &&
+                            outputValue.success &&
+                            outputValue.metrics &&
+                            typeof outputValue.metrics === 'object' &&
+                            ('totalRevenue' in outputValue.metrics || 'roas' in outputValue.metrics || 'cac' in outputValue.metrics)
+                          
                           addMessage({
                             content:
                               typeof outputValue === 'string'
                                 ? outputValue
+                                : isGTMMetrics
+                                ? outputValue  // Pass GTM metrics as object directly
                                 : `\`\`\`json\n${JSON.stringify(outputValue, null, 2)}\n\`\`\``,
                             workflowId: activeWorkflowId,
                             type: 'workflow',

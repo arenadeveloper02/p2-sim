@@ -24,6 +24,7 @@ import { GmailBlock } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
+import { GTMAgentBlock } from '@/blocks/blocks/gtm_agent'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
 import { GoogleSheetsBlock } from '@/blocks/blocks/google_sheets'
@@ -104,6 +105,7 @@ export const registry: Record<string, BlockConfig> = {
   google_ads: GoogleAdsBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
+  gtm_agent: GTMAgentBlock,
   google_drive: GoogleDriveBlock,
   google_search: GoogleSearchBlock,
   google_sheets: GoogleSheetsBlock,

@@ -19,6 +19,7 @@ import { Chat } from './components/chat/chat'
 import { Console } from './components/console/console'
 import { Copilot } from './components/copilot/copilot'
 import { Variables } from './components/variables/variables'
+import { GTMPanel } from './components/gtm/gtm-panel'
 
 const logger = createLogger('Panel')
 
@@ -226,7 +227,7 @@ export function Panel() {
   )
 
   // Handle tab clicks - no loading, just switch tabs
-  const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot') => {
+  const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot' | 'gtm') => {
     setActiveTab(tab)
     if (!isOpen) {
       togglePanel()
@@ -277,7 +278,7 @@ export function Panel() {
       document.addEventListener('mouseup', handleResizeEnd)
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
-
+ 
       return () => {
         document.removeEventListener('mousemove', handleResize)
         document.removeEventListener('mouseup', handleResizeEnd)
@@ -332,6 +333,14 @@ export function Panel() {
           }`}
         >
           Console
+        </button>
+        <button
+          onClick={() => handleTabClick('gtm')}
+          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+            isOpen && activeTab === 'gtm' ? 'panel-tab-active' : 'panel-tab-inactive'
+          }`}
+        >
+          📊 GTM
         </button>
         {!isFullScreenExpanded && !parentTemplateId && (
           <button
@@ -583,6 +592,14 @@ export function Panel() {
               }}
             >
               <Variables />
+            </div>
+            <div
+              style={{
+                display: activeTab === 'gtm' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
+              {activeWorkflowId && <GTMPanel workflowId={activeWorkflowId} />}
             </div>
           </div>
         </div>
