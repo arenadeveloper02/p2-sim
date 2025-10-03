@@ -23,6 +23,18 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import {
+  figmaConvertTool,
+  figmaCreateTool,
+  figmaDeleteCommentTool,
+  figmaGetCommentsTool,
+  figmaGetFileImagesTool,
+  figmaGetFileNodesTool,
+  figmaGetFileTool,
+  figmaGetProjectFilesTool,
+  figmaGetTeamProjectsTool,
+  figmaPostCommentTool,
+} from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import { crawlTool, scrapeTool, searchTool } from '@/tools/firecrawl'
 import { functionExecuteTool } from '@/tools/function'
@@ -363,6 +375,17 @@ export const tools: Record<string, ToolConfig> = {
   sharepoint_create_page: sharepointCreatePageTool,
   sharepoint_read_page: sharepointReadPageTool,
   sharepoint_list_sites: sharepointListSitesTool,
+  // Figma tools
+  figma_create: figmaCreateTool,
+  figma_convert: figmaConvertTool,
+  figma_get_comments: figmaGetCommentsTool,
+  figma_post_comment: figmaPostCommentTool,
+  figma_delete_comment: figmaDeleteCommentTool,
+  figma_get_team_projects: figmaGetTeamProjectsTool,
+  figma_get_file: figmaGetFileTool,
+  figma_get_file_nodes: figmaGetFileNodesTool,
+  figma_get_file_images: figmaGetFileImagesTool,
+  figma_get_project_files: figmaGetProjectFilesTool,
   // Provider chat tools
   // Provider chat tools - handled separately in agent blocks
 }
