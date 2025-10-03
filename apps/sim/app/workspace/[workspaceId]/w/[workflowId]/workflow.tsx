@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   Background,
   ConnectionLineType,
-  Controls,
   type Edge,
   type EdgeTypes,
   type NodeTypes,
@@ -43,6 +42,7 @@ import { useGeneralStore } from '@/stores/settings/general/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { hasWorkflowsInitiallyLoaded, useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { FloatingControls } from './components/floating-controls/floating-contols'
 
 const logger = createLogger('Workflow')
 
@@ -1640,6 +1640,9 @@ const WorkflowContent = React.memo(() => {
         {/* Floating Control Bar */}
         <ControlBar hasValidationErrors={nestedSubflowErrors.size > 0} />
 
+        {/* Floating Controls (Zoom, Undo, Redo) */}
+        <FloatingControls />
+
         <ReactFlow
           nodes={nodes}
           edges={edgesWithSelection}
@@ -1686,7 +1689,6 @@ const WorkflowContent = React.memo(() => {
           autoPanOnConnect={effectivePermissions.canEdit}
           autoPanOnNodeDrag={effectivePermissions.canEdit}
         >
-          <Controls position='bottom-right' />
           <Background
             color='hsl(var(--workflow-dots))'
             size={4}
