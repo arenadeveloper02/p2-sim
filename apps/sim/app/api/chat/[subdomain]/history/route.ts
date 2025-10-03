@@ -1,24 +1,20 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
+import { and, eq, gte, lte, sql } from 'drizzle-orm'
+import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import {
-  addCorsHeaders,
-  validateAuthToken,
-  validateChatAuth,
-} from '@/app/api/chat/utils'
+import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, workflow, workflowExecutionLogs } from '@/db/schema'
+import { workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatHistoryAPI')
 
 /**
  * GET /api/chat/[subdomain]/history
- * 
+ *
  * Retrieves the execution history for external chat interactions.
  * Only returns logs where is_external_chat = true in workflow_execution_logs table.
- * 
+ *
  * Query Parameters:
  * - limit: Number of records to return (max 100, default 50)
  * - offset: Number of records to skip (default 0)
@@ -26,7 +22,7 @@ const logger = createLogger('ChatHistoryAPI')
  * - endDate: ISO 8601 date string to filter to
  * - conversationId: Filter by specific conversation ID
  * - level: Filter by log level ('info' or 'error')
- * 
+ *
  * Authentication:
  * - Public chats: No authentication required
  * - Password/Email chats: Requires valid authentication cookie or credentials
@@ -43,26 +39,37 @@ export async function GET(
 
     // Parse query parameters for pagination and filtering
     const { searchParams } = new URL(request.url)
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100) // Max 100 items
-    const offset = Math.max(parseInt(searchParams.get('offset') || '0'), 0) // Ensure non-negative
+    const limit = Math.min(Number.parseInt(searchParams.get('limit') || '50'), 100) // Max 100 items
+    const offset = Math.max(Number.parseInt(searchParams.get('offset') || '0'), 0) // Ensure non-negative
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const conversationId = searchParams.get('conversationId') || subdomain
     const level = searchParams.get('level') // 'info' or 'error'
 
-    logger.debug(`[${requestId}] Start date: ${startDate}, End date: ${endDate}, Conversation ID: ${conversationId}, Level: ${level}`)
-    
+    logger.debug(
+      `[${requestId}] Start date: ${startDate}, End date: ${endDate}, Conversation ID: ${conversationId}, Level: ${level}`
+    )
+
     // Validate date parameters
-    if (startDate && isNaN(Date.parse(startDate))) {
-      return addCorsHeaders(createErrorResponse('Invalid startDate format. Use ISO 8601 format.', 400), request)
+    if (startDate && Number.isNaN(Date.parse(startDate))) {
+      return addCorsHeaders(
+        createErrorResponse('Invalid startDate format. Use ISO 8601 format.', 400),
+        request
+      )
     }
-    if (endDate && isNaN(Date.parse(endDate))) {
-      return addCorsHeaders(createErrorResponse('Invalid endDate format. Use ISO 8601 format.', 400), request)
+    if (endDate && Number.isNaN(Date.parse(endDate))) {
+      return addCorsHeaders(
+        createErrorResponse('Invalid endDate format. Use ISO 8601 format.', 400),
+        request
+      )
     }
 
     // Validate level parameter
     if (level && !['info', 'error'].includes(level)) {
-      return addCorsHeaders(createErrorResponse('Invalid level parameter. Must be "info" or "error".', 400), request)
+      return addCorsHeaders(
+        createErrorResponse('Invalid level parameter. Must be "info" or "error".', 400),
+        request
+      )
     }
 
     // Build query conditions for external chat logs
@@ -131,12 +138,12 @@ export async function GET(
     // Format the response data
     const formattedLogs = logs.map((log) => {
       const executionData = log.executionData as any
-      
+
       // Extract input and output from traceSpans children
       let userInput = null
       let modelOutput = null
       let conversationId = null
-      
+
       if (executionData?.traceSpans && Array.isArray(executionData.traceSpans)) {
         // Look for workflow execution span
         const workflowSpan = executionData.traceSpans.find((span: any) => span.type === 'workflow')
@@ -152,7 +159,7 @@ export async function GET(
           }
         }
       }
-      
+
       return {
         id: log.id,
         executionId: log.executionId,
@@ -176,22 +183,24 @@ export async function GET(
         offset,
         total: totalCount,
         hasMore: offset + limit < Number(totalCount),
-      }
-    //   filters: {
-    //     startDate: startDate || null,
-    //     endDate: endDate || null,
-    //     conversationId: conversationId || null,
-    //     level: level || null,
-    //   }
-    //   summary: {
-    //     totalExecutions: Number(totalCount),
-    //     successfulExecutions: formattedLogs.filter(log => log.level === 'info').length,
-    //     failedExecutions: formattedLogs.filter(log => log.level === 'error').length,
-    //     uniqueConversations: new Set(formattedLogs.map(log => log.conversationId).filter(Boolean)).size,
-    //   },
+      },
+      //   filters: {
+      //     startDate: startDate || null,
+      //     endDate: endDate || null,
+      //     conversationId: conversationId || null,
+      //     level: level || null,
+      //   }
+      //   summary: {
+      //     totalExecutions: Number(totalCount),
+      //     successfulExecutions: formattedLogs.filter(log => log.level === 'info').length,
+      //     failedExecutions: formattedLogs.filter(log => log.level === 'error').length,
+      //     uniqueConversations: new Set(formattedLogs.map(log => log.conversationId).filter(Boolean)).size,
+      //   },
     }
 
-    logger.info(`[${requestId}] Successfully fetched ${formattedLogs.length} chat history entries for subdomain: ${subdomain}`)
+    logger.info(
+      `[${requestId}] Successfully fetched ${formattedLogs.length} chat history entries for subdomain: ${subdomain}`
+    )
 
     return addCorsHeaders(createSuccessResponse(response), request)
   } catch (error: any) {
