@@ -21,6 +21,7 @@ const logger = createLogger('ChatHistoryAPI')
  * - startDate: ISO 8601 date string to filter from
  * - endDate: ISO 8601 date string to filter to
  * - conversationId: Filter by specific conversation ID
+ * - chatId: Filter by specific chat ID (chat_id column in workflow_execution_logs)
  * - level: Filter by log level ('info' or 'error')
  *
  * Authentication:
@@ -44,10 +45,11 @@ export async function GET(
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const conversationId = searchParams.get('conversationId') || subdomain
+    const chatId = searchParams.get('chatId')
     const level = searchParams.get('level') // 'info' or 'error'
 
     logger.debug(
-      `[${requestId}] Start date: ${startDate}, End date: ${endDate}, Conversation ID: ${conversationId}, Level: ${level}`
+      `[${requestId}] Start date: ${startDate}, End date: ${endDate}, Conversation ID: ${conversationId}, Chat ID: ${chatId}, Level: ${level}`
     )
 
     // Validate date parameters
@@ -91,6 +93,11 @@ export async function GET(
       conditions = and(conditions, eq(workflowExecutionLogs.level, level))
     }
 
+    // Add chatId filter if provided
+    if (chatId) {
+      conditions = and(conditions, eq(workflowExecutionLogs.chatId, chatId))
+    }
+
     // Add conversation ID filter if provided (search in executionData)
     // if (conversationId) {
     //   conditions = and(conditions, sql`${workflowExecutionLogs.executionData}->>'conversationId' = ${conversationId}`)
@@ -104,6 +111,7 @@ export async function GET(
       endDate: endDate || null,
       level: level || null,
       conversationId: conversationId || null,
+      chatId: chatId || null,
     }
     logger.debug(`[${requestId}] Query conditions:`, conditionsInfo)
 
