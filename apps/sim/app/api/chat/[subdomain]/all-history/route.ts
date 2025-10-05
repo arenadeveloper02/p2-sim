@@ -75,7 +75,7 @@ export async function GET(
       })
       .from(deployedChat)
       .where(eq(deployedChat.workflowId, subdomain))
-      .orderBy(desc(deployedChat.createdAt))
+      .orderBy(desc(deployedChat.updatedAt))
 
     logger.debug(`[${requestId}] Found ${deployedChatRecords.length} deployed chat records`)
 

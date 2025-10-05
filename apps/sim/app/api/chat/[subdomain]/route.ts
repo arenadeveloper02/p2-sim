@@ -157,7 +157,17 @@ export async function POST(
             `[${requestId}] Successfully stored new chat details in deployed_chat table: ${chatId}`
           )
         } else {
-          logger.debug(`[${requestId}] ChatId already exists in deployed_chat table: ${chatId}`)
+          // Update the updatedAt timestamp for existing chat
+          const existingChatId = existingChat[0].id
+
+          logger.debug(`[${requestId}] Updating updatedAt for existing chat: ${chatId}`)
+
+          await db
+            .update(deployedChat)
+            .set({ updatedAt: new Date() })
+            .where(eq(deployedChat.id, existingChatId))
+
+          logger.debug(`[${requestId}] Successfully updated updatedAt for existing chat: ${chatId}`)
         }
       } catch (error: any) {
         // Log error but don't fail the request
