@@ -1480,3 +1480,19 @@ export const userArenaDetails = pgTable(
     airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
   })
 )
+
+export const deployedChat = pgTable(
+  'deployed_chat',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    chatId: text('chat_id'),
+    title: text('title'),
+    workflowId: text('workflow_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
+  })
+)
