@@ -29,12 +29,12 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
     <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
       <div className='flex items-center gap-4'>
         {
-          <div className='flex h-[56px] w-[56px] flex-col items-center justify-center rounded-2xl bg-[linear-gradient(to_bottom,#8F50AC,#0086AB)]'>
+          <div className='flex h-[40px] w-[40px] flex-col items-center justify-center rounded-md bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]'>
             <Image
               src={'https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'}
               alt='vimi-sparkle'
-              width={32}
-              height={32}
+              width={22}
+              height={22}
             />
           </div>
         }

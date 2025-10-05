@@ -48,9 +48,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
-        className='!scroll-smooth absolute inset-0 h-[90%] touch-pan-y overflow-y-auto overscroll-auto'
+        className='!scroll-smooth absolute inset-0 h-[calc(100%-50px)] touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='mx-auto max-w-4xl px-4 pt-10 pb-8'>
+        <div className='ml-64 w-[calc(100%-270px)] px-4 pb-8'>
           {messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
@@ -86,7 +86,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
 
       {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 transform'>
+        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[100px] transform'>
           <Button
             onClick={scrollToBottom}
             size='sm'

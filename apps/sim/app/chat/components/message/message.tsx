@@ -68,10 +68,10 @@ export const ClientChatMessage = memo(
         <div className='px-4 py-5' data-message-id={message.id}>
           <div className='mx-auto max-w-3xl'>
             <div className='flex justify-end'>
-              <div className='max-w-[80%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
+              <div className='max-w-[94%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
                 <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
                   {isJsonObject ? (
-                    <pre>{JSON.stringify(message.content, null, 2)}</pre>
+                    <span>{JSON.stringify(message.content as string)}</span>
                   ) : (
                     <span>{message.content as string}</span>
                   )}

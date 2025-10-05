@@ -20,6 +20,7 @@ import {
 } from '@/app/chat/components'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { extractInputFieldsByWorkflowId } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
+import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -107,6 +108,15 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [starCount, setStarCount] = useState('3.4k')
   const [conversationId, setConversationId] = useState('')
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null)
+
+  // Function to handle thread change - clear messages except welcome message
+  const handleThreadChange = useCallback(() => {
+    setMessages((prevMessages) => {
+      const welcomeMessage = prevMessages.find(msg => msg.isInitialMessage)
+      return welcomeMessage ? [welcomeMessage] : []
+    })
+  }, [])
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -161,6 +171,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     [messagesContainerRef]
   )
 
+  // Get chatId from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId')
+    setCurrentChatId(chatId)
+  }, [])
+
   const handleScroll = useCallback(
     throttle(() => {
       const container = messagesContainerRef.current
@@ -180,49 +197,71 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Fetch history messages
   useEffect(() => {
     const workflowId = subdomain
-    const fetchHistory = async (workflowId: string) => {
-      const response = await fetch(`/api/chat/${workflowId}/history`)
-      if (response.ok) {
-        const data = await response.json()
-        const formatData = data.logs.flatMap((log: any) => {
-          const messages = []
+    
+    const fetchHistory = async (workflowId: string, chatId: string | null) => {
+      // Only fetch history if we have a chatId
+      if (!chatId) {
+        console.log('No chatId provided, skipping history fetch')
+        return
+      }
 
-          // Add user message if userInput exists
-          if (log.userInput) {
-            messages.push({
-              id: `${log.id}-user`,
-              content: log.userInput,
-              type: 'user',
-              timestamp: new Date(log.startedAt),
-            })
-          }
+      try {
+        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
+        if (response.ok) {
+          const data = await response.json()
+          const formatData = data.logs.flatMap((log: any) => {
+            const messages = []
 
-          // Add assistant message if modelOutput exists
-          if (log.modelOutput) {
-            messages.push({
-              id: `${log.id}-assistant`,
-              content: log.modelOutput,
-              type: 'assistant',
-              timestamp: new Date(log.endedAt || log.startedAt),
-              isStreaming: false,
-            })
-          }
+            // Add user message if userInput exists
+            if (log.userInput) {
+              messages.push({
+                id: `${log.id}-user`,
+                content: log.userInput,
+                type: 'user',
+                timestamp: new Date(log.startedAt),
+              })
+            }
 
-          return messages
-        })
-        setTimeout(() => {
-          setMessages((prev) => [...prev, ...formatData])
-          // Scroll to bottom after setting history messages
+            // Add assistant message if modelOutput exists
+            if (log.modelOutput) {
+              messages.push({
+                id: `${log.id}-assistant`,
+                content: log.modelOutput,
+                type: 'assistant',
+                timestamp: new Date(log.endedAt || log.startedAt),
+                isStreaming: false,
+              })
+            }
+
+            return messages
+          })
+          
           setTimeout(() => {
-            scrollToBottom()
-          }, 100)
-        }, 500)
+            // Get the welcome message from current messages if it exists
+            setMessages((prevMessages) => {
+              const welcomeMessage = prevMessages.find(msg => msg.isInitialMessage)
+              
+              // Set messages: welcome message + history messages
+              return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
+            })
+            
+            // Scroll to bottom after setting history messages
+            setTimeout(() => {
+              scrollToBottom()
+            }, 100)
+          }, 500)
+        } else {
+          console.error('Failed to fetch history:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('Error fetching history:', error)
       }
     }
-    if (workflowId && Object.keys(chatConfig || {}).length > 0) {
-      fetchHistory(workflowId)
+    
+    if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
+      fetchHistory(workflowId, currentChatId)
     }
-  }, [subdomain, chatConfig])
+  }, [subdomain, chatConfig, currentChatId])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -403,6 +442,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       const payload = {
         input: finalMessage,
         conversationId,
+        chatId: currentChatId,
       }
 
       logger.info('API payload:', payload)
@@ -650,6 +690,12 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         {/* Header component */}
         <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
+        <LeftNavThread 
+          workflowId={subdomain} 
+          setCurrentChatId={setCurrentChatId} 
+          currentChatId={currentChatId || ''} 
+          onThreadChange={handleThreadChange}
+        />
         {/* Message Container component */}
         <ChatMessageContainer
           messages={messages}
