@@ -313,6 +313,7 @@ export const workflowExecutionLogs = pgTable(
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
     isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
+    chatId: text('chat_id'), // chat_id for tracking conversation context
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
@@ -329,6 +330,7 @@ export const workflowExecutionLogs = pgTable(
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
+    chatIdIdx: index('workflow_execution_logs_chat_id_idx').on(table.chatId),
     executionIdUnique: uniqueIndex('workflow_execution_logs_execution_id_unique').on(
       table.executionId
     ),
@@ -1476,5 +1478,21 @@ export const userArenaDetails = pgTable(
   },
   (table) => ({
     airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
+  })
+)
+
+export const deployedChat = pgTable(
+  'deployed_chat',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    chatId: text('chat_id'),
+    title: text('title'),
+    workflowId: text('workflow_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
   })
 )
