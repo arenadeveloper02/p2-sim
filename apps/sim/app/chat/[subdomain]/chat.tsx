@@ -128,7 +128,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
   const [isConversationFinished, setIsConversationFinished] = useState(false)
 
-
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isUserScrollingRef = useRef(false)
