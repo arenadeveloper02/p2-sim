@@ -720,7 +720,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // If error, show error message using the extracted component
   if (error) {
-    return <ChatErrorState error={error} starCount={starCount} />
+    return <ChatErrorState error={error} starCount={starCount} workflowId={subdomain} />
   }
 
   // Show loading state while fetching input fields
@@ -733,7 +733,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     return (
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
         {/* Header component */}
-        <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+        <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
         {/* Input form container */}
         <div className='flex flex-1 items-center justify-center p-4'>
@@ -854,6 +854,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
               isStreaming={isStreamingResponse}
               onStopStreaming={() => stopStreaming(setMessages)}
               onVoiceStart={handleVoiceStart}
+              currentChatId={currentChatId}
             />
           </div>
         </div>

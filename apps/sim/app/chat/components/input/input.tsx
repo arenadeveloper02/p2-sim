@@ -18,7 +18,15 @@ export const ChatInput: React.FC<{
   onStopStreaming?: () => void
   onVoiceStart?: () => void
   voiceOnly?: boolean
-}> = ({ onSubmit, isStreaming = false, onStopStreaming, onVoiceStart, voiceOnly = false }) => {
+  currentChatId?: string | any
+}> = ({
+  onSubmit,
+  isStreaming = false,
+  onStopStreaming,
+  onVoiceStart,
+  voiceOnly = false,
+  currentChatId,
+}) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null) // Ref for the textarea
   const [isActive, setIsActive] = useState(false)
@@ -79,6 +87,13 @@ export const ChatInput: React.FC<{
       adjustTextareaHeight() // Adjust height when becoming active
     }
   }, [isActive])
+
+  // Focus textarea on component mount
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [currentChatId])
 
   const handleActivate = () => {
     setIsActive(true)
