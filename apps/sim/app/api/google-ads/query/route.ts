@@ -62,6 +62,7 @@ interface GoogleAdsRequest {
   sort_by?: string
   custom_start_date?: string
   custom_end_date?: string
+  outputType?: string // 🆕 For GTM Chat routing
 }
 
 interface Campaign {
@@ -182,11 +183,33 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - geo_target_constant (location targeting constants and details)
 - geographic_view (geographic performance data) + campaign.id + campaign.status required
 - campaign_criterion (campaign-level targeting criteria)
+- shopping_performance_view (shopping campaign performance data) + campaign.id + campaign.status required
+- product_group_view (product group performance in shopping campaigns) + campaign.id + campaign.status required
+- video_view (video campaign performance) + campaign.id + campaign.status required
+- display_keyword_view (display network keyword performance) + campaign.id + campaign.status required
+- placement_view (display network placement performance) + campaign.id + campaign.status required
+- audience_view (audience targeting performance) + campaign.id + campaign.status required
+- user_list (custom audience lists and performance)
+- bidding_strategy (automated bidding strategy details)
+- campaign_budget (campaign budget information and performance)
+- landing_page_view (landing page performance data) + campaign.id + campaign.status required
+- expanded_landing_page_view (detailed landing page insights) + campaign.id + campaign.status required
+- call_view (call extension performance) + campaign.id + campaign.status required
+- phone_call_details (detailed call tracking data)
 
 **METRICS:**
 - Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
-- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion, metrics.conversion_rate
+- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion
 - Quality: metrics.quality_score (keywords only), metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
+- Shopping: metrics.shopping_performance_view.clicks, metrics.benchmark_average_max_cpc, metrics.benchmark_ctr
+- Video: metrics.video_views, metrics.video_quartile_p25_rate, metrics.video_quartile_p50_rate, metrics.video_quartile_p75_rate, metrics.video_quartile_p100_rate
+- Display: metrics.gmail_forwards, metrics.gmail_saves, metrics.engagement_rate
+- Audience: metrics.view_through_conversions, metrics.cross_device_conversions
+- Call Extensions: metrics.phone_calls, metrics.phone_impressions, metrics.phone_through_rate
+- Landing Pages: metrics.mobile_friendly_clicks_percentage, metrics.speed_score, metrics.valid_accelerated_mobile_pages_clicks_percentage
+- Attribution: metrics.conversions_from_interactions_rate, metrics.conversions_value_per_cost, metrics.value_per_conversion
+- Budget: metrics.budget_lost_impression_share, metrics.budget_campaign_association_status
+- NOTE: conversion_rate is NOT a valid field - it must be calculated as (conversions / clicks) * 100
 
 **SEGMENTS:**
 - Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
@@ -920,7 +943,7 @@ export async function POST(request: NextRequest) {
     const body: GoogleAdsRequest = await request.json()
     logger.info(`[${requestId}] Request body received`, { body })
 
-    const { query, accounts, period_type, output_format = 'detailed', sort_by = 'cost_desc' } = body
+    const { query, accounts, period_type, output_format = 'detailed', sort_by = 'cost_desc', outputType } = body
 
     if (!query) {
       logger.error(`[${requestId}] No query provided in request`)
@@ -1195,6 +1218,7 @@ export async function POST(request: NextRequest) {
         ],
         summary: '1/1 accounts have requested data',
       },
+      outputType: outputType || 'chat', // 🆕 Pass through output type for GTM Chat routing
     }
 
     const executionTime = Date.now() - startTime

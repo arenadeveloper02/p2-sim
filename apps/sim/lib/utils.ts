@@ -299,6 +299,7 @@ export function getRotatingApiKey(provider: string): string {
   const keys = []
 
   if (provider === 'openai') {
+    if (env.OPENAI_API_KEY) keys.push(env.OPENAI_API_KEY)
     if (env.OPENAI_API_KEY_1) keys.push(env.OPENAI_API_KEY_1)
     if (env.OPENAI_API_KEY_2) keys.push(env.OPENAI_API_KEY_2)
     if (env.OPENAI_API_KEY_3) keys.push(env.OPENAI_API_KEY_3)

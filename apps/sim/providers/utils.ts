@@ -569,12 +569,14 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
 
-  // Use server key rotation for all OpenAI models and Anthropic's Claude models on the hosted platform
+  // Use server key rotation for all OpenAI models and Anthropic's Claude models
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGoogleModel = provider === 'google'
   const isXAIModel = provider === 'xai'
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel || isXAIModel)) {
+  
+  // Try to use rotating keys for these providers (works for both hosted and local)
+  if (isOpenAIModel || isClaudeModel || isGoogleModel || isXAIModel) {
     try {
       // Import the key rotation function
       const { getRotatingApiKey } = require('@/lib/utils')
@@ -586,7 +588,7 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
         return userProvidedKey!
       }
 
-      // Otherwise, throw an error
+      // If no rotating keys and no user key, throw error
       throw new Error(`No API key available for ${provider} ${model}`)
     }
   }

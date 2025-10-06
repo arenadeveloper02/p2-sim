@@ -72,6 +72,19 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       required: true,
     },
     {
+      id: 'outputType',
+      title: 'Output Type',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: '💬 Chat (Text + Tables)', id: 'chat' },
+        { label: '📊 GTM Chat (Dashboards + Charts + KPIs)', id: 'gtm_chat' },
+      ],
+      placeholder: 'Select output type...',
+      required: true,
+      value: () => 'chat', // Default value
+    },
+    {
       id: 'question',
       title: 'Question / Query',
       type: 'long-input',
@@ -122,17 +135,20 @@ Generate a clear, specific question about Google Ads performance based on the us
         period_type: 'last_30_days', // Default fallback
         output_format: 'detailed',
         sort_by: 'cost_desc',
+        outputType: params.outputType, // 🆕 Pass through output type for GTM Chat routing
       }),
     },
   },
   inputs: {
     question: { type: 'string', description: 'User question about Google Ads data' },
     accounts: { type: 'string', description: 'Selected Google Ads account' },
+    outputType: { type: 'string', description: 'Output type: chat or gtm_chat' },
   },
   outputs: {
     query: { type: 'string', description: 'Executed query' },
     results: { type: 'json', description: 'Google Ads campaign data and analytics' },
     grand_totals: { type: 'json', description: 'Aggregated totals across all accounts' },
     data_availability: { type: 'json', description: 'Data availability information' },
+    outputType: { type: 'string', description: 'Output type selected by user' },
   },
 }

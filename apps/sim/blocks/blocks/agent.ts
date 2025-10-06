@@ -415,6 +415,14 @@ Example 3 (Array Input):
         return tool
       },
       params: (params: Record<string, any>) => {
+        // 🆕 GTM CHAT ROUTING: Check if Google Ads block has gtm_chat output type
+        const googleAdsData = params._blockInputs?.['Google Ads 1']
+        if (googleAdsData?.outputType === 'gtm_chat') {
+          // Mark this execution as GTM Chat mode
+          params._isGTMChat = true
+          params._googleAdsData = googleAdsData
+        }
+        
         // If tools array is provided, handle tool usage control
         if (params.tools && Array.isArray(params.tools)) {
           // Transform tools to include usageControl
@@ -517,5 +525,7 @@ Example 3 (Array Input):
     model: { type: 'string', description: 'Model used for generation' },
     tokens: { type: 'any', description: 'Token usage statistics' },
     toolCalls: { type: 'any', description: 'Tool calls made' },
+    _isGTMChat: { type: 'boolean', description: 'Whether this is GTM Chat mode' },
+    _googleAdsData: { type: 'json', description: 'Google Ads data for GTM Chat' },
   },
 }

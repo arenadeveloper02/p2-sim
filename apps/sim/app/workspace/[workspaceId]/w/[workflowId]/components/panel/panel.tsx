@@ -19,6 +19,7 @@ import { Chat } from './components/chat/chat'
 import { Console } from './components/console/console'
 import { Copilot } from './components/copilot/copilot'
 import { Variables } from './components/variables/variables'
+import { GTMDashboard } from './components/gtm/gtm-dashboard'
 
 const logger = createLogger('Panel')
 
@@ -226,7 +227,7 @@ export function Panel() {
   )
 
   // Handle tab clicks - no loading, just switch tabs
-  const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot') => {
+  const handleTabClick = async (tab: 'chat' | 'console' | 'variables' | 'copilot' | 'gtm') => {
     setActiveTab(tab)
     if (!isOpen) {
       togglePanel()
@@ -300,11 +301,46 @@ export function Panel() {
     }
   }, [activeWorkflowId, copilotWorkflowId, ensureCopilotDataLoaded])
 
+  // 🆕 GTM CHAT ROUTING: Listen for Google Ads block with GTM Chat output type
+  const consoleEntries = useConsoleStore((state) => state.entries)
+  
+  useEffect(() => {
+    // Find the latest Google Ads block output with gtm_chat output type
+    const latestGoogleAdsEntry = consoleEntries
+      .filter(entry => 
+        entry.workflowId === activeWorkflowId &&
+        entry.blockName?.includes('Google Ads') &&
+        entry.output &&
+        typeof entry.output === 'object' &&
+        'outputType' in entry.output &&
+        (entry.output as any).outputType === 'gtm_chat'
+      )
+      .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())[0]
+    
+    // Also check if there's a recent Agent output (within last 5 seconds of Google Ads)
+    if (latestGoogleAdsEntry) {
+      const googleAdsTime = new Date(latestGoogleAdsEntry.timestamp || 0).getTime()
+      const recentAgentEntry = consoleEntries.find(entry =>
+        entry.workflowId === activeWorkflowId &&
+        entry.blockName?.includes('Agent') &&
+        Math.abs(new Date(entry.timestamp || 0).getTime() - googleAdsTime) < 10000 // Within 10 seconds
+      )
+      
+      if (recentAgentEntry && activeTab !== 'gtm') {
+        logger.info('GTM Chat detected (via Google Ads outputType), switching to GTM tab')
+        setActiveTab('gtm')
+        if (!isOpen) {
+          togglePanel()
+        }
+      }
+    }
+  }, [consoleEntries, activeWorkflowId, activeTab, isOpen, setActiveTab, togglePanel])
+
   return (
     <>
       {/* Tab Selector - Always visible */}
       <div
-        className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[308px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
+        className={`fixed ${isFullScreenExpanded ? 'top-[64px] mr-2' : 'top-[76px]'} right-4 z-20 flex h-9 w-[390px] items-center gap-1 rounded-[14px] border bg-card px-[2.5px] py-1 shadow-xs`}
       >
         {parentTemplateId && isFullScreenExpanded && (
           <button
@@ -343,6 +379,14 @@ export function Panel() {
             Copilot
           </button>
         )}
+        <button
+          onClick={() => handleTabClick('gtm')}
+          className={`panel-tab-base inline-flex flex-1 cursor-pointer items-center justify-center rounded-[10px] border border-transparent py-1 font-[450] text-sm outline-none transition-colors duration-200 ${
+            isOpen && activeTab === 'gtm' ? 'panel-tab-active' : 'panel-tab-inactive'
+          }`}
+        >
+          GTM
+        </button>
         {false && (
           <button
             onClick={() => handleTabClick('variables')}
@@ -583,6 +627,14 @@ export function Panel() {
               }}
             >
               <Variables />
+            </div>
+            <div
+              style={{
+                display: activeTab === 'gtm' ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
+              <GTMDashboard />
             </div>
           </div>
         </div>
