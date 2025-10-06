@@ -19,9 +19,10 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       type: 'dropdown',
       layout: 'full',
       options: [
-        { label: 'Create Styles & Variables', id: 'figma_create_styles_variables' },
-        { label: 'Figma Make Integration', id: 'figma_make_integration' },
-        { label: 'Wireframe to UI', id: 'figma_wireframe_to_ui' },
+        { label: 'Convert to HTML', id: 'figma_to_html_ai' },
+        // { label: 'Create Styles & Variables', id: 'figma_create_styles_variables' },
+        // { label: 'Figma Make Integration', id: 'figma_make_integration' },
+        // { label: 'Wireframe to UI', id: 'figma_wireframe_to_ui' },
         { label: 'Get Comments', id: 'figma_get_comments' },
         { label: 'Post Comment', id: 'figma_post_comment' },
         { label: 'Delete Comment', id: 'figma_delete_comment' },
@@ -91,6 +92,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
         field: 'operation',
         value: [
           'figma_convert',
+          'figma_to_html_ai',
           'figma_create_styles_variables',
           'figma_get_comments',
           'figma_post_comment',
@@ -107,23 +109,12 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       title: 'Node ID',
       type: 'short-input',
       layout: 'full',
-      placeholder: 'e.g., 1:23 (optional)',
+      placeholder: 'e.g., 1:23 (optional - converts entire file if not provided)',
       condition: {
         field: 'operation',
-        value: ['figma_get_comments', 'figma_get_file_images'],
+        value: ['figma_to_html_ai', 'figma_get_comments', 'figma_get_file_images'],
       },
-    },
-    {
-      id: 'nodeId',
-      title: 'Node ID',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: 'e.g., 1:23',
-      condition: {
-        field: 'operation',
-        value: ['figma_convert'],
-      },
-      required: true,
+      required: false,
     },
     {
       id: 'outputFormat',
@@ -150,7 +141,23 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       title: 'Responsive',
       type: 'switch',
       layout: 'full',
-      condition: { field: 'operation', value: 'figma_convert' },
+      condition: { field: 'operation', value: ['figma_convert', 'figma_to_html_ai'] },
+    },
+    {
+      id: 'outputFormat',
+      title: 'Output Format',
+      type: 'dropdown',
+      layout: 'full',
+      options: [{ label: 'HTML', id: 'html' }],
+      condition: { field: 'operation', value: 'figma_to_html_ai' },
+    },
+    {
+      id: 'customPrompt',
+      title: 'Custom AI Prompt',
+      type: 'long-input',
+      layout: 'full',
+      placeholder: 'Additional requirements for AI conversion...',
+      condition: { field: 'operation', value: 'figma_to_html_ai' },
     },
     // Comment parameters
     {
@@ -393,6 +400,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     access: [
       'figma_create',
       'figma_convert',
+      'figma_to_html_ai',
       'figma_create_styles_variables',
       'figma_make_integration',
       'figma_wireframe_to_ui',
@@ -412,6 +420,8 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
             return 'figma_create'
           case 'figma_convert':
             return 'figma_convert'
+          case 'figma_to_html_ai':
+            return 'figma_to_html_ai'
           case 'figma_create_styles_variables':
             return 'figma_create_styles_variables'
           case 'figma_make_integration':
@@ -471,6 +481,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     designStyle: { type: 'string', description: 'Design style preference' },
     targetPlatform: { type: 'string', description: 'Target platform' },
     includeInteractions: { type: 'boolean', description: 'Include interaction states' },
+    customPrompt: { type: 'string', description: 'Custom AI prompt' },
   },
   outputs: {
     content: { type: 'string', description: 'Response content' },
