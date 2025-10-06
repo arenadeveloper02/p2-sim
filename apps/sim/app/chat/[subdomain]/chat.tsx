@@ -816,7 +816,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
         {isHistoryLoading && (
-          <div className='absolute top-[72px] left-[256px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-260px)] items-center justify-center bg-white/60'>
+          <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
             <LoadingAgentP2 size='lg' />
           </div>
         )}
@@ -830,6 +830,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           currentChatId={currentChatId || ''}
           onSelectThread={handleSelectThread}
           onNewChat={handleNewChat}
+          isStreaming={isStreamingResponse || isLoading}
         />
         {/* Message Container component */}
         <ChatMessageContainer

@@ -86,7 +86,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
 
       {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[100px] transform'>
+        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[9%] transform'>
           <Button
             onClick={scrollToBottom}
             size='sm'

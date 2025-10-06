@@ -19,6 +19,7 @@ interface LeftNavThreadProps {
   currentChatId: string
   onSelectThread?: (chatId: string) => void
   onNewChat?: () => void
+  isStreaming: boolean
 }
 
 const LeftNavThread = ({
@@ -28,9 +29,10 @@ const LeftNavThread = ({
   currentChatId,
   onSelectThread,
   onNewChat,
+  isStreaming,
 }: LeftNavThreadProps) => {
   return (
-    <div className='absolute top-[70px] z-50 flex h-[calc(100%-84px)] w-64 flex-col border-gray-200 border-r bg-gray-50'>
+    <div className='absolute top-[70px] left-4 z-50 flex h-[calc(100%-84px)] w-64 flex-col rounded-[10px] border border-gray-200 bg-gray-50'>
       <div className='border-gray-200 border-b p-3'>
         <Button
           className='w-full justify-start gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -38,6 +40,7 @@ const LeftNavThread = ({
           onClick={() => {
             onNewChat?.()
           }}
+          disabled={isLoading || isStreaming}
         >
           <Plus className='h-4 w-4' />
           New Chat

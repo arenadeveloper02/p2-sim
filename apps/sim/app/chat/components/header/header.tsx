@@ -26,7 +26,7 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
   const workspaceId = params.get('workspaceId')
 
   return (
-    <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
+    <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 pl-[18px] backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4 md:pl-[18px]'>
       <div className='flex items-center gap-4'>
         {
           <div className='flex h-[40px] w-[40px] flex-col items-center justify-center rounded-md bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]'>
