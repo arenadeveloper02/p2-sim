@@ -26,6 +26,7 @@ import {
 } from '@/providers/models'
 import { ollamaProvider } from '@/providers/ollama'
 import { openaiProvider } from '@/providers/openai'
+import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderConfig, ProviderId, ProviderToolConfig } from '@/providers/types'
 import { xAIProvider } from '@/providers/xai'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
@@ -97,6 +98,11 @@ export const providers: Record<
     ...ollamaProvider,
     models: getProviderModelsFromDefinitions('ollama'),
     modelPatterns: PROVIDER_DEFINITIONS.ollama.modelPatterns,
+  },
+  sambanova: {
+    ...sambanovaProvider,
+    models: getProviderModelsFromDefinitions('sambanova'),
+    modelPatterns: PROVIDER_DEFINITIONS.sambanova.modelPatterns,
   },
 }
 
@@ -540,7 +546,8 @@ export function formatCost(cost: number): string {
  * These are the models for which we hide the API key field in the hosted environment
  */
 export function getHostedModels(): string[] {
-  return getHostedModelsFromDefinitions()
+  // Normalize to lowercase because UI model selections are lowercased
+  return getHostedModelsFromDefinitions().map((model) => model.toLowerCase())
 }
 
 /**
@@ -568,13 +575,19 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   if (isOllamaModel) {
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
-
-  // Use server key rotation for all OpenAI models and Anthropic's Claude models on the hosted platform
+  console.log(
+    `Getting API key for provider: ${provider}, model: ${model}, hasUserKey: ${hasUserKey}`
+  )
+  // Use server key rotation for all OpenAI models, Anthropic's Claude models, Google models, and SambaNova models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGoogleModel = provider === 'google'
   const isXAIModel = provider === 'xai'
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGoogleModel || isXAIModel)) {
+  const isSambaNovaModel = provider === 'sambanova'
+  if (
+    isHosted &&
+    (isOpenAIModel || isClaudeModel || isGoogleModel || isXAIModel || isSambaNovaModel)
+  ) {
     try {
       // Import the key rotation function
       const { getRotatingApiKey } = require('@/lib/utils')

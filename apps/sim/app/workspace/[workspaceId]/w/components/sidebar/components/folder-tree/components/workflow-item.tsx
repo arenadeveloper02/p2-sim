@@ -27,6 +27,8 @@ interface Workspace {
   permissions?: 'admin' | 'write' | 'read' | null
 }
 
+import { extractInputFields } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
+
 const logger = createLogger('WorkflowItem')
 
 // Helper function to check if workspace is AGENTS APPROVAL
@@ -212,6 +214,8 @@ export function WorkflowItem({
   }
 
   const handleClickWorkflowName = () => {
+    console.log('the input fields are', extractInputFields())
+
     if (isOpen) {
       togglePanel()
     }

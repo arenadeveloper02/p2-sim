@@ -1,27 +1,25 @@
 import React, { type HTMLAttributes, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <TooltipProvider>
-      <Tooltip delayDuration={300}>
-        <TooltipTrigger asChild>
-          <a
-            href={href}
-            className='text-blue-600 hover:underline dark:text-blue-400'
-            target='_blank'
-            rel='noopener noreferrer'
-          >
-            {children}
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side='top' align='center' sideOffset={5} className='max-w-sm p-3'>
-          <span className='truncate font-medium text-xs'>{href}</span>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <a
+          href={href}
+          className='text-blue-600 hover:underline dark:text-blue-400'
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          {children}
+        </a>
+      </TooltipTrigger>
+      <TooltipContent side='top' align='center' sideOffset={5} className='max-w-sm p-3'>
+        <span className='truncate font-medium text-xs'>{href}</span>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

@@ -885,6 +885,7 @@ export function Sidebar() {
     }
   }, [stopScroll])
 
+  //sai
   useEffect(() => {
     if (workspaceId) {
       const fetchAllTemplatesUsed = async () => {

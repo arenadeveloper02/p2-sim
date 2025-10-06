@@ -10,6 +10,7 @@ export type ProviderId =
   | 'cerebras'
   | 'groq'
   | 'ollama'
+  | 'sambanova'
 // | 'openrouter'
 
 /**
