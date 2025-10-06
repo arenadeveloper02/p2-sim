@@ -25,6 +25,7 @@ import {
 } from '@/tools/exa'
 import {
   figmaConvertTool,
+  figmaCreateStylesVariablesTool,
   figmaCreateTool,
   figmaDeleteCommentTool,
   figmaGetCommentsTool,
@@ -33,7 +34,9 @@ import {
   figmaGetFileTool,
   figmaGetProjectFilesTool,
   figmaGetTeamProjectsTool,
+  figmaMakeIntegrationTool,
   figmaPostCommentTool,
+  figmaWireframeToUITool,
 } from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import { crawlTool, scrapeTool, searchTool } from '@/tools/firecrawl'
@@ -380,6 +383,9 @@ export const tools: Record<string, ToolConfig> = {
   // Figma tools
   figma_create: figmaCreateTool,
   figma_convert: figmaConvertTool,
+  figma_create_styles_variables: figmaCreateStylesVariablesTool,
+  figma_make_integration: figmaMakeIntegrationTool,
+  figma_wireframe_to_ui: figmaWireframeToUITool,
   figma_get_comments: figmaGetCommentsTool,
   figma_post_comment: figmaPostCommentTool,
   figma_delete_comment: figmaDeleteCommentTool,

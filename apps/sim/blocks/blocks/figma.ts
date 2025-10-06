@@ -19,8 +19,9 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       type: 'dropdown',
       layout: 'full',
       options: [
-        // { label: 'Generate Figma Design', id: 'figma_create' },
-        // { label: 'Convert to Code with AI', id: 'figma_convert' },
+        { label: 'Create Styles & Variables', id: 'figma_create_styles_variables' },
+        { label: 'Figma Make Integration', id: 'figma_make_integration' },
+        { label: 'Wireframe to UI', id: 'figma_wireframe_to_ui' },
         { label: 'Get Comments', id: 'figma_get_comments' },
         { label: 'Post Comment', id: 'figma_post_comment' },
         { label: 'Delete Comment', id: 'figma_delete_comment' },
@@ -90,6 +91,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
         field: 'operation',
         value: [
           'figma_convert',
+          'figma_create_styles_variables',
           'figma_get_comments',
           'figma_post_comment',
           'figma_delete_comment',
@@ -235,11 +237,165 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       step: 0.1,
       condition: { field: 'operation', value: 'figma_get_file_images' },
     },
+    // Create Styles & Variables parameters
+    {
+      id: 'designSystemName',
+      title: 'Design System Name',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'e.g., Company Design System',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+      required: true,
+    },
+    {
+      id: 'brandGuidelines',
+      title: 'Brand Guidelines',
+      type: 'file-upload' as SubBlockType,
+      layout: 'full',
+      required: true,
+      description: 'Brand guidelines file (PDF, image, or text)',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+    },
+    {
+      id: 'includeColors',
+      title: 'Include Colors',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+    },
+    {
+      id: 'includeTypography',
+      title: 'Include Typography',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+    },
+    {
+      id: 'includeSpacing',
+      title: 'Include Spacing',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+    },
+    {
+      id: 'includeComponents',
+      title: 'Include Components',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_create_styles_variables' },
+    },
+    // Figma Make Integration parameters
+    {
+      id: 'designPrompt',
+      title: 'Design Prompt',
+      type: 'long-input',
+      layout: 'full',
+      placeholder: 'Describe the design you want to create...',
+      condition: { field: 'operation', value: 'figma_make_integration' },
+      required: true,
+    },
+    {
+      id: 'brandGuidelines',
+      title: 'Brand Guidelines',
+      type: 'file-upload' as SubBlockType,
+      layout: 'full',
+      required: false,
+      description: 'Optional brand guidelines file',
+      condition: { field: 'operation', value: 'figma_make_integration' },
+    },
+    {
+      id: 'wireframe',
+      title: 'Wireframe/Sketch',
+      type: 'file-upload' as SubBlockType,
+      layout: 'full',
+      required: false,
+      description: 'Optional wireframe or sketch file',
+      condition: { field: 'operation', value: 'figma_make_integration' },
+    },
+    {
+      id: 'designType',
+      title: 'Design Type',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Landing Page', id: 'landing_page' },
+        { label: 'Wireframe', id: 'wireframe' },
+        { label: 'UI Components', id: 'ui_components' },
+        { label: 'Full Website', id: 'full_website' },
+      ],
+      condition: { field: 'operation', value: 'figma_make_integration' },
+      required: true,
+    },
+    {
+      id: 'includeCode',
+      title: 'Include Code',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_make_integration' },
+    },
+    // Wireframe to UI parameters
+    {
+      id: 'wireframeFile',
+      title: 'Wireframe File',
+      type: 'file-upload' as SubBlockType,
+      layout: 'full',
+      required: true,
+      description: 'Wireframe or sketch file to convert',
+      condition: { field: 'operation', value: 'figma_wireframe_to_ui' },
+    },
+    {
+      id: 'brandGuidelines',
+      title: 'Brand Guidelines',
+      type: 'file-upload' as SubBlockType,
+      layout: 'full',
+      required: false,
+      description: 'Optional brand guidelines file',
+      condition: { field: 'operation', value: 'figma_wireframe_to_ui' },
+    },
+    {
+      id: 'designStyle',
+      title: 'Design Style',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Modern', id: 'modern' },
+        { label: 'Minimal', id: 'minimal' },
+        { label: 'Corporate', id: 'corporate' },
+        { label: 'Creative', id: 'creative' },
+        { label: 'Elegant', id: 'elegant' },
+      ],
+      condition: { field: 'operation', value: 'figma_wireframe_to_ui' },
+      required: true,
+    },
+    {
+      id: 'targetPlatform',
+      title: 'Target Platform',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Web', id: 'web' },
+        { label: 'Mobile', id: 'mobile' },
+        { label: 'Tablet', id: 'tablet' },
+        { label: 'Desktop', id: 'desktop' },
+      ],
+      condition: { field: 'operation', value: 'figma_wireframe_to_ui' },
+      required: true,
+    },
+    {
+      id: 'includeInteractions',
+      title: 'Include Interactions',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_wireframe_to_ui' },
+    },
   ],
   tools: {
     access: [
       'figma_create',
       'figma_convert',
+      'figma_create_styles_variables',
+      'figma_make_integration',
+      'figma_wireframe_to_ui',
       'figma_get_comments',
       'figma_post_comment',
       'figma_delete_comment',
@@ -256,6 +412,12 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
             return 'figma_create'
           case 'figma_convert':
             return 'figma_convert'
+          case 'figma_create_styles_variables':
+            return 'figma_create_styles_variables'
+          case 'figma_make_integration':
+            return 'figma_make_integration'
+          case 'figma_wireframe_to_ui':
+            return 'figma_wireframe_to_ui'
           case 'figma_get_comments':
             return 'figma_get_comments'
           case 'figma_post_comment':
@@ -297,6 +459,18 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     scale: { type: 'number', description: 'Image scale factor' },
     designPrompt: { type: 'string', description: 'AI design prompt' },
     brandGuidelines: { type: 'json', description: 'Brand guidelines file' },
+    designSystemName: { type: 'string', description: 'Design system name' },
+    includeColors: { type: 'boolean', description: 'Include color styles' },
+    includeTypography: { type: 'boolean', description: 'Include typography styles' },
+    includeSpacing: { type: 'boolean', description: 'Include spacing variables' },
+    includeComponents: { type: 'boolean', description: 'Include component specifications' },
+    wireframe: { type: 'json', description: 'Wireframe or sketch file' },
+    designType: { type: 'string', description: 'Type of design to generate' },
+    includeCode: { type: 'boolean', description: 'Include code output' },
+    wireframeFile: { type: 'json', description: 'Wireframe file to convert' },
+    designStyle: { type: 'string', description: 'Design style preference' },
+    targetPlatform: { type: 'string', description: 'Target platform' },
+    includeInteractions: { type: 'boolean', description: 'Include interaction states' },
   },
   outputs: {
     content: { type: 'string', description: 'Response content' },
