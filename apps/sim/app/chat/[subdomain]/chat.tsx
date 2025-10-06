@@ -126,14 +126,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [isThreadsLoading, setIsThreadsLoading] = useState(true)
   const [threadsError, setThreadsError] = useState<string | null>(null)
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [isConversationFinished, setIsConversationFinished] = useState(false)
 
-  // Function to handle thread change - clear messages except welcome message
-  const handleThreadChange = useCallback(() => {
-    setMessages((prevMessages) => {
-      const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
-      return welcomeMessage ? [welcomeMessage] : []
-    })
-  }, [])
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -195,11 +189,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     setCurrentChatId(chatId)
   }, [])
 
-  // Fetch left threads here and handle initial/no-thread cases
-  useEffect(() => {
-    const fetchThreads = async (workflowId: string) => {
+  // Function to fetch threads (reusable)
+  const fetchThreads = useCallback(
+    async (workflowId: string, isInitialLoad = false) => {
       try {
-        setIsThreadsLoading(true)
+        if (isInitialLoad) {
+          setIsThreadsLoading(true)
+        }
         setThreadsError(null)
         const response = await fetch(`/api/chat/${workflowId}/all-history`, {
           method: 'GET',
@@ -212,24 +208,27 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const list = data.records || []
         setThreads(list)
 
-        const params = new URLSearchParams(window.location.search)
-        const urlChatId = params.get('chatId')
+        // Only handle initial navigation on first load
+        if (isInitialLoad) {
+          const params = new URLSearchParams(window.location.search)
+          const urlChatId = params.get('chatId')
 
-        // If no chatId in URL, decide default
-        if (!urlChatId) {
-          if (list.length > 0) {
-            const firstId = list[0].chatId
-            setCurrentChatId(firstId)
-            params.set('chatId', firstId)
-            const newUrl = `/chat/${workflowId}?${params.toString()}`
-            router.push(newUrl)
-          } else {
-            // No threads exist yet: generate a new UUID chatId for a fresh chat
-            const newId = uuidv4()
-            setCurrentChatId(newId)
-            params.set('chatId', newId)
-            const newUrl = `/chat/${workflowId}?${params.toString()}`
-            router.push(newUrl)
+          // If no chatId in URL, decide default
+          if (!urlChatId) {
+            if (list.length > 0) {
+              const firstId = list[0].chatId
+              setCurrentChatId(firstId)
+              params.set('chatId', firstId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            } else {
+              // No threads exist yet: generate a new UUID chatId for a fresh chat
+              const newId = uuidv4()
+              setCurrentChatId(newId)
+              params.set('chatId', newId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            }
           }
         }
       } catch (err) {
@@ -239,11 +238,29 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       } finally {
         setIsThreadsLoading(false)
       }
-    }
+    },
+    [router]
+  )
+
+  // Fetch left threads here and handle initial/no-thread cases
+  useEffect(() => {
     if (subdomain) {
-      fetchThreads(subdomain)
+      fetchThreads(subdomain, true)
     }
-  }, [subdomain])
+  }, [subdomain, fetchThreads])
+
+  // Check if current chatId exists in threads when conversation is finished
+  useEffect(() => {
+    if (isConversationFinished && currentChatId) {
+      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
+
+      if (!chatIdExists) {
+        fetchThreads(subdomain, false)
+      }
+      // Reset the flag
+      setIsConversationFinished(false)
+    }
+  }, [isConversationFinished, currentChatId, threads, fetchThreads, subdomain])
 
   const handleScroll = useCallback(
     throttle(() => {
@@ -465,6 +482,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const handleSelectThread = useCallback(
     (chatId: string) => {
       if (currentChatId === chatId) return
+      setShowScrollButton(false)
       setCurrentChatId(chatId)
       // Clear messages except welcome
       setMessages((prev) => {
@@ -478,6 +496,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // Create a new chat
   const handleNewChat = useCallback(() => {
+    setShowScrollButton(false)
     const id = uuidv4()
     setCurrentChatId(id)
     // Clear messages except welcome
@@ -602,6 +621,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           audioStreamHandler: audioHandler,
         }
       )
+      // Mark conversation as finished
+      setIsConversationFinished(true)
     } catch (error: any) {
       // Clear timeout in case of error
       clearTimeout(timeoutId)
@@ -796,7 +817,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
         {isHistoryLoading && (
-          <div className='absolute top-0 left-0 z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-108px)] items-center justify-center bg-white/60'>
+          <div className='absolute top-[72px] left-[256px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-260px)] items-center justify-center bg-white/60'>
             <LoadingAgentP2 size='lg' />
           </div>
         )}
