@@ -604,6 +604,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
+      setIsConversationFinished(true)
 
       await handleStreamedResponse(
         response,
@@ -621,7 +622,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         }
       )
       // Mark conversation as finished
-      setIsConversationFinished(true)
     } catch (error: any) {
       // Clear timeout in case of error
       clearTimeout(timeoutId)

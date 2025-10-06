@@ -33,7 +33,7 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
 
   // Check if at least one input field has a meaningful value
   const hasValidInput = () => {
-    return fields.some((field) => {
+    return fields.every((field) => {
       const value = inputs[field.name]
       if (value === undefined || value === null) return false
 
