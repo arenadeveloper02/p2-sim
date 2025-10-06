@@ -139,9 +139,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Workflow input form state
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
-  const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
-  const [workflowInputs, setWorkflowInputs] = useState<Record<string, any>>({})
-  const [isLoadingInputFields, setIsLoadingInputFields] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -293,53 +290,55 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
         if (response.ok) {
           const data = await response.json()
-          const formatData = data.logs.flatMap((log: any) => {
-            const messages = []
+          if (data?.logs?.length === 0) {
+            fetchInputFields()
+          } else {
+            const formatData = data.logs.flatMap((log: any) => {
+              const messages = []
+              // Add user message if userInput exists
+              if (log.userInput) {
+                messages.push({
+                  id: `${log.id}-user`,
+                  content: log.userInput,
+                  type: 'user',
+                  timestamp: new Date(log.startedAt),
+                })
+              }
 
-            // Add user message if userInput exists
-            if (log.userInput) {
-              messages.push({
-                id: `${log.id}-user`,
-                content: log.userInput,
-                type: 'user',
-                timestamp: new Date(log.startedAt),
-              })
-            }
+              // Add assistant message if modelOutput exists
+              if (log.modelOutput) {
+                messages.push({
+                  id: `${log.id}-assistant`,
+                  content: log.modelOutput,
+                  type: 'assistant',
+                  timestamp: new Date(log.endedAt || log.startedAt),
+                  isStreaming: false,
+                })
+              }
 
-            // Add assistant message if modelOutput exists
-            if (log.modelOutput) {
-              messages.push({
-                id: `${log.id}-assistant`,
-                content: log.modelOutput,
-                type: 'assistant',
-                timestamp: new Date(log.endedAt || log.startedAt),
-                isStreaming: false,
-              })
-            }
-
-            return messages
-          })
-
-          setTimeout(() => {
-            // Get the welcome message from current messages if it exists
-            setMessages((prevMessages) => {
-              const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
-
-              // Set messages: welcome message + history messages
-              return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
+              return messages
             })
 
-            // Scroll to bottom after setting history messages
             setTimeout(() => {
-              scrollToBottom()
-            }, 100)
-          }, 500)
+              // Get the welcome message from current messages if it exists
+              setMessages((prevMessages) => {
+                const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
+
+                // Set messages: welcome message + history messages
+                return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
+              })
+
+              // Scroll to bottom after setting history messages
+              setTimeout(() => {
+                scrollToBottom()
+              }, 100)
+            }, 500)
+            setIsHistoryLoading(false)
+          }
         } else {
-          console.error('Failed to fetch history:', response.status, response.statusText)
+          setIsHistoryLoading(false)
         }
       } catch (error) {
-        console.error('Error fetching history:', error)
-      } finally {
         setIsHistoryLoading(false)
       }
     }
@@ -425,32 +424,24 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Fetch input fields for the workflow
   const fetchInputFields = async () => {
     try {
-      setIsLoadingInputFields(true)
       // The subdomain is actually the workflow ID in this case
       const fields = await extractInputFieldsByWorkflowId(subdomain)
-      console.log('<><><>Input fields', fields)
       setInputFields(fields)
-
       // If there are input fields, show the form
       if (fields && fields.length > 0) {
         setShowInputForm(true)
-      } else {
-        // No input fields needed, proceed directly to chat
-        setInitialInputsSubmitted(true)
       }
     } catch (error) {
       logger.error('Error fetching input fields:', error)
       // On error, proceed to chat anyway
-      setInitialInputsSubmitted(true)
     } finally {
-      setIsLoadingInputFields(false)
+      setIsHistoryLoading(false)
     }
   }
 
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
-    fetchInputFields() // Fetch input fields for the workflow
     setConversationId(uuidv4())
 
     getFormattedGitHubStars()
@@ -659,9 +650,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           return `${formattedKey}: ${value}`
         })
         .join('\n')
-      setWorkflowInputs(inputs)
       setShowInputForm(false)
-      setInitialInputsSubmitted(true)
 
       // Add a message indicating the workflow is starting
       const workflowStartMessage: ChatMessage = {
@@ -721,38 +710,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // If error, show error message using the extracted component
   if (error) {
     return <ChatErrorState error={error} starCount={starCount} workflowId={subdomain} />
-  }
-
-  // Show loading state while fetching input fields
-  if (isLoadingInputFields) {
-    return <ChatLoadingState />
-  }
-
-  // Show workflow input form if needed and not yet submitted
-  if (showInputForm && !initialInputsSubmitted) {
-    return (
-      <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {/* Header component */}
-        <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
-
-        {/* Input form container */}
-        <div className='flex flex-1 items-center justify-center p-4'>
-          <div className='mx-auto w-full max-w-2xl'>
-            <div className='rounded-lg border bg-card p-6 shadow-sm'>
-              <div className='mb-6'>
-                <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
-                <p className='text-muted-foreground'>
-                  Please provide the required inputs to start the workflow chat.
-                </p>
-              </div>
-              <TooltipProvider>
-                <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
-              </TooltipProvider>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   // If authentication is required, use the extracted components
@@ -815,6 +772,23 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+        {showInputForm && (
+          <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
+            <div className='mx-auto w-full max-w-2xl'>
+              <div className='rounded-lg border bg-card p-6 shadow-sm'>
+                <div className='mb-6'>
+                  <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
+                  <p className='text-muted-foreground'>
+                    Please provide the required inputs to start the workflow chat.
+                  </p>
+                </div>
+                <TooltipProvider>
+                  <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
+                </TooltipProvider>
+              </div>
+            </div>
+          </div>
+        )}
         {isHistoryLoading && (
           <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
             <LoadingAgentP2 size='lg' />
