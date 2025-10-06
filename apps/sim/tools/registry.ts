@@ -36,6 +36,7 @@ import {
   figmaGetTeamProjectsTool,
   figmaMakeIntegrationTool,
   figmaPostCommentTool,
+  figmaToHTMLAITool,
   figmaWireframeToUITool,
 } from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
@@ -385,6 +386,7 @@ export const tools: Record<string, ToolConfig> = {
   figma_convert: figmaConvertTool,
   figma_create_styles_variables: figmaCreateStylesVariablesTool,
   figma_make_integration: figmaMakeIntegrationTool,
+  figma_to_html_ai: figmaToHTMLAITool,
   figma_wireframe_to_ui: figmaWireframeToUITool,
   figma_get_comments: figmaGetCommentsTool,
   figma_post_comment: figmaPostCommentTool,
