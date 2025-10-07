@@ -23,7 +23,6 @@ export const categories = [
   { value: 'seo', label: 'SEO' },
   { value: 'strategy', label: 'Strategy' },
   { value: 'waas', label: 'WAAS' },
-  { value: 'product', label: 'Product' },
 ] as const
 
 export type CategoryValue = (typeof categories)[number]['value']
@@ -81,7 +80,6 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
     seo: useRef<HTMLDivElement>(null),
     strategy: useRef<HTMLDivElement>(null),
     waas: useRef<HTMLDivElement>(null),
-    product: useRef<HTMLDivElement>(null),
   }
 
   // Fetch current workspace information
@@ -233,11 +231,6 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
       count: loading ? 8 : getTemplatesByCategory('strategy').length,
     },
     { id: 'waas', label: 'WAAS', count: loading ? 8 : getTemplatesByCategory('waas').length },
-    {
-      id: 'product',
-      label: 'Product',
-      count: loading ? 8 : getTemplatesByCategory('product').length,
-    },
   ]
 
   return (
@@ -414,20 +407,6 @@ export default function Templates({ initialTemplates, currentUserId }: Templates
               {loading
                 ? renderSkeletonCards()
                 : getTemplatesByCategory('waas').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
-
-          {/* Product Section */}
-          <div ref={sectionRefs.product} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>Product</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
-
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('product').map((template) => renderTemplateCard(template))}
             </div>
           </div>
         </div>
