@@ -64,8 +64,9 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
   request: {
     url: (params) => {
       // If a specific message ID is provided, fetch that message directly with full format
-      if (params.messageId) {
-        return `${GMAIL_API_BASE}/messages/${params.messageId}?format=full`
+      const trimmedMessageId = (params.messageId || '').trim()
+      if (trimmedMessageId) {
+        return `${GMAIL_API_BASE}/messages/${trimmedMessageId}?format=full`
       }
 
       // Otherwise, list messages from the specified folder or INBOX by default
@@ -79,13 +80,14 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
         queryParams.push('is:unread')
       }
 
-      if (params.folder) {
+      const trimmedFolder = (params.folder || '').trim()
+      if (trimmedFolder) {
         // If it's a system label like INBOX, SENT, etc., use it directly
-        if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM'].includes(params.folder)) {
-          queryParams.push(`in:${params.folder.toLowerCase()}`)
+        if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM'].includes(trimmedFolder)) {
+          queryParams.push(`in:${trimmedFolder.toLowerCase()}`)
         } else {
           // Otherwise, it's a user-defined label
-          queryParams.push(`label:${params.folder}`)
+          queryParams.push(`label:${trimmedFolder}`)
         }
       } else {
         // Default to INBOX if no folder is specified
