@@ -365,9 +365,7 @@ TRAVEL
     // Get API key for OpenAI hosted provider
     let apiKey: string
     try {
-      // Try to get the API key from environment variable first
-      const envApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_1
-      apiKey = getApiKey('openai', 'gpt-4o', envApiKey)
+      apiKey = getApiKey('openai', 'gpt-4o')
     } catch (keyError) {
       logger.error('Failed to get OpenAI API key', { keyError })
       throw new Error('OpenAI API key not available')
