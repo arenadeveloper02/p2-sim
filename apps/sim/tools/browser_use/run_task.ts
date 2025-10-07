@@ -1,3 +1,5 @@
+import { env } from '@/lib/env'
+import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { BrowserUseRunTaskParams, BrowserUseRunTaskResponse } from '@/tools/browser_use/types'
 import type { ToolConfig } from '@/tools/types'
@@ -50,7 +52,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${isHosted ? env.BROWSER_USE_API_KEY : params.apiKey}`,
     }),
     body: (params) => {
       const requestBody: Record<string, any> = {
@@ -124,7 +126,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       const initialTaskResponse = await fetch(`https://api.browser-use.com/api/v1/task/${taskId}`, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${params.apiKey}`,
+          Authorization: `Bearer ${isHosted ? env.BROWSER_USE_API_KEY : params.apiKey}`,
         },
       })
 
@@ -150,7 +152,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
           {
             method: 'GET',
             headers: {
-              Authorization: `Bearer ${params.apiKey}`,
+              Authorization: `Bearer ${isHosted ? env.BROWSER_USE_API_KEY : params.apiKey}`,
             },
           }
         )
@@ -167,7 +169,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
           const taskResponse = await fetch(`https://api.browser-use.com/api/v1/task/${taskId}`, {
             method: 'GET',
             headers: {
-              Authorization: `Bearer ${params.apiKey}`,
+              Authorization: `Bearer ${isHosted ? env.BROWSER_USE_API_KEY : params.apiKey}`,
             },
           })
 
@@ -188,7 +190,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
           const taskResponse = await fetch(`https://api.browser-use.com/api/v1/task/${taskId}`, {
             method: 'GET',
             headers: {
-              Authorization: `Bearer ${params.apiKey}`,
+              Authorization: `Bearer ${isHosted ? env.BROWSER_USE_API_KEY : params.apiKey}`,
             },
           })
 
