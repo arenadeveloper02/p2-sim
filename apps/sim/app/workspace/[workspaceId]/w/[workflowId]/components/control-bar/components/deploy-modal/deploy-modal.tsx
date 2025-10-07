@@ -433,7 +433,7 @@ export function DeployModal({
           {!isSidebar && (
             <div className='flex h-14 flex-none items-center border-b px-6'>
               <div className='flex gap-2'>
-                <button
+                {initialTab === 'chat' && <button
                   onClick={() => setActiveTab('chat')}
                   className={`rounded-md px-3 py-1 text-sm transition-colors ${
                     activeTab === 'chat'
@@ -442,8 +442,8 @@ export function DeployModal({
                   }`}
                 >
                   Chat
-                </button>
-                <button
+                </button>}
+                {initialTab === 'api' && <button
                   onClick={() => setActiveTab('api')}
                   className={`rounded-md px-3 py-1 text-sm transition-colors ${
                     activeTab === 'api'
@@ -452,7 +452,7 @@ export function DeployModal({
                   }`}
                 >
                   API
-                </button>
+                </button>}
               </div>
             </div>
           )}

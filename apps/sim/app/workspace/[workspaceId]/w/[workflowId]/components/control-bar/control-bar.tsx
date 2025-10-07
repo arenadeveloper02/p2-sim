@@ -1433,7 +1433,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {/* {!isDebugging && renderDebugModeToggle()} */}
       {renderDeployButton()}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
-      {Object.keys(deployedState || {})?.length > 0 && renderRunAgentWorkflow()}
+      {Object.keys(deployedState || {})?.length > 0 &&  initialTab === 'chat' && renderRunAgentWorkflow()}
 
       {/* Template Modal */}
       {activeWorkflowId && (
