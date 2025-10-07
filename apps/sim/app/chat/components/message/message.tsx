@@ -90,7 +90,7 @@ export const ClientChatMessage = memo(
           <div className='flex flex-col space-y-3'>
             {/* Direct content rendering - tool calls are now handled via SSE events */}
             <div>
-              <div className='break-words text-base'>
+              <div className='break-words text-base break-all'>
                 {renderContent(cleanTextContent)}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>

@@ -92,7 +92,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div className='w-full py-2 pl-[2px]'>
       <div className='overflow-wrap-anywhere relative whitespace-normal break-normal font-normal text-sm leading-normal'>
-        <div className='whitespace-normal break-words bg-secondary p-3 text-foreground'>
+        <div className='whitespace-normal break-words bg-secondary p-3 text-foreground break-all'>
           {/* <WordWrap text={formattedContent} /> */}
           {renderContent(message?.content)}
           {message.isStreaming && (
