@@ -433,26 +433,30 @@ export function DeployModal({
           {!isSidebar && (
             <div className='flex h-14 flex-none items-center border-b px-6'>
               <div className='flex gap-2'>
-                {initialTab === 'chat' && <button
-                  onClick={() => setActiveTab('chat')}
-                  className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                    activeTab === 'chat'
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                  }`}
-                >
-                  Chat
-                </button>}
-                {initialTab === 'api' && <button
-                  onClick={() => setActiveTab('api')}
-                  className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                    activeTab === 'api'
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                  }`}
-                >
-                  API
-                </button>}
+                {initialTab === 'chat' && (
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'chat'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    Chat
+                  </button>
+                )}
+                {initialTab === 'api' && (
+                  <button
+                    onClick={() => setActiveTab('api')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'api'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    API
+                  </button>
+                )}
               </div>
             </div>
           )}
