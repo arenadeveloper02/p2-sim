@@ -160,7 +160,7 @@ Create a system prompt appropriately detailed for the request, using clear langu
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
         const baseModels = Object.keys(getBaseModelProviders())
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)

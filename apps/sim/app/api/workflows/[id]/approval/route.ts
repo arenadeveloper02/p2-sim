@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { and, eq, or } from 'drizzle-orm'
+import { and, desc, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -30,6 +30,7 @@ const ApprovalRequestSchema = z.object({
   workspaceId: z.string().optional(),
   folderId: z.string().nullable().optional(),
   approvalUserId: z.string().min(1, 'Approval user ID is required'),
+  category: z.string().optional().default('creative'),
 })
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,11 +46,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const body = await req.json()
-    const { name, description, color, workspaceId, folderId, approvalUserId } =
+    const { name, description, color, workspaceId, folderId, approvalUserId, category } =
       ApprovalRequestSchema.parse(body)
     let newWorkspaceId = crypto.randomUUID()
     const now = new Date()
     const workflowApproval = await db.transaction(async (tx) => {
+      /**
+       * Get arena developer user details
+       */
       const arenaUser = await tx
         .select()
         .from(user)
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const userWorkspace = await tx
         .select()
         .from(workspace)
-        .where(and(eq(workspace.name, 'APPROVAL LIST'), eq(workspace.ownerId, arenaUser[0].id)))
+        .where(and(eq(workspace.name, 'AGENTS APPROVAL'), eq(workspace.ownerId, arenaUser[0].id)))
         .limit(1)
       if (userWorkspace.length === 0) {
         logger.warn(
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await tx.insert(workspace).values({
           id: newWorkspaceId,
           ownerId: arenaUser[0].id,
-          name: `APPROVAL LIST`,
+          name: `AGENTS APPROVAL`,
           createdAt: now,
           updatedAt: now,
         })
@@ -108,95 +112,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         })
       }
     })
-
     logger.info(
       `[${requestId}] Duplicating workflow ${sourceWorkflowId} for user ${session.user.id}`
     )
 
-    // Check if an approval request already exists for this workflow and users
-    const existingApproval = await db
-      .select()
-      .from(workflowStatus)
-      .where(
-        and(
-          eq(workflowStatus.mappedWorkflowId, sourceWorkflowId),
-          eq(workflowStatus.ownerId, session.user.id),
-          eq(workflowStatus.userId, approvalUserId)
-        )
-      )
-      .limit(1)
-
-    let result: any
-
-    if (existingApproval.length > 0) {
-      // Existing approval request found - update it to PENDING and reuse existing workflow
-      logger.info(
-        `[${requestId}] Found existing approval request ${existingApproval[0].id}, updating to PENDING`
-      )
-
-      await db
-        .update(workflowStatus)
-        .set({
-          status: 'PENDING',
-          updatedAt: now,
-          comments: null, // Reset comments
-          name: name, // Update name if changed
-        })
-        .where(eq(workflowStatus.id, existingApproval[0].id))
-
-      // Get the existing workflow details for the response
-      const existingWorkflow = await db
-        .select()
-        .from(workflow)
-        .where(eq(workflow.id, existingApproval[0].workflowId))
-        .limit(1)
-
-      if (existingWorkflow.length === 0) {
-        throw new Error('Associated workflow not found')
-      }
-
-      // Count existing blocks, edges, and subflows for response
-      const [blocksCount, edgesCount, subflowsCount] = await Promise.all([
-        db
-          .select({ count: workflowBlocks.id })
-          .from(workflowBlocks)
-          .where(eq(workflowBlocks.workflowId, existingWorkflow[0].id)),
-        db
-          .select({ count: workflowEdges.id })
-          .from(workflowEdges)
-          .where(eq(workflowEdges.workflowId, existingWorkflow[0].id)),
-        db
-          .select({ count: workflowSubflows.id })
-          .from(workflowSubflows)
-          .where(eq(workflowSubflows.workflowId, existingWorkflow[0].id)),
-      ])
-
-      result = {
-        id: existingWorkflow[0].id,
-        name,
-        description: description || existingWorkflow[0].description,
-        color: color || existingWorkflow[0].color,
-        workspaceId: existingWorkflow[0].workspaceId,
-        folderId: existingWorkflow[0].folderId,
-        blocksCount: blocksCount.length,
-        edgesCount: edgesCount.length,
-        subflowsCount: subflowsCount.length,
-        isExistingRequest: true,
-      }
-
-      const elapsed = Date.now() - startTime
-      logger.info(
-        `[${requestId}] Successfully updated existing approval request for workflow ${sourceWorkflowId} in ${elapsed}ms`
-      )
-
-      return NextResponse.json(result, { status: 200 })
-    }
-
-    // No existing approval request - create new workflow and approval record
+    // Generate new workflow ID
     const newWorkflowId = crypto.randomUUID()
 
-    // Create workflow and all related data in a transaction
-    result = await db.transaction(async (tx) => {
+    // Approval workflow and all related data in a transaction
+    const result = await db.transaction(async (tx) => {
       // First verify the source workflow exists
       const sourceWorkflow = await tx
         .select()
@@ -233,7 +157,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!canAccessSource) {
         throw new Error('Source workflow not found or access denied')
       }
-
       // Create the new workflow first (required for foreign key constraints)
       await tx.insert(workflow).values({
         id: newWorkflowId,
@@ -431,29 +354,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         blocksCount: sourceBlocks.length,
         edgesCount: sourceEdges.length,
         subflowsCount: sourceSubflows.length,
-        isExistingRequest: false,
       }
-    })
-
-    // Create the workflow status for maintaining the approval process
-    const workflowStatusId = crypto.randomUUID()
-    await db.insert(workflowStatus).values({
-      id: workflowStatusId,
-      name,
-      workflowId: newWorkflowId,
-      mappedWorkflowId: sourceWorkflowId,
-      ownerId: session.user.id,
-      userId: approvalUserId,
-      status: 'PENDING',
-      createdAt: now,
-      updatedAt: now,
     })
 
     const elapsed = Date.now() - startTime
     logger.info(
-      `[${requestId}] Successfully created new approval request for workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
+      `[${requestId}] Successfully approved workflow ${sourceWorkflowId} to ${newWorkflowId} in ${elapsed}ms`
     )
+    // Check if there's an existing approval status for this workflow
+    const existingApprovalStatus = await db
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.workflowId, newWorkflowId),
+          eq(workflowStatus.mappedWorkflowId, sourceWorkflowId)
+        )
+      )
+      .orderBy(desc(workflowStatus.updatedAt))
+      .limit(1)
 
+    if (existingApprovalStatus.length > 0) {
+      // Update existing approval status
+      await db
+        .update(workflowStatus)
+        .set({
+          name,
+          userId: approvalUserId,
+          status: 'PENDING',
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowStatus.id, existingApprovalStatus[0].id))
+    } else {
+      // Create new approval status
+      const workflowStatusId = crypto.randomUUID()
+      await db.insert(workflowStatus).values({
+        id: workflowStatusId,
+        name,
+        workflowId: newWorkflowId,
+        mappedWorkflowId: sourceWorkflowId,
+        ownerId: session.user.id,
+        userId: approvalUserId,
+        status: 'PENDING',
+        description: description || null,
+        category: category || 'creative',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+    }
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     console.log(error)
@@ -495,28 +443,57 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     logger.warn(`Unauthorized workflow duplication attempt for ${workflowId}`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
   const getWorkflowApproval = await db.transaction(async (tx) => {
-    const userWorkspace = await tx
+    // First, check if this is a workflow in the AGENTS APPROVAL (copied workflow)
+    // by looking for a workflowStatus record where mappedWorkflowId = workflowId
+    const approvalListStatus = await tx
       .select()
       .from(workflowStatus)
       .where(
         and(
-          or(
-            eq(workflowStatus.workflowId, workflowId),
-            eq(workflowStatus.mappedWorkflowId, workflowId)
-          ),
+          eq(workflowStatus.workflowId, workflowId), // This is the AGENTS APPROVAL copy
           or(
             eq(workflowStatus.userId, session.user.id),
             eq(workflowStatus.ownerId, session.user.id)
           )
         )
       )
+      .orderBy(desc(workflowStatus.updatedAt))
       .limit(1)
-    if (userWorkspace.length === 0) {
-      return { status: 'NO_APPROVAL_REQUEST' }
+
+    if (approvalListStatus.length > 0) {
+      // This is a workflow in the AGENTS APPROVAL, return its status
+      console.log('Found AGENTS APPROVAL workflow status:', approvalListStatus[0])
+      return approvalListStatus[0]
     }
-    return userWorkspace[0]
+
+    // If not found, check if this is an original workflow by looking for mappedWorkflowId
+    const originalWorkflowStatus = await tx
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.mappedWorkflowId, workflowId), // This is the original workflow
+          or(
+            eq(workflowStatus.userId, session.user.id),
+            eq(workflowStatus.ownerId, session.user.id)
+          )
+        )
+      )
+      .orderBy(desc(workflowStatus.updatedAt))
+      .limit(1)
+
+    if (originalWorkflowStatus.length > 0) {
+      console.log('Found original workflow status:', originalWorkflowStatus[0])
+      return originalWorkflowStatus[0]
+    }
+
+    // No approval status found
+    console.log('No approval status found for workflow:', workflowId)
+    return { status: 'NO_APPROVAL_REQUEST', ownerId: session.user.id }
   })
+
   return NextResponse.json(getWorkflowApproval, { status: 201 })
 }
 
@@ -536,7 +513,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { statusId, action, reason } = body
     const now = new Date()
 
-    if (action === 'APPROVED') {
+    if (action === 'APPROVED' || action === 'REJECTED') {
       const result = await db.transaction(async (tx) => {
         // First verify the source workflow exists
         const sourceWorkflow = await tx
@@ -737,15 +714,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       })
     }
     const getWorkflowApproval = await db.transaction(async (tx) => {
-      await tx
-        .update(workflowStatus)
-        .set({
-          updatedAt: now,
-          status: action,
-          comments: reason,
-        })
-        .where(eq(workflowStatus.id, statusId))
-      const userWorkflowStatus = await tx
+      // Find the latest approval status by updatedAt
+      const latestApprovalStatus = await tx
         .select()
         .from(workflowStatus)
         .where(
@@ -754,48 +724,159 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             eq(workflowStatus.userId, session.user.id)
           )
         )
+        .orderBy(desc(workflowStatus.updatedAt))
         .limit(1)
-      /**
-       * Create the template for the approval workflow
-       */
-      const workflowData = await db
-        .select()
-        .from(workflow)
-        .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
-        .then((rows) => rows[0])
-      console.log('workflowData', workflowData)
-      const normalizedData = await loadWorkflowFromNormalizedTables(
-        userWorkflowStatus[0].mappedWorkflowId
-      )
-      console.log('workflowData', normalizedData)
 
-      const templateId = uuidv4()
-      const newTemplate = {
-        id: templateId,
-        workflowId: userWorkflowStatus[0].mappedWorkflowId,
-        userId: session.user.id,
-        name: userWorkflowStatus[0].name,
-        description: ' Bot created the template',
-        author: session.user.name,
-        views: 0,
-        stars: 0,
-        color: '#3972F6',
-        icon: 'FileText',
-        category: 'marketing',
-        state: {
+      if (latestApprovalStatus.length === 0) {
+        throw new Error('No approval status found for this workflow')
+      }
+
+      // Update the latest approval status
+      await tx
+        .update(workflowStatus)
+        .set({
+          updatedAt: now,
+          status: action,
+          comments: reason,
+        })
+        .where(eq(workflowStatus.id, latestApprovalStatus[0].id))
+
+      const userWorkflowStatus = await tx
+        .select()
+        .from(workflowStatus)
+        .where(eq(workflowStatus.id, latestApprovalStatus[0].id))
+        .limit(1)
+
+      console.log('userWorkflowStatus data:', userWorkflowStatus[0])
+
+      // Only create template when approved, not when rejected
+      if (action === 'APPROVED') {
+        /**
+         * Create or update template for the approval workflow
+         * Use the original workflow ID (sourceWorkflowId) to track templates
+         * This ensures we update the same template when the owner makes changes
+         */
+        const workflowData = await tx
+          .select()
+          .from(workflow)
+          .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
+          .then((rows) => rows[0])
+        console.log('workflowData', workflowData)
+
+        // Get the owner's details for the author field
+        const ownerData = await tx
+          .select()
+          .from(user)
+          .where(eq(user.id, userWorkflowStatus[0].ownerId))
+          .limit(1)
+
+        // Load data from ORIGINAL workflow (not the AGENTS APPROVAL copy)
+        const normalizedData = await loadWorkflowFromNormalizedTables(
+          userWorkflowStatus[0].mappedWorkflowId // Original workflow ID
+        )
+
+        // Check if a template already exists for this original workflow
+        // Use userWorkflowStatus[0].workflowId which is the original owner's workflow ID
+        const existingTemplate = await tx
+          .select()
+          .from(templates)
+          .where(eq(templates.workflowId, userWorkflowStatus[0].mappedWorkflowId))
+          .limit(1)
+
+        // Debug: Check all templates to see what's in the database
+        const allTemplates = await tx.select().from(templates).limit(10)
+
+        const templateState = {
           blocks: normalizedData?.blocks,
           edges: normalizedData?.edges,
           loops: normalizedData?.loops,
           parallels: normalizedData?.parallels,
           lastSaved: now,
-        },
-        createdAt: now,
-        updatedAt: now,
+        }
+
+        if (existingTemplate.length > 0) {
+          // Update existing template with new data
+          const updateResult = await tx
+            .update(templates)
+            .set({
+              name: userWorkflowStatus[0].name,
+              description: userWorkflowStatus[0].description || '',
+              author: ownerData[0]?.name || session.user.name,
+              category: userWorkflowStatus[0].category || 'creative',
+              state: templateState,
+              updatedAt: now,
+            })
+            .where(eq(templates.id, existingTemplate[0].id))
+        } else {
+          // Create new template if none exists
+          const templateId = uuidv4()
+          const newTemplate = {
+            id: templateId,
+            workflowId: userWorkflowStatus[0].mappedWorkflowId, // Use original owner's workflow ID
+            userId: userWorkflowStatus[0].ownerId, // Use original owner's userId
+            name: userWorkflowStatus[0].name,
+            description: userWorkflowStatus[0].description || '',
+            author: ownerData[0]?.name || session.user.name,
+            views: 0,
+            stars: 0,
+            color: '#3972F6',
+            icon: 'FileText',
+            category: userWorkflowStatus[0].category || 'creative',
+            state: templateState,
+            createdAt: now,
+            updatedAt: now,
+          }
+
+          await tx.insert(templates).values(newTemplate)
+          console.log('🆕 Created new template with ID:', templateId)
+        }
+
+        // Final verification - check template for this workflow
+        const finalTemplate = await tx
+          .select()
+          .from(templates)
+          .where(eq(templates.workflowId, userWorkflowStatus[0].mappedWorkflowId))
+          .limit(1)
+
+        console.log('📊 Final template check for workflow:', {
+          found: finalTemplate.length > 0,
+          id: finalTemplate[0]?.id,
+          name: finalTemplate[0]?.name,
+          updatedAt: finalTemplate[0]?.updatedAt,
+        })
       }
-      console.log('newTemplate', newTemplate)
-      await db.insert(templates).values(newTemplate)
+
       return userWorkflowStatus[0]
     })
+
+    // Debug: Check if template was actually updated after transaction
+    // We need to get the userWorkflowStatus again to get the original workflow ID
+    const finalUserWorkflowStatus = await db
+      .select()
+      .from(workflowStatus)
+      .where(
+        and(
+          eq(workflowStatus.workflowId, sourceWorkflowId),
+          eq(workflowStatus.userId, session.user.id)
+        )
+      )
+      .orderBy(desc(workflowStatus.updatedAt))
+      .limit(1)
+
+    const finalTemplateCheck = await db
+      .select()
+      .from(templates)
+      .where(eq(templates.workflowId, finalUserWorkflowStatus[0].mappedWorkflowId))
+      .limit(1)
+
+    console.log('Final template check after transaction:', {
+      found: finalTemplateCheck.length > 0,
+      id: finalTemplateCheck[0]?.id,
+      name: finalTemplateCheck[0]?.name,
+      workflowId: finalTemplateCheck[0]?.workflowId,
+      createdAt: finalTemplateCheck[0]?.createdAt,
+    })
+
     return NextResponse.json(getWorkflowApproval, { status: 201 })
   } catch (error) {
     logger.error(`[${requestId}] Error approving workflow ${sourceWorkflowId}:`, error)

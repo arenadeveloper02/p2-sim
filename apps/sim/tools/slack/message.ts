@@ -51,6 +51,24 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'Message text to send (supports Slack mrkdwn formatting)',
     },
+    mergeMessages: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Whether to merge multiple messages into a single block',
+    },
+    additionalMessages: {
+      type: 'array',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Additional messages to merge with the main message',
+    },
+    mentionUsers: {
+      type: 'array',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'User IDs to mention in the message',
+    },
   },
 
   request: {
@@ -61,9 +79,45 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       Authorization: `Bearer ${params.accessToken || params.botToken}`,
     }),
     body: (params: SlackMessageParams) => {
+      let messageText = params.text
+
+      // Handle user mentions
+      if (params.mentionUsers && params.mentionUsers.length > 0) {
+        const mentions = params.mentionUsers.map((userId) => `<@${userId}>`).join(' ')
+        messageText = `${mentions} ${messageText}`
+      }
+
+      // Handle message merging
+      if (
+        params.mergeMessages &&
+        params.additionalMessages &&
+        params.additionalMessages.length > 0
+      ) {
+        // Process @ mentions in additional messages
+        const processedAdditionalMessages = params.additionalMessages.map((msg) => {
+          // Convert @username mentions to <@userId> format
+          // Note: In a real implementation, you'd want to resolve usernames to user IDs
+          // For now, we'll keep the @username format as Slack will handle the resolution
+          return msg
+        })
+
+        const allMessages = [messageText, ...processedAdditionalMessages]
+        messageText = allMessages.join('\n\n')
+      }
+
       const body: any = {
         channel: params.channel,
-        markdown_text: params.text,
+        text: messageText,
+        // Enable link parsing for proper mention handling
+        link_names: true,
+        // Enable unfurling of links
+        unfurl_links: true,
+        unfurl_media: true,
+      }
+
+      // Add thread timestamp if provided
+      if (params.thread_ts) {
+        body.thread_ts = params.thread_ts
       }
 
       return body

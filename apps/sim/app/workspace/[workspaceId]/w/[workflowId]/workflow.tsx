@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   Background,
   ConnectionLineType,
-  Controls,
   type Edge,
   type EdgeTypes,
   type NodeTypes,
@@ -13,6 +12,7 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { Toaster } from '@/components/ui'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -42,6 +42,7 @@ import { useGeneralStore } from '@/stores/settings/general/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { hasWorkflowsInitiallyLoaded, useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { FloatingControls } from './components/floating-controls/floating-contols'
 
 const logger = createLogger('Workflow')
 
@@ -1639,6 +1640,9 @@ const WorkflowContent = React.memo(() => {
         {/* Floating Control Bar */}
         <ControlBar hasValidationErrors={nestedSubflowErrors.size > 0} />
 
+        {/* Floating Controls (Zoom, Undo, Redo) */}
+        <FloatingControls />
+
         <ReactFlow
           nodes={nodes}
           edges={edgesWithSelection}
@@ -1685,7 +1689,6 @@ const WorkflowContent = React.memo(() => {
           autoPanOnConnect={effectivePermissions.canEdit}
           autoPanOnNodeDrag={effectivePermissions.canEdit}
         >
-          <Controls position='bottom-right' />
           <Background
             color='hsl(var(--workflow-dots))'
             size={4}
@@ -1697,6 +1700,9 @@ const WorkflowContent = React.memo(() => {
         {/* Show DiffControls if diff is available (regardless of current view mode) */}
         <DiffControls />
       </div>
+
+      {/* Toast notifications */}
+      <Toaster position='top-right' />
     </div>
   )
 })

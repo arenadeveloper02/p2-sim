@@ -33,6 +33,16 @@ export const StarterBlock: BlockConfig = {
       mode: 'advanced',
       condition: { field: 'startWorkflow', value: 'manual' },
     },
+    {
+      id: 'inputFormat',
+      title: 'Input Format',
+      type: 'input-format',
+      layout: 'full',
+      description:
+        'Name and Type define your input schema. Value is used only for manual test runs.',
+      mode: 'advanced',
+      condition: { field: 'startWorkflow', value: 'chat' },
+    },
   ],
   tools: {
     access: [],

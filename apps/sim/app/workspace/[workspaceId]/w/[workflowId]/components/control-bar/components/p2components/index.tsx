@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { CircleCheck, CircleX, FileCheck, Hourglass } from 'lucide-react'
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  toastError,
+  toastSuccess,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -16,7 +23,8 @@ export const renderApprovalButton = (
   userPermissions: any,
   isDebugging: boolean,
   activeWorkflowId: string | null,
-  handleOpenApproval: any
+  handleOpenApproval: any,
+  workspaceName?: string
 ) => {
   const [approval, setApproval] = useState<any>({})
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false)
@@ -41,7 +49,7 @@ export const renderApprovalButton = (
           ) {
             setGlobalActionsDisabled(true)
           } else if (e?.status === 'APPROVED' && e?.ownerId === session?.user?.id) {
-            setGlobalActionsDisabled(true)
+            setGlobalActionsDisabled(false)
           } else if (e?.status === 'PENDING' && e?.ownerId === session?.user?.id) {
             setGlobalActionsDisabled(true)
           } else {
@@ -65,17 +73,29 @@ export const renderApprovalButton = (
         approval.id
       )
       if (aRWorkflow) {
-        if (action === 'APPROVED') {
-          alert(`Approved`)
-        } else {
-          alert(`Rejected`)
-        }
         setIsSubmitting(false)
         setIsRejectModalOpen(false)
         setGlobalActionsDisabled(true)
+
+        // Show success toast based on action
+        if (action === 'APPROVED') {
+          toastSuccess('Workflow Approved', {
+            description: 'The workflow has been successfully approved.',
+          })
+        } else {
+          toastSuccess('Workflow Rejected', {
+            description: reason
+              ? `Workflow rejected: ${reason}`
+              : 'The workflow has been rejected.',
+          })
+        }
       }
     } catch (error) {
       logger.error('Error approval workflow:', { error })
+      setIsSubmitting(false)
+      toastError('Action Failed', {
+        description: `Failed to ${action.toLowerCase()} the workflow. Please try again.`,
+      })
     }
   }
 
@@ -88,35 +108,53 @@ export const renderApprovalButton = (
   }
 
   const canShowApprovalRequest =
-    !isDisabled &&
-    (approval?.status === 'NO_APPROVAL_REQUEST' || approval?.status === 'REJECTED') &&
-    approval?.userId !== session?.user?.id
+    !isDisabled && approval?.status !== 'PENDING' && approval?.ownerId === session?.user?.id
+  workspaceName !== 'AGENTS APPROVAL'
 
   const canShowApproveReject =
     !isDisabled && approval?.status === 'PENDING' && approval?.userId === session?.user?.id
 
   return (
     <>
-      {!isDisabled && approval?.status === 'REJECTED' && (
+      {!isDisabled &&
+        approval?.status === 'REJECTED' &&
+        approval?.ownerId === session?.user?.id && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='outline'
+                className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+              >
+                <CircleX className='h-5 w-5' />
+                <span className='sr-only'>Rejected</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className='max-w-[300px]'>
+              {approval?.comments
+                ? approval.comments.charAt(0).toUpperCase() +
+                  approval.comments.slice(1).toLowerCase()
+                : ''}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      {approval?.status === 'APPROVED' && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant='outline'
-              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-red-500 hover:text-white'
+              className='h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-green-500 hover:text-white'
             >
-              <CircleX className='h-5 w-5' />
-              <span className='sr-only'>Rejected</span>
+              <CircleCheck className='h-5 w-5' />
+              <span className='sr-only'>Approved</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            {approval?.comments
-              ? approval.comments.charAt(0).toUpperCase() + approval.comments.slice(1).toLowerCase()
-              : ''}
-          </TooltipContent>
+          <TooltipContent>Approved</TooltipContent>
         </Tooltip>
       )}
-
-      {approval?.userId !== session?.user?.id && approval?.status === 'PENDING' && (
+      {((approval?.userId !== session?.user?.id && approval?.status === 'PENDING') ||
+        (isDisabled &&
+          approval?.ownerId === session?.user?.id &&
+          approval?.status === 'PENDING')) && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

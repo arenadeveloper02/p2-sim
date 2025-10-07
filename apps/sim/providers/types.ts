@@ -10,7 +10,8 @@ export type ProviderId =
   | 'cerebras'
   | 'groq'
   | 'ollama'
-  | 'openrouter'
+  | 'sambanova'
+// | 'openrouter'
 
 /**
  * Model pricing information per million tokens

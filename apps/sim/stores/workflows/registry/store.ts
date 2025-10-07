@@ -1398,7 +1398,12 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 
         logger.info('Logout complete - all workflow data cleared')
       },
-      askApproveWorkflow: async (sourceId: string, approvalUserId: string) => {
+      askApproveWorkflow: async (
+        sourceId: string,
+        approvalUserId: string,
+        category = 'creative',
+        description = ''
+      ) => {
         const { workflows } = get()
         const sourceWorkflow = workflows[sourceId]
 
@@ -1418,11 +1423,12 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: `${sourceWorkflow.name}`,
-              description: sourceWorkflow.description,
+              description: description || sourceWorkflow.description,
               color: sourceWorkflow.color,
               workspaceId: workspaceId,
               folderId: sourceWorkflow.folderId,
               approvalUserId: approvalUserId,
+              category: category,
             }),
           })
 

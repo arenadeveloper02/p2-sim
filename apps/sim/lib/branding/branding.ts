@@ -25,7 +25,7 @@ export interface BrandConfig {
  * Default brand configuration values
  */
 const defaultConfig: BrandConfig = {
-  name: 'P2 Agents',
+  name: 'Agentic AI',
   logoUrl: 'https://arenav2image.s3.us-west-1.amazonaws.com/arena_svg_white.svg',
   faviconUrl: '/sim.svg',
   customCssUrl: undefined,

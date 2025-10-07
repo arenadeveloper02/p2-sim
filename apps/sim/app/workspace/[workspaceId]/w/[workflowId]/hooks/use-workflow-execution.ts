@@ -521,6 +521,7 @@ export function useWorkflowExecution() {
     // Use currentWorkflow but check if we're in diff mode
     const { blocks: workflowBlocks, edges: workflowEdges } = currentWorkflow
 
+    logger.info('>>>>>>>>>Preparing to execute workflow')
     // Filter out blocks without type (these are layout-only blocks)
     const validBlocks = Object.entries(workflowBlocks).reduce(
       (acc, [blockId, block]) => {

@@ -15,6 +15,7 @@ import { DiscordBlock } from '@/blocks/blocks/discord'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
+import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FunctionBlock } from '@/blocks/blocks/function'
@@ -22,6 +23,7 @@ import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
 import { GitHubBlock } from '@/blocks/blocks/github'
 import { GmailBlock } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
+import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
@@ -64,6 +66,7 @@ import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StarterBlock } from '@/blocks/blocks/starter'
 import { SupabaseBlock } from '@/blocks/blocks/supabase'
+import { TaskManagerBlock } from '@/blocks/blocks/task_manager'
 import { TavilyBlock } from '@/blocks/blocks/tavily'
 import { TelegramBlock } from '@/blocks/blocks/telegram'
 import { ThinkingBlock } from '@/blocks/blocks/thinking'
@@ -94,12 +97,14 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
+  figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
   file: FileBlock,
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,
   github: GitHubBlock,
   gmail: GmailBlock,
+  google_ads: GoogleAdsBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
@@ -143,6 +148,7 @@ export const registry: Record<string, BlockConfig> = {
   slack: SlackBlock,
   starter: StarterBlock,
   supabase: SupabaseBlock,
+  task_manager: TaskManagerBlock,
   tavily: TavilyBlock,
   telegram: TelegramBlock,
   thinking: ThinkingBlock,

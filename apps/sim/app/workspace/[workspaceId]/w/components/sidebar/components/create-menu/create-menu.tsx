@@ -290,7 +290,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
     const data = await response.json()
     data?.workspaces.forEach((work: any) => {
-      if (work.id === workspaceId && work.name === 'APPROVAL LIST') {
+      if (work?.id === workspaceId && work?.name === 'AGENTS APPROVAL') {
         setDisableCreate(true)
       }
     })
@@ -330,83 +330,91 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
 
   return (
     <>
-      {!disableCreate && (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-              title='Create Workflow (Hover, right-click, or long press for more options)'
-              disabled={isCreatingWorkflow}
-              onClick={(e) => {
-                handleClosePanel()
-                handleButtonClick(e)
-              }}
-              onContextMenu={handleContextMenu}
-              onMouseDown={handleMouseDown}
-              onMouseUp={handleMouseUp}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            >
-              <Plus className='h-[18px] w-[18px] stroke-[2px]' />
-              <span className='sr-only'>Create Workflow</span>
-            </Button>
-          </PopoverTrigger>
-
-          <PopoverContent
-            align='end'
-            sideOffset={4}
-            className={popoverContentClassName}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onCloseAutoFocus={(e) => e.preventDefault()}
-            onMouseEnter={handlePopoverMouseEnter}
-            onMouseLeave={handlePopoverMouseLeave}
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+            title={
+              disableCreate
+                ? 'Create functionality is disabled in AGENTS APPROVAL workspace'
+                : 'Create Workflow (Hover, right-click, or long press for more options)'
+            }
+            disabled={isCreatingWorkflow || disableCreate}
+            onClick={(e) => {
+              handleClosePanel()
+              handleButtonClick(e)
+            }}
+            onContextMenu={handleContextMenu}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
           >
-            {/* New Workflow */}
+            <Plus className='h-[18px] w-[18px] stroke-[2px]' />
+            <span className='sr-only'>Create Workflow</span>
+          </Button>
+        </PopoverTrigger>
+
+        <PopoverContent
+          align='end'
+          sideOffset={4}
+          className={popoverContentClassName}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onMouseEnter={handlePopoverMouseEnter}
+          onMouseLeave={handlePopoverMouseLeave}
+        >
+          {/* New Workflow */}
+          <button
+            className={cn(
+              menuItemClassName,
+              (isCreatingWorkflow || disableCreate) && 'cursor-not-allowed opacity-50'
+            )}
+            onClick={() => {
+              handleClosePanel()
+              handleCreateWorkflow()
+            }}
+            disabled={isCreatingWorkflow || disableCreate}
+          >
+            <Plus className={iconClassName} />
+            <span className={textClassName}>
+              {isCreatingWorkflow ? 'Creating...' : 'New workflow'}
+            </span>
+          </button>
+
+          {/* New Folder */}
+          <button
+            className={cn(
+              menuItemClassName,
+              (isCreating || disableCreate) && 'cursor-not-allowed opacity-50'
+            )}
+            onClick={handleCreateFolder}
+            disabled={isCreating || disableCreate}
+          >
+            <Folder className={iconClassName} />
+            <span className={textClassName}>{isCreating ? 'Creating...' : 'New folder'}</span>
+          </button>
+
+          {/* Import Workflow */}
+          {userPermissions.canEdit && (
             <button
               className={cn(
                 menuItemClassName,
-                isCreatingWorkflow && 'cursor-not-allowed opacity-50'
+                (isImporting || disableCreate) && 'cursor-not-allowed opacity-50'
               )}
-              onClick={() => {
-                handleClosePanel()
-                handleCreateWorkflow()
-              }}
-              disabled={isCreatingWorkflow}
+              onClick={handleImportWorkflow}
+              disabled={isImporting || disableCreate}
             >
-              <Plus className={iconClassName} />
+              <Download className={iconClassName} />
               <span className={textClassName}>
-                {isCreatingWorkflow ? 'Creating...' : 'New workflow'}
+                {isImporting ? 'Importing...' : 'Import workflow'}
               </span>
             </button>
-
-            {/* New Folder */}
-            <button
-              className={cn(menuItemClassName, isCreating && 'cursor-not-allowed opacity-50')}
-              onClick={handleCreateFolder}
-              disabled={isCreating}
-            >
-              <Folder className={iconClassName} />
-              <span className={textClassName}>{isCreating ? 'Creating...' : 'New folder'}</span>
-            </button>
-
-            {/* Import Workflow */}
-            {userPermissions.canEdit && (
-              <button
-                className={cn(menuItemClassName, isImporting && 'cursor-not-allowed opacity-50')}
-                onClick={handleImportWorkflow}
-                disabled={isImporting}
-              >
-                <Download className={iconClassName} />
-                <span className={textClassName}>
-                  {isImporting ? 'Importing...' : 'Import workflow'}
-                </span>
-              </button>
-            )}
-          </PopoverContent>
-        </Popover>
-      )}
+          )}
+        </PopoverContent>
+      </Popover>
 
       <input
         ref={fileInputRef}
