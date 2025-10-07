@@ -73,7 +73,7 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
       const url = new URL(`${GMAIL_API_BASE}/messages`)
 
       // Build query parameters for the folder/label
-      const queryParams = []
+      const queryParams: string[] = []
 
       // Add unread filter if specified
       if (params.unreadOnly) {
@@ -82,12 +82,23 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
 
       const trimmedFolder = (params.folder || '').trim()
       if (trimmedFolder) {
-        // If it's a system label like INBOX, SENT, etc., use it directly
-        if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM'].includes(trimmedFolder)) {
-          queryParams.push(`in:${trimmedFolder.toLowerCase()}`)
+        const isLabelId = /^Label_/i.test(trimmedFolder)
+        if (isLabelId) {
+          // Use Gmail API labelIds parameter when a label ID is provided (e.g., Label_12345)
+          url.searchParams.append('labelIds', trimmedFolder)
         } else {
-          // Otherwise, it's a user-defined label
-          queryParams.push(`label:${trimmedFolder}`)
+          // Handle system labels via query
+          if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM', 'STARRED'].includes(trimmedFolder)) {
+            // INBOX/SENT/DRAFT/TRASH/SPAM: use in: operator; STARRED prefers is:starred
+            if (trimmedFolder === 'STARRED') {
+              queryParams.push('is:starred')
+            } else {
+              queryParams.push(`in:${trimmedFolder.toLowerCase()}`)
+            }
+          } else {
+            // Otherwise, it's a user-defined label name
+            queryParams.push(`label:${trimmedFolder}`)
+          }
         }
       } else {
         // Default to INBOX if no folder is specified
@@ -100,7 +111,11 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
       }
 
       // Set max results (default to 1 for simplicity, max 10)
-      const maxResults = params.maxResults ? Math.min(params.maxResults, 10) : 1
+      const maxResultsValue = params.maxResults as unknown as number
+      const parsedMax = Number.isFinite(maxResultsValue as number)
+        ? Number(maxResultsValue)
+        : Number(params.maxResults)
+      const maxResults = parsedMax ? Math.min(parsedMax, 10) : 1
       url.searchParams.append('maxResults', maxResults.toString())
 
       return url.toString()
@@ -232,11 +247,11 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
       }
     }
 
-    // Fallback for unexpected response format
+    // Treat missing messages as zero results (e.g., when no emails match the filters)
     return {
       success: true,
       output: {
-        content: 'Unexpected response format from Gmail API',
+        content: 'No messages found in the selected folder.',
         metadata: {
           results: [],
         },
