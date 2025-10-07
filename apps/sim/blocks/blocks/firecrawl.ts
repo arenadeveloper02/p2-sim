@@ -1,4 +1,5 @@
 import { FirecrawlIcon } from '@/components/icons'
+import { isHosted } from '@/lib/environment'
 import type { BlockConfig } from '@/blocks/types'
 import type { FirecrawlResponse } from '@/tools/firecrawl/types'
 
@@ -78,6 +79,7 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
       placeholder: 'Enter your Firecrawl API key',
       password: true,
       required: true,
+      hidden: isHosted,
     },
   ],
   tools: {
