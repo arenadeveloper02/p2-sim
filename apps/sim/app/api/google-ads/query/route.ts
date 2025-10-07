@@ -204,6 +204,7 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 5. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
 6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
 7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
+8. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
 
 **FIELD-SPECIFIC OPERATORS:**
 - STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
@@ -234,7 +235,7 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 ## QUERY EXAMPLES
 
 **Basic Campaign Performance:**
-SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
 
 **Keyword Analysis:**
 SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC
@@ -261,7 +262,7 @@ SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
 
 **Geographic Performance:**
-SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_country, segments.geo_target_region, segments.geo_target_city, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
+SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
 
 **Location Targeting:**
 SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
@@ -294,9 +295,10 @@ SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_cri
 - Campaign types: Brand Search, Non-Brand Search, PMax
 
 **6. GEO PERFORMANCE**
-- Location targeting: segments.geo_target_city vs segments.user_location_geo_target
+- Use geographic_view resource with: geographic_view.country_criterion_id, geographic_view.location_type
 - Calculate: CPL (Cost/Conversions), ROAS (Conversion Value/Cost)
-- Identify: "Spending outside target location" vs "Good"
+- Identify high-spend, low-conversion locations for optimization
+- Note: Use campaign_criterion for location targeting settings
 
 **7. BRAND vs NON-BRAND vs PMAX**
 - Search: campaign.advertising_channel_type = 'SEARCH'
@@ -363,7 +365,9 @@ TRAVEL
     // Get API key for OpenAI hosted provider
     let apiKey: string
     try {
-      apiKey = getApiKey('openai', 'gpt-4o')
+      // Try to get the API key from environment variable first
+      const envApiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_1
+      apiKey = getApiKey('openai', 'gpt-4o', envApiKey)
     } catch (keyError) {
       logger.error('Failed to get OpenAI API key', { keyError })
       throw new Error('OpenAI API key not available')
