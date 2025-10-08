@@ -1,5 +1,5 @@
 'use client'
-import { MessageSquare, Plus } from 'lucide-react'
+import { MessageSquare, Plus, RefreshCw } from 'lucide-react'
 import { Tooltip, TooltipTrigger } from '@/components/ui'
 import { Button } from '@/components/ui/button'
 import { TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
@@ -19,7 +19,9 @@ interface LeftNavThreadProps {
   currentChatId: string
   onSelectThread?: (chatId: string) => void
   onNewChat?: () => void
+  onReRunWithNewInputs?: () => void
   isStreaming: boolean
+  hasInputFields?: boolean
 }
 
 const LeftNavThread = ({
@@ -29,11 +31,13 @@ const LeftNavThread = ({
   currentChatId,
   onSelectThread,
   onNewChat,
+  onReRunWithNewInputs,
   isStreaming,
+  hasInputFields = false,
 }: LeftNavThreadProps) => {
   return (
     <div className='absolute top-[70px] left-4 z-50 flex h-[calc(100%-84px)] w-64 flex-col rounded-[10px] border border-gray-200 bg-gray-50'>
-      <div className='border-gray-200 border-b p-3'>
+      <div className='space-y-2 border-gray-200 border-b p-3'>
         <Button
           className='w-full justify-start gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
           variant='outline'
@@ -45,6 +49,29 @@ const LeftNavThread = ({
           <Plus className='h-4 w-4' />
           New Chat
         </Button>
+
+        {hasInputFields && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  className='w-full justify-start gap-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  variant='outline'
+                  onClick={() => {
+                    onReRunWithNewInputs?.()
+                  }}
+                  disabled={isLoading || isStreaming}
+                >
+                  <RefreshCw className='h-4 w-4' />
+                  Re-run with new inputs
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Re-run with new inputs</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
 
       <div className='flex-1 overflow-y-auto'>

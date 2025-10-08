@@ -139,6 +139,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Workflow input form state
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
+  const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -427,8 +428,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       // The subdomain is actually the workflow ID in this case
       const fields = await extractInputFieldsByWorkflowId(subdomain)
       setInputFields(fields)
-      // If there are input fields, show the form
-      if (fields && fields.length > 0) {
+      // If there are input fields and they haven't been submitted yet, show the form
+      if (fields && fields.length > 0 && !initialInputsSubmitted) {
         setShowInputForm(true)
       }
     } catch (error) {
@@ -452,6 +453,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         logger.error('Failed to fetch GitHub stars:', err)
       })
   }, [subdomain])
+
+  // Show input form when input fields are detected and not yet submitted
+  useEffect(() => {
+    if (inputFields.length > 0 && !initialInputsSubmitted) {
+      logger.info('Showing input form for workflow with input fields:', {
+        inputFieldsCount: inputFields.length,
+        initialInputsSubmitted,
+      })
+      setShowInputForm(true)
+    } else if (inputFields.length === 0) {
+      logger.info('No input fields detected, hiding form if visible')
+      setShowInputForm(false)
+    }
+  }, [inputFields.length, initialInputsSubmitted])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -495,7 +510,19 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       return welcome ? [welcome] : []
     })
     updateUrlChatId(id)
-  }, [updateUrlChatId])
+
+    // Reset input form state and show form if there are input fields
+    setInitialInputsSubmitted(false)
+    if (inputFields.length > 0) {
+      setShowInputForm(true)
+    }
+  }, [updateUrlChatId, inputFields.length])
+
+  // Handle re-run with new inputs
+  const handleReRunWithNewInputs = useCallback(() => {
+    logger.info('Re-running with new inputs')
+    setShowInputForm(true)
+  }, [])
 
   const handleAuthSuccess = () => {
     setAuthRequired(null)
@@ -639,18 +666,26 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const handleWorkflowInputSubmit = useCallback(
     async (inputs: Record<string, any>) => {
       logger.info('Workflow inputs submitted:', inputs)
-      // Stringify the form inputs to use as the main workflow input
-      const stringifiedInputs = Object.entries(inputs)
-        .map(([key, value]) => {
-          const formattedKey = key
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, (char, index) =>
-              index === 0 ? char.toUpperCase() : char.toLowerCase()
-            )
-          return `${formattedKey}: ${value}`
-        })
-        .join('\n')
+
+      // Mark the initial form as submitted
+      setInitialInputsSubmitted(true)
+
+      // Hide the form
       setShowInputForm(false)
+
+      // Format the inputs as a message for display
+      const inputMessage = Object.entries(inputs)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n')
+
+      // Add the inputs as a user message
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: `Inputs received are:\n\`\n${inputMessage}\n\``,
+        type: 'user',
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, userMessage])
 
       // Add a message indicating the workflow is starting
       const workflowStartMessage: ChatMessage = {
@@ -661,10 +696,96 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       }
       setMessages((prev) => [...prev, workflowStartMessage])
 
-      // Trigger the workflow execution with stringified inputs as the main input
-      await handleSendMessage(stringifiedInputs, false, true) // Use stringified inputs as the main message
+      // Reset userHasScrolled when sending a new message
+      setUserHasScrolled(false)
+      setIsLoading(true)
+
+      // Create abort controller for request cancellation
+      const abortController = new AbortController()
+      const timeoutId = setTimeout(() => {
+        abortController.abort()
+      }, CHAT_REQUEST_TIMEOUT_MS)
+
+      try {
+        // Send the structured inputs to the workflow
+        const payload = {
+          input: 'Starting workflow with provided inputs...', // Main input message
+          workflowInputs: inputs, // Structured inputs for the workflow
+          conversationId,
+          chatId: currentChatId,
+        }
+
+        logger.info('API payload with workflowInputs:', payload)
+
+        const response = await fetch(`/api/chat/${subdomain}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(payload),
+          credentials: 'same-origin',
+          signal: abortController.signal,
+        })
+
+        // Clear timeout since request succeeded
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          logger.error('API error response:', errorData)
+          throw new Error(errorData.error || 'Failed to get response')
+        }
+
+        if (!response.body) {
+          throw new Error('Response body is missing')
+        }
+
+        // Use the streaming hook to handle the response
+        await handleStreamedResponse(
+          response,
+          setMessages,
+          setIsLoading,
+          scrollToBottom,
+          userHasScrolled,
+          {
+            voiceSettings: {
+              isVoiceEnabled: false,
+              voiceId: DEFAULT_VOICE_SETTINGS.voiceId,
+              autoPlayResponses: false,
+            },
+          }
+        )
+        setIsConversationFinished(true)
+      } catch (error: any) {
+        // Clear timeout in case of error
+        clearTimeout(timeoutId)
+
+        if (error.name === 'AbortError') {
+          logger.info('Request aborted by user or timeout')
+          setIsLoading(false)
+          return
+        }
+
+        logger.error('Error in handleWorkflowInputSubmit:', error)
+        setIsLoading(false)
+        const errorMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          content: 'Sorry, there was an error processing your inputs. Please try again.',
+          type: 'assistant',
+          timestamp: new Date(),
+        }
+        setMessages((prev) => [...prev, errorMessage])
+      }
     },
-    [handleSendMessage]
+    [
+      conversationId,
+      currentChatId,
+      subdomain,
+      handleStreamedResponse,
+      scrollToBottom,
+      userHasScrolled,
+    ]
   )
 
   // Stop audio when component unmounts or when streaming is stopped
@@ -804,7 +925,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           currentChatId={currentChatId || ''}
           onSelectThread={handleSelectThread}
           onNewChat={handleNewChat}
+          onReRunWithNewInputs={handleReRunWithNewInputs}
           isStreaming={isStreamingResponse || isLoading}
+          hasInputFields={inputFields.length > 0}
         />
         {/* Message Container component */}
         <ChatMessageContainer
