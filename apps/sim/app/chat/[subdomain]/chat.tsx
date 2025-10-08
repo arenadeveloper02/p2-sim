@@ -675,13 +675,21 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
       // Format the inputs as a message for display
       const inputMessage = Object.entries(inputs)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('\n')
+        .map(([key, value]) => {
+          // Convert field names to a more readable format
+          const formattedKey = key
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char, index) =>
+              index === 0 ? char.toUpperCase() : char.toLowerCase()
+            )
+          return `${formattedKey}: ${value}`
+        })
+        .join('\n\n')
 
       // Add the inputs as a user message
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
-        content: `Inputs received are:\n\`\n${inputMessage}\n\``,
+        content: `Workflow Inputs Received:\n\n${inputMessage}`,
         type: 'user',
         timestamp: new Date(),
       }
