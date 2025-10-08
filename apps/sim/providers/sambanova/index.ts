@@ -32,6 +32,13 @@ function createReadableStreamFromOpenAIStream(
       try {
         for await (const chunk of openaiStream) {
           if (chunk.usage) usageData = chunk.usage
+
+          // Add error handling for empty or undefined choices array in streaming
+          if (!chunk.choices || chunk.choices.length === 0) {
+            logger.warn('SambaNova streaming chunk has empty choices array:', chunk)
+            continue
+          }
+
           const content = chunk.choices[0]?.delta?.content || ''
           if (content) {
             fullContent += content
@@ -297,6 +304,15 @@ export const sambanovaProvider: ProviderConfig = {
       let currentResponse = await sambanova.chat.completions.create(payload)
       const firstResponseTime = Date.now() - initialCallTime
 
+      // Add error handling for empty or undefined choices array
+      if (!currentResponse.choices || currentResponse.choices.length === 0) {
+        logger.error('SambaNova API returned empty choices array:', {
+          response: currentResponse,
+          model: request.model,
+        })
+        throw new Error('SambaNova API returned empty response - no choices available')
+      }
+
       let content = currentResponse.choices[0]?.message?.content || ''
       const tokens = {
         prompt: currentResponse.usage?.prompt_tokens || 0,
@@ -324,6 +340,16 @@ export const sambanovaProvider: ProviderConfig = {
       checkForForcedToolUsage(currentResponse, originalToolChoice)
 
       while (iterationCount < MAX_ITERATIONS) {
+        // Add error handling for empty or undefined choices array in loop
+        if (!currentResponse.choices || currentResponse.choices.length === 0) {
+          logger.error('SambaNova API returned empty choices array in iteration:', {
+            iteration: iterationCount,
+            response: currentResponse,
+            model: request.model,
+          })
+          break
+        }
+
         const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
         if (!toolCallsInResponse?.length) break
 
@@ -411,6 +437,17 @@ export const sambanovaProvider: ProviderConfig = {
 
         const nextModelStartTime = Date.now()
         currentResponse = await sambanova.chat.completions.create(nextPayload)
+
+        // Add error handling for empty or undefined choices array in next iteration
+        if (!currentResponse.choices || currentResponse.choices.length === 0) {
+          logger.error('SambaNova API returned empty choices array in next iteration:', {
+            iteration: iterationCount + 1,
+            response: currentResponse,
+            model: request.model,
+          })
+          break
+        }
+
         checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
         const nextModelEndTime = Date.now()
         const thisModelTime = nextModelEndTime - nextModelStartTime
