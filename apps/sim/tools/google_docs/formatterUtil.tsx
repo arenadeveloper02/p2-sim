@@ -373,10 +373,44 @@ function addBlockquoteRequest(
 }
 
 function addHorizontalRuleRequest(requests: Array<Record<string, any>>, index: number): number {
+  // Insert a newline for the border to apply to
   requests.push({
     insertText: {
       location: { index },
       text: '\n',
+    },
+  })
+
+  // Apply paragraph border with dashed style
+  requests.push({
+    updateParagraphStyle: {
+      range: {
+        startIndex: index,
+        endIndex: index + 1,
+      },
+      paragraphStyle: {
+        borderBottom: {
+          color: {
+            color: {
+              rgbColor: {
+                red: 0.5,
+                green: 0.5,
+                blue: 0.5,
+              },
+            },
+          },
+          width: {
+            magnitude: 1,
+            unit: 'PT',
+          },
+          padding: {
+            magnitude: 0,
+            unit: 'PT',
+          },
+          dashStyle: 'DASH',
+        },
+      },
+      fields: 'borderBottom',
     },
   })
 
