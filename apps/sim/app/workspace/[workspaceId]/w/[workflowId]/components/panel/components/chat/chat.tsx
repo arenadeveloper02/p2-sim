@@ -82,7 +82,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Use the execution store state to track if a workflow is executing
   const { isExecuting } = useExecutionStore()
   const isFullScreen = usePanelStore((state) => state.isFullScreen)
-
+  const panelWidth = usePanelStore((state) => state.panelWidth)
   // Get workflow execution functionality
   const { handleRunWorkflow } = useWorkflowExecution()
 
@@ -1027,7 +1027,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             ) : (
               <div ref={scrollAreaRef} className='h-full'>
                 <ScrollArea className='h-full pb-2' hideScrollbar={true}>
-                  <div>
+                  <div className='overflow-x-auto block' style={{ width: `${panelWidth - 30}px` }}>
                     {workflowMessages.map((message) => (
                       <ChatMessage key={message.id} message={message} />
                     ))}
