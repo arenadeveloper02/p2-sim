@@ -172,7 +172,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
       // Lists
       ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => (
         <ul
-          className='pl-2 font-geist-sans text-gray-800 dark:text-gray-200 ml-2'
+          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'disc' }}
         >
           {children}
@@ -180,7 +180,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
       ),
       ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
         <ol
-          className='pl-2 font-geist-sans text-gray-800 dark:text-gray-200 ml-2'
+          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'decimal' }}
         >
           {children}

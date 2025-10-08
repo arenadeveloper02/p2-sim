@@ -1027,7 +1027,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             ) : (
               <div ref={scrollAreaRef} className='h-full'>
                 <ScrollArea className='h-full pb-2' hideScrollbar={true}>
-                  <div className='overflow-x-auto block' style={{ width: `${panelWidth - 30}px` }}>
+                  <div className='block overflow-x-auto' style={{ width: `${panelWidth - 30}px` }}>
                     {workflowMessages.map((message) => (
                       <ChatMessage key={message.id} message={message} />
                     ))}
