@@ -253,6 +253,7 @@ function processMarkdownTable(lines: string[], startIndex: number): TableData | 
 }
 
 function formatTableWithSpacing(tableLines: string[]): string {
+  // Parse all rows to find column widths
   const allRows = tableLines.map((line) =>
     line
       .split('|')
@@ -260,13 +261,15 @@ function formatTableWithSpacing(tableLines: string[]): string {
       .map((cell) => cell.trim())
   )
 
+  // Calculate max width for each column
   const numCols = allRows[0].length
   const colWidths: number[] = []
 
   for (let col = 0; col < numCols; col++) {
     let maxWidth = 0
     for (const row of allRows) {
-      if (col < row.length && row[col] !== '') {
+      if (col < row.length) {
+        // Skip separator row (contains only dashes, colons, and spaces)
         if (!/^:?-+:?$/.test(row[col])) {
           maxWidth = Math.max(maxWidth, row[col].length)
         }
@@ -275,26 +278,114 @@ function formatTableWithSpacing(tableLines: string[]): string {
     colWidths.push(maxWidth)
   }
 
-  const formattedLines: string[] = []
+  // Calculate maximum line width (80 characters to prevent wrapping in Google Docs)
+  const MAX_LINE_WIDTH = 80
+  const PIPE_PADDING = 3 // ' | ' between columns
+  const BORDER_CHARS = 4 // '| ' at start and ' |' at end
+  const ROW_COL_WIDTH = 8 // Width for "Row" column in continuation segments (includes padding)
 
-  for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
-    const row = allRows[rowIdx]
-    const cells: string[] = []
+  // Determine column segments that fit within MAX_LINE_WIDTH
+  const segments: number[][] = []
+  let currentSegment: number[] = []
+  let currentWidth = BORDER_CHARS // Start with '| ' and ' |'
 
-    for (let col = 0; col < numCols; col++) {
-      const cellContent = col < row.length ? row[col] : ''
+  for (let col = 0; col < numCols; col++) {
+    const colWidth = colWidths[col]
+    const additionalWidth = colWidth + (currentSegment.length > 0 ? PIPE_PADDING : 0)
 
-      if (rowIdx === 1 && /^:?-+:?$/.test(cellContent)) {
-        cells.push('-'.repeat(colWidths[col]))
-      } else {
-        cells.push(cellContent.padEnd(colWidths[col], ' '))
-      }
+    // For non-first segments, account for the "Row" column
+    const isFirstSegment = segments.length === 0 && currentSegment.length === 0
+    const extraWidth = isFirstSegment ? 0 : ROW_COL_WIDTH + PIPE_PADDING
+
+    // Check if adding this column exceeds the limit
+    if (currentWidth + additionalWidth + extraWidth > MAX_LINE_WIDTH && currentSegment.length > 0) {
+      // Save current segment and start new one
+      segments.push([...currentSegment])
+      currentSegment = [col]
+      currentWidth = BORDER_CHARS + colWidth + ROW_COL_WIDTH + PIPE_PADDING // Include row column for new segment
+    } else {
+      currentSegment.push(col)
+      currentWidth += additionalWidth
     }
-
-    formattedLines.push(`| ${cells.join(' | ')} |`)
   }
 
-  return formattedLines.join('\n')
+  // Add the last segment
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment)
+  }
+
+  // Format each segment vertically
+  const allFormattedLines: string[] = []
+
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const segment = segments[segIdx]
+
+    // Add segment header if not the first segment
+    if (segIdx > 0) {
+      allFormattedLines.push('') // Empty line between segments
+      allFormattedLines.push('') // Another empty line for spacing
+      const colStart = segment[0] + 1
+      const colEnd = segment[segment.length - 1] + 1
+      allFormattedLines.push(`Columns ${colStart}-${colEnd}:`)
+    }
+
+    // For continuation segments, add a "Row" identifier column
+    const needsRowColumn = segIdx > 0
+    const rowColWidth = needsRowColumn ? 5 : 0 // Width for "Row" text
+
+    // Format each row in this segment
+    for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
+      const row = allRows[rowIdx]
+      const cells: string[] = []
+
+      // Add row identifier for continuation segments
+      if (needsRowColumn) {
+        if (rowIdx === 0) {
+          // Header row
+          cells.push('Row'.padEnd(rowColWidth, ' '))
+        } else if (rowIdx === 1) {
+          // Separator row
+          cells.push('-'.repeat(rowColWidth))
+        } else {
+          // Data rows - show row number
+          cells.push(`${rowIdx - 1}`.padEnd(rowColWidth, ' '))
+        }
+      }
+
+      for (const col of segment) {
+        const cellContent = col < row.length ? row[col] : ''
+        const width = colWidths[col]
+
+        // Check if this is the separator row
+        if (/^:?-+:?$/.test(cellContent)) {
+          // Create separator with proper alignment indicators
+          let separator = ''
+          if (cellContent.startsWith(':') && cellContent.endsWith(':')) {
+            // Center aligned
+            separator = ':' + '-'.repeat(Math.max(0, width - 2)) + ':'
+          } else if (cellContent.endsWith(':')) {
+            // Right aligned
+            separator = '-'.repeat(Math.max(0, width - 1)) + ':'
+          } else if (cellContent.startsWith(':')) {
+            // Left aligned
+            separator = ':' + '-'.repeat(Math.max(0, width - 1))
+          } else {
+            // Default (left aligned)
+            separator = '-'.repeat(width)
+          }
+          cells.push(separator)
+        } else {
+          // Regular cell - pad to column width
+          cells.push(cellContent.padEnd(width, ' '))
+        }
+      }
+
+      // Join cells with proper spacing
+      allFormattedLines.push(`| ${cells.join(' | ')} |`)
+    }
+  }
+
+  return allFormattedLines.join('\n')
 }
 
 function addCodeBlockRequest(
