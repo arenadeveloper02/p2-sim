@@ -32,6 +32,13 @@ function createReadableStreamFromOpenAIStream(
       try {
         for await (const chunk of openaiStream) {
           if (chunk.usage) usageData = chunk.usage
+
+          // Add error handling for empty or undefined choices array in streaming
+          if (!chunk.choices || chunk.choices.length === 0) {
+            logger.warn('SambaNova streaming chunk has empty choices array:', chunk)
+            continue
+          }
+
           const content = chunk.choices[0]?.delta?.content || ''
           if (content) {
             fullContent += content
@@ -62,15 +69,7 @@ export const sambanovaProvider: ProviderConfig = {
   executeRequest: async (
     request: ProviderRequest
   ): Promise<ProviderResponse | ReadableStream | StreamingExecution> => {
-    logger.info('Preparing SambaNova request', {
-      model: request.model || getProviderDefaultModel('sambanova'),
-      hasSystemPrompt: !!request.systemPrompt,
-      hasMessages: !!request.messages?.length,
-      hasTools: !!request.tools?.length,
-      toolCount: request.tools?.length || 0,
-      hasResponseFormat: !!request.responseFormat,
-      stream: !!request.stream,
-    })
+    // SambaNova request preparation
 
     // SambaNova uses OpenAI-compatible API
     const sambanova = new OpenAI({
@@ -174,14 +173,15 @@ export const sambanovaProvider: ProviderConfig = {
     if (request.temperature !== undefined) payload.temperature = request.temperature
     if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
 
-    // Structured output
+    // Structured output - SambaNova doesn't support strict mode
+    // Note: SambaNova API returns error "response_format of type 'json_schema' does not currently support 'strict' value to be True"
     if (request.responseFormat) {
       payload.response_format = {
         type: 'json_schema',
         json_schema: {
           name: request.responseFormat.name || 'response_schema',
           schema: request.responseFormat.schema || request.responseFormat,
-          strict: request.responseFormat.strict !== false,
+          // SambaNova doesn't support strict: true, so we omit it
         },
       }
     }
@@ -197,27 +197,52 @@ export const sambanovaProvider: ProviderConfig = {
       }
     }
 
-    logger.info('Sending request to SambaNova', {
-      model: payload.model,
-      messageCount: payload.messages.length,
-      hasTools: !!payload.tools,
-      toolCount: payload.tools?.length || 0,
-      stream: request.stream,
-      hasResponseFormat: !!payload.response_format,
-      hasTemperature: payload.temperature !== undefined,
-      hasMaxTokens: payload.max_tokens !== undefined,
-      baseURL: 'https://api.sambanova.ai/v1',
-      endpoint: '/chat/completions',
-    })
+    // Validate the request before sending
+    if (!payload.messages || payload.messages.length === 0) {
+      throw new Error('SambaNova request validation failed: No messages provided')
+    }
+
+    // Validate request messages
+    const invalidMessages = payload.messages.filter(
+      (msg: any) => !msg.content || msg.content.trim() === ''
+    )
+    if (invalidMessages.length > 0) {
+      logger.warn('SambaNova request has messages with empty content')
+    }
 
     // Timing
     const providerStartTime = Date.now()
     const providerStartTimeISO = new Date(providerStartTime).toISOString()
 
     try {
+      // Try the main request first
+      let currentResponse
+      try {
+        currentResponse = await sambanova.chat.completions.create(payload)
+      } catch (apiError: any) {
+        // If it's a 400 error, try with a simplified payload
+        if (apiError.status === 400) {
+          const simplifiedPayload = {
+            model: payload.model,
+            messages: payload.messages,
+            temperature: payload.temperature,
+            max_tokens: payload.max_tokens,
+          }
+          currentResponse = await sambanova.chat.completions.create(simplifiedPayload)
+        } else if (
+          apiError.message?.includes('response_format') ||
+          apiError.message?.includes('strict')
+        ) {
+          // Retry without response_format due to SambaNova compatibility
+          const { response_format, ...payloadWithoutFormat } = payload
+          currentResponse = await sambanova.chat.completions.create(payloadWithoutFormat)
+        } else {
+          throw apiError
+        }
+      }
+
       // Streaming path when no tools
       if (request.stream && (!tools || tools.length === 0)) {
-        logger.info('Using streaming response for SambaNova request')
         const streamResponse = await sambanova.chat.completions.create({
           ...payload,
           stream: true,
@@ -294,8 +319,20 @@ export const sambanovaProvider: ProviderConfig = {
         }
       }
 
-      let currentResponse = await sambanova.chat.completions.create(payload)
+      // Use the currentResponse from the try-catch block above
       const firstResponseTime = Date.now() - initialCallTime
+
+      // Add error handling for empty or undefined choices array
+      if (!currentResponse.choices || currentResponse.choices.length === 0) {
+        // Check if it's an error response
+        if ((currentResponse as any).error) {
+          throw new Error(
+            `SambaNova API error: ${(currentResponse as any).error.message || JSON.stringify((currentResponse as any).error)}`
+          )
+        }
+
+        throw new Error('SambaNova API returned empty response - no choices available')
+      }
 
       let content = currentResponse.choices[0]?.message?.content || ''
       const tokens = {
@@ -324,6 +361,12 @@ export const sambanovaProvider: ProviderConfig = {
       checkForForcedToolUsage(currentResponse, originalToolChoice)
 
       while (iterationCount < MAX_ITERATIONS) {
+        // Add error handling for empty or undefined choices array in loop
+        if (!currentResponse.choices || currentResponse.choices.length === 0) {
+          logger.error('SambaNova API returned empty choices array in iteration')
+          break
+        }
+
         const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
         if (!toolCallsInResponse?.length) break
 
@@ -402,15 +445,22 @@ export const sambanovaProvider: ProviderConfig = {
           const remainingTools = forcedTools.filter((tool) => !usedForcedTools.includes(tool))
           if (remainingTools.length > 0) {
             nextPayload.tool_choice = { type: 'function', function: { name: remainingTools[0] } }
-            logger.info(`Forcing next tool: ${remainingTools[0]}`)
+            // Forcing next tool
           } else {
             nextPayload.tool_choice = 'auto'
-            logger.info('All forced tools used, switching to auto tool_choice')
+            // All forced tools used, switching to auto
           }
         }
 
         const nextModelStartTime = Date.now()
         currentResponse = await sambanova.chat.completions.create(nextPayload)
+
+        // Add error handling for empty or undefined choices array in next iteration
+        if (!currentResponse.choices || currentResponse.choices.length === 0) {
+          logger.error('SambaNova API returned empty choices array in next iteration')
+          break
+        }
+
         checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
         const nextModelEndTime = Date.now()
         const thisModelTime = nextModelEndTime - nextModelStartTime
@@ -434,7 +484,7 @@ export const sambanovaProvider: ProviderConfig = {
 
       // Optional final streaming after tools (keep parity with OpenAI)
       if (request.stream && iterationCount > 0) {
-        logger.info('Using streaming for final SambaNova response after tool calls')
+        // Using streaming for final response after tool calls
         const streamingPayload = {
           ...payload,
           messages: currentMessages,
@@ -510,7 +560,6 @@ export const sambanovaProvider: ProviderConfig = {
       const providerEndTime = Date.now()
       const providerEndTimeISO = new Date(providerEndTime).toISOString()
       const totalDuration = providerEndTime - providerStartTime
-      logger.error('Error in SambaNova request:', { error, duration: totalDuration })
       const enhancedError = new Error(error instanceof Error ? error.message : String(error))
       // @ts-ignore
       enhancedError.timing = {
