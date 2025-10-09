@@ -140,6 +140,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
+  const [hasNoChatHistory, setHasNoChatHistory] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -291,8 +292,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
         if (response.ok) {
           const data = await response.json()
+          // Always fetch input fields regardless of chat history
+          fetchInputFields()
           if (data?.logs?.length === 0) {
-            fetchInputFields()
+            // Case 1: No chat history - mark this for form display
+            setHasNoChatHistory(true)
           } else {
             const formatData = data.logs.flatMap((log: any) => {
               const messages = []
@@ -428,10 +432,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       // The subdomain is actually the workflow ID in this case
       const fields = await extractInputFieldsByWorkflowId(subdomain)
       setInputFields(fields)
-      // If there are input fields and they haven't been submitted yet, show the form
-      if (fields && fields.length > 0 && !initialInputsSubmitted) {
-        setShowInputForm(true)
-      }
+      // Don't automatically show the form - it will be shown based on specific conditions
     } catch (error) {
       logger.error('Error fetching input fields:', error)
       // On error, proceed to chat anyway
@@ -454,19 +455,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       })
   }, [subdomain])
 
-  // Show input form when input fields are detected and not yet submitted
+  // Case 1: Show input form when there are input fields and no chat history
   useEffect(() => {
-    if (inputFields.length > 0 && !initialInputsSubmitted) {
-      logger.info('Showing input form for workflow with input fields:', {
-        inputFieldsCount: inputFields.length,
-        initialInputsSubmitted,
-      })
+    if (hasNoChatHistory && inputFields.length > 0 && !initialInputsSubmitted) {
+      logger.info('Case 1: Showing input form - no chat history and input fields available')
       setShowInputForm(true)
-    } else if (inputFields.length === 0) {
-      logger.info('No input fields detected, hiding form if visible')
-      setShowInputForm(false)
     }
-  }, [inputFields.length, initialInputsSubmitted])
+  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -494,6 +489,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const welcome = prev.find((m) => (m as any).isInitialMessage)
         return welcome ? [welcome] : []
       })
+      // Reset form state when switching threads
+      setShowInputForm(false)
+      setHasNoChatHistory(false)
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
@@ -511,12 +509,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     })
     updateUrlChatId(id)
 
-    // Reset input form state and show form if there are input fields
+    // Reset input form state - Case 1 will handle showing the form
     setInitialInputsSubmitted(false)
-    if (inputFields.length > 0) {
-      setShowInputForm(true)
-    }
-  }, [updateUrlChatId, inputFields.length])
+    setHasNoChatHistory(true)
+    setShowInputForm(false)
+  }, [updateUrlChatId])
 
   // Handle re-run with new inputs
   const handleReRunWithNewInputs = useCallback(() => {
