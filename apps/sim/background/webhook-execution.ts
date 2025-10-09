@@ -1,7 +1,8 @@
 import { task } from '@trigger.dev/sdk'
 import { eq, sql } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
-import { checkServerSideUsageLimits } from '@/lib/billing'
+// Usage limits have been disabled for webhook execution
+// import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { IdempotencyService, webhookIdempotency } from '@/lib/idempotency'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -65,21 +66,11 @@ async function executeWebhookJobInternal(
   const loggingSession = new LoggingSession(payload.workflowId, executionId, 'webhook', requestId)
 
   try {
-    const usageCheck = await checkServerSideUsageLimits(payload.userId)
-    if (usageCheck.isExceeded) {
-      logger.warn(
-        `[${requestId}] User ${payload.userId} has exceeded usage limits. Skipping webhook execution.`,
-        {
-          currentUsage: usageCheck.currentUsage,
-          limit: usageCheck.limit,
-          workflowId: payload.workflowId,
-        }
-      )
-      throw new Error(
-        usageCheck.message ||
-          'Usage limit exceeded. Please upgrade your plan to continue using webhooks.'
-      )
-    }
+    // Usage limits have been disabled for webhook execution to allow unlimited usage
+    logger.debug(`[${requestId}] Usage limit check bypassed for webhook execution`, {
+      userId: payload.userId,
+      workflowId: payload.workflowId,
+    })
 
     const workflowData = await loadWorkflowFromNormalizedTables(payload.workflowId)
     if (!workflowData) {

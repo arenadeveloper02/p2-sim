@@ -128,24 +128,7 @@ describe('Webhook Trigger API Route', () => {
     mockExecutionDependencies()
     mockTriggerDevSdk()
 
-    vi.doMock('@/services/queue', () => ({
-      RateLimiter: vi.fn().mockImplementation(() => ({
-        checkRateLimit: vi.fn().mockResolvedValue({
-          allowed: true,
-          remaining: 10,
-          resetAt: new Date(),
-        }),
-      })),
-      RateLimitError: class RateLimitError extends Error {
-        constructor(
-          message: string,
-          public statusCode = 429
-        ) {
-          super(message)
-          this.name = 'RateLimitError'
-        }
-      },
-    }))
+    // Rate limiting has been disabled for webhooks, so no need to mock it
 
     vi.doMock('@/lib/workflows/db-helpers', () => ({
       loadWorkflowFromNormalizedTables: vi.fn().mockResolvedValue({

@@ -1,8 +1,9 @@
 import { tasks } from '@trigger.dev/sdk'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { checkServerSideUsageLimits } from '@/lib/billing'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+// Rate limiting and usage limits have been disabled for webhooks
+// import { checkServerSideUsageLimits } from '@/lib/billing'
+// import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env, isTruthy } from '@/lib/env'
 import { IdempotencyService, webhookIdempotency } from '@/lib/idempotency/service'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -15,7 +16,9 @@ import {
 import { executeWebhookJob } from '@/background/webhook-execution'
 import { db } from '@/db'
 import { webhook, workflow } from '@/db/schema'
-import { RateLimiter } from '@/services/queue'
+
+// Rate limiting has been disabled for webhooks
+// import { RateLimiter } from '@/services/queue'
 
 const logger = createLogger('WebhookTriggerAPI')
 
@@ -248,86 +251,19 @@ export async function POST(
     }
   }
 
-  // --- PHASE 3: Rate limiting for webhook execution ---
-  try {
-    // Get user subscription for rate limiting (checks both personal and org subscriptions)
-    const userSubscription = await getHighestPrioritySubscription(foundWorkflow.userId)
+  // --- PHASE 3: Rate limiting bypassed for webhook execution ---
+  // Rate limiting has been disabled for webhooks to allow unlimited usage
+  logger.debug(`[${requestId}] Rate limiting bypassed for webhook execution`, {
+    provider: foundWebhook.provider,
+    userId: foundWorkflow.userId,
+  })
 
-    // Check async rate limits (webhooks are processed asynchronously)
-    const rateLimiter = new RateLimiter()
-    const rateLimitCheck = await rateLimiter.checkRateLimitWithSubscription(
-      foundWorkflow.userId,
-      userSubscription,
-      'webhook',
-      true // isAsync = true for webhook execution
-    )
-
-    if (!rateLimitCheck.allowed) {
-      logger.warn(`[${requestId}] Rate limit exceeded for webhook user ${foundWorkflow.userId}`, {
-        provider: foundWebhook.provider,
-        remaining: rateLimitCheck.remaining,
-        resetAt: rateLimitCheck.resetAt,
-      })
-
-      // Return 200 to prevent webhook provider retries, but indicate rate limit
-      if (foundWebhook.provider === 'microsoftteams') {
-        // Microsoft Teams requires specific response format
-        return NextResponse.json({
-          type: 'message',
-          text: 'Rate limit exceeded. Please try again later.',
-        })
-      }
-
-      // Simple error response for other providers (return 200 to prevent retries)
-      return NextResponse.json({ message: 'Rate limit exceeded' }, { status: 200 })
-    }
-
-    logger.debug(`[${requestId}] Rate limit check passed for webhook`, {
-      provider: foundWebhook.provider,
-      remaining: rateLimitCheck.remaining,
-      resetAt: rateLimitCheck.resetAt,
-    })
-  } catch (rateLimitError) {
-    logger.error(`[${requestId}] Error checking webhook rate limits:`, rateLimitError)
-    // Continue processing - better to risk rate limit bypass than fail webhook
-  }
-
-  // --- PHASE 4: Usage limit check ---
-  try {
-    const usageCheck = await checkServerSideUsageLimits(foundWorkflow.userId)
-    if (usageCheck.isExceeded) {
-      logger.warn(
-        `[${requestId}] User ${foundWorkflow.userId} has exceeded usage limits. Skipping webhook execution.`,
-        {
-          currentUsage: usageCheck.currentUsage,
-          limit: usageCheck.limit,
-          workflowId: foundWorkflow.id,
-          provider: foundWebhook.provider,
-        }
-      )
-
-      // Return 200 to prevent webhook provider retries, but indicate usage limit exceeded
-      if (foundWebhook.provider === 'microsoftteams') {
-        // Microsoft Teams requires specific response format
-        return NextResponse.json({
-          type: 'message',
-          text: 'Usage limit exceeded. Please upgrade your plan to continue.',
-        })
-      }
-
-      // Simple error response for other providers (return 200 to prevent retries)
-      return NextResponse.json({ message: 'Usage limit exceeded' }, { status: 200 })
-    }
-
-    logger.debug(`[${requestId}] Usage limit check passed for webhook`, {
-      provider: foundWebhook.provider,
-      currentUsage: usageCheck.currentUsage,
-      limit: usageCheck.limit,
-    })
-  } catch (usageError) {
-    logger.error(`[${requestId}] Error checking webhook usage limits:`, usageError)
-    // Continue processing - better to risk usage limit bypass than fail webhook
-  }
+  // --- PHASE 4: Usage limit check bypassed for webhook execution ---
+  // Usage limits have been disabled for webhooks to allow unlimited usage
+  logger.debug(`[${requestId}] Usage limit check bypassed for webhook execution`, {
+    provider: foundWebhook.provider,
+    userId: foundWorkflow.userId,
+  })
 
   // --- PHASE 5: Idempotent webhook execution ---
   try {
