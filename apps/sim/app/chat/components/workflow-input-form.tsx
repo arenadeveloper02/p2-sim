@@ -31,9 +31,9 @@ export function WorkflowInputForm({ fields, onSubmit }: WorkflowInputFormProps) 
     return text.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
   }
 
-  // Check if at least one input field has a meaningful value
+  // Check if all input fields have meaningful values
   const hasValidInput = () => {
-    return fields.some((field) => {
+    return fields.every((field) => {
       const value = inputs[field.name]
       if (value === undefined || value === null) return false
 

@@ -91,8 +91,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
   // Render agent/workflow messages as full-width text
   return (
     <div className='w-full py-2 pl-[2px]'>
-      <div className='overflow-wrap-anywhere relative whitespace-normal break-normal font-normal text-sm leading-normal'>
-        <div className='whitespace-normal break-words bg-secondary p-3 text-foreground'>
+      <div className='overflow-wrap-anywhere relative break-normal font-normal text-sm leading-normal'>
+        <div className=' break-words bg-secondary p-3 text-base text-foreground'>
           {/* <WordWrap text={formattedContent} /> */}
           {renderContent(message?.content)}
           {message.isStreaming && (

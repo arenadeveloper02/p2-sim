@@ -165,6 +165,10 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 
   const systemPrompt = `You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries for ANY Google Ads question.
 
+**IMPORTANT RULE**: When users ask about asset performance or data over time, use campaign or ad_group resources instead of asset resources. Asset resources don't support date segments, but campaign/ad_group resources do.
+
+**NEVER REFUSE**: Always generate a valid GAQL query. Never return error messages or refuse to generate queries.
+
 ## RESOURCES & METRICS
 
 **RESOURCES:**
@@ -194,6 +198,12 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - Demographics: segments.age_range, segments.gender
 - Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
+**SEGMENT COMPATIBILITY RULES:**
+- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, ad_group_ad, geographic_view, gender_view
+- segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion
+- **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
+- Asset queries show structure (what exists), not performance (how it performed)
+
 ## SYNTAX RULES
 
 **CRITICAL:**
@@ -204,6 +214,7 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 5. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
 6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
 7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
+8. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
 
 **FIELD-SPECIFIC OPERATORS:**
 - STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
@@ -234,7 +245,7 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 ## QUERY EXAMPLES
 
 **Basic Campaign Performance:**
-SELECT campaign.id, campaign.name, metrics.clicks, metrics.impressions, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
 
 **Keyword Analysis:**
 SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC
@@ -242,17 +253,23 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_crit
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-**Campaign Assets:**
+**Campaign Assets (NO DATE SEGMENTS):**
 SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
 
-**Asset Group Assets:**
+**Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
 
-**Asset Group Assets with Filtering:**
+**Asset Group Assets with Filtering (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.field_type = 'HEADLINE'
 
-**Asset Group Assets by Specific Asset Group:**
+**Asset Group Assets by Specific Asset Group (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.asset_group = '1234567890'
+
+**CRITICAL ASSET RESOURCE RULES:**
+- asset, campaign_asset, asset_group_asset resources DO NOT support segments.date
+- **SOLUTION**: Use campaign or ad_group resources for asset performance data
+- Asset queries show structure (what assets exist) not performance (how they performed)
+- For performance data with date segments, always use campaign or ad_group resources
 
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
@@ -261,7 +278,7 @@ SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
 
 **Geographic Performance:**
-SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_country, segments.geo_target_region, segments.geo_target_city, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
+SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
 
 **Location Targeting:**
 SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
@@ -294,9 +311,10 @@ SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_cri
 - Campaign types: Brand Search, Non-Brand Search, PMax
 
 **6. GEO PERFORMANCE**
-- Location targeting: segments.geo_target_city vs segments.user_location_geo_target
+- Use geographic_view resource with: geographic_view.country_criterion_id, geographic_view.location_type
 - Calculate: CPL (Cost/Conversions), ROAS (Conversion Value/Cost)
-- Identify: "Spending outside target location" vs "Good"
+- Identify high-spend, low-conversion locations for optimization
+- Note: Use campaign_criterion for location targeting settings
 
 **7. BRAND vs NON-BRAND vs PMAX**
 - Search: campaign.advertising_channel_type = 'SEARCH'

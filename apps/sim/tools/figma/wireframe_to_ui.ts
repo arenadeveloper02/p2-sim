@@ -126,7 +126,10 @@ export const wireframeToUITool: ToolConfig<WireframeToUIParams, WireframeToUIRes
     const userData = await response.json()
 
     // Analyze wireframe
-    const wireframeAnalysis = await analyzeWireframe(params?.wireframeFile)
+    if (!params?.wireframeFile) {
+      throw new Error('Wireframe file is required')
+    }
+    const wireframeAnalysis = await analyzeWireframe(params.wireframeFile)
 
     // Process brand guidelines if provided
     let brandAnalysis = ''

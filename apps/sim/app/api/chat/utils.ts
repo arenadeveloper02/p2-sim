@@ -302,7 +302,8 @@ export async function executeWorkflowForChat(
   chatId: string,
   input: string,
   conversationId?: string,
-  workflowInputs?: Record<string, any>
+  workflowInputs?: Record<string, any>,
+  logChatId?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
@@ -351,7 +352,14 @@ export async function executeWorkflowForChat(
   }
 
   // Set up logging for chat execution
-  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId, true)
+  const loggingSession = new LoggingSession(
+    workflowId,
+    executionId,
+    'chat',
+    requestId,
+    true,
+    logChatId || chatId
+  )
 
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>
