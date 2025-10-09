@@ -351,6 +351,7 @@ function addBlockquoteRequest(
         borderLeft: {
           color: { color: { rgbColor: { red: 0.8, green: 0.8, blue: 0.8 } } },
           width: { magnitude: 3, unit: 'PT' },
+          padding: { magnitude: 8, unit: 'PT' },
           dashStyle: 'SOLID',
         },
       },
@@ -358,16 +359,19 @@ function addBlockquoteRequest(
     },
   })
 
-  requests.push({
-    updateTextStyle: {
-      range: {
-        startIndex: index,
-        endIndex: index + text.length,
+  // Only apply italic style if there's actual text content
+  if (text.length > 0) {
+    requests.push({
+      updateTextStyle: {
+        range: {
+          startIndex: index,
+          endIndex: index + text.length,
+        },
+        textStyle: { italic: true },
+        fields: 'italic',
       },
-      textStyle: { italic: true },
-      fields: 'italic',
-    },
-  })
+    })
+  }
 
   return index + text.length + 1
 }
