@@ -3,8 +3,9 @@ import { and, eq, lte, not, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { checkServerSideUsageLimits } from '@/lib/billing'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+// Usage limits and rate limiting have been disabled for scheduled execution only
+// import { checkServerSideUsageLimits } from '@/lib/billing'
+// import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -22,7 +23,8 @@ import { db } from '@/db'
 import { userStats, workflow, workflowSchedule } from '@/db/schema'
 import { Executor } from '@/executor'
 import { Serializer } from '@/serializer'
-import { RateLimiter } from '@/services/queue'
+// Rate limiting has been disabled for scheduled execution only
+// import { RateLimiter } from '@/services/queue'
 import { mergeSubblockState } from '@/stores/workflows/server-utils'
 
 export const dynamic = 'force-dynamic'
@@ -107,82 +109,17 @@ export async function GET() {
           continue
         }
 
-        // Check rate limits for scheduled execution (checks both personal and org subscriptions)
-        const userSubscription = await getHighestPrioritySubscription(workflowRecord.userId)
+        // Rate limiting has been disabled for scheduled execution only
+        logger.debug(`[${requestId}] Rate limiting bypassed for scheduled workflow execution`, {
+          workflowId: schedule.workflowId,
+          userId: workflowRecord.userId,
+        })
 
-        const rateLimiter = new RateLimiter()
-        const rateLimitCheck = await rateLimiter.checkRateLimitWithSubscription(
-          workflowRecord.userId,
-          userSubscription,
-          'schedule',
-          false // schedules are always sync
-        )
-
-        if (!rateLimitCheck.allowed) {
-          logger.warn(
-            `[${requestId}] Rate limit exceeded for scheduled workflow ${schedule.workflowId}`,
-            {
-              userId: workflowRecord.userId,
-              remaining: rateLimitCheck.remaining,
-              resetAt: rateLimitCheck.resetAt,
-            }
-          )
-
-          // Retry in 5 minutes for rate limit
-          const retryDelay = 5 * 60 * 1000 // 5 minutes
-          const nextRetryAt = new Date(now.getTime() + retryDelay)
-
-          try {
-            await db
-              .update(workflowSchedule)
-              .set({
-                updatedAt: now,
-                nextRunAt: nextRetryAt,
-              })
-              .where(eq(workflowSchedule.id, schedule.id))
-
-            logger.debug(`[${requestId}] Updated next retry time due to rate limit`)
-          } catch (updateError) {
-            logger.error(`[${requestId}] Error updating schedule for rate limit:`, updateError)
-          }
-
-          runningExecutions.delete(schedule.workflowId)
-          continue
-        }
-
-        const usageCheck = await checkServerSideUsageLimits(workflowRecord.userId)
-        if (usageCheck.isExceeded) {
-          logger.warn(
-            `[${requestId}] User ${workflowRecord.userId} has exceeded usage limits. Skipping scheduled execution.`,
-            {
-              currentUsage: usageCheck.currentUsage,
-              limit: usageCheck.limit,
-              workflowId: schedule.workflowId,
-            }
-          )
-
-          // Error logging handled by logging session
-
-          const retryDelay = 24 * 60 * 60 * 1000 // 24 hour delay for exceeded limits
-          const nextRetryAt = new Date(now.getTime() + retryDelay)
-
-          try {
-            await db
-              .update(workflowSchedule)
-              .set({
-                updatedAt: now,
-                nextRunAt: nextRetryAt,
-              })
-              .where(eq(workflowSchedule.id, schedule.id))
-
-            logger.debug(`[${requestId}] Updated next retry time due to usage limits`)
-          } catch (updateError) {
-            logger.error(`[${requestId}] Error updating schedule for usage limits:`, updateError)
-          }
-
-          runningExecutions.delete(schedule.workflowId)
-          continue
-        }
+        // Usage limits have been disabled for scheduled execution only
+        logger.debug(`[${requestId}] Usage limit check bypassed for scheduled workflow execution`, {
+          workflowId: schedule.workflowId,
+          userId: workflowRecord.userId,
+        })
 
         // Execute scheduled workflow immediately (no queuing)
         logger.info(`[${requestId}] Executing scheduled workflow ${schedule.workflowId}`)
