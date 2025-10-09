@@ -523,11 +523,11 @@ export function VoiceInterface({
   }
 
   return (
-    <div className={cn('fixed inset-0 z-[100] flex flex-col bg-white text-gray-900', className)}>
+    <div className={cn('fixed inset-0 z-[100] flex flex-col justify-center bg-white text-gray-900', className)}>
       {/* Main content */}
-      <div className='flex flex-1 flex-col items-center justify-center px-8'>
+      <div className='flex flex-col items-center justify-center px-8'>
         {/* Voice visualization */}
-        <div className='relative mb-16'>
+        <div className='relative'>
           <ParticlesVisualization
             audioLevels={audioLevels}
             isListening={state === 'listening'}
@@ -539,15 +539,14 @@ export function VoiceInterface({
         </div>
 
         {/* Live transcript - subtitle style */}
-        <div className='mb-16 flex h-24 items-center justify-center'>
-          {currentTranscript && (
+        {currentTranscript && (<div className='mb-5 flex h-24 items-center justify-center'>
             <div className='max-w-2xl px-8'>
               <p className='overflow-hidden text-center text-gray-700 text-xl leading-relaxed'>
                 {currentTranscript}
               </p>
             </div>
-          )}
-        </div>
+         
+        </div> )}
 
         {/* Status */}
         <p className='mb-8 text-center text-gray-600 text-lg'>
