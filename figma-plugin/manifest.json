@@ -1,0 +1,29 @@
+{
+  "name": "P2 Sim Design Generator",
+  "id": "p2-sim-design-generator",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "capabilities": ["inspect"],
+  "enableProposedApi": false,
+  "editorType": ["figma", "dev"],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://api.sim.ai",
+      "https://api.figma.com"
+    ]
+  },
+  "permissions": [
+    "currentuser"
+  ],
+  "menu": [
+    {
+      "name": "Generate Design",
+      "command": "generate-design"
+    },
+    {
+      "name": "Export Design",
+      "command": "export-design"
+    }
+  ]
+}

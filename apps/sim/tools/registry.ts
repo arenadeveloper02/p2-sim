@@ -24,6 +24,7 @@ import {
   exaSearchTool,
 } from '@/tools/exa'
 import {
+  aiDesignGeneratorTool,
   figmaConvertTool,
   figmaCreateStylesVariablesTool,
   figmaCreateTool,
@@ -382,6 +383,7 @@ export const tools: Record<string, ToolConfig> = {
   sharepoint_read_page: sharepointReadPageTool,
   sharepoint_list_sites: sharepointListSitesTool,
   // Figma tools
+  ai_design_generator: aiDesignGeneratorTool,
   figma_create: figmaCreateTool,
   figma_convert: figmaConvertTool,
   figma_create_styles_variables: figmaCreateStylesVariablesTool,

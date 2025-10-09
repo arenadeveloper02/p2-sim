@@ -1,3 +1,4 @@
+import { aiDesignGeneratorTool } from './ai_design_generator'
 import { convertFigmaTool } from './convert_figma'
 import { createFigmaTool } from './create_figma'
 import { createStylesVariablesTool } from './create_styles_variables'
@@ -13,6 +14,7 @@ import { getTeamProjectsTool } from './get_team_projects'
 import { postCommentTool } from './post_comment'
 import { wireframeToUITool } from './wireframe_to_ui'
 
+export { aiDesignGeneratorTool }
 export const figmaCreateTool = createFigmaTool
 export const figmaConvertTool = convertFigmaTool
 export const figmaCreateStylesVariablesTool = createStylesVariablesTool

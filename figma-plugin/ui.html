@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>P2 Sim Design Generator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #333;
+      line-height: 1.5;
+    }
+    
+    .container {
+      padding: 20px;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 8px;
+    }
+    
+    .header p {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    
+    .project-info {
+      background: #f0f8ff;
+      border: 1px solid #007AFF;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .project-info h4 {
+      margin: 0 0 8px 0;
+      color: #007AFF;
+    }
+    
+    .project-info p {
+      margin: 4px 0;
+      font-size: 12px;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 30px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background: #2563eb;
+    }
+    
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    
+    .btn-secondary:hover:not(:disabled) {
+      background: #e5e7eb;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+    
+    .status.success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+    
+    .status.info {
+      background: #dbeafe;
+      color: #1e40af;
+      border: 1px solid #93c5fd;
+    }
+    
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .loading.show {
+      display: block;
+    }
+    
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #e5e5e5;
+      border-top: 2px solid #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .design-history {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e5e5;
+    }
+    
+    .history-item {
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    
+    .history-item h4 {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    
+    .history-item p {
+      color: #666;
+      font-size: 12px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>P2 Sim Design Generator</h1>
+      <p>Create designs with AI-powered tools</p>
+    </div>
+    
+    <div id="status" class="status"></div>
+    
+    <form id="designForm">
+      <div class="form-group">
+        <label for="designPrompt">Design Description</label>
+        <textarea 
+          id="designPrompt" 
+          placeholder="Describe the design you want to create..."
+          required
+        ></textarea>
+      </div>
+      
+      <div class="form-group">
+        <label for="designType">Design Type</label>
+        <select id="designType" required>
+          <option value="landing_page">Landing Page</option>
+          <option value="component">Component</option>
+          <option value="wireframe">Wireframe</option>
+          <option value="generic">Generic Design</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="brandGuidelines">Brand Guidelines (Optional)</label>
+        <textarea 
+          id="brandGuidelines" 
+          placeholder="Enter brand guidelines, colors, fonts, etc..."
+        ></textarea>
+      </div>
+      
+      <div class="form-group">
+        <label>Responsive Breakpoints</label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="mobile" value="mobile" checked>
+          <label for="mobile">Mobile</label>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="tablet" value="tablet" checked>
+          <label for="tablet">Tablet</label>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="desktop" value="desktop" checked>
+          <label for="desktop">Desktop</label>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="createNewPage" value="createNewPage">
+          <label for="createNewPage">Create New Page for Design</label>
+        </div>
+      </div>
+      
+      <div class="button-group">
+        <button type="submit" class="btn btn-primary" id="generateBtn">
+          Generate Design
+        </button>
+        <button type="button" class="btn btn-secondary" id="exportBtn" disabled>
+          Export
+        </button>
+      </div>
+    </form>
+    
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Generating your design...</p>
+    </div>
+    
+    <div id="designHistory" class="design-history hidden">
+      <h3>Design History</h3>
+      <div id="historyList"></div>
+    </div>
+  </div>
+  
+  <script>
+    // Plugin state
+    let currentDesign = null;
+    let designHistory = [];
+    
+    // DOM elements
+    const form = document.getElementById('designForm');
+    const status = document.getElementById('status');
+    const loading = document.getElementById('loading');
+    const generateBtn = document.getElementById('generateBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const designHistoryDiv = document.getElementById('designHistory');
+    const historyList = document.getElementById('historyList');
+    
+    // Show status message
+    function showStatus(message, type = 'info') {
+      status.textContent = message;
+      status.className = `status ${type}`;
+      status.style.display = 'block';
+      
+      setTimeout(() => {
+        status.style.display = 'none';
+      }, 5000);
+    }
+    
+    // Show/hide loading
+    function setLoading(show) {
+      loading.classList.toggle('show', show);
+      generateBtn.disabled = show;
+    }
+    
+    // Get responsive breakpoints
+    function getResponsiveBreakpoints() {
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
+    }
+    
+    // Handle form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = {
+        designPrompt: document.getElementById('designPrompt').value,
+        designType: document.getElementById('designType').value,
+        brandGuidelines: document.getElementById('brandGuidelines').value,
+        responsiveBreakpoints: getResponsiveBreakpoints(),
+        createNewPage: document.getElementById('createNewPage').checked
+      };
+      
+      if (!formData.designPrompt.trim()) {
+        showStatus('Please enter a design description', 'error');
+        return;
+      }
+      
+      setLoading(true);
+      showStatus('Generating design...', 'info');
+      
+      // Send message to plugin code
+      parent.postMessage({
+        pluginMessage: {
+          type: 'generate-design',
+          data: formData
+        }
+      }, '*');
+    });
+    
+    // Handle export button
+    exportBtn.addEventListener('click', () => {
+      if (!currentDesign) {
+        showStatus('No design to export', 'error');
+        return;
+      }
+      
+      parent.postMessage({
+        pluginMessage: {
+          type: 'export-design'
+        }
+      }, '*');
+    });
+    
+    // Listen for messages from plugin code
+    window.addEventListener('message', (event) => {
+      const { type, data } = event.data.pluginMessage || {};
+      
+      switch (type) {
+        case 'generation-started':
+          setLoading(true);
+          showStatus('Generating design...', 'info');
+          break;
+          
+        case 'generation-completed':
+          setLoading(false);
+          currentDesign = data;
+          exportBtn.disabled = false;
+          showStatus('Design generated successfully!', 'success');
+          addToHistory(data);
+          break;
+          
+      case 'generation-error':
+        setLoading(false);
+        if (data.error.includes('read-only mode')) {
+          showStatus('⚠️ Read-only mode detected. Please open a file you have edit permissions for.', 'error');
+          generateBtn.disabled = true;
+        } else {
+          showStatus(`Error: ${data.error}`, 'error');
+        }
+        break;
+        
+      case 'project-mismatch':
+        setLoading(false);
+        showStatus(`⚠️ File Mismatch: You're in file ${data.data.currentFile}, but target is ${data.data.targetFile}. Please open the correct file or create a new one in the target project.`, 'warning');
+        break;
+          
+        case 'export-completed':
+          showStatus('Design exported successfully!', 'success');
+          break;
+          
+        case 'export-error':
+          showStatus(`Export error: ${data.error}`, 'error');
+          break;
+          
+        case 'plugin-initialized':
+          console.log('Plugin initialized:', data);
+          break;
+      }
+    });
+    
+    // Add design to history
+    function addToHistory(design) {
+      designHistory.unshift({
+        id: Date.now(),
+        timestamp: new Date().toLocaleString(),
+        type: document.getElementById('designType').value,
+        prompt: document.getElementById('designPrompt').value
+      });
+      
+      updateHistoryDisplay();
+    }
+    
+    // Update history display
+    function updateHistoryDisplay() {
+      if (designHistory.length === 0) {
+        designHistoryDiv.classList.add('hidden');
+        return;
+      }
+      
+      designHistoryDiv.classList.remove('hidden');
+      historyList.innerHTML = designHistory.map(item => `
+        <div class="history-item">
+          <h4>${item.type.replace('_', ' ').toUpperCase()}</h4>
+          <p>${item.timestamp} - ${item.prompt.substring(0, 50)}...</p>
+        </div>
+      `).join('');
+    }
+    
+      // Initialize plugin
+      document.addEventListener('DOMContentLoaded', () => {
+        // Check if we're in read-only mode
+        if (window.figma && window.figma.mode === 'readonly') {
+          showStatus('⚠️ You are in read-only mode. Please open a file you have edit permissions for to generate designs.', 'error');
+          generateBtn.disabled = true;
+        } else {
+          showStatus('Plugin ready. Enter your design description to get started.', 'info');
+        }
+        
+        // Auto-fill form from URL parameters
+        autoFillFromUrlParams();
+      });
+      
+      // Auto-fill form from URL parameters
+      function autoFillFromUrlParams() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        if (urlParams.get('designPrompt')) {
+          document.getElementById('designPrompt').value = urlParams.get('designPrompt');
+        }
+        
+        if (urlParams.get('designType')) {
+          document.getElementById('designType').value = urlParams.get('designType');
+        }
+        
+        if (urlParams.get('brandGuidelines')) {
+          document.getElementById('brandGuidelines').value = urlParams.get('brandGuidelines');
+        }
+        
+        if (urlParams.get('responsiveBreakpoints')) {
+          try {
+            const breakpoints = JSON.parse(urlParams.get('responsiveBreakpoints'));
+            breakpoints.forEach(bp => {
+              const checkbox = document.querySelector(`input[value="${bp}"]`);
+              if (checkbox) checkbox.checked = true;
+            });
+          } catch (e) {
+            console.log('Could not parse responsive breakpoints');
+          }
+        }
+        
+        if (urlParams.get('exportFormat')) {
+          document.getElementById('exportFormat').value = urlParams.get('exportFormat');
+        }
+        
+        if (urlParams.get('includeCode') === 'true') {
+          document.getElementById('includeCode').checked = true;
+        }
+        
+        if (urlParams.get('createNewPage') === 'true') {
+          document.getElementById('createNewPage').checked = true;
+        }
+        
+        // Show project information if available
+        if (urlParams.get('projectId')) {
+          const projectInfo = document.createElement('div');
+          projectInfo.className = 'project-info';
+          projectInfo.innerHTML = `
+            <h4>📁 Target Project</h4>
+            <p><strong>Project ID:</strong> ${urlParams.get('projectId')}</p>
+            ${urlParams.get('teamId') ? `<p><strong>Team ID:</strong> ${urlParams.get('teamId')}</p>` : ''}
+            ${urlParams.get('figmaFileKey') ? `<p><strong>File Key:</strong> ${urlParams.get('figmaFileKey')}</p>` : ''}
+          `;
+          document.querySelector('.form-group').insertBefore(projectInfo, document.querySelector('.form-group').firstChild);
+        }
+        
+        // If we have URL parameters, show a success message
+        if (urlParams.toString()) {
+          showStatus('✅ Form pre-filled from workflow. Ready to generate design!', 'success');
+        }
+      }
+  </script>
+</body>
+</html>
