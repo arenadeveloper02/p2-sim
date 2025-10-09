@@ -1,7 +1,9 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/utils'
@@ -20,6 +22,7 @@ import {
 } from '@/app/chat/components'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { extractInputFieldsByWorkflowId } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
+import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -39,6 +42,14 @@ interface ChatConfig {
   }
   authType?: 'public' | 'password' | 'email'
   outputConfigs?: Array<{ blockId: string; path?: string }>
+}
+
+interface ThreadRecord {
+  chatId: string
+  title: string
+  workflowId: string
+  createdAt: string
+  updatedAt: string
 }
 
 interface AudioStreamingOptions {
@@ -98,6 +109,7 @@ function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T 
 }
 
 export default function ChatClient({ subdomain }: { subdomain: string }) {
+  const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -107,6 +119,14 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [starCount, setStarCount] = useState('3.4k')
   const [conversationId, setConversationId] = useState('')
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null)
+  // Left threads state managed here
+
+  const [threads, setThreads] = useState<ThreadRecord[]>([])
+  const [isThreadsLoading, setIsThreadsLoading] = useState(true)
+  const [threadsError, setThreadsError] = useState<string | null>(null)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [isConversationFinished, setIsConversationFinished] = useState(false)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -119,9 +139,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Workflow input form state
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
-  const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
-  const [workflowInputs, setWorkflowInputs] = useState<Record<string, any>>({})
-  const [isLoadingInputFields, setIsLoadingInputFields] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -161,6 +178,86 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     [messagesContainerRef]
   )
 
+  // Get chatId from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId')
+    setCurrentChatId(chatId)
+  }, [])
+
+  // Function to fetch threads (reusable)
+  const fetchThreads = useCallback(
+    async (workflowId: string, isInitialLoad = false) => {
+      try {
+        if (isInitialLoad) {
+          setIsThreadsLoading(true)
+        }
+        setThreadsError(null)
+        const response = await fetch(`/api/chat/${workflowId}/all-history`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        if (!response.ok) {
+          throw new Error(`Failed to fetch threads: ${response.status}`)
+        }
+        const data = (await response.json()) as { records: ThreadRecord[]; total: number }
+        const list = data.records || []
+        setThreads(list)
+
+        // Only handle initial navigation on first load
+        if (isInitialLoad) {
+          const params = new URLSearchParams(window.location.search)
+          const urlChatId = params.get('chatId')
+
+          // If no chatId in URL, decide default
+          if (!urlChatId) {
+            if (list.length > 0) {
+              const firstId = list[0].chatId
+              setCurrentChatId(firstId)
+              params.set('chatId', firstId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            } else {
+              // No threads exist yet: generate a new UUID chatId for a fresh chat
+              const newId = uuidv4()
+              setCurrentChatId(newId)
+              params.set('chatId', newId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching threads:', err)
+        setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
+        setThreads([])
+      } finally {
+        setIsThreadsLoading(false)
+      }
+    },
+    [router]
+  )
+
+  // Fetch left threads here and handle initial/no-thread cases
+  useEffect(() => {
+    if (subdomain) {
+      fetchThreads(subdomain, true)
+    }
+  }, [subdomain, fetchThreads])
+
+  // Check if current chatId exists in threads when conversation is finished
+  useEffect(() => {
+    if (isConversationFinished && currentChatId) {
+      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
+
+      if (!chatIdExists) {
+        fetchThreads(subdomain, false)
+      }
+      // Reset the flag
+      setIsConversationFinished(false)
+    }
+  }, [isConversationFinished, currentChatId, threads, fetchThreads, subdomain])
+
   const handleScroll = useCallback(
     throttle(() => {
       const container = messagesContainerRef.current
@@ -180,49 +277,76 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Fetch history messages
   useEffect(() => {
     const workflowId = subdomain
-    const fetchHistory = async (workflowId: string) => {
-      const response = await fetch(`/api/chat/${workflowId}/history`)
-      if (response.ok) {
-        const data = await response.json()
-        const formatData = data.logs.flatMap((log: any) => {
-          const messages = []
 
-          // Add user message if userInput exists
-          if (log.userInput) {
-            messages.push({
-              id: `${log.id}-user`,
-              content: log.userInput,
-              type: 'user',
-              timestamp: new Date(log.startedAt),
+    const fetchHistory = async (workflowId: string, chatId: string | null) => {
+      // Only fetch history if we have a chatId
+      if (!chatId) {
+        console.log('No chatId provided, skipping history fetch')
+        return
+      }
+
+      try {
+        setIsHistoryLoading(true)
+        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data?.logs?.length === 0) {
+            fetchInputFields()
+          } else {
+            const formatData = data.logs.flatMap((log: any) => {
+              const messages = []
+              // Add user message if userInput exists
+              if (log.userInput) {
+                messages.push({
+                  id: `${log.id}-user`,
+                  content: log.userInput,
+                  type: 'user',
+                  timestamp: new Date(log.startedAt),
+                })
+              }
+
+              // Add assistant message if modelOutput exists
+              if (log.modelOutput) {
+                messages.push({
+                  id: `${log.id}-assistant`,
+                  content: log.modelOutput,
+                  type: 'assistant',
+                  timestamp: new Date(log.endedAt || log.startedAt),
+                  isStreaming: false,
+                })
+              }
+
+              return messages
             })
-          }
 
-          // Add assistant message if modelOutput exists
-          if (log.modelOutput) {
-            messages.push({
-              id: `${log.id}-assistant`,
-              content: log.modelOutput,
-              type: 'assistant',
-              timestamp: new Date(log.endedAt || log.startedAt),
-              isStreaming: false,
-            })
-          }
+            setTimeout(() => {
+              // Get the welcome message from current messages if it exists
+              setMessages((prevMessages) => {
+                const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
 
-          return messages
-        })
-        setTimeout(() => {
-          setMessages((prev) => [...prev, ...formatData])
-          // Scroll to bottom after setting history messages
-          setTimeout(() => {
-            scrollToBottom()
-          }, 100)
-        }, 500)
+                // Set messages: welcome message + history messages
+                return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
+              })
+
+              // Scroll to bottom after setting history messages
+              setTimeout(() => {
+                scrollToBottom()
+              }, 100)
+            }, 500)
+            setIsHistoryLoading(false)
+          }
+        } else {
+          setIsHistoryLoading(false)
+        }
+      } catch (error) {
+        setIsHistoryLoading(false)
       }
     }
-    if (workflowId && Object.keys(chatConfig || {}).length > 0) {
-      fetchHistory(workflowId)
+
+    if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
+      fetchHistory(workflowId, currentChatId)
     }
-  }, [subdomain, chatConfig])
+  }, [subdomain, chatConfig, currentChatId])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -300,32 +424,24 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Fetch input fields for the workflow
   const fetchInputFields = async () => {
     try {
-      setIsLoadingInputFields(true)
       // The subdomain is actually the workflow ID in this case
       const fields = await extractInputFieldsByWorkflowId(subdomain)
-      console.log('<><><>Input fields', fields)
       setInputFields(fields)
-
       // If there are input fields, show the form
       if (fields && fields.length > 0) {
         setShowInputForm(true)
-      } else {
-        // No input fields needed, proceed directly to chat
-        setInitialInputsSubmitted(true)
       }
     } catch (error) {
       logger.error('Error fetching input fields:', error)
       // On error, proceed to chat anyway
-      setInitialInputsSubmitted(true)
     } finally {
-      setIsLoadingInputFields(false)
+      setIsHistoryLoading(false)
     }
   }
 
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
-    fetchInputFields() // Fetch input fields for the workflow
     setConversationId(uuidv4())
 
     getFormattedGitHubStars()
@@ -340,6 +456,46 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const refreshChat = () => {
     fetchChatConfig()
   }
+
+  // Helpers to update URL chatId without reload
+  const updateUrlChatId = useCallback(
+    (newChatId: string) => {
+      const params = new URLSearchParams(window.location.search)
+      params.set('chatId', newChatId)
+      const newUrl = `/chat/${subdomain}?${params.toString()}`
+      router.push(newUrl)
+    },
+    [router, subdomain]
+  )
+
+  // Select an existing thread
+  const handleSelectThread = useCallback(
+    (chatId: string) => {
+      if (currentChatId === chatId) return
+      setShowScrollButton(false)
+      setCurrentChatId(chatId)
+      // Clear messages except welcome
+      setMessages((prev) => {
+        const welcome = prev.find((m) => (m as any).isInitialMessage)
+        return welcome ? [welcome] : []
+      })
+      updateUrlChatId(chatId)
+    },
+    [currentChatId, updateUrlChatId]
+  )
+
+  // Create a new chat
+  const handleNewChat = useCallback(() => {
+    setShowScrollButton(false)
+    const id = uuidv4()
+    setCurrentChatId(id)
+    // Clear messages except welcome
+    setMessages((prev) => {
+      const welcome = prev.find((m) => (m as any).isInitialMessage)
+      return welcome ? [welcome] : []
+    })
+    updateUrlChatId(id)
+  }, [updateUrlChatId])
 
   const handleAuthSuccess = () => {
     setAuthRequired(null)
@@ -403,6 +559,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       const payload = {
         input: finalMessage,
         conversationId,
+        chatId: currentChatId,
       }
 
       logger.info('API payload:', payload)
@@ -438,6 +595,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
+      setIsConversationFinished(true)
 
       await handleStreamedResponse(
         response,
@@ -454,6 +612,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           audioStreamHandler: audioHandler,
         }
       )
+      // Mark conversation as finished
     } catch (error: any) {
       // Clear timeout in case of error
       clearTimeout(timeoutId)
@@ -491,9 +650,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           return `${formattedKey}: ${value}`
         })
         .join('\n')
-      setWorkflowInputs(inputs)
       setShowInputForm(false)
-      setInitialInputsSubmitted(true)
 
       // Add a message indicating the workflow is starting
       const workflowStartMessage: ChatMessage = {
@@ -552,39 +709,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // If error, show error message using the extracted component
   if (error) {
-    return <ChatErrorState error={error} starCount={starCount} />
-  }
-
-  // Show loading state while fetching input fields
-  if (isLoadingInputFields) {
-    return <ChatLoadingState />
-  }
-
-  // Show workflow input form if needed and not yet submitted
-  if (showInputForm && !initialInputsSubmitted) {
-    return (
-      <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {/* Header component */}
-        <ChatHeader chatConfig={chatConfig} starCount={starCount} />
-
-        {/* Input form container */}
-        <div className='flex flex-1 items-center justify-center p-4'>
-          <div className='mx-auto w-full max-w-2xl'>
-            <div className='rounded-lg border bg-card p-6 shadow-sm'>
-              <div className='mb-6'>
-                <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
-                <p className='text-muted-foreground'>
-                  Please provide the required inputs to start the workflow chat.
-                </p>
-              </div>
-              <TooltipProvider>
-                <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
-              </TooltipProvider>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <ChatErrorState error={error} starCount={starCount} workflowId={subdomain} />
   }
 
   // If authentication is required, use the extracted components
@@ -647,9 +772,40 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+        {showInputForm && (
+          <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
+            <div className='mx-auto w-full max-w-2xl'>
+              <div className='rounded-lg border bg-card p-6 shadow-sm'>
+                <div className='mb-6'>
+                  <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
+                  <p className='text-muted-foreground'>
+                    Please provide the required inputs to start the workflow chat.
+                  </p>
+                </div>
+                <TooltipProvider>
+                  <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
+                </TooltipProvider>
+              </div>
+            </div>
+          </div>
+        )}
+        {isHistoryLoading && (
+          <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
+            <LoadingAgentP2 size='lg' />
+          </div>
+        )}
         {/* Header component */}
         <ChatHeader chatConfig={chatConfig} starCount={starCount} workflowId={subdomain} />
 
+        <LeftNavThread
+          threads={threads}
+          isLoading={isThreadsLoading}
+          error={threadsError}
+          currentChatId={currentChatId || ''}
+          onSelectThread={handleSelectThread}
+          onNewChat={handleNewChat}
+          isStreaming={isStreamingResponse || isLoading}
+        />
         {/* Message Container component */}
         <ChatMessageContainer
           messages={messages}
@@ -672,6 +828,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
               isStreaming={isStreamingResponse}
               onStopStreaming={() => stopStreaming(setMessages)}
               onVoiceStart={handleVoiceStart}
+              currentChatId={currentChatId}
             />
           </div>
         </div>

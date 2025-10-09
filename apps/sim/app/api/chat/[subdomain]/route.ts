@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import {
@@ -11,7 +12,7 @@ import {
 } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, workflow } from '@/db/schema'
+import { chat, deployedChat, workflow } from '@/db/schema'
 
 const logger = createLogger('ChatSubdomainAPI')
 
@@ -30,7 +31,14 @@ export async function POST(
     let parsedBody
     try {
       parsedBody = await request.json()
+      logger.debug(`[${requestId}] Parsed request body:`, {
+        chatId: parsedBody.chatId,
+        input: parsedBody.input ? `${parsedBody.input.substring(0, 100)}...` : 'No input',
+        conversationId: parsedBody.conversationId,
+        hasWorkflowInputs: !!parsedBody.workflowInputs,
+      })
     } catch (_error) {
+      logger.error(`[${requestId}] Failed to parse request body:`, _error)
       return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
     }
 
@@ -56,6 +64,13 @@ export async function POST(
     }
 
     const deployment = deploymentResult[0]
+    logger.debug(`[${requestId}] Found deployment:`, {
+      id: deployment.id,
+      workflowId: deployment.workflowId,
+      userId: deployment.userId,
+      isActive: deployment.isActive,
+      authType: deployment.authType,
+    })
 
     // Check if the chat is active
     if (!deployment.isActive) {
@@ -73,7 +88,15 @@ export async function POST(
     }
 
     // Use the already parsed body
-    const { input, password, email, conversationId, workflowInputs } = parsedBody
+    const { input, password, email, conversationId, workflowInputs, chatId } = parsedBody
+    logger.debug(`[${requestId}] Extracted request parameters:`, {
+      hasInput: !!input,
+      hasPassword: !!password,
+      hasEmail: !!email,
+      conversationId,
+      hasWorkflowInputs: !!workflowInputs,
+      chatId,
+    })
 
     // If this is an authentication request (has password or email but no input),
     // set auth cookie and return success
@@ -89,6 +112,74 @@ export async function POST(
     // For chat messages, create regular response
     if (!input) {
       return addCorsHeaders(createErrorResponse('No input provided', 400), request)
+    }
+
+    // Store chat details in deployed_chat table if chatId is provided and not already exists
+    if (chatId) {
+      try {
+        logger.debug(`[${requestId}] Attempting to store chat details for chatId: ${chatId}`)
+
+        // Check if chatId already exists in deployed_chat table
+        const existingChat = await db
+          .select({ id: deployedChat.id })
+          .from(deployedChat)
+          .where(eq(deployedChat.chatId, chatId))
+          .limit(1)
+
+        logger.debug(`[${requestId}] Existing chat check result:`, existingChat)
+
+        // If chatId doesn't exist, create a new record
+        if (existingChat.length === 0) {
+          // Generate title from first 4-5 words of input
+          const words = input.trim().split(/\s+/)
+          const title = words.slice(0, 5).join(' ')
+
+          // Generate a unique ID for the deployed_chat record
+          const deployedChatId = uuidv4()
+
+          logger.debug(`[${requestId}] Inserting new deployed_chat record:`, {
+            id: deployedChatId,
+            chatId: chatId,
+            title: title,
+            workflowId: subdomain,
+          })
+
+          await db.insert(deployedChat).values({
+            id: deployedChatId,
+            chatId: chatId,
+            title: title,
+            workflowId: subdomain, // Using subdomain as workflow_id as per requirements
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+
+          logger.debug(
+            `[${requestId}] Successfully stored new chat details in deployed_chat table: ${chatId}`
+          )
+        } else {
+          // Update the updatedAt timestamp for existing chat
+          const existingChatId = existingChat[0].id
+
+          logger.debug(`[${requestId}] Updating updatedAt for existing chat: ${chatId}`)
+
+          await db
+            .update(deployedChat)
+            .set({ updatedAt: new Date() })
+            .where(eq(deployedChat.id, existingChatId))
+
+          logger.debug(`[${requestId}] Successfully updated updatedAt for existing chat: ${chatId}`)
+        }
+      } catch (error: any) {
+        // Log error but don't fail the request
+        logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, error)
+        logger.error(`[${requestId}] Error details:`, {
+          message: error.message,
+          stack: error.stack,
+          code: error.code,
+        })
+      }
+    } else {
+      logger.debug(`[${requestId}] No chatId provided in request body`)
     }
 
     // Get the workflow for this chat
@@ -107,11 +198,21 @@ export async function POST(
 
     try {
       // Execute workflow with structured input (input + conversationId for context)
+      logger.debug(`[${requestId}] Executing workflow for chat:`, {
+        deploymentId: deployment.id,
+        workflowId: deployment.workflowId,
+        hasInput: !!input,
+        conversationId,
+        hasWorkflowInputs: !!workflowInputs,
+        chatId,
+      })
+
       const result = await executeWorkflowForChat(
         deployment.id,
         input,
         conversationId,
-        workflowInputs
+        workflowInputs,
+        chatId // Pass the chatId from payload for logging
       )
 
       // The result is always a ReadableStream that we can pipe to the client
