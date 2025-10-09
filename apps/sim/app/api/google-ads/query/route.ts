@@ -165,6 +165,10 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 
   const systemPrompt = `You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries for ANY Google Ads question.
 
+**IMPORTANT RULE**: When users ask about asset performance or data over time, use campaign or ad_group resources instead of asset resources. Asset resources don't support date segments, but campaign/ad_group resources do.
+
+**NEVER REFUSE**: Always generate a valid GAQL query. Never return error messages or refuse to generate queries.
+
 ## RESOURCES & METRICS
 
 **RESOURCES:**
@@ -193,6 +197,12 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - Device/Network: segments.device, segments.ad_network_type
 - Demographics: segments.age_range, segments.gender
 - Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
+
+**SEGMENT COMPATIBILITY RULES:**
+- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, ad_group_ad, geographic_view, gender_view
+- segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion
+- **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
+- Asset queries show structure (what exists), not performance (how it performed)
 
 ## SYNTAX RULES
 
@@ -243,17 +253,23 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_crit
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-**Campaign Assets:**
+**Campaign Assets (NO DATE SEGMENTS):**
 SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
 
-**Asset Group Assets:**
+**Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
 
-**Asset Group Assets with Filtering:**
+**Asset Group Assets with Filtering (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.field_type = 'HEADLINE'
 
-**Asset Group Assets by Specific Asset Group:**
+**Asset Group Assets by Specific Asset Group (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.asset_group = '1234567890'
+
+**CRITICAL ASSET RESOURCE RULES:**
+- asset, campaign_asset, asset_group_asset resources DO NOT support segments.date
+- **SOLUTION**: Use campaign or ad_group resources for asset performance data
+- Asset queries show structure (what assets exist) not performance (how they performed)
+- For performance data with date segments, always use campaign or ad_group resources
 
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
