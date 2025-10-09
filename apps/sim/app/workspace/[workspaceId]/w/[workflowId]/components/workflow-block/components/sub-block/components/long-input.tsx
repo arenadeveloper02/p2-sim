@@ -36,6 +36,33 @@ const DEFAULT_ROWS = 4
 const ROW_HEIGHT_PX = 24
 const MIN_HEIGHT_PX = 80
 
+/**
+ * LongInput Component
+ * 
+ * A multi-line textarea with formatted text overlay for syntax highlighting.
+ * 
+ * Architecture:
+ * 1. Base Textarea: User input with transparent text (shows only cursor)
+ * 2. Overlay Div: Positioned absolutely on top, displays formatted/highlighted text
+ * 3. Scroll Synchronization: Keeps overlay aligned with textarea using percentage-based scrolling
+ * 
+ * Why percentage-based scrolling?
+ * The textarea and overlay may have slightly different scrollHeights (~20px difference) due to:
+ * - Browser rendering differences between <textarea> and <div> elements
+ * - Border/padding box model calculations
+ * - Font rendering variations
+ * 
+ * Instead of copying exact scrollTop values (which would cause misalignment),
+ * we calculate the scroll position as a percentage and apply it proportionally.
+ * 
+ * Example:
+ * - Textarea: scrollTop=2900, scrollHeight=3019, clientHeight=118
+ *   → maxScroll = 2901, percentage = 2900/2901 = 99.96%
+ * - Overlay: scrollHeight=2998, clientHeight=120
+ *   → maxScroll = 2878, scrollTop = 0.9996 × 2878 = 2877
+ * 
+ * This ensures both elements scroll proportionally, keeping text aligned with the cursor.
+ */
 export function LongInput({
   placeholder,
   blockId,
@@ -172,22 +199,108 @@ export function LongInput({
     setShowTags(tagTrigger.show)
   }
 
-  // Sync scroll position between textarea and overlay
+  /**
+   * Sync scroll position between textarea and overlay
+   * 
+   * Why percentage-based scrolling?
+   * The textarea and overlay may have slightly different scrollHeights due to:
+   * - Border rendering differences
+   * - Text rendering engine variations
+   * - Box model calculation differences
+   * 
+   * Using percentage ensures the overlay scrolls proportionally with the textarea,
+   * keeping the formatted text aligned with the cursor position even when
+   * scrolling up from the bottom.
+   */
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (overlayRef.current) {
-      overlayRef.current.scrollTop = e.currentTarget.scrollTop
-      overlayRef.current.scrollLeft = e.currentTarget.scrollLeft
+    const textarea = e.currentTarget
+    const overlay = overlayRef.current
+    
+    if (overlay && textarea) {
+      // Calculate the maximum scrollable distance for the textarea
+      // scrollHeight = total content height, clientHeight = visible height
+      const maxScroll = textarea.scrollHeight - textarea.clientHeight
+      
+      // Calculate what percentage of the total scroll distance we're at
+      // E.g., if scrolled 2900px out of 2901px max, percentage = 99.96%
+      const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
+      
+      // Calculate the maximum scrollable distance for the overlay
+      const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
+      
+      // Apply the same scroll percentage to the overlay
+      // This ensures proportional scrolling even if heights differ slightly
+      overlay.scrollTop = scrollPercentage * overlayMaxScroll
+      overlay.scrollLeft = textarea.scrollLeft
     }
   }
 
-  // Ensure overlay updates when content changes
+  /**
+   * Ensure overlay maintains scroll position when content changes
+   * 
+   * This effect runs whenever the value changes (e.g., during typing or AI generation).
+   * It recalculates and preserves the scroll position using the same percentage-based
+   * approach to keep the overlay in sync as content is added or removed.
+   */
   useEffect(() => {
-    if (textareaRef.current && overlayRef.current) {
-      // Ensure scrolling is synchronized
-      overlayRef.current.scrollTop = textareaRef.current.scrollTop
-      overlayRef.current.scrollLeft = textareaRef.current.scrollLeft
+    const textarea = textareaRef.current
+    const overlay = overlayRef.current
+    
+    if (textarea && overlay) {
+      // Calculate current scroll position as a percentage
+      const maxScroll = textarea.scrollHeight - textarea.clientHeight
+      const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
+      const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
+      
+      // Apply the same percentage to overlay to maintain relative scroll position
+      overlay.scrollTop = scrollPercentage * overlayMaxScroll
+      overlay.scrollLeft = textarea.scrollLeft
     }
   }, [value])
+
+  /**
+   * Set up continuous scroll sync with native event listener
+   * 
+   * Why use native addEventListener in addition to React's onScroll?
+   * - Native events fire more reliably for all scroll triggers (wheel, keyboard, touch)
+   * - The 'passive: true' option improves scroll performance
+   * - Ensures sync even if React's synthetic events miss some edge cases
+   * 
+   * This effect runs once on mount and cleans up on unmount.
+   */
+  useEffect(() => {
+    const textarea = textareaRef.current
+    const overlay = overlayRef.current
+    
+    if (!textarea || !overlay) return
+
+    const syncScroll = () => {
+      if (overlay && textarea) {
+        // Calculate scroll percentage to handle height differences
+        // Formula: current position / maximum scrollable distance
+        const scrollPercentage = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight)
+        const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
+        
+        // Apply the same percentage to overlay
+        // Example: If textarea is 80% scrolled, overlay will also be 80% scrolled
+        overlay.scrollTop = scrollPercentage * overlayMaxScroll
+        overlay.scrollLeft = textarea.scrollLeft
+      }
+    }
+
+    // Add native scroll event listener
+    // 'passive: true' tells the browser we won't call preventDefault(),
+    // allowing it to optimize scroll performance
+    textarea.addEventListener('scroll', syncScroll, { passive: true })
+    
+    // Perform initial sync when component mounts
+    syncScroll()
+
+    // Cleanup: remove event listener when component unmounts
+    return () => {
+      textarea.removeEventListener('scroll', syncScroll)
+    }
+  }, [])
 
   // Handle resize functionality
   const startResize = (e: React.MouseEvent) => {
@@ -336,10 +449,24 @@ export function LongInput({
       return false
     }
 
-    // For regular scrolling (without Ctrl/Cmd), let the default behavior happen
-    if (overlayRef.current) {
-      overlayRef.current.scrollTop = e.currentTarget.scrollTop
-    }
+    // For regular scrolling (without Ctrl/Cmd), sync overlay scroll after default behavior
+    // Use requestAnimationFrame to ensure the sync happens after the browser's next paint
+    // This provides smooth, synchronized scrolling without blocking the main thread
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      const overlay = overlayRef.current
+      
+      if (textarea && overlay) {
+        // Calculate scroll percentage
+        const maxScroll = textarea.scrollHeight - textarea.clientHeight
+        const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
+        const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
+        
+        // Apply proportional scroll to overlay
+        overlay.scrollTop = scrollPercentage * overlayMaxScroll
+        overlay.scrollLeft = textarea.scrollLeft
+      }
+    })
   }
 
   return (
@@ -395,18 +522,53 @@ export function LongInput({
             whiteSpace: 'pre-wrap',
           }}
         />
+        {/* 
+          Overlay div for displaying formatted text with syntax highlighting
+          
+          Why is this needed?
+          - The textarea has 'text-transparent' to hide raw text
+          - This overlay shows the formatted/highlighted version on top
+          - Must be perfectly synchronized with textarea scroll to keep text aligned
+          
+          Key styling decisions:
+          - 'pointer-events-none': Allows clicks to pass through to textarea
+          - 'absolute left-0 top-0': Positioned exactly over the textarea
+          - 'overflow-auto': Must be scrollable to sync with textarea
+          - '[&::-webkit-scrollbar]:hidden': Hide scrollbars (only textarea shows scrollbars)
+          - 'border border-transparent': Matches textarea border to maintain same box model
+          - 'rounded-md': Matches textarea border-radius
+          - 'px-3 py-2': Matches textarea padding exactly
+          - 'boxSizing: border-box': Ensures padding is included in height calculations
+        */}
         <div
           ref={overlayRef}
-          className='pointer-events-none absolute inset-0 whitespace-pre-wrap break-words bg-transparent px-3 py-2 text-sm'
+          className='pointer-events-none absolute left-0 top-0 overflow-auto rounded-md border border-transparent bg-transparent px-3 py-2 text-sm [&::-webkit-scrollbar]:hidden'
           style={{
-            fontFamily: 'inherit',
-            lineHeight: 'inherit',
             width: '100%',
             height: `${height}px`,
-            overflow: 'hidden',
+            scrollbarWidth: 'none', // Firefox
+            msOverflowStyle: 'none', // IE/Edge
+            boxSizing: 'border-box',
+            fontFamily: 'inherit',
+            lineHeight: 'inherit',
           }}
         >
-          {formatDisplayText(value?.toString() ?? '', true)}
+          {/* 
+            Inner <pre> element holds the actual formatted content
+            - Must expand naturally to create scrollable content
+            - Uses <pre> tag for consistent whitespace/newline handling
+            - Matches all text styling from textarea for pixel-perfect alignment
+          */}
+          <pre
+            className='m-0 whitespace-pre-wrap break-words font-sans text-sm'
+            style={{
+              fontFamily: 'inherit',
+              lineHeight: 'inherit',
+              wordBreak: 'break-word',
+            }}
+          >
+            {formatDisplayText(value?.toString() ?? '', true)}
+          </pre>
         </div>
 
         {/* Wand Button */}
