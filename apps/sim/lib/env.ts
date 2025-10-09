@@ -72,6 +72,7 @@ export const env = createEnv({
     XAI_API_KEY_2:                         z.string().min(1).optional(), 
     XAI_API_KEY_3:                         z.string().min(1).optional(), 
     MISTRAL_API_KEY:                       z.string().min(1).optional(),           // Mistral AI API key
+    ANTHROPIC_API_KEY:                     z.string().min(1).optional(),           // Primary Anthropic Claude API key
     ANTHROPIC_API_KEY_1:                   z.string().min(1).optional(),           // Primary Anthropic Claude API key
     ANTHROPIC_API_KEY_2:                   z.string().min(1).optional(),           // Additional Anthropic API key for load balancing
     ANTHROPIC_API_KEY_3:                   z.string().min(1).optional(),           // Additional Anthropic API key for load balancing
