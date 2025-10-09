@@ -152,6 +152,24 @@ export async function POST(
     return slackResponse
   }
 
+  // --- PHASE 1.5: Slack-specific validation ---
+  if (body?.type === 'event_callback' && body?.event) {
+    const event = body.event
+
+    // Skip Slack events with empty text to prevent duplicate workflow executions
+    if (event.type === 'message' && (!event.text || event.text.trim() === '')) {
+      logger.info(`[${requestId}] Skipping Slack message event with empty text`, {
+        event_type: event.type,
+        channel: event.channel,
+        user: event.user,
+        timestamp: event.ts,
+        team_id: body.team_id,
+        event_id: body.event_id,
+      })
+      return new NextResponse('Event skipped - empty message text', { status: 200 })
+    }
+  }
+
   // --- PHASE 2: Webhook identification ---
   const path = (await params).path
   logger.info(`[${requestId}] Processing webhook request for path: ${path}`)

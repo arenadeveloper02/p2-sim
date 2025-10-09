@@ -305,6 +305,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.OPENAI_API_KEY_2) keys.push(env.OPENAI_API_KEY_2)
     if (env.OPENAI_API_KEY_3) keys.push(env.OPENAI_API_KEY_3)
   } else if (provider === 'anthropic') {
+    if (env.ANTHROPIC_API_KEY) keys.push(env.ANTHROPIC_API_KEY)
     if (env.ANTHROPIC_API_KEY_1) keys.push(env.ANTHROPIC_API_KEY_1)
     if (env.ANTHROPIC_API_KEY_2) keys.push(env.ANTHROPIC_API_KEY_2)
     if (env.ANTHROPIC_API_KEY_3) keys.push(env.ANTHROPIC_API_KEY_3)

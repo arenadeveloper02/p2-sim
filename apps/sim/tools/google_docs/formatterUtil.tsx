@@ -22,22 +22,19 @@ export function convertMarkdownToGoogleDocsRequests(
   startIndex?: number
 ): Array<Record<string, any>> {
   const requests: Array<Record<string, any>> = []
-  // If startIndex is provided, use it; otherwise default to 1 for new documents
   let currentIndex = startIndex ?? 1
 
-  // Only add initial newline if starting at the beginning of the document
+  // Only add initial newline if starting at the beginning
   if (!startIndex || startIndex === 1) {
-    const insertNewline: Record<string, any> = {
+    requests.push({
       insertText: {
         location: { index: currentIndex },
         text: '\n',
       },
-    }
-    requests.push(insertNewline)
+    })
     currentIndex += 1
   }
 
-  // Split content into lines
   const lines = markdown.split('\n')
 
   // Add centered title if provided
@@ -46,13 +43,19 @@ export function convertMarkdownToGoogleDocsRequests(
   }
 
   let i = 0
+  let inListBlock = false
+  let listType: 'bullet' | 'numbered' | null = null
+
   while (i < lines.length) {
     const line = lines[i]
+    const trimmedLine = line.trim()
 
     // Check for markdown tables
-    if (line.trim().startsWith('|') && i + 1 < lines.length) {
+    if (trimmedLine.startsWith('|') && i + 1 < lines.length) {
       const tableResult = processMarkdownTable(lines, i)
       if (tableResult) {
+        inListBlock = false
+        listType = null
         currentIndex = addTableRequest(requests, tableResult, currentIndex)
         i = tableResult.endIndex + 1
         continue
@@ -61,6 +64,8 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for code blocks
     if (line.startsWith('```')) {
+      inListBlock = false
+      listType = null
       const codeBlockResult = processCodeBlock(lines, i)
       currentIndex = addCodeBlockRequest(
         requests,
@@ -74,65 +79,119 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for blockquotes
     if (line.startsWith('> ')) {
+      inListBlock = false
+      listType = null
       const blockquoteText = line.substring(2)
       currentIndex = addBlockquoteRequest(requests, blockquoteText, currentIndex)
-    }
-    // Check for horizontal rules
-    else if (line.trim() === '---' || line.trim() === '***' || line.trim() === '___') {
-      currentIndex = addHorizontalRuleRequest(requests, currentIndex)
-    }
-    // Check for headings
-    else if (line.startsWith('#### ')) {
-      const headingText = line.substring(5)
-      currentIndex = addHeadingRequest(requests, headingText, currentIndex, 'HEADING_4')
-    } else if (line.startsWith('### ')) {
-      const headingText = line.substring(4)
-      currentIndex = addHeadingRequest(requests, headingText, currentIndex, 'HEADING_3')
-    } else if (line.startsWith('## ')) {
-      const headingText = line.substring(3)
-      currentIndex = addHeadingRequest(requests, headingText, currentIndex, 'HEADING_2')
-    } else if (line.startsWith('# ')) {
-      const headingText = line.substring(2)
-      currentIndex = addHeadingRequest(requests, headingText, currentIndex, 'HEADING_1')
-    }
-    // Check for task lists (must come before bullet points)
-    else if (line.startsWith('- [ ]') || line.startsWith('- [x]') || line.startsWith('- [X]')) {
-      const checked = line.startsWith('- [x]') || line.startsWith('- [X]')
-      const taskText = line.substring(5).trim()
-      currentIndex = addTaskListRequest(requests, taskText, checked, currentIndex)
-    }
-    // ADD THIS NEW CONDITION HERE - Check for indented bullet points
-    else if (/^\s+[-*]\s/.test(line)) {
-      const bulletText = line.trim().substring(2)
-      currentIndex = addBulletPointRequest(requests, bulletText, currentIndex)
-    }
-    // Check for numbered list items with bold (treat as formatted paragraphs)
-    else if (/^\d+\.\s\*\*/.test(line)) {
-      const text = line.replace(/^\d+\.\s/, '')
-      currentIndex = addParagraphWithFormattingRequest(requests, text, currentIndex)
-    }
-    // Check for bullet points with '- ' or '* ' (but not '**' which is bold)
-    else if (line.startsWith('- ') || (line.startsWith('* ') && !line.startsWith('** '))) {
-      const bulletText = line.substring(2)
-      currentIndex = addBulletPointRequest(requests, bulletText, currentIndex)
-    }
-    // Check for ordered lists (regular numbered items without bold)
-    else if (/^\d+\.\s/.test(line)) {
-      const listText = line.replace(/^\d+\.\s/, '')
-      currentIndex = addNumberedListRequest(requests, listText, currentIndex)
-    }
-    // Empty line
-    else if (line.trim().length === 0) {
-      currentIndex = addEmptyLineRequest(requests, currentIndex)
-    }
-    // Regular paragraph with inline formatting
-    else {
-      currentIndex = addParagraphWithFormattingRequest(requests, line, currentIndex)
+      i++
+      continue
     }
 
+    // Check for horizontal rules
+    if (trimmedLine === '---' || trimmedLine === '***' || trimmedLine === '___') {
+      inListBlock = false
+      listType = null
+      currentIndex = addHorizontalRuleRequest(requests, currentIndex)
+      i++
+      continue
+    }
+
+    // Check for headings
+    if (line.startsWith('#### ')) {
+      inListBlock = false
+      listType = null
+      currentIndex = addHeadingRequest(requests, line.substring(5), currentIndex, 'HEADING_4')
+      i++
+      continue
+    }
+    if (line.startsWith('### ')) {
+      inListBlock = false
+      listType = null
+      currentIndex = addHeadingRequest(requests, line.substring(4), currentIndex, 'HEADING_3')
+      i++
+      continue
+    }
+    if (line.startsWith('## ')) {
+      inListBlock = false
+      listType = null
+      currentIndex = addHeadingRequest(requests, line.substring(3), currentIndex, 'HEADING_2')
+      i++
+      continue
+    }
+    if (line.startsWith('# ')) {
+      inListBlock = false
+      listType = null
+      currentIndex = addHeadingRequest(requests, line.substring(2), currentIndex, 'HEADING_1')
+      i++
+      continue
+    }
+
+    // Check for task lists
+    if (
+      trimmedLine.startsWith('- [ ]') ||
+      trimmedLine.startsWith('- [x]') ||
+      trimmedLine.startsWith('- [X]')
+    ) {
+      inListBlock = false
+      listType = null
+      const checked = trimmedLine.startsWith('- [x]') || trimmedLine.startsWith('- [X]')
+      const taskText = trimmedLine.substring(5).trim()
+      currentIndex = addTaskListRequest(requests, taskText, checked, currentIndex)
+      i++
+      continue
+    }
+
+    // Check for ordered lists (numbered)
+    const numberedMatch = trimmedLine.match(/^(\d+)\.\s+(.*)/)
+    if (numberedMatch) {
+      const text = numberedMatch[2]
+      const leadingSpaces = line.length - line.trimStart().length
+      const indentLevel = Math.floor(leadingSpaces / 2)
+
+      // Start new list block if needed
+      if (!inListBlock || listType !== 'numbered') {
+        inListBlock = true
+        listType = 'numbered'
+      }
+
+      currentIndex = addNumberedListRequest(requests, text, currentIndex, indentLevel)
+      i++
+      continue
+    }
+
+    // Check for bullet points (unordered lists)
+    const bulletMatch = trimmedLine.match(/^[-*+]\s+(.*)/)
+    if (bulletMatch) {
+      const text = bulletMatch[1]
+      const leadingSpaces = line.length - line.trimStart().length
+      const indentLevel = Math.floor(leadingSpaces / 2)
+
+      // Start new list block if needed
+      if (!inListBlock || listType !== 'bullet') {
+        inListBlock = true
+        listType = 'bullet'
+      }
+
+      currentIndex = addBulletPointRequest(requests, text, currentIndex, indentLevel)
+      i++
+      continue
+    }
+
+    // Empty line - breaks list blocks
+    if (trimmedLine.length === 0) {
+      inListBlock = false
+      listType = null
+      currentIndex = addEmptyLineRequest(requests, currentIndex)
+      i++
+      continue
+    }
+
+    // Regular paragraph
+    inListBlock = false
+    listType = null
+    currentIndex = addParagraphWithFormattingRequest(requests, line, currentIndex)
     i++
   }
-
   return requests
 }
 
@@ -163,7 +222,6 @@ function processMarkdownTable(lines: string[], startIndex: number): TableData | 
     return null
   }
 
-  // Check if next line is separator
   if (startIndex + 1 >= lines.length) {
     return null
   }
@@ -173,7 +231,6 @@ function processMarkdownTable(lines: string[], startIndex: number): TableData | 
     return null
   }
 
-  // Collect all table lines (header + separator + data rows)
   const tableLines: string[] = [firstLine, separatorLine]
   let i = startIndex + 2
 
@@ -186,12 +243,11 @@ function processMarkdownTable(lines: string[], startIndex: number): TableData | 
     i++
   }
 
-  // Format the table with proper spacing
   const formattedTable = formatTableWithSpacing(tableLines)
 
   return {
-    headers: [], // Not used in new approach
-    rows: [[formattedTable]], // Store formatted table as single cell
+    headers: [],
+    rows: [[formattedTable]],
     endIndex: i - 1,
   }
 }
@@ -212,8 +268,8 @@ function formatTableWithSpacing(tableLines: string[]): string {
   for (let col = 0; col < numCols; col++) {
     let maxWidth = 0
     for (const row of allRows) {
-      if (col < row.length && row[col] !== '') {
-        // Check if it's the separator row (contains only dashes, colons, and spaces)
+      if (col < row.length) {
+        // Skip separator row (contains only dashes, colons, and spaces)
         if (!/^:?-+:?$/.test(row[col])) {
           maxWidth = Math.max(maxWidth, row[col].length)
         }
@@ -222,68 +278,111 @@ function formatTableWithSpacing(tableLines: string[]): string {
     colWidths.push(maxWidth)
   }
 
-  // Calculate maximum line width (roughly 80 characters to be safe)
+  // Calculate maximum line width (80 characters to prevent wrapping in Google Docs)
   const MAX_LINE_WIDTH = 80
-  const SEPARATOR_WIDTH = 4 // '·|·' between columns
+  const PIPE_PADDING = 3 // ' | ' between columns
+  const BORDER_CHARS = 4 // '| ' at start and ' |' at end
+  const ROW_COL_WIDTH = 8 // Width for "Row" column in continuation segments (includes padding)
 
-  // Determine how many columns can fit in one segment
+  // Determine column segments that fit within MAX_LINE_WIDTH
   const segments: number[][] = []
   let currentSegment: number[] = []
-  let currentWidth = 2 // Starting '|·'
+  let currentWidth = BORDER_CHARS // Start with '| ' and ' |'
 
   for (let col = 0; col < numCols; col++) {
     const colWidth = colWidths[col]
-    const neededWidth = colWidth + (currentSegment.length > 0 ? SEPARATOR_WIDTH : 0)
+    const additionalWidth = colWidth + (currentSegment.length > 0 ? PIPE_PADDING : 0)
 
-    if (currentWidth + neededWidth + 2 > MAX_LINE_WIDTH && currentSegment.length > 0) {
-      // Start a new segment
+    // For non-first segments, account for the "Row" column
+    const isFirstSegment = segments.length === 0 && currentSegment.length === 0
+    const extraWidth = isFirstSegment ? 0 : ROW_COL_WIDTH + PIPE_PADDING
+
+    // Check if adding this column exceeds the limit
+    if (currentWidth + additionalWidth + extraWidth > MAX_LINE_WIDTH && currentSegment.length > 0) {
+      // Save current segment and start new one
       segments.push([...currentSegment])
       currentSegment = [col]
-      currentWidth = 2 + colWidth
+      currentWidth = BORDER_CHARS + colWidth + ROW_COL_WIDTH + PIPE_PADDING // Include row column for new segment
     } else {
       currentSegment.push(col)
-      currentWidth += neededWidth
+      currentWidth += additionalWidth
     }
   }
 
+  // Add the last segment
   if (currentSegment.length > 0) {
     segments.push(currentSegment)
   }
 
-  // Format each segment
+  // Format each segment vertically
   const allFormattedLines: string[] = []
 
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     const segment = segments[segIdx]
-    const segmentLines: string[] = []
 
+    // Add segment header if not the first segment
+    if (segIdx > 0) {
+      allFormattedLines.push('') // Empty line between segments
+      allFormattedLines.push('') // Another empty line for spacing
+      const colStart = segment[0] + 1
+      const colEnd = segment[segment.length - 1] + 1
+      allFormattedLines.push(`Columns ${colStart}-${colEnd}:`)
+    }
+
+    // For continuation segments, add a "Row" identifier column
+    const needsRowColumn = segIdx > 0
+    const rowColWidth = needsRowColumn ? 5 : 0 // Width for "Row" text
+
+    // Format each row in this segment
     for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
       const row = allRows[rowIdx]
       const cells: string[] = []
 
-      for (const col of segment) {
-        const cellContent = col < row.length ? row[col] : ''
-
-        // Check if this is the separator row
-        if (rowIdx === 1 && /^:?-+:?$/.test(cellContent)) {
-          cells.push('-'.repeat(colWidths[col]))
+      // Add row identifier for continuation segments
+      if (needsRowColumn) {
+        if (rowIdx === 0) {
+          // Header row
+          cells.push('Row'.padEnd(rowColWidth, ' '))
+        } else if (rowIdx === 1) {
+          // Separator row
+          cells.push('-'.repeat(rowColWidth))
         } else {
-          cells.push(cellContent.padEnd(colWidths[col], ' '))
+          // Data rows - show row number
+          cells.push(`${rowIdx - 1}`.padEnd(rowColWidth, ' '))
         }
       }
 
-      segmentLines.push(`| ${cells.join(' | ')} |`)
-    }
+      for (const col of segment) {
+        const cellContent = col < row.length ? row[col] : ''
+        const width = colWidths[col]
 
-    // Add segment header if this is not the first segment
-    if (segIdx > 0) {
-      allFormattedLines.push('') // Empty line between segments
-      allFormattedLines.push(
-        `(continued - columns ${segment[0] + 1}-${segment[segment.length - 1] + 1})`
-      )
-    }
+        // Check if this is the separator row
+        if (/^:?-+:?$/.test(cellContent)) {
+          // Create separator with proper alignment indicators
+          let separator = ''
+          if (cellContent.startsWith(':') && cellContent.endsWith(':')) {
+            // Center aligned
+            separator = `:${'-'.repeat(Math.max(0, width - 2))}:`
+          } else if (cellContent.endsWith(':')) {
+            // Right aligned
+            separator = `${'-'.repeat(Math.max(0, width - 1))}:`
+          } else if (cellContent.startsWith(':')) {
+            // Left aligned
+            separator = `:${'-'.repeat(Math.max(0, width - 1))}`
+          } else {
+            // Default (left aligned)
+            separator = '-'.repeat(width)
+          }
+          cells.push(separator)
+        } else {
+          // Regular cell - pad to column width
+          cells.push(cellContent.padEnd(width, ' '))
+        }
+      }
 
-    allFormattedLines.push(...segmentLines)
+      // Join cells with proper spacing
+      allFormattedLines.push(`| ${cells.join(' | ')} |`)
+    }
   }
 
   return allFormattedLines.join('\n')
@@ -295,16 +394,14 @@ function addCodeBlockRequest(
   language: string,
   index: number
 ): number {
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${code}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
-  // Apply code block styling (monospace font and gray background)
-  const codeStyle: Record<string, any> = {
+  requests.push({
     updateTextStyle: {
       range: {
         startIndex: index,
@@ -317,8 +414,7 @@ function addCodeBlockRequest(
       },
       fields: 'weightedFontFamily,fontSize,backgroundColor',
     },
-  }
-  requests.push(codeStyle)
+  })
 
   return index + code.length + 1
 }
@@ -328,85 +424,99 @@ function addBlockquoteRequest(
   text: string,
   index: number
 ): number {
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${text}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
-  // Apply indentation and italic style for blockquote
-  const blockquoteStyle: Record<string, any> = {
+  requests.push({
     updateParagraphStyle: {
       range: {
         startIndex: index,
-        endIndex: index + text.length,
+        endIndex: index + text.length + 1,
       },
       paragraphStyle: {
         indentStart: { magnitude: 36, unit: 'PT' },
         borderLeft: {
           color: { color: { rgbColor: { red: 0.8, green: 0.8, blue: 0.8 } } },
           width: { magnitude: 3, unit: 'PT' },
+          padding: { magnitude: 8, unit: 'PT' },
           dashStyle: 'SOLID',
         },
       },
       fields: 'indentStart,borderLeft',
     },
-  }
-  requests.push(blockquoteStyle)
+  })
 
-  const italicStyle: Record<string, any> = {
-    updateTextStyle: {
-      range: {
-        startIndex: index,
-        endIndex: index + text.length,
+  // Only apply italic style if there's actual text content
+  if (text.length > 0) {
+    requests.push({
+      updateTextStyle: {
+        range: {
+          startIndex: index,
+          endIndex: index + text.length,
+        },
+        textStyle: { italic: true },
+        fields: 'italic',
       },
-      textStyle: { italic: true },
-      fields: 'italic',
-    },
+    })
   }
-  requests.push(italicStyle)
 
   return index + text.length + 1
 }
 
 function addHorizontalRuleRequest(requests: Array<Record<string, any>>, index: number): number {
-  // Insert a horizontal rule as a series of dashes with bottom border
-  const ruleText = '_______________________________________________'
-  const insertText: Record<string, any> = {
+  // Insert a newline for the border to apply to
+  requests.push({
     insertText: {
       location: { index },
-      text: `${ruleText}\n`,
+      text: '\n',
     },
-  }
-  requests.push(insertText)
+  })
 
-  const ruleStyle: Record<string, any> = {
+  // Apply paragraph border with dashed style
+  requests.push({
     updateParagraphStyle: {
       range: {
         startIndex: index,
-        endIndex: index + ruleText.length,
+        endIndex: index + 1,
       },
       paragraphStyle: {
         borderBottom: {
-          color: { color: { rgbColor: { red: 0.7, green: 0.7, blue: 0.7 } } },
-          width: { magnitude: 1, unit: 'PT' },
-          dashStyle: 'SOLID',
+          color: {
+            color: {
+              rgbColor: {
+                red: 0.5,
+                green: 0.5,
+                blue: 0.5,
+              },
+            },
+          },
+          width: {
+            magnitude: 1,
+            unit: 'PT',
+          },
+          padding: {
+            magnitude: 0,
+            unit: 'PT',
+          },
+          dashStyle: 'DASH',
         },
       },
       fields: 'borderBottom',
     },
-  }
-  requests.push(ruleStyle)
+  })
 
-  return index + ruleText.length + 1
+  return index + 1
 }
 
 function addNumberedListRequest(
   requests: Array<Record<string, any>>,
   text: string,
-  index: number
+  index: number,
+  indentLevel = 0
 ): number {
   const cleanTextBuilder: string[] = []
   const formatRanges: FormatRange[] = []
@@ -415,17 +525,16 @@ function addNumberedListRequest(
   parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
   const cleanText = cleanTextBuilder.join('')
 
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${cleanText}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
   applyInlineFormatting(requests, formatRanges, linkRanges, index)
 
-  const numberedListRequest: Record<string, any> = {
+  requests.push({
     createParagraphBullets: {
       range: {
         startIndex: index,
@@ -433,8 +542,24 @@ function addNumberedListRequest(
       },
       bulletPreset: 'NUMBERED_DECIMAL_ALPHA_ROMAN',
     },
+  })
+
+  // Apply indentation for nested numbered lists
+  if (indentLevel > 0) {
+    requests.push({
+      updateParagraphStyle: {
+        range: {
+          startIndex: index,
+          endIndex: index + cleanText.length + 1,
+        },
+        paragraphStyle: {
+          indentStart: { magnitude: 36 * indentLevel, unit: 'PT' },
+          indentEnd: { magnitude: 0, unit: 'PT' },
+        },
+        fields: 'indentStart,indentEnd',
+      },
+    })
   }
-  requests.push(numberedListRequest)
 
   return index + cleanText.length + 1
 }
@@ -448,16 +573,15 @@ function addTaskListRequest(
   const prefix = checked ? '☑ ' : '☐ '
   const fullText = prefix + text
 
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${fullText}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
   if (checked) {
-    const strikeStyle: Record<string, any> = {
+    requests.push({
       updateTextStyle: {
         range: {
           startIndex: index + prefix.length,
@@ -466,8 +590,7 @@ function addTaskListRequest(
         textStyle: { strikethrough: true },
         fields: 'strikethrough',
       },
-    }
-    requests.push(strikeStyle)
+    })
   }
 
   return index + fullText.length + 1
@@ -478,19 +601,18 @@ function addCenteredTitle(
   title: string,
   index: number
 ): number {
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${title}\n\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
-  const titleStyle: Record<string, any> = {
+  requests.push({
     updateParagraphStyle: {
       range: {
-        startIndex: index + 1,
-        endIndex: index + 1 + title.length,
+        startIndex: index,
+        endIndex: index + title.length + 1,
       },
       paragraphStyle: {
         namedStyleType: 'TITLE',
@@ -498,10 +620,9 @@ function addCenteredTitle(
       },
       fields: 'namedStyleType,alignment',
     },
-  }
-  requests.push(titleStyle)
+  })
 
-  return index + title.length + 3
+  return index + title.length + 2
 }
 
 function addHeadingRequest(
@@ -510,27 +631,25 @@ function addHeadingRequest(
   index: number,
   headingType: string
 ): number {
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${text}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
-  const paragraphStyle: Record<string, any> = {
+  requests.push({
     updateParagraphStyle: {
       range: {
         startIndex: index,
-        endIndex: index + text.length,
+        endIndex: index + text.length + 1,
       },
       paragraphStyle: {
         namedStyleType: headingType,
       },
       fields: 'namedStyleType',
     },
-  }
-  requests.push(paragraphStyle)
+  })
 
   return index + text.length + 1
 }
@@ -548,17 +667,16 @@ function addBulletPointRequest(
   parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
   const cleanText = cleanTextBuilder.join('')
 
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: `${cleanText}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
   applyInlineFormatting(requests, formatRanges, linkRanges, index)
 
-  const bulletRequest: Record<string, any> = {
+  requests.push({
     createParagraphBullets: {
       range: {
         startIndex: index,
@@ -566,12 +684,11 @@ function addBulletPointRequest(
       },
       bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
     },
-  }
-  requests.push(bulletRequest)
+  })
 
-  // Apply indentation if nested
+  // Apply indentation for nested bullets
   if (indentLevel > 0) {
-    const indentRequest: Record<string, any> = {
+    requests.push({
       updateParagraphStyle: {
         range: {
           startIndex: index,
@@ -579,11 +696,11 @@ function addBulletPointRequest(
         },
         paragraphStyle: {
           indentStart: { magnitude: 36 * indentLevel, unit: 'PT' },
+          indentEnd: { magnitude: 0, unit: 'PT' },
         },
-        fields: 'indentStart',
+        fields: 'indentStart,indentEnd',
       },
-    }
-    requests.push(indentRequest)
+    })
   }
 
   return index + cleanText.length + 1
@@ -601,13 +718,12 @@ function addParagraphWithFormattingRequest(
   parseInlineFormatting(line, cleanTextBuilder, formatRanges, linkRanges)
   const cleanText = cleanTextBuilder.join('')
 
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index: startIndex },
       text: `${cleanText}\n`,
     },
-  }
-  requests.push(insertText)
+  })
 
   applyInlineFormatting(requests, formatRanges, linkRanges, startIndex)
 
@@ -615,13 +731,27 @@ function addParagraphWithFormattingRequest(
 }
 
 function addEmptyLineRequest(requests: Array<Record<string, any>>, index: number): number {
-  const insertText: Record<string, any> = {
+  requests.push({
     insertText: {
       location: { index },
       text: '\n',
     },
-  }
-  requests.push(insertText)
+  })
+
+  // Apply default paragraph style to prevent UNIT_UNSPECIFIED errors
+  requests.push({
+    updateParagraphStyle: {
+      range: {
+        startIndex: index,
+        endIndex: index + 1,
+      },
+      paragraphStyle: {
+        namedStyleType: 'NORMAL_TEXT',
+      },
+      fields: 'namedStyleType',
+    },
+  })
+
   return index + 1
 }
 
@@ -630,10 +760,8 @@ function addTableRequest(
   tableData: TableData,
   index: number
 ): number {
-  // The formatted table is stored in rows[0][0]
   const formattedTable = tableData.rows[0][0]
 
-  // Insert the formatted table as a code block
   requests.push({
     insertText: {
       location: { index },
@@ -641,7 +769,6 @@ function addTableRequest(
     },
   })
 
-  // Apply code block styling (monospace font and gray background)
   requests.push({
     updateTextStyle: {
       range: {
@@ -695,7 +822,7 @@ function parseInlineFormatting(
         cleanTextBuilder.push(codeChars.join(''))
         const codeEnd = cleanTextBuilder.join('').length
         formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
-        i++ // skip closing `
+        i++
       } else {
         cleanTextBuilder.push('`', ...codeChars)
       }
@@ -784,7 +911,6 @@ function parseInlineFormatting(
       continue
     }
 
-    // Regular character
     cleanTextBuilder.push(text[i])
     i++
   }
@@ -796,7 +922,6 @@ function applyInlineFormatting(
   linkRanges: LinkRange[],
   startIndex: number
 ): void {
-  // Apply format ranges
   for (const range of formatRanges) {
     const formatStart = startIndex + range.start
     const formatEnd = startIndex + range.end
@@ -839,7 +964,6 @@ function applyInlineFormatting(
     }
   }
 
-  // Apply link ranges
   for (const linkRange of linkRanges) {
     const formatStart = startIndex + linkRange.start
     const formatEnd = startIndex + linkRange.end

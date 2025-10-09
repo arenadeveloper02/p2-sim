@@ -262,6 +262,192 @@ describe('Webhook Trigger API Route', () => {
     expect(text).toMatch(/not found/i) // Response should contain "not found" message
   })
 
+  describe('Slack Webhook Validation', () => {
+    const setupSlackWebhook = async () => {
+      const { db } = await import('@/db')
+      const limitMock = vi.fn().mockReturnValue([
+        {
+          webhook: {
+            id: 'slack-webhook-id',
+            provider: 'slack',
+            path: 'slack-path',
+            isActive: true,
+            providerConfig: {
+              signingSecret: 'test-signing-secret',
+            },
+            workflowId: 'test-workflow-id',
+          },
+          workflow: {
+            id: 'test-workflow-id',
+            userId: 'test-user-id',
+            name: 'Test Slack Workflow',
+          },
+        },
+      ])
+      const whereMock = vi.fn().mockReturnValue({ limit: limitMock })
+      const innerJoinMock = vi.fn().mockReturnValue({ where: whereMock })
+      const fromMock = vi.fn().mockReturnValue({ innerJoin: innerJoinMock })
+
+      const subscriptionLimitMock = vi.fn().mockReturnValue([{ plan: 'pro' }])
+      const subscriptionWhereMock = vi.fn().mockReturnValue({ limit: subscriptionLimitMock })
+      const subscriptionFromMock = vi.fn().mockReturnValue({ where: subscriptionWhereMock })
+
+      // @ts-ignore - mocking the query chain
+      db.select.mockImplementation((columns: any) => {
+        if (columns.plan) {
+          return { from: subscriptionFromMock }
+        }
+        return { from: fromMock }
+      })
+    }
+
+    /**
+     * Test that Slack events with empty text are rejected
+     */
+    it('should reject Slack message events with empty text', async () => {
+      await setupSlackWebhook()
+
+      // Mock Slack signature validation to pass
+      validateSlackSignatureMock.mockResolvedValue(true)
+
+      const slackPayload = {
+        type: 'event_callback',
+        event: {
+          type: 'message',
+          channel: 'C09J14JRVGD',
+          user: 'U1234567890',
+          text: '', // Empty text
+          ts: '1759483293.000400',
+        },
+        team_id: 'T09JHFZE5U1',
+        event_id: 'Ev09JH1E4F8E',
+      }
+
+      const req = createMockRequest('POST', slackPayload)
+      const params = Promise.resolve({ path: 'slack-path' })
+
+      const { POST } = await import('@/app/api/webhooks/trigger/[path]/route')
+      const response = await POST(req, { params })
+
+      // Should return 200 with skip message (not 400 error)
+      expect(response.status).toBe(200)
+      const responseText = await response.text()
+      expect(responseText).toContain('Event skipped - empty message text')
+
+      // Should not process the webhook
+      expect(processWebhookMock).not.toHaveBeenCalled()
+    })
+
+    /**
+     * Test that Slack events with whitespace-only text are rejected
+     */
+    it('should reject Slack message events with whitespace-only text', async () => {
+      await setupSlackWebhook()
+
+      // Mock Slack signature validation to pass
+      validateSlackSignatureMock.mockResolvedValue(true)
+
+      const slackPayload = {
+        type: 'event_callback',
+        event: {
+          type: 'message',
+          channel: 'C09J14JRVGD',
+          user: 'U1234567890',
+          text: '   ', // Whitespace only
+          ts: '1759483293.000400',
+        },
+        team_id: 'T09JHFZE5U1',
+        event_id: 'Ev09JH1E4F8E',
+      }
+
+      const req = createMockRequest('POST', slackPayload)
+      const params = Promise.resolve({ path: 'slack-path' })
+
+      const { POST } = await import('@/app/api/webhooks/trigger/[path]/route')
+      const response = await POST(req, { params })
+
+      // Should return 200 with skip message
+      expect(response.status).toBe(200)
+      const responseText = await response.text()
+      expect(responseText).toContain('Event skipped - empty message text')
+
+      // Should not process the webhook
+      expect(processWebhookMock).not.toHaveBeenCalled()
+    })
+
+    /**
+     * Test that Slack events with valid text are processed normally
+     */
+    it('should process Slack message events with valid text', async () => {
+      await setupSlackWebhook()
+
+      // Mock Slack signature validation to pass
+      validateSlackSignatureMock.mockResolvedValue(true)
+
+      const slackPayload = {
+        type: 'event_callback',
+        event: {
+          type: 'message',
+          channel: 'C09J14JRVGD',
+          user: 'U1234567890',
+          text: 'Hello, this is a valid message!',
+          ts: '1759483293.000400',
+        },
+        team_id: 'T09JHFZE5U1',
+        event_id: 'Ev09JH1E4F8E',
+      }
+
+      const req = createMockRequest('POST', slackPayload)
+      const params = Promise.resolve({ path: 'slack-path' })
+
+      mockTriggerDevSdk()
+
+      const { POST } = await import('@/app/api/webhooks/trigger/[path]/route')
+      const response = await POST(req, { params })
+
+      // Should process normally (not return skip message)
+      expect(response.status).toBe(200)
+      const responseText = await response.text()
+      expect(responseText).not.toContain('Event skipped - empty message text')
+    })
+
+    /**
+     * Test that non-message Slack events are processed normally
+     */
+    it('should process non-message Slack events normally', async () => {
+      await setupSlackWebhook()
+
+      // Mock Slack signature validation to pass
+      validateSlackSignatureMock.mockResolvedValue(true)
+
+      const slackPayload = {
+        type: 'event_callback',
+        event: {
+          type: 'app_mention',
+          channel: 'C09J14JRVGD',
+          user: 'U1234567890',
+          text: '', // Empty text but different event type
+          ts: '1759483293.000400',
+        },
+        team_id: 'T09JHFZE5U1',
+        event_id: 'Ev09JH1E4F8E',
+      }
+
+      const req = createMockRequest('POST', slackPayload)
+      const params = Promise.resolve({ path: 'slack-path' })
+
+      mockTriggerDevSdk()
+
+      const { POST } = await import('@/app/api/webhooks/trigger/[path]/route')
+      const response = await POST(req, { params })
+
+      // Should process normally (app_mention events are not filtered)
+      expect(response.status).toBe(200)
+      const responseText = await response.text()
+      expect(responseText).not.toContain('Event skipped - empty message text')
+    })
+  })
+
   describe('Generic Webhook Authentication', () => {
     const setupGenericWebhook = async (config: Record<string, any>) => {
       const { db } = await import('@/db')

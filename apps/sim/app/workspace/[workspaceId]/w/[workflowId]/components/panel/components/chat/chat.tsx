@@ -82,7 +82,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Use the execution store state to track if a workflow is executing
   const { isExecuting } = useExecutionStore()
   const isFullScreen = usePanelStore((state) => state.isFullScreen)
-
+  const panelWidth = usePanelStore((state) => state.panelWidth)
   // Get workflow execution functionality
   const { handleRunWorkflow } = useWorkflowExecution()
 
@@ -175,6 +175,8 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Add handler to hide the input form
   const handleHideInputForm = useCallback(() => {
     setShowInputForm(false)
+    // Mark as submitted to prevent auto-showing again
+    setInitialInputsSubmitted(true)
   }, [])
 
   // Initial form display effect
@@ -718,12 +720,20 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Format the inputs as a message
       const inputMessage = Object.entries(formInputs)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('\n')
+        .map(([key, value]) => {
+          // Convert field names to a more readable format
+          const formattedKey = key
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (char, index) =>
+              index === 0 ? char.toUpperCase() : char.toLowerCase()
+            )
+          return `${formattedKey}: ${value}`
+        })
+        .join('\n\n')
 
       // Add the inputs as a user message
       addMessage({
-        content: `Inputs received are:\n\`\n${inputMessage}\n\``,
+        content: `Workflow Inputs Received:\n\n${inputMessage}`,
         workflowId: activeWorkflowId,
         type: 'workflow',
       })
@@ -951,6 +961,9 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         onSubmit={handleInputFormSubmit}
         onClose={handleHideInputForm}
         isVisible={showInputForm}
+        workflowId={activeWorkflowId || undefined}
+        selectedOutputs={selectedOutputs}
+        onOutputSelect={handleOutputSelection}
       />
       {/* Always render the chat UI */}
       <>
@@ -1027,7 +1040,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             ) : (
               <div ref={scrollAreaRef} className='h-full'>
                 <ScrollArea className='h-full pb-2' hideScrollbar={true}>
-                  <div>
+                  <div className='block overflow-x-auto' style={{ width: `${panelWidth - 30}px` }}>
                     {workflowMessages.map((message) => (
                       <ChatMessage key={message.id} message={message} />
                     ))}
