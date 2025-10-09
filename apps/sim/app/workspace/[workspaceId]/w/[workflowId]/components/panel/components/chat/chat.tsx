@@ -961,6 +961,9 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         onSubmit={handleInputFormSubmit}
         onClose={handleHideInputForm}
         isVisible={showInputForm}
+        workflowId={activeWorkflowId || undefined}
+        selectedOutputs={selectedOutputs}
+        onOutputSelect={handleOutputSelection}
       />
       {/* Always render the chat UI */}
       <>

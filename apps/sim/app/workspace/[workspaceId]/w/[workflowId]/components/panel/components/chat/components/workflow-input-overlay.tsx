@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { OutputSelect } from './output-select/output-select'
 import { WorkflowInputForm } from './workflow-input-form'
 
 interface InputField {
@@ -14,6 +15,9 @@ interface WorkflowInputOverlayProps {
   onSubmit: (inputs: Record<string, any>) => void
   onClose: () => void
   isVisible: boolean
+  workflowId?: string
+  selectedOutputs?: string[]
+  onOutputSelect?: (values: string[]) => void
 }
 
 export function WorkflowInputOverlay({
@@ -21,6 +25,9 @@ export function WorkflowInputOverlay({
   onSubmit,
   onClose,
   isVisible,
+  workflowId,
+  selectedOutputs = [],
+  onOutputSelect,
 }: WorkflowInputOverlayProps) {
   if (!isVisible) return null
 
@@ -32,7 +39,7 @@ export function WorkflowInputOverlay({
 
   return (
     <div className='absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm'>
-      <Card className='max-h-[80vh] w-[90%] max-w-md overflow-auto shadow-lg'>
+      <Card className='max-h-[80vh] w-[90%] max-w-lg overflow-auto shadow-lg'>
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
           <CardTitle className='font-medium text-xl'>Workflow Inputs</CardTitle>
           <Button
@@ -46,8 +53,28 @@ export function WorkflowInputOverlay({
             <X className='h-4 w-4' />
           </Button>
         </CardHeader>
-        <CardContent>
-          <WorkflowInputForm fields={fields} onSubmit={handleSubmit} />
+        <CardContent className='space-y-4'>
+          {/* Output Selection */}
+          {workflowId && onOutputSelect && (
+            <div className='space-y-2'>
+              <div className='font-medium text-gray-700 text-sm dark:text-gray-300'>
+                Output Sources
+              </div>
+              <OutputSelect
+                workflowId={workflowId}
+                selectedOutputs={selectedOutputs}
+                onOutputSelect={onOutputSelect}
+                disabled={!workflowId}
+                placeholder='Select output sources'
+              />
+            </div>
+          )}
+
+          {/* Input Form */}
+          <div className='space-y-2'>
+            <div className='font-medium text-gray-700 text-sm dark:text-gray-300'>Input Fields</div>
+            <WorkflowInputForm fields={fields} onSubmit={handleSubmit} />
+          </div>
         </CardContent>
       </Card>
     </div>
