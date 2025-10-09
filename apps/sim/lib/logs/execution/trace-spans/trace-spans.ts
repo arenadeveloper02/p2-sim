@@ -1,8 +1,62 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import type { TraceSpan } from '@/lib/logs/types'
+import { isWorkflowBlockType } from '@/executor/consts'
 import type { ExecutionResult } from '@/executor/types'
 
 const logger = createLogger('TraceSpans')
+
+function isSyntheticWorkflowWrapper(span: TraceSpan | undefined): boolean {
+  if (!span || span.type !== 'workflow') return false
+  return !span.blockId
+}
+
+function flattenWorkflowChildren(spans: TraceSpan[]): TraceSpan[] {
+  const flattened: TraceSpan[] = []
+
+  spans.forEach((span) => {
+    if (isSyntheticWorkflowWrapper(span)) {
+      if (span.children && Array.isArray(span.children)) {
+        flattened.push(...flattenWorkflowChildren(span.children))
+      }
+      return
+    }
+
+    const processedSpan = ensureNestedWorkflowsProcessed(span)
+    flattened.push(processedSpan)
+  })
+
+  return flattened
+}
+
+function getTraceSpanKey(span: TraceSpan): string {
+  if (span.id) {
+    return span.id
+  }
+
+  const name = span.name || 'span'
+  const start = span.startTime || 'unknown-start'
+  const end = span.endTime || 'unknown-end'
+
+  return `${name}|${start}|${end}`
+}
+
+function mergeTraceSpanChildren(...childGroups: TraceSpan[][]): TraceSpan[] {
+  const merged: TraceSpan[] = []
+  const seen = new Set<string>()
+
+  childGroups.forEach((group) => {
+    group.forEach((child) => {
+      const key = getTraceSpanKey(child)
+      if (seen.has(key)) {
+        return
+      }
+      seen.add(key)
+      merged.push(child)
+    })
+  })
+
+  return merged
+}
 
 // Helper function to build a tree of trace spans from execution logs
 export function buildTraceSpans(result: ExecutionResult): {
@@ -56,11 +110,8 @@ export function buildTraceSpans(result: ExecutionResult): {
       }
     }
 
-    // Prefer human-friendly workflow block naming if provided by child execution mapping
-    const displayName =
-      log.blockType === 'workflow' && log.output?.childWorkflowName
-        ? `${log.output.childWorkflowName} workflow`
-        : log.blockName || log.blockId
+    // Use block name consistently for all block types
+    const displayName = log.blockName || log.blockId
 
     const span: TraceSpan = {
       id: spanId,
@@ -106,42 +157,11 @@ export function buildTraceSpans(result: ExecutionResult): {
       ;(span as any).model = log.output.model
     }
 
-    // Handle child workflow spans for workflow blocks
-    if (
-      log.blockType === 'workflow' &&
-      log.output?.childTraceSpans &&
-      Array.isArray(log.output.childTraceSpans)
-    ) {
-      // Convert child trace spans to be direct children of this workflow block span
-      const childTraceSpans = log.output.childTraceSpans as TraceSpan[]
-
-      // Process child workflow spans and add them as children
-      const flatChildSpans: TraceSpan[] = []
-      childTraceSpans.forEach((childSpan) => {
-        // Skip the synthetic workflow span wrapper - we only want the actual block executions
-        if (
-          childSpan.type === 'workflow' &&
-          (childSpan.name === 'Workflow Execution' || childSpan.name.endsWith(' workflow'))
-        ) {
-          // Add its children directly, skipping the synthetic wrapper
-          if (childSpan.children && Array.isArray(childSpan.children)) {
-            flatChildSpans.push(...childSpan.children)
-          }
-        } else {
-          // This is a regular span, add it directly
-          // But first, ensure nested workflow blocks in this span are also processed
-          const processedSpan = ensureNestedWorkflowsProcessed(childSpan)
-          flatChildSpans.push(processedSpan)
-        }
-      })
-
-      // Add the child spans as children of this workflow block
-      span.children = flatChildSpans
-    }
-
     // Enhanced approach: Use timeSegments for sequential flow if available
     // This provides the actual model→tool→model execution sequence
+    // Skip for workflow blocks since they will be processed via output.childTraceSpans at the end
     if (
+      !isWorkflowBlockType(log.blockType) &&
       log.output?.providerTiming?.timeSegments &&
       Array.isArray(log.output.providerTiming.timeSegments)
     ) {
@@ -250,6 +270,17 @@ export function buildTraceSpans(result: ExecutionResult): {
       }
     }
 
+    // Handle child workflow spans for workflow blocks - process at the end to avoid being overwritten
+    if (
+      isWorkflowBlockType(log.blockType) &&
+      log.output?.childTraceSpans &&
+      Array.isArray(log.output.childTraceSpans)
+    ) {
+      const childTraceSpans = log.output.childTraceSpans as TraceSpan[]
+      const flattenedChildren = flattenWorkflowChildren(childTraceSpans)
+      span.children = mergeTraceSpanChildren(span.children || [], flattenedChildren)
+    }
+
     // Store in map
     spanMap.set(spanId, span)
   })
@@ -327,22 +358,19 @@ export function buildTraceSpans(result: ExecutionResult): {
       }
 
       // Check if this span could be a parent to future spans
-      if (log.blockType === 'agent' || log.blockType === 'workflow') {
+      if (log.blockType === 'agent' || isWorkflowBlockType(log.blockType)) {
         spanStack.push(span)
       }
     })
   }
 
-  // Calculate total duration as the sum of root spans
-  const totalDuration = rootSpans.reduce((sum, span) => sum + span.duration, 0)
+  const groupedRootSpans = groupIterationBlocks(rootSpans)
 
-  // Create a synthetic workflow span that represents the entire execution
-  // This ensures we have a consistent top-level representation
-  if (rootSpans.length > 0 && result.metadata) {
-    // Get all spans to calculate accurate timings
+  const totalDuration = groupedRootSpans.reduce((sum, span) => sum + span.duration, 0)
+
+  if (groupedRootSpans.length > 0 && result.metadata) {
     const allSpansList = Array.from(spanMap.values())
 
-    // Find the earliest start time and latest end time across all spans
     const earliestStart = allSpansList.reduce((earliest, span) => {
       const startTime = new Date(span.startTime).getTime()
       return startTime < earliest ? startTime : earliest
@@ -353,14 +381,10 @@ export function buildTraceSpans(result: ExecutionResult): {
       return endTime > latest ? endTime : latest
     }, 0)
 
-    // Calculate actual workflow duration from earliest start to latest end
-    // This correctly accounts for parallel execution
     const actualWorkflowDuration = latestEnd - earliestStart
 
-    // Check if any spans have errors to determine overall workflow status
-    const hasErrors = rootSpans.some((span) => {
+    const hasErrors = groupedRootSpans.some((span) => {
       if (span.status === 'error') return true
-      // Recursively check children for errors
       const checkChildren = (children: TraceSpan[] = []): boolean => {
         return children.some(
           (child) => child.status === 'error' || (child.children && checkChildren(child.children))
@@ -369,7 +393,6 @@ export function buildTraceSpans(result: ExecutionResult): {
       return span.children && checkChildren(span.children)
     })
 
-    // Create the workflow span
     const workflowSpan: TraceSpan = {
       id: 'workflow-execution',
       name: 'Workflow Execution',
@@ -378,54 +401,264 @@ export function buildTraceSpans(result: ExecutionResult): {
       startTime: new Date(earliestStart).toISOString(),
       endTime: new Date(latestEnd).toISOString(),
       status: hasErrors ? 'error' : 'success',
-      children: rootSpans,
+      children: groupedRootSpans,
     }
 
-    // Return this as the only root span, using the actual duration for total
     return { traceSpans: [workflowSpan], totalDuration: actualWorkflowDuration }
   }
 
-  return { traceSpans: rootSpans, totalDuration }
+  return { traceSpans: groupedRootSpans, totalDuration }
 }
 
-// Helper function to recursively process nested workflow blocks in trace spans
-function ensureNestedWorkflowsProcessed(span: TraceSpan): TraceSpan {
-  // Create a copy to avoid mutating the original
-  const processedSpan = { ...span }
+/**
+ * Groups iteration-based blocks (parallel and loop) by organizing their iteration spans
+ * into a hierarchical structure with proper parent-child relationships.
+ *
+ * @param spans - Array of root spans to process
+ * @returns Array of spans with iteration blocks properly grouped
+ */
+function groupIterationBlocks(spans: TraceSpan[]): TraceSpan[] {
+  const result: TraceSpan[] = []
+  const iterationSpans: TraceSpan[] = []
+  const normalSpans: TraceSpan[] = []
 
-  // If this is a workflow block and it has childTraceSpans in its output, process them
-  if (
-    span.type === 'workflow' &&
-    span.output?.childTraceSpans &&
-    Array.isArray(span.output.childTraceSpans)
-  ) {
-    const childTraceSpans = span.output.childTraceSpans as TraceSpan[]
-    const nestedChildren: TraceSpan[] = []
+  spans.forEach((span) => {
+    const iterationMatch = span.name.match(/^(.+) \(iteration (\d+)\)$/)
+    if (iterationMatch) {
+      iterationSpans.push(span)
+    } else {
+      normalSpans.push(span)
+    }
+  })
 
-    childTraceSpans.forEach((childSpan) => {
-      // Skip synthetic workflow wrappers and get the actual blocks
-      if (
-        childSpan.type === 'workflow' &&
-        (childSpan.name === 'Workflow Execution' || childSpan.name.endsWith(' workflow'))
-      ) {
-        if (childSpan.children && Array.isArray(childSpan.children)) {
-          // Recursively process each child to handle deeper nesting
-          childSpan.children.forEach((grandchildSpan) => {
-            nestedChildren.push(ensureNestedWorkflowsProcessed(grandchildSpan))
+  const nonIterationContainerSpans = normalSpans.filter(
+    (span) => span.type !== 'parallel' && span.type !== 'loop'
+  )
+
+  if (iterationSpans.length > 0) {
+    const containerGroups = new Map<
+      string,
+      {
+        type: 'parallel' | 'loop'
+        containerId: string
+        containerName: string
+        spans: TraceSpan[]
+      }
+    >()
+
+    iterationSpans.forEach((span) => {
+      const iterationMatch = span.name.match(/^(.+) \(iteration (\d+)\)$/)
+      if (iterationMatch) {
+        let containerType: 'parallel' | 'loop' = 'loop'
+        let containerId = 'unknown'
+        let containerName = 'Unknown'
+
+        if (span.blockId?.includes('_parallel_')) {
+          const parallelMatch = span.blockId.match(/_parallel_([^_]+)_iteration_/)
+          if (parallelMatch) {
+            containerType = 'parallel'
+            containerId = parallelMatch[1]
+
+            const parallelBlock = normalSpans.find(
+              (s) => s.blockId === containerId && s.type === 'parallel'
+            )
+            containerName = parallelBlock?.name || `Parallel ${containerId}`
+          }
+        } else {
+          containerType = 'loop'
+
+          const loopBlock = normalSpans.find((s) => s.type === 'loop')
+          if (loopBlock) {
+            containerId = loopBlock.blockId || 'loop-1'
+            containerName = loopBlock.name || `Loop ${loopBlock.blockId || '1'}`
+          } else {
+            containerId = 'loop-1'
+            containerName = 'Loop 1'
+          }
+        }
+
+        const groupKey = `${containerType}_${containerId}`
+
+        if (!containerGroups.has(groupKey)) {
+          containerGroups.set(groupKey, {
+            type: containerType,
+            containerId,
+            containerName,
+            spans: [],
           })
         }
-      } else {
-        // Regular span, recursively process it for potential deeper nesting
-        nestedChildren.push(ensureNestedWorkflowsProcessed(childSpan))
+
+        containerGroups.get(groupKey)!.spans.push(span)
       }
     })
 
-    // Set the processed children on this workflow block
-    processedSpan.children = nestedChildren
-  } else if (span.children && Array.isArray(span.children)) {
-    // Recursively process regular children too
-    processedSpan.children = span.children.map((child) => ensureNestedWorkflowsProcessed(child))
+    containerGroups.forEach((group, groupKey) => {
+      const { type, containerId, containerName, spans } = group
+
+      const iterationGroups = new Map<number, TraceSpan[]>()
+
+      spans.forEach((span) => {
+        const iterationMatch = span.name.match(/^(.+) \(iteration (\d+)\)$/)
+        if (iterationMatch) {
+          const iterationIndex = Number.parseInt(iterationMatch[2])
+
+          if (!iterationGroups.has(iterationIndex)) {
+            iterationGroups.set(iterationIndex, [])
+          }
+          iterationGroups.get(iterationIndex)!.push(span)
+        }
+      })
+
+      if (type === 'parallel') {
+        const allIterationSpans = spans
+
+        const startTimes = allIterationSpans.map((span) => new Date(span.startTime).getTime())
+        const endTimes = allIterationSpans.map((span) => new Date(span.endTime).getTime())
+        const earliestStart = Math.min(...startTimes)
+        const latestEnd = Math.max(...endTimes)
+        const totalDuration = latestEnd - earliestStart
+
+        const iterationChildren: TraceSpan[] = []
+
+        const sortedIterations = Array.from(iterationGroups.entries()).sort(([a], [b]) => a - b)
+
+        sortedIterations.forEach(([iterationIndex, spans]) => {
+          const iterStartTimes = spans.map((span) => new Date(span.startTime).getTime())
+          const iterEndTimes = spans.map((span) => new Date(span.endTime).getTime())
+          const iterEarliestStart = Math.min(...iterStartTimes)
+          const iterLatestEnd = Math.max(...iterEndTimes)
+          const iterDuration = iterLatestEnd - iterEarliestStart
+
+          const hasErrors = spans.some((span) => span.status === 'error')
+
+          const iterationSpan: TraceSpan = {
+            id: `${containerId}-iteration-${iterationIndex}`,
+            name: `Iteration ${iterationIndex}`,
+            type: 'parallel-iteration',
+            duration: iterDuration,
+            startTime: new Date(iterEarliestStart).toISOString(),
+            endTime: new Date(iterLatestEnd).toISOString(),
+            status: hasErrors ? 'error' : 'success',
+            children: spans.map((span) => ({
+              ...span,
+              name: span.name.replace(/ \(iteration \d+\)$/, ''),
+            })),
+          }
+
+          iterationChildren.push(iterationSpan)
+        })
+
+        const hasErrors = allIterationSpans.some((span) => span.status === 'error')
+        const parallelContainer: TraceSpan = {
+          id: `parallel-execution-${containerId}`,
+          name: containerName,
+          type: 'parallel',
+          duration: totalDuration,
+          startTime: new Date(earliestStart).toISOString(),
+          endTime: new Date(latestEnd).toISOString(),
+          status: hasErrors ? 'error' : 'success',
+          children: iterationChildren,
+        }
+
+        result.push(parallelContainer)
+      } else {
+        const allIterationSpans = spans
+
+        const startTimes = allIterationSpans.map((span) => new Date(span.startTime).getTime())
+        const endTimes = allIterationSpans.map((span) => new Date(span.endTime).getTime())
+        const earliestStart = Math.min(...startTimes)
+        const latestEnd = Math.max(...endTimes)
+        const totalDuration = latestEnd - earliestStart
+
+        const iterationChildren: TraceSpan[] = []
+
+        const sortedIterations = Array.from(iterationGroups.entries()).sort(([a], [b]) => a - b)
+
+        sortedIterations.forEach(([iterationIndex, spans]) => {
+          const iterStartTimes = spans.map((span) => new Date(span.startTime).getTime())
+          const iterEndTimes = spans.map((span) => new Date(span.endTime).getTime())
+          const iterEarliestStart = Math.min(...iterStartTimes)
+          const iterLatestEnd = Math.max(...iterEndTimes)
+          const iterDuration = iterLatestEnd - iterEarliestStart
+
+          const hasErrors = spans.some((span) => span.status === 'error')
+
+          const iterationSpan: TraceSpan = {
+            id: `${containerId}-iteration-${iterationIndex}`,
+            name: `Iteration ${iterationIndex}`,
+            type: 'loop-iteration',
+            duration: iterDuration,
+            startTime: new Date(iterEarliestStart).toISOString(),
+            endTime: new Date(iterLatestEnd).toISOString(),
+            status: hasErrors ? 'error' : 'success',
+            children: spans.map((span) => ({
+              ...span,
+              name: span.name.replace(/ \(iteration \d+\)$/, ''),
+            })),
+          }
+
+          iterationChildren.push(iterationSpan)
+        })
+
+        const hasErrors = allIterationSpans.some((span) => span.status === 'error')
+        const loopContainer: TraceSpan = {
+          id: `loop-execution-${containerId}`,
+          name: containerName,
+          type: 'loop',
+          duration: totalDuration,
+          startTime: new Date(earliestStart).toISOString(),
+          endTime: new Date(latestEnd).toISOString(),
+          status: hasErrors ? 'error' : 'success',
+          children: iterationChildren,
+        }
+
+        result.push(loopContainer)
+      }
+    })
   }
+
+  result.push(...nonIterationContainerSpans)
+
+  result.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+
+  return result
+}
+
+function ensureNestedWorkflowsProcessed(span: TraceSpan): TraceSpan {
+  const processedSpan: TraceSpan = { ...span }
+
+  if (processedSpan.output && typeof processedSpan.output === 'object') {
+    processedSpan.output = { ...processedSpan.output }
+  }
+
+  const normalizedChildren = Array.isArray(span.children)
+    ? span.children.map((child) => ensureNestedWorkflowsProcessed(child))
+    : []
+
+  const outputChildSpans = (() => {
+    if (!processedSpan.output || typeof processedSpan.output !== 'object') {
+      return [] as TraceSpan[]
+    }
+
+    const maybeChildSpans = (processedSpan.output as { childTraceSpans?: TraceSpan[] })
+      .childTraceSpans
+    if (!Array.isArray(maybeChildSpans) || maybeChildSpans.length === 0) {
+      return [] as TraceSpan[]
+    }
+
+    return flattenWorkflowChildren(maybeChildSpans)
+  })()
+
+  const mergedChildren = mergeTraceSpanChildren(normalizedChildren, outputChildSpans)
+
+  if (processedSpan.output && 'childTraceSpans' in processedSpan.output) {
+    const { childTraceSpans, ...cleanOutput } = processedSpan.output as {
+      childTraceSpans?: TraceSpan[]
+    } & Record<string, unknown>
+    processedSpan.output = cleanOutput
+  }
+
+  processedSpan.children = mergedChildren.length > 0 ? mergedChildren : undefined
 
   return processedSpan
 }

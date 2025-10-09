@@ -3,20 +3,20 @@ import { createLogger } from '@/lib/logs/console/logger'
 const logger = createLogger('AutoLayoutUtils')
 
 /**
- * Default auto layout options
+ * Default auto layout options (now using native compact spacing)
  */
 export const DEFAULT_AUTO_LAYOUT_OPTIONS: AutoLayoutOptions = {
   strategy: 'smart',
   direction: 'auto',
   spacing: {
-    horizontal: 250,
+    horizontal: 550,
     vertical: 200,
-    layer: 350,
+    layer: 550,
   },
   alignment: 'center',
   padding: {
-    x: 125,
-    y: 125,
+    x: 150,
+    y: 150,
   },
 }
 
@@ -78,13 +78,19 @@ export async function applyAutoLayoutToWorkflow(
       },
     }
 
-    // Call the autolayout API route which has access to the server-side API key
+    // Call the autolayout API route, sending blocks with live measurements
     const response = await fetch(`/api/workflows/${workflowId}/autolayout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(layoutOptions),
+      body: JSON.stringify({
+        ...layoutOptions,
+        blocks,
+        edges,
+        loops,
+        parallels,
+      }),
     })
 
     if (!response.ok) {
@@ -198,14 +204,29 @@ export async function applyAutoLayoutAndUpdateStore(
       useWorkflowStore.getState().updateLastSaved()
 
       // Clean up the workflow state for API validation
+      // Destructure out UI-only fields that shouldn't be persisted
+      const { deploymentStatuses, needsRedeployment, dragStartPosition, ...stateToSave } =
+        newWorkflowState
+
       const cleanedWorkflowState = {
-        ...newWorkflowState,
+        ...stateToSave,
         // Convert null dates to undefined (since they're optional)
-        deployedAt: newWorkflowState.deployedAt ? new Date(newWorkflowState.deployedAt) : undefined,
+        deployedAt: stateToSave.deployedAt ? new Date(stateToSave.deployedAt) : undefined,
         // Ensure other optional fields are properly handled
-        loops: newWorkflowState.loops || {},
-        parallels: newWorkflowState.parallels || {},
-        deploymentStatuses: newWorkflowState.deploymentStatuses || {},
+        loops: stateToSave.loops || {},
+        parallels: stateToSave.parallels || {},
+        // Sanitize edges: remove null/empty handle fields to satisfy schema (optional strings)
+        edges: (stateToSave.edges || []).map((edge: any) => {
+          const { sourceHandle, targetHandle, ...rest } = edge || {}
+          const sanitized: any = { ...rest }
+          if (typeof sourceHandle === 'string' && sourceHandle.length > 0) {
+            sanitized.sourceHandle = sourceHandle
+          }
+          if (typeof targetHandle === 'string' && targetHandle.length > 0) {
+            sanitized.targetHandle = targetHandle
+          }
+          return sanitized
+        }),
       }
 
       // Save the updated workflow state to the database

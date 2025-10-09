@@ -68,8 +68,20 @@ export type CopilotMode = 'ask' | 'agent'
 
 export interface CopilotState {
   mode: CopilotMode
-  agentDepth: 0 | 1 | 2 | 3
+  selectedModel:
+    | 'gpt-5-fast'
+    | 'gpt-5'
+    | 'gpt-5-medium'
+    | 'gpt-5-high'
+    | 'gpt-4o'
+    | 'gpt-4.1'
+    | 'o3'
+    | 'claude-4-sonnet'
+    | 'claude-4.5-sonnet'
+    | 'claude-4.1-opus'
   agentPrefetch: boolean
+  enabledModels: string[] | null // Null means not loaded yet, array of model IDs when loaded
+  isCollapsed: boolean
 
   currentChat: CopilotChat | null
   chats: CopilotChat[]
@@ -112,13 +124,13 @@ export interface CopilotState {
   currentUserMessageId?: string | null
 
   // Per-message metadata captured at send-time for reliable stats
-  messageMetaById?: Record<string, { depth: 0 | 1 | 2 | 3; maxEnabled: boolean }>
 }
 
 export interface CopilotActions {
   setMode: (mode: CopilotMode) => void
-  setAgentDepth: (depth: 0 | 1 | 2 | 3) => void
+  setSelectedModel: (model: CopilotStore['selectedModel']) => void
   setAgentPrefetch: (prefetch: boolean) => void
+  setEnabledModels: (models: string[] | null) => void
 
   setWorkflowId: (workflowId: string | null) => Promise<void>
   validateCurrentChat: () => boolean

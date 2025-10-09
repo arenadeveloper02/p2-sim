@@ -1,16 +1,14 @@
-import { Analytics } from '@vercel/analytics/next'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import type { Metadata, Viewport } from 'next'
 import { PublicEnvScript } from 'next-runtime-env'
 import { BrandedLayout } from '@/components/branded-layout'
 import { generateThemeCSS } from '@/lib/branding/inject-theme'
 import { generateBrandedMetadata, generateStructuredData } from '@/lib/branding/metadata'
-import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { PostHogProvider } from '@/lib/posthog/provider'
 import '@/app/globals.css'
 
 import { SessionProvider } from '@/lib/session/session-context'
-import { ConditionalThemeProvider } from '@/app/conditional-theme-provider'
+import { ThemeProvider } from '@/app/theme-provider'
 import { ZoomPrevention } from '@/app/zoom-prevention'
 
 const logger = createLogger('RootLayout')
@@ -56,7 +54,6 @@ export const viewport: Viewport = {
   ],
 }
 
-// Generate dynamic metadata based on brand configuration
 export const metadata: Metadata = generateBrandedMetadata()
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -92,20 +89,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PublicEnvScript />
       </head>
       <body suppressHydrationWarning>
-        <ConditionalThemeProvider>
-          <SessionProvider>
-            <BrandedLayout>
-              <ZoomPrevention />
-              {children}
-              {isHosted && (
-                <>
-                  <SpeedInsights />
-                  <Analytics />
-                </>
-              )}
-            </BrandedLayout>
-          </SessionProvider>
-        </ConditionalThemeProvider>
+        <PostHogProvider>
+          <ThemeProvider>
+            <SessionProvider>
+              <BrandedLayout>
+                <ZoomPrevention />
+                {children}
+              </BrandedLayout>
+            </SessionProvider>
+          </ThemeProvider>
+        </PostHogProvider>
       </body>
     </html>
   )

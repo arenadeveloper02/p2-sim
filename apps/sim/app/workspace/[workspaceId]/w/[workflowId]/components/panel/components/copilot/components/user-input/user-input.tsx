@@ -3,6 +3,7 @@
 import {
   forwardRef,
   type KeyboardEvent,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -41,7 +42,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Switch,
   Textarea,
   Tooltip,
   TooltipContent,
@@ -49,9 +49,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
+import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
-import { CopilotSlider } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/components/copilot-slider'
 import { useCopilotStore } from '@/stores/copilot/store'
 import type { ChatContext } from '@/stores/copilot/types'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -93,6 +93,7 @@ interface UserInputProps {
   onModeChange?: (mode: 'ask' | 'agent') => void
   value?: string // Controlled value from outside
   onChange?: (value: string) => void // Callback when value changes
+  panelWidth?: number // Panel width to adjust truncation
 }
 
 interface UserInputRef {
@@ -113,6 +114,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
       onModeChange,
       value: controlledValue,
       onChange: onControlledChange,
+      panelWidth = 308,
     },
     ref
   ) => {
@@ -122,6 +124,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
     const [isDragging, setIsDragging] = useState(false)
     const [dragCounter, setDragCounter] = useState(0)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const overlayRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [showMentionMenu, setShowMentionMenu] = useState(false)
     const mentionMenuRef = useRef<HTMLDivElement>(null)
@@ -179,7 +182,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
     const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
     const { data: session } = useSession()
-    const { currentChat, workflowId } = useCopilotStore()
+    const { currentChat, workflowId, enabledModels, setEnabledModels } = useCopilotStore()
     const params = useParams()
     const workspaceId = params.workspaceId as string
     // Track per-chat preference for auto-adding workflow context
@@ -223,6 +226,30 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
         ensureWorkflowsLoaded()
       }
     }, [workflowId])
+
+    // Fetch enabled models when dropdown is opened for the first time
+    const fetchEnabledModelsOnce = useCallback(async () => {
+      if (!isHosted) return
+      if (enabledModels !== null) return // Already loaded
+
+      try {
+        const res = await fetch('/api/copilot/user-models')
+        if (!res.ok) {
+          logger.error('Failed to fetch enabled models')
+          return
+        }
+        const data = await res.json()
+        const modelsMap = data.enabledModels || {}
+
+        // Convert to array for store (API already merged with defaults)
+        const enabledArray = Object.entries(modelsMap)
+          .filter(([_, enabled]) => enabled)
+          .map(([modelId]) => modelId)
+        setEnabledModels(enabledArray)
+      } catch (error) {
+        logger.error('Error fetching enabled models', { error })
+      }
+    }, [enabledModels, setEnabledModels])
 
     // Track the last chat ID we've seen to detect chat changes
     const [lastChatId, setLastChatId] = useState<string | undefined>(undefined)
@@ -319,14 +346,36 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
     // Auto-resize textarea and toggle vertical scroll when exceeding max height
     useEffect(() => {
       const textarea = textareaRef.current
+      const overlay = overlayRef.current
       if (textarea) {
         const maxHeight = 120
         textarea.style.height = 'auto'
         const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
         textarea.style.height = `${nextHeight}px`
         textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+
+        // Also update overlay height to match
+        if (overlay) {
+          overlay.style.height = `${nextHeight}px`
+          overlay.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+        }
       }
     }, [message])
+
+    // Sync scroll position between textarea and overlay
+    useEffect(() => {
+      const textarea = textareaRef.current
+      const overlay = overlayRef.current
+
+      if (!textarea || !overlay) return
+
+      const handleScroll = () => {
+        overlay.scrollTop = textarea.scrollTop
+      }
+
+      textarea.addEventListener('scroll', handleScroll)
+      return () => textarea.removeEventListener('scroll', handleScroll)
+    }, [])
 
     // Close mention menu on outside click
     useEffect(() => {
@@ -1754,55 +1803,60 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
       return 'Agent'
     }
 
-    // Depth toggle state comes from global store; access via useCopilotStore
-    const { agentDepth, agentPrefetch, setAgentDepth, setAgentPrefetch } = useCopilotStore()
+    // Model selection state comes from global store; access via useCopilotStore
+    const { selectedModel, agentPrefetch, setSelectedModel, setAgentPrefetch } = useCopilotStore()
 
-    // Ensure MAX mode is off for Fast and Balanced depths
-    useEffect(() => {
-      if (agentDepth < 2 && !agentPrefetch) {
-        setAgentPrefetch(true)
-      }
-    }, [agentDepth, agentPrefetch, setAgentPrefetch])
+    // Model configurations with their display names
+    const allModelOptions = [
+      { value: 'gpt-5-fast', label: 'gpt-5-fast' },
+      { value: 'gpt-5', label: 'gpt-5' },
+      { value: 'gpt-5-medium', label: 'gpt-5-medium' },
+      { value: 'gpt-5-high', label: 'gpt-5-high' },
+      { value: 'gpt-4o', label: 'gpt-4o' },
+      { value: 'gpt-4.1', label: 'gpt-4.1' },
+      { value: 'o3', label: 'o3' },
+      { value: 'claude-4-sonnet', label: 'claude-4-sonnet' },
+      { value: 'claude-4.5-sonnet', label: 'claude-4.5-sonnet' },
+      { value: 'claude-4.1-opus', label: 'claude-4.1-opus' },
+    ] as const
 
-    const cycleDepth = () => {
-      // 8 modes: depths 0-3, each with prefetch off/on. Cycle depth, then toggle prefetch when wrapping.
-      const nextDepth = agentDepth === 3 ? 0 : ((agentDepth + 1) as 0 | 1 | 2 | 3)
-      if (nextDepth === 0 && agentDepth === 3) {
-        setAgentPrefetch(!agentPrefetch)
-      }
-      setAgentDepth(nextDepth)
-    }
+    // Filter models based on user preferences (only for hosted)
+    const modelOptions =
+      isHosted && enabledModels !== null
+        ? allModelOptions.filter((model) => enabledModels.includes(model.value))
+        : allModelOptions
 
     const getCollapsedModeLabel = () => {
-      const base = getDepthLabelFor(agentDepth)
-      return !agentPrefetch ? `${base} MAX` : base
+      const model = modelOptions.find((m) => m.value === selectedModel)
+      return model ? model.label : 'claude-4.5-sonnet'
     }
 
-    const getDepthLabelFor = (value: 0 | 1 | 2 | 3) => {
-      return value === 0 ? 'Fast' : value === 1 ? 'Balanced' : value === 2 ? 'Advanced' : 'Behemoth'
-    }
+    const getModelIcon = () => {
+      // Only Brain and BrainCircuit models show purple when agentPrefetch is false
+      const isBrainModel = [
+        'gpt-5',
+        'gpt-5-medium',
+        'claude-4-sonnet',
+        'claude-4.5-sonnet',
+      ].includes(selectedModel)
+      const isBrainCircuitModel = ['gpt-5-high', 'o3', 'claude-4.1-opus'].includes(selectedModel)
+      const colorClass =
+        (isBrainModel || isBrainCircuitModel) && !agentPrefetch
+          ? 'text-[var(--brand-primary-hover-hex)]'
+          : 'text-muted-foreground'
 
-    // Removed descriptive suffixes; concise labels only
-    const getDepthDescription = (value: 0 | 1 | 2 | 3) => {
-      if (value === 0)
-        return 'Fastest and cheapest. Good for small edits, simple workflows, and small tasks'
-      if (value === 1) return 'Balances speed and reasoning. Good fit for most tasks'
-      if (value === 2)
-        return 'More reasoning for larger workflows and complex edits, still balanced for speed'
-      return 'Maximum reasoning power. Best for complex workflow building and debugging'
+      // Match the dropdown icon logic exactly
+      if (isBrainCircuitModel) {
+        return <BrainCircuit className={`h-3 w-3 ${colorClass}`} />
+      }
+      if (isBrainModel) {
+        return <Brain className={`h-3 w-3 ${colorClass}`} />
+      }
+      if (['gpt-4o', 'gpt-4.1', 'gpt-5-fast'].includes(selectedModel)) {
+        return <Zap className={`h-3 w-3 ${colorClass}`} />
+      }
+      return <InfinityIcon className={`h-3 w-3 ${colorClass}`} />
     }
-
-    const getDepthIconFor = (value: 0 | 1 | 2 | 3) => {
-      const colorClass = !agentPrefetch
-        ? 'text-[var(--brand-primary-hover-hex)]'
-        : 'text-muted-foreground'
-      if (value === 0) return <Zap className={`h-3 w-3 ${colorClass}`} />
-      if (value === 1) return <InfinityIcon className={`h-3 w-3 ${colorClass}`} />
-      if (value === 2) return <Brain className={`h-3 w-3 ${colorClass}`} />
-      return <BrainCircuit className={`h-3 w-3 ${colorClass}`} />
-    }
-
-    const getDepthIcon = () => getDepthIconFor(agentDepth)
 
     const scrollActiveItemIntoView = (index: number) => {
       const container = menuListRef.current
@@ -2116,8 +2170,11 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           {/* Textarea Field with overlay */}
           <div className='relative'>
             {/* Highlight overlay */}
-            <div className='pointer-events-none absolute inset-0 z-[1] px-[2px] py-1'>
-              <pre className='whitespace-pre-wrap font-sans text-foreground text-sm leading-[1.25rem]'>
+            <div
+              ref={overlayRef}
+              className='pointer-events-none absolute inset-0 z-[1] max-h-[120px] overflow-y-auto overflow-x-hidden px-[2px] py-1 [&::-webkit-scrollbar]:hidden'
+            >
+              <pre className='whitespace-pre-wrap break-words font-sans text-foreground text-sm leading-[1.25rem]'>
                 {(() => {
                   const elements: React.ReactNode[] = []
                   const remaining = message
@@ -2163,8 +2220,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
               placeholder={isDragging ? 'Drop files here...' : effectivePlaceholder}
               disabled={disabled}
               rows={1}
-              className='relative z-[2] mb-2 min-h-[32px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-[2px] py-1 font-sans text-sm text-transparent leading-[1.25rem] caret-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
-              style={{ height: 'auto' }}
+              className='relative z-[2] mb-2 min-h-[32px] w-full resize-none overflow-y-auto overflow-x-hidden break-words border-0 bg-transparent px-[2px] py-1 font-sans text-sm text-transparent leading-[1.25rem] caret-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
+              style={{ height: 'auto', wordBreak: 'break-word' }}
             />
 
             {showMentionMenu && (
@@ -3051,13 +3108,13 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                     variant='ghost'
                     size='sm'
                     disabled={!onModeChange}
-                    className='flex h-6 items-center gap-1.5 rounded-full border px-2 py-1 font-medium text-xs'
+                    className='flex h-6 items-center gap-1.5 rounded-full border px-2 py-1 font-medium text-xs focus-visible:ring-0 focus-visible:ring-offset-0'
                   >
                     {getModeIcon()}
                     <span>{getModeText()}</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align='start' className='p-0'>
+                <DropdownMenuContent align='start' side='top' className='p-0'>
                   <TooltipProvider>
                     <div className='w-[160px] p-1'>
                       <Tooltip>
@@ -3117,105 +3174,183 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                   </TooltipProvider>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      className={cn(
-                        'flex h-6 items-center gap-1.5 rounded-full border px-2 py-1 font-medium text-xs',
-                        !agentPrefetch
-                          ? 'border-[var(--brand-primary-hover-hex)] text-[var(--brand-primary-hover-hex)] hover:bg-[color-mix(in_srgb,var(--brand-primary-hover-hex)_8%,transparent)] hover:text-[var(--brand-primary-hover-hex)]'
-                          : 'border-border text-foreground'
-                      )}
-                      title='Choose mode'
-                    >
-                      {getDepthIcon()}
-                      <span>{getCollapsedModeLabel()}</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align='start' className='p-0'>
-                    <TooltipProvider delayDuration={100} skipDelayDuration={0}>
-                      <div className='w-[260px] p-3'>
-                        <div className='mb-3 flex items-center justify-between'>
-                          <div className='flex items-center gap-1.5'>
-                            <span className='font-medium text-xs'>MAX mode</span>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type='button'
-                                  className='h-3.5 w-3.5 rounded text-muted-foreground transition-colors hover:text-foreground'
-                                  aria-label='MAX mode info'
-                                >
-                                  <Info className='h-3.5 w-3.5' />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent
-                                side='right'
-                                sideOffset={6}
-                                align='center'
-                                className='max-w-[220px] border bg-popover p-2 text-[11px] text-popover-foreground leading-snug shadow-md'
-                              >
-                                Significantly increases depth of reasoning
-                                <br />
-                                <span className='text-[10px] text-muted-foreground italic'>
-                                  Only available in Advanced and Behemoth modes
-                                </span>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                          <Switch
-                            checked={!agentPrefetch}
-                            disabled={agentDepth < 2}
-                            title={
-                              agentDepth < 2
-                                ? 'MAX mode is only available for Advanced or Expert'
-                                : undefined
-                            }
-                            onCheckedChange={(checked) => {
-                              if (agentDepth < 2) return
-                              setAgentPrefetch(!checked)
-                            }}
-                          />
-                        </div>
-                        <div className='my-2 flex justify-center'>
-                          <div className='h-px w-[100%] bg-border' />
-                        </div>
-                        <div className='mb-3'>
-                          <div className='mb-2 flex items-center justify-between'>
-                            <span className='font-medium text-xs'>Mode</span>
-                            <div className='flex items-center gap-1'>
-                              {getDepthIconFor(agentDepth)}
-                              <span className='text-muted-foreground text-xs'>
-                                {getDepthLabelFor(agentDepth)}
-                              </span>
+              {(() => {
+                const isBrainModel = [
+                  'gpt-5',
+                  'gpt-5-medium',
+                  'claude-4-sonnet',
+                  'claude-4.5-sonnet',
+                ].includes(selectedModel)
+                const isBrainCircuitModel = ['gpt-5-high', 'o3', 'claude-4.1-opus'].includes(
+                  selectedModel
+                )
+                const showPurple = (isBrainModel || isBrainCircuitModel) && !agentPrefetch
+
+                return (
+                  <DropdownMenu
+                    onOpenChange={(open) => {
+                      if (open) {
+                        fetchEnabledModelsOnce()
+                      }
+                    }}
+                  >
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className={cn(
+                          'flex h-6 items-center gap-1.5 rounded-full border px-2 py-1 font-medium text-xs focus-visible:ring-0 focus-visible:ring-offset-0',
+                          showPurple
+                            ? 'border-[var(--brand-primary-hover-hex)] text-[var(--brand-primary-hover-hex)] hover:bg-[color-mix(in_srgb,var(--brand-primary-hover-hex)_8%,transparent)] hover:text-[var(--brand-primary-hover-hex)]'
+                            : 'border-border text-foreground'
+                        )}
+                        title='Choose mode'
+                      >
+                        {getModelIcon()}
+                        <span className={cn(panelWidth < 360 ? 'max-w-[72px] truncate' : '')}>
+                          {getCollapsedModeLabel()}
+                          {agentPrefetch &&
+                            !['gpt-4o', 'gpt-4.1', 'gpt-5-fast'].includes(selectedModel) && (
+                              <span className='ml-1 font-semibold'>Lite</span>
+                            )}
+                        </span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align='start' side='top' className='max-h-[400px] p-0'>
+                      <TooltipProvider delayDuration={100} skipDelayDuration={0}>
+                        <div className='w-[220px]'>
+                          <div className='max-h-[280px] overflow-y-auto p-2'>
+                            <div>
+                              <div className='mb-1'>
+                                <span className='font-medium text-xs'>Model</span>
+                              </div>
+                              <div className='space-y-2'>
+                                {/* Helper function to get icon for a model */}
+                                {(() => {
+                                  const getModelIcon = (modelValue: string) => {
+                                    if (
+                                      ['gpt-5-high', 'o3', 'claude-4.1-opus'].includes(modelValue)
+                                    ) {
+                                      return (
+                                        <BrainCircuit className='h-3 w-3 text-muted-foreground' />
+                                      )
+                                    }
+                                    if (
+                                      [
+                                        'gpt-5',
+                                        'gpt-5-medium',
+                                        'claude-4-sonnet',
+                                        'claude-4.5-sonnet',
+                                      ].includes(modelValue)
+                                    ) {
+                                      return <Brain className='h-3 w-3 text-muted-foreground' />
+                                    }
+                                    if (['gpt-4o', 'gpt-4.1', 'gpt-5-fast'].includes(modelValue)) {
+                                      return <Zap className='h-3 w-3 text-muted-foreground' />
+                                    }
+                                    return <div className='h-3 w-3' />
+                                  }
+
+                                  const renderModelOption = (
+                                    option: (typeof modelOptions)[number]
+                                  ) => (
+                                    <DropdownMenuItem
+                                      key={option.value}
+                                      onSelect={() => {
+                                        setSelectedModel(option.value)
+                                        // Automatically turn off Lite mode for fast models (Zap icon)
+                                        if (
+                                          ['gpt-4o', 'gpt-4.1', 'gpt-5-fast'].includes(
+                                            option.value
+                                          ) &&
+                                          agentPrefetch
+                                        ) {
+                                          setAgentPrefetch(false)
+                                        }
+                                      }}
+                                      className={cn(
+                                        'flex h-7 items-center gap-1.5 px-2 py-1 text-left text-xs',
+                                        selectedModel === option.value ? 'bg-muted/50' : ''
+                                      )}
+                                    >
+                                      {getModelIcon(option.value)}
+                                      <span>{option.label}</span>
+                                    </DropdownMenuItem>
+                                  )
+
+                                  return (
+                                    <>
+                                      {/* OpenAI Models */}
+                                      <div>
+                                        <div className='px-2 py-1 font-medium text-[10px] text-muted-foreground uppercase'>
+                                          OpenAI
+                                        </div>
+                                        <div className='space-y-0.5'>
+                                          {modelOptions
+                                            .filter((option) =>
+                                              [
+                                                'gpt-5-fast',
+                                                'gpt-5',
+                                                'gpt-5-medium',
+                                                'gpt-5-high',
+                                                'gpt-4o',
+                                                'gpt-4.1',
+                                                'o3',
+                                              ].includes(option.value)
+                                            )
+                                            .map(renderModelOption)}
+                                        </div>
+                                      </div>
+
+                                      {/* Anthropic Models */}
+                                      <div>
+                                        <div className='px-2 py-1 font-medium text-[10px] text-muted-foreground uppercase'>
+                                          Anthropic
+                                        </div>
+                                        <div className='space-y-0.5'>
+                                          {modelOptions
+                                            .filter((option) =>
+                                              [
+                                                'claude-4-sonnet',
+                                                'claude-4.5-sonnet',
+                                                'claude-4.1-opus',
+                                              ].includes(option.value)
+                                            )
+                                            .map(renderModelOption)}
+                                        </div>
+                                      </div>
+
+                                      {/* More Models Button (only for hosted) */}
+                                      {isHosted && (
+                                        <div className='mt-1 border-t pt-1'>
+                                          <button
+                                            type='button'
+                                            onClick={() => {
+                                              // Dispatch event to open settings modal on copilot tab
+                                              window.dispatchEvent(
+                                                new CustomEvent('open-settings', {
+                                                  detail: { tab: 'copilot' },
+                                                })
+                                              )
+                                            }}
+                                            className='w-full rounded-sm px-2 py-1.5 text-left text-muted-foreground text-xs transition-colors hover:bg-muted/50'
+                                          >
+                                            More Models...
+                                          </button>
+                                        </div>
+                                      )}
+                                    </>
+                                  )
+                                })()}
+                              </div>
                             </div>
                           </div>
-                          <div className='relative'>
-                            <CopilotSlider
-                              min={0}
-                              max={3}
-                              step={1}
-                              value={[agentDepth]}
-                              onValueChange={(val) =>
-                                setAgentDepth((val?.[0] ?? 0) as 0 | 1 | 2 | 3)
-                              }
-                            />
-                            <div className='pointer-events-none absolute inset-0'>
-                              <div className='-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-[33.333%] h-2 w-[3px] bg-background' />
-                              <div className='-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-[66.667%] h-2 w-[3px] bg-background' />
-                            </div>
-                          </div>
                         </div>
-                        <div className='mt-3 text-[11px] text-muted-foreground'>
-                          {getDepthDescription(agentDepth)}
-                        </div>
-                      </div>
-                    </TooltipProvider>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              }
+                      </TooltipProvider>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )
+              })()}
               <Button
                 variant='ghost'
                 size='icon'

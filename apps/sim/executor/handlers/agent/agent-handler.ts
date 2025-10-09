@@ -1,6 +1,6 @@
-import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createMcpToolId } from '@/lib/mcp/utils'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
 import { BlockType } from '@/executor/consts'
@@ -261,8 +261,7 @@ export class AgentBlockHandler implements BlockHandler {
         }
       }
 
-      const appUrl = getEnv('NEXT_PUBLIC_APP_URL')
-      const url = new URL(`${appUrl}/api/mcp/tools/discover`)
+      const url = new URL('/api/mcp/tools/discover', getBaseUrl())
       url.searchParams.set('serverId', serverId)
       if (context.workspaceId) {
         url.searchParams.set('workspaceId', context.workspaceId)
@@ -316,7 +315,7 @@ export class AgentBlockHandler implements BlockHandler {
             }
           }
 
-          const execResponse = await fetch(`${appUrl}/api/mcp/tools/execute`, {
+          const execResponse = await fetch(`${getBaseUrl()}/api/mcp/tools/execute`, {
             method: 'POST',
             headers,
             body: JSON.stringify({
@@ -372,7 +371,7 @@ export class AgentBlockHandler implements BlockHandler {
 
   private getStreamingConfig(block: SerializedBlock, context: ExecutionContext): StreamingConfig {
     const isBlockSelectedForOutput =
-      context.selectedOutputIds?.some((outputId) => {
+      context.selectedOutputs?.some((outputId) => {
         if (outputId === block.id) return true
         const firstUnderscoreIndex = outputId.indexOf('_')
         return (
@@ -382,10 +381,6 @@ export class AgentBlockHandler implements BlockHandler {
 
     const hasOutgoingConnections = context.edges?.some((edge) => edge.source === block.id) ?? false
     const shouldUseStreaming = Boolean(context.stream) && isBlockSelectedForOutput
-
-    if (shouldUseStreaming) {
-      logger.info(`Block ${block.id} will use streaming response`)
-    }
 
     return { shouldUseStreaming, isBlockSelectedForOutput, hasOutgoingConnections }
   }
@@ -640,7 +635,7 @@ export class AgentBlockHandler implements BlockHandler {
   ) {
     logger.info('Using HTTP provider request (browser environment)')
 
-    const url = new URL('/api/providers', getEnv('NEXT_PUBLIC_APP_URL') || '')
+    const url = new URL('/api/providers', getBaseUrl())
     const response = await fetch(url.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

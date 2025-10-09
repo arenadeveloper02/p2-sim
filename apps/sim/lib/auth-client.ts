@@ -1,4 +1,5 @@
 import { useContext } from 'react'
+import { ssoClient } from '@better-auth/sso/client'
 import { stripeClient } from '@better-auth/stripe/client'
 import {
   customSessionClient,
@@ -9,23 +10,11 @@ import {
 import { createAuthClient } from 'better-auth/react'
 import type { auth } from '@/lib/auth'
 import { env, getEnv } from '@/lib/env'
-import { isProd } from '@/lib/environment'
+import { isBillingEnabled } from '@/lib/environment'
 import { SessionContext, type SessionHookResult } from '@/lib/session/session-context'
 
 export function getBaseURL() {
-  let baseURL
-
-  if (env.VERCEL_ENV === 'preview') {
-    baseURL = `https://${getEnv('NEXT_PUBLIC_VERCEL_URL')}`
-  } else if (env.VERCEL_ENV === 'development') {
-    baseURL = `https://${getEnv('NEXT_PUBLIC_VERCEL_URL')}`
-  } else if (env.VERCEL_ENV === 'production') {
-    baseURL = env.BETTER_AUTH_URL || getEnv('NEXT_PUBLIC_APP_URL')
-  } else if (env.NODE_ENV === 'development') {
-    baseURL = getEnv('NEXT_PUBLIC_APP_URL') || env.BETTER_AUTH_URL || 'http://localhost:3000'
-  }
-
-  return baseURL
+  return getEnv('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000'
 }
 
 export const client = createAuthClient({
@@ -34,8 +23,7 @@ export const client = createAuthClient({
     emailOTPClient(),
     genericOAuthClient(),
     customSessionClient<typeof auth>(),
-    // Only include Stripe client in production
-    ...(isProd
+    ...(isBillingEnabled
       ? [
           stripeClient({
             subscription: true, // Enable subscription management
@@ -43,6 +31,7 @@ export const client = createAuthClient({
         ]
       : []),
     organizationClient(),
+    ...(env.NEXT_PUBLIC_SSO_ENABLED ? [ssoClient()] : []),
   ],
 })
 

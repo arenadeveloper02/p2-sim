@@ -11,14 +11,14 @@ import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useFolderStore } from '@/stores/folders/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
+import { parseWorkflowJson } from '@/stores/workflows/json/importer'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { parseWorkflowYaml } from '@/stores/workflows/yaml/importer'
 
 const logger = createLogger('CreateMenu')
 
 const TIMERS = {
   LONG_PRESS_DELAY: 500,
-  CLOSE_DELAY: 300,
+  CLOSE_DELAY: 600,
 } as const
 
 interface CreateMenuProps {
@@ -117,18 +117,18 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const handleDirectImport = useCallback(
     async (content: string, filename?: string) => {
       if (!content.trim()) {
-        logger.error('YAML content is required')
+        logger.error('JSON content is required')
         return
       }
 
       setIsImporting(true)
 
       try {
-        // First validate the YAML without importing
-        const { data: yamlWorkflow, errors: parseErrors } = parseWorkflowYaml(content)
+        // First validate the JSON without importing
+        const { data: workflowData, errors: parseErrors } = parseWorkflowJson(content)
 
-        if (!yamlWorkflow || parseErrors.length > 0) {
-          logger.error('Failed to parse YAML:', { errors: parseErrors })
+        if (!workflowData || parseErrors.length > 0) {
+          logger.error('Failed to parse JSON:', { errors: parseErrors })
           return
         }
 
@@ -136,7 +136,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
         const getWorkflowName = () => {
           if (filename) {
             // Remove file extension and use the filename
-            const nameWithoutExtension = filename.replace(/\.(ya?ml)$/i, '')
+            const nameWithoutExtension = filename.replace(/\.json$/i, '')
             return (
               nameWithoutExtension.trim() || `Imported Workflow - ${new Date().toLocaleString()}`
             )
@@ -151,45 +151,36 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
         // Create a new workflow
         const newWorkflowId = await createWorkflow({
           name: getWorkflowName(),
-          description: 'Workflow imported from YAML',
+          description: 'Workflow imported from JSON',
           workspaceId,
         })
 
-        // Use the new consolidated YAML endpoint to import the workflow
-        const response = await fetch(`/api/workflows/${newWorkflowId}/yaml`, {
+        // Save workflow state to database first
+        const response = await fetch(`/api/workflows/${newWorkflowId}/state`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            yamlContent: content,
-            description: 'Workflow imported from YAML',
-            source: 'import',
-            applyAutoLayout: true,
-            createCheckpoint: false,
-          }),
+          body: JSON.stringify(workflowData),
         })
 
         if (!response.ok) {
-          const errorData = await response.json()
-          logger.error('Import failed:', {
-            message: errorData.message || `HTTP ${response.status}: ${response.statusText}`,
-          })
-          return
+          logger.error('Failed to persist imported workflow to database')
+          throw new Error('Failed to save workflow')
         }
 
-        const result = await response.json()
+        logger.info('Imported workflow persisted to database')
 
-        // Navigate to the new workflow AFTER import is complete
-        if (result.success) {
-          logger.info('Navigating to imported workflow')
-          router.push(`/workspace/${workspaceId}/w/${newWorkflowId}`)
-          logger.info('YAML import completed successfully')
-        } else {
-          logger.error('Import failed:', { errors: result.errors || [] })
-        }
+        // Pre-load the workflow state before navigating
+        const { setActiveWorkflow } = useWorkflowRegistry.getState()
+        await setActiveWorkflow(newWorkflowId)
+
+        // Navigate to the new workflow (replace to avoid history entry)
+        router.replace(`/workspace/${workspaceId}/w/${newWorkflowId}`)
+
+        logger.info('Workflow imported successfully from JSON')
       } catch (error) {
-        logger.error('Failed to import YAML workflow:', { error })
+        logger.error('Failed to import workflow:', { error })
       } finally {
         setIsImporting(false)
       }
@@ -230,9 +221,9 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
       e.preventDefault()
       e.stopPropagation()
       clearAllTimers()
-      handleCreateWorkflow()
+      setIsOpen(true)
     },
-    [clearAllTimers, handleCreateWorkflow]
+    [clearAllTimers]
   )
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -371,7 +362,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
       <input
         ref={fileInputRef}
         type='file'
-        accept='.yaml,.yml'
+        accept='.json'
         style={{ display: 'none' }}
         onChange={handleFileChange}
       />

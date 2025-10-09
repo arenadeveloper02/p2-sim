@@ -86,7 +86,6 @@ export function DiffControls() {
         lastSaved: rawState.lastSaved || Date.now(),
         isDeployed: rawState.isDeployed || false,
         deploymentStatuses: rawState.deploymentStatuses || {},
-        hasActiveWebhook: rawState.hasActiveWebhook || false,
         // Only include deployedAt if it's a valid date, never include null/undefined
         ...(rawState.deployedAt && rawState.deployedAt instanceof Date
           ? { deployedAt: rawState.deployedAt }
@@ -213,7 +212,7 @@ export function DiffControls() {
             const b = blocks[bi]
             if (b?.type === 'tool_call') {
               const tn = b.toolCall?.name
-              if (tn === 'build_workflow' || tn === 'edit_workflow') {
+              if (tn === 'edit_workflow') {
                 id = b.toolCall?.id
                 break outer
               }
@@ -221,9 +220,7 @@ export function DiffControls() {
           }
         }
         if (!id) {
-          const candidates = Object.values(toolCallsById).filter(
-            (t) => t.name === 'build_workflow' || t.name === 'edit_workflow'
-          )
+          const candidates = Object.values(toolCallsById).filter((t) => t.name === 'edit_workflow')
           id = candidates.length ? candidates[candidates.length - 1].id : undefined
         }
         if (id) updatePreviewToolCallState('accepted', id)
@@ -264,7 +261,7 @@ export function DiffControls() {
           const b = blocks[bi]
           if (b?.type === 'tool_call') {
             const tn = b.toolCall?.name
-            if (tn === 'build_workflow' || tn === 'edit_workflow') {
+            if (tn === 'edit_workflow') {
               id = b.toolCall?.id
               break outer
             }
@@ -272,9 +269,7 @@ export function DiffControls() {
         }
       }
       if (!id) {
-        const candidates = Object.values(toolCallsById).filter(
-          (t) => t.name === 'build_workflow' || t.name === 'edit_workflow'
-        )
+        const candidates = Object.values(toolCallsById).filter((t) => t.name === 'edit_workflow')
         id = candidates.length ? candidates[candidates.length - 1].id : undefined
       }
       if (id) updatePreviewToolCallState('rejected', id)

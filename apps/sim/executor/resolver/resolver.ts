@@ -1,10 +1,13 @@
 import { BlockPathCalculator } from '@/lib/block-path-calculator'
 import { createLogger } from '@/lib/logs/console/logger'
 import { VariableManager } from '@/lib/variables/variable-manager'
+import { extractReferencePrefixes, SYSTEM_REFERENCE_PREFIXES } from '@/lib/workflows/references'
+import { TRIGGER_REFERENCE_ALIAS_MAP } from '@/lib/workflows/triggers'
 import { getBlock } from '@/blocks/index'
 import type { LoopManager } from '@/executor/loops/loops'
 import type { ExecutionContext } from '@/executor/types'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
+import { normalizeBlockName } from '@/stores/workflows/utils'
 
 const logger = createLogger('InputResolver')
 
@@ -460,75 +463,55 @@ export class InputResolver {
       return value
     }
 
-    const blockMatches = value.match(/<([^>]+)>/g)
-    if (!blockMatches) return value
+    const blockMatches = extractReferencePrefixes(value)
+    if (blockMatches.length === 0) return value
 
-    // Filter out patterns that are clearly not variable references (e.g., comparison operators)
-    const validBlockMatches = blockMatches.filter((match) => this.isValidVariableReference(match))
-
-    // If no valid matches found after filtering, return original value
-    if (validBlockMatches.length === 0) {
-      return value
-    }
-
-    // If we're in an API block body, check each valid match to see if it looks like XML rather than a reference
-    if (
-      currentBlock.metadata?.id === 'api' &&
-      validBlockMatches.some((match) => {
-        const innerContent = match.slice(1, -1)
-        // Patterns that suggest this is XML, not a block reference:
-        return (
-          innerContent.includes(':') || // namespaces like soap:Envelope
-          innerContent.includes('=') || // attributes like xmlns="http://..."
-          innerContent.includes(' ') || // any space indicates attributes
-          innerContent.includes('/') || // self-closing tags
-          !innerContent.includes('.')
-        ) // block refs always have dots
-      })
-    ) {
-      return value // Likely XML content, return unchanged
-    }
+    const accessiblePrefixes = this.getAccessiblePrefixes(currentBlock)
 
     let resolvedValue = value
 
-    // Check if we're in a template literal for function blocks
-    const isInTemplateLiteral =
-      currentBlock.metadata?.id === 'function' &&
-      value.includes('${') &&
-      value.includes('}') &&
-      value.includes('`')
-
-    for (const match of validBlockMatches) {
-      // Skip variables - they've already been processed
-      if (match.startsWith('<variable.')) {
+    for (const match of blockMatches) {
+      const { raw, prefix } = match
+      if (!accessiblePrefixes.has(prefix)) {
         continue
       }
 
-      const path = match.slice(1, -1)
-      const [blockRef, ...pathParts] = path.split('.')
+      if (raw.startsWith('<variable.')) {
+        continue
+      }
+
+      const path = raw.slice(1, -1)
+      const [blockRefToken, ...pathParts] = path.split('.')
+      const blockRef = blockRefToken.trim()
 
       // Skip XML-like tags (but allow block names with spaces)
       if (blockRef.includes(':')) {
         continue
       }
 
-      // System references (start, loop, parallel, variable) are handled as special cases
-      const isSystemReference = ['start', 'loop', 'parallel', 'variable'].includes(
-        blockRef.toLowerCase()
-      )
+      // Check if we're in a template literal context
+      const isInTemplateLiteral =
+        currentBlock.metadata?.id === 'function' &&
+        value.includes('${') &&
+        value.includes('}') &&
+        value.includes('`')
 
-      // System references and regular block references are both processed
+      // System references (start, loop, parallel, variable) and regular block references are both processed
       // Accessibility validation happens later in validateBlockReference
 
-      // Special case for "start" references
-      if (blockRef.toLowerCase() === 'start') {
-        // Find the starter block
-        const starterBlock = this.workflow.blocks.find((block) => block.metadata?.id === 'starter')
-        if (starterBlock) {
-          const blockState = context.blockStates.get(starterBlock.id)
+      // Special case for trigger block references (start, api, chat, manual)
+      const blockRefLower = blockRef.toLowerCase()
+      const triggerType =
+        TRIGGER_REFERENCE_ALIAS_MAP[blockRefLower as keyof typeof TRIGGER_REFERENCE_ALIAS_MAP]
+      if (triggerType) {
+        const triggerBlock = this.workflow.blocks.find(
+          (block) => block.metadata?.id === triggerType
+        )
+        if (triggerBlock) {
+          const blockState = context.blockStates.get(triggerBlock.id)
           if (blockState) {
-            // For starter block, start directly with the flattened output
-            // This enables direct access to <start.input> and <start.conversationId>
+            // For trigger blocks, start directly with the flattened output
+            // This enables direct access to <start.input>, <api.fieldName>, <chat.input> etc
             let replacementValue: any = blockState.output
 
             for (const part of pathParts) {
@@ -537,7 +520,7 @@ export class InputResolver {
                   `[resolveBlockReferences] Invalid path "${part}" - replacementValue is not an object:`,
                   replacementValue
                 )
-                throw new Error(`Invalid path "${part}" in "${path}" for starter block.`)
+                throw new Error(`Invalid path "${part}" in "${path}" for trigger block.`)
               }
 
               // Handle array indexing syntax like "files[0]" or "items[1]"
@@ -550,14 +533,14 @@ export class InputResolver {
                 const arrayValue = replacementValue[arrayName]
                 if (!Array.isArray(arrayValue)) {
                   throw new Error(
-                    `Property "${arrayName}" is not an array in path "${path}" for starter block.`
+                    `Property "${arrayName}" is not an array in path "${path}" for trigger block.`
                   )
                 }
 
                 // Then access the array element
                 if (index < 0 || index >= arrayValue.length) {
                   throw new Error(
-                    `Array index ${index} is out of bounds for "${arrayName}" (length: ${arrayValue.length}) in path "${path}" for starter block.`
+                    `Array index ${index} is out of bounds for "${arrayName}" (length: ${arrayValue.length}) in path "${path}" for trigger block.`
                   )
                 }
 
@@ -577,17 +560,22 @@ export class InputResolver {
 
               if (replacementValue === undefined) {
                 logger.warn(
-                  `[resolveBlockReferences] No value found at path "${part}" in starter block.`
+                  `[resolveBlockReferences] No value found at path "${part}" in trigger block.`
                 )
-                throw new Error(`No value found at path "${path}" in starter block.`)
+                throw new Error(`No value found at path "${path}" in trigger block.`)
               }
             }
 
             // Format the value based on block type and path
             let formattedValue: string
 
-            // Special handling for all blocks referencing starter input
-            if (blockRef.toLowerCase() === 'start' && pathParts.join('.').includes('input')) {
+            // Special handling for all blocks referencing trigger input
+            // For starter and chat triggers, check for 'input' field. For API trigger, any field access counts
+            const isTriggerInputRef =
+              (blockRefLower === 'start' && pathParts.join('.').includes('input')) ||
+              (blockRefLower === 'chat' && pathParts.join('.').includes('input')) ||
+              (blockRefLower === 'api' && pathParts.length > 0)
+            if (isTriggerInputRef) {
               const blockType = currentBlock.metadata?.id
 
               // Format based on which block is consuming this value
@@ -647,7 +635,7 @@ export class InputResolver {
               }
             }
 
-            resolvedValue = resolvedValue.replace(match, formattedValue)
+            resolvedValue = resolvedValue.replace(raw, formattedValue)
             continue
           }
         }
@@ -668,7 +656,7 @@ export class InputResolver {
           )
 
           if (formattedValue !== null) {
-            resolvedValue = resolvedValue.replace(match, formattedValue)
+            resolvedValue = resolvedValue.replace(raw, formattedValue)
             continue
           }
         }
@@ -689,7 +677,7 @@ export class InputResolver {
           )
 
           if (formattedValue !== null) {
-            resolvedValue = resolvedValue.replace(match, formattedValue)
+            resolvedValue = resolvedValue.replace(raw, formattedValue)
             continue
           }
         }
@@ -713,25 +701,44 @@ export class InputResolver {
       const isInActivePath = context.activeExecutionPath.has(sourceBlock.id)
 
       if (!isInActivePath) {
-        resolvedValue = resolvedValue.replace(match, '')
+        resolvedValue = resolvedValue.replace(raw, '')
         continue
       }
 
-      const blockState = context.blockStates.get(sourceBlock.id)
+      // For parallel execution, check if we need to use the virtual block ID
+      let blockState = context.blockStates.get(sourceBlock.id)
+
+      // If we're in parallel execution and the source block is also in the same parallel,
+      // try to get the virtual block state for the same iteration
+      if (
+        context.currentVirtualBlockId &&
+        context.parallelBlockMapping?.has(context.currentVirtualBlockId)
+      ) {
+        const currentParallelInfo = context.parallelBlockMapping.get(context.currentVirtualBlockId)
+        if (currentParallelInfo) {
+          // Check if the source block is in the same parallel
+          const parallel = context.workflow?.parallels?.[currentParallelInfo.parallelId]
+          if (parallel?.nodes.includes(sourceBlock.id)) {
+            // Try to get the virtual block state for the same iteration
+            const virtualSourceBlockId = `${sourceBlock.id}_parallel_${currentParallelInfo.parallelId}_iteration_${currentParallelInfo.iterationIndex}`
+            blockState = context.blockStates.get(virtualSourceBlockId)
+          }
+        }
+      }
 
       if (!blockState) {
         // If the block is in a loop, return empty string
         const isInLoop = this.loopsByBlockId.has(sourceBlock.id)
 
         if (isInLoop) {
-          resolvedValue = resolvedValue.replace(match, '')
+          resolvedValue = resolvedValue.replace(raw, '')
           continue
         }
 
         // If the block hasn't been executed and isn't in the active path,
         // it means it's in an inactive branch - return empty string
         if (!context.activeExecutionPath.has(sourceBlock.id)) {
-          resolvedValue = resolvedValue.replace(match, '')
+          resolvedValue = resolvedValue.replace(raw, '')
           continue
         }
 
@@ -832,7 +839,7 @@ export class InputResolver {
             : String(replacementValue)
       }
 
-      resolvedValue = resolvedValue.replace(match, formattedValue)
+      resolvedValue = resolvedValue.replace(raw, formattedValue)
     }
 
     return resolvedValue
@@ -1333,6 +1340,18 @@ export class InputResolver {
     if (!sourceBlock) {
       const normalizedRef = this.normalizeBlockName(blockRef)
       sourceBlock = this.blockByNormalizedName.get(normalizedRef)
+
+      if (!sourceBlock) {
+        for (const candidate of this.workflow.blocks) {
+          const candidateName = candidate.metadata?.name
+          if (!candidateName) continue
+          const normalizedName = this.normalizeBlockName(candidateName)
+          if (normalizedName === normalizedRef) {
+            sourceBlock = candidate
+            break
+          }
+        }
+      }
     }
 
     if (!sourceBlock) {
@@ -2005,5 +2024,22 @@ export class InputResolver {
    */
   getContainingParallelId(blockId: string): string | undefined {
     return this.parallelsByBlockId.get(blockId)
+  }
+
+  private getAccessiblePrefixes(block: SerializedBlock): Set<string> {
+    const prefixes = new Set<string>()
+
+    const accessibleBlocks = this.getAccessibleBlocks(block.id)
+    accessibleBlocks.forEach((blockId) => {
+      prefixes.add(normalizeBlockName(blockId))
+      const sourceBlock = this.blockById.get(blockId)
+      if (sourceBlock?.metadata?.name) {
+        prefixes.add(normalizeBlockName(sourceBlock.metadata.name))
+      }
+    })
+
+    SYSTEM_REFERENCE_PREFIXES.forEach((prefix) => prefixes.add(prefix))
+
+    return prefixes
   }
 }

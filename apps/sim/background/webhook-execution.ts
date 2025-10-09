@@ -11,9 +11,13 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { decryptSecret } from '@/lib/utils'
 import { fetchAndProcessAirtablePayloads, formatWebhookInput } from '@/lib/webhooks/utils'
-import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import {
+  loadDeployedWorkflowState,
+  loadWorkflowFromNormalizedTables,
+} from '@/lib/workflows/db-helpers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
 import { Executor } from '@/executor'
+import type { ExecutionResult } from '@/executor/types'
 import { Serializer } from '@/serializer'
 import { mergeSubblockState } from '@/stores/workflows/server-utils'
 
@@ -28,6 +32,8 @@ export type WebhookExecutionPayload = {
   headers: Record<string, string>
   path: string
   blockId?: string
+  testMode?: boolean
+  executionTarget?: 'deployed' | 'live'
 }
 
 export async function executeWebhookJob(payload: WebhookExecutionPayload) {
@@ -82,9 +88,13 @@ async function executeWebhookJobInternal(
       )
     }
 
-    const workflowData = await loadWorkflowFromNormalizedTables(payload.workflowId)
+    // Load workflow state based on execution target
+    const workflowData =
+      payload.executionTarget === 'live'
+        ? await loadWorkflowFromNormalizedTables(payload.workflowId)
+        : await loadDeployedWorkflowState(payload.workflowId)
     if (!workflowData) {
-      throw new Error(`Workflow not found: ${payload.workflowId}`)
+      throw new Error(`Workflow ${payload.workflowId} has no live normalized state`)
     }
 
     const { blocks, edges, loops, parallels } = workflowData
@@ -114,6 +124,10 @@ async function executeWebhookJobInternal(
       userId: payload.userId,
       workspaceId: workspaceId || '',
       variables: decryptedEnvVars,
+      triggerData: {
+        isTest: payload.testMode === true,
+        executionTarget: payload.executionTarget || 'deployed',
+      },
     })
 
     // Merge subblock states (matching workflow-execution pattern)
@@ -195,6 +209,7 @@ async function executeWebhookJobInternal(
           contextExtensions: {
             executionId,
             workspaceId: workspaceId || '',
+            isDeployedContext: !payload.testMode,
           },
         })
 
@@ -307,6 +322,7 @@ async function executeWebhookJobInternal(
       contextExtensions: {
         executionId,
         workspaceId: workspaceId || '',
+        isDeployedContext: !payload.testMode,
       },
     })
 
@@ -331,14 +347,16 @@ async function executeWebhookJobInternal(
     if (executionResult.success) {
       await updateWorkflowRunCounts(payload.workflowId)
 
-      // Track execution in user stats
-      await db
-        .update(userStats)
-        .set({
-          totalWebhookTriggers: sql`total_webhook_triggers + 1`,
-          lastActive: sql`now()`,
-        })
-        .where(eq(userStats.userId, payload.userId))
+      // Track execution in user stats (skip in test mode)
+      if (!payload.testMode) {
+        await db
+          .update(userStats)
+          .set({
+            totalWebhookTriggers: sql`total_webhook_triggers + 1`,
+            lastActive: sql`now()`,
+          })
+          .where(eq(userStats.userId, payload.userId))
+      }
     }
 
     // Build trace spans and complete logging session
@@ -369,6 +387,13 @@ async function executeWebhookJobInternal(
 
     // Complete logging session with error (matching workflow-execution pattern)
     try {
+      const executionResult = (error?.executionResult as ExecutionResult | undefined) || {
+        success: false,
+        output: {},
+        logs: [],
+      }
+      const { traceSpans } = buildTraceSpans(executionResult)
+
       await loggingSession.safeCompleteWithError({
         endedAt: new Date().toISOString(),
         totalDurationMs: 0,
@@ -376,6 +401,7 @@ async function executeWebhookJobInternal(
           message: error.message || 'Webhook execution failed',
           stackTrace: error.stack,
         },
+        traceSpans,
       })
     } catch (loggingError) {
       logger.error(`[${requestId}] Failed to complete logging session`, loggingError)

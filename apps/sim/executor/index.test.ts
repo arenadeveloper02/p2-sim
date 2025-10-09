@@ -101,7 +101,7 @@ describe('Executor', () => {
         workflow,
         contextExtensions: {
           stream: true,
-          selectedOutputIds: ['block1'],
+          selectedOutputs: ['block1'],
           edges: [{ source: 'starter', target: 'block1' }],
           onStream: mockOnStream,
         },
@@ -302,7 +302,7 @@ describe('Executor', () => {
         workflow,
         contextExtensions: {
           stream: true,
-          selectedOutputIds: ['block1'],
+          selectedOutputs: ['block1'],
           onStream: mockOnStream,
         },
       })
@@ -322,14 +322,14 @@ describe('Executor', () => {
     it.concurrent('should pass context extensions to execution context', async () => {
       const workflow = createMinimalWorkflow()
       const mockOnStream = vi.fn()
-      const selectedOutputIds = ['block1', 'block2']
+      const selectedOutputs = ['block1', 'block2']
       const edges = [{ source: 'starter', target: 'block1' }]
 
       const executor = new Executor({
         workflow,
         contextExtensions: {
           stream: true,
-          selectedOutputIds,
+          selectedOutputs,
           edges,
           onStream: mockOnStream,
         },
@@ -618,7 +618,7 @@ describe('Executor', () => {
         workflow,
         contextExtensions: {
           stream: true,
-          selectedOutputIds: ['block1'],
+          selectedOutputs: ['block1'],
           onStream: mockOnStream,
         },
       })
@@ -639,7 +639,7 @@ describe('Executor', () => {
         workflow,
         contextExtensions: {
           stream: true,
-          selectedOutputIds: ['block1'],
+          selectedOutputs: ['block1'],
           onStream: mockOnStream,
         },
       })
@@ -1449,6 +1449,105 @@ describe('Executor', () => {
           expect(result.error).toContain('Error in child workflow')
         }
       }
+    })
+  })
+
+  describe('Parallel Execution Ordering', () => {
+    it('should handle missing parallel block mapping gracefully', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      // Test isIterationComplete with missing parallel config
+      const result = (executor as any).isIterationComplete('nonexistent-parallel', 0, null, context)
+      expect(result).toBe(true) // Should return true for safety
+    })
+
+    it('should correctly identify incomplete iterations', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      const parallelConfig = {
+        nodes: ['function-1', 'function-2'],
+      }
+
+      // Add some executed blocks
+      context.executedBlocks.add('function-1_parallel_parallel-1_iteration_0')
+      // function-2 iteration 0 is missing
+
+      const result = (executor as any).isIterationComplete('parallel-1', 0, parallelConfig, context)
+      expect(result).toBe(false)
+
+      // Add the missing block
+      context.executedBlocks.add('function-2_parallel_parallel-1_iteration_0')
+
+      const completedResult = (executor as any).isIterationComplete(
+        'parallel-1',
+        0,
+        parallelConfig,
+        context
+      )
+      expect(completedResult).toBe(true)
+    })
+
+    it('should detect when no more parallel work is available', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      // Add parallel execution state with completed parallel
+      context.parallelExecutions = new Map([
+        [
+          'parallel-1',
+          {
+            parallelCount: 3,
+            currentIteration: 3,
+            distributionItems: null,
+            completedExecutions: 3,
+            executionResults: new Map(),
+            activeIterations: new Set(),
+          },
+        ],
+      ])
+
+      context.completedLoops.add('parallel-1')
+
+      const hasWork = (executor as any).hasMoreParallelWork(context)
+      expect(hasWork).toBe(false)
+    })
+
+    it('should handle empty parallel execution context', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      // No parallel executions
+      context.parallelExecutions = undefined
+
+      const hasWork = (executor as any).hasMoreParallelWork(context)
+      expect(hasWork).toBe(false)
+    })
+
+    it('should identify complete iterations correctly', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      const parallelConfig = {
+        nodes: ['function-1', 'function-2', 'function-3'],
+      }
+
+      // All blocks executed for iteration 1
+      context.executedBlocks.add('function-1_parallel_parallel-1_iteration_1')
+      context.executedBlocks.add('function-2_parallel_parallel-1_iteration_1')
+      context.executedBlocks.add('function-3_parallel_parallel-1_iteration_1')
+
+      const result = (executor as any).isIterationComplete('parallel-1', 1, parallelConfig, context)
+      expect(result).toBe(true)
+    })
+
+    it('should handle undefined parallel configuration safely', () => {
+      const executor = new Executor(createMinimalWorkflow())
+      const context = createMockContext()
+
+      const result = (executor as any).isIterationComplete('parallel-1', 0, undefined, context)
+      expect(result).toBe(true)
     })
   })
 })

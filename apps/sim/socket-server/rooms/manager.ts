@@ -7,14 +7,13 @@ import type { Server } from 'socket.io'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 
-// Create dedicated database connection for room manager
-const connectionString = env.POSTGRES_URL ?? env.DATABASE_URL
+const connectionString = env.DATABASE_URL
 const db = drizzle(
   postgres(connectionString, {
     prepare: false,
     idle_timeout: 15,
     connect_timeout: 20,
-    max: 5,
+    max: 3,
     onnotice: () => {},
   }),
   { schema }
@@ -29,6 +28,7 @@ export interface UserPresence {
   socketId: string
   joinedAt: number
   lastActivity: number
+  role: string
   cursor?: { x: number; y: number }
   selection?: { type: 'block' | 'edge' | 'none'; id?: string }
 }

@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
+import { extractAndPersistCustomTools } from '@/lib/workflows/custom-tools-persistence'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/db-helpers'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/validation'
 
@@ -89,13 +90,6 @@ const ParallelSchema = z.object({
   parallelType: z.enum(['count', 'collection']).optional(),
 })
 
-const DeploymentStatusSchema = z.object({
-  id: z.string(),
-  status: z.enum(['deploying', 'deployed', 'failed', 'stopping', 'stopped']),
-  deployedAt: z.date().optional(),
-  error: z.string().optional(),
-})
-
 const WorkflowStateSchema = z.object({
   blocks: z.record(BlockStateSchema),
   edges: z.array(EdgeSchema),
@@ -103,9 +97,7 @@ const WorkflowStateSchema = z.object({
   parallels: z.record(ParallelSchema).optional(),
   lastSaved: z.number().optional(),
   isDeployed: z.boolean().optional(),
-  deployedAt: z.date().optional(),
-  deploymentStatuses: z.record(DeploymentStatusSchema).optional(),
-  hasActiveWebhook: z.boolean().optional(),
+  deployedAt: z.coerce.date().optional(),
 })
 
 /**
@@ -204,8 +196,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       lastSaved: state.lastSaved || Date.now(),
       isDeployed: state.isDeployed || false,
       deployedAt: state.deployedAt,
-      deploymentStatuses: state.deploymentStatuses || {},
-      hasActiveWebhook: state.hasActiveWebhook || false,
     }
 
     const saveResult = await saveWorkflowToNormalizedTables(workflowId, workflowState as any)
@@ -216,6 +206,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         { error: 'Failed to save workflow state', details: saveResult.error },
         { status: 500 }
       )
+    }
+
+    // Extract and persist custom tools to database
+    try {
+      const { saved, errors } = await extractAndPersistCustomTools(workflowState, userId)
+
+      if (saved > 0) {
+        logger.info(`[${requestId}] Persisted ${saved} custom tool(s) to database`, { workflowId })
+      }
+
+      if (errors.length > 0) {
+        logger.warn(`[${requestId}] Some custom tools failed to persist`, { errors, workflowId })
+      }
+    } catch (error) {
+      logger.error(`[${requestId}] Failed to persist custom tools`, { error, workflowId })
     }
 
     // Update workflow's lastSynced timestamp
