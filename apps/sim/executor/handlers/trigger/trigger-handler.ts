@@ -25,7 +25,10 @@ export class TriggerBlockHandler implements BlockHandler {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<any> {
-    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`)
+    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`, {
+      blockCategory: block.metadata?.category,
+      hasTriggerMode: block.config?.params?.triggerMode,
+    })
 
     // If this trigger block was initialized with a precomputed output in the execution context
     // (e.g., webhook payload injected at init), return it as-is to preserve the raw shape.
@@ -52,6 +55,8 @@ export class TriggerBlockHandler implements BlockHandler {
           logger.debug(`Processing webhook trigger for block ${block.id}`, {
             provider,
             blockType: block.metadata?.id,
+            starterOutputKeys: Object.keys(starterOutput),
+            webhookDataKeys: Object.keys(webhookData),
           })
 
           // Provider-specific early return for GitHub: expose raw payload at root
@@ -159,10 +164,34 @@ export class TriggerBlockHandler implements BlockHandler {
           // Always keep webhook metadata
           if (starterOutput.webhook) result.webhook = starterOutput.webhook
 
-          // For generic webhooks, expose the URL field at root level
-          if (provider === 'generic' && webhookData.url) {
-            result.url = webhookData.url
+          // For generic webhooks, expose all webhook data properties at root level
+          if (provider === 'generic' && webhookData) {
+            // Expose all webhook data properties at root level for easy access
+            if (webhookData.url) result.url = webhookData.url
+            if (webhookData.payload) result.payload = webhookData.payload
+            if (webhookData.headers) result.headers = webhookData.headers
+            if (webhookData.method) result.method = webhookData.method
+            if (webhookData.path) result.path = webhookData.path
+            if (webhookData.provider) result.provider = webhookData.provider
+            if (webhookData.providerConfig) result.providerConfig = webhookData.providerConfig
+
+            // Add timestamp
+            result.timestamp = new Date().toISOString()
+
+            // Extract common fields from payload if they exist
+            if (webhookData.payload) {
+              if (webhookData.payload.event) result.event = webhookData.payload.event
+              if (webhookData.payload.id) result.id = webhookData.payload.id
+              if (webhookData.payload.data) result.data = webhookData.payload.data
+            }
           }
+
+          logger.debug(`Final webhook trigger result for block ${block.id}:`, {
+            resultKeys: Object.keys(result),
+            hasUrl: !!result.url,
+            hasPayload: !!result.payload,
+            hasHeaders: !!result.headers,
+          })
 
           return result
         }

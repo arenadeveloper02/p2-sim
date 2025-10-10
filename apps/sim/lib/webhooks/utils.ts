@@ -626,7 +626,22 @@ export function formatWebhookInput(
     ? `${request.headers.get('x-forwarded-proto') || 'https'}://${request.headers.get('host')}`
     : 'https://your-domain.com'
 
+  const webhookUrl = `${baseUrl}/api/webhooks/trigger/${foundWebhook.path}`
+
   return {
+    // Flatten generic webhook data to root level for easy access
+    payload: body,
+    headers: Object.fromEntries(request.headers.entries()),
+    method: request.method,
+    url: webhookUrl,
+    path: foundWebhook.path,
+    provider: foundWebhook.provider,
+    timestamp: new Date().toISOString(),
+    // Extract common fields from payload if they exist
+    ...(body.event && { event: body.event }),
+    ...(body.id && { id: body.id }),
+    ...(body.data && { data: body.data }),
+    // Keep nested structure for backwards compatibility
     webhook: {
       data: {
         path: foundWebhook.path,
@@ -635,7 +650,7 @@ export function formatWebhookInput(
         payload: body,
         headers: Object.fromEntries(request.headers.entries()),
         method: request.method,
-        url: `${baseUrl}/api/webhooks/trigger/${foundWebhook.path}`,
+        url: webhookUrl,
       },
     },
     workflowId: foundWorkflow.id,
