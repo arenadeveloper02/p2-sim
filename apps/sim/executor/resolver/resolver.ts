@@ -785,6 +785,19 @@ export class InputResolver {
         }
 
         if (replacementValue === undefined) {
+          logger.debug(
+            `Path resolution failed for "${path}" in block "${sourceBlock.metadata?.name || sourceBlock.id}":`,
+            {
+              sourceBlockId: sourceBlock.id,
+              sourceBlockType: sourceBlock.metadata?.id,
+              path,
+              availableKeys:
+                typeof replacementValue === 'object' && replacementValue !== null
+                  ? Object.keys(replacementValue)
+                  : 'not an object',
+              replacementValue,
+            }
+          )
           throw new Error(
             `No value found at path "${path}" in block "${sourceBlock.metadata?.name || sourceBlock.id}".`
           )
