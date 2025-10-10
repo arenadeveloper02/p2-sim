@@ -430,10 +430,17 @@ function addBlockquoteRequest(
   text: string,
   index: number
 ): number {
+  const cleanTextBuilder: string[] = []
+  const formatRanges: FormatRange[] = []
+  const linkRanges: LinkRange[] = []
+
+  parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
+  const cleanText = cleanTextBuilder.join('')
+
   requests.push({
     insertText: {
       location: { index },
-      text: `${text}\n`,
+      text: `${cleanText}\n`,
     },
   })
 
@@ -441,7 +448,7 @@ function addBlockquoteRequest(
     updateParagraphStyle: {
       range: {
         startIndex: index,
-        endIndex: index + text.length + 1,
+        endIndex: index + cleanText.length + 1,
       },
       paragraphStyle: {
         indentStart: { magnitude: 36, unit: 'PT' },
@@ -456,21 +463,10 @@ function addBlockquoteRequest(
     },
   })
 
-  // Only apply italic style if there's actual text content
-  if (text.length > 0) {
-    requests.push({
-      updateTextStyle: {
-        range: {
-          startIndex: index,
-          endIndex: index + text.length,
-        },
-        textStyle: { italic: true },
-        fields: 'italic',
-      },
-    })
-  }
+  // Apply inline formatting
+  applyInlineFormatting(requests, formatRanges, linkRanges, index)
 
-  return index + text.length + 1
+  return index + cleanText.length + 1
 }
 
 function addHorizontalRuleRequest(requests: Array<Record<string, any>>, index: number): number {
@@ -771,10 +767,17 @@ function addHeadingRequest(
   index: number,
   headingType: string
 ): number {
+  const cleanTextBuilder: string[] = []
+  const formatRanges: FormatRange[] = []
+  const linkRanges: LinkRange[] = []
+
+  parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
+  const cleanText = cleanTextBuilder.join('')
+
   requests.push({
     insertText: {
       location: { index },
-      text: `${text}\n`,
+      text: `${cleanText}\n`,
     },
   })
 
@@ -782,7 +785,7 @@ function addHeadingRequest(
     updateParagraphStyle: {
       range: {
         startIndex: index,
-        endIndex: index + text.length + 1,
+        endIndex: index + cleanText.length + 1,
       },
       paragraphStyle: {
         namedStyleType: headingType,
@@ -791,7 +794,10 @@ function addHeadingRequest(
     },
   })
 
-  return index + text.length + 1
+  // Apply inline formatting
+  applyInlineFormatting(requests, formatRanges, linkRanges, index)
+
+  return index + cleanText.length + 1
 }
 
 function addBulletPointRequest(
@@ -942,9 +948,29 @@ function parseInlineFormatting(
       const linkText = linkMatch[1]
       const linkUrl = linkMatch[2]
       const linkStart = cleanTextBuilder.join('').length
-      cleanTextBuilder.push(linkText)
+      
+      // Parse formatting inside the link text
+      const nestedCleanText: string[] = []
+      const nestedFormatRanges: FormatRange[] = []
+      const nestedLinkRanges: LinkRange[] = []
+      parseInlineFormattingWithoutLinks(linkText, nestedCleanText, nestedFormatRanges, nestedLinkRanges)
+      
+      const cleanLinkText = nestedCleanText.join('')
+      cleanTextBuilder.push(cleanLinkText)
       const linkEnd = cleanTextBuilder.join('').length
+      
+      // Add the link range
       linkRanges.push({ start: linkStart, end: linkEnd, url: linkUrl })
+      
+      // Add formatting ranges from within the link text, adjusted for position
+      for (const range of nestedFormatRanges) {
+        formatRanges.push({
+          start: linkStart + range.start,
+          end: linkStart + range.end,
+          type: range.type
+        })
+      }
+      
       i += linkMatch[0].length
       continue
     }
@@ -979,10 +1005,37 @@ function parseInlineFormatting(
         i++
       }
       if (text.substring(i).startsWith('***')) {
-        cleanTextBuilder.push(formatChars.join(''))
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add bold and italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        for (const range of innerLinkRanges) {
+          linkRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            url: range.url
+          })
+        }
+        
         i += 3
       } else {
         cleanTextBuilder.push('***', ...formatChars)
@@ -1000,9 +1053,36 @@ function parseInlineFormatting(
         i++
       }
       if (text.substring(i).startsWith('**')) {
-        cleanTextBuilder.push(formatChars.join(''))
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add bold to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        for (const range of innerLinkRanges) {
+          linkRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            url: range.url
+          })
+        }
+        
         i += 2
       } else {
         cleanTextBuilder.push('**', ...formatChars)
@@ -1020,9 +1100,36 @@ function parseInlineFormatting(
         i++
       }
       if (text.substring(i).startsWith('~~')) {
-        cleanTextBuilder.push(formatChars.join(''))
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add strikethrough to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'strikethrough' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        for (const range of innerLinkRanges) {
+          linkRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            url: range.url
+          })
+        }
+        
         i += 2
       } else {
         cleanTextBuilder.push('~~', ...formatChars)
@@ -1041,9 +1148,232 @@ function parseInlineFormatting(
         i++
       }
       if (i < text.length && text[i] === marker) {
-        cleanTextBuilder.push(formatChars.join(''))
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        for (const range of innerLinkRanges) {
+          linkRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            url: range.url
+          })
+        }
+        
+        i++
+      } else {
+        cleanTextBuilder.push(marker, ...formatChars)
+      }
+      continue
+    }
+
+    cleanTextBuilder.push(text[i])
+    i++
+  }
+}
+
+function parseInlineFormattingWithoutLinks(
+  text: string,
+  cleanTextBuilder: string[],
+  formatRanges: FormatRange[],
+  linkRanges: LinkRange[]
+): void {
+  let i = 0
+
+  while (i < text.length) {
+    // Check for inline code `code`
+    if (text[i] === '`') {
+      const codeStart = cleanTextBuilder.join('').length
+      i++
+      const codeChars: string[] = []
+      while (i < text.length && text[i] !== '`') {
+        codeChars.push(text[i])
+        i++
+      }
+      if (i < text.length) {
+        cleanTextBuilder.push(codeChars.join(''))
+        const codeEnd = cleanTextBuilder.join('').length
+        formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
+        i++
+      } else {
+        cleanTextBuilder.push('`', ...codeChars)
+      }
+      continue
+    }
+
+    // Check for bold+italic ***text***
+    if (text.substring(i).startsWith('***')) {
+      const formatStart = cleanTextBuilder.join('').length
+      i += 3
+      const formatChars: string[] = []
+      while (i + 2 < text.length && !text.substring(i).startsWith('***')) {
+        formatChars.push(text[i])
+        i++
+      }
+      if (text.substring(i).startsWith('***')) {
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
+        const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add bold and italic to the outer range
+        formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
+        formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        
+        i += 3
+      } else {
+        cleanTextBuilder.push('***', ...formatChars)
+      }
+      continue
+    }
+
+    // Check for bold **text**
+    if (text.substring(i).startsWith('**')) {
+      const formatStart = cleanTextBuilder.join('').length
+      i += 2
+      const formatChars: string[] = []
+      while (i + 1 < text.length && !text.substring(i).startsWith('**')) {
+        formatChars.push(text[i])
+        i++
+      }
+      if (text.substring(i).startsWith('**')) {
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
+        const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add bold to the outer range
+        formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        
+        i += 2
+      } else {
+        cleanTextBuilder.push('**', ...formatChars)
+      }
+      continue
+    }
+
+    // Check for strikethrough ~~text~~
+    if (text.substring(i).startsWith('~~')) {
+      const formatStart = cleanTextBuilder.join('').length
+      i += 2
+      const formatChars: string[] = []
+      while (i + 1 < text.length && !text.substring(i).startsWith('~~')) {
+        formatChars.push(text[i])
+        i++
+      }
+      if (text.substring(i).startsWith('~~')) {
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
+        const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add strikethrough to the outer range
+        formatRanges.push({ start: formatStart, end: formatEnd, type: 'strikethrough' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        
+        i += 2
+      } else {
+        cleanTextBuilder.push('~~', ...formatChars)
+      }
+      continue
+    }
+
+    // Check for italic *text* or _text_
+    if (text[i] === '*' || text[i] === '_') {
+      const marker = text[i]
+      const formatStart = cleanTextBuilder.join('').length
+      i++
+      const formatChars: string[] = []
+      while (i < text.length && text[i] !== marker) {
+        formatChars.push(text[i])
+        i++
+      }
+      if (i < text.length && text[i] === marker) {
+        // Recursively parse the inner content for nested formatting
+        const innerText = formatChars.join('')
+        const innerCleanText: string[] = []
+        const innerFormatRanges: FormatRange[] = []
+        const innerLinkRanges: LinkRange[] = []
+        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
+        
+        const cleanInnerText = innerCleanText.join('')
+        cleanTextBuilder.push(cleanInnerText)
+        const formatEnd = cleanTextBuilder.join('').length
+        
+        // Add italic to the outer range
+        formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
+        
+        // Add nested formatting with adjusted positions
+        for (const range of innerFormatRanges) {
+          formatRanges.push({
+            start: formatStart + range.start,
+            end: formatStart + range.end,
+            type: range.type
+          })
+        }
+        
         i++
       } else {
         cleanTextBuilder.push(marker, ...formatChars)
