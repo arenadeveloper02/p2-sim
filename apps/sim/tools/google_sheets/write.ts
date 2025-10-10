@@ -36,7 +36,8 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
       type: 'array',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The data to write to the spreadsheet',
+      description:
+        'The data to write to the spreadsheet. Can be a 2D array, array of objects, or JSON string.',
     },
     valueInputOption: {
       type: 'string',
