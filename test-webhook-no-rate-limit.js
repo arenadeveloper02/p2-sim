@@ -132,10 +132,7 @@ async function testWebhookRateLimiting() {
 
   // Check for rate limiting indicators
   const rateLimitedRequests = results.filter(
-    (r) =>
-      r.statusCode === 429 ||
-      (r.body && r.body.includes('rate limit')) ||
-      (r.body && r.body.includes('Rate limit'))
+    (r) => r.statusCode === 429 || r.body?.includes('rate limit') || r.body?.includes('Rate limit')
   )
 
   if (rateLimitedRequests.length > 0) {

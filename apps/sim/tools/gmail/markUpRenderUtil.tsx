@@ -59,9 +59,6 @@ export function extractContentFromAgentResponse(response: string): string {
   return response
 }
 
-// Forward declaration for recursive processing
-let processTokens: (tokens: Token[]) => string
-
 // Helper function to recursively process tokens with inline formatting
 function processInlineTokens(tokens: Token[]): string {
   return tokens
@@ -159,7 +156,7 @@ function renderList(listToken: Tokens.List): string {
 }
 
 // Process any token type (block or inline)
-processTokens = (tokens: Token[]): string => {
+const processTokens = (tokens: Token[]): string => {
   return tokens
     .map((token) => {
       if (token.type === 'paragraph') {
