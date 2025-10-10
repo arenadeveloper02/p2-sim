@@ -119,7 +119,19 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
           })
         })
 
-        processedValues = [headers, ...rows]
+        // For update operations, only add data rows (no headers)
+        // Ensure rows is properly formatted as a 2D array
+        processedValues = rows.filter((row) => Array.isArray(row))
+      }
+
+      // Final validation: ensure processedValues is a proper 2D array
+      if (!Array.isArray(processedValues)) {
+        processedValues = [[String(processedValues)]]
+      } else if (!processedValues.every((item: any) => Array.isArray(item))) {
+        // If any element is not an array, wrap it
+        processedValues = processedValues.map((row: any) =>
+          Array.isArray(row) ? row : [String(row)]
+        )
       }
 
       const body: Record<string, any> = {

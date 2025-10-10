@@ -151,8 +151,8 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
           })
         })
 
-        // Add headers as the first row, then add data rows
-        processedValues = [headers, ...rows]
+        // For append operations, only add data rows (no headers)
+        processedValues = rows
       }
       // Continue with existing logic for other array types
       else if (!Array.isArray(processedValues)) {
