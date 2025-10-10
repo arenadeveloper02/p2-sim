@@ -164,34 +164,10 @@ export class TriggerBlockHandler implements BlockHandler {
           // Always keep webhook metadata
           if (starterOutput.webhook) result.webhook = starterOutput.webhook
 
-          // For generic webhooks, expose all webhook data properties at root level
-          if (provider === 'generic' && webhookData) {
-            // Expose all webhook data properties at root level for easy access
-            if (webhookData.url) result.url = webhookData.url
-            if (webhookData.payload) result.payload = webhookData.payload
-            if (webhookData.headers) result.headers = webhookData.headers
-            if (webhookData.method) result.method = webhookData.method
-            if (webhookData.path) result.path = webhookData.path
-            if (webhookData.provider) result.provider = webhookData.provider
-            if (webhookData.providerConfig) result.providerConfig = webhookData.providerConfig
-
-            // Add timestamp
-            result.timestamp = new Date().toISOString()
-
-            // Extract common fields from payload if they exist
-            if (webhookData.payload) {
-              if (webhookData.payload.event) result.event = webhookData.payload.event
-              if (webhookData.payload.id) result.id = webhookData.payload.id
-              if (webhookData.payload.data) result.data = webhookData.payload.data
-            }
+          // For generic webhooks, expose the URL field at root level
+          if (provider === 'generic' && webhookData.url) {
+            result.url = webhookData.url
           }
-
-          logger.debug(`Final webhook trigger result for block ${block.id}:`, {
-            resultKeys: Object.keys(result),
-            hasUrl: !!result.url,
-            hasPayload: !!result.payload,
-            hasHeaders: !!result.headers,
-          })
 
           return result
         }
