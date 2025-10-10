@@ -86,9 +86,248 @@ export function convertMarkdownToGoogleDocsRequests(
     // Check for blockquotes
     if (line.startsWith('> ')) {
       flushListItems()
-      const blockquoteText = line.substring(2)
-      currentIndex = addBlockquoteRequest(requests, blockquoteText, currentIndex)
-      i++
+      
+      // Collect all consecutive blockquote lines
+      const blockquoteLines: string[] = []
+      let j = i
+      while (j < lines.length && lines[j].startsWith('> ')) {
+        // Remove the '> ' prefix
+        blockquoteLines.push(lines[j].substring(2))
+        j++
+      }
+      
+      // Check if this is an alert-style blockquote (e.g., [!NOTE], [!TIP], etc.)
+      let alertType: string | null = null
+      let alertColor: { red: number; green: number; blue: number } = { red: 0.8, green: 0.8, blue: 0.8 }
+      
+      if (blockquoteLines.length > 0) {
+        const firstLine = blockquoteLines[0].trim()
+        const alertMatch = firstLine.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$/i)
+        if (alertMatch) {
+          alertType = alertMatch[1].toUpperCase()
+          // Remove the alert marker line
+          blockquoteLines.shift()
+          
+          // Set color based on alert type
+          switch (alertType) {
+            case 'NOTE':
+              alertColor = { red: 0.53, green: 0.81, blue: 0.92 } // Light blue
+              break
+            case 'TIP':
+              alertColor = { red: 0.56, green: 0.93, blue: 0.56 } // Light green
+              break
+            case 'IMPORTANT':
+              alertColor = { red: 0.68, green: 0.51, blue: 0.87 } // Light purple
+              break
+            case 'WARNING':
+              alertColor = { red: 1.0, green: 0.8, blue: 0.4 } // Light orange/yellow
+              break
+            case 'CAUTION':
+              alertColor = { red: 1.0, green: 0.4, blue: 0.4 } // Light red
+              break
+          }
+        }
+      }
+      
+      // Process the blockquote content as markdown
+      const blockquoteMarkdown = blockquoteLines.join('\n')
+      const blockquoteStartIndex = currentIndex
+      
+      // Process blockquote content recursively - but we need to simulate execution
+      // to track the actual end index after tabs are consumed by createParagraphBullets
+      const tempRequests: Array<Record<string, any>> = []
+      let tempIndex = currentIndex
+      
+      // Add initial newline if starting at beginning
+      if (currentIndex === 1) {
+        tempRequests.push({
+          insertText: {
+            location: { index: tempIndex },
+            text: '\n',
+          },
+        })
+        tempIndex += 1
+      }
+      
+      // Process the blockquote markdown line by line
+      const blockquoteInnerLines = blockquoteMarkdown.split('\n')
+      let blockListItems: Array<{ text: string; indentLevel: number; type: 'bullet' | 'numbered' }> = []
+      let blockListStartIndex: number | null = null
+      
+      const flushBlockListItems = () => {
+        if (blockListItems.length > 0 && blockListStartIndex !== null) {
+          tempIndex = addListBlockRequests(tempRequests, blockListItems, blockListStartIndex)
+          blockListItems = []
+          blockListStartIndex = null
+        }
+      }
+      
+      for (let k = 0; k < blockquoteInnerLines.length; k++) {
+        const blockLine = blockquoteInnerLines[k]
+        const blockTrimmed = blockLine.trim()
+        
+        if (blockTrimmed.length === 0) {
+          flushBlockListItems()
+          tempRequests.push({
+            insertText: {
+              location: { index: tempIndex },
+              text: '\n',
+            },
+          })
+          tempRequests.push({
+            updateParagraphStyle: {
+              range: {
+                startIndex: tempIndex,
+                endIndex: tempIndex + 1,
+              },
+              paragraphStyle: {
+                namedStyleType: 'NORMAL_TEXT',
+              },
+              fields: 'namedStyleType',
+            },
+          })
+          tempIndex += 1
+          continue
+        }
+        
+        // Check for code blocks
+        if (blockTrimmed.startsWith('```')) {
+          flushBlockListItems()
+          const codeBlockResult = processCodeBlock(blockquoteInnerLines, k)
+          tempIndex = addCodeBlockRequest(
+            tempRequests,
+            codeBlockResult.code,
+            codeBlockResult.language,
+            tempIndex
+          )
+          k = codeBlockResult.endIndex
+          continue
+        }
+        
+        // Check for bullet lists
+        const bulletMatch = blockTrimmed.match(/^[-*+]\s+(.*)/)
+        if (bulletMatch) {
+          const text = bulletMatch[1]
+          const leadingSpaces = blockLine.length - blockLine.trimStart().length
+          const indentLevel = Math.floor(leadingSpaces / 2)
+          
+          if (blockListItems.length > 0 && blockListItems[0].type !== 'bullet') {
+            flushBlockListItems()
+          }
+          
+          if (blockListStartIndex === null) {
+            blockListStartIndex = tempIndex
+          }
+          
+          blockListItems.push({ text, indentLevel, type: 'bullet' })
+          continue
+        }
+        
+        // Check for numbered lists
+        const numberedMatch = blockTrimmed.match(/^(\d+)\.\s+(.*)/)
+        if (numberedMatch) {
+          const text = numberedMatch[2]
+          const leadingSpaces = blockLine.length - blockLine.trimStart().length
+          const indentLevel = Math.floor(leadingSpaces / 2)
+          
+          if (blockListItems.length > 0 && blockListItems[0].type !== 'numbered') {
+            flushBlockListItems()
+          }
+          
+          if (blockListStartIndex === null) {
+            blockListStartIndex = tempIndex
+          }
+          
+          blockListItems.push({ text, indentLevel, type: 'numbered' })
+          continue
+        }
+        
+        // Regular paragraph
+        flushBlockListItems()
+        tempIndex = addParagraphWithFormattingRequest(tempRequests, blockLine, tempIndex)
+      }
+      
+      flushBlockListItems()
+      const blockquoteEndIndex = tempIndex
+      
+      // If this is an alert-style blockquote, add the label at the beginning
+      if (alertType) {
+        // Insert alert label before the blockquote content
+        requests.push({
+          insertText: {
+            location: { index: blockquoteStartIndex },
+            text: `${alertType}\n`,
+          },
+        })
+        
+        // Make the label bold
+        requests.push({
+          updateTextStyle: {
+            range: {
+              startIndex: blockquoteStartIndex,
+              endIndex: blockquoteStartIndex + alertType.length,
+            },
+            textStyle: {
+              bold: true,
+              foregroundColor: {
+                color: {
+                  rgbColor: alertColor,
+                },
+              },
+            },
+            fields: 'bold,foregroundColor',
+          },
+        })
+        
+        // Adjust all subsequent requests to account for the label
+        const labelLength = alertType.length + 1
+        for (const request of tempRequests) {
+          if (request.insertText?.location?.index !== undefined) {
+            request.insertText.location.index += labelLength
+          }
+          if (request.updateTextStyle?.range) {
+            request.updateTextStyle.range.startIndex += labelLength
+            request.updateTextStyle.range.endIndex += labelLength
+          }
+          if (request.updateParagraphStyle?.range) {
+            request.updateParagraphStyle.range.startIndex += labelLength
+            request.updateParagraphStyle.range.endIndex += labelLength
+          }
+          if (request.createParagraphBullets?.range) {
+            request.createParagraphBullets.range.startIndex += labelLength
+            request.createParagraphBullets.range.endIndex += labelLength
+          }
+        }
+      }
+      
+      // Add all blockquote requests
+      requests.push(...tempRequests)
+      
+      // Calculate final end index
+      const finalEndIndex = alertType ? blockquoteEndIndex + alertType.length + 1 : blockquoteEndIndex
+      
+      // Apply blockquote styling to the entire range
+      requests.push({
+        updateParagraphStyle: {
+          range: {
+            startIndex: blockquoteStartIndex,
+            endIndex: finalEndIndex,
+          },
+          paragraphStyle: {
+            indentStart: { magnitude: 36, unit: 'PT' },
+            borderLeft: {
+              color: { color: { rgbColor: alertColor } },
+              width: { magnitude: 3, unit: 'PT' },
+              padding: { magnitude: 8, unit: 'PT' },
+              dashStyle: 'SOLID',
+            },
+          },
+          fields: 'indentStart,borderLeft',
+        },
+      })
+      
+      currentIndex = finalEndIndex
+      i = j
       continue
     }
 
@@ -205,12 +444,12 @@ function processCodeBlock(
   lines: string[],
   startIndex: number
 ): { code: string; language: string; endIndex: number } {
-  const firstLine = lines[startIndex]
+  const firstLine = lines[startIndex].trim()
   const language = firstLine.substring(3).trim() || 'plain'
   const codeLines: string[] = []
   let i = startIndex + 1
 
-  while (i < lines.length && !lines[i].startsWith('```')) {
+  while (i < lines.length && !lines[i].trim().startsWith('```')) {
     codeLines.push(lines[i])
     i++
   }
@@ -976,7 +1215,8 @@ function parseInlineFormatting(
     }
 
     // Check for inline code `code`
-    if (text[i] === '`') {
+    // Skip if this is a code block delimiter (```)
+    if (text[i] === '`' && !text.substring(i).startsWith('```')) {
       const codeStart = cleanTextBuilder.join('').length
       i++
       const codeChars: string[] = []
@@ -985,10 +1225,17 @@ function parseInlineFormatting(
         i++
       }
       if (i < text.length) {
-        cleanTextBuilder.push(codeChars.join(''))
-        const codeEnd = cleanTextBuilder.join('').length
-        formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
-        i++
+        const codeContent = codeChars.join('')
+        // Only apply code formatting if there's actual content
+        if (codeContent.length > 0) {
+          cleanTextBuilder.push(codeContent)
+          const codeEnd = cleanTextBuilder.join('').length
+          formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
+          i++
+        } else {
+          // Empty inline code, treat as literal backticks
+          cleanTextBuilder.push('`')
+        }
       } else {
         cleanTextBuilder.push('`', ...codeChars)
       }
@@ -1138,12 +1385,18 @@ function parseInlineFormatting(
     }
 
     // Check for italic *text* or _text_
-    if (text[i] === '*' || text[i] === '_') {
+    // Make sure single * is not part of ** or ***
+    if ((text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) || text[i] === '_') {
       const marker = text[i]
       const formatStart = cleanTextBuilder.join('').length
       i++
       const formatChars: string[] = []
-      while (i < text.length && text[i] !== marker) {
+      // Collect characters until we find a matching closing marker (not part of ** or ***)
+      while (i < text.length) {
+        if (text[i] === marker && text[i + 1] !== marker && (i === 0 || text[i - 1] !== marker)) {
+          // Found the closing marker
+          break
+        }
         formatChars.push(text[i])
         i++
       }
@@ -1200,7 +1453,8 @@ function parseInlineFormattingWithoutLinks(
 
   while (i < text.length) {
     // Check for inline code `code`
-    if (text[i] === '`') {
+    // Skip if this is a code block delimiter (```)
+    if (text[i] === '`' && !text.substring(i).startsWith('```')) {
       const codeStart = cleanTextBuilder.join('').length
       i++
       const codeChars: string[] = []
@@ -1209,10 +1463,17 @@ function parseInlineFormattingWithoutLinks(
         i++
       }
       if (i < text.length) {
-        cleanTextBuilder.push(codeChars.join(''))
-        const codeEnd = cleanTextBuilder.join('').length
-        formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
-        i++
+        const codeContent = codeChars.join('')
+        // Only apply code formatting if there's actual content
+        if (codeContent.length > 0) {
+          cleanTextBuilder.push(codeContent)
+          const codeEnd = cleanTextBuilder.join('').length
+          formatRanges.push({ start: codeStart, end: codeEnd, type: 'code' })
+          i++
+        } else {
+          // Empty inline code, treat as literal backticks
+          cleanTextBuilder.push('`')
+        }
       } else {
         cleanTextBuilder.push('`', ...codeChars)
       }
@@ -1341,12 +1602,18 @@ function parseInlineFormattingWithoutLinks(
     }
 
     // Check for italic *text* or _text_
-    if (text[i] === '*' || text[i] === '_') {
+    // Make sure single * is not part of ** or ***
+    if ((text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) || text[i] === '_') {
       const marker = text[i]
       const formatStart = cleanTextBuilder.join('').length
       i++
       const formatChars: string[] = []
-      while (i < text.length && text[i] !== marker) {
+      // Collect characters until we find a matching closing marker (not part of ** or ***)
+      while (i < text.length) {
+        if (text[i] === marker && text[i + 1] !== marker && (i === 0 || text[i - 1] !== marker)) {
+          // Found the closing marker
+          break
+        }
         formatChars.push(text[i])
         i++
       }
