@@ -39,7 +39,8 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
       type: 'array',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The data to append to the spreadsheet',
+      description:
+        'The data to append to the spreadsheet. Can be a 2D array, array of objects, or JSON string.',
     },
     valueInputOption: {
       type: 'string',

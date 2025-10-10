@@ -39,7 +39,8 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
       type: 'array',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The data to update in the spreadsheet',
+      description:
+        'The data to update in the spreadsheet. Can be a 2D array, array of objects, or JSON string.',
     },
     valueInputOption: {
       type: 'string',
@@ -82,22 +83,40 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
     body: (params) => {
       let processedValues: any = params.values || []
 
-      // Minimal shape enforcement: Google requires a 2D array
-      if (!Array.isArray(processedValues)) {
-        processedValues = [[processedValues]]
-      } else if (!processedValues.every((item: any) => Array.isArray(item))) {
-        processedValues = (processedValues as any[]).map((row: any) =>
-          Array.isArray(row) ? row : [row]
-        )
+      // Handle case where values might be a string (potentially JSON string)
+      if (typeof processedValues === 'string') {
+        try {
+          // Try to parse it as JSON
+          processedValues = JSON.parse(processedValues)
+        } catch (_error) {
+          // If the input contains literal newlines causing JSON parse to fail,
+          // try a more robust approach
+          try {
+            // Replace literal newlines with escaped newlines for JSON parsing
+            const sanitizedInput = (processedValues as string)
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+              .replace(/\t/g, '\\t')
+
+            // Try to parse again with sanitized input
+            processedValues = JSON.parse(sanitizedInput)
+          } catch (_secondError) {
+            // If all parsing attempts fail, wrap as a single cell value
+            processedValues = [[processedValues]]
+          }
+        }
       }
 
-      // Handle array of objects (existing behavior)
+      // Handle array of objects
       if (
         Array.isArray(processedValues) &&
         processedValues.length > 0 &&
         typeof processedValues[0] === 'object' &&
         !Array.isArray(processedValues[0])
       ) {
+        // It's an array of objects
+
+        // First, extract all unique keys from all objects to create headers
         const allKeys = new Set<string>()
         processedValues.forEach((obj: any) => {
           if (obj && typeof obj === 'object') {
@@ -106,30 +125,30 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
         })
         const headers = Array.from(allKeys)
 
+        // Then create rows with object values in the order of headers
         const rows = processedValues.map((obj: any) => {
           if (!obj || typeof obj !== 'object') {
+            // Handle non-object items by creating an array with empty values
             return Array(headers.length).fill('')
           }
           return headers.map((key) => {
             const value = obj[key]
+            // Handle nested objects/arrays by converting to JSON string
             if (value !== null && typeof value === 'object') {
               return JSON.stringify(value)
             }
             return value === undefined ? '' : value
           })
         })
-
-        // For update operations, only add data rows (no headers)
-        // Ensure rows is properly formatted as a 2D array
-        processedValues = rows.filter((row) => Array.isArray(row))
+        // Add headers as the first row, then add data rows
+        processedValues = [headers, ...rows]
       }
-
-      // Final validation: ensure processedValues is a proper 2D array
-      if (!Array.isArray(processedValues)) {
+      // Continue with existing logic for other array types
+      else if (!Array.isArray(processedValues)) {
         processedValues = [[String(processedValues)]]
       } else if (!processedValues.every((item: any) => Array.isArray(item))) {
-        // If any element is not an array, wrap it
-        processedValues = processedValues.map((row: any) =>
+        // If it's an array but not all elements are arrays, wrap each element
+        processedValues = (processedValues as any[]).map((row: any) =>
           Array.isArray(row) ? row : [String(row)]
         )
       }
