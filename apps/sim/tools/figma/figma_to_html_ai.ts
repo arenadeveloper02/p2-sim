@@ -21,115 +21,12 @@ export interface FigmaToHTMLAIResponse {
       fileKey: string
       nodeId?: string
       processingTime: number
-      designSystem: {
-        colors: string[]
-        typography: string[]
-        spacing: string[]
-        components: string[]
-      }
       aiModel: string
       tokensUsed: number
-      html: string
-      css: string
+      combinedHtml: string
     }
   }
   error?: string
-}
-
-// Extract design system from Figma data
-function extractDesignSystem(
-  figmaData: any,
-  nodeId: string
-): {
-  colors: string[]
-  typography: string[]
-  spacing: string[]
-  components: string[]
-} {
-  const designSystem = {
-    colors: [] as string[],
-    typography: [] as string[],
-    spacing: [] as string[],
-    components: [] as string[],
-  }
-
-  function traverseNode(node: any) {
-    if (!node) return
-
-    // Extract colors from fills and strokes
-    if (node.fills) {
-      node.fills.forEach((fill: any) => {
-        if (fill.color) {
-          const { r, g, b, a } = fill.color
-          const hex = `#${Math.round(r * 255)
-            .toString(16)
-            .padStart(2, '0')}${Math.round(g * 255)
-            .toString(16)
-            .padStart(2, '0')}${Math.round(b * 255)
-            .toString(16)
-            .padStart(2, '0')}`
-          if (!designSystem.colors.includes(hex)) {
-            designSystem.colors.push(hex)
-          }
-        }
-      })
-    }
-
-    if (node.strokes) {
-      node.strokes.forEach((stroke: any) => {
-        if (stroke.color) {
-          const { r, g, b, a } = stroke.color
-          const hex = `#${Math.round(r * 255)
-            .toString(16)
-            .padStart(2, '0')}${Math.round(g * 255)
-            .toString(16)
-            .padStart(2, '0')}${Math.round(b * 255)
-            .toString(16)
-            .padStart(2, '0')}`
-          if (!designSystem.colors.includes(hex)) {
-            designSystem.colors.push(hex)
-          }
-        }
-      })
-    }
-
-    // Extract typography
-    if (node.style) {
-      const fontFamily = node.style.fontFamily || node.style.fontPostScriptName
-      const fontSize = node.style.fontSize
-      if (fontFamily && fontSize) {
-        const typography = `${fontFamily} ${fontSize}px`
-        if (!designSystem.typography.includes(typography)) {
-          designSystem.typography.push(typography)
-        }
-      }
-    }
-
-    // Extract spacing from layout properties
-    if (node.absoluteBoundingBox) {
-      const { width, height } = node.absoluteBoundingBox
-      const spacing = `${width}px x ${height}px`
-      if (!designSystem.spacing.includes(spacing)) {
-        designSystem.spacing.push(spacing)
-      }
-    }
-
-    // Extract components
-    if (node.type && ['FRAME', 'COMPONENT', 'INSTANCE'].includes(node.type)) {
-      if (node.name && !designSystem.components.includes(node.name)) {
-        designSystem.components.push(node.name)
-      }
-    }
-
-    // Recursively traverse children
-    if (node.children) {
-      node.children.forEach(traverseNode)
-    }
-  }
-
-  const node = nodeId.replace('-', ':')
-  traverseNode(figmaData.nodes[node])
-  return designSystem
 }
 
 // Optimize Figma data for AI processing
@@ -181,7 +78,7 @@ function optimizeFigmaData(figmaData: any, nodeId: string): any {
 }
 
 // Generate AI prompt for HTML/CSS conversion
-function generateAIPrompt(figmaData: any, designSystem: any, params: FigmaToHTMLAIParams): string {
+function generateAIPrompt(figmaData: any, params: FigmaToHTMLAIParams): string {
   const optimizedData = optimizeFigmaData(figmaData, params.nodeId || '')
   const figmaJson = JSON.stringify(optimizedData, null, 2)
 
@@ -196,19 +93,19 @@ CRITICAL REQUIREMENTS:
 6. Include proper accessibility attributes (ARIA labels, roles, etc.)
 7. Use CSS custom properties for design tokens
 8. Generate clean, maintainable code with comments
+9. USE THE PROVIDED IMAGES: Replace any image placeholders with the actual image URLs provided below
 
 Figma Design Data:
 ${figmaJson}
 
-Design System Context (Auto-extracted):
-- Colors: ${designSystem.colors.join(', ') || 'None detected'}
-- Typography: ${designSystem.typography.join(', ') || 'None detected'}
-- Spacing: ${designSystem.spacing.join(', ') || 'None detected'}
-- Components: ${designSystem.components.join(', ') || 'None detected'}
+CRITICAL OUTPUT REQUIREMENTS:
+- Generate ONLY ONE complete HTML5 document with DOCTYPE, html, head, and body tags
+- ALL CSS styles MUST be embedded in <style> tags within the <head> section
+- DO NOT generate separate HTML and CSS sections
+- DO NOT use external CSS files or separate CSS blocks
+- Return a single, complete HTML document with embedded styles
 
-Output Requirements:
-- Generate a complete HTML5 document with DOCTYPE, html, head, and body tags
-- DO NOT include any CSS styles in the HTML - keep them completely separate
+Technical Requirements:
 - Use semantic HTML5 elements (header, nav, main, section, article, aside, footer, button, input, etc.)
 - Include comprehensive accessibility attributes
 - Implement responsive design with CSS Grid and Flexbox
@@ -220,17 +117,14 @@ Output Requirements:
 - Preserve all text content exactly as shown in the design
 - Include all visual elements, shapes, and components from the design
 - Maintain the exact layout structure and positioning from Figma
+- For images, use proper <img> tags with alt attributes for accessibility
 - Remove all newline characters (\n) from the output
 - Use class names that correspond to the CSS selectors
 
 ${params.customPrompt ? `\nAdditional Requirements: ${params.customPrompt}` : ''}
 
-Format your response exactly as:
-HTML:
-[Complete HTML document WITHOUT any <style> tags or inline styles]
-
-CSS:
-[Complete CSS stylesheet with all styles]`
+RESPONSE FORMAT - Return ONLY this:
+<!DOCTYPE html><html><head><style>/* ALL CSS STYLES HERE */</style></head><body><!-- ALL HTML CONTENT HERE --></body></html>`
 
   return basePrompt
 }
@@ -240,8 +134,7 @@ async function callAIService(
   prompt: string,
   params: FigmaToHTMLAIParams
 ): Promise<{
-  html: string
-  css: string
+  combinedHtml: string
   model: string
   tokens: number
 }> {
@@ -266,7 +159,7 @@ async function callAIService(
           {
             role: 'system',
             content:
-              'You are an expert frontend developer specializing in converting Figma designs to clean, semantic, and accessible HTML/CSS code. Always respond with properly formatted HTML and CSS. Generate separate HTML and CSS - do not embed CSS in HTML. Remove all newline characters from the output.',
+              'You are an expert frontend developer specializing in converting Figma designs to clean, semantic, and accessible HTML/CSS code. Always respond with a single HTML document that includes embedded CSS in <style> tags within the <head> section. Do NOT generate separate HTML and CSS sections. Return only one complete HTML document with embedded styles. Remove all newline characters from the output.',
           },
           {
             role: 'user',
@@ -286,24 +179,40 @@ async function callAIService(
     const data = await response.json()
     const processingTime = Date.now() - startTime
 
-    // Parse AI response to extract HTML and CSS
+    // Parse AI response to extract combined HTML/CSS
     const content = data.choices?.[0]?.message?.content || ''
-    const htmlMatch = content.match(/HTML:\s*([\s\S]*?)(?=CSS:|$)/)
-    const cssMatch = content.match(/CSS:\s*([\s\S]*?)$/)
-
-    // Extract and clean HTML
-    let html = htmlMatch ? htmlMatch[1].trim() : content
-    // Remove all newline characters and backslashes from HTML
-    html = html.replace(/\n/g, '').replace(/\\/g, '')
-
-    // Extract and clean CSS
-    let css = cssMatch ? cssMatch[1].trim() : ''
-    // Remove all newline characters and backslashes from CSS
-    css = css.replace(/\n/g, '').replace(/\\/g, '')
+    
+    // Clean the combined HTML/CSS response
+    let combinedHtml = content.trim()
+    
+    // If AI still returned separate HTML and CSS sections, combine them
+    const htmlMatch = content.match(/HTML:\s*([\s\S]*?)(?=CSS:|$)/i)
+    const cssMatch = content.match(/CSS:\s*([\s\S]*?)$/i)
+    
+    if (htmlMatch && cssMatch) {
+      // AI returned separate sections, combine them
+      let html = htmlMatch[1].trim()
+      let css = cssMatch[1].trim()
+      
+      // Clean HTML and CSS
+      html = html.replace(/\n/g, '').replace(/\\/g, '')
+      css = css.replace(/\n/g, '').replace(/\\/g, '')
+      
+      // Create combined HTML with embedded CSS
+      combinedHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Figma Design</title><style>${css}</style></head><body>${html}</body></html>`
+    } else {
+      // AI returned combined format, clean it thoroughly
+      combinedHtml = combinedHtml
+        .replace(/\n/g, '')                    // Remove newlines
+        .replace(/\\/g, '')                     // Remove all backslashes
+        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'")                  // Replace escaped single quotes
+        .replace(/\\t/g, '')                   // Remove escaped tabs
+        .replace(/\\r/g, '')                    // Remove escaped carriage returns
+    }
 
     return {
-      html,
-      css,
+      combinedHtml,
       model: data.model || 'gpt-5',
       tokens: data.usage?.total_tokens || 0,
     }
@@ -311,27 +220,20 @@ async function callAIService(
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error('AI service error', { error: errorMessage })
 
-    // Fallback: Generate basic HTML structure
-    const fallbackHtml = generateFallbackHTML()
-    const fallbackCss = generateFallbackCSS()
+    // Fallback: Generate basic HTML structure with embedded CSS
+    const fallbackHtml = generateFallbackCombinedHTML()
 
     return {
-      html: fallbackHtml,
-      css: fallbackCss,
+      combinedHtml: fallbackHtml,
       model: 'fallback',
       tokens: 0,
     }
   }
 }
 
-// Generate fallback HTML when AI service fails
-function generateFallbackHTML(): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Figma Design</title></head><body><div class="container"><header class="header"><h1>Figma Design</h1><p>This is a fallback HTML structure. Please check your AI service configuration.</p></header><main class="content"><section class="section"><h2>Content Section</h2><p>This is a placeholder for your Figma design content.</p><button class="button">Action Button</button></section></main></div></body></html>`
-}
-
-// Generate fallback CSS
-function generateFallbackCSS(): string {
-  return `/* Fallback CSS - Please check AI service configuration */ * { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; } .container { max-width: 1200px; margin: 0 auto; padding: 20px; } .header { background: #f8f9fa; padding: 20px 0; margin-bottom: 40px; } .content { display: grid; gap: 20px; } .section { background: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; } .button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; } .button:hover { background: #0056b3; } @media (max-width: 768px) { .container { padding: 10px; } }`
+// Generate fallback combined HTML with embedded CSS when AI service fails
+function generateFallbackCombinedHTML(): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Figma Design</title><style>* { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; } .container { max-width: 1200px; margin: 0 auto; padding: 20px; } .header { background: #f8f9fa; padding: 20px 0; margin-bottom: 40px; } .content { display: grid; gap: 20px; } .section { background: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; } .button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; } .button:hover { background: #0056b3; } @media (max-width: 768px) { .container { padding: 10px; } }</style></head><body><div class="container"><header class="header"><h1>Figma Design</h1><p>This is a fallback HTML structure. Please check your AI service configuration.</p></header><main class="content"><section class="section"><h2>Content Section</h2><p>This is a placeholder for your Figma design content.</p><button class="button">Action Button</button></section></main></div></body></html>`
 }
 
 // Main tool configuration
@@ -403,16 +305,20 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
       // Extract data from Figma API response
       const data = await response.json()
       const figmaData = data
-      // Extract design system
-      const designSystem = extractDesignSystem(figmaData, params.nodeId || '')
 
       // Generate AI prompt
-      const prompt = generateAIPrompt(figmaData, designSystem, params)
+      const prompt = generateAIPrompt(figmaData, params)
 
       // Call AI service
       const aiResult = await callAIService(prompt, params)
 
       const processingTime = Date.now() - startTime
+
+      // Final cleanup of combined HTML
+      const finalCombinedHtml = aiResult.combinedHtml
+        .replace(/\\/g, '')                     // Remove all backslashes
+        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'")                  // Replace escaped single quotes
 
       return {
         success: true,
@@ -421,11 +327,9 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             fileKey: params.fileKey,
             nodeId: params.nodeId,
             processingTime,
-            designSystem,
             aiModel: aiResult.model,
             tokensUsed: aiResult.tokens,
-            html: aiResult.html.replaceAll('\n', '').replaceAll('\\', ''),
-            css: aiResult.css,
+            combinedHtml: finalCombinedHtml,
           },
         },
       }
@@ -438,6 +342,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
         nodeId: params.nodeId,
       })
 
+      // Final cleanup of fallback HTML
+      const finalFallbackHtml = generateFallbackCombinedHTML()
+        .replace(/\\/g, '')                     // Remove all backslashes
+        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'")                  // Replace escaped single quotes
+
       return {
         success: false,
         output: {
@@ -445,16 +355,9 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             fileKey: params.fileKey,
             nodeId: params.nodeId,
             processingTime: Date.now() - startTime,
-            designSystem: {
-              colors: [],
-              typography: [],
-              spacing: [],
-              components: [],
-            },
             aiModel: 'fallback',
             tokensUsed: 0,
-            html: generateFallbackHTML().replaceAll('\\', ''),
-            css: generateFallbackCSS(),
+            combinedHtml: finalFallbackHtml,
           },
         },
         error: errorMessage,
@@ -465,16 +368,14 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
   outputs: {
     metadata: {
       type: 'object',
-      description: 'Metadata about the conversion process including HTML and CSS',
+      description: 'Metadata about the conversion process including combined HTML/CSS',
       properties: {
         fileKey: { type: 'string', description: 'Figma file key' },
         nodeId: { type: 'string', description: 'Figma node ID', optional: true },
         processingTime: { type: 'number', description: 'Processing time in milliseconds' },
-        designSystem: { type: 'object', description: 'Extracted design system' },
         aiModel: { type: 'string', description: 'AI model used for conversion' },
         tokensUsed: { type: 'number', description: 'Number of tokens used' },
-        html: { type: 'string', description: 'Generated HTML code from the Figma design' },
-        css: { type: 'string', description: 'Generated CSS styles for the HTML' },
+        combinedHtml: { type: 'string', description: 'Generated HTML document with embedded CSS styles' },
       },
     },
   },
