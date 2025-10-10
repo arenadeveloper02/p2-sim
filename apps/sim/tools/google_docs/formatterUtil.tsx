@@ -43,8 +43,16 @@ export function convertMarkdownToGoogleDocsRequests(
   }
 
   let i = 0
-  let inListBlock = false
-  let listType: 'bullet' | 'numbered' | null = null
+  let listItems: Array<{ text: string; indentLevel: number; type: 'bullet' | 'numbered' }> = []
+  let listStartIndex: number | null = null
+
+  const flushListItems = () => {
+    if (listItems.length > 0 && listStartIndex !== null) {
+      currentIndex = addListBlockRequests(requests, listItems, listStartIndex)
+      listItems = []
+      listStartIndex = null
+    }
+  }
 
   while (i < lines.length) {
     const line = lines[i]
@@ -54,8 +62,7 @@ export function convertMarkdownToGoogleDocsRequests(
     if (trimmedLine.startsWith('|') && i + 1 < lines.length) {
       const tableResult = processMarkdownTable(lines, i)
       if (tableResult) {
-        inListBlock = false
-        listType = null
+        flushListItems()
         currentIndex = addTableRequest(requests, tableResult, currentIndex)
         i = tableResult.endIndex + 1
         continue
@@ -64,8 +71,7 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for code blocks
     if (line.startsWith('```')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       const codeBlockResult = processCodeBlock(lines, i)
       currentIndex = addCodeBlockRequest(
         requests,
@@ -79,8 +85,7 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for blockquotes
     if (line.startsWith('> ')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       const blockquoteText = line.substring(2)
       currentIndex = addBlockquoteRequest(requests, blockquoteText, currentIndex)
       i++
@@ -89,8 +94,7 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for horizontal rules
     if (trimmedLine === '---' || trimmedLine === '***' || trimmedLine === '___') {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addHorizontalRuleRequest(requests, currentIndex)
       i++
       continue
@@ -98,29 +102,25 @@ export function convertMarkdownToGoogleDocsRequests(
 
     // Check for headings
     if (line.startsWith('#### ')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addHeadingRequest(requests, line.substring(5), currentIndex, 'HEADING_4')
       i++
       continue
     }
     if (line.startsWith('### ')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addHeadingRequest(requests, line.substring(4), currentIndex, 'HEADING_3')
       i++
       continue
     }
     if (line.startsWith('## ')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addHeadingRequest(requests, line.substring(3), currentIndex, 'HEADING_2')
       i++
       continue
     }
     if (line.startsWith('# ')) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addHeadingRequest(requests, line.substring(2), currentIndex, 'HEADING_1')
       i++
       continue
@@ -132,8 +132,7 @@ export function convertMarkdownToGoogleDocsRequests(
       trimmedLine.startsWith('- [x]') ||
       trimmedLine.startsWith('- [X]')
     ) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       const checked = trimmedLine.startsWith('- [x]') || trimmedLine.startsWith('- [X]')
       const taskText = trimmedLine.substring(5).trim()
       currentIndex = addTaskListRequest(requests, taskText, checked, currentIndex)
@@ -148,13 +147,16 @@ export function convertMarkdownToGoogleDocsRequests(
       const leadingSpaces = line.length - line.trimStart().length
       const indentLevel = Math.floor(leadingSpaces / 2)
 
-      // Start new list block if needed
-      if (!inListBlock || listType !== 'numbered') {
-        inListBlock = true
-        listType = 'numbered'
+      // Start new list block if this is a different type
+      if (listItems.length > 0 && listItems[0].type !== 'numbered') {
+        flushListItems()
       }
 
-      currentIndex = addNumberedListRequest(requests, text, currentIndex, indentLevel)
+      if (listStartIndex === null) {
+        listStartIndex = currentIndex
+      }
+
+      listItems.push({ text, indentLevel, type: 'numbered' })
       i++
       continue
     }
@@ -166,32 +168,36 @@ export function convertMarkdownToGoogleDocsRequests(
       const leadingSpaces = line.length - line.trimStart().length
       const indentLevel = Math.floor(leadingSpaces / 2)
 
-      // Start new list block if needed
-      if (!inListBlock || listType !== 'bullet') {
-        inListBlock = true
-        listType = 'bullet'
+      // Start new list block if this is a different type
+      if (listItems.length > 0 && listItems[0].type !== 'bullet') {
+        flushListItems()
       }
 
-      currentIndex = addBulletPointRequest(requests, text, currentIndex, indentLevel)
+      if (listStartIndex === null) {
+        listStartIndex = currentIndex
+      }
+
+      listItems.push({ text, indentLevel, type: 'bullet' })
       i++
       continue
     }
 
     // Empty line - breaks list blocks
     if (trimmedLine.length === 0) {
-      inListBlock = false
-      listType = null
+      flushListItems()
       currentIndex = addEmptyLineRequest(requests, currentIndex)
       i++
       continue
     }
 
     // Regular paragraph
-    inListBlock = false
-    listType = null
+    flushListItems()
     currentIndex = addParagraphWithFormattingRequest(requests, line, currentIndex)
     i++
   }
+
+  // Flush any remaining list items
+  flushListItems()
   return requests
 }
 
@@ -512,6 +518,140 @@ function addHorizontalRuleRequest(requests: Array<Record<string, any>>, index: n
   return index + 1
 }
 
+function addListBlockRequests(
+  requests: Array<Record<string, any>>,
+  listItems: Array<{ text: string; indentLevel: number; type: 'bullet' | 'numbered' }>,
+  startIndex: number
+): number {
+  if (listItems.length === 0) return startIndex
+
+  const listType = listItems[0].type
+  let currentIndex = startIndex
+  let totalTabs = 0
+  const allFormatRequests: Array<{ range: FormatRange; index: number }> = []
+  const allLinkRequests: Array<{ range: LinkRange; index: number }> = []
+
+  // First, insert all the text for all list items
+  for (const item of listItems) {
+    const cleanTextBuilder: string[] = []
+    const formatRanges: FormatRange[] = []
+    const linkRanges: LinkRange[] = []
+
+    parseInlineFormatting(item.text, cleanTextBuilder, formatRanges, linkRanges)
+    const cleanText = cleanTextBuilder.join('')
+
+    // Add tab characters for nesting level
+    const tabs = '\t'.repeat(item.indentLevel)
+    const textWithTabs = tabs + cleanText
+    totalTabs += item.indentLevel
+
+    requests.push({
+      insertText: {
+        location: { index: currentIndex },
+        text: `${textWithTabs}\n`,
+      },
+    })
+
+    // Collect formatting requests with adjusted positions
+    for (const range of formatRanges) {
+      allFormatRequests.push({
+        range: {
+          ...range,
+          start: range.start + item.indentLevel,
+          end: range.end + item.indentLevel,
+        },
+        index: currentIndex,
+      })
+    }
+
+    for (const range of linkRanges) {
+      allLinkRequests.push({
+        range: {
+          ...range,
+          start: range.start + item.indentLevel,
+          end: range.end + item.indentLevel,
+        },
+        index: currentIndex,
+      })
+    }
+
+    currentIndex += textWithTabs.length + 1
+  }
+
+  // Apply all formatting
+  for (const { range, index } of allFormatRequests) {
+    const formatStart = index + range.start
+    const formatEnd = index + range.end
+
+    if (range.type === 'bold') {
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: formatStart, endIndex: formatEnd },
+          textStyle: { bold: true },
+          fields: 'bold',
+        },
+      })
+    } else if (range.type === 'italic') {
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: formatStart, endIndex: formatEnd },
+          textStyle: { italic: true },
+          fields: 'italic',
+        },
+      })
+    } else if (range.type === 'strikethrough') {
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: formatStart, endIndex: formatEnd },
+          textStyle: { strikethrough: true },
+          fields: 'strikethrough',
+        },
+      })
+    } else if (range.type === 'code') {
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: formatStart, endIndex: formatEnd },
+          textStyle: {
+            weightedFontFamily: { fontFamily: 'Courier New' },
+            backgroundColor: { color: { rgbColor: { red: 0.95, green: 0.95, blue: 0.95 } } },
+          },
+          fields: 'weightedFontFamily,backgroundColor',
+        },
+      })
+    }
+  }
+
+  for (const { range, index } of allLinkRequests) {
+    const formatStart = index + range.start
+    const formatEnd = index + range.end
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: formatStart, endIndex: formatEnd },
+        textStyle: { link: { url: range.url } },
+        fields: 'link',
+      },
+    })
+  }
+
+  // Apply bullets to the entire range once
+  const bulletPreset =
+    listType === 'bullet' ? 'BULLET_DISC_CIRCLE_SQUARE' : 'NUMBERED_DECIMAL_ALPHA_ROMAN'
+
+  requests.push({
+    createParagraphBullets: {
+      range: {
+        startIndex: startIndex,
+        endIndex: currentIndex,
+      },
+      bulletPreset,
+    },
+  })
+
+  // After createParagraphBullets, tabs are consumed and the document is shorter
+  // Return the adjusted index (subtract the number of tab characters)
+  return currentIndex - totalTabs
+}
+
 function addNumberedListRequest(
   requests: Array<Record<string, any>>,
   text: string,
@@ -525,43 +665,43 @@ function addNumberedListRequest(
   parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
   const cleanText = cleanTextBuilder.join('')
 
+  // Add tab characters for nesting level
+  const tabs = '\t'.repeat(indentLevel)
+  const textWithTabs = tabs + cleanText
+
   requests.push({
     insertText: {
       location: { index },
-      text: `${cleanText}\n`,
+      text: `${textWithTabs}\n`,
     },
   })
 
-  applyInlineFormatting(requests, formatRanges, linkRanges, index)
+  // Adjust format ranges to account for the tabs
+  const adjustedFormatRanges = formatRanges.map((range) => ({
+    ...range,
+    start: range.start + indentLevel,
+    end: range.end + indentLevel,
+  }))
+
+  const adjustedLinkRanges = linkRanges.map((range) => ({
+    ...range,
+    start: range.start + indentLevel,
+    end: range.end + indentLevel,
+  }))
+
+  applyInlineFormatting(requests, adjustedFormatRanges, adjustedLinkRanges, index)
 
   requests.push({
     createParagraphBullets: {
       range: {
         startIndex: index,
-        endIndex: index + cleanText.length + 1,
+        endIndex: index + textWithTabs.length + 1,
       },
       bulletPreset: 'NUMBERED_DECIMAL_ALPHA_ROMAN',
     },
   })
 
-  // Apply indentation for nested numbered lists
-  if (indentLevel > 0) {
-    requests.push({
-      updateParagraphStyle: {
-        range: {
-          startIndex: index,
-          endIndex: index + cleanText.length + 1,
-        },
-        paragraphStyle: {
-          indentStart: { magnitude: 36 * indentLevel, unit: 'PT' },
-          indentEnd: { magnitude: 0, unit: 'PT' },
-        },
-        fields: 'indentStart,indentEnd',
-      },
-    })
-  }
-
-  return index + cleanText.length + 1
+  return index + textWithTabs.length + 1
 }
 
 function addTaskListRequest(
@@ -667,43 +807,43 @@ function addBulletPointRequest(
   parseInlineFormatting(text, cleanTextBuilder, formatRanges, linkRanges)
   const cleanText = cleanTextBuilder.join('')
 
+  // Add tab characters for nesting level
+  const tabs = '\t'.repeat(indentLevel)
+  const textWithTabs = tabs + cleanText
+
   requests.push({
     insertText: {
       location: { index },
-      text: `${cleanText}\n`,
+      text: `${textWithTabs}\n`,
     },
   })
 
-  applyInlineFormatting(requests, formatRanges, linkRanges, index)
+  // Adjust format ranges to account for the tabs
+  const adjustedFormatRanges = formatRanges.map((range) => ({
+    ...range,
+    start: range.start + indentLevel,
+    end: range.end + indentLevel,
+  }))
+
+  const adjustedLinkRanges = linkRanges.map((range) => ({
+    ...range,
+    start: range.start + indentLevel,
+    end: range.end + indentLevel,
+  }))
+
+  applyInlineFormatting(requests, adjustedFormatRanges, adjustedLinkRanges, index)
 
   requests.push({
     createParagraphBullets: {
       range: {
         startIndex: index,
-        endIndex: index + cleanText.length + 1,
+        endIndex: index + textWithTabs.length + 1,
       },
       bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
     },
   })
 
-  // Apply indentation for nested bullets
-  if (indentLevel > 0) {
-    requests.push({
-      updateParagraphStyle: {
-        range: {
-          startIndex: index,
-          endIndex: index + cleanText.length + 1,
-        },
-        paragraphStyle: {
-          indentStart: { magnitude: 36 * indentLevel, unit: 'PT' },
-          indentEnd: { magnitude: 0, unit: 'PT' },
-        },
-        fields: 'indentStart,indentEnd',
-      },
-    })
-  }
-
-  return index + cleanText.length + 1
+  return index + textWithTabs.length + 1
 }
 
 function addParagraphWithFormattingRequest(
