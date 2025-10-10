@@ -622,6 +622,10 @@ export function formatWebhookInput(
   }
 
   // Generic format for other providers
+  const baseUrl = request.headers.get('host')
+    ? `${request.headers.get('x-forwarded-proto') || 'https'}://${request.headers.get('host')}`
+    : 'https://your-domain.com'
+
   return {
     webhook: {
       data: {
@@ -631,6 +635,7 @@ export function formatWebhookInput(
         payload: body,
         headers: Object.fromEntries(request.headers.entries()),
         method: request.method,
+        url: `${baseUrl}/api/webhooks/trigger/${foundWebhook.path}`,
       },
     },
     workflowId: foundWorkflow.id,

@@ -159,6 +159,11 @@ export class TriggerBlockHandler implements BlockHandler {
           // Always keep webhook metadata
           if (starterOutput.webhook) result.webhook = starterOutput.webhook
 
+          // For generic webhooks, expose the URL field at root level
+          if (provider === 'generic' && webhookData.url) {
+            result.url = webhookData.url
+          }
+
           return result
         }
 

@@ -5,7 +5,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 // import { checkServerSideUsageLimits } from '@/lib/billing'
 // import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env, isTruthy } from '@/lib/env'
-import { IdempotencyService, webhookIdempotency } from '@/lib/idempotency/service'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import {
@@ -296,42 +295,35 @@ export async function POST(
       blockId: foundWebhook.blockId,
     }
 
-    const idempotencyKey = IdempotencyService.createWebhookIdempotencyKey(
-      foundWebhook.id,
-      body,
-      Object.fromEntries(request.headers.entries())
-    )
+    // Execute webhook directly without idempotency check
+    logger.info(`[${requestId}] Executing webhook directly (idempotency disabled)`)
 
-    const result = await webhookIdempotency.executeWithIdempotency(
-      foundWebhook.provider,
-      idempotencyKey,
-      async () => {
-        const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+    const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+    let result: any
 
-        if (useTrigger) {
-          const handle = await tasks.trigger('webhook-execution', payload)
-          logger.info(
-            `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
-          )
-          return {
-            method: 'trigger.dev',
-            taskId: handle.id,
-            status: 'queued',
-          }
-        }
-        // Fire-and-forget direct execution to avoid blocking webhook response
-        void executeWebhookJob(payload).catch((error) => {
-          logger.error(`[${requestId}] Direct webhook execution failed`, error)
-        })
-        logger.info(
-          `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
-        )
-        return {
-          method: 'direct',
-          status: 'queued',
-        }
+    if (useTrigger) {
+      const handle = await tasks.trigger('webhook-execution', payload)
+      logger.info(
+        `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
+      )
+      result = {
+        method: 'trigger.dev',
+        taskId: handle.id,
+        status: 'queued',
       }
-    )
+    } else {
+      // Fire-and-forget direct execution to avoid blocking webhook response
+      void executeWebhookJob(payload).catch((error) => {
+        logger.error(`[${requestId}] Direct webhook execution failed`, error)
+      })
+      logger.info(
+        `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
+      )
+      result = {
+        method: 'direct',
+        status: 'queued',
+      }
+    }
 
     logger.debug(`[${requestId}] Webhook execution result:`, result)
 
