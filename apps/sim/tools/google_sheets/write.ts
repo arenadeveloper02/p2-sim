@@ -138,8 +138,8 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
           })
         })
 
-        // Add headers as the first row, then add data rows
-        processedValues = [headers, ...rows]
+        // For write operations, only add data rows (no headers)
+        processedValues = rows
       }
       // Continue with existing logic for other array types
       else if (!Array.isArray(processedValues)) {
