@@ -362,13 +362,13 @@ function formatTableWithSpacing(tableLines: string[]): string {
           let separator = ''
           if (cellContent.startsWith(':') && cellContent.endsWith(':')) {
             // Center aligned
-            separator = ':' + '-'.repeat(Math.max(0, width - 2)) + ':'
+            separator = `:${'-'.repeat(Math.max(0, width - 2))}:`
           } else if (cellContent.endsWith(':')) {
             // Right aligned
-            separator = '-'.repeat(Math.max(0, width - 1)) + ':'
+            separator = `${'-'.repeat(Math.max(0, width - 1))}:`
           } else if (cellContent.startsWith(':')) {
             // Left aligned
-            separator = ':' + '-'.repeat(Math.max(0, width - 1))
+            separator = `:${'-'.repeat(Math.max(0, width - 1))}`
           } else {
             // Default (left aligned)
             separator = '-'.repeat(width)
