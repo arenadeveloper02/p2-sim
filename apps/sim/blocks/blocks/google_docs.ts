@@ -7,7 +7,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   name: 'Google Docs',
   description: 'Read, write, and create documents',
   longDescription:
-    'Integrate Google Docs into the workflow. Can read, write, and create documents. Requires OAuth.',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents. Automatically handles both native Google Docs and other document formats (like .docx files). Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/google_docs',
   category: 'tools',
   bgColor: '#E0E0E0',
