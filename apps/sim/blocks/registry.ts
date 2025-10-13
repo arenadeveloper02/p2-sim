@@ -31,6 +31,7 @@ import { GoogleSheetsBlock } from '@/blocks/blocks/google_sheets'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HunterBlock } from '@/blocks/blocks/hunter'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
+import { IndustryBenchmarkBlock } from '@/blocks/blocks/industry_benchmark'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
@@ -113,6 +114,7 @@ export const registry: Record<string, BlockConfig> = {
   huggingface: HuggingFaceBlock,
   hunter: HunterBlock,
   image_generator: ImageGeneratorBlock,
+  industry_benchmark: IndustryBenchmarkBlock,
   jina: JinaBlock,
   jira: JiraBlock,
   knowledge: KnowledgeBlock,

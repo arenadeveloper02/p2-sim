@@ -81,6 +81,7 @@ import {
   hunterEmailFinderTool,
   hunterEmailVerifierTool,
 } from '@/tools/hunter'
+import { industryBenchmarkAnalyzeTool } from '@/tools/industry_benchmark'
 import { readUrlTool } from '@/tools/jina'
 import { jiraBulkRetrieveTool, jiraRetrieveTool, jiraUpdateTool, jiraWriteTool } from '@/tools/jira'
 import {
@@ -304,6 +305,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
+  industry_benchmark_analyze: industryBenchmarkAnalyzeTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,
