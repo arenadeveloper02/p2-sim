@@ -158,6 +158,21 @@ export function LongInput({
   // Get ReactFlow instance for zoom control
   const reactFlowInstance = useReactFlow()
 
+  /**
+   * Helper function to ensure trailing newlines are rendered
+   * 
+   * Problem: When text ends with \n, React/DOM doesn't render the empty line
+   * Solution: Append a zero-width space (\u200B) after trailing newlines
+   * This forces the browser to render the empty line while remaining invisible
+   */
+  const ensureTrailingNewlineVisible = (text: string) => {
+    // If text ends with one or more newlines, append zero-width space
+    if (text.endsWith('\n')) {
+      return text + '\u200B'
+    }
+    return text
+  }
+
   // Set initial height on first render
   useLayoutEffect(() => {
     const initialHeight = getInitialHeight()
@@ -539,6 +554,7 @@ export function LongInput({
           - 'rounded-md': Matches textarea border-radius
           - 'px-3 py-2': Matches textarea padding exactly
           - 'boxSizing: border-box': Ensures padding is included in height calculations
+          - 'whiteSpace: pre-wrap': Preserves newlines and spaces, crucial for Enter key
         */}
         <div
           ref={overlayRef}
@@ -551,6 +567,8 @@ export function LongInput({
             boxSizing: 'border-box',
             fontFamily: 'inherit',
             lineHeight: 'inherit',
+            whiteSpace: 'pre-wrap', // CRITICAL: Preserves newlines from Enter key
+            wordBreak: 'break-word',
           }}
         >
           {/* 
@@ -558,6 +576,8 @@ export function LongInput({
             - Must expand naturally to create scrollable content
             - Uses <pre> tag for consistent whitespace/newline handling
             - Matches all text styling from textarea for pixel-perfect alignment
+            - The <pre> tag naturally handles \n characters as line breaks
+            - Uses ensureTrailingNewlineVisible() to render trailing newlines properly
           */}
           <pre
             className='m-0 whitespace-pre-wrap break-words font-sans text-sm'
@@ -567,7 +587,7 @@ export function LongInput({
               wordBreak: 'break-word',
             }}
           >
-            {formatDisplayText(value?.toString() ?? '', true)}
+            {formatDisplayText(ensureTrailingNewlineVisible(value?.toString() ?? ''), true)}
           </pre>
         </div>
 
