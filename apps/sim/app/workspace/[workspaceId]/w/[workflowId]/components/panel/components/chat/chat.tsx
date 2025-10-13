@@ -464,6 +464,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Execute the workflow to generate a response
       result = await handleRunWorkflow(workflowInput)
+      console.log('Workflow execution result:', result)
     } catch (error) {
       logger.error('Error in handleSendMessage:', error)
       setIsUploadingFiles(false)
@@ -474,6 +475,8 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     // Check if we got a streaming response
     if (result && 'stream' in result && result.stream instanceof ReadableStream) {
       const messageIdMap = new Map<string, string>()
+      const executionId = (result as any).executionId
+      console.log('Streaming executionId:', executionId)
 
       const reader = result.stream.getReader()
       const decoder = new TextDecoder()
@@ -494,7 +497,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             if (line.startsWith('data: ')) {
               try {
                 const json = JSON.parse(line.substring(6))
-                const { blockId, chunk: contentChunk, event, data } = json
+                const { blockId, chunk: contentChunk, event, data, executionId: streamExecutionId } = json
+                
+                // Use executionId from stream data if available, otherwise fall back to the one from result
+                const currentExecutionId = streamExecutionId || executionId
+                console.log('Stream executionId:', streamExecutionId, 'Fallback executionId:', executionId, 'Using:', currentExecutionId)
 
                 if (event === 'final' && data) {
                   const result = data as ExecutionResult
@@ -550,13 +557,16 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                   if (!messageIdMap.has(blockId)) {
                     const newMessageId = crypto.randomUUID()
                     messageIdMap.set(blockId, newMessageId)
-                    addMessage({
+                    const messageData = {
                       id: newMessageId,
                       content: contentChunk,
                       workflowId: activeWorkflowId,
-                      type: 'workflow',
+                      type: 'workflow' as const,
                       isStreaming: true,
-                    })
+                      executionId: currentExecutionId,
+                    }
+                    console.log('Adding streaming message with data:', messageData)
+                    addMessage(messageData)
                   } else {
                     const existingMessageId = messageIdMap.get(blockId)
                     if (existingMessageId) {
@@ -636,6 +646,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             content,
             workflowId: activeWorkflowId,
             type: 'workflow',
+            executionId: (result as any).executionId,
           })
         }
       })
@@ -644,6 +655,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         content: `Error: ${'error' in result ? result.error : 'Workflow execution failed.'}`,
         workflowId: activeWorkflowId,
         type: 'workflow',
+        executionId: (result as any).executionId,
       })
     }
 

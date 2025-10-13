@@ -15,13 +15,16 @@ export const useChatStore = create<ChatStore>()(
         conversationIds: {},
 
         addMessage: (message) => {
+          console.log('Chat store addMessage received:', message)
           set((state) => {
             const newMessage: ChatMessage = {
               ...message,
               // Preserve provided id and timestamp if they exist; otherwise generate new ones
               id: (message as any).id ?? crypto.randomUUID(),
               timestamp: (message as any).timestamp ?? new Date().toISOString(),
+              executionId: (message as any).executionId,
             }
+            console.log('Chat store creating new message:', newMessage)
 
             // Keep only the last MAX_MESSAGES
             const newMessages = [newMessage, ...state.messages].slice(0, MAX_MESSAGES)
