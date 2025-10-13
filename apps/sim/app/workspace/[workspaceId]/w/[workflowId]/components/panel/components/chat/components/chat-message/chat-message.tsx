@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useChatStore } from '@/stores/panel/chat/store'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import CopilotMarkdownRenderer from '../../../copilot/components/copilot-message/components/markdown-renderer'
 import { downloadImage, isBase64, renderBs64Img } from './constants'
 
@@ -13,6 +15,7 @@ interface ChatMessageProps {
     isStreaming?: boolean
     executionId?: string
   }
+  onShowFeedbackDialog?: (executionId: string) => void
 }
 
 // Maximum character length for a word before it's broken up
@@ -50,8 +53,10 @@ const WordWrap = ({ text }: { text: string }) => {
   )
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onShowFeedbackDialog }: ChatMessageProps) {
   const [isCopied, setIsCopied] = useState<boolean>(false)
+  const { lookupExecutionIdForMessage } = useChatStore()
+  const { activeWorkflowId } = useWorkflowRegistry()
   // Format message content as text
   const formattedContent = useMemo(() => {
     if (typeof message.content === 'object' && message.content !== null) {
@@ -99,18 +104,62 @@ export function ChatMessage({ message }: ChatMessageProps) {
     setTimeout(() => setIsCopied(false), 2000)
   }
 
-  const handleLike = () => {
-    console.log('handleLike - executionId:', message.executionId)
-    console.log('handleLike - full message:', message)
+  const handleLike = async () => {
+    let executionId = message.executionId
+
+    // If executionId is missing (for older messages), try to look it up
+    if (!executionId && activeWorkflowId) {
+      const lookedUpExecutionId = await lookupExecutionIdForMessage(message.id, activeWorkflowId)
+      executionId = lookedUpExecutionId || undefined
+    }
+
+    if (!executionId) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/chat/feedback/${executionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          comment: '',
+          inComplete: false,
+          inAccurate: false,
+          outOfDate: false,
+          tooLong: false,
+          tooShort: false,
+          liked: true, // This is a like feedback
+        }),
+      })
+
+      if (!response.ok) {
+        console.error('Failed to submit like feedback:', response.statusText)
+      }
+    } catch (error) {
+      console.error('Error submitting like feedback:', error)
+    }
   }
 
-  const handleDislike = () => {
-    console.log('handleDislike')
+  const handleDislike = async () => {
+    let executionId = message.executionId
+
+    // If executionId is missing (for older messages), try to look it up
+    if (!executionId && activeWorkflowId) {
+      const lookedUpExecutionId = await lookupExecutionIdForMessage(message.id, activeWorkflowId)
+      executionId = lookedUpExecutionId || undefined
+    }
+
+    // Show feedback dialog using parent handler
+    if (executionId && onShowFeedbackDialog) {
+      onShowFeedbackDialog(executionId)
+    }
   }
 
   // Render agent/workflow messages as full-width text
   return (
-    <div className='w-full py-2 pl-[2px]'>
+    <div className='relative w-full py-2 pl-[2px]'>
       <div className='overflow-wrap-anywhere relative break-normal font-normal text-sm leading-normal'>
         <div className=' break-words bg-secondary p-3 text-base text-foreground'>
           {/* <WordWrap text={formattedContent} /> */}
@@ -148,10 +197,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <TooltipProvider>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
-                  <button className='text-muted-foreground transition-colors hover:bg-muted'
-                  onClick={()=>{
-                    handleLike()
-                  }}>
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      handleLike()
+                    }}
+                  >
                     <ThumbsUp className='h-4 w-4' strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
@@ -163,10 +214,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <TooltipProvider>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
-                  <button className='text-muted-foreground transition-colors hover:bg-muted'
-                  onClick={()=>{
-                    handleDislike()
-                  }}
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      handleDislike()
+                    }}
                   >
                     <ThumbsDown className='h-4 w-4' strokeWidth={2} />
                   </button>

@@ -179,6 +179,37 @@ export const useChatStore = create<ChatStore>()(
           return newId
         },
 
+        lookupExecutionIdForMessage: async (messageId, workflowId) => {
+          try {
+            // Find the message to get its timestamp
+            const message = get().messages.find((m) => m.id === messageId)
+            if (!message) {
+              return null
+            }
+
+            // Call the API endpoint to lookup the executionId
+            const response = await fetch(
+              `/api/chat/execution-id/${messageId}?workflowId=${encodeURIComponent(workflowId)}&timestamp=${encodeURIComponent(message.timestamp)}`
+            )
+
+            if (!response.ok) {
+              console.error('Failed to lookup executionId:', response.status, response.statusText)
+              return null
+            }
+
+            const data = await response.json()
+
+            if (data?.executionId) {
+              return data.executionId
+            }
+
+            return null
+          } catch (error) {
+            console.error('Error looking up executionId for message:', messageId, error)
+            return null
+          }
+        },
+
         appendMessageContent: (messageId, content) => {
           set((state) => {
             const newMessages = state.messages.map((message) => {

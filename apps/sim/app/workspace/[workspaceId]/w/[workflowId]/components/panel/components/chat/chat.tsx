@@ -18,6 +18,7 @@ import {
   ChatMessage,
   OutputSelect,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components'
+import { FeedbackDialog } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/feedback-dialog'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useExecutionStore } from '@/stores/execution/store'
@@ -91,6 +92,10 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
   // Add this new state to control form visibility
   const [showInputForm, setShowInputForm] = useState(false)
+
+  // Feedback dialog state
+  const [showFeedbackDialog, setShowFeedbackDialog] = useState(false)
+  const [feedbackExecutionId, setFeedbackExecutionId] = useState<string | undefined>()
 
   // Listen to subblock store changes for input format fields from starter blocks
   const subBlockInputFormat = useSubBlockStore(
@@ -406,7 +411,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
     // Store the message being sent for reference
     const sentMessage = chatMessage.trim()
-
+    handleHideFeedbackDialog()
     // Add to prompt history if it's not already the most recent
     if (
       sentMessage &&
@@ -464,7 +469,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
 
       // Execute the workflow to generate a response
       result = await handleRunWorkflow(workflowInput)
-      console.log('Workflow execution result:', result)
     } catch (error) {
       logger.error('Error in handleSendMessage:', error)
       setIsUploadingFiles(false)
@@ -476,7 +480,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     if (result && 'stream' in result && result.stream instanceof ReadableStream) {
       const messageIdMap = new Map<string, string>()
       const executionId = (result as any).executionId
-      console.log('Streaming executionId:', executionId)
 
       const reader = result.stream.getReader()
       const decoder = new TextDecoder()
@@ -497,11 +500,16 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             if (line.startsWith('data: ')) {
               try {
                 const json = JSON.parse(line.substring(6))
-                const { blockId, chunk: contentChunk, event, data, executionId: streamExecutionId } = json
-                
+                const {
+                  blockId,
+                  chunk: contentChunk,
+                  event,
+                  data,
+                  executionId: streamExecutionId,
+                } = json
+
                 // Use executionId from stream data if available, otherwise fall back to the one from result
                 const currentExecutionId = streamExecutionId || executionId
-                console.log('Stream executionId:', streamExecutionId, 'Fallback executionId:', executionId, 'Using:', currentExecutionId)
 
                 if (event === 'final' && data) {
                   const result = data as ExecutionResult
@@ -565,7 +573,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                       isStreaming: true,
                       executionId: currentExecutionId,
                     }
-                    console.log('Adding streaming message with data:', messageData)
                     addMessage(messageData)
                   } else {
                     const existingMessageId = messageIdMap.get(blockId)
@@ -724,6 +731,57 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     },
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
+
+  // Handler for feedback submission
+  const handleFeedbackSubmit = useCallback(
+    async (feedbackData: any) => {
+      if (!feedbackExecutionId) {
+        console.error('No executionId available for feedback submission')
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/chat/feedback/${feedbackExecutionId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            comment: feedbackData.comment || '',
+            inComplete: feedbackData.incomplete,
+            inAccurate: feedbackData.inaccurate,
+            outOfDate: feedbackData.outOfDate,
+            tooLong: feedbackData.tooLong,
+            tooShort: feedbackData.tooShort,
+            liked: false, // This is a dislike feedback
+          }),
+        })
+
+        if (!response.ok) {
+          console.error('Failed to submit feedback:', response.statusText)
+        }
+      } catch (error) {
+        console.error('Error submitting feedback:', error)
+      }
+
+      // Close the dialog
+      setShowFeedbackDialog(false)
+      setFeedbackExecutionId(undefined)
+    },
+    [feedbackExecutionId]
+  )
+
+  // Handler for showing feedback dialog
+  const handleShowFeedbackDialog = useCallback((executionId: string) => {
+    setFeedbackExecutionId(executionId)
+    setShowFeedbackDialog(true)
+  }, [])
+
+  // Handler for hiding feedback dialog
+  const handleHideFeedbackDialog = useCallback(() => {
+    setShowFeedbackDialog(false)
+    setFeedbackExecutionId(undefined)
+  }, [])
 
   // Handler for form submission
   const handleInputFormSubmit = useCallback(
@@ -977,6 +1035,13 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         selectedOutputs={selectedOutputs}
         onOutputSelect={handleOutputSelection}
       />
+      {/* Feedback Dialog - contained within the chat component */}
+      <FeedbackDialog
+        isOpen={showFeedbackDialog}
+        onClose={handleHideFeedbackDialog}
+        onSubmit={handleFeedbackSubmit}
+        executionId={feedbackExecutionId}
+      />
       {/* Always render the chat UI */}
       <>
         {/* Header with actions */}
@@ -1054,7 +1119,11 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                 <ScrollArea className='h-full pb-2' hideScrollbar={true}>
                   <div className='block overflow-x-auto' style={{ width: `${panelWidth - 30}px` }}>
                     {workflowMessages.map((message) => (
-                      <ChatMessage key={message.id} message={message} />
+                      <ChatMessage
+                        key={message.id}
+                        message={message}
+                        onShowFeedbackDialog={handleShowFeedbackDialog}
+                      />
                     ))}
                     <div ref={messagesEndRef} />
                   </div>
