@@ -181,34 +181,34 @@ async function callAIService(
 
     // Parse AI response to extract combined HTML/CSS
     const content = data.choices?.[0]?.message?.content || ''
-    
+
     // Clean the combined HTML/CSS response
     let combinedHtml = content.trim()
-    
+
     // If AI still returned separate HTML and CSS sections, combine them
     const htmlMatch = content.match(/HTML:\s*([\s\S]*?)(?=CSS:|$)/i)
     const cssMatch = content.match(/CSS:\s*([\s\S]*?)$/i)
-    
+
     if (htmlMatch && cssMatch) {
       // AI returned separate sections, combine them
       let html = htmlMatch[1].trim()
       let css = cssMatch[1].trim()
-      
+
       // Clean HTML and CSS
       html = html.replace(/\n/g, '').replace(/\\/g, '')
       css = css.replace(/\n/g, '').replace(/\\/g, '')
-      
+
       // Create combined HTML with embedded CSS
       combinedHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Figma Design</title><style>${css}</style></head><body>${html}</body></html>`
     } else {
       // AI returned combined format, clean it thoroughly
       combinedHtml = combinedHtml
-        .replace(/\n/g, '')                    // Remove newlines
-        .replace(/\\/g, '')                     // Remove all backslashes
-        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
-        .replace(/\\'/g, "'")                  // Replace escaped single quotes
-        .replace(/\\t/g, '')                   // Remove escaped tabs
-        .replace(/\\r/g, '')                    // Remove escaped carriage returns
+        .replace(/\n/g, '') // Remove newlines
+        .replace(/\\/g, '') // Remove all backslashes
+        .replace(/\\"/g, '"') // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'") // Replace escaped single quotes
+        .replace(/\\t/g, '') // Remove escaped tabs
+        .replace(/\\r/g, '') // Remove escaped carriage returns
     }
 
     return {
@@ -316,9 +316,9 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
 
       // Final cleanup of combined HTML
       const finalCombinedHtml = aiResult.combinedHtml
-        .replace(/\\/g, '')                     // Remove all backslashes
-        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
-        .replace(/\\'/g, "'")                  // Replace escaped single quotes
+        .replace(/\\/g, '') // Remove all backslashes
+        .replace(/\\"/g, '"') // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'") // Replace escaped single quotes
 
       return {
         success: true,
@@ -344,9 +344,9 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
 
       // Final cleanup of fallback HTML
       const finalFallbackHtml = generateFallbackCombinedHTML()
-        .replace(/\\/g, '')                     // Remove all backslashes
-        .replace(/\\"/g, '"')                  // Replace escaped quotes with regular quotes
-        .replace(/\\'/g, "'")                  // Replace escaped single quotes
+        .replace(/\\/g, '') // Remove all backslashes
+        .replace(/\\"/g, '"') // Replace escaped quotes with regular quotes
+        .replace(/\\'/g, "'") // Replace escaped single quotes
 
       return {
         success: false,
@@ -375,7 +375,10 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
         processingTime: { type: 'number', description: 'Processing time in milliseconds' },
         aiModel: { type: 'string', description: 'AI model used for conversion' },
         tokensUsed: { type: 'number', description: 'Number of tokens used' },
-        combinedHtml: { type: 'string', description: 'Generated HTML document with embedded CSS styles' },
+        combinedHtml: {
+          type: 'string',
+          description: 'Generated HTML document with embedded CSS styles',
+        },
       },
     },
   },
