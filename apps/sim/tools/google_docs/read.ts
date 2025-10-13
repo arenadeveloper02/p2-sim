@@ -65,10 +65,14 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
       ) {
         // Fall back to Google Drive API to get the file content
         try {
+          if (!params?.accessToken || !params?.documentId) {
+            throw new Error('Missing required parameters for fallback')
+          }
+
           const { executeTool } = await import('@/tools')
           const driveResult = await executeTool('google_drive_get_content', {
-            accessToken: params?.accessToken,
-            fileId: params?.documentId,
+            accessToken: params.accessToken,
+            fileId: params.documentId,
           })
 
           if (driveResult.success) {
@@ -77,12 +81,12 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
               output: {
                 content: driveResult.output?.content || '',
                 metadata: {
-                  documentId: params?.documentId,
+                  documentId: params.documentId,
                   title: driveResult.output?.metadata?.name || 'Untitled Document',
                   mimeType:
                     driveResult.output?.metadata?.mimeType ||
                     'application/vnd.google-apps.document',
-                  url: `https://docs.google.com/document/d/${params?.documentId}/edit`,
+                  url: `https://docs.google.com/document/d/${params.documentId}/edit`,
                   isExported: true, // Indicate this was exported from Drive API
                 },
               },
