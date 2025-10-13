@@ -301,14 +301,16 @@ export async function validateChatAuth(
 export async function executeWorkflowForChat(
   chatId: string,
   input: string,
-  conversationId?: string
+  conversationId?: string,
+  workflowInputs?: Record<string, any>,
+  logChatId?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
   logger.debug(
     `[${requestId}] Executing workflow for chat: ${chatId}${
       conversationId ? `, conversationId: ${conversationId}` : ''
-    }`
+    }${workflowInputs ? `, workflowInputs: ${JSON.stringify(workflowInputs)}` : ''}`
   )
 
   // Find the chat deployment
@@ -350,7 +352,14 @@ export async function executeWorkflowForChat(
   }
 
   // Set up logging for chat execution
-  const loggingSession = new LoggingSession(workflowId, executionId, 'chat', requestId)
+  const loggingSession = new LoggingSession(
+    workflowId,
+    executionId,
+    'chat',
+    requestId,
+    true,
+    logChatId || chatId
+  )
 
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>
@@ -449,6 +458,7 @@ export async function executeWorkflowForChat(
         },
         {} as Record<string, any>
       )
+
       return acc
     },
     {} as Record<string, Record<string, any>>
@@ -593,11 +603,20 @@ export async function executeWorkflowForChat(
         }
       }
 
+      // Merge workflow inputs into the workflow input
+      const mergedWorkflowInput = {
+        input: input,
+        conversationId,
+        ...(workflowInputs && Object.keys(workflowInputs).length > 0 ? workflowInputs : {}),
+      }
+
+      logger.debug(`[${requestId}] Merged workflow input:`, mergedWorkflowInput)
+
       const executor = new Executor({
         workflow: serializedWorkflow,
         currentBlockStates: processedBlockStates,
         envVarValues: decryptedEnvVars,
-        workflowInput: { input: input, conversationId },
+        workflowInput: mergedWorkflowInput,
         workflowVariables,
         contextExtensions: {
           stream: true,

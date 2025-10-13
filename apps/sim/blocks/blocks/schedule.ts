@@ -98,6 +98,7 @@ export const ScheduleBlock: BlockConfig = {
         { label: 'US Pacific (UTC-7)', id: 'America/Los_Angeles' },
         { label: 'London (UTC+1)', id: 'Europe/London' },
         { label: 'Paris (UTC+2)', id: 'Europe/Paris' },
+        { label: 'IST (UTC+5:30)', id: 'Asia/Kolkata' },
         { label: 'Singapore (UTC+8)', id: 'Asia/Singapore' },
         { label: 'Tokyo (UTC+9)', id: 'Asia/Tokyo' },
         { label: 'Sydney (UTC+10)', id: 'Australia/Sydney' },

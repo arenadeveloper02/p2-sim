@@ -2,7 +2,12 @@ import { LinearIcon } from '@/components/icons'
 import type { BlockConfig, BlockIcon } from '@/blocks/types'
 import type { LinearResponse } from '@/tools/linear/types'
 
-const LinearBlockIcon: BlockIcon = (props) => LinearIcon(props as any)
+interface LinearBlockIconProps {
+  // Define any props expected by LinearIcon here, or use 'any' if unknown
+  [key: string]: unknown
+}
+
+const LinearBlockIcon: BlockIcon = (props: LinearBlockIconProps) => LinearIcon(props as any)
 
 export const LinearBlock: BlockConfig<LinearResponse> = {
   type: 'linear',

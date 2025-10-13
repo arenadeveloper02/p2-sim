@@ -97,6 +97,7 @@ export function useChatStreaming() {
     const decoder = new TextDecoder()
     let accumulatedText = ''
     let lastAudioPosition = 0
+    let partialData = '' // Buffer for incomplete JSON data
 
     // Track which blocks have streamed content (like chat panel)
     const messageIdMap = new Map<string, string>()
@@ -143,98 +144,169 @@ export function useChatStreaming() {
         }
 
         const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n\n')
+        // Append to partial data buffer
+        partialData += chunk
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const json = JSON.parse(line.substring(6))
-              const { blockId, chunk: contentChunk, event: eventType } = json
+        // Split by double newlines to separate complete messages
+        const parts = partialData.split('\n\n')
 
-              if (eventType === 'final' && json.data) {
-                // The backend has already processed and combined all outputs
-                // We just need to extract the combined content and use it
-                const result = json.data as ExecutionResult
+        // Keep the last part as it might be incomplete
+        partialData = parts.pop() || ''
 
-                // Collect all content from logs that have output.content (backend processed)
-                let combinedContent = ''
-                if (result.logs) {
-                  const contentParts: string[] = []
+        // Process complete parts
+        for (const part of parts) {
+          const lines = part.split('\n')
 
-                  // Get content from all logs that have processed content
-                  result.logs.forEach((log) => {
-                    if (log.output?.content && typeof log.output.content === 'string') {
-                      // The backend already includes proper separators, so just collect the content
-                      contentParts.push(log.output.content)
-                    }
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonString = line.substring(6)
+                const json = JSON.parse(jsonString)
+                const { blockId, chunk: contentChunk, event: eventType } = json
+
+                if (eventType === 'final' && json.data) {
+                  // Final event received - check if we need to add additional content
+                  const result = json.data as ExecutionResult
+
+                  logger.info('Final event received:', {
+                    hasDirectOutput: !!result.output?.content,
+                    hasLogs: !!result.logs,
+                    outputType: typeof result.output?.content,
+                    outputLength: result.output?.content?.length || 0,
+                    accumulatedTextLength: accumulatedText.length,
                   })
 
-                  // Join without additional separators since backend already handles this
-                  combinedContent = contentParts.join('')
-                }
+                  // Check if there's additional content that wasn't streamed
+                  let additionalContent = ''
 
-                // Update the existing streaming message with the final combined content
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === messageId
-                      ? {
-                          ...msg,
-                          content: combinedContent || accumulatedText, // Use combined content or fallback to streamed
-                          isStreaming: false,
-                        }
-                      : msg
-                  )
-                )
-
-                return
-              }
-
-              if (blockId && contentChunk) {
-                // Track that this block has streamed content (like chat panel)
-                if (!messageIdMap.has(blockId)) {
-                  messageIdMap.set(blockId, messageId)
-                }
-
-                accumulatedText += contentChunk
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === messageId ? { ...msg, content: accumulatedText } : msg
-                  )
-                )
-
-                // Real-time TTS for voice mode
-                if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
-                  const newText = accumulatedText.substring(lastAudioPosition)
-                  const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
-                  let sentenceEnd = -1
-
-                  for (const ending of sentenceEndings) {
-                    const index = newText.indexOf(ending)
-                    if (index > 0) {
-                      sentenceEnd = index + ending.length
-                      break
+                  // For base64 images or other direct output content that wasn't streamed
+                  if (result.output?.content && typeof result.output.content === 'string') {
+                    // Only use direct output if it's different from accumulated text (e.g., base64 images)
+                    if (result.output.content !== accumulatedText.trim()) {
+                      additionalContent = result.output.content
+                      logger.info(
+                        'Found additional direct output content, length:',
+                        additionalContent.length
+                      )
                     }
                   }
 
-                  if (sentenceEnd > 0) {
-                    const sentence = newText.substring(0, sentenceEnd).trim()
-                    if (sentence && sentence.length >= 3) {
-                      try {
-                        await streamingOptions.audioStreamHandler(sentence)
-                        lastAudioPosition += sentenceEnd
-                      } catch (error) {
-                        logger.error('TTS error:', error)
+                  // Check for additional content in logs that wasn't streamed
+                  if (!additionalContent && result.logs) {
+                    const contentParts: string[] = []
+
+                    result.logs.forEach((log) => {
+                      if (log.output?.content && typeof log.output.content === 'string') {
+                        // Only add if it's different from what was already streamed
+                        if (log.output.content !== accumulatedText.trim()) {
+                          contentParts.push(log.output.content)
+                        }
+                      }
+                    })
+
+                    if (contentParts.length > 0) {
+                      additionalContent = contentParts.join('')
+                    }
+                  }
+
+                  // Determine final content
+                  let finalContent = accumulatedText
+                  if (additionalContent) {
+                    // Only append additional content if it's truly different
+                    finalContent = `${accumulatedText}\n\n${additionalContent}`
+                    logger.info('Appending additional content to streamed content')
+                  }
+
+                  // Update the streaming message to final state
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId
+                        ? {
+                            ...msg,
+                            content: finalContent,
+                            isStreaming: false,
+                          }
+                        : msg
+                    )
+                  )
+
+                  return
+                }
+
+                if (blockId && contentChunk) {
+                  // Track that this block has streamed content (like chat panel)
+                  if (!messageIdMap.has(blockId)) {
+                    messageIdMap.set(blockId, messageId)
+                  }
+
+                  accumulatedText += contentChunk
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+                    )
+                  )
+
+                  // Real-time TTS for voice mode
+                  if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
+                    const newText = accumulatedText.substring(lastAudioPosition)
+                    const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
+                    let sentenceEnd = -1
+
+                    for (const ending of sentenceEndings) {
+                      const index = newText.indexOf(ending)
+                      if (index > 0) {
+                        sentenceEnd = index + ending.length
+                        break
+                      }
+                    }
+
+                    if (sentenceEnd > 0) {
+                      const sentence = newText.substring(0, sentenceEnd).trim()
+                      if (sentence && sentence.length >= 3) {
+                        try {
+                          await streamingOptions.audioStreamHandler(sentence)
+                          lastAudioPosition += sentenceEnd
+                        } catch (error) {
+                          logger.error('TTS error:', error)
+                        }
                       }
                     }
                   }
+                } else if (blockId && eventType === 'end') {
+                  setMessages((prev) =>
+                    prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
+                  )
+                } else if (eventType === 'error') {
+                  // Handle error events from the server
+                  const errorData = json.data || {}
+                  const errorMessage = errorData.error || 'An error occurred during processing'
+
+                  logger.error('Server error event received:', errorData)
+
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId
+                        ? {
+                            ...msg,
+                            content: `⚠️ Error: ${errorMessage}`,
+                            isStreaming: false,
+                          }
+                        : msg
+                    )
+                  )
+
+                  // Stop streaming on error
+                  setIsStreamingResponse(false)
+                  return
                 }
-              } else if (blockId && eventType === 'end') {
-                setMessages((prev) =>
-                  prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
-                )
+              } catch (parseError) {
+                logger.error('Error parsing stream data:', {
+                  error: parseError,
+                  lineLength: line.length,
+                  lineStart: line.substring(0, 100),
+                  lineEnd: line.substring(Math.max(0, line.length - 100)),
+                })
               }
-            } catch (parseError) {
-              logger.error('Error parsing stream data:', parseError)
             }
           }
         }

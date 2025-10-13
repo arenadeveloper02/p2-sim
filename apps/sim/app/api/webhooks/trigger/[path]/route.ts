@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env, isTruthy } from '@/lib/env'
+import { IdempotencyService, webhookIdempotency } from '@/lib/idempotency/service'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import {
@@ -146,6 +147,24 @@ export async function POST(
   const slackResponse = handleSlackChallenge(body)
   if (slackResponse) {
     return slackResponse
+  }
+
+  // --- PHASE 1.5: Slack-specific validation ---
+  if (body?.type === 'event_callback' && body?.event) {
+    const event = body.event
+
+    // Skip Slack events with empty text to prevent duplicate workflow executions
+    if (event.type === 'message' && (!event.text || event.text.trim() === '')) {
+      logger.info(`[${requestId}] Skipping Slack message event with empty text`, {
+        event_type: event.type,
+        channel: event.channel,
+        user: event.user,
+        timestamp: event.ts,
+        team_id: body.team_id,
+        event_id: body.event_id,
+      })
+      return new NextResponse('Event skipped - empty message text', { status: 200 })
+    }
   }
 
   // --- PHASE 2: Webhook identification ---
@@ -328,7 +347,7 @@ export async function POST(
     // Continue processing - better to risk usage limit bypass than fail webhook
   }
 
-  // --- PHASE 5: Queue webhook execution (trigger.dev or direct based on env) ---
+  // --- PHASE 5: Idempotent webhook execution ---
   try {
     const payload = {
       webhookId: foundWebhook.id,
@@ -341,22 +360,44 @@ export async function POST(
       blockId: foundWebhook.blockId,
     }
 
-    const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+    const idempotencyKey = IdempotencyService.createWebhookIdempotencyKey(
+      foundWebhook.id,
+      body,
+      Object.fromEntries(request.headers.entries())
+    )
 
-    if (useTrigger) {
-      const handle = await tasks.trigger('webhook-execution', payload)
-      logger.info(
-        `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
-      )
-    } else {
-      // Fire-and-forget direct execution to avoid blocking webhook response
-      void executeWebhookJob(payload).catch((error) => {
-        logger.error(`[${requestId}] Direct webhook execution failed`, error)
-      })
-      logger.info(
-        `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
-      )
-    }
+    const result = await webhookIdempotency.executeWithIdempotency(
+      foundWebhook.provider,
+      idempotencyKey,
+      async () => {
+        const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
+
+        if (useTrigger) {
+          const handle = await tasks.trigger('webhook-execution', payload)
+          logger.info(
+            `[${requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
+          )
+          return {
+            method: 'trigger.dev',
+            taskId: handle.id,
+            status: 'queued',
+          }
+        }
+        // Fire-and-forget direct execution to avoid blocking webhook response
+        void executeWebhookJob(payload).catch((error) => {
+          logger.error(`[${requestId}] Direct webhook execution failed`, error)
+        })
+        logger.info(
+          `[${requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
+        )
+        return {
+          method: 'direct',
+          status: 'queued',
+        }
+      }
+    )
+
+    logger.debug(`[${requestId}] Webhook execution result:`, result)
 
     // Return immediate acknowledgment with provider-specific format
     if (foundWebhook.provider === 'microsoftteams') {

@@ -10,6 +10,9 @@ export interface SlackMessageParams extends SlackBaseParams {
   channel: string
   text: string
   thread_ts?: string
+  mergeMessages?: boolean
+  additionalMessages?: string[]
+  mentionUsers?: string[]
 }
 
 export interface SlackCanvasParams extends SlackBaseParams {

@@ -19,6 +19,9 @@ bun-debug.log*
 /apps/**/.next/
 /apps/**/build
 
+# logs
+/logs/
+
 # production
 /build
 /dist
@@ -69,3 +72,4 @@ start-collector.sh
 
 ## Helm Chart Tests
 helm/sim/test
+i18n.cache

@@ -1,3 +1,5 @@
+import { env } from '@/lib/env'
+import { isHosted } from '@/lib/environment'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -27,7 +29,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     url: 'https://api.firecrawl.dev/v1/search',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY : params.apiKey}`,
     }),
     body: (params) => ({
       query: params.query,

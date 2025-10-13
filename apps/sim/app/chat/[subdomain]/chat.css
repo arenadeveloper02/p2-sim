@@ -77,9 +77,9 @@
 }
 
 /* Override dark mode utility classes using CSS variables */
-.chat-light-wrapper :is(.dark\:bg-black) {
+/* .chat-light-wrapper :is(.dark\:bg-black) {
   background-color: hsl(var(--secondary));
-}
+} */
 
 .chat-light-wrapper :is(.dark\:bg-gray-900) {
   background-color: hsl(var(--background));

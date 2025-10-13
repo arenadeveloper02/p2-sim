@@ -1,7 +1,9 @@
 'use client'
 
+import { LogOut } from 'lucide-react'
 import Image from 'next/image'
-import { GithubIcon } from '@/components/icons'
+import Link from 'next/link'
+import { Button } from '@/components/ui'
 
 interface ChatHeaderProps {
   chatConfig: {
@@ -14,29 +16,56 @@ interface ChatHeaderProps {
     }
   } | null
   starCount: string
+  workflowId?: string
 }
 
-export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
+export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProps) {
   const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
+  const params = new URLSearchParams(window.location.search)
+  const workspaceId = params.get('workspaceId')
 
   return (
-    <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4'>
+    <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 pl-[18px] backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4 md:pl-[18px]'>
       <div className='flex items-center gap-4'>
-        <Image
-          src={customImage || '/default-logo.png'}
-          alt={`${chatConfig?.title || 'Chat'} logo`}
-          width={32}
-          height={32}
-          className='h-8 w-8 rounded-md object-cover'
-          style={{ objectFit: 'cover' }}
-          unoptimized
-        />
+        {
+          <div className='flex h-[40px] w-[40px] flex-col items-center justify-center rounded-md bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]'>
+            <Image
+              src={'https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'}
+              alt='vimi-sparkle'
+              width={22}
+              height={22}
+            />
+          </div>
+        }
+        {customImage && (
+          <Image
+            src={customImage}
+            alt={`${chatConfig?.title || 'Chat'} logo`}
+            width={32}
+            height={32}
+            className='h-8 w-8 rounded-md object-cover'
+            style={{ objectFit: 'cover' }}
+            unoptimized
+          />
+        )}
         <h2 className='font-medium text-foreground text-lg'>
           {chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
         </h2>
       </div>
       <div className='flex items-center gap-2'>
+        <Link href={workspaceId && workflowId ? `/workspace/${workspaceId}/w/${workflowId}` : '/'}>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+          >
+            <LogOut className='h-5 w-5' />
+            <span className='font-medium text-lg'>Exit</span>
+          </Button>
+        </Link>
+      </div>
+      {/*<div className='flex items-center gap-2'>
         <a
           href='https://github.com/simstudioai/sim'
           className='flex items-center gap-1 text-foreground'
@@ -91,7 +120,7 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
             </svg>
           </div>
         </a>
-      </div>
+      </div>*/}
     </div>
   )
 }

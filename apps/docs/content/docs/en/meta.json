@@ -1,0 +1,25 @@
+{
+  "title": "Agentic AI Documentation",
+  "pages": [
+    "./introduction/index",
+    "./getting-started/index",
+    "---Building Workflows---",
+    "triggers",
+    "blocks",
+    "tools",
+    "connections",
+    "mcp",
+    "copilot",
+    "knowledgebase",
+    "---Configuration---",
+    "variables",
+    "---Execution---",
+    "execution",
+    "---Advanced---",
+    "permissions",
+    "yaml",
+    "---SDKs---",
+    "sdks"
+  ],
+  "defaultOpen": false
+}

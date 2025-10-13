@@ -218,9 +218,8 @@ export const googleProvider: ProviderConfig = {
   executeRequest: async (
     request: ProviderRequest
   ): Promise<ProviderResponse | StreamingExecution> => {
-    if (!request.apiKey) {
-      throw new Error('API key is required for Google Gemini')
-    }
+    // API key is now handled server-side before this function is called
+    // Google models are hosted and don't require user API keys
 
     logger.info('Preparing Google Gemini request', {
       model: request.model || 'gemini-2.5-pro',

@@ -1,5 +1,6 @@
 import { type SQL, sql } from 'drizzle-orm'
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -137,6 +138,33 @@ export const workflowTemplateMapper = pgTable('workflow_template_mapper', {
   workspaceId: text('workspace_id'),
   name: text('name'),
 })
+
+export const chatPromptFeedback = pgTable(
+  'chat_prompt_feedback',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    inComplete: boolean('in_complete').default(false),
+    inAccurate: boolean('in_accurate').default(false),
+    outOfDate: boolean('out_of_date').default(false),
+    tooLong: boolean('too_long').default(false),
+    tooShort: boolean('too_short').default(false),
+    liked: boolean('liked').default(false),
+    executionId: text('execution_id').notNull(),
+    workflowId: text('workflow_id').notNull(),
+  },
+  (table) => ({
+    // Access patterns
+    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
+    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
+    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
+    // Ordering indexes
+    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
+  })
+)
 
 export const workflow = pgTable(
   'workflow',
@@ -311,6 +339,8 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
+    isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
+    chatId: text('chat_id'), // chat_id for tracking conversation context
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
@@ -327,6 +357,7 @@ export const workflowExecutionLogs = pgTable(
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
+    chatIdIdx: index('workflow_execution_logs_chat_id_idx').on(table.chatId),
     executionIdUnique: uniqueIndex('workflow_execution_logs_execution_id_unique').on(
       table.executionId
     ),
@@ -1343,6 +1374,27 @@ export const workflowDeploymentVersion = pgTable(
   })
 )
 
+// Idempotency keys for preventing duplicate processing across all webhooks and triggers
+export const idempotencyKey = pgTable(
+  'idempotency_key',
+  {
+    key: text('key').notNull(),
+    namespace: text('namespace').notNull().default('default'),
+    result: json('result').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Primary key is combination of key and namespace
+    keyNamespacePk: uniqueIndex('idempotency_key_namespace_unique').on(table.key, table.namespace),
+
+    // Index for cleanup operations by creation time
+    createdAtIdx: index('idempotency_key_created_at_idx').on(table.createdAt),
+
+    // Index for namespace-based queries
+    namespaceIdx: index('idempotency_key_namespace_idx').on(table.namespace),
+  })
+)
+
 export const mcpServers = pgTable(
   'mcp_servers',
   {
@@ -1394,30 +1446,80 @@ export const mcpServers = pgTable(
   })
 )
 
-
-export const chatPromptFeedback = pgTable(
-  'chat_prompt_feedback',
+export const copilotApiKeys = pgTable(
+  'copilot_api_keys',
   {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
-    comment: text('comment'),
-    createdAt: timestamp('created_at').notNull(),
-    updatedAt: timestamp('updated_at').notNull(),
-    inComplete: boolean('in_complete').default(false),
-    inAccurate: boolean('in_accurate').default(false),
-    outOfDate: boolean('out_of_date').default(false),
-    tooLong: boolean('too_long').default(false),
-    tooShort: boolean('too_short').default(false),
-    liked: boolean('liked').default(false),
-    executionId: text('execution_id').notNull(),
-    workflowId: text('workflow_id').notNull(),
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    apiKeyEncrypted: text('api_key_encrypted').notNull(),
+    apiKeyLookup: text('api_key_lookup').notNull(),
   },
   (table) => ({
-    // Access patterns
-    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
-    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
-    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
-    // Ordering indexes
-    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
+    apiKeyEncryptedHashIdx: index('copilot_api_keys_api_key_encrypted_hash_idx').using(
+      'hash',
+      table.apiKeyEncrypted
+    ),
+    apiKeyLookupHashIdx: index('copilot_api_keys_lookup_hash_idx').using(
+      'hash',
+      table.apiKeyLookup
+    ),
+  })
+)
+
+export const workflowStatus = pgTable('workflow_status', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  workflowId: text('workflow_id').notNull(),
+  mappedWorkflowId: text('mapped_workflow_id').notNull(),
+  status: text('status').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  comments: text('comments'),
+  description: text('description'),
+  category: text('category').default('creative'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+export const userArenaDetails = pgTable(
+  'user_arena_details',
+  {
+    id: text('id'), // nullable
+    userType: text('user_type'), // nullable
+    createdAt: timestamp('created_at', { withTimezone: false }), // nullable
+    department: text('department'), // nullable
+    updatedAt: timestamp('updated_at', { withTimezone: false }), // nullable
+    userIdRef: text('user_id_ref'), // nullable
+    arenaUserIdRef: text('arena_user_id_ref'), // nullable
+    airbyteRawId: text('_airbyte_raw_id').$type<string>(), // varchar(36) in SQL, mapped to text
+    airbyteExtractedAt: timestamp('_airbyte_extracted_at', { withTimezone: true }), // timestamptz
+    airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
+    airbyteMeta: jsonb('_airbyte_meta'), // jsonb
+    arenaToken: text('arena_token'), // text
+  },
+  (table) => ({
+    airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
+  })
+)
+
+export const deployedChat = pgTable(
+  'deployed_chat',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    chatId: text('chat_id'),
+    title: text('title'),
+    workflowId: text('workflow_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
   })
 )

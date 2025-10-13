@@ -1,8 +1,14 @@
 'use client'
 
 import { memo, useMemo, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Download } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  downloadImage,
+  isBase64,
+  renderBs64Img,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/constants'
+import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/markdown-renderer'
 import MarkdownRenderer from './components/markdown-renderer'
 
 export interface ChatMessage {
@@ -34,16 +40,38 @@ export const ClientChatMessage = memo(
     // we can use the content directly without parsing
     const cleanTextContent = message.content
 
+    const renderContent = (content: any) => {
+      if (!content) {
+        return null
+      }
+
+      try {
+        if (isBase64(content)) {
+          return renderBs64Img({ isBase64: true, imageData: content })
+        }
+        if (content) {
+          return <CopilotMarkdownRenderer content={content} />
+        }
+      } catch (error) {
+        console.error('Error rendering message content:', error)
+        return (
+          <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
+            <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
+          </div>
+        )
+      }
+    }
+
     // For user messages (on the right)
     if (message.type === 'user') {
       return (
         <div className='px-4 py-5' data-message-id={message.id}>
           <div className='mx-auto max-w-3xl'>
             <div className='flex justify-end'>
-              <div className='max-w-[80%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
+              <div className='max-w-[94%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
                 <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
                   {isJsonObject ? (
-                    <pre>{JSON.stringify(message.content, null, 2)}</pre>
+                    <span>{JSON.stringify(message.content as string)}</span>
                   ) : (
                     <span>{message.content as string}</span>
                   )}
@@ -63,47 +91,72 @@ export const ClientChatMessage = memo(
             {/* Direct content rendering - tool calls are now handled via SSE events */}
             <div>
               <div className='break-words text-base'>
-                {isJsonObject ? (
+                {renderContent(cleanTextContent)}
+                {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
                     {JSON.stringify(cleanTextContent, null, 2)}
                   </pre>
                 ) : (
                   <EnhancedMarkdownRenderer content={cleanTextContent as string} />
-                )}
+                )} */}
               </div>
             </div>
-            {message.type === 'assistant' && !isJsonObject && !message.isInitialMessage && (
+            {message.type === 'assistant' &&
+              !isJsonObject &&
+              !message.isInitialMessage &&
+              !isBase64(cleanTextContent) && (
+                <div className='flex items-center justify-start space-x-2'>
+                  {/* Copy Button - Only show when not streaming */}
+                  {!message.isStreaming && (
+                    <TooltipProvider>
+                      <Tooltip delayDuration={300}>
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              const contentToCopy =
+                                typeof cleanTextContent === 'string'
+                                  ? cleanTextContent
+                                  : JSON.stringify(cleanTextContent, null, 2)
+                              navigator.clipboard.writeText(contentToCopy)
+                              setIsCopied(true)
+                              setTimeout(() => setIsCopied(false), 2000)
+                            }}
+                          >
+                            {isCopied ? (
+                              <Check className='h-4 w-4' strokeWidth={2} />
+                            ) : (
+                              <Copy className='h-4 w-4' strokeWidth={2} />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side='top' align='center' sideOffset={5}>
+                          {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+              )}
+            {isBase64(cleanTextContent) && message.type === 'assistant' && !message.isStreaming && (
               <div className='flex items-center justify-start space-x-2'>
-                {/* Copy Button - Only show when not streaming */}
-                {!message.isStreaming && (
-                  <TooltipProvider>
-                    <Tooltip delayDuration={300}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className='text-muted-foreground transition-colors hover:bg-muted'
-                          onClick={() => {
-                            const contentToCopy =
-                              typeof cleanTextContent === 'string'
-                                ? cleanTextContent
-                                : JSON.stringify(cleanTextContent, null, 2)
-                            navigator.clipboard.writeText(contentToCopy)
-                            setIsCopied(true)
-                            setTimeout(() => setIsCopied(false), 2000)
-                          }}
-                        >
-                          {isCopied ? (
-                            <Check className='h-3 w-3' strokeWidth={2} />
-                          ) : (
-                            <Copy className='h-3 w-3' strokeWidth={2} />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side='top' align='center' sideOffset={5}>
-                        {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                <TooltipProvider>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger asChild>
+                      <button
+                        className='text-muted-foreground transition-colors hover:bg-muted'
+                        onClick={() => {
+                          downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
+                        }}
+                      >
+                        <Download className='h-4 w-4' strokeWidth={2} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side='top' align='center' sideOffset={5}>
+                      Download
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             )}
           </div>

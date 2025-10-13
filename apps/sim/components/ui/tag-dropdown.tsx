@@ -358,7 +358,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const responseFormatValue = getSubBlockValue(activeSourceBlockId, 'responseFormat')
       const responseFormat = parseResponseFormatSafely(responseFormatValue, activeSourceBlockId)
 
-      let blockTags: string[]
+      let blockTags: string[] = []
 
       if (sourceBlock.type === 'evaluator') {
         const metricsValue = getSubBlockValue(activeSourceBlockId, 'metrics')
@@ -384,14 +384,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         if (sourceBlock.type === 'starter') {
           const startWorkflowValue = getSubBlockValue(activeSourceBlockId, 'startWorkflow')
 
-          if (startWorkflowValue === 'chat') {
-            // For chat mode, provide input, conversationId, and files
-            blockTags = [
-              `${normalizedBlockName}.input`,
-              `${normalizedBlockName}.conversationId`,
-              `${normalizedBlockName}.files`,
-            ]
-          } else {
+          // Helper function to process inputFormatValue and generate blockTags
+          const processInputFormat = (appendExtraTags: boolean) => {
             const inputFormatValue = getSubBlockValue(activeSourceBlockId, 'inputFormat')
 
             if (
@@ -405,6 +399,22 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             } else {
               blockTags = [normalizedBlockName]
             }
+
+            if (appendExtraTags) {
+              blockTags.push(
+                `${normalizedBlockName}.input`,
+                `${normalizedBlockName}.conversationId`,
+                `${normalizedBlockName}.files`
+              )
+            }
+          }
+
+          if (startWorkflowValue === 'chat') {
+            // For chat mode, append extra tags
+            processInputFormat(true)
+          } else {
+            // For other modes, do not append extra tags
+            processInputFormat(false)
           }
         } else {
           blockTags = [normalizedBlockName]
@@ -628,7 +638,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       const responseFormatValue = getSubBlockValue(accessibleBlockId, 'responseFormat')
       const responseFormat = parseResponseFormatSafely(responseFormatValue, accessibleBlockId)
 
-      let blockTags: string[]
+      let blockTags: string[] = []
 
       if (accessibleBlock.type === 'evaluator') {
         const metricsValue = getSubBlockValue(accessibleBlockId, 'metrics')
@@ -654,14 +664,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         if (accessibleBlock.type === 'starter') {
           const startWorkflowValue = getSubBlockValue(accessibleBlockId, 'startWorkflow')
 
-          if (startWorkflowValue === 'chat') {
-            // For chat mode, provide input, conversationId, and files
-            blockTags = [
-              `${normalizedBlockName}.input`,
-              `${normalizedBlockName}.conversationId`,
-              `${normalizedBlockName}.files`,
-            ]
-          } else {
+          //console.log('<><><><><><><><><> Starter block value :', startWorkflowValue);
+          // Helper function to process inputFormatValue and generate blockTags
+          const processInputFormat = (appendExtraTags: boolean) => {
             const inputFormatValue = getSubBlockValue(accessibleBlockId, 'inputFormat')
 
             if (
@@ -675,6 +680,22 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             } else {
               blockTags = [normalizedBlockName]
             }
+
+            if (appendExtraTags) {
+              blockTags.push(
+                `${normalizedBlockName}.input`,
+                `${normalizedBlockName}.conversationId`,
+                `${normalizedBlockName}.files`
+              )
+            }
+          }
+
+          if (startWorkflowValue === 'chat') {
+            // For chat mode, append extra tags
+            processInputFormat(true)
+          } else {
+            // For other modes, do not append extra tags
+            processInputFormat(false)
           }
         } else {
           blockTags = [normalizedBlockName]

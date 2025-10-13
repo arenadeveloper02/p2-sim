@@ -133,6 +133,20 @@ export {
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs'
 export { checkTagTrigger, TagDropdown } from './tag-dropdown'
 export { Textarea } from './textarea'
+export {
+  Toast,
+  ToastAction,
+  ToastClose,
+  ToastDescription,
+  ToastTitle,
+  ToastViewport,
+  toast,
+  toastError,
+  toastInfo,
+  toastSuccess,
+  toastWarning,
+} from './toast'
+export { Toaster } from './toaster'
 export { Toggle, toggleVariants } from './toggle'
 export { ToolCallCompletion, ToolCallExecution } from './tool-call'
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'

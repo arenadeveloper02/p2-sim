@@ -100,7 +100,7 @@ app:
     MANUAL_EXECUTION_LIMIT: "999999"                      # Manual execution bypass value
     
     # UI Branding & Whitelabeling Configuration
-    NEXT_PUBLIC_BRAND_NAME: "P2 Agents"                         # Custom brand name
+    NEXT_PUBLIC_BRAND_NAME: "Agentic AI"                         # Custom brand name
     NEXT_PUBLIC_BRAND_LOGO_URL: ""                        # Custom logo URL (leave empty for default)
     NEXT_PUBLIC_BRAND_FAVICON_URL: ""                     # Custom favicon URL (leave empty for default)
     NEXT_PUBLIC_CUSTOM_CSS_URL: ""                        # Custom stylesheet URL (leave empty for none)

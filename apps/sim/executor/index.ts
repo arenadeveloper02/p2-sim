@@ -779,6 +779,10 @@ export class Executor {
 
         // If input format is defined, structure the input according to the schema
         if (inputFormat && Array.isArray(inputFormat) && inputFormat.length > 0) {
+          // Check if this is a chat workflow by looking at the startWorkflow value
+          const startWorkflowValue = blockParams?.startWorkflow
+          const isChatWorkflow = startWorkflowValue === 'chat'
+
           // Create structured input based on input format
           const structuredInput: Record<string, any> = {}
 
@@ -788,10 +792,18 @@ export class Executor {
               // Get the field value from workflow input if available
               // First try to access via input.field, then directly from field
               // This handles both input formats: { input: { field: value } } and { field: value }
-              let inputValue =
-                this.workflowInput?.input?.[field.name] !== undefined
-                  ? this.workflowInput.input[field.name] // Try to get from input.field
-                  : this.workflowInput?.[field.name] // Fallback to direct field access
+              const inputFieldValue = this.workflowInput?.input?.[field.name]
+              const directFieldValue = this.workflowInput?.[field.name]
+
+              console.log(`[Executor] Processing field ${field.name}:`, {
+                inputFieldValue,
+                directFieldValue,
+                workflowInput: this.workflowInput,
+                fieldType: field.type,
+                isChatWorkflow,
+              })
+
+              let inputValue = inputFieldValue !== undefined ? inputFieldValue : directFieldValue
 
               if (inputValue === undefined || inputValue === null) {
                 if (Object.hasOwn(field, 'value')) {
@@ -842,10 +854,17 @@ export class Executor {
           const finalInput = hasProcessedFields ? structuredInput : rawInputData
 
           // Initialize the starting block with structured input (flattened)
-          const blockOutput = {
+          const blockOutput: any = {
             input: finalInput,
             conversationId: this.workflowInput?.conversationId, // Add conversationId to root
             ...finalInput, // Add input fields directly at top level
+          }
+
+          // For chat workflows, ensure the chat input is always available at the root level
+          if (isChatWorkflow && this.workflowInput?.input !== undefined) {
+            blockOutput.input = this.workflowInput.input
+            // Also add it as a top-level property for easy access
+            blockOutput.chatInput = this.workflowInput.input
           }
 
           // Add files if present (for all trigger types)
