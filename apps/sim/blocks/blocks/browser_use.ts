@@ -62,6 +62,17 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
   ],
   tools: {
     access: ['browser_use_run_task'],
+    config: {
+      tool: () => 'browser_use_run_task',
+      params: (params) => {
+        // Remove API key from params when hosted (tool will use env var)
+        if (isHosted) {
+          const { apiKey, ...rest } = params
+          return rest
+        }
+        return params
+      },
+    },
   },
   inputs: {
     task: { type: 'string', description: 'Browser automation task' },
