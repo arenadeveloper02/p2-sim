@@ -31,13 +31,7 @@ function EnhancedMarkdownRenderer({ content }: { content: string }) {
 }
 
 export const ClientChatMessage = memo(
-  function ClientChatMessage({
-    message,
-    workflowId,
-  }: {
-    message: ChatMessage
-    workflowId: string
-  }) {
+  function ClientChatMessage({ message }: { message: ChatMessage }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
 
@@ -281,12 +275,14 @@ export const ClientChatMessage = memo(
       </div>
     )
   },
+  // Memoization to prevent unnecessary re-renders
   (prevProps, nextProps) => {
     return (
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.content === nextProps.message.content &&
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
-      prevProps.message.isInitialMessage === nextProps.message.isInitialMessage
+      prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
+      prevProps.message.executionId === nextProps.message.executionId
     )
   }
 )

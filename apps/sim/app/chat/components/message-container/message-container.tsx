@@ -63,9 +63,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               </div>
             </div>
           ) : (
-            messages.map((message) => (
-              <ClientChatMessage key={message.id} message={message} workflowId={workflowId} />
-            ))
+            messages.map((message) => <ClientChatMessage key={message.id} message={message} />)
           )}
 
           {/* Loading indicator (shows only when executing) */}

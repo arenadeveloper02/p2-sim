@@ -214,7 +214,6 @@ export function useChatStreaming() {
                   if (additionalContent) {
                     // Only append additional content if it's truly different
                     finalContent = `${accumulatedText}\n\n${additionalContent}`
-                    logger.info('Appending additional content to streamed content')
                   }
 
                   // Update the streaming message to final state
@@ -225,6 +224,7 @@ export function useChatStreaming() {
                             ...msg,
                             content: finalContent,
                             isStreaming: false,
+                            executionId: result?.executionId || msg?.executionId,
                           }
                         : msg
                     )
