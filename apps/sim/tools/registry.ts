@@ -38,6 +38,7 @@ import {
   figmaPostCommentTool,
   figmaToHTMLAITool,
   figmaWireframeToUITool,
+  figmaAIDesignWorkflowTool,
 } from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import { crawlTool, scrapeTool, searchTool } from '@/tools/firecrawl'
@@ -382,6 +383,7 @@ export const tools: Record<string, ToolConfig> = {
   sharepoint_read_page: sharepointReadPageTool,
   sharepoint_list_sites: sharepointListSitesTool,
   // Figma tools
+  figma_ai_design_workflow: figmaAIDesignWorkflowTool,
   figma_create: figmaCreateTool,
   figma_convert: figmaConvertTool,
   figma_create_styles_variables: figmaCreateStylesVariablesTool,

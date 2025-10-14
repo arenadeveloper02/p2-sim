@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Figma AI Design Plugin</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #333333;
+    }
+    
+    .header {
+      margin-bottom: 24px;
+    }
+    
+    .header h1 {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      font-weight: 600;
+      color: #333333;
+    }
+    
+    .header p {
+      margin: 0;
+      font-size: 14px;
+      color: #666666;
+      line-height: 1.4;
+    }
+    
+    .status-card {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background: #4CAF50;
+      transition: background-color 0.3s ease;
+    }
+    
+    .status-dot.processing {
+      background: #FF9500;
+      animation: pulse 2s infinite;
+    }
+    
+    .status-dot.error {
+      background: #FF3B30;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    
+    .status-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333333;
+    }
+    
+    .queue-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .queue-count {
+      font-size: 14px;
+      color: #666666;
+    }
+    
+    .queue-count.has-items {
+      color: #007AFF;
+      font-weight: 500;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: #e9ecef;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: #007AFF;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+    }
+    
+    .btn-primary {
+      background: #007AFF;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #0056CC;
+    }
+    
+    .btn-secondary {
+      background: #f8f9fa;
+      color: #333333;
+      border: 1px solid #e9ecef;
+    }
+    
+    .btn-secondary:hover {
+      background: #e9ecef;
+    }
+    
+    .btn-danger {
+      background: #FF3B30;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #CC2A20;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .settings-section {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+    }
+    
+    .settings-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333333;
+      margin-bottom: 16px;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #333333;
+      margin-bottom: 6px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #333333;
+      background: white;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #007AFF;
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+    }
+    
+    .form-help {
+      font-size: 12px;
+      color: #666666;
+      margin-top: 4px;
+    }
+    
+    .log-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #e9ecef;
+    }
+    
+    .log-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333333;
+      margin-bottom: 12px;
+    }
+    
+    .log-container {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      padding: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    
+    .log-entry {
+      margin-bottom: 4px;
+      padding: 2px 0;
+    }
+    
+    .log-entry.info {
+      color: #007AFF;
+    }
+    
+    .log-entry.success {
+      color: #4CAF50;
+    }
+    
+    .log-entry.warning {
+      color: #FF9500;
+    }
+    
+    .log-entry.error {
+      color: #FF3B30;
+    }
+    
+    .log-timestamp {
+      color: #666666;
+      margin-right: 8px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Figma AI Design Plugin</h1>
+    <p>Automatically process AI-generated designs from SQS messages</p>
+  </div>
+
+  <div class="status-card">
+    <div class="status-indicator">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">Ready</span>
+    </div>
+    
+    <div class="queue-info">
+      <span class="queue-count" id="queue-count">Queue: 0 items</span>
+      <span id="last-processed">Last processed: Never</span>
+    </div>
+    
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" id="process-btn">Process Queue</button>
+    <button class="btn btn-secondary" id="pause-btn">Pause</button>
+    <button class="btn btn-danger" id="clear-btn">Clear Queue</button>
+  </div>
+
+  <div class="settings-section">
+    <h3 class="settings-title">Settings</h3>
+    
+    <div class="form-group">
+      <label class="form-label" for="aws-region">AWS Region</label>
+      <input type="text" class="form-input" id="aws-region" value="us-east-1" placeholder="us-east-1">
+      <div class="form-help">AWS region where your SQS queue is located</div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="sqs-queue-url">SQS Queue URL</label>
+      <input type="text" class="form-input" id="sqs-queue-url" placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/figma-design-queue">
+      <div class="form-help">Full URL of your SQS queue</div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="poll-interval">Poll Interval (ms)</label>
+      <input type="number" class="form-input" id="poll-interval" value="5000" min="1000" max="60000">
+      <div class="form-help">How often to check for new messages (1000-60000ms)</div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label" for="max-retries">Max Retries</label>
+      <input type="number" class="form-input" id="max-retries" value="3" min="1" max="10">
+      <div class="form-help">Maximum number of retries for failed operations</div>
+    </div>
+    
+    <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
+  </div>
+
+  <div class="log-section">
+    <h3 class="log-title">Activity Log</h3>
+    <div class="log-container" id="log-container">
+      <div class="log-entry info">
+        <span class="log-timestamp">[00:00:00]</span>
+        Plugin initialized successfully
+      </div>
+    </div>
+    <button class="btn btn-secondary" id="clear-log-btn">Clear Log</button>
+  </div>
+
+  <script>
+    // Plugin UI JavaScript
+    class PluginUI {
+      constructor() {
+        this.isProcessing = false;
+        this.isPaused = false;
+        this.queueCount = 0;
+        this.lastProcessed = null;
+        this.logEntries = [];
+        
+        this.initializeUI();
+        this.setupEventListeners();
+        this.loadSettings();
+      }
+
+      initializeUI() {
+        this.updateStatus('Ready', 'ready');
+        this.updateQueueCount(0);
+        this.addLogEntry('Plugin UI initialized', 'info');
+      }
+
+      setupEventListeners() {
+        // Process button
+        document.getElementById('process-btn').addEventListener('click', () => {
+          this.processQueue();
+        });
+
+        // Pause button
+        document.getElementById('pause-btn').addEventListener('click', () => {
+          this.togglePause();
+        });
+
+        // Clear button
+        document.getElementById('clear-btn').addEventListener('click', () => {
+          this.clearQueue();
+        });
+
+        // Save settings button
+        document.getElementById('save-settings-btn').addEventListener('click', () => {
+          this.saveSettings();
+        });
+
+        // Clear log button
+        document.getElementById('clear-log-btn').addEventListener('click', () => {
+          this.clearLog();
+        });
+
+        // Settings inputs
+        ['aws-region', 'sqs-queue-url', 'poll-interval', 'max-retries'].forEach(id => {
+          document.getElementById(id).addEventListener('change', () => {
+            this.saveSettings();
+          });
+        });
+      }
+
+      processQueue() {
+        if (this.isProcessing) {
+          this.addLogEntry('Already processing queue', 'warning');
+          return;
+        }
+
+        this.isProcessing = true;
+        this.updateStatus('Processing queue...', 'processing');
+        this.addLogEntry('Started processing queue', 'info');
+
+        // Send message to plugin code
+        parent.postMessage({
+          pluginMessage: {
+            type: 'PROCESS_QUEUE'
+          }
+        }, '*');
+
+        // Simulate processing (in real implementation, this would be handled by the plugin)
+        setTimeout(() => {
+          this.isProcessing = false;
+          this.updateStatus('Queue processed', 'ready');
+          this.addLogEntry('Finished processing queue', 'success');
+          this.updateLastProcessed();
+        }, 2000);
+      }
+
+      togglePause() {
+        this.isPaused = !this.isPaused;
+        const pauseBtn = document.getElementById('pause-btn');
+        
+        if (this.isPaused) {
+          pauseBtn.textContent = 'Resume';
+          pauseBtn.className = 'btn btn-primary';
+          this.updateStatus('Paused', 'paused');
+          this.addLogEntry('Plugin paused', 'warning');
+        } else {
+          pauseBtn.textContent = 'Pause';
+          pauseBtn.className = 'btn btn-secondary';
+          this.updateStatus('Ready', 'ready');
+          this.addLogEntry('Plugin resumed', 'info');
+        }
+      }
+
+      clearQueue() {
+        this.queueCount = 0;
+        this.updateQueueCount(0);
+        this.addLogEntry('Queue cleared', 'info');
+
+        // Send message to plugin code
+        parent.postMessage({
+          pluginMessage: {
+            type: 'CLEAR_QUEUE'
+          }
+        }, '*');
+      }
+
+      saveSettings() {
+        const settings = {
+          awsRegion: document.getElementById('aws-region').value,
+          sqsQueueUrl: document.getElementById('sqs-queue-url').value,
+          pollInterval: parseInt(document.getElementById('poll-interval').value),
+          maxRetries: parseInt(document.getElementById('max-retries').value)
+        };
+
+        // Save to localStorage
+        localStorage.setItem('figma-ai-plugin-settings', JSON.stringify(settings));
+        
+        this.addLogEntry('Settings saved', 'success');
+
+        // Send settings to plugin code
+        parent.postMessage({
+          pluginMessage: {
+            type: 'UPDATE_SETTINGS',
+            data: settings
+          }
+        }, '*');
+      }
+
+      loadSettings() {
+        const saved = localStorage.getItem('figma-ai-plugin-settings');
+        if (saved) {
+          const settings = JSON.parse(saved);
+          document.getElementById('aws-region').value = settings.awsRegion || 'us-east-1';
+          document.getElementById('sqs-queue-url').value = settings.sqsQueueUrl || '';
+          document.getElementById('poll-interval').value = settings.pollInterval || 5000;
+          document.getElementById('max-retries').value = settings.maxRetries || 3;
+        }
+      }
+
+      updateStatus(text, status) {
+        document.getElementById('status-text').textContent = text;
+        const statusDot = document.getElementById('status-dot');
+        
+        statusDot.className = 'status-dot';
+        if (status === 'processing') {
+          statusDot.classList.add('processing');
+        } else if (status === 'error') {
+          statusDot.classList.add('error');
+        }
+      }
+
+      updateQueueCount(count) {
+        this.queueCount = count;
+        const queueCountEl = document.getElementById('queue-count');
+        queueCountEl.textContent = `Queue: ${count} items`;
+        
+        if (count > 0) {
+          queueCountEl.classList.add('has-items');
+        } else {
+          queueCountEl.classList.remove('has-items');
+        }
+      }
+
+      updateLastProcessed() {
+        this.lastProcessed = new Date();
+        const lastProcessedEl = document.getElementById('last-processed');
+        lastProcessedEl.textContent = `Last processed: ${this.lastProcessed.toLocaleTimeString()}`;
+      }
+
+      addLogEntry(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const logContainer = document.getElementById('log-container');
+        
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span>${message}`;
+        
+        logContainer.appendChild(entry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+        
+        // Keep only last 50 entries
+        while (logContainer.children.length > 50) {
+          logContainer.removeChild(logContainer.firstChild);
+        }
+      }
+
+      clearLog() {
+        document.getElementById('log-container').innerHTML = '';
+        this.addLogEntry('Log cleared', 'info');
+      }
+    }
+
+    // Initialize UI when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      new PluginUI();
+    });
+
+    // Handle messages from plugin code
+    window.addEventListener('message', (event) => {
+      if (event.data.pluginMessage) {
+        const message = event.data.pluginMessage;
+        
+        switch (message.type) {
+          case 'UPDATE_STATUS':
+            // Handle status updates from plugin
+            break;
+          case 'UPDATE_QUEUE':
+            // Handle queue updates from plugin
+            break;
+          case 'LOG_MESSAGE':
+            // Handle log messages from plugin
+            break;
+        }
+      }
+    });
+  </script>
+</body>
+</html>

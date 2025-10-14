@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <body>
+    <h3>Figma Live Listener</h3>
+    <p id="status">Connecting...</p>
+    <script>
+      onmessage = (e) => {
+        const { type, payload } = e.data;
+        if (type === "status") document.getElementById("status").textContent = payload;
+        if (type === "error") document.getElementById("status").textContent = "Error: " + payload;
+      };
+    </script>
+  </body>
+</html>

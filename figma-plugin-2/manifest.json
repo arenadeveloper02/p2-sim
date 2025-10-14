@@ -1,0 +1,61 @@
+{
+  "name": "Figma Design Poller",
+  "id": "figma-design-poller",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "editorType": [
+    "figma"
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://your-api-endpoint.com",
+      "https://*.amazonaws.com",
+      "https://*.figma.com"
+    ]
+  },
+  "permissions": [
+    "currentuser"
+  ],
+  "parameters": [
+    {
+      "name": "Poll Interval (minutes)",
+      "key": "pollInterval",
+      "description": "How often to poll for new design data",
+      "type": "number",
+      "default": 1,
+      "min": 1,
+      "max": 60
+    },
+    {
+      "name": "API Endpoint",
+      "key": "apiEndpoint",
+      "description": "The API endpoint to poll for design data",
+      "type": "string",
+      "default": "https://your-api-endpoint.com/api/sqs/poll"
+    },
+    {
+      "name": "SQS Queue URL",
+      "key": "queueUrl",
+      "description": "The SQS queue URL to poll from",
+      "type": "string",
+      "default": ""
+    }
+  ],
+  "menu": [
+    {
+      "name": "Start Polling",
+      "command": "start-polling"
+    },
+    {
+      "name": "Stop Polling",
+      "command": "stop-polling"
+    },
+    {
+      "name": "Clear Designs",
+      "command": "clear-designs"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "figma-ai-design-plugin",
+  "version": "1.0.0",
+  "description": "Production-level Figma plugin for AI design generation with SQS integration",
+  "main": "code.js",
+  "scripts": {
+    "build": "tsc figma-ai-design-plugin.ts --target es2017 --module commonjs --outDir dist",
+    "package": "npm run build && zip -r figma-ai-design-plugin.zip manifest.json dist/code.js ui.html",
+    "test": "vitest",
+    "lint": "eslint . --ext .ts,.js",
+    "lint:fix": "eslint . --ext .ts,.js --fix"
+  },
+  "keywords": [
+    "figma",
+    "plugin",
+    "ai",
+    "design",
+    "sqs",
+    "aws",
+    "chatgpt"
+  ],
+  "author": "Sim AI Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

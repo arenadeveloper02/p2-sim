@@ -1,0 +1,48 @@
+{
+  "name": "Figma AI Design Plugin",
+  "id": "figma-ai-design-plugin",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "editorType": [
+    "figma"
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://api.figma.com",
+      "https://p2-sim.vercel.app",
+      "https://sqs.us-east-1.amazonaws.com",
+      "https://sqs.us-west-2.amazonaws.com",
+      "https://sqs.eu-west-1.amazonaws.com"
+    ]
+  },
+  "permissions": [
+    "currentuser"
+  ],
+  "menu": [
+    {
+      "name": "AI Design Generator",
+      "command": "generate-design"
+    },
+    {
+      "name": "Process Queue",
+      "command": "process-queue"
+    },
+    {
+      "name": "Settings",
+      "command": "settings"
+    }
+  ],
+  "relaunchButtons": [
+    {
+      "name": "AI Design Generator",
+      "command": "generate-design"
+    },
+    {
+      "name": "Process Queue",
+      "command": "process-queue"
+    }
+  ]
+}

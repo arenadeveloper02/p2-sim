@@ -2,6 +2,7 @@ import { convertFigmaTool } from './convert_figma'
 import { createFigmaTool } from './create_figma'
 import { createStylesVariablesTool } from './create_styles_variables'
 import { deleteCommentTool } from './delete_comment'
+import { figmaAIDesignWorkflowTool } from './figma_ai_design_workflow'
 import { figmaMakeIntegrationTool } from './figma_make_integration'
 import { figmaToHTMLAITool } from './figma_to_html_ai'
 import { getCommentsTool } from './get_comments'
@@ -16,6 +17,7 @@ import { wireframeToUITool } from './wireframe_to_ui'
 export const figmaCreateTool = createFigmaTool
 export const figmaConvertTool = convertFigmaTool
 export const figmaCreateStylesVariablesTool = createStylesVariablesTool
+export { figmaAIDesignWorkflowTool }
 export { figmaMakeIntegrationTool }
 export { figmaToHTMLAITool }
 export { wireframeToUITool as figmaWireframeToUITool }

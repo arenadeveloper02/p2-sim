@@ -1,0 +1,29 @@
+{
+  "name": "figma-design-poller",
+  "version": "1.0.0",
+  "description": "Figma plugin that polls for design data every minute and creates designs automatically",
+  "main": "code.js",
+  "scripts": {
+    "build": "tsc figma-polling-plugin.ts --outDir . --target es2017 --module commonjs",
+    "dev": "tsc figma-polling-plugin.ts --outDir . --target es2017 --module commonjs --watch",
+    "clean": "rm -f code.js"
+  },
+  "keywords": [
+    "figma",
+    "plugin",
+    "design",
+    "polling",
+    "automation",
+    "sqs"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^4.9.0",
+    "@figma/plugin-typings": "^1.0.0"
+  },
+  "figma": {
+    "id": "figma-design-poller",
+    "name": "Figma Design Poller"
+  }
+}

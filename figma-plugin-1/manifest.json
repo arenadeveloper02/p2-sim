@@ -1,0 +1,11 @@
+{
+  "name": "Arena Figma Live Listener",
+  "id": "com.arena.figmalive",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["wss://abcd1234.execute-api.us-east-1.amazonaws.com"]
+  }
+}

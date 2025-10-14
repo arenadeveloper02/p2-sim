@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Figma Design Poller</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #333;
+    }
+
+    .container {
+      padding: 20px;
+      max-width: 350px;
+    }
+
+    .header {
+      margin-bottom: 20px;
+    }
+
+    .title {
+      margin: 0 0 8px 0;
+      color: #333;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin: 0 0 16px 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .status-card {
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      margin: 16px 0;
+      border-left: 4px solid #4CAF50;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #4CAF50;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-text {
+      font-weight: 500;
+      color: #333;
+    }
+
+    .stats-card {
+      margin: 16px 0;
+      padding: 12px;
+      background: #f0f0f0;
+      border-radius: 8px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .stat-time {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .controls {
+      margin: 16px 0;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-right: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .btn-danger {
+      background: #FF3B30;
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .log-container {
+      margin: 16px 0;
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .log-entry {
+      margin-bottom: 4px;
+      color: #666;
+    }
+
+    .log-entry:last-child {
+      margin-bottom: 0;
+    }
+
+    .log-entry.error {
+      color: #FF3B30;
+    }
+
+    .log-entry.success {
+      color: #4CAF50;
+    }
+
+    .log-entry.info {
+      color: #2196F3;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">Figma Design Poller</h1>
+      <p class="subtitle">Polling for design data every minute...</p>
+    </div>
+
+    <div class="status-card">
+      <div class="status-indicator">
+        <div id="status-dot" class="status-dot"></div>
+        <span id="status-text" class="status-text">Polling Active</span>
+      </div>
+    </div>
+
+    <div class="stats-card">
+      <div class="stat-row">
+        <span class="stat-label">Designs Created:</span>
+        <span id="designs-count" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Last Poll:</span>
+        <span id="last-poll" class="stat-time">Never</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Next Poll:</span>
+        <span id="next-poll" class="stat-time">In 1 minute</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="start-btn" class="btn btn-primary">Start Polling</button>
+      <button id="stop-btn" class="btn btn-danger">Stop Polling</button>
+      <button id="clear-btn" class="btn btn-secondary">Clear Designs</button>
+    </div>
+
+    <div class="log-container">
+      <div id="log-content">
+        <div class="log-entry">Plugin initialized. Ready to poll for design data...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Handle messages from the plugin
+    window.onmessage = (event) => {
+      const message = event.data.pluginMessage;
+      
+      if (message) {
+        switch (message.type) {
+          case 'UPDATE_STATUS':
+            updateStatus(message.data.text, message.data.color);
+            break;
+          case 'UPDATE_DESIGNS_COUNT':
+            updateDesignsCount(message.data.count);
+            break;
+          case 'UPDATE_LAST_POLL':
+            updateLastPoll(message.data.time);
+            break;
+          case 'UPDATE_NEXT_POLL':
+            updateNextPoll(message.data.time);
+            break;
+          case 'LOG_MESSAGE':
+            addLogEntry(message.data.message);
+            break;
+          case 'STATUS_UPDATE':
+            updateAllStatus(message.data);
+            break;
+        }
+      }
+    };
+
+    // Update status indicator
+    function updateStatus(text, color) {
+      const statusText = document.getElementById('status-text');
+      const statusDot = document.getElementById('status-dot');
+      
+      if (statusText) {
+        statusText.textContent = text;
+      }
+      
+      if (statusDot) {
+        statusDot.style.backgroundColor = color;
+      }
+    }
+
+    // Update designs count
+    function updateDesignsCount(count) {
+      const designsCount = document.getElementById('designs-count');
+      if (designsCount) {
+        designsCount.textContent = count;
+      }
+    }
+
+    // Update last poll time
+    function updateLastPoll(time) {
+      const lastPoll = document.getElementById('last-poll');
+      if (lastPoll) {
+        lastPoll.textContent = time;
+      }
+    }
+
+    // Update next poll time
+    function updateNextPoll(time) {
+      const nextPoll = document.getElementById('next-poll');
+      if (nextPoll) {
+        nextPoll.textContent = time;
+      }
+    }
+
+    // Add log entry
+    function addLogEntry(message) {
+      const logContent = document.getElementById('log-content');
+      if (logContent) {
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        logEntry.textContent = message;
+        
+        // Add appropriate class based on message content
+        if (message.includes('Error') || message.includes('Failed')) {
+          logEntry.classList.add('error');
+        } else if (message.includes('Success') || message.includes('Created')) {
+          logEntry.classList.add('success');
+        } else if (message.includes('Polling') || message.includes('Started')) {
+          logEntry.classList.add('info');
+        }
+        
+        logContent.appendChild(logEntry);
+        
+        // Scroll to bottom
+        logContent.scrollTop = logContent.scrollHeight;
+        
+        // Keep only last 50 entries
+        while (logContent.children.length > 50) {
+          logContent.removeChild(logContent.firstChild);
+        }
+      }
+    }
+
+    // Update all status at once
+    function updateAllStatus(data) {
+      updateStatus(data.isPolling ? 'Polling Active' : 'Polling Stopped', 
+                   data.isPolling ? '#4CAF50' : '#FF3B30');
+      updateDesignsCount(data.designsCount);
+    }
+
+    // Button event listeners
+    document.getElementById('start-btn').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'START_POLLING' } }, '*');
+    });
+
+    document.getElementById('stop-btn').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'STOP_POLLING' } }, '*');
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'CLEAR_DESIGNS' } }, '*');
+    });
+
+    // Initialize
+    addLogEntry('UI loaded successfully');
+  </script>
+</body>
+</html>

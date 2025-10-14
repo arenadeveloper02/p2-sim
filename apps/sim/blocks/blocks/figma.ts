@@ -19,10 +19,11 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       type: 'dropdown',
       layout: 'full',
       options: [
+        { label: 'AI Design Workflow', id: 'figma_ai_design_workflow' },
         { label: 'Convert to HTML', id: 'figma_to_html_ai' },
-        // { label: 'Create Styles & Variables', id: 'figma_create_styles_variables' },
-        // { label: 'Figma Make Integration', id: 'figma_make_integration' },
-        // { label: 'Wireframe to UI', id: 'figma_wireframe_to_ui' },
+        { label: 'Create Styles & Variables', id: 'figma_create_styles_variables' },
+        { label: 'Figma Make Integration', id: 'figma_make_integration' },
+        { label: 'Wireframe to UI', id: 'figma_wireframe_to_ui' },
         { label: 'Get Comments', id: 'figma_get_comments' },
         { label: 'Post Comment', id: 'figma_post_comment' },
         { label: 'Delete Comment', id: 'figma_delete_comment' },
@@ -32,7 +33,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
         { label: 'Get File Images', id: 'figma_get_file_images' },
         { label: 'Get Project Files', id: 'figma_get_project_files' },
       ],
-      value: () => 'figma_get_comments',
+      value: () => 'figma_ai_design_workflow',
     },
     // Create Figma File parameters
     {
@@ -61,6 +62,58 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       required: false,
       description: 'AI prompt to generate design content',
       condition: { field: 'operation', value: 'figma_create' },
+    },
+    // AI Design Workflow parameters
+    {
+      id: 'aiPrompt',
+      title: 'AI Prompt',
+      type: 'long-input',
+      layout: 'full',
+      placeholder: 'Create a modern landing page with hero section, features, and footer...',
+      required: true,
+      description: 'Detailed AI prompt describing the design to generate',
+      condition: { field: 'operation', value: 'figma_ai_design_workflow' },
+    },
+    {
+      id: 'designType',
+      title: 'Design Type',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Landing Page', id: 'landing_page' },
+        { label: 'UI Components', id: 'ui_components' },
+        { label: 'Wireframe', id: 'wireframe' },
+        { label: 'Full Website', id: 'full_website' },
+      ],
+      condition: { field: 'operation', value: 'figma_ai_design_workflow' },
+      required: true,
+    },
+    {
+      id: 'brandGuidelines',
+      title: 'Brand Guidelines',
+      type: 'long-input',
+      layout: 'full',
+      placeholder: 'Optional brand guidelines to inform the design...',
+      required: false,
+      description: 'Optional brand guidelines to inform the design',
+      condition: { field: 'operation', value: 'figma_ai_design_workflow' },
+    },
+    {
+      id: 'responsiveBreakpoints',
+      title: 'Responsive Breakpoints',
+      type: 'long-input',
+      layout: 'full',
+      placeholder: 'mobile, tablet, desktop',
+      required: false,
+      description: 'Comma-separated list of responsive breakpoints',
+      condition: { field: 'operation', value: 'figma_ai_design_workflow' },
+    },
+    {
+      id: 'includeCode',
+      title: 'Include Generated Code',
+      type: 'switch',
+      layout: 'full',
+      condition: { field: 'operation', value: 'figma_ai_design_workflow' },
     },
     {
       id: 'projectId',
@@ -398,6 +451,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
   ],
   tools: {
     access: [
+      'figma_ai_design_workflow',
       'figma_create',
       'figma_convert',
       'figma_to_html_ai',
@@ -416,6 +470,8 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     config: {
       tool: (params) => {
         switch (params.operation) {
+          case 'figma_ai_design_workflow':
+            return 'figma_ai_design_workflow'
           case 'figma_create':
             return 'figma_create'
           case 'figma_convert':
@@ -468,15 +524,17 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     format: { type: 'string', description: 'Image format' },
     scale: { type: 'number', description: 'Image scale factor' },
     designPrompt: { type: 'string', description: 'AI design prompt' },
-    brandGuidelines: { type: 'json', description: 'Brand guidelines file' },
+    aiPrompt: { type: 'string', description: 'AI prompt for design generation' },
+    designType: { type: 'string', description: 'Type of design to generate' },
+    brandGuidelines: { type: 'string', description: 'Brand guidelines' },
+    responsiveBreakpoints: { type: 'string', description: 'Responsive breakpoints' },
+    includeCode: { type: 'boolean', description: 'Include generated code' },
     designSystemName: { type: 'string', description: 'Design system name' },
     includeColors: { type: 'boolean', description: 'Include color styles' },
     includeTypography: { type: 'boolean', description: 'Include typography styles' },
     includeSpacing: { type: 'boolean', description: 'Include spacing variables' },
     includeComponents: { type: 'boolean', description: 'Include component specifications' },
     wireframe: { type: 'json', description: 'Wireframe or sketch file' },
-    designType: { type: 'string', description: 'Type of design to generate' },
-    includeCode: { type: 'boolean', description: 'Include code output' },
     wireframeFile: { type: 'json', description: 'Wireframe file to convert' },
     designStyle: { type: 'string', description: 'Design style preference' },
     targetPlatform: { type: 'string', description: 'Target platform' },
