@@ -16,6 +16,7 @@ interface ChatMessageContainerProps {
   chatConfig: {
     description?: string
   } | null
+  workflowId: string
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -27,6 +28,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   scrollToBottom,
   scrollToMessage,
   chatConfig,
+  workflowId,
 }: ChatMessageContainerProps) {
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
@@ -61,7 +63,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               </div>
             </div>
           ) : (
-            messages.map((message) => <ClientChatMessage key={message.id} message={message} />)
+            messages.map((message) => (
+              <ClientChatMessage key={message.id} message={message} workflowId={workflowId} />
+            ))
           )}
 
           {/* Loading indicator (shows only when executing) */}

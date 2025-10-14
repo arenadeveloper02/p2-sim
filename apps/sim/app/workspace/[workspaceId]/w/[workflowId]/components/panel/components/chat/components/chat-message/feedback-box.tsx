@@ -5,11 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 
-interface FeedbackDialogProps {
-  isOpen: boolean
-  onClose: () => void
-  onSubmit: (feedback: FeedbackData) => void
-  executionId?: string
+interface FeedbackBoxProps {
+  isOpen?: boolean
+  onClose?: () => void
+  onSubmit?: (feedback: FeedbackData) => void
 }
 
 interface FeedbackData {
@@ -21,7 +20,7 @@ interface FeedbackData {
   comment?: string
 }
 
-export function FeedbackDialog({ isOpen, onClose, onSubmit, executionId }: FeedbackDialogProps) {
+export function FeedbackBox({ isOpen, onClose, onSubmit }: FeedbackBoxProps) {
   const [feedback, setFeedback] = useState<FeedbackData>({
     tooLong: false,
     outOfDate: false,
@@ -46,7 +45,7 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit, executionId }: Feedb
   }
 
   const handleSubmit = () => {
-    onSubmit(feedback)
+    onSubmit?.(feedback)
     // Reset form
     setFeedback({
       tooLong: false,
@@ -56,7 +55,7 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit, executionId }: Feedb
       inaccurate: false,
       comment: '',
     })
-    onClose()
+    onClose?.()
   }
 
   const hasAnyFeedback =
@@ -70,8 +69,7 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit, executionId }: Feedb
   if (!isOpen) return null
 
   return (
-    <div className='absolute inset-0 z-40 mt-[8%] mb-[14%] flex items-center justify-center bg-background/80 backdrop-blur-sm'>
-      <Card className=' w-[70%] max-w-lg overflow-auto shadow-lg'>
+      <Card className='  max-w-lg overflow-auto shadow-lg'>
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
           <CardTitle className='text-center font-medium text-xl'>Help us out</CardTitle>
           <Button
@@ -182,6 +180,5 @@ export function FeedbackDialog({ isOpen, onClose, onSubmit, executionId }: Feedb
           </div>
         </CardContent>
       </Card>
-    </div>
   )
 }
