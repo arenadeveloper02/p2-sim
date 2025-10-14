@@ -17,7 +17,7 @@ COPY package.json bun.lock ./
 RUN mkdir -p apps
 COPY apps/sim/package.json ./apps/sim/package.json
 
-RUN bun install
+RUN bun install --omit dev --ignore-scripts
 
 # ========================================
 # Builder Stage: Build the Application
