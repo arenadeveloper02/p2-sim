@@ -216,8 +216,6 @@ export const workflowEdges = pgTable(
   },
   (table) => ({
     workflowIdIdx: index('workflow_edges_workflow_id_idx').on(table.workflowId),
-    sourceBlockIdx: index('workflow_edges_source_block_idx').on(table.sourceBlockId),
-    targetBlockIdx: index('workflow_edges_target_block_idx').on(table.targetBlockId),
     workflowSourceIdx: index('workflow_edges_workflow_source_idx').on(
       table.workflowId,
       table.sourceBlockId
@@ -306,6 +304,9 @@ export const workflowExecutionLogs = pgTable(
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
     executionIdIdx: index('workflow_execution_logs_execution_id_idx').on(table.executionId),
+    stateSnapshotIdIdx: index('workflow_execution_logs_state_snapshot_id_idx').on(
+      table.stateSnapshotId
+    ),
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
@@ -564,6 +565,7 @@ export const userStats = pgTable('user_stats', {
   // Billing period tracking
   currentPeriodCost: decimal('current_period_cost').notNull().default('0'), // Usage in current billing period
   lastPeriodCost: decimal('last_period_cost').default('0'), // Usage from previous billing period
+  billedOverageThisPeriod: decimal('billed_overage_this_period').notNull().default('0'), // Amount of overage already billed via threshold billing
   // Pro usage snapshot when joining a team (to prevent double-billing)
   proPeriodCostSnapshot: decimal('pro_period_cost_snapshot').default('0'), // Snapshot of Pro usage when joining team
   // Copilot usage tracking
@@ -1315,6 +1317,7 @@ export const workflowDeploymentVersion = pgTable(
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
+    name: text('name'),
     state: json('state').notNull(),
     isActive: boolean('is_active').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),

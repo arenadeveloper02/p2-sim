@@ -97,7 +97,6 @@ export async function createStreamingResponse(
           for (const outputId of matchingOutputs) {
             const path = extractPathFromOutputId(outputId, blockId)
 
-            // Response blocks have their data nested under 'response'
             let outputValue = traverseObjectPath(output, path)
             if (outputValue === undefined && output.response) {
               outputValue = traverseObjectPath(output.response, path)
@@ -118,6 +117,7 @@ export async function createStreamingResponse(
           workflowTriggerType: streamConfig.workflowTriggerType,
           onStream: onStreamCallback,
           onBlockComplete: onBlockCompleteCallback,
+          skipLoggingComplete: true, // We'll complete logging after tokenization
         })
 
         if (result.logs && streamedContent.size > 0) {
@@ -135,6 +135,22 @@ export async function createStreamingResponse(
           processStreamingBlockLogs(result.logs, streamedContent)
         }
 
+        // Complete the logging session with updated trace spans that include cost data
+        if (result._streamingMetadata?.loggingSession) {
+          const { buildTraceSpans } = await import('@/lib/logs/execution/trace-spans/trace-spans')
+          const { traceSpans, totalDuration } = buildTraceSpans(result)
+
+          await result._streamingMetadata.loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: (traceSpans || []) as any,
+            workflowInput: result._streamingMetadata.processedInput,
+          })
+
+          result._streamingMetadata = undefined
+        }
+
         // Create a minimal result with only selected outputs
         const minimalResult = {
           success: result.success,
@@ -142,7 +158,6 @@ export async function createStreamingResponse(
           output: {} as any,
         }
 
-        // If there are selected outputs, only include those specific fields
         if (streamConfig.selectedOutputs?.length && result.output) {
           const { extractBlockIdFromOutputId, extractPathFromOutputId, traverseObjectPath } =
             await import('@/lib/response-format')
@@ -151,19 +166,28 @@ export async function createStreamingResponse(
             const blockId = extractBlockIdFromOutputId(outputId)
             const path = extractPathFromOutputId(outputId, blockId)
 
-            // Find the output value from the result
             if (result.logs) {
               const blockLog = result.logs.find((log: any) => log.blockId === blockId)
               if (blockLog?.output) {
-                // Response blocks have their data nested under 'response'
                 let value = traverseObjectPath(blockLog.output, path)
                 if (value === undefined && blockLog.output.response) {
                   value = traverseObjectPath(blockLog.output.response, path)
                 }
                 if (value !== undefined) {
-                  // Store it in a structured way
+                  const dangerousKeys = ['__proto__', 'constructor', 'prototype']
+                  if (dangerousKeys.includes(blockId) || dangerousKeys.includes(path)) {
+                    logger.warn(
+                      `[${requestId}] Blocked potentially dangerous property assignment`,
+                      {
+                        blockId,
+                        path,
+                      }
+                    )
+                    continue
+                  }
+
                   if (!minimalResult.output[blockId]) {
-                    minimalResult.output[blockId] = {}
+                    minimalResult.output[blockId] = Object.create(null)
                   }
                   minimalResult.output[blockId][path] = value
                 }
@@ -171,7 +195,6 @@ export async function createStreamingResponse(
             }
           }
         } else if (!streamConfig.selectedOutputs?.length) {
-          // No selected outputs means include the full output (but still filtered)
           minimalResult.output = result.output
         }
 

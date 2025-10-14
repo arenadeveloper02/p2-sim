@@ -1116,12 +1116,20 @@ export function createMockDatabase(options: MockDatabaseOptions = {}) {
 
   const createUpdateChain = () => ({
     set: vi.fn().mockImplementation(() => ({
-      where: vi.fn().mockImplementation(() => {
-        if (updateOptions.throwError) {
-          return Promise.reject(createDbError('update', updateOptions.errorMessage))
-        }
-        return Promise.resolve(updateOptions.results)
-      }),
+      where: vi.fn().mockImplementation(() => ({
+        returning: vi.fn().mockImplementation(() => {
+          if (updateOptions.throwError) {
+            return Promise.reject(createDbError('update', updateOptions.errorMessage))
+          }
+          return Promise.resolve(updateOptions.results)
+        }),
+        then: vi.fn().mockImplementation((resolve) => {
+          if (updateOptions.throwError) {
+            return Promise.reject(createDbError('update', updateOptions.errorMessage))
+          }
+          return Promise.resolve(updateOptions.results).then(resolve)
+        }),
+      })),
     })),
   })
 
@@ -1356,24 +1364,6 @@ export function setupKnowledgeApiMocks(
   }
 }
 
-// Legacy functions for backward compatibility (DO NOT REMOVE - still used in tests)
-
-/**
- * @deprecated Use mockAuth instead - provides same functionality with improved interface
- */
-export function mockAuthSession(isAuthenticated = true, user: MockUser = mockUser) {
-  const authMocks = mockAuth(user)
-  if (isAuthenticated) {
-    authMocks.setAuthenticated(user)
-  } else {
-    authMocks.setUnauthenticated()
-  }
-  return authMocks
-}
-
-/**
- * @deprecated Use setupComprehensiveTestMocks instead - provides better organization and features
- */
 export function setupApiTestMocks(
   options: {
     authenticated?: boolean
@@ -1404,9 +1394,6 @@ export function setupApiTestMocks(
   })
 }
 
-/**
- * @deprecated Use createStorageProviderMocks instead
- */
 export function mockUploadUtils(
   options: { isCloudStorage?: boolean; uploadResult?: any; uploadError?: boolean } = {}
 ) {
@@ -1444,10 +1431,6 @@ export function mockUploadUtils(
   }))
 }
 
-/**
- * Create a mock transaction function for database testing
- * @deprecated Use createMockDatabase instead
- */
 export function createMockTransaction(
   mockData: {
     selectData?: DatabaseSelectResult[]

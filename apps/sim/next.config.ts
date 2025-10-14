@@ -209,17 +209,24 @@ const nextConfig: NextConfig = {
   async redirects() {
     const redirects = []
 
+    // Redirect /building to /blog (legacy URL support)
+    redirects.push({
+      source: '/building/:path*',
+      destination: '/blog/:path*',
+      permanent: true,
+    })
+
     // Only enable domain redirects for the hosted version
     if (isHosted) {
       redirects.push(
         {
-          source: '/((?!api|_next|_vercel|favicon|static|.*\\..*).*)',
+          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
           destination: 'https://www.sim.ai/$1',
           permanent: true,
           has: [{ type: 'host' as const, value: 'simstudio.ai' }],
         },
         {
-          source: '/((?!api|_next|_vercel|favicon|static|.*\\..*).*)',
+          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
           destination: 'https://www.sim.ai/$1',
           permanent: true,
           has: [{ type: 'host' as const, value: 'www.simstudio.ai' }],

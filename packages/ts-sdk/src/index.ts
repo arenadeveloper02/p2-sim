@@ -94,6 +94,20 @@ export class SimStudioError extends Error {
   }
 }
 
+/**
+ * Remove trailing slashes from a URL
+ * Uses string operations instead of regex to prevent ReDoS attacks
+ * @param url - The URL to normalize
+ * @returns URL without trailing slashes
+ */
+function normalizeBaseUrl(url: string): string {
+  let normalized = url
+  while (normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1)
+  }
+  return normalized
+}
+
 export class SimStudioClient {
   private apiKey: string
   private baseUrl: string
@@ -101,13 +115,62 @@ export class SimStudioClient {
 
   constructor(config: SimStudioConfig) {
     this.apiKey = config.apiKey
-    this.baseUrl = (config.baseUrl || 'https://sim.ai').replace(/\/+$/, '')
+    this.baseUrl = normalizeBaseUrl(config.baseUrl || 'https://sim.ai')
   }
 
   /**
    * Execute a workflow with optional input data
    * If async is true, returns immediately with a task ID
    */
+  /**
+   * Convert File objects in input to API format (base64)
+   * Recursively processes nested objects and arrays
+   */
+  private async convertFilesToBase64(
+    value: any,
+    visited: WeakSet<object> = new WeakSet()
+  ): Promise<any> {
+    if (value instanceof File) {
+      const arrayBuffer = await value.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const base64 = buffer.toString('base64')
+
+      return {
+        type: 'file',
+        data: `data:${value.type || 'application/octet-stream'};base64,${base64}`,
+        name: value.name,
+        mime: value.type || 'application/octet-stream',
+      }
+    }
+
+    if (Array.isArray(value)) {
+      if (visited.has(value)) {
+        return '[Circular]'
+      }
+      visited.add(value)
+      const result = await Promise.all(
+        value.map((item) => this.convertFilesToBase64(item, visited))
+      )
+      visited.delete(value)
+      return result
+    }
+
+    if (value !== null && typeof value === 'object') {
+      if (visited.has(value)) {
+        return '[Circular]'
+      }
+      visited.add(value)
+      const converted: any = {}
+      for (const [key, val] of Object.entries(value)) {
+        converted[key] = await this.convertFilesToBase64(val, visited)
+      }
+      visited.delete(value)
+      return converted
+    }
+
+    return value
+  }
+
   async executeWorkflow(
     workflowId: string,
     options: ExecutionOptions = {}
@@ -121,15 +184,6 @@ export class SimStudioClient {
         setTimeout(() => reject(new Error('TIMEOUT')), timeout)
       })
 
-      // Build request body - spread input at root level, then add API control parameters
-      const body: any = input !== undefined ? { ...input } : {}
-      if (stream !== undefined) {
-        body.stream = stream
-      }
-      if (selectedOutputs !== undefined) {
-        body.selectedOutputs = selectedOutputs
-      }
-
       // Build headers - async execution uses X-Execution-Mode header
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -139,10 +193,23 @@ export class SimStudioClient {
         headers['X-Execution-Mode'] = 'async'
       }
 
+      // Build JSON body - spread input at root level, then add API control parameters
+      let jsonBody: any = input !== undefined ? { ...input } : {}
+
+      // Convert any File objects in the input to base64 format
+      jsonBody = await this.convertFilesToBase64(jsonBody)
+
+      if (stream !== undefined) {
+        jsonBody.stream = stream
+      }
+      if (selectedOutputs !== undefined) {
+        jsonBody.selectedOutputs = selectedOutputs
+      }
+
       const fetchPromise = fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(jsonBody),
       })
 
       const response = await Promise.race([fetchPromise, timeoutPromise])
@@ -253,7 +320,7 @@ export class SimStudioClient {
    * Set a new base URL
    */
   setBaseUrl(baseUrl: string): void {
-    this.baseUrl = baseUrl.replace(/\/+$/, '')
+    this.baseUrl = normalizeBaseUrl(baseUrl)
   }
 
   /**
