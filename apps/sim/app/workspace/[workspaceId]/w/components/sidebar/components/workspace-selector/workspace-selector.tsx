@@ -89,6 +89,11 @@ export function WorkspaceSelector({
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
+  // Helper function to check if workspace is AGENTS APPROVAL
+  const isApproverListWorkspace = useCallback((workspace: Workspace) => {
+    return workspace?.name === 'AGENTS APPROVAL'
+  }, [])
+
   // Focus input when editing starts
   useEffect(() => {
     if (editingWorkspaceId && editInputRef.current) {
@@ -119,15 +124,22 @@ export function WorkspaceSelector({
   /**
    * Handle start editing workspace name
    */
-  const handleStartEdit = useCallback((workspace: Workspace, e: React.MouseEvent) => {
-    // Only allow admins to rename workspace
-    if (workspace.permissions !== 'admin') {
-      return
-    }
-    e.stopPropagation()
-    setEditingWorkspaceId(workspace.id)
-    setEditingName(workspace.name)
-  }, [])
+  const handleStartEdit = useCallback(
+    (workspace: Workspace, e: React.MouseEvent) => {
+      // Only allow admins to rename workspace
+      if (workspace.permissions !== 'admin') {
+        return
+      }
+      // Prevent editing AGENTS APPROVAL workspace
+      if (isApproverListWorkspace(workspace)) {
+        return
+      }
+      e.stopPropagation()
+      setEditingWorkspaceId(workspace.id)
+      setEditingName(workspace.name)
+    },
+    [isApproverListWorkspace]
+  )
 
   /**
    * Handle save edit
@@ -300,6 +312,49 @@ export function WorkspaceSelector({
     [onLeaveWorkspace]
   )
 
+  // Render AGENTS APPROVAL workspace separately
+  const renderAgentsApprovalWorkspace = () => {
+    const agentsApprovalWorkspace = workspaces.find(
+      (workspace) => workspace.name === 'AGENTS APPROVAL'
+    )
+
+    if (!agentsApprovalWorkspace) {
+      return null
+    }
+
+    return (
+      <div
+        key={agentsApprovalWorkspace.id}
+        className={cn(
+          'group flex h-8 cursor-pointer items-center rounded-[8px] p-2 text-left transition-colors',
+          activeWorkspace?.id === agentsApprovalWorkspace.id ? 'bg-muted' : 'hover:bg-muted'
+        )}
+        style={{ maxWidth: '206px' }}
+        onClick={() => {
+          if (agentsApprovalWorkspace.name === 'AGENTS APPROVAL') {
+            // Redirect to approvals dashboard instead of regular workspace view
+            window.location.href = `/workspace/${agentsApprovalWorkspace.id}/approvals`
+          } else {
+            onSwitchWorkspace(agentsApprovalWorkspace)
+          }
+        }}
+      >
+        <div className='flex min-w-0 flex-1 items-center text-left'>
+          <span
+            className={cn(
+              'min-w-0 flex-1 select-none truncate pr-1 font-medium text-sm',
+              activeWorkspace?.id === agentsApprovalWorkspace.id
+                ? 'text-foreground'
+                : 'text-muted-foreground group-hover:text-foreground'
+            )}
+          >
+            {agentsApprovalWorkspace.name}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   // Render workspace list
   const renderWorkspaceList = () => {
     if (isWorkspacesLoading) {
@@ -320,9 +375,12 @@ export function WorkspaceSelector({
       )
     }
 
+    // Filter out AGENTS APPROVAL workspace
+    const regularWorkspaces = workspaces.filter((workspace) => workspace.name !== 'AGENTS APPROVAL')
+
     return (
       <div className='space-y-1'>
-        {workspaces.map((workspace) => {
+        {regularWorkspaces.map((workspace) => {
           const isEditing = editingWorkspaceId === workspace.id
           const isHovered = hoveredWorkspaceId === workspace.id
 
@@ -385,7 +443,16 @@ export function WorkspaceSelector({
                     variant='ghost'
                     size='icon'
                     onClick={(e) => handleStartEdit(workspace, e)}
-                    className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+                    disabled={isApproverListWorkspace(workspace)}
+                    title={
+                      isApproverListWorkspace(workspace)
+                        ? 'Cannot edit AGENTS APPROVAL workspace'
+                        : 'Edit workspace name'
+                    }
+                    className={cn(
+                      'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
+                      isApproverListWorkspace(workspace) && 'cursor-not-allowed opacity-50'
+                    )}
                   >
                     <Pencil className='!h-3.5 !w-3.5' />
                   </Button>
@@ -461,12 +528,21 @@ export function WorkspaceSelector({
                     size='icon'
                     onClick={(e) => {
                       e.stopPropagation()
-                      setWorkspaceToDelete(workspace)
-                      setIsDeleteDialogOpen(true)
+                      if (!isApproverListWorkspace(workspace)) {
+                        setWorkspaceToDelete(workspace)
+                        setIsDeleteDialogOpen(true)
+                      }
                     }}
+                    disabled={isApproverListWorkspace(workspace)}
+                    title={
+                      isApproverListWorkspace(workspace)
+                        ? 'Cannot delete AGENTS APPROVAL workspace'
+                        : 'Delete workspace'
+                    }
                     className={cn(
                       'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                      !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
+                      !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0',
+                      isApproverListWorkspace(workspace) && 'cursor-not-allowed opacity-50'
                     )}
                   >
                     <Trash2 className='!h-3.5 !w-3.5' />
@@ -486,15 +562,20 @@ export function WorkspaceSelector({
         <div className='flex h-full flex-col p-2'>
           {/* Workspace List */}
           <div className='min-h-0 flex-1'>
-            <ScrollArea ref={scrollAreaRef} className='h-[104px]' hideScrollbar={true}>
+            <ScrollArea ref={scrollAreaRef} className='h-[104px]' hideScrollbar={false}>
               {renderWorkspaceList()}
             </ScrollArea>
           </div>
 
+          {/* AGENTS APPROVAL Section */}
+          {workspaces.find((workspace) => workspace.name === 'AGENTS APPROVAL') && (
+            <div className='mt-2 border-t pt-2'>{renderAgentsApprovalWorkspace()}</div>
+          )}
+
           {/* Bottom Actions */}
           <div className='mt-2 flex items-center gap-2 border-t pt-2'>
-            {/* Send Invite - Hide in development */}
-            {!isDev && (
+            {/* Send Invite - Hide in development and AGENTS APPROVAL */}
+            {!isDev && !isApproverListWorkspace(activeWorkspace!) && (
               <Button
                 variant='secondary'
                 onClick={userPermissions.canAdmin ? () => setShowInviteMembers(true) : undefined}

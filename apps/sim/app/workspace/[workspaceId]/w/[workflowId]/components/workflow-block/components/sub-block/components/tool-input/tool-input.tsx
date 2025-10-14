@@ -29,6 +29,7 @@ import {
   SliderInput,
   Table,
   TimeInput,
+  UserSelectorInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components'
 import {
   type CustomTool,
@@ -1024,6 +1025,29 @@ export function ToolInput({
               placeholder: uiComponent.placeholder,
             }}
             onChannelSelect={onChange}
+            disabled={disabled}
+            isPreview={true}
+            previewValue={value}
+          />
+        )
+
+      case 'user-selector':
+        return (
+          <UserSelectorInput
+            blockId={blockId}
+            subBlock={{
+              id: `tool-${toolIndex || 0}-${param.id}`,
+              type: 'user-selector' as const,
+              title: param.id,
+              provider: uiComponent.provider || 'slack',
+              placeholder: uiComponent.placeholder,
+              multiple: uiComponent.multiple || false,
+            }}
+            onUserSelect={(value) => {
+              // Convert array to string for tool inputs if needed
+              const stringValue = Array.isArray(value) ? value.join(',') : value
+              onChange(stringValue)
+            }}
             disabled={disabled}
             isPreview={true}
             previewValue={value}

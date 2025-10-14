@@ -130,6 +130,8 @@ interface TemplateCardProps {
   onTemplateUsed?: () => void
   // Callback when star state changes (for parent state updates)
   onStarChange?: (templateId: string, isStarred: boolean, newStarCount: number) => void
+  // Workspace information to check if we should hide the Use button
+  workspaceName?: string
 }
 
 // Skeleton component for loading states
@@ -249,6 +251,7 @@ export function TemplateCard({
   isStarred = false,
   onTemplateUsed,
   onStarChange,
+  workspaceName,
 }: TemplateCardProps) {
   const router = useRouter()
   const params = useParams()
@@ -266,6 +269,9 @@ export function TemplateCard({
 
   // Get the icon component
   const iconComponent = getIconComponent(icon)
+
+  // Check if we should hide the Use button (when in AGENTS APPROVAL workspace)
+  const shouldHideUseButton = workspaceName === 'AGENTS APPROVAL'
 
   // Handle star toggle with optimistic updates
   const handleStarClick = async (e: React.MouseEvent) => {
@@ -408,16 +414,18 @@ export function TemplateCard({
                   isStarLoading && 'opacity-50'
                 )}
               />
-              <button
-                onClick={handleUseClick}
-                className={cn(
-                  'rounded-[8px] px-3 py-1 font-medium font-sans text-white text-xs transition-[background-color,box-shadow] duration-200',
-                  'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
-                  'shadow-[0_0_0_0_var(--brand-primary-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
-                )}
-              >
-                Use
-              </button>
+              {!shouldHideUseButton && (
+                <button
+                  onClick={handleUseClick}
+                  className={cn(
+                    'rounded-[8px] px-3 py-1 font-medium font-sans text-white text-xs transition-[background-color,box-shadow] duration-200',
+                    'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
+                    'shadow-[0_0_0_0_var(--brand-primary-hex)] hover:shadow-[0_0_0_4px_rgba(127,47,255,0.15)]'
+                  )}
+                >
+                  Use
+                </button>
+              )}
             </div>
           </div>
 

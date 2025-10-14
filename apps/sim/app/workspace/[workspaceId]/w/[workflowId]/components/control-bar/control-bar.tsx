@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -15,7 +15,9 @@ import {
   Webhook,
   WifiOff,
   X,
+  Zap,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
   AlertDialog,
@@ -29,6 +31,7 @@ import {
   Button,
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -42,11 +45,9 @@ import {
   TemplateModal,
   WebhookSettings,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components'
+import { renderApprovalButton } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/p2components'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
-import {
-  getKeyboardShortcutText,
-  useKeyboardShortcuts,
-} from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
+import { useKeyboardShortcuts } from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
 import { useFolderStore } from '@/stores/folders/store'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { usePanelStore } from '@/stores/panel/store'
@@ -56,6 +57,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { GetApprovalModal } from './components/approval-modal/approval-modal'
 
 const logger = createLogger('ControlBar')
 
@@ -84,6 +86,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const { data: session } = useSession()
   const params = useParams()
   const workspaceId = params.workspaceId as string
+
+  // State for workspace name
+  const [workspaceName, setWorkspaceName] = useState<string>('')
 
   // Store hooks
   const { history, revertToHistoryState, lastSaved, setNeedsRedeploymentFlag, blocks } =
@@ -116,6 +121,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
   const [isWebhookSettingsOpen, setIsWebhookSettingsOpen] = useState(false)
   const [isAutoLayouting, setIsAutoLayouting] = useState(false)
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false)
 
   // Delete workflow state - grouped for better organization
   const [deleteState, setDeleteState] = useState({
@@ -144,6 +150,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     limit: number
   } | null>(null)
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
   // Helper function to open console panel
   const openConsolePanel = useCallback(() => {
     setActiveTab('console')
@@ -268,9 +275,21 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const subBlockValues = useSubBlockStore((state) =>
     activeWorkflowId ? state.workflowValues[activeWorkflowId] : null
   )
+  const starterBlock = Object.values(currentBlocks).find((block) => block.type === 'starter')
+
+  // Get the actual startWorkflow value from the sub-block store
+  const startWorkflowValue = useSubBlockStore((state) => {
+    if (!activeWorkflowId || !starterBlock) return null
+    return state.workflowValues[activeWorkflowId]?.[starterBlock.id]?.startWorkflow ?? null
+  })
+
+  // Make initialTab reactive to starter block changes using useMemo
+  const initialTab = useMemo(() => {
+    const tab = startWorkflowValue === 'manual' ? 'api' : 'chat'
+    return tab
+  }, [startWorkflowValue])
 
   useEffect(() => {
-    // Avoid off-by-one false positives: wait until operation queue is idle
     const { operations, isProcessing } = useOperationQueueStore.getState()
     const hasPendingOps =
       isProcessing || operations.some((op) => op.status === 'pending' || op.status === 'processing')
@@ -284,9 +303,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       return
     }
 
-    // Use the workflow status API to get accurate change detection
-    // This uses the same logic as the deployment API (reading from normalized tables)
-    const checkForChanges = async () => {
+    // Debounce API calls
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    //due more dependences this will call so many times.
+    //for detecting changes debouncing is the better solution so when ever user changes anything insted of calling the status api everytime it will call within certian time
+    debounceRef.current = setTimeout(async () => {
       try {
         const response = await fetch(`/api/workflows/${activeWorkflowId}/status`)
         if (response.ok) {
@@ -300,9 +323,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         logger.error('Error fetching workflow status:', error)
         setChangeDetected(false)
       }
-    }
+    }, 1000)
 
-    checkForChanges()
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current)
+      }
+    }
   }, [
     activeWorkflowId,
     deployedState,
@@ -324,6 +351,28 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       })
     }
   }, [session?.user?.id, isRegistryLoading])
+
+  // Fetch workspace name
+  useEffect(() => {
+    const fetchWorkspaceName = async () => {
+      try {
+        const response = await fetch('/api/workspaces')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.workspaces && Array.isArray(data.workspaces)) {
+            const workspace = data.workspaces.find((w: any) => w.id === workspaceId)
+            if (workspace) {
+              setWorkspaceName(workspace.name)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching workspace name:', error)
+      }
+    }
+
+    fetchWorkspaceName()
+  }, [workspaceId])
 
   /**
    * Check user usage limits and cache results
@@ -564,11 +613,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const renderDeleteButton = () => {
     const canEdit = userPermissions.canEdit
     const hasMultipleWorkflows = Object.keys(workflows).length > 1
-    const isDisabled = !canEdit || !hasMultipleWorkflows
+    const isAgentsApprovalWorkspace = workspaceName === 'AGENTS APPROVAL'
+    const isDisabled = !canEdit || !hasMultipleWorkflows || isAgentsApprovalWorkspace
 
     const getTooltipText = () => {
-      if (!canEdit) return 'Admin permission required to delete workflows'
+      if (!canEdit) return 'Cannot delete workflow'
       if (!hasMultipleWorkflows) return 'Cannot delete the last workflow'
+      if (isAgentsApprovalWorkspace) return 'Cannot delete workflow'
       return 'Delete workflow'
     }
 
@@ -707,6 +758,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       isLoadingDeployedState={isLoadingDeployedState}
       refetchDeployedState={fetchDeployedState}
       userPermissions={userPermissions}
+      workspaceId={workspaceId}
+      initialTab={initialTab}
+      onDeploymentComplete={refreshChatDeployment}
     />
   )
 
@@ -1115,7 +1169,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         )
       }
 
-      return 'Run'
+      return 'Test agent'
     }
 
     const handleRunClick = () => {
@@ -1132,21 +1186,27 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            // className={cn(
+            //   'gap-2 font-medium',
+            //   'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
+            //   'shadow-[0_0_0_0_var(--brand-primary-hex)]',
+            //   'text-white transition-all duration-200',
+            //   'disabled:opacity-50 disabled:hover:bg-[var(--brand-primary-hex)] disabled:hover:shadow-none',
+            //   'h-12 rounded-[11px] px-4 py-2'
+            // )}
             className={cn(
-              'gap-2 font-medium',
-              'bg-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hover-hex)]',
-              'shadow-[0_0_0_0_var(--brand-primary-hex)]',
-              'text-white transition-all duration-200',
-              'disabled:opacity-50 disabled:hover:bg-[var(--brand-primary-hex)] disabled:hover:shadow-none',
-              'h-12 rounded-[11px] px-4 py-2'
+              'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+              'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
             )}
             onClick={handleRunClick}
             disabled={isButtonDisabled}
           >
-            <Play className={cn('h-3.5 w-3.5', 'fill-current stroke-current')} />
+            <Play className={cn('h-3.5 w-3.5')} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent command={getKeyboardShortcutText('Enter', true)}>
+        <TooltipContent
+        // command={getKeyboardShortcutText('Enter', true)}
+        >
           {getTooltipContent()}
         </TooltipContent>
       </Tooltip>
@@ -1251,6 +1311,103 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
   }
 
+  // Chat deployment state - moved to component level
+  const [chatDeployment, setChatDeployment] = useState<{
+    isDeployed: boolean
+    subdomain?: string
+  } | null>(null)
+  const [isLoadingChatStatus, setIsLoadingChatStatus] = useState(false)
+
+  // Check if workflow has chat deployment
+  const checkChatDeployment = useCallback(async () => {
+    if (!activeWorkflowId) return
+
+    setIsLoadingChatStatus(true)
+    try {
+      const response = await fetch(`/api/workflows/${activeWorkflowId}/chat/status`)
+      if (response.ok) {
+        const data = await response.json()
+        data.subdomain = activeWorkflowId
+        setChatDeployment(data)
+      } else {
+        setChatDeployment({ isDeployed: false })
+      }
+    } catch (error) {
+      logger.error('Error checking chat deployment status:', error)
+      setChatDeployment({ isDeployed: false })
+    } finally {
+      setIsLoadingChatStatus(false)
+    }
+  }, [activeWorkflowId])
+
+  // Initial check when activeWorkflowId changes
+  useEffect(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
+
+  // Refresh chat deployment status when deployment status changes
+  useEffect(() => {
+    if (isDeployed && activeWorkflowId) {
+      // Small delay to ensure deployment is fully processed
+      const timeoutId = setTimeout(() => {
+        checkChatDeployment()
+      }, 1000)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [isDeployed, activeWorkflowId, checkChatDeployment])
+
+  // Refresh chat deployment status when workflow execution completes
+  useEffect(() => {
+    if (!isExecuting && activeWorkflowId && isDeployed) {
+      // Refresh chat deployment status after execution completes
+      // This ensures the "Run Agent" button appears if chat was deployed during execution
+      checkChatDeployment()
+    }
+  }, [isExecuting, activeWorkflowId, isDeployed, checkChatDeployment])
+
+  const renderRunAgentWorkflow = () => {
+    // Don't render if no chat deployment or still loading
+    if (!chatDeployment?.isDeployed || !chatDeployment?.subdomain || isLoadingChatStatus) {
+      return null
+    }
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}>
+              <Button
+                variant='outline'
+                className={cn(
+                  'h-12 w-12 rounded-[11px] border bg-card text-card-foreground shadow-xs hover:bg-secondary',
+                  'hover:border-[var(--brand-primary-hex)] hover:bg-[var(--brand-primary-hex)] hover:text-white'
+                )}
+                // onClick={(e) => {
+                //   e.preventDefault()
+                //   e.stopPropagation()
+                //   router.push(`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`)
+                // }}
+              >
+                <Zap className={cn('h-5 w-5')} />
+              </Button>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>Run Agent</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  // Expose refresh function for external use (e.g., from deployment modals)
+  const refreshChatDeployment = useCallback(() => {
+    checkChatDeployment()
+  }, [checkChatDeployment])
+
+  const handleOpenApproval = () => {
+    setIsApprovalModalOpen(true)
+  }
+
   return (
     <div
       className={cn(
@@ -1264,11 +1421,21 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       {isExpanded && <ExportControls />}
       {isExpanded && renderAutoLayoutButton()}
       {/* {isExpanded && renderPublishButton()} */}
+      {renderApprovalButton(
+        userPermissions,
+        isDebugging,
+        activeWorkflowId,
+        handleOpenApproval,
+        workspaceName
+      )}
       {renderDeleteButton()}
       {renderDuplicateButton()}
       {/* {!isDebugging && renderDebugModeToggle()} */}
       {renderDeployButton()}
       {isDebugging ? renderDebugControlsBar() : renderRunButton()}
+      {Object.keys(deployedState || {})?.length > 0 &&
+        initialTab === 'chat' &&
+        renderRunAgentWorkflow()}
 
       {/* Template Modal */}
       {activeWorkflowId && (
@@ -1285,6 +1452,15 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           open={isWebhookSettingsOpen}
           onOpenChange={setIsWebhookSettingsOpen}
           workflowId={activeWorkflowId}
+        />
+      )}
+      {/* get approval Modal */}
+      {activeWorkflowId && (
+        <GetApprovalModal
+          open={isApprovalModalOpen}
+          onOpenChange={setIsApprovalModalOpen}
+          workflowId={activeWorkflowId}
+          canEdit={userPermissions.canEdit}
         />
       )}
     </div>

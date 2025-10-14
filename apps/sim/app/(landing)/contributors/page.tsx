@@ -206,7 +206,7 @@ export default function ContributorsPage() {
                   <div className='flex items-center gap-2'>
                     <div className='relative h-6 w-6 sm:h-8 sm:w-8'>
                       <Image
-                        src='/favicon.ico'
+                        src='/favicon/favicon-32x32.png'
                         alt='Sim Logo'
                         className='object-contain'
                         width={32}

@@ -1,4 +1,7 @@
+import { env } from '@/lib/env'
+import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import type { FirecrawlCrawlParams, FirecrawlCrawlResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -43,7 +46,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY : params.apiKey}`,
     }),
     body: (params) => ({
       url: params.url,
@@ -79,10 +82,13 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
 
     while (elapsedTime < MAX_POLL_TIME_MS) {
       try {
-        const statusResponse = await fetch(`/api/tools/firecrawl/crawl/${jobId}`, {
+        const baseUrl = getBaseUrl()
+        const fullUrl = new URL(`/api/tools/firecrawl/crawl/${jobId}`, baseUrl).toString()
+
+        const statusResponse = await fetch(fullUrl, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${params.apiKey}`,
+            Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY : params.apiKey}`,
           },
         })
 

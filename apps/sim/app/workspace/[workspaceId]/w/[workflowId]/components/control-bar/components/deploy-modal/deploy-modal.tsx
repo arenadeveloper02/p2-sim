@@ -27,6 +27,15 @@ interface DeployModalProps {
   deployedState: WorkflowState
   isLoadingDeployedState: boolean
   refetchDeployedState: () => Promise<void>
+  /**
+   * Initial tab to show when modal opens
+   * - 'api': Default for control bar deployment
+   * - 'chat': Used when opening from sidebar chat icon
+   */
+  initialTab?: TabView
+  isSidebar?: boolean
+  workspaceId?: string
+  onDeploymentComplete?: () => void
 }
 
 interface ApiKey {
@@ -63,6 +72,10 @@ export function DeployModal({
   deployedState,
   isLoadingDeployedState,
   refetchDeployedState,
+  initialTab = 'chat', // Default to API tab unless overridden (e.g., from sidebar chat icon)
+  isSidebar = false,
+  workspaceId,
+  onDeploymentComplete,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
@@ -75,7 +88,8 @@ export function DeployModal({
   const [isLoading, setIsLoading] = useState(false)
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [keysLoaded, setKeysLoaded] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabView>('api')
+  // Initialize active tab based on the initialTab prop (allows sidebar to open directly to chat)
+  const [activeTab, setActiveTab] = useState<TabView>(initialTab)
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [apiDeployError, setApiDeployError] = useState<string | null>(null)
   const [chatExists, setChatExists] = useState(false)
@@ -172,9 +186,10 @@ export function DeployModal({
       setIsLoading(true)
       fetchApiKeys()
       fetchChatDeploymentInfo()
-      setActiveTab('api')
+      // Set the initial tab based on how the modal was opened
+      setActiveTab(initialTab)
     }
-  }, [open, workflowId])
+  }, [open, workflowId, initialTab])
 
   useEffect(() => {
     async function fetchDeploymentInfo() {
@@ -415,30 +430,36 @@ export function DeployModal({
         </DialogHeader>
 
         <div className='flex flex-1 flex-col overflow-hidden'>
-          <div className='flex h-14 flex-none items-center border-b px-6'>
-            <div className='flex gap-2'>
-              <button
-                onClick={() => setActiveTab('api')}
-                className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                  activeTab === 'api'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                }`}
-              >
-                API
-              </button>
-              <button
-                onClick={() => setActiveTab('chat')}
-                className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                  activeTab === 'chat'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                }`}
-              >
-                Chat
-              </button>
+          {!isSidebar && (
+            <div className='flex h-14 flex-none items-center border-b px-6'>
+              <div className='flex gap-2'>
+                {initialTab === 'chat' && (
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'chat'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    Chat
+                  </button>
+                )}
+                {initialTab === 'api' && (
+                  <button
+                    onClick={() => setActiveTab('api')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'api'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    API
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className='flex-1 overflow-y-auto'>
             <div className='p-6'>
@@ -489,8 +510,27 @@ export function DeployModal({
                   chatSubmitting={chatSubmitting}
                   setChatSubmitting={setChatSubmitting}
                   onValidationChange={setIsChatFormValid}
-                  onPreDeployWorkflow={handleWorkflowPreDeploy}
-                  onDeploymentComplete={handleCloseModal}
+                  onPreDeployWorkflow={handleWorkflowPreDeploy} // For initial deployments
+                  onRedeployWorkflow={handleRedeploy} // For updating existing deployments
+                  onDeploymentComplete={() => {
+                    handleCloseModal()
+                    onDeploymentComplete?.()
+                  }}
+                  needsRedeployment={needsRedeployment} // Indicates if workflow has changes
+                  onRedeploymentComplete={() => {
+                    // Clear the needsRedeployment flag after successful redeployment
+                    setNeedsRedeployment(false)
+                    if (workflowId) {
+                      useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
+                    }
+                    // Also trigger a refetch of deployed state to ensure consistency
+                    refetchDeployedState()
+                    // Trigger chat deployment refresh
+                    onDeploymentComplete?.()
+                  }}
+                  isSidebar={isSidebar}
+                  workspaceId={workspaceId}
+                  onOpenChange={onOpenChange}
                 />
               )}
             </div>
@@ -563,7 +603,9 @@ export function DeployModal({
               <Button
                 type='button'
                 onClick={handleChatFormSubmit}
-                disabled={chatSubmitting || !isChatFormValid}
+                disabled={
+                  chatSubmitting || (!chatExists && isLoading) || (chatExists && !isChatFormValid)
+                }
                 className={cn(
                   'gap-2 font-medium',
                   'bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]',

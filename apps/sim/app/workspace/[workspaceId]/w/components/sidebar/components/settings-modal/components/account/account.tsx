@@ -307,7 +307,7 @@ export function Account(_props: AccountProps) {
                         className='h-full w-full object-cover'
                       />
                     ) : (
-                      <AgentIcon className='h-6 w-6 text-white' />
+                      <AgentIcon />
                     )
                   })()}
 

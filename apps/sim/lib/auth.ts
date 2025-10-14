@@ -48,7 +48,7 @@ const validStripeKey = env.STRIPE_SECRET_KEY
 let stripeClient = null
 if (validStripeKey) {
   stripeClient = new Stripe(env.STRIPE_SECRET_KEY || '', {
-    apiVersion: '2025-02-24.acacia',
+    apiVersion: '2025-08-27.basil',
   })
 }
 
@@ -407,7 +407,7 @@ export const auth = betterAuth({
           scopes: [
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/drive',
           ],
           prompt: 'consent',
           redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-drive`,
@@ -422,7 +422,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/documents',
-            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/drive',
             'https://www.googleapis.com/auth/documents',
           ],
           prompt: 'consent',
@@ -438,7 +438,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
             'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/drive',
             'https://www.googleapis.com/auth/spreadsheets',
           ],
           prompt: 'consent',
@@ -596,7 +596,6 @@ export const auth = betterAuth({
                 id: uniqueId,
                 name: 'Wealthbox User',
                 email: `${uniqueId.replace(/[^a-zA-Z0-9]/g, '')}@wealthbox.user`,
-                image: null,
                 emailVerified: false,
                 createdAt: now,
                 updatedAt: now,
@@ -654,7 +653,6 @@ export const auth = betterAuth({
                 id: uniqueId,
                 name: 'Supabase User',
                 email: `${uniqueId.replace(/[^a-zA-Z0-9]/g, '')}@supabase.user`,
-                image: null,
                 emailVerified: false,
                 createdAt: now,
                 updatedAt: now,
@@ -764,7 +762,7 @@ export const auth = betterAuth({
                 id: profile.account_id,
                 name: profile.name || profile.display_name || 'Confluence User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
-                image: profile.picture || null,
+                image: profile.picture || undefined,
                 emailVerified: true, // Assume verified since it's an Atlassian account
                 createdAt: now,
                 updatedAt: now,
@@ -815,7 +813,7 @@ export const auth = betterAuth({
                 email: profile.email || `${profile.id}@discord.user`,
                 image: profile.avatar
                   ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`
-                  : null,
+                  : undefined,
                 emailVerified: profile.verified || false,
                 createdAt: now,
                 updatedAt: now,
@@ -885,7 +883,7 @@ export const auth = betterAuth({
                 id: profile.account_id,
                 name: profile.name || profile.display_name || 'Jira User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
-                image: profile.picture || null,
+                image: profile.picture || undefined,
                 emailVerified: true, // Assume verified since it's an Atlassian account
                 createdAt: now,
                 updatedAt: now,
@@ -953,7 +951,6 @@ export const auth = betterAuth({
                 id: profile.bot?.owner?.user?.id || profile.id,
                 name: profile.name || profile.bot?.owner?.user?.name || 'Notion User',
                 email: profile.person?.email || `${profile.id}@notion.user`,
-                image: null, // Notion API doesn't provide profile images
                 emailVerified: !!profile.person?.email,
                 createdAt: now,
                 updatedAt: now,
@@ -1004,7 +1001,7 @@ export const auth = betterAuth({
                 id: data.id,
                 name: data.name || 'Reddit User',
                 email: `${data.name}@reddit.user`, // Reddit doesn't provide email in identity scope
-                image: data.icon_img || null,
+                image: data.icon_img || undefined,
                 emailVerified: false,
                 createdAt: now,
                 updatedAt: now,
@@ -1079,7 +1076,7 @@ export const auth = betterAuth({
                 emailVerified: true,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-                image: viewer.avatarUrl || null,
+                image: viewer.avatarUrl || undefined,
               }
             } catch (error) {
               logger.error('Error in getUserInfo:', error)
@@ -1142,7 +1139,6 @@ export const auth = betterAuth({
                 id: uniqueId,
                 name: 'Slack Bot',
                 email: `${uniqueId.replace(/[^a-zA-Z0-9]/g, '')}@slack.bot`,
-                image: null,
                 emailVerified: false,
                 createdAt: now,
                 updatedAt: now,

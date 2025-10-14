@@ -23,6 +23,22 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import {
+  figmaConvertTool,
+  figmaCreateStylesVariablesTool,
+  figmaCreateTool,
+  figmaDeleteCommentTool,
+  figmaGetCommentsTool,
+  figmaGetFileImagesTool,
+  figmaGetFileNodesTool,
+  figmaGetFileTool,
+  figmaGetProjectFilesTool,
+  figmaGetTeamProjectsTool,
+  figmaMakeIntegrationTool,
+  figmaPostCommentTool,
+  figmaToHTMLAITool,
+  figmaWireframeToUITool,
+} from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import { crawlTool, scrapeTool, searchTool } from '@/tools/firecrawl'
 import { functionExecuteTool } from '@/tools/function'
@@ -33,7 +49,8 @@ import {
   githubRepoInfoTool,
 } from '@/tools/github'
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
-import { searchTool as googleSearchTool } from '@/tools/google'
+import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -182,9 +199,12 @@ import {
 import { workflowExecutorTool } from '@/tools/workflow'
 import { xReadTool, xSearchTool, xUserTool, xWriteTool } from '@/tools/x'
 import { youtubeSearchTool } from '@/tools/youtube'
+import { arenaCreateTask, arenaSearchTask } from './arena_task_manager'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
+  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -199,6 +219,8 @@ export const tools: Record<string, ToolConfig> = {
   firecrawl_search: searchTool,
   firecrawl_crawl: crawlTool,
   google_search: googleSearchTool,
+  google_imagen: imagenTool,
+  google_nano_banana: nanoBananaTool,
   jina_read_url: readUrlTool,
   linkup_search: linkupSearchTool,
   jira_retrieve: jiraRetrieveTool,
@@ -281,6 +303,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,
@@ -358,6 +381,21 @@ export const tools: Record<string, ToolConfig> = {
   sharepoint_create_page: sharepointCreatePageTool,
   sharepoint_read_page: sharepointReadPageTool,
   sharepoint_list_sites: sharepointListSitesTool,
+  // Figma tools
+  figma_create: figmaCreateTool,
+  figma_convert: figmaConvertTool,
+  figma_create_styles_variables: figmaCreateStylesVariablesTool,
+  figma_make_integration: figmaMakeIntegrationTool,
+  figma_to_html_ai: figmaToHTMLAITool,
+  figma_wireframe_to_ui: figmaWireframeToUITool,
+  figma_get_comments: figmaGetCommentsTool,
+  figma_post_comment: figmaPostCommentTool,
+  figma_delete_comment: figmaDeleteCommentTool,
+  figma_get_team_projects: figmaGetTeamProjectsTool,
+  figma_get_file: figmaGetFileTool,
+  figma_get_file_nodes: figmaGetFileNodesTool,
+  figma_get_file_images: figmaGetFileImagesTool,
+  figma_get_project_files: figmaGetProjectFilesTool,
   // Provider chat tools
   // Provider chat tools - handled separately in agent blocks
 }

@@ -86,7 +86,7 @@ export function useUserPermissions(
       isLoading: false,
       error: permissionsError,
     }
-  }, [session, workspacePermissions, permissionsLoading, permissionsError])
+  }, [session, workspacePermissions, permissionsLoading, permissionsError, globalActionsDisabled])
 
   return userPermissions
 }

@@ -6,6 +6,11 @@ import { getMainCSPPolicy, getWorkflowExecutionCSPPolicy } from './lib/security/
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Configure asset prefix to use relative paths for static assets
+  assetPrefix: '',
+  // Use relative paths for static assets
+  trailingSlash: false,
+  basePath: '',
   images: {
     remotePatterns: [
       {
@@ -38,6 +43,10 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'via.placeholder.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'sambanova.ai',
       },
       // Custom domain for file storage if configured
       ...(env.NEXT_PUBLIC_BLOB_BASE_URL

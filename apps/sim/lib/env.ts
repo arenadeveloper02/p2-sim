@@ -50,6 +50,12 @@ export const env = createEnv({
     ENTERPRISE_TIER_COST_LIMIT:            z.number().optional(),                  // Cost limit for enterprise tier users
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
 
+    //browseruse
+    BROWSER_USE_API_KEY:                   z.string().min(1).optional(),           // BrowserUse API key for browser automation
+
+    // Firecrawl
+    FIRECRAWL_API_KEY:                     z.string().min(1).optional(),           // Firecrawl API key for web crawling
+    
     // Email & Communication
     RESEND_API_KEY:                        z.string().min(1).optional(),           // Resend API key for transactional emails
     FROM_EMAIL_ADDRESS:                    z.string().min(1).optional(),           // Complete from address (e.g., "Sim <noreply@domain.com>" or "noreply@domain.com")
@@ -61,13 +67,22 @@ export const env = createEnv({
     OPENAI_API_KEY_1:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
     OPENAI_API_KEY_2:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
     OPENAI_API_KEY_3:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
+    XAI_API_KEY:                           z.string().min(1).optional(),  
+    XAI_API_KEY_1:                         z.string().min(1).optional(), 
+    XAI_API_KEY_2:                         z.string().min(1).optional(), 
+    XAI_API_KEY_3:                         z.string().min(1).optional(), 
     MISTRAL_API_KEY:                       z.string().min(1).optional(),           // Mistral AI API key
+    ANTHROPIC_API_KEY:                     z.string().min(1).optional(),           // Primary Anthropic Claude API key
     ANTHROPIC_API_KEY_1:                   z.string().min(1).optional(),           // Primary Anthropic Claude API key
     ANTHROPIC_API_KEY_2:                   z.string().min(1).optional(),           // Additional Anthropic API key for load balancing
     ANTHROPIC_API_KEY_3:                   z.string().min(1).optional(),           // Additional Anthropic API key for load balancing
     OLLAMA_URL:                            z.string().url().optional(),            // Ollama local LLM server URL
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
+    SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
+    SAMBANOVA_API_KEY_1:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
+    SAMBANOVA_API_KEY_2:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
+    SAMBANOVA_API_KEY_3:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
 
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
@@ -195,6 +210,10 @@ export const env = createEnv({
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
     E2B_API_KEY:                           z.string().optional(),                  // E2B API key for sandbox creation
+
+     // Arena
+    ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
   },
 
   client: {
@@ -242,6 +261,11 @@ export const env = createEnv({
 
     // Feature Flags
     NEXT_PUBLIC_TRIGGER_DEV_ENABLED:       z.boolean().optional(),                 // Client-side gate for async executions UI
+
+
+    // Arena
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
   },
 
   // Variables available on both server and client
@@ -251,6 +275,8 @@ export const env = createEnv({
   },
 
   experimental__runtimeEnv: {
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL: process.env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL,
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL: process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_VERCEL_URL: process.env.NEXT_PUBLIC_VERCEL_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
