@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useMemo, useState } from 'react'
-import { Check, Copy, Download } from 'lucide-react'
+import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   downloadImage,
@@ -10,6 +10,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/constants'
 import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/markdown-renderer'
 import MarkdownRenderer from './components/markdown-renderer'
+import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/feedback-box'
 
 export interface ChatMessage {
   id: string
@@ -29,8 +30,15 @@ function EnhancedMarkdownRenderer({ content }: { content: string }) {
 }
 
 export const ClientChatMessage = memo(
-  function ClientChatMessage({ message }: { message: ChatMessage }) {
+  function ClientChatMessage({
+    message,
+    workflowId,
+  }: {
+    message: ChatMessage
+    workflowId: string
+  }) {
     const [isCopied, setIsCopied] = useState(false)
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
 
     const isJsonObject = useMemo(() => {
       return typeof message.content === 'object' && message.content !== null
@@ -60,6 +68,30 @@ export const ClientChatMessage = memo(
           </div>
         )
       }
+    }
+
+    const handleCopy = () => {
+      const contentToCopy =
+        typeof cleanTextContent === 'string'
+          ? cleanTextContent
+          : JSON.stringify(cleanTextContent, null, 2)
+      navigator.clipboard.writeText(contentToCopy)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    }
+
+
+    const handleLike = () => {
+      console.log('Like')
+    }
+
+    const handleDislike = () => {
+      setIsFeedbackOpen(true)
+    }
+
+    const handleSubmitFeedback = (feedback: any) => {
+      console.log('Feedback submitted:', feedback)
+      setIsFeedbackOpen(false)
     }
 
     // For user messages (on the right)
@@ -101,62 +133,98 @@ export const ClientChatMessage = memo(
                 )} */}
               </div>
             </div>
-            {message.type === 'assistant' &&
-              !isJsonObject &&
-              !message.isInitialMessage &&
-              !isBase64(cleanTextContent) && (
-                <div className='flex items-center justify-start space-x-2'>
-                  {/* Copy Button - Only show when not streaming */}
-                  {!message.isStreaming && (
-                    <TooltipProvider>
-                      <Tooltip delayDuration={300}>
-                        <TooltipTrigger asChild>
-                          <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={() => {
-                              const contentToCopy =
-                                typeof cleanTextContent === 'string'
-                                  ? cleanTextContent
-                                  : JSON.stringify(cleanTextContent, null, 2)
-                              navigator.clipboard.writeText(contentToCopy)
-                              setIsCopied(true)
-                              setTimeout(() => setIsCopied(false), 2000)
-                            }}
-                          >
-                            {isCopied ? (
-                              <Check className='h-4 w-4' strokeWidth={2} />
-                            ) : (
-                              <Copy className='h-4 w-4' strokeWidth={2} />
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side='top' align='center' sideOffset={5}>
-                          {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
-              )}
-            {isBase64(cleanTextContent) && message.type === 'assistant' && !message.isStreaming && (
-              <div className='flex items-center justify-start space-x-2'>
+            {message.type === 'assistant' && !message.isStreaming && !message.isInitialMessage && (
+              <div className='relative flex items-center justify-start space-x-2'>
+                {/* Feedback Box Popover */}
+                {isFeedbackOpen && (
+                  <div className='absolute bottom-full left-0 mb-2 z-50 w-[400px]'>
+                    <FeedbackBox 
+                      isOpen={isFeedbackOpen} 
+                      onClose={() => setIsFeedbackOpen(false)} 
+                      onSubmit={handleSubmitFeedback} 
+                    />
+                  </div>
+                )}
+
+                {!isJsonObject && !isBase64(cleanTextContent) && (
+                  <TooltipProvider>
+                    <Tooltip delayDuration={300}>
+                      <TooltipTrigger asChild>
+                        <button
+                          className='text-muted-foreground transition-colors hover:bg-muted'
+                          onClick={() => {
+                            handleCopy()
+                          }}
+                        >
+                          {isCopied ? (
+                            <Check className='h-4 w-4' strokeWidth={2} />
+                          ) : (
+                            <Copy className='h-4 w-4' strokeWidth={2} />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side='top' align='center' sideOffset={5}>
+                        {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+
                 <TooltipProvider>
                   <Tooltip delayDuration={300}>
                     <TooltipTrigger asChild>
                       <button
                         className='text-muted-foreground transition-colors hover:bg-muted'
                         onClick={() => {
-                          downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
+                          handleLike()
                         }}
                       >
-                        <Download className='h-4 w-4' strokeWidth={2} />
+                        <ThumbsUp className='h-4 w-4' strokeWidth={2} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side='top' align='center' sideOffset={5}>
-                      Download
+                      {'Like'}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip delayDuration={300}>
+                    <TooltipTrigger asChild>
+                      <button
+                        className='text-muted-foreground transition-colors hover:bg-muted'
+                        onClick={() => {
+                          handleDislike()
+                        }}
+                      >
+                        <ThumbsDown className='h-4 w-4' strokeWidth={2} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side='top' align='center' sideOffset={5}>
+                      {'Dislike'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {isBase64(cleanTextContent) && (
+                  <TooltipProvider>
+                    <Tooltip delayDuration={300}>
+                      <TooltipTrigger asChild>
+                        <button
+                          className='text-muted-foreground transition-colors hover:bg-muted'
+                          onClick={() => {
+                            downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
+                          }}
+                        >
+                          <Download className='h-4 w-4' strokeWidth={2} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side='top' align='center' sideOffset={5}>
+                        Download
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
             )}
           </div>

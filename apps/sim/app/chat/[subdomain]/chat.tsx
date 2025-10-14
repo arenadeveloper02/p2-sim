@@ -944,6 +944,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           scrollToBottom={scrollToBottom}
           scrollToMessage={scrollToMessage}
           chatConfig={chatConfig}
+          workflowId={subdomain}
         />
 
         {/* Input area (free-standing at the bottom) */}
