@@ -13,7 +13,6 @@ interface ChatMessageProps {
     isStreaming?: boolean
     executionId?: string
   }
-  onShowFeedbackDialog?: (executionId: string) => void
 }
 
 // Maximum character length for a word before it's broken up

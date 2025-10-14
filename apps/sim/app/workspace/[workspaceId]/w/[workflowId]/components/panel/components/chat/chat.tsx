@@ -18,7 +18,6 @@ import {
   ChatMessage,
   OutputSelect,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components'
-import { FeedbackDialog } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/feedback-dialog'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useExecutionStore } from '@/stores/execution/store'
@@ -93,9 +92,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Add this new state to control form visibility
   const [showInputForm, setShowInputForm] = useState(false)
 
-  // Feedback dialog state
-  const [showFeedbackDialog, setShowFeedbackDialog] = useState(false)
-  const [feedbackExecutionId, setFeedbackExecutionId] = useState<string | undefined>()
+  
 
   // Listen to subblock store changes for input format fields from starter blocks
   const subBlockInputFormat = useSubBlockStore(
@@ -731,56 +728,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
 
-  // Handler for feedback submission
-  const handleFeedbackSubmit = useCallback(
-    async (feedbackData: any) => {
-      if (!feedbackExecutionId) {
-        console.error('No executionId available for feedback submission')
-        return
-      }
-
-      try {
-        const response = await fetch(`/api/chat/feedback/${feedbackExecutionId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            comment: feedbackData.comment || '',
-            inComplete: feedbackData.incomplete,
-            inAccurate: feedbackData.inaccurate,
-            outOfDate: feedbackData.outOfDate,
-            tooLong: feedbackData.tooLong,
-            tooShort: feedbackData.tooShort,
-            liked: false, // This is a dislike feedback
-          }),
-        })
-
-        if (!response.ok) {
-          console.error('Failed to submit feedback:', response.statusText)
-        }
-      } catch (error) {
-        console.error('Error submitting feedback:', error)
-      }
-
-      // Close the dialog
-      setShowFeedbackDialog(false)
-      setFeedbackExecutionId(undefined)
-    },
-    [feedbackExecutionId]
-  )
-
-  // Handler for showing feedback dialog
-  const handleShowFeedbackDialog = useCallback((executionId: string) => {
-    setFeedbackExecutionId(executionId)
-    setShowFeedbackDialog(true)
-  }, [])
-
-  // Handler for hiding feedback dialog
-  const handleHideFeedbackDialog = useCallback(() => {
-    setShowFeedbackDialog(false)
-    setFeedbackExecutionId(undefined)
-  }, [])
+ 
 
   // Handler for form submission
   const handleInputFormSubmit = useCallback(
@@ -1034,13 +982,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         selectedOutputs={selectedOutputs}
         onOutputSelect={handleOutputSelection}
       />
-      {/* Feedback Dialog - contained within the chat component */}
-      <FeedbackDialog
-        isOpen={showFeedbackDialog}
-        onClose={handleHideFeedbackDialog}
-        onSubmit={handleFeedbackSubmit}
-        executionId={feedbackExecutionId}
-      />
       {/* Always render the chat UI */}
       <>
         {/* Header with actions */}
@@ -1121,7 +1062,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                       <ChatMessage
                         key={message.id}
                         message={message}
-                        onShowFeedbackDialog={handleShowFeedbackDialog}
                       />
                     ))}
                     <div ref={messagesEndRef} />
