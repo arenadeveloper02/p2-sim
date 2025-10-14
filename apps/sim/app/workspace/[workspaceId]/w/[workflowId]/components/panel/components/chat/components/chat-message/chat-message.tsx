@@ -99,8 +99,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
     setTimeout(() => setIsCopied(false), 2000)
   }
 
-
-  
   return (
     <div className='w-full py-2 pl-[2px]'>
       <div className='overflow-wrap-anywhere relative break-normal font-normal text-sm leading-normal'>
@@ -136,8 +134,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 </Tooltip>
               </TooltipProvider>
             )}
-
-            
 
             {isBase64(message?.content) && (
               <TooltipProvider>

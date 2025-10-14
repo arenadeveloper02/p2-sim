@@ -92,8 +92,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
   // Add this new state to control form visibility
   const [showInputForm, setShowInputForm] = useState(false)
 
-  
-
   // Listen to subblock store changes for input format fields from starter blocks
   const subBlockInputFormat = useSubBlockStore(
     useCallback(
@@ -728,8 +726,6 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
 
- 
-
   // Handler for form submission
   const handleInputFormSubmit = useCallback(
     async (formInputs: Record<string, any>) => {
@@ -1059,10 +1055,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                 <ScrollArea className='h-full pb-2' hideScrollbar={true}>
                   <div className='block overflow-x-auto' style={{ width: `${panelWidth - 30}px` }}>
                     {workflowMessages.map((message) => (
-                      <ChatMessage
-                        key={message.id}
-                        message={message}
-                      />
+                      <ChatMessage key={message.id} message={message} />
                     ))}
                     <div ref={messagesEndRef} />
                   </div>
