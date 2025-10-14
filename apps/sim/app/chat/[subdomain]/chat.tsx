@@ -318,6 +318,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                   type: 'assistant',
                   timestamp: new Date(log.endedAt || log.startedAt),
                   isStreaming: false,
+                  executionId: log?.executionId || '',
                 })
               }
 

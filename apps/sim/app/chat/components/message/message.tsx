@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -19,6 +19,7 @@ export interface ChatMessage {
   timestamp: Date
   isInitialMessage?: boolean
   isStreaming?: boolean
+  executionId?: string
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -47,6 +48,16 @@ export const ClientChatMessage = memo(
     // Since tool calls are now handled via SSE events and stored in message.toolCalls,
     // we can use the content directly without parsing
     const cleanTextContent = message.content
+
+    // Close this feedback box when another message opens theirs
+    useEffect(() => {
+      if (typeof window === 'undefined') return
+      const handleCloseFeedback = () => setIsFeedbackOpen(false)
+      window.addEventListener('p2-close-feedback', handleCloseFeedback)
+      return () => {
+        window.removeEventListener('p2-close-feedback', handleCloseFeedback)
+      }
+    }, [])
 
     const renderContent = (content: any) => {
       if (!content) {
@@ -80,17 +91,54 @@ export const ClientChatMessage = memo(
       setTimeout(() => setIsCopied(false), 2000)
     }
 
-
-    const handleLike = () => {
-      console.log('Like')
+    const handleLike = async (currentExecutionId: string) => {
+      if (!currentExecutionId) return
+      try {
+        await fetch(`/api/chat/feedback/${currentExecutionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            comment: '',
+            inComplete: false,
+            inAccurate: false,
+            outOfDate: false,
+            tooLong: false,
+            tooShort: false,
+            liked: true,
+          }),
+        })
+      } catch {}
     }
 
-    const handleDislike = () => {
+    const handleDislike = (currentExecutionId: string) => {
+      try {
+        // Close any other open feedback boxes across messages
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('p2-close-feedback'))
+        }
+      } catch {}
       setIsFeedbackOpen(true)
     }
 
-    const handleSubmitFeedback = (feedback: any) => {
-      console.log('Feedback submitted:', feedback)
+    const handleSubmitFeedback = async (feedback: any, currentExecutionId: string) => {
+      if (!currentExecutionId) return
+
+      try {
+        await fetch(`/api/chat/feedback/${currentExecutionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            comment: feedback.comment || '',
+            inComplete: feedback.incomplete,
+            inAccurate: feedback.inaccurate,
+            outOfDate: feedback.outOfDate,
+            tooLong: feedback.tooLong,
+            tooShort: feedback.tooShort,
+            liked: false, // This is a dislike feedback
+          }),
+        })
+      } catch {}
+
       setIsFeedbackOpen(false)
     }
 
@@ -138,10 +186,11 @@ export const ClientChatMessage = memo(
                 {/* Feedback Box Popover */}
                 {isFeedbackOpen && (
                   <div className='absolute bottom-full left-0 mb-2 z-50 w-[400px]'>
-                    <FeedbackBox 
-                      isOpen={isFeedbackOpen} 
-                      onClose={() => setIsFeedbackOpen(false)} 
-                      onSubmit={handleSubmitFeedback} 
+                    <FeedbackBox
+                      isOpen={isFeedbackOpen}
+                      onClose={() => setIsFeedbackOpen(false)}
+                      onSubmit={handleSubmitFeedback}
+                      currentExecutionId={message?.executionId || ''}
                     />
                   </div>
                 )}
@@ -176,7 +225,7 @@ export const ClientChatMessage = memo(
                       <button
                         className='text-muted-foreground transition-colors hover:bg-muted'
                         onClick={() => {
-                          handleLike()
+                          handleLike(message?.executionId || '')
                         }}
                       >
                         <ThumbsUp className='h-4 w-4' strokeWidth={2} />
@@ -194,7 +243,7 @@ export const ClientChatMessage = memo(
                       <button
                         className='text-muted-foreground transition-colors hover:bg-muted'
                         onClick={() => {
-                          handleDislike()
+                          handleDislike(message?.executionId || '')
                         }}
                       >
                         <ThumbsDown className='h-4 w-4' strokeWidth={2} />
