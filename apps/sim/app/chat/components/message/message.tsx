@@ -212,42 +212,45 @@ export const ClientChatMessage = memo(
                     </Tooltip>
                   </TooltipProvider>
                 )}
+                {cleanTextContent && message?.executionId && (
+                  <>
+                    <TooltipProvider>
+                      <Tooltip delayDuration={300}>
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              handleLike(message?.executionId || '')
+                            }}
+                          >
+                            <ThumbsUp className='h-4 w-4' strokeWidth={2} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side='top' align='center' sideOffset={5}>
+                          {'Like'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
 
-                <TooltipProvider>
-                  <Tooltip delayDuration={300}>
-                    <TooltipTrigger asChild>
-                      <button
-                        className='text-muted-foreground transition-colors hover:bg-muted'
-                        onClick={() => {
-                          handleLike(message?.executionId || '')
-                        }}
-                      >
-                        <ThumbsUp className='h-4 w-4' strokeWidth={2} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side='top' align='center' sideOffset={5}>
-                      {'Like'}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <TooltipProvider>
-                  <Tooltip delayDuration={300}>
-                    <TooltipTrigger asChild>
-                      <button
-                        className='text-muted-foreground transition-colors hover:bg-muted'
-                        onClick={() => {
-                          handleDislike(message?.executionId || '')
-                        }}
-                      >
-                        <ThumbsDown className='h-4 w-4' strokeWidth={2} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side='top' align='center' sideOffset={5}>
-                      {'Dislike'}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                    <TooltipProvider>
+                      <Tooltip delayDuration={300}>
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              handleDislike(message?.executionId || '')
+                            }}
+                          >
+                            <ThumbsDown className='h-4 w-4' strokeWidth={2} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side='top' align='center' sideOffset={5}>
+                          {'Dislike'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </>
+                )}
 
                 {isBase64(cleanTextContent) && (
                   <TooltipProvider>
