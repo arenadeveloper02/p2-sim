@@ -100,22 +100,6 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
       params: (params) => {
         const { operation, limit, ...rest } = params
 
-        // Remove API key from params when hosted (tool will use env var)
-        if (isHosted) {
-          const { apiKey, ...filteredRest } = rest
-          const processedParams = { ...filteredRest }
-
-          switch (operation) {
-            case 'crawl':
-              return {
-                ...processedParams,
-                limit: limit ? Number.parseInt(limit) : undefined,
-              }
-            default:
-              return processedParams
-          }
-        }
-
         switch (operation) {
           case 'crawl':
             return {
