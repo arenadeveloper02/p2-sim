@@ -519,26 +519,6 @@ export class Serializer {
           shouldValidateParam = includedByMode && includedByCondition
         }
 
-        // Special handling for API keys in hosted environment
-        // Skip validation if the field is hidden due to hosting
-        if (shouldValidateParam && paramId === 'apiKey') {
-          const { isHosted } = require('@/lib/environment')
-          const { env } = require('@/lib/env')
-
-          // Check if field is hidden due to hosting (either via hidden property or condition)
-          if (isHosted) {
-            if (subBlockConfig?.hidden === true) {
-              // Field is directly hidden when hosted (like Browser Use)
-              // Skip validation regardless of environment variable - user can't provide it
-              shouldValidateParam = false
-            } else if (subBlockConfig?.condition?.not === true) {
-              // Field is conditionally hidden when hosted (like Firecrawl)
-              // Skip validation regardless of environment variable - user can't provide it
-              shouldValidateParam = false
-            }
-          }
-        }
-
         if (!shouldValidateParam) {
           return
         }
