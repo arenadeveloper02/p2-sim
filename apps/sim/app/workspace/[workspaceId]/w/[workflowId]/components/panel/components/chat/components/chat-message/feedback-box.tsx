@@ -71,7 +71,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
 
   return (
     <Card className=' max-w-lg overflow-auto shadow-lg'>
-      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pr-4'>
+      <CardHeader className='flex flex-row items-center justify-between space-y-0 pt-4 pr-4 pb-2'>
         <CardTitle className='text-center font-medium text-xl'>Help us out</CardTitle>
         <Button
           variant='ghost'

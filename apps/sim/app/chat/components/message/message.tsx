@@ -1,6 +1,14 @@
 'use client'
 
-import { type Dispatch, memo, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type Dispatch,
+  memo,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toastError, toastSuccess } from '@/components/ui'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -230,7 +238,10 @@ export const ClientChatMessage = memo(
               <div className='relative flex items-center justify-start space-x-2'>
                 {/* Feedback Box Popover */}
                 {isFeedbackOpen && (
-                  <div ref={feedbackRef} className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'>
+                  <div
+                    ref={feedbackRef}
+                    className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'
+                  >
                     <FeedbackBox
                       isOpen={isFeedbackOpen}
                       onClose={() => setIsFeedbackOpen(false)}
