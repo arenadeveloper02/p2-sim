@@ -1,6 +1,6 @@
 'use client'
 
-import { type Dispatch, memo, type SetStateAction, useEffect, useMemo, useState } from 'react'
+import { type Dispatch, memo, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toastError, toastSuccess } from '@/components/ui'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -42,6 +42,7 @@ export const ClientChatMessage = memo(
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
+    const feedbackRef = useRef<HTMLDivElement>(null)
 
     const isJsonObject = useMemo(() => {
       return typeof message.content === 'object' && message.content !== null
@@ -60,6 +61,22 @@ export const ClientChatMessage = memo(
         window.removeEventListener('p2-close-feedback', handleCloseFeedback)
       }
     }, [])
+
+    // Close feedback box when clicking outside
+    useEffect(() => {
+      if (!isFeedbackOpen) return
+
+      const handleClickOutside = (event: MouseEvent) => {
+        if (feedbackRef.current && !feedbackRef.current.contains(event.target as Node)) {
+          setIsFeedbackOpen(false)
+        }
+      }
+
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }, [isFeedbackOpen])
 
     const renderContent = (content: any) => {
       if (!content) {
@@ -213,7 +230,7 @@ export const ClientChatMessage = memo(
               <div className='relative flex items-center justify-start space-x-2'>
                 {/* Feedback Box Popover */}
                 {isFeedbackOpen && (
-                  <div className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'>
+                  <div ref={feedbackRef} className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'>
                     <FeedbackBox
                       isOpen={isFeedbackOpen}
                       onClose={() => setIsFeedbackOpen(false)}

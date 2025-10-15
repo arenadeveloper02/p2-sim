@@ -71,7 +71,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
 
   return (
     <Card className=' max-w-lg overflow-auto shadow-lg'>
-      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pr-4'>
         <CardTitle className='text-center font-medium text-xl'>Help us out</CardTitle>
         <Button
           variant='ghost'
@@ -84,7 +84,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
           <X className='h-4 w-4' />
         </Button>
       </CardHeader>
-      <CardContent className='space-y-4'>
+      <CardContent className='space-y-4 pb-4'>
         {/* Feedback checkboxes */}
         <div className='grid grid-cols-2 gap-4'>
           <div className='space-y-3'>
