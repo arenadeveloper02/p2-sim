@@ -56,7 +56,7 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
       layout: 'full',
       password: true,
       placeholder: 'Enter your BrowserUse API key',
-      required: true,
+      required: false,
       hidden: isHosted,
     },
   ],

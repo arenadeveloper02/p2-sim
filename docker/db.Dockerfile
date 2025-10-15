@@ -1,7 +1,7 @@
 # ========================================
 # Dependencies Stage: Install Dependencies
 # ========================================
-FROM oven/bun:1.2.22-alpine AS deps
+FROM oven/bun:1.2.19-alpine AS deps
 WORKDIR /app
 
 # Copy only package files needed for migrations
