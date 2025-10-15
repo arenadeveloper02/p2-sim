@@ -319,6 +319,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                   timestamp: new Date(log.endedAt || log.startedAt),
                   isStreaming: false,
                   executionId: log?.executionId || '',
+                  liked: log.liked
                 })
               }
 

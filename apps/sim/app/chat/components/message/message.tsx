@@ -20,6 +20,7 @@ export interface ChatMessage {
   isInitialMessage?: boolean
   isStreaming?: boolean
   executionId?: string
+  liked?: boolean | null
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -216,36 +217,36 @@ export const ClientChatMessage = memo(
                   <>
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
-                        <TooltipTrigger asChild>
+                        {(message?.liked === true || message?.liked === null) && <TooltipTrigger asChild>
                           <button
                             className='text-muted-foreground transition-colors hover:bg-muted'
                             onClick={() => {
                               handleLike(message?.executionId || '')
                             }}
                           >
-                            <ThumbsUp className='h-4 w-4' strokeWidth={2} />
+                            <ThumbsUp stroke={'gray'} fill={message?.liked === true ? 'gray' : 'white'} className='h-4 w-4' strokeWidth={2} />
                           </button>
-                        </TooltipTrigger>
+                        </TooltipTrigger>}
                         <TooltipContent side='top' align='center' sideOffset={5}>
-                          {'Like'}
+                          {message?.liked === true ? 'Liked' : 'Like'}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
 
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
-                        <TooltipTrigger asChild>
+                        {(message?.liked === false || message?.liked === null) && <TooltipTrigger asChild>
                           <button
                             className='text-muted-foreground transition-colors hover:bg-muted'
                             onClick={() => {
                               handleDislike(message?.executionId || '')
                             }}
                           >
-                            <ThumbsDown className='h-4 w-4' strokeWidth={2} />
+                            <ThumbsDown stroke={'gray' } fill={message?.liked === false ? 'gray' : 'white'}  className='h-4 w-4' strokeWidth={2} />
                           </button>
-                        </TooltipTrigger>
+                        </TooltipTrigger>}
                         <TooltipContent side='top' align='center' sideOffset={5}>
-                          {'Dislike'}
+                          {message?.liked === false ? 'Disliked' : 'Dislike'}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -285,7 +286,8 @@ export const ClientChatMessage = memo(
       prevProps.message.content === nextProps.message.content &&
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
-      prevProps.message.executionId === nextProps.message.executionId
+      prevProps.message.executionId === nextProps.message.executionId &&
+      prevProps.message.liked === nextProps.message.liked
     )
   }
 )
