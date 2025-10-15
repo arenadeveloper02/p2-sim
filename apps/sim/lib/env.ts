@@ -82,7 +82,10 @@ export const env = createEnv({
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
     SAMBANOVA_API_KEY_1:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
     SAMBANOVA_API_KEY_2:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
-    SAMBANOVA_API_KEY_3:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
+    SAMBANOVA_API_KEY_3:                   z.string().min(1).optional(),
+    
+    // Exa API key
+    EXA_API_KEY:                         z.string().min(1).optional(),           // Exa AI API key
 
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
