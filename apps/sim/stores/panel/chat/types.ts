@@ -6,6 +6,7 @@ export interface ChatMessage {
   timestamp: string
   blockId?: string
   isStreaming?: boolean
+  executionId?: string
 }
 
 export interface OutputConfig {
@@ -17,7 +18,9 @@ export interface ChatStore {
   messages: ChatMessage[]
   selectedWorkflowOutputs: Record<string, string[]>
   conversationIds: Record<string, string>
-  addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'> & { id?: string }) => void
+  addMessage: (
+    message: Omit<ChatMessage, 'id' | 'timestamp'> & { id?: string; executionId?: string }
+  ) => void
   clearChat: (workflowId: string | null) => void
   exportChatCSV: (workflowId: string) => void
   getWorkflowMessages: (workflowId: string) => ChatMessage[]
@@ -27,4 +30,5 @@ export interface ChatStore {
   finalizeMessageStream: (messageId: string) => void
   getConversationId: (workflowId: string) => string
   generateNewConversationId: (workflowId: string) => string
+  lookupExecutionIdForMessage: (messageId: string, workflowId: string) => Promise<string | null>
 }
