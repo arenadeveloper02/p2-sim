@@ -169,7 +169,7 @@ export const ClientChatMessage = memo(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            comment: feedback.comment || '',
+            comment: feedback.comment?.trim() || '',
             inComplete: feedback.incomplete,
             inAccurate: feedback.inaccurate,
             outOfDate: feedback.outOfDate,
@@ -285,6 +285,9 @@ export const ClientChatMessage = memo(
                             <button
                               className='text-muted-foreground transition-colors hover:bg-muted'
                               onClick={() => {
+                                if (message?.liked === true) {
+                                  return
+                                }
                                 handleLike(message?.executionId || '')
                               }}
                             >
@@ -310,6 +313,9 @@ export const ClientChatMessage = memo(
                             <button
                               className='text-muted-foreground transition-colors hover:bg-muted'
                               onClick={() => {
+                                if (message?.liked === false) {
+                                  return
+                                }
                                 handleDislike(message?.executionId || '')
                               }}
                             >
