@@ -38,29 +38,29 @@ const MIN_HEIGHT_PX = 80
 
 /**
  * LongInput Component
- * 
+ *
  * A multi-line textarea with formatted text overlay for syntax highlighting.
- * 
+ *
  * Architecture:
  * 1. Base Textarea: User input with transparent text (shows only cursor)
  * 2. Overlay Div: Positioned absolutely on top, displays formatted/highlighted text
  * 3. Scroll Synchronization: Keeps overlay aligned with textarea using percentage-based scrolling
- * 
+ *
  * Why percentage-based scrolling?
  * The textarea and overlay may have slightly different scrollHeights (~20px difference) due to:
  * - Browser rendering differences between <textarea> and <div> elements
  * - Border/padding box model calculations
  * - Font rendering variations
- * 
+ *
  * Instead of copying exact scrollTop values (which would cause misalignment),
  * we calculate the scroll position as a percentage and apply it proportionally.
- * 
+ *
  * Example:
  * - Textarea: scrollTop=2900, scrollHeight=3019, clientHeight=118
  *   → maxScroll = 2901, percentage = 2900/2901 = 99.96%
  * - Overlay: scrollHeight=2998, clientHeight=120
  *   → maxScroll = 2878, scrollTop = 0.9996 × 2878 = 2877
- * 
+ *
  * This ensures both elements scroll proportionally, keeping text aligned with the cursor.
  */
 export function LongInput({
@@ -160,7 +160,7 @@ export function LongInput({
 
   /**
    * Helper function to ensure trailing newlines are rendered
-   * 
+   *
    * Problem: When text ends with \n, React/DOM doesn't render the empty line
    * Solution: Append a zero-width space (\u200B) after trailing newlines
    * This forces the browser to render the empty line while remaining invisible
@@ -168,7 +168,7 @@ export function LongInput({
   const ensureTrailingNewlineVisible = (text: string) => {
     // If text ends with one or more newlines, append zero-width space
     if (text.endsWith('\n')) {
-      return text + '\u200B'
+      return `${text}\u200B`
     }
     return text
   }
@@ -216,13 +216,13 @@ export function LongInput({
 
   /**
    * Sync scroll position between textarea and overlay
-   * 
+   *
    * Why percentage-based scrolling?
    * The textarea and overlay may have slightly different scrollHeights due to:
    * - Border rendering differences
    * - Text rendering engine variations
    * - Box model calculation differences
-   * 
+   *
    * Using percentage ensures the overlay scrolls proportionally with the textarea,
    * keeping the formatted text aligned with the cursor position even when
    * scrolling up from the bottom.
@@ -230,19 +230,19 @@ export function LongInput({
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
     const overlay = overlayRef.current
-    
+
     if (overlay && textarea) {
       // Calculate the maximum scrollable distance for the textarea
       // scrollHeight = total content height, clientHeight = visible height
       const maxScroll = textarea.scrollHeight - textarea.clientHeight
-      
+
       // Calculate what percentage of the total scroll distance we're at
       // E.g., if scrolled 2900px out of 2901px max, percentage = 99.96%
       const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
-      
+
       // Calculate the maximum scrollable distance for the overlay
       const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
-      
+
       // Apply the same scroll percentage to the overlay
       // This ensures proportional scrolling even if heights differ slightly
       overlay.scrollTop = scrollPercentage * overlayMaxScroll
@@ -252,7 +252,7 @@ export function LongInput({
 
   /**
    * Ensure overlay maintains scroll position when content changes
-   * 
+   *
    * This effect runs whenever the value changes (e.g., during typing or AI generation).
    * It recalculates and preserves the scroll position using the same percentage-based
    * approach to keep the overlay in sync as content is added or removed.
@@ -260,13 +260,13 @@ export function LongInput({
   useEffect(() => {
     const textarea = textareaRef.current
     const overlay = overlayRef.current
-    
+
     if (textarea && overlay) {
       // Calculate current scroll position as a percentage
       const maxScroll = textarea.scrollHeight - textarea.clientHeight
       const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
       const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
-      
+
       // Apply the same percentage to overlay to maintain relative scroll position
       overlay.scrollTop = scrollPercentage * overlayMaxScroll
       overlay.scrollLeft = textarea.scrollLeft
@@ -275,27 +275,28 @@ export function LongInput({
 
   /**
    * Set up continuous scroll sync with native event listener
-   * 
+   *
    * Why use native addEventListener in addition to React's onScroll?
    * - Native events fire more reliably for all scroll triggers (wheel, keyboard, touch)
    * - The 'passive: true' option improves scroll performance
    * - Ensures sync even if React's synthetic events miss some edge cases
-   * 
+   *
    * This effect runs once on mount and cleans up on unmount.
    */
   useEffect(() => {
     const textarea = textareaRef.current
     const overlay = overlayRef.current
-    
+
     if (!textarea || !overlay) return
 
     const syncScroll = () => {
       if (overlay && textarea) {
         // Calculate scroll percentage to handle height differences
         // Formula: current position / maximum scrollable distance
-        const scrollPercentage = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight)
+        const scrollPercentage =
+          textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight)
         const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
-        
+
         // Apply the same percentage to overlay
         // Example: If textarea is 80% scrolled, overlay will also be 80% scrolled
         overlay.scrollTop = scrollPercentage * overlayMaxScroll
@@ -307,7 +308,7 @@ export function LongInput({
     // 'passive: true' tells the browser we won't call preventDefault(),
     // allowing it to optimize scroll performance
     textarea.addEventListener('scroll', syncScroll, { passive: true })
-    
+
     // Perform initial sync when component mounts
     syncScroll()
 
@@ -470,13 +471,13 @@ export function LongInput({
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
       const overlay = overlayRef.current
-      
+
       if (textarea && overlay) {
         // Calculate scroll percentage
         const maxScroll = textarea.scrollHeight - textarea.clientHeight
         const scrollPercentage = maxScroll > 0 ? textarea.scrollTop / maxScroll : 0
         const overlayMaxScroll = overlay.scrollHeight - overlay.clientHeight
-        
+
         // Apply proportional scroll to overlay
         overlay.scrollTop = scrollPercentage * overlayMaxScroll
         overlay.scrollLeft = textarea.scrollLeft
@@ -558,7 +559,7 @@ export function LongInput({
         */}
         <div
           ref={overlayRef}
-          className='pointer-events-none absolute left-0 top-0 overflow-auto rounded-md border border-transparent bg-transparent px-3 py-2 text-sm [&::-webkit-scrollbar]:hidden'
+          className='pointer-events-none absolute top-0 left-0 overflow-auto rounded-md border border-transparent bg-transparent px-3 py-2 text-sm [&::-webkit-scrollbar]:hidden'
           style={{
             width: '100%',
             height: `${height}px`,
