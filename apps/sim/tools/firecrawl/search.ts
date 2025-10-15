@@ -18,7 +18,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
