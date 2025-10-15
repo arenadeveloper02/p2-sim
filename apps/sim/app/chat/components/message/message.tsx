@@ -1,16 +1,17 @@
 'use client'
 
-import { memo, useEffect, useMemo, useState } from 'react'
+import { type Dispatch, memo, type SetStateAction, useEffect, useMemo, useState } from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { toastError, toastSuccess } from '@/components/ui'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   downloadImage,
   isBase64,
   renderBs64Img,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/constants'
+import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/feedback-box'
 import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/markdown-renderer'
 import MarkdownRenderer from './components/markdown-renderer'
-import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/chat-message/feedback-box'
 
 export interface ChatMessage {
   id: string
@@ -32,7 +33,13 @@ function EnhancedMarkdownRenderer({ content }: { content: string }) {
 }
 
 export const ClientChatMessage = memo(
-  function ClientChatMessage({ message }: { message: ChatMessage }) {
+  function ClientChatMessage({
+    message,
+    setMessages,
+  }: {
+    message: ChatMessage
+    setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+  }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
 
@@ -102,7 +109,21 @@ export const ClientChatMessage = memo(
             liked: true,
           }),
         })
-      } catch {}
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.executionId === currentExecutionId ? { ...msg, liked: true } : msg
+          )
+        )
+        toastSuccess('Success', {
+          description: 'Thanks for your feedback!',
+        })
+      } catch {
+        toastError('Error', {
+          description: 'Something went wrong!',
+        })
+      } finally {
+        setIsFeedbackOpen(false)
+      }
     }
 
     const handleDislike = (currentExecutionId: string) => {
@@ -132,9 +153,21 @@ export const ClientChatMessage = memo(
             liked: false, // This is a dislike feedback
           }),
         })
-      } catch {}
-
-      setIsFeedbackOpen(false)
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.executionId === currentExecutionId ? { ...msg, liked: false } : msg
+          )
+        )
+        toastSuccess('Success', {
+          description: 'Thanks for your feedback!',
+        })
+      } catch {
+        toastError('Error', {
+          description: 'Something went wrong!',
+        })
+      } finally {
+        setIsFeedbackOpen(false)
+      }
     }
 
     // For user messages (on the right)
@@ -180,7 +213,7 @@ export const ClientChatMessage = memo(
               <div className='relative flex items-center justify-start space-x-2'>
                 {/* Feedback Box Popover */}
                 {isFeedbackOpen && (
-                  <div className='absolute bottom-full left-0 mb-2 z-50 w-[400px]'>
+                  <div className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'>
                     <FeedbackBox
                       isOpen={isFeedbackOpen}
                       onClose={() => setIsFeedbackOpen(false)}
@@ -217,16 +250,23 @@ export const ClientChatMessage = memo(
                   <>
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
-                        {(message?.liked === true || message?.liked === null) && <TooltipTrigger asChild>
-                          <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={() => {
-                              handleLike(message?.executionId || '')
-                            }}
-                          >
-                            <ThumbsUp stroke={'gray'} fill={message?.liked === true ? 'gray' : 'white'} className='h-4 w-4' strokeWidth={2} />
-                          </button>
-                        </TooltipTrigger>}
+                        {(message?.liked === true || message?.liked === null) && (
+                          <TooltipTrigger asChild>
+                            <button
+                              className='text-muted-foreground transition-colors hover:bg-muted'
+                              onClick={() => {
+                                handleLike(message?.executionId || '')
+                              }}
+                            >
+                              <ThumbsUp
+                                stroke={'gray'}
+                                fill={message?.liked === true ? 'gray' : 'white'}
+                                className='h-4 w-4'
+                                strokeWidth={2}
+                              />
+                            </button>
+                          </TooltipTrigger>
+                        )}
                         <TooltipContent side='top' align='center' sideOffset={5}>
                           {message?.liked === true ? 'Liked' : 'Like'}
                         </TooltipContent>
@@ -235,16 +275,23 @@ export const ClientChatMessage = memo(
 
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
-                        {(message?.liked === false || message?.liked === null) && <TooltipTrigger asChild>
-                          <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={() => {
-                              handleDislike(message?.executionId || '')
-                            }}
-                          >
-                            <ThumbsDown stroke={'gray' } fill={message?.liked === false ? 'gray' : 'white'}  className='h-4 w-4' strokeWidth={2} />
-                          </button>
-                        </TooltipTrigger>}
+                        {(message?.liked === false || message?.liked === null) && (
+                          <TooltipTrigger asChild>
+                            <button
+                              className='text-muted-foreground transition-colors hover:bg-muted'
+                              onClick={() => {
+                                handleDislike(message?.executionId || '')
+                              }}
+                            >
+                              <ThumbsDown
+                                stroke={'gray'}
+                                fill={message?.liked === false ? 'gray' : 'white'}
+                                className='h-4 w-4'
+                                strokeWidth={2}
+                              />
+                            </button>
+                          </TooltipTrigger>
+                        )}
                         <TooltipContent side='top' align='center' sideOffset={5}>
                           {message?.liked === false ? 'Disliked' : 'Dislike'}
                         </TooltipContent>

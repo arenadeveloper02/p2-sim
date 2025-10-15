@@ -225,7 +225,7 @@ export function useChatStreaming() {
                             content: finalContent,
                             isStreaming: false,
                             executionId: result?.executionId || msg?.executionId,
-                            liked: null
+                            liked: null,
                           }
                         : msg
                     )

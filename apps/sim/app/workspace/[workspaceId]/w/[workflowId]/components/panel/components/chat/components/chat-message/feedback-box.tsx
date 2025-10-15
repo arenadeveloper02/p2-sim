@@ -70,7 +70,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
   if (!isOpen) return null
 
   return (
-    <Card className='  max-w-lg overflow-auto shadow-lg'>
+    <Card className=' max-w-lg overflow-auto shadow-lg'>
       <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
         <CardTitle className='text-center font-medium text-xl'>Help us out</CardTitle>
         <Button

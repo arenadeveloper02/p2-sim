@@ -3,6 +3,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
+import { Toaster } from '@/components/ui'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -319,7 +320,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                   timestamp: new Date(log.endedAt || log.startedAt),
                   isStreaming: false,
                   executionId: log?.executionId || '',
-                  liked: log.liked
+                  liked: log.liked,
                 })
               }
 
@@ -939,6 +940,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         {/* Message Container component */}
         <ChatMessageContainer
           messages={messages}
+          setMessages={setMessages}
           isLoading={isLoading}
           showScrollButton={showScrollButton}
           messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
@@ -963,6 +965,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
             />
           </div>
         </div>
+        <Toaster position='top-right' />
       </div>
     </TooltipProvider>
   )
