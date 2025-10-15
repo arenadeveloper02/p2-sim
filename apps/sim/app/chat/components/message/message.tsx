@@ -237,19 +237,21 @@ export const ClientChatMessage = memo(
             {message.type === 'assistant' && !message.isStreaming && !message.isInitialMessage && (
               <div className='relative flex items-center justify-start space-x-2'>
                 {/* Feedback Box Popover */}
-                {isFeedbackOpen && (
-                  <div
-                    ref={feedbackRef}
-                    className='absolute bottom-full left-0 z-50 mb-2 w-[400px]'
-                  >
-                    <FeedbackBox
-                      isOpen={isFeedbackOpen}
-                      onClose={() => setIsFeedbackOpen(false)}
-                      onSubmit={handleSubmitFeedback}
-                      currentExecutionId={message?.executionId || ''}
-                    />
-                  </div>
-                )}
+                <div
+                  ref={feedbackRef}
+                  className={`absolute bottom-full left-0 z-50 mb-2 w-[400px] transition-all duration-200 ease-out ${
+                    isFeedbackOpen
+                      ? 'translate-y-0 scale-100 opacity-100'
+                      : 'pointer-events-none translate-y-2 scale-95 opacity-0'
+                  }`}
+                >
+                  <FeedbackBox
+                    isOpen={isFeedbackOpen}
+                    onClose={() => setIsFeedbackOpen(false)}
+                    onSubmit={handleSubmitFeedback}
+                    currentExecutionId={message?.executionId || ''}
+                  />
+                </div>
 
                 {!isJsonObject && !isBase64(cleanTextContent) && (
                   <TooltipProvider>
