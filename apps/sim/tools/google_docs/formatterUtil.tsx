@@ -86,7 +86,7 @@ export function convertMarkdownToGoogleDocsRequests(
     // Check for blockquotes
     if (line.startsWith('> ')) {
       flushListItems()
-      
+
       // Collect all consecutive blockquote lines
       const blockquoteLines: string[] = []
       let j = i
@@ -95,11 +95,15 @@ export function convertMarkdownToGoogleDocsRequests(
         blockquoteLines.push(lines[j].substring(2))
         j++
       }
-      
+
       // Check if this is an alert-style blockquote (e.g., [!NOTE], [!TIP], etc.)
       let alertType: string | null = null
-      let alertColor: { red: number; green: number; blue: number } = { red: 0.8, green: 0.8, blue: 0.8 }
-      
+      let alertColor: { red: number; green: number; blue: number } = {
+        red: 0.8,
+        green: 0.8,
+        blue: 0.8,
+      }
+
       if (blockquoteLines.length > 0) {
         const firstLine = blockquoteLines[0].trim()
         const alertMatch = firstLine.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$/i)
@@ -107,7 +111,7 @@ export function convertMarkdownToGoogleDocsRequests(
           alertType = alertMatch[1].toUpperCase()
           // Remove the alert marker line
           blockquoteLines.shift()
-          
+
           // Set color based on alert type
           switch (alertType) {
             case 'NOTE':
@@ -128,16 +132,16 @@ export function convertMarkdownToGoogleDocsRequests(
           }
         }
       }
-      
+
       // Process the blockquote content as markdown
       const blockquoteMarkdown = blockquoteLines.join('\n')
       const blockquoteStartIndex = currentIndex
-      
+
       // Process blockquote content recursively - but we need to simulate execution
       // to track the actual end index after tabs are consumed by createParagraphBullets
       const tempRequests: Array<Record<string, any>> = []
       let tempIndex = currentIndex
-      
+
       // Add initial newline if starting at beginning
       if (currentIndex === 1) {
         tempRequests.push({
@@ -148,12 +152,16 @@ export function convertMarkdownToGoogleDocsRequests(
         })
         tempIndex += 1
       }
-      
+
       // Process the blockquote markdown line by line
       const blockquoteInnerLines = blockquoteMarkdown.split('\n')
-      let blockListItems: Array<{ text: string; indentLevel: number; type: 'bullet' | 'numbered' }> = []
+      let blockListItems: Array<{
+        text: string
+        indentLevel: number
+        type: 'bullet' | 'numbered'
+      }> = []
       let blockListStartIndex: number | null = null
-      
+
       const flushBlockListItems = () => {
         if (blockListItems.length > 0 && blockListStartIndex !== null) {
           tempIndex = addListBlockRequests(tempRequests, blockListItems, blockListStartIndex)
@@ -161,11 +169,11 @@ export function convertMarkdownToGoogleDocsRequests(
           blockListStartIndex = null
         }
       }
-      
+
       for (let k = 0; k < blockquoteInnerLines.length; k++) {
         const blockLine = blockquoteInnerLines[k]
         const blockTrimmed = blockLine.trim()
-        
+
         if (blockTrimmed.length === 0) {
           flushBlockListItems()
           tempRequests.push({
@@ -189,7 +197,7 @@ export function convertMarkdownToGoogleDocsRequests(
           tempIndex += 1
           continue
         }
-        
+
         // Check for code blocks
         if (blockTrimmed.startsWith('```')) {
           flushBlockListItems()
@@ -203,53 +211,53 @@ export function convertMarkdownToGoogleDocsRequests(
           k = codeBlockResult.endIndex
           continue
         }
-        
+
         // Check for bullet lists
         const bulletMatch = blockTrimmed.match(/^[-*+]\s+(.*)/)
         if (bulletMatch) {
           const text = bulletMatch[1]
           const leadingSpaces = blockLine.length - blockLine.trimStart().length
           const indentLevel = Math.floor(leadingSpaces / 2)
-          
+
           if (blockListItems.length > 0 && blockListItems[0].type !== 'bullet') {
             flushBlockListItems()
           }
-          
+
           if (blockListStartIndex === null) {
             blockListStartIndex = tempIndex
           }
-          
+
           blockListItems.push({ text, indentLevel, type: 'bullet' })
           continue
         }
-        
+
         // Check for numbered lists
         const numberedMatch = blockTrimmed.match(/^(\d+)\.\s+(.*)/)
         if (numberedMatch) {
           const text = numberedMatch[2]
           const leadingSpaces = blockLine.length - blockLine.trimStart().length
           const indentLevel = Math.floor(leadingSpaces / 2)
-          
+
           if (blockListItems.length > 0 && blockListItems[0].type !== 'numbered') {
             flushBlockListItems()
           }
-          
+
           if (blockListStartIndex === null) {
             blockListStartIndex = tempIndex
           }
-          
+
           blockListItems.push({ text, indentLevel, type: 'numbered' })
           continue
         }
-        
+
         // Regular paragraph
         flushBlockListItems()
         tempIndex = addParagraphWithFormattingRequest(tempRequests, blockLine, tempIndex)
       }
-      
+
       flushBlockListItems()
       const blockquoteEndIndex = tempIndex
-      
+
       // If this is an alert-style blockquote, add the label at the beginning
       if (alertType) {
         // Insert alert label before the blockquote content
@@ -259,7 +267,7 @@ export function convertMarkdownToGoogleDocsRequests(
             text: `${alertType}\n`,
           },
         })
-        
+
         // Make the label bold
         requests.push({
           updateTextStyle: {
@@ -278,7 +286,7 @@ export function convertMarkdownToGoogleDocsRequests(
             fields: 'bold,foregroundColor',
           },
         })
-        
+
         // Adjust all subsequent requests to account for the label
         const labelLength = alertType.length + 1
         for (const request of tempRequests) {
@@ -299,13 +307,15 @@ export function convertMarkdownToGoogleDocsRequests(
           }
         }
       }
-      
+
       // Add all blockquote requests
       requests.push(...tempRequests)
-      
+
       // Calculate final end index
-      const finalEndIndex = alertType ? blockquoteEndIndex + alertType.length + 1 : blockquoteEndIndex
-      
+      const finalEndIndex = alertType
+        ? blockquoteEndIndex + alertType.length + 1
+        : blockquoteEndIndex
+
       // Apply blockquote styling to the entire range
       requests.push({
         updateParagraphStyle: {
@@ -325,7 +335,7 @@ export function convertMarkdownToGoogleDocsRequests(
           fields: 'indentStart,borderLeft',
         },
       })
-      
+
       currentIndex = finalEndIndex
       i = j
       continue
@@ -1187,29 +1197,34 @@ function parseInlineFormatting(
       const linkText = linkMatch[1]
       const linkUrl = linkMatch[2]
       const linkStart = cleanTextBuilder.join('').length
-      
+
       // Parse formatting inside the link text
       const nestedCleanText: string[] = []
       const nestedFormatRanges: FormatRange[] = []
       const nestedLinkRanges: LinkRange[] = []
-      parseInlineFormattingWithoutLinks(linkText, nestedCleanText, nestedFormatRanges, nestedLinkRanges)
-      
+      parseInlineFormattingWithoutLinks(
+        linkText,
+        nestedCleanText,
+        nestedFormatRanges,
+        nestedLinkRanges
+      )
+
       const cleanLinkText = nestedCleanText.join('')
       cleanTextBuilder.push(cleanLinkText)
       const linkEnd = cleanTextBuilder.join('').length
-      
+
       // Add the link range
       linkRanges.push({ start: linkStart, end: linkEnd, url: linkUrl })
-      
+
       // Add formatting ranges from within the link text, adjusted for position
       for (const range of nestedFormatRanges) {
         formatRanges.push({
           start: linkStart + range.start,
           end: linkStart + range.end,
-          type: range.type
+          type: range.type,
         })
       }
-      
+
       i += linkMatch[0].length
       continue
     }
@@ -1258,31 +1273,31 @@ function parseInlineFormatting(
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
         parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add bold and italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
         for (const range of innerLinkRanges) {
           linkRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            url: range.url
+            url: range.url,
           })
         }
-        
+
         i += 3
       } else {
         cleanTextBuilder.push('***', ...formatChars)
@@ -1306,30 +1321,30 @@ function parseInlineFormatting(
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
         parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add bold to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
         for (const range of innerLinkRanges) {
           linkRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            url: range.url
+            url: range.url,
           })
         }
-        
+
         i += 2
       } else {
         cleanTextBuilder.push('**', ...formatChars)
@@ -1353,30 +1368,30 @@ function parseInlineFormatting(
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
         parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add strikethrough to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'strikethrough' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
         for (const range of innerLinkRanges) {
           linkRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            url: range.url
+            url: range.url,
           })
         }
-        
+
         i += 2
       } else {
         cleanTextBuilder.push('~~', ...formatChars)
@@ -1386,7 +1401,10 @@ function parseInlineFormatting(
 
     // Check for italic *text* or _text_
     // Make sure single * is not part of ** or ***
-    if ((text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) || text[i] === '_') {
+    if (
+      (text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) ||
+      text[i] === '_'
+    ) {
       const marker = text[i]
       const formatStart = cleanTextBuilder.join('').length
       i++
@@ -1407,30 +1425,30 @@ function parseInlineFormatting(
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
         parseInlineFormatting(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
         for (const range of innerLinkRanges) {
           linkRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            url: range.url
+            url: range.url,
           })
         }
-        
+
         i++
       } else {
         cleanTextBuilder.push(marker, ...formatChars)
@@ -1495,25 +1513,30 @@ function parseInlineFormattingWithoutLinks(
         const innerCleanText: string[] = []
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
-        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+        parseInlineFormattingWithoutLinks(
+          innerText,
+          innerCleanText,
+          innerFormatRanges,
+          innerLinkRanges
+        )
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add bold and italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
-        
+
         i += 3
       } else {
         cleanTextBuilder.push('***', ...formatChars)
@@ -1536,24 +1559,29 @@ function parseInlineFormattingWithoutLinks(
         const innerCleanText: string[] = []
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
-        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+        parseInlineFormattingWithoutLinks(
+          innerText,
+          innerCleanText,
+          innerFormatRanges,
+          innerLinkRanges
+        )
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add bold to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'bold' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
-        
+
         i += 2
       } else {
         cleanTextBuilder.push('**', ...formatChars)
@@ -1576,24 +1604,29 @@ function parseInlineFormattingWithoutLinks(
         const innerCleanText: string[] = []
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
-        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+        parseInlineFormattingWithoutLinks(
+          innerText,
+          innerCleanText,
+          innerFormatRanges,
+          innerLinkRanges
+        )
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add strikethrough to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'strikethrough' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
-        
+
         i += 2
       } else {
         cleanTextBuilder.push('~~', ...formatChars)
@@ -1603,7 +1636,10 @@ function parseInlineFormattingWithoutLinks(
 
     // Check for italic *text* or _text_
     // Make sure single * is not part of ** or ***
-    if ((text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) || text[i] === '_') {
+    if (
+      (text[i] === '*' && text[i + 1] !== '*' && (i === 0 || text[i - 1] !== '*')) ||
+      text[i] === '_'
+    ) {
       const marker = text[i]
       const formatStart = cleanTextBuilder.join('').length
       i++
@@ -1623,24 +1659,29 @@ function parseInlineFormattingWithoutLinks(
         const innerCleanText: string[] = []
         const innerFormatRanges: FormatRange[] = []
         const innerLinkRanges: LinkRange[] = []
-        parseInlineFormattingWithoutLinks(innerText, innerCleanText, innerFormatRanges, innerLinkRanges)
-        
+        parseInlineFormattingWithoutLinks(
+          innerText,
+          innerCleanText,
+          innerFormatRanges,
+          innerLinkRanges
+        )
+
         const cleanInnerText = innerCleanText.join('')
         cleanTextBuilder.push(cleanInnerText)
         const formatEnd = cleanTextBuilder.join('').length
-        
+
         // Add italic to the outer range
         formatRanges.push({ start: formatStart, end: formatEnd, type: 'italic' })
-        
+
         // Add nested formatting with adjusted positions
         for (const range of innerFormatRanges) {
           formatRanges.push({
             start: formatStart + range.start,
             end: formatStart + range.end,
-            type: range.type
+            type: range.type,
           })
         }
-        
+
         i++
       } else {
         cleanTextBuilder.push(marker, ...formatChars)
