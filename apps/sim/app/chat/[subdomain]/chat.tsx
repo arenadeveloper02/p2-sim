@@ -901,7 +901,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {showInputForm && (
+        {showInputForm && inputFields?.filter((field) => field.name !== '')?.length > 0 && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
               <div className='rounded-lg border bg-card p-6 shadow-sm'>
@@ -912,7 +912,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                   </p>
                 </div>
                 <TooltipProvider>
-                  <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
+                  <WorkflowInputForm fields={inputFields?.filter((field) => field.name !== '')} onSubmit={handleWorkflowInputSubmit} />
                 </TooltipProvider>
               </div>
             </div>
@@ -935,7 +935,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           onNewChat={handleNewChat}
           onReRunWithNewInputs={handleReRunWithNewInputs}
           isStreaming={isStreamingResponse || isLoading}
-          hasInputFields={inputFields.length > 0}
+          hasInputFields={inputFields?.filter((field) => field.name !== '')?.length > 0}
         />
         {/* Message Container component */}
         <ChatMessageContainer
