@@ -71,6 +71,7 @@ import {
   googleSheetsUpdateTool,
   googleSheetsWriteTool,
 } from '@/tools/google_sheets'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { requestTool as httpRequest } from '@/tools/http'
 import { huggingfaceChatTool } from '@/tools/huggingface'
 import {
@@ -288,6 +289,7 @@ export const tools: Record<string, ToolConfig> = {
   exa_find_similar_links: exaFindSimilarLinksTool,
   exa_answer: exaAnswerTool,
   exa_research: exaResearchTool,
+  facebook_ads_query: facebookAdsQueryTool,
   parallel_search: parallelSearchTool,
   reddit_hot_posts: redditHotPostsTool,
   reddit_get_posts: redditGetPostsTool,

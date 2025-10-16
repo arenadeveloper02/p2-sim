@@ -36,7 +36,7 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
       type: 'array',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The data to write to the spreadsheet',
+      description: 'A 2D array of values to write (array of arrays). Each inner array represents a row. Example: [["Header1", "Header2"], ["Row1Col1", "Row1Col2"], ["Row2Col1", "Row2Col2"]]',
     },
     valueInputOption: {
       type: 'string',
