@@ -788,9 +788,15 @@ export async function executeWorkflowForChat(
       }
 
       if (!(result && typeof result === 'object' && 'stream' in result)) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ event: 'final', data: result })}\n\n`)
-        )
+        // Include executionId in the final event payload for traceability
+        const finalPayload = {
+          event: 'final',
+          data: {
+            ...(typeof result === 'object' && result !== null ? result : { value: result }),
+            executionId,
+          },
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
       }
 
       // Complete logging session (for both success and failure)

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, type RefObject } from 'react'
+import { type Dispatch, memo, type RefObject, type SetStateAction } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type ChatMessage, ClientChatMessage } from '@/app/chat/components/message/message'
@@ -16,6 +16,8 @@ interface ChatMessageContainerProps {
   chatConfig: {
     description?: string
   } | null
+  workflowId: string
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -27,6 +29,8 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   scrollToBottom,
   scrollToMessage,
   chatConfig,
+  workflowId,
+  setMessages,
 }: ChatMessageContainerProps) {
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
@@ -61,7 +65,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               </div>
             </div>
           ) : (
-            messages.map((message) => <ClientChatMessage key={message.id} message={message} />)
+            messages.map((message) => (
+              <ClientChatMessage key={message.id} message={message} setMessages={setMessages} />
+            ))
           )}
 
           {/* Loading indicator (shows only when executing) */}
