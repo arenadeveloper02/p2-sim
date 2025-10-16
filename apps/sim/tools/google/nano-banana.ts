@@ -1,7 +1,7 @@
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { getRotatingApiKey } from '@/lib/utils'
 import type { ToolConfig } from '@/tools/types'
-import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('NanoBananaTool')
 
