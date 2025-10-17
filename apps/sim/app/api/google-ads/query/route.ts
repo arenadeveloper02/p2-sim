@@ -236,6 +236,8 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - Custom: BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
 - Single: segments.date = '2025-09-30'
 - NEVER use >=, <=, or open-ended ranges
+- **CRITICAL**: NEVER use OR to combine multiple date ranges in one query
+- **CRITICAL**: For comparisons, return TWO separate queries with isComparison: true
 
 **STATUS FILTERING:**
 - campaign.status != 'REMOVED' (exclude deleted)
@@ -373,6 +375,29 @@ TRAVEL
 - ✅ CORRECT: campaign.status = 'ENABLED' (use exact match for ENUM)
 - ❌ WRONG: campaign.name = 'Brand Campaign' (STRING field should use LIKE for partial matches)
 - ✅ CORRECT: campaign.name LIKE '%Brand%' (use LIKE for STRING pattern matching)
+- ❌ WRONG: WHERE (segments.date BETWEEN '2025-09-08' AND '2025-09-14' OR segments.date BETWEEN '2025-09-15' AND '2025-09-21')
+- ✅ CORRECT: Return TWO separate queries with isComparison: true
+
+## COMPARISON QUERIES
+
+**CRITICAL RULE**: GAQL does NOT support OR operators. For date comparisons, you MUST return TWO separate queries.
+
+**When user asks to compare two date ranges:**
+
+Example Input: "Compare performance from September 8-14 to September 15-21, 2025"
+
+Response Format:
+{
+  "gaql_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
+  "query_type": "campaign_performance",
+  "period_type": "custom",
+  "start_date": "2025-09-15",
+  "end_date": "2025-09-21",
+  "isComparison": true,
+  "comparisonQuery": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
+  "comparisonStartDate": "2025-09-08",
+  "comparisonEndDate": "2025-09-14"
+}
 
 **NOTE: Include ad_group.name for all ad-related queries**
 }`
@@ -484,21 +509,23 @@ TRAVEL
     // Remove invalid GROUP BY clauses (GAQL doesn't support GROUP BY)
     cleanedGaqlQuery = cleanedGaqlQuery.replace(/\s+GROUP\s+BY\s+[^ORDER\s]+/gi, '')
 
-    // Validate that the query doesn't contain invalid characters
+    // Validate that the query doesn't contain invalid characters or OR operators
     const hasInvalidChars = /[(){}[\]<>]/.test(
       cleanedGaqlQuery.replace(/BETWEEN '[^']*' AND '[^']*'/g, '')
     ) // Allow parentheses in BETWEEN clauses
     const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
+    const hasOrOperator = /\bOR\b/i.test(cleanedGaqlQuery)
 
-    if (hasInvalidChars || hasGroupBy || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
+    if (hasInvalidChars || hasGroupBy || hasOrOperator || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
       logger.error('AI generated invalid GAQL query', {
         originalQuery: gaqlQuery,
         cleanedQuery: cleanedGaqlQuery,
         hasInvalidChars,
         hasGroupBy,
+        hasOrOperator,
         hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
       })
-      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}`)
+      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}. GAQL does not support OR operators. For comparisons, use isComparison: true with separate queries.`)
     }
 
     logger.info('AI generated GAQL successfully', {
