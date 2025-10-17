@@ -266,6 +266,7 @@ export const env = createEnv({
     // Arena
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
+    NEXT_PUBLIC_FIRECRAWL_API_KEY:                   z.string().min(1).optional(),           // Firecrawl API key for web crawling
   },
 
   // Variables available on both server and client
@@ -305,6 +306,7 @@ export const env = createEnv({
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NODE_ENV: process.env.NODE_ENV,
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
+    NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
   },
 })
 
