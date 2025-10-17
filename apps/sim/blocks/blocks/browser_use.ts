@@ -1,5 +1,4 @@
 import { BrowserUseIcon } from '@/components/icons'
-import { isHosted } from '@/lib/environment'
 import type { BlockConfig } from '@/blocks/types'
 import type { BrowserUseResponse } from '@/tools/browser_use/types'
 
@@ -57,7 +56,6 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
       password: true,
       placeholder: 'Enter your BrowserUse API key',
       required: true,
-      hidden: isHosted,
     },
   ],
   tools: {

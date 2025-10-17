@@ -11,6 +11,7 @@ interface ChatMessageProps {
     timestamp: string | Date
     type: 'user' | 'workflow'
     isStreaming?: boolean
+    executionId?: string
   }
 }
 
@@ -88,7 +89,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
   }
 
-  // Render agent/workflow messages as full-width text
+  const handleCopy = () => {
+    const contentToCopy =
+      typeof formattedContent === 'string'
+        ? formattedContent
+        : JSON.stringify(formattedContent, null, 2)
+    navigator.clipboard.writeText(contentToCopy)
+    setIsCopied(true)
+    setTimeout(() => setIsCopied(false), 2000)
+  }
+
   return (
     <div className='w-full py-2 pl-[2px]'>
       <div className='overflow-wrap-anywhere relative break-normal font-normal text-sm leading-normal'>
@@ -99,57 +109,51 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span className='ml-1 inline-block h-4 w-2 animate-pulse bg-primary' />
           )}
         </div>
-        {!message.isStreaming && !isBase64(message?.content) && (
-          <div className='mt-2 flex items-center justify-end'>
-            <TooltipProvider>
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <button
-                    className='text-muted-foreground transition-colors hover:bg-muted'
-                    onClick={() => {
-                      const contentToCopy =
-                        typeof formattedContent === 'string'
-                          ? formattedContent
-                          : JSON.stringify(formattedContent, null, 2)
-                      navigator.clipboard.writeText(contentToCopy)
-                      setIsCopied(true)
-                      setTimeout(() => setIsCopied(false), 2000)
-                    }}
-                  >
-                    {isCopied ? (
-                      <Check className='h-4 w-4' strokeWidth={2} />
-                    ) : (
-                      <Copy className='h-4 w-4' strokeWidth={2} />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side='top' align='center' sideOffset={5}>
-                  {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            {/* here forthere we can add feedback buttons */}
-          </div>
-        )}
-        {!message.isStreaming && isBase64(message?.content) && (
-          <div className='mt-2 flex items-center justify-end'>
-            <TooltipProvider>
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <button
-                    className='text-muted-foreground transition-colors hover:bg-muted'
-                    onClick={() => {
-                      downloadImage(isBase64(message?.content), message.content)
-                    }}
-                  >
-                    <Download className='h-4 w-4' strokeWidth={2} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side='top' align='center' sideOffset={5}>
-                  Download
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+        {!message.isStreaming && (
+          <div className='mt-2 flex items-center justify-end gap-2'>
+            {!isBase64(message?.content) && (
+              <TooltipProvider>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className='text-muted-foreground transition-colors hover:bg-muted'
+                      onClick={() => {
+                        handleCopy()
+                      }}
+                    >
+                      {isCopied ? (
+                        <Check className='h-4 w-4' strokeWidth={2} />
+                      ) : (
+                        <Copy className='h-4 w-4' strokeWidth={2} />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side='top' align='center' sideOffset={5}>
+                    {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            {isBase64(message?.content) && (
+              <TooltipProvider>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <button
+                      className='text-muted-foreground transition-colors hover:bg-muted'
+                      onClick={() => {
+                        downloadImage(isBase64(message?.content), message.content)
+                      }}
+                    >
+                      <Download className='h-4 w-4' strokeWidth={2} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side='top' align='center' sideOffset={5}>
+                    Download
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
         )}
       </div>

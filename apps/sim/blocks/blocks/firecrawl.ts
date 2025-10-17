@@ -78,7 +78,7 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
       layout: 'full',
       placeholder: 'Enter your Firecrawl API key',
       password: true,
-      required: true,
+      required: false,
       hidden: isHosted,
     },
   ],
