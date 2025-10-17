@@ -912,7 +912,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                   </p>
                 </div>
                 <TooltipProvider>
-                  <WorkflowInputForm fields={inputFields?.filter((field) => field.name !== '')} onSubmit={handleWorkflowInputSubmit} />
+                  <WorkflowInputForm
+                    fields={inputFields?.filter((field) => field.name !== '')}
+                    onSubmit={handleWorkflowInputSubmit}
+                  />
                 </TooltipProvider>
               </div>
             </div>
