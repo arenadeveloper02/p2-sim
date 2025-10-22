@@ -9,22 +9,25 @@ const logger = createLogger('Workspaces')
 
 // Get all workspaces for the current user
 export async function GET() {
-  const session = await getSession()
+  try {
+    const session = await getSession()
 
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-  // Get all workspaces where the user has permissions
-  const userWorkspaces = await db
-    .select({
-      workspace: workspace,
-      permissionType: permissions.permissionType,
-    })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
-    .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-    .orderBy(desc(workspace.createdAt))
+    logger.info(`Fetching workspaces for user ${session.user.id}`)
+
+    // Get all workspaces where the user has permissions
+    const userWorkspaces = await db
+      .select({
+        workspace: workspace,
+        permissionType: permissions.permissionType,
+      })
+      .from(permissions)
+      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+      .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
+      .orderBy(desc(workspace.createdAt))
 
   if (userWorkspaces.length === 0) {
     // Create a default workspace for the user
@@ -49,6 +52,10 @@ export async function GET() {
   )
 
   return NextResponse.json({ workspaces: workspacesWithPermissions })
+  } catch (error) {
+    logger.error('Error fetching workspaces:', error)
+    return NextResponse.json({ error: 'Failed to fetch workspaces', details: String(error) }, { status: 500 })
+  }
 }
 
 // POST /api/workspaces - Create a new workspace

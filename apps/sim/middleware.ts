@@ -34,8 +34,8 @@ export async function middleware(request: NextRequest) {
   if (url.pathname.startsWith('/api/')) {
     return NextResponse.next()
   }
-  if (url.pathname === '/login' && email) {
-    return NextResponse.redirect(new URL('/', request.url))
+  if (url.pathname === '/login' && (email || hasActiveSession)) {
+    return NextResponse.redirect(new URL('/workspace', request.url))
   }
 
   function getLoginRedirectUrl() {
