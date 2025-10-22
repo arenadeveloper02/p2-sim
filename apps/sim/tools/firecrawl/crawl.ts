@@ -88,7 +88,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
         const statusResponse = await fetch(fullUrl, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY : params.apiKey}`,
+            Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY || env.NEXT_PUBLIC_FIRECRAWL_API_KEY : params.apiKey}`,
           },
         })
 
