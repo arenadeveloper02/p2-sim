@@ -363,6 +363,12 @@ export default function Logs() {
 
   const fetchLogs = useCallback(async (pageNum: number, append = false) => {
     try {
+      // Don't fetch if workspaceId is not set
+      const { workspaceId: storeWorkspaceId } = useFilterStore.getState()
+      if (!storeWorkspaceId) {
+        return
+      }
+
       if (pageNum === 1) {
         setLoading(true)
       } else {
@@ -497,6 +503,11 @@ export default function Logs() {
       return
     }
 
+    // Don't fetch if workspaceId is not set yet
+    if (!workspaceId) {
+      return
+    }
+
     setPage(1)
     setHasMore(true)
 
@@ -613,7 +624,11 @@ export default function Logs() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isFetchingMore) {
+        const e = entries[0]
+        if (!e?.isIntersecting) return
+        const { scrollTop, scrollHeight, clientHeight } = scrollContainer
+        const pct = (scrollTop / (scrollHeight - clientHeight)) * 100
+        if (pct > 70 && !isFetchingMore) {
           loadMoreLogs()
         }
       },

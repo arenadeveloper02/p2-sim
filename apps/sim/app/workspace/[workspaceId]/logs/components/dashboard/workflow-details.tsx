@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Info, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,9 @@ export interface ExecutionLogItem {
 export interface WorkflowDetailsData {
   errorRates: LineChartPoint[]
   durations?: LineChartPoint[]
+  durationP50?: LineChartPoint[]
+  durationP90?: LineChartPoint[]
+  durationP99?: LineChartPoint[]
   executionCounts: LineChartPoint[]
   logs: ExecutionLogItem[]
   allLogs: ExecutionLogItem[]
@@ -47,6 +50,9 @@ export function WorkflowDetails({
   selectedSegment,
   clearSegmentSelection,
   formatCost,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: {
   workspaceId: string
   expandedWorkflowId: string
@@ -57,6 +63,9 @@ export function WorkflowDetails({
   selectedSegment: { timestamp: string; totalExecutions: number } | null
   clearSegmentSelection: () => void
   formatCost: (n: number) => string
+  onLoadMore?: () => void
+  hasMore?: boolean
+  isLoadingMore?: boolean
 }) {
   const router = useRouter()
   const { workflows } = useWorkflowRegistry()
@@ -65,9 +74,49 @@ export function WorkflowDetails({
     [workflows, expandedWorkflowId]
   )
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const loaderRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const rootEl = listRef.current
+    const sentinel = loaderRef.current
+    if (!rootEl || !sentinel || !onLoadMore || !hasMore) return
+
+    let ticking = false
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry?.isIntersecting && hasMore && !ticking && !isLoadingMore) {
+          ticking = true
+          setTimeout(() => {
+            onLoadMore()
+            ticking = false
+          }, 50)
+        }
+      },
+      { root: rootEl, threshold: 0.1, rootMargin: '200px 0px 0px 0px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [onLoadMore, hasMore, isLoadingMore])
+
+  // Fallback: if IntersectionObserver fails (older browsers), use scroll position
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || !onLoadMore || !hasMore) return
+
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el
+      const pct = (scrollTop / Math.max(1, scrollHeight - clientHeight)) * 100
+      if (pct > 80 && !isLoadingMore) onLoadMore()
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [onLoadMore, hasMore, isLoadingMore])
 
   return (
-    <div className='mt-5 overflow-hidden rounded-[11px] border bg-card shadow-sm'>
+    <div className='mt-1 overflow-hidden rounded-[11px] border bg-card shadow-sm'>
       <div className='border-b bg-muted/30 px-4 py-2.5'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>
@@ -79,7 +128,7 @@ export function WorkflowDetails({
                 className='h-[14px] w-[14px] flex-shrink-0 rounded'
                 style={{ backgroundColor: workflowColor }}
               />
-              <span className='font-semibold text-sm tracking-tight group-hover:text-primary'>
+              <span className='font-[480] text-sm tracking-tight group-hover:text-primary dark:font-[560]'>
                 {workflowName}
               </span>
             </button>
@@ -87,17 +136,15 @@ export function WorkflowDetails({
           <div className='flex items-center gap-2'>
             <div className='inline-flex h-7 items-center gap-2 rounded-[10px] border px-2.5'>
               <span className='text-[11px] text-muted-foreground'>Executions</span>
-              <span className='font-semibold text-sm leading-none'>{overview.total}</span>
+              <span className='font-[500] text-sm leading-none'>{overview.total}</span>
             </div>
             <div className='inline-flex h-7 items-center gap-2 rounded-[10px] border px-2.5'>
               <span className='text-[11px] text-muted-foreground'>Success</span>
-              <span className='font-semibold text-sm leading-none'>
-                {overview.rate.toFixed(1)}%
-              </span>
+              <span className='font-[500] text-sm leading-none'>{overview.rate.toFixed(1)}%</span>
             </div>
             <div className='inline-flex h-7 items-center gap-2 rounded-[10px] border px-2.5'>
               <span className='text-[11px] text-muted-foreground'>Failures</span>
-              <span className='font-semibold text-sm leading-none'>{overview.failures}</span>
+              <span className='font-[500] text-sm leading-none'>{overview.failures}</span>
             </div>
           </div>
         </div>
@@ -123,9 +170,9 @@ export function WorkflowDetails({
                       })
                     : 'Selected segment'
                 return (
-                  <div className='mb-4 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-foreground text-sm'>
+                  <div className='mb-4 flex items-center justify-between rounded-[10px] border bg-muted/30 px-3 py-2 text-[13px] text-foreground'>
                     <div className='flex items-center gap-2'>
-                      <div className='h-2 w-2 animate-pulse rounded-full bg-primary ring-2 ring-primary/40' />
+                      <div className='h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-primary/30' />
                       <span className='font-medium'>
                         Filtered to {tsLabel}
                         {selectedSegmentIndex.length > 1
@@ -137,7 +184,7 @@ export function WorkflowDetails({
                     </div>
                     <button
                       onClick={clearSegmentSelection}
-                      className='rounded px-2 py-1 text-foreground text-xs hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/50'
+                      className='rounded px-2 py-1 text-foreground text-xs hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/40'
                     >
                       Clear filter
                     </button>
@@ -151,7 +198,7 @@ export function WorkflowDetails({
                 ? 'md:grid-cols-2 xl:grid-cols-4'
                 : 'md:grid-cols-2 xl:grid-cols-3'
               return (
-                <div className={`mb-4 grid grid-cols-1 gap-4 ${gridCols}`}>
+                <div className={`mb-3 grid grid-cols-1 gap-3 ${gridCols}`}>
                   <LineChart
                     data={details.errorRates}
                     label='Error Rate'
@@ -164,13 +211,42 @@ export function WorkflowDetails({
                       label='Workflow Duration'
                       color='#3b82f6'
                       unit='ms'
+                      series={
+                        [
+                          details.durationP50
+                            ? {
+                                id: 'p50',
+                                label: 'p50',
+                                color: '#60A5FA',
+                                data: details.durationP50,
+                                dashed: true,
+                              }
+                            : undefined,
+                          details.durationP90
+                            ? {
+                                id: 'p90',
+                                label: 'p90',
+                                color: '#3B82F6',
+                                data: details.durationP90,
+                              }
+                            : undefined,
+                          details.durationP99
+                            ? {
+                                id: 'p99',
+                                label: 'p99',
+                                color: '#1D4ED8',
+                                data: details.durationP99,
+                              }
+                            : undefined,
+                        ].filter(Boolean) as any
+                      }
                     />
                   )}
                   <LineChart
                     data={details.executionCounts}
-                    label='Usage'
+                    label='Executions'
                     color='#10b981'
-                    unit=' execs'
+                    unit='execs'
                   />
                   {(() => {
                     const failures = details.errorRates.map((e, i) => ({
@@ -188,13 +264,13 @@ export function WorkflowDetails({
                 <div>
                   <div className='border-border border-b'>
                     <div className='grid min-w-[980px] grid-cols-[140px_90px_90px_90px_180px_1fr_100px] gap-2 px-2 pb-3 md:gap-3 lg:min-w-0 lg:gap-4'>
-                      <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                      <div className='font-[460] font-sans text-[13px] text-muted-foreground leading-normal'>
                         Time
                       </div>
-                      <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                      <div className='font-[460] font-sans text-[13px] text-muted-foreground leading-normal'>
                         Status
                       </div>
-                      <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                      <div className='font-[460] font-sans text-[13px] text-muted-foreground leading-normal'>
                         Trigger
                       </div>
                       <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
@@ -214,7 +290,7 @@ export function WorkflowDetails({
                 </div>
               </div>
 
-              <div className='flex-1 overflow-auto' style={{ maxHeight: '400px' }}>
+              <div ref={listRef} className='flex-1 overflow-auto' style={{ maxHeight: '400px' }}>
                 <div className='pb-4'>
                   {(() => {
                     const logsToDisplay = details.logs
@@ -261,7 +337,7 @@ export function WorkflowDetails({
                                 </span>
                                 <span
                                   style={{ marginLeft: '8px' }}
-                                  className='hidden font-medium sm:inline'
+                                  className='hidden font-[400] sm:inline'
                                 >
                                   {formattedDate.compactTime}
                                 </span>
@@ -271,7 +347,7 @@ export function WorkflowDetails({
                             <div>
                               <div
                                 className={cn(
-                                  'inline-flex items-center rounded-[8px] px-[6px] py-[2px] font-medium text-xs transition-all duration-200 lg:px-[8px]',
+                                  'inline-flex items-center rounded-[8px] px-[6px] py-[2px] font-[400] text-xs transition-all duration-200 lg:px-[8px]',
                                   log.level === 'error'
                                     ? 'bg-red-500 text-white'
                                     : 'bg-secondary text-card-foreground'
@@ -285,7 +361,7 @@ export function WorkflowDetails({
                               {log.trigger ? (
                                 <div
                                   className={cn(
-                                    'inline-flex items-center rounded-[8px] px-[6px] py-[2px] font-medium text-xs transition-all duration-200 lg:px-[8px]',
+                                    'inline-flex items-center rounded-[8px] px-[6px] py-[2px] font-[400] text-xs transition-all duration-200 lg:px-[8px]',
                                     log.trigger.toLowerCase() === 'manual'
                                       ? 'bg-secondary text-card-foreground'
                                       : 'text-white'
@@ -304,7 +380,7 @@ export function WorkflowDetails({
                             </div>
 
                             <div>
-                              <div className='font-medium text-muted-foreground text-xs'>
+                              <div className='font-[400] text-muted-foreground text-xs'>
                                 {log.cost && log.cost.total > 0 ? formatCost(log.cost.total) : '—'}
                               </div>
                             </div>
@@ -361,6 +437,21 @@ export function WorkflowDetails({
                       )
                     })
                   })()}
+                  {/* Bottom loading / sentinel */}
+                  {hasMore && (
+                    <div className='flex items-center justify-center py-3 text-muted-foreground'>
+                      <div ref={loaderRef} className='flex items-center gap-2'>
+                        {isLoadingMore ? (
+                          <>
+                            <Loader2 className='h-4 w-4 animate-spin' />
+                            <span className='text-sm'>Loading more…</span>
+                          </>
+                        ) : (
+                          <span className='text-sm'>Scroll to load more</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
