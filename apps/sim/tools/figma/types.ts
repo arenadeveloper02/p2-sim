@@ -215,8 +215,6 @@ export interface CreateFigmaResponse extends ToolResponse {
     metadata: FigmaFileMetadata & {
       designPrompt: string
       projectId: string
-      userId: string
-      userEmail: string
       figmaFileUrl?: string
       renderedData?: string
     }

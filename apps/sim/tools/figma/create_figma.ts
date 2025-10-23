@@ -4,7 +4,8 @@ import type { CreateFigmaParams, CreateFigmaResponse } from './types'
 export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse> = {
   id: 'figma_create',
   name: 'Generate Figma Design with AI',
-  description: 'Generate AI-powered Figma designs automatically using Claude AI and browser automation',
+  description:
+    'Generate AI-powered Figma designs automatically using Claude AI and browser automation',
   version: '1.0.0',
   params: {
     name: {
@@ -64,7 +65,9 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
     }),
     body: (params: CreateFigmaParams) => {
       if (!params?.designPrompt || !params?.projectId || !params?.name) {
-        throw new Error('Missing required parameters: designPrompt, projectId, and name are required')
+        throw new Error(
+          'Missing required parameters: designPrompt, projectId, and name are required'
+        )
       }
 
       // For internal API calls, send file paths/URLs as JSON, not FormData
@@ -80,7 +83,8 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
 
       // Handle file parameters - extract path or URL from file objects
       if (params.brandGuidelines) {
-        body.brandGuidelinesFile = (params.brandGuidelines as any).path || (params.brandGuidelines as any).url
+        body.brandGuidelinesFile =
+          (params.brandGuidelines as any).path || (params.brandGuidelines as any).url
       }
 
       if (params.wireframes) {
@@ -88,8 +92,11 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       }
 
       if (params.additionalData) {
-        body.additionalDataFile = (params.additionalData as any).path || (params.additionalData as any).url
+        body.additionalDataFile =
+          (params.additionalData as any).path || (params.additionalData as any).url
       }
+
+      body.description = params.description
 
       return body
     },
@@ -107,22 +114,6 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       throw new Error(result.error || 'Failed to generate Figma design')
     }
 
-    // Get Figma user info for metadata
-    let userData = { id: 'unknown', email: 'unknown' }
-    try {
-      const userResponse = await fetch('https://api.figma.com/v1/me', {
-        method: 'GET',
-        headers: {
-          'X-Figma-Token': process.env.FIGMA_API_KEY || '',
-        },
-      })
-      if (userResponse.ok) {
-        userData = await userResponse.json()
-      }
-    } catch (error) {
-      // Continue with default values if Figma API call fails
-    }
-
     return {
       success: true,
       output: {
@@ -138,8 +129,6 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
           linkAccess: 'private',
           designPrompt: result.prompt || '',
           projectId: result.projectId || '',
-          userId: userData.id,
-          userEmail: userData.email,
           figmaFileUrl: result.figmaFileUrl,
           renderedData: result.renderedData,
         },
@@ -165,8 +154,6 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
         linkAccess: { type: 'string', description: 'Link access level' },
         designPrompt: { type: 'string', description: 'Design prompt used' },
         projectId: { type: 'string', description: 'Project ID' },
-        userId: { type: 'string', description: 'Figma user ID' },
-        userEmail: { type: 'string', description: 'Figma user email' },
         figmaFileUrl: { type: 'string', description: 'URL to the created Figma file' },
         renderedData: { type: 'string', description: 'Generated HTML/CSS code' },
       },
