@@ -28,6 +28,7 @@ import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const logger = createLogger('ChatDeploy')
 
@@ -108,8 +109,10 @@ export function ChatDeploy({
 
   const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
+  const { getApprovalStatus } = useWorkflowRegistry()
   const formRef = useRef<HTMLFormElement>(null)
   const [isSubdomainValid, setIsSubdomainValid] = useState(true)
+  const [approvalStatus, setApprovalStatus] = useState<any>(null)
   const isFormValid =
     isSubdomainValid &&
     Boolean(formData.title.trim()) &&
@@ -124,11 +127,41 @@ export function ChatDeploy({
     onValidationChange?.(isFormValid)
   }, [isFormValid, onValidationChange])
 
+  // Update emails when approval status changes for new chats
+  useEffect(() => {
+    console.log('Approval status effect triggered:', {
+      approvalStatus,
+      existingChat: !!existingChat,
+      currentEmails: formData.emails,
+      isApproved: approvalStatus?.status === 'APPROVED',
+    })
+    if (
+      !existingChat &&
+      approvalStatus?.status === 'APPROVED' &&
+      !formData.emails.includes('@position2.com')
+    ) {
+      console.log('Adding @position2.com to emails')
+      updateField('emails', ['@position2.com'])
+    }
+  }, [approvalStatus, existingChat, formData.emails, updateField])
+
   useEffect(() => {
     if (workflowId) {
       fetchExistingChat()
+      fetchApprovalStatus()
     }
   }, [workflowId])
+
+  const fetchApprovalStatus = async () => {
+    try {
+      const approval = await getApprovalStatus(workflowId)
+      console.log('Approval status fetched:', approval)
+      setApprovalStatus(approval)
+    } catch (error) {
+      logger.error('Error fetching approval status:', error)
+      setApprovalStatus(null)
+    }
+  }
 
   const fetchExistingChat = async () => {
     try {
@@ -149,7 +182,7 @@ export function ChatDeploy({
               subdomain: chatDetail.subdomain || '',
               title: chatDetail.title || '',
               description: chatDetail.description || '',
-              authType: chatDetail.authType || 'public',
+              authType: chatDetail.authType || 'email',
               password: '',
               emails: Array.isArray(chatDetail.allowedEmails) ? [...chatDetail.allowedEmails] : [],
               welcomeMessage:
@@ -177,13 +210,14 @@ export function ChatDeploy({
           onChatExistsChange?.(false)
 
           // Initialize form with default values for new chat deployment
+          const defaultEmails = approvalStatus?.status === 'APPROVED' ? ['@position2.com'] : []
           setFormData({
             subdomain: workflowId,
             title: formData.title || 'Chat Assistant', // Keep existing title or use default
             description: formData.description || '',
-            authType: 'public',
+            authType: 'email',
             password: '',
-            emails: [],
+            emails: defaultEmails,
             welcomeMessage: formData.welcomeMessage || 'Hi there! How can I help you today?',
             selectedOutputBlocks: formData.selectedOutputBlocks || [], // Keep existing selections
           })
@@ -428,20 +462,18 @@ export function ChatDeploy({
               Select which block's output to return to the user in the chat interface
             </p>
           </div>
-
-          {false && (
-            <AuthSelector
-              authType={formData.authType}
-              password={formData.password}
-              emails={formData.emails}
-              onAuthTypeChange={(type) => updateField('authType', type)}
-              onPasswordChange={(password) => updateField('password', password)}
-              onEmailsChange={(emails) => updateField('emails', emails)}
-              disabled={chatSubmitting}
-              isExistingChat={!!existingChat}
-              error={errors.password || errors.emails}
-            />
-          )}
+          <AuthSelector
+            authType={formData.authType}
+            password={formData.password}
+            emails={formData.emails}
+            onAuthTypeChange={(type) => updateField('authType', type)}
+            onPasswordChange={(password) => updateField('password', password)}
+            onEmailsChange={(emails) => updateField('emails', emails)}
+            disabled={chatSubmitting}
+            isExistingChat={!!existingChat}
+            error={errors.password || errors.emails}
+            approvalStatus={approvalStatus}
+          />
           <div className='space-y-2'>
             <Label htmlFor='welcomeMessage' className='font-medium text-sm'>
               Welcome Message

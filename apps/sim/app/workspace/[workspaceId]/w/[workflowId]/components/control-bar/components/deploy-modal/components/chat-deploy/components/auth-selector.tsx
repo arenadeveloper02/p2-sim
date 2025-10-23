@@ -14,6 +14,7 @@ interface AuthSelectorProps {
   disabled?: boolean
   isExistingChat?: boolean
   error?: string
+  approvalStatus?: any
 }
 
 export function AuthSelector({
@@ -26,6 +27,7 @@ export function AuthSelector({
   disabled = false,
   isExistingChat = false,
   error,
+  approvalStatus,
 }: AuthSelectorProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [newEmail, setNewEmail] = useState('')
@@ -60,6 +62,10 @@ export function AuthSelector({
   }
 
   const handleRemoveEmail = (email: string) => {
+    // Prevent deletion of @position2.com if workflow is approved
+    if (email === '@position2.com' && approvalStatus?.status === 'APPROVED') {
+      return
+    }
     onEmailsChange(emails.filter((e) => e !== email))
   }
 
@@ -68,7 +74,7 @@ export function AuthSelector({
       <Label className='font-medium text-sm'>Access Control</Label>
 
       {/* Auth Type Selection */}
-      <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+      {/* <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
         {(['public', 'password', 'email'] as const).map((type) => (
           <Card
             key={type}
@@ -102,7 +108,7 @@ export function AuthSelector({
             </CardContent>
           </Card>
         ))}
-      </div>
+      </div> */}
 
       {/* Auth Settings */}
       {authType === 'password' && (
@@ -214,6 +220,14 @@ export function AuthSelector({
         <Card className='rounded-[8px] shadow-none'>
           <CardContent className='p-4'>
             <h3 className='mb-2 font-medium text-sm'>Email Access Settings</h3>
+            {approvalStatus?.status === 'APPROVED' && (
+              <div className='mb-2 flex items-center text-green-600 text-xs'>
+                <div className='mr-2 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700'>
+                  Approved
+                </div>
+                <span>Internal access (@position2.com) is automatically included</span>
+              </div>
+            )}
 
             <div className='flex gap-2'>
               <Input
@@ -245,23 +259,31 @@ export function AuthSelector({
             {emails.length > 0 && (
               <div className='mt-3 max-h-[150px] overflow-y-auto rounded-md border bg-background px-2 py-0 shadow-none'>
                 <ul className='divide-y divide-border'>
-                  {emails.map((email) => (
-                    <li key={email} className='relative'>
-                      <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
-                        <span className='font-medium text-foreground'>{email}</span>
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          size='icon'
-                          onClick={() => handleRemoveEmail(email)}
-                          disabled={disabled}
-                          className='h-7 w-7 opacity-70'
-                        >
-                          <Trash2 className='h-4 w-4' />
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                  {emails.map((email) => {
+                    const isNonDeletable =
+                      email === '@position2.com' && approvalStatus?.status === 'APPROVED'
+                    return (
+                      <li key={email} className='relative'>
+                        <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
+                          <div className='flex items-center gap-2'>
+                            <span className='font-medium text-foreground'>{email}</span>
+                          </div>
+                          {!isNonDeletable && (
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='icon'
+                              onClick={() => handleRemoveEmail(email)}
+                              disabled={disabled}
+                              className='h-7 w-7 opacity-70'
+                            >
+                              <Trash2 className='h-4 w-4' />
+                            </Button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}
