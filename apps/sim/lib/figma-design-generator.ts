@@ -47,12 +47,9 @@
  */
 
 import fs from 'fs/promises'
-import path from 'path'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
-import { PdfParser } from '@/lib/file-parsers/pdf-parser'
-import { downloadFile } from '@/lib/uploads/storage-client'
 
 interface FigmaDesignInputs {
   projectId: string
@@ -62,7 +59,6 @@ interface FigmaDesignInputs {
   wireframesFile?: string // Path to file
   additionalDataFile?: string // Path to file
   additionalInfo?: string // Text input
-  description?: string // Text input
 }
 
 interface FigmaDesignResult {
@@ -70,65 +66,6 @@ interface FigmaDesignResult {
   renderedData?: string
   error?: string
   figmaFileUrl?: string
-}
-
-/**
- * Helper function to read file content from S3 or local filesystem
- * Automatically detects file type and extracts content appropriately
- * @param filePath - Path to the file (can be S3 URL or local path)
- * @returns File content as string
- */
-async function readFileContent(filePath: string): Promise<string> {
-  try {
-    let fileBuffer: Buffer
-    let filename: string
-
-    // Check if it's an S3 URL (starts with /api/files/serve/s3/ or contains s3://)
-    if (filePath.includes('/api/files/serve/s3/') || filePath.startsWith('s3://')) {
-      console.log(`Reading file from S3: ${filePath}`)
-
-      // Extract S3 key from the URL
-      let s3Key: string
-      if (filePath.includes('/api/files/serve/s3/')) {
-        // Extract key from /api/files/serve/s3/KEY format
-        s3Key = filePath.split('/api/files/serve/s3/')[1]
-      } else if (filePath.startsWith('s3://')) {
-        // Extract key from s3://bucket/key format
-        const s3Url = new URL(filePath)
-        s3Key = s3Url.pathname.substring(1) // Remove leading slash
-      } else {
-        throw new Error(`Unsupported S3 URL format: ${filePath}`)
-      }
-
-      // Download file from S3
-      fileBuffer = await downloadFile(s3Key)
-      filename = s3Key.split('/').pop() || s3Key
-    } else {
-      // Read from local filesystem
-      console.log(`Reading file from local filesystem: ${filePath}`)
-      fileBuffer = await fs.readFile(filePath)
-      filename = path.basename(filePath)
-    }
-
-    // Determine file type and extract content accordingly
-    const fileExtension = path.extname(filename).toLowerCase()
-
-    if (fileExtension === '.pdf') {
-      console.log(`Extracting text from PDF: ${filename}`)
-      const pdfParser = new PdfParser()
-      const result = await pdfParser.parseBuffer(fileBuffer)
-      console.log(
-        `PDF parsed successfully: ${result.metadata?.pageCount || 0} pages, ${result.content.length} characters`
-      )
-      return result.content
-    }
-    // For non-PDF files, convert buffer to string
-    console.log(`Reading text file: ${filename}`)
-    return fileBuffer.toString('utf-8')
-  } catch (error) {
-    console.error(`Failed to read file ${filePath}:`, error)
-    throw error
-  }
 }
 
 /**
@@ -156,10 +93,10 @@ export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<Fi
 
     // Step 3: Clean the rendered data (remove markdown code blocks if present)
     let cleanedHtml = renderedData
-    cleanedHtml = cleanedHtml.replace(/```html?/g, '')
-    cleanedHtml = cleanedHtml.replace(/```/g, '')
-    cleanedHtml = cleanedHtml.replace(/[\\\r\n\t]+/g, '') // remove \, newlines, tabs
-    cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // remove extra spaces
+    cleanedHtml = cleanedHtml.replace(/```html\n?/g, '')
+    cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
+    cleanedHtml = cleanedHtml.replace(/\n?/g, '')
+    cleanedHtml = cleanedHtml.replace(/\?/g, '')
     cleanedHtml = cleanedHtml.trim()
 
     // Step 4: Do Selenium automation
@@ -262,7 +199,7 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.wireframesFile) {
     console.log('Reading wireframes file:', inputs.wireframesFile)
     try {
-      const wireframes = await readFileContent(inputs.wireframesFile)
+      const wireframes = await fs.readFile(inputs.wireframesFile, 'utf-8')
       systemPrompt += `\n=== WIREFRAMES (STRUCTURE TO FOLLOW) ===\n${wireframes}\n\n`
       hasWireframes = true
     } catch (error) {
@@ -274,7 +211,7 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.brandGuidelinesFile) {
     console.log('Reading brand guidelines file:', inputs.brandGuidelinesFile)
     try {
-      const brandGuidelines = await readFileContent(inputs.brandGuidelinesFile)
+      const brandGuidelines = await fs.readFile(inputs.brandGuidelinesFile, 'utf-8')
       systemPrompt += `\n=== BRAND GUIDELINES (COLORS & STYLING TO USE) ===\n${brandGuidelines}\n\n`
       hasBrandGuidelines = true
     } catch (error) {
@@ -286,7 +223,7 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.additionalDataFile) {
     console.log('Reading additional data file:', inputs.additionalDataFile)
     try {
-      const additionalData = await readFileContent(inputs.additionalDataFile)
+      const additionalData = await fs.readFile(inputs.additionalDataFile, 'utf-8')
       systemPrompt += `\n=== ADDITIONAL DATA ===\n${additionalData}\n\n`
     } catch (error) {
       console.warn('Could not read additional data file:', inputs.additionalDataFile)
@@ -369,8 +306,7 @@ EXAMPLE STRUCTURE:
 </html>
 
 IMPORTANT: Your response should ONLY contain the HTML with embedded CSS in a <style> tag. Do not include any explanations or markdown code blocks. Start directly with <!DOCTYPE html>.`
-  console.log(systemPrompt)
-  console.log('systemPrompt')
+
   return systemPrompt
 }
 
@@ -448,32 +384,6 @@ function parseRenderedData(renderedData: string): { html: string; css: string } 
 }
 
 /**
- * Helper function to log all iframe information for debugging
- */
-async function logIframeInfo(driver: WebDriver, level = 'main'): Promise<void> {
-  try {
-    const iframes = await driver.findElements(By.css('iframe'))
-    console.log(`[${level}] Found ${iframes.length} iframe(s)`)
-
-    for (let i = 0; i < iframes.length; i++) {
-      try {
-        const iframe = iframes[i]
-        const id = await iframe.getAttribute('id')
-        const name = await iframe.getAttribute('name')
-        const src = await iframe.getAttribute('src')
-        console.log(
-          `[${level}] Iframe ${i}: id="${id}", name="${name}", src="${src?.substring(0, 50)}..."`
-        )
-      } catch (e) {
-        console.log(`[${level}] Could not get iframe ${i} attributes:`, e)
-      }
-    }
-  } catch (error) {
-    console.log(`[${level}] Error logging iframe info:`, error)
-  }
-}
-
-/**
  * Helper function to switch back to main content from nested iframe structure
  */
 async function switchToMainContent(driver: WebDriver): Promise<void> {
@@ -487,136 +397,6 @@ async function switchToMainContent(driver: WebDriver): Promise<void> {
 }
 
 /**
- * Helper function to check if current iframe contains editor content
- */
-async function hasEditorContent(driver: WebDriver): Promise<boolean> {
-  try {
-    const editorTab = await driver.findElements(
-      By.xpath("//*[@id='container-tabs']/div/div[1]/label[4]")
-    )
-    const specificSelector = await driver.findElements(
-      By.xpath("//*[@id='container-tabs']/div/div[2]/div[4]/section/div[1]")
-    )
-    return editorTab.length > 0 || specificSelector.length > 0
-  } catch (e) {
-    return false
-  }
-}
-
-/**
- * Helper function for consistent sleep timing
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/**
- * Helper function to click "Add to Canvas" button with multiple fallback methods
- */
-async function clickAddToCanvasButton(driver: WebDriver, context = ''): Promise<boolean> {
-  console.log(`Looking for Add to Canvas button${context ? ` (${context})` : ''}...`)
-
-  const addToCanvasSelectors = [
-    "//button[contains(text(), 'Add to Canvas')]",
-    "//button[contains(text(), 'Add to canvas')]",
-    "//button[contains(text(), 'Add to Figma')]",
-    "//button[contains(text(), 'Import to Canvas')]",
-    "//button[contains(text(), 'Place on Canvas')]",
-    "//button[contains(text(), 'Add')]",
-    "//div[contains(text(), 'Add to Canvas')]",
-    "//span[contains(text(), 'Add to Canvas')]",
-  ]
-
-  try {
-    // Try XPath selectors first
-    for (const selector of addToCanvasSelectors) {
-      try {
-        const addToCanvasElement = await driver.wait(until.elementLocated(By.xpath(selector)), 3000)
-        await addToCanvasElement.click()
-        console.log(
-          `✓ Clicked Add to Canvas using selector: ${selector}${context ? ` (${context})` : ''}`
-        )
-        await sleep(2000) // Wait for design to be added to canvas
-        return true
-      } catch (e) {
-        // Continue to next selector
-      }
-    }
-
-    // Fallback to JavaScript search
-    console.log(
-      `Add to Canvas button not found via XPath${context ? ` (${context})` : ''}, trying JavaScript...`
-    )
-    await driver.executeScript(`
-      const buttons = document.querySelectorAll('button');
-      for (let button of buttons) {
-        if (button.textContent && button.textContent.toLowerCase().includes('add to canvas')) {
-          button.click();
-          console.log('Clicked Add to Canvas button via JavaScript${context ? ` (${context})` : ''}');
-          break;
-        }
-      }
-    `)
-    console.log(`✓ Attempted JavaScript click for Add to Canvas${context ? ` (${context})` : ''}`)
-    await sleep(1500)
-    return true
-  } catch (error) {
-    console.log(`Could not find Add to Canvas button${context ? ` (${context})` : ''}:`, error)
-    return false
-  }
-}
-
-/**
- * Helper function to recursively find and navigate to the deepest iframe with editor content
- */
-async function findDeepestIframeWithEditor(driver: WebDriver, maxDepth = 5): Promise<boolean> {
-  try {
-    const iframes = await driver.findElements(By.css('iframe'))
-    console.log(`Found ${iframes.length} iframe(s) at current level`)
-
-    if (iframes.length === 0) {
-      // No more iframes, check if we have editor content
-      return await hasEditorContent(driver)
-    }
-
-    // Try each iframe to find the one with editor content
-    for (let i = 0; i < iframes.length; i++) {
-      try {
-        await driver.switchTo().frame(i)
-        console.log(`Switched to iframe ${i}, checking for editor content...`)
-
-        // Check if this iframe has editor content
-        if (await hasEditorContent(driver)) {
-          console.log(`✓ Found editor content in iframe ${i}`)
-          return true
-        }
-
-        // If no editor content, recursively check deeper
-        if (maxDepth > 0) {
-          const found = await findDeepestIframeWithEditor(driver, maxDepth - 1)
-          if (found) {
-            return true
-          }
-        }
-
-        // Switch back to parent frame
-        await driver.switchTo().parentFrame()
-      } catch (e) {
-        console.log(`Error checking iframe ${i}: ${e instanceof Error ? e.message : String(e)}`)
-        await driver.switchTo().parentFrame()
-      }
-    }
-
-    return false
-  } catch (error) {
-    console.log(
-      `Error in findDeepestIframeWithEditor: ${error instanceof Error ? error.message : String(error)}`
-    )
-    return false
-  }
-}
-
-/**
  * Helper function to switch to the innermost plugin iframe and return whether switch was successful
  * Handles nested iframe structure: plugin-iframe-in-modal -> Network Plugin Iframe -> Inner Plugin Iframe
  */
@@ -624,12 +404,14 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
   try {
     console.log('Looking for nested plugin iframes...')
 
-    // Log iframe information for debugging
-    await logIframeInfo(driver, 'main')
-
     // Step 1: Find the main plugin iframe with multiple possible selectors
     let mainIframe = null
-    const mainIframeSelectors = [By.id('plugin-iframe-in-modal'), By.name('Shim Plugin Iframe')]
+    const mainIframeSelectors = [
+      By.id('plugin-iframe-in-modal'),
+      By.name('Shim Plugin Iframe'),
+      By.css("iframe[id*='plugin-iframe']"),
+      By.css("iframe[name*='Plugin']"),
+    ]
 
     for (const selector of mainIframeSelectors) {
       try {
@@ -647,11 +429,15 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
     await driver.switchTo().frame(mainIframe)
     console.log('✓ Switched to main plugin iframe')
-    await logIframeInfo(driver, 'main-plugin')
 
     // Step 2: Find the Network Plugin Iframe with multiple possible selectors
     let networkIframe = null
-    const networkIframeSelectors = [By.name('Network Plugin Iframe')]
+    const networkIframeSelectors = [
+      By.name('Network Plugin Iframe'),
+      By.css("iframe[name*='Network']"),
+      By.css("iframe[name*='Plugin']"),
+      By.tagName('iframe'),
+    ]
 
     for (const selector of networkIframeSelectors) {
       try {
@@ -669,17 +455,15 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
     await driver.switchTo().frame(networkIframe)
     console.log('✓ Switched to Network Plugin Iframe')
-    await logIframeInfo(driver, 'network-plugin')
 
     // Step 3: Find the Inner Plugin Iframe with multiple possible selectors
     let innerIframe = null
     const innerIframeSelectors = [
       By.id('plugin-iframe'),
       By.name('Inner Plugin Iframe'),
-      By.css("iframe[name*='plugin']"),
-      By.css("iframe[id*='plugin']"),
-      By.css("iframe[src*='plugin']"),
-      By.css('iframe'), // Fallback to any iframe
+      By.css("iframe[id*='plugin-iframe']"),
+      By.css("iframe[name*='Inner']"),
+      By.tagName('iframe'),
     ]
 
     for (const selector of innerIframeSelectors) {
@@ -688,9 +472,6 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
         console.log(`✓ Found Inner Plugin Iframe using selector: ${selector.toString()}`)
         break
       } catch (e) {
-        console.log(
-          `⚠️ Selector ${selector.toString()} failed: ${e instanceof Error ? e.message : String(e)}`
-        )
         // Continue to next selector
       }
     }
@@ -701,79 +482,27 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
     await driver.switchTo().frame(innerIframe)
     console.log('✓ Switched to Inner Plugin Iframe')
-    await logIframeInfo(driver, 'inner-plugin')
 
-    // Step 4: Check for additional nested iframe (4th level)
+    // Verify we're in the correct iframe by checking for Editor tab
     try {
-      const nestedIframes = await driver.findElements(By.css('iframe'))
-      console.log(`Found ${nestedIframes.length} nested iframe(s) in Inner Plugin Iframe`)
-
-      if (nestedIframes.length > 0) {
-        // Try to find the innermost iframe with editor content
-        for (let i = 0; i < nestedIframes.length; i++) {
-          try {
-            await driver.switchTo().frame(i)
-            console.log(`✓ Switched to nested iframe ${i}`)
-            await logIframeInfo(driver, `nested-${i}`)
-
-            // Check if this iframe contains editor content
-            if (await hasEditorContent(driver)) {
-              console.log('✓ Confirmed editor content found in innermost iframe')
-              return true
-            }
-
-            // Switch back to parent iframe to try next one
-            await driver.switchTo().parentFrame()
-          } catch (nestedError) {
-            console.log(
-              `⚠️ Could not switch to nested iframe ${i}: ${nestedError instanceof Error ? nestedError.message : String(nestedError)}`
-            )
-            await driver.switchTo().parentFrame()
-          }
-        }
-      }
-    } catch (e) {
-      console.log(
-        '⚠️ No additional nested iframes found or error checking: ',
-        e instanceof Error ? e.message : String(e)
+      const editorTab = await driver.findElement(
+        By.xpath("//*[@id='container-tabs']/div/div[1]/label[4]")
       )
-    }
-
-    // Verify we're in the correct iframe by checking for editor content
-    try {
-      if (await hasEditorContent(driver)) {
-        console.log('✓ Confirmed editor content found in innermost iframe')
-        return true
-      }
-      console.log('⚠️ Editor content not found, but iframe structure is correct')
-      return true // Still return true as we're in the right iframe structure
+      console.log('✓ Confirmed Editor tab found in innermost iframe')
+      return true
     } catch (e) {
-      console.log('⚠️ Could not verify iframe content, but iframe structure is correct')
+      console.log('⚠️ Editor tab not found in innermost iframe, but iframe structure is correct')
       return true // Still return true as we're in the right iframe structure
     }
   } catch (error) {
     console.log('Error switching to nested plugin iframes:', error)
 
-    // Fallback: Use recursive approach to find the deepest iframe with editor content
-    try {
-      await driver.switchTo().defaultContent()
-      console.log('Falling back to recursive iframe detection...')
-
-      const found = await findDeepestIframeWithEditor(driver, 5)
-      if (found) {
-        console.log('✓ Found editor content using recursive approach')
-        return true
-      }
-    } catch (fallbackError) {
-      console.log('Recursive fallback failed:', fallbackError)
-    }
-
-    // Final fallback: Try to find any iframe with plugin content
+    // Fallback: Try to find any iframe with plugin content
     try {
       await driver.switchTo().defaultContent()
       console.log('Falling back to generic iframe detection...')
 
-      const iframes = await driver.findElements(By.css('iframe'))
+      const iframes = await driver.findElements(By.tagName('iframe'))
       console.log(`Found ${iframes.length} iframe(s) for fallback`)
 
       for (let i = 0; i < iframes.length; i++) {
@@ -792,7 +521,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
           // Also check for nested iframes within this iframe
           try {
-            const nestedIframes = await driver.findElements(By.css('iframe'))
+            const nestedIframes = await driver.findElements(By.tagName('iframe'))
             console.log(`Found ${nestedIframes.length} nested iframe(s) in iframe ${i}`)
 
             for (let j = 0; j < nestedIframes.length; j++) {
@@ -810,7 +539,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
                 // Check for even deeper nesting
                 try {
-                  const deepIframes = await driver.findElements(By.css('iframe'))
+                  const deepIframes = await driver.findElements(By.tagName('iframe'))
                   console.log(
                     `Found ${deepIframes.length} deep nested iframe(s) in iframe ${i}-${j}`
                   )
@@ -965,56 +694,52 @@ async function automateDesignCreation(
 
     // Step 5.5: Rename the file
     // console.log(`Renaming file to: ${fileName}`);
-    try {
-      // Method 1: Try to find and click the file name input
-      try {
-        const fileNameElement = await driver.wait(
-          until.elementLocated(
-            By.xpath(
-              "//input[@placeholder='Untitled' or contains(@class, 'filename') or @aria-label='File name']"
-            )
-          ),
-          3000
-        )
+    // try {
+    //   // Method 1: Try to find and click the file name input
+    //   try {
+    //     const fileNameElement = await driver.wait(
+    //       until.elementLocated(
+    //         By.xpath("//input[@placeholder='Untitled' or contains(@class, 'filename') or @aria-label='File name']")
+    //       ),
+    //       3000
+    //     );
 
-        // Triple-click to select all text
-        await driver
-          .actions()
-          .click(fileNameElement)
-          .click(fileNameElement)
-          .click(fileNameElement)
-          .perform()
+    //     // Triple-click to select all text
+    //     await driver.actions()
+    //       .click(fileNameElement)
+    //       .click(fileNameElement)
+    //       .click(fileNameElement)
+    //       .perform();
 
-        await driver.sleep(300)
+    //     await driver.sleep(300);
 
-        // Clear and type new name
-        await fileNameElement.sendKeys(Key.chord(Key.COMMAND, 'a')) // Select all
-        await fileNameElement.sendKeys(fileName)
-        await fileNameElement.sendKeys(Key.RETURN) // Press Enter to save
+    //     // Clear and type new name
+    //     await fileNameElement.sendKeys(Key.chord(Key.COMMAND, "a")); // Select all
+    //     await fileNameElement.sendKeys(fileName);
+    //     await fileNameElement.sendKeys(Key.RETURN); // Press Enter to save
 
-        console.log(`File renamed successfully to: ${fileName}`)
-        await driver.sleep(500)
-      } catch (innerError) {
-        // Method 2: Try keyboard shortcut to rename (Cmd+R on Mac)
-        console.log('Trying keyboard shortcut to rename...')
-        await driver.actions().sendKeys(Key.chord(Key.COMMAND, 'r')).perform()
-        await driver.sleep(500)
+    //     console.log(`File renamed successfully to: ${fileName}`);
+    //     await driver.sleep(500);
+    //   } catch (innerError) {
+    //     // Method 2: Try keyboard shortcut to rename (Cmd+R on Mac)
+    //     console.log("Trying keyboard shortcut to rename...");
+    //     await driver.actions().sendKeys(Key.chord(Key.COMMAND, "r")).perform();
+    //     await driver.sleep(500);
 
-        // Type the new name
-        await driver
-          .actions()
-          .sendKeys(Key.chord(Key.COMMAND, 'a')) // Select all
-          .sendKeys(fileName)
-          .sendKeys(Key.RETURN)
-          .perform()
+    //     // Type the new name
+    //     await driver.actions()
+    //       .sendKeys(Key.chord(Key.COMMAND, "a")) // Select all
+    //       .sendKeys(fileName)
+    //       .sendKeys(Key.RETURN)
+    //       .perform();
 
-        console.log(`File renamed using keyboard shortcut: ${fileName}`)
-        await driver.sleep(500)
-      }
-    } catch (error) {
-      console.log('Could not rename file automatically, continuing with default name...', error)
-      // Continue even if renaming fails - the file will have default name
-    }
+    //     console.log(`File renamed using keyboard shortcut: ${fileName}`);
+    //     await driver.sleep(500);
+    //   }
+    // } catch (error) {
+    //   console.log("Could not rename file automatically, continuing with default name...", error);
+    //   // Continue even if renaming fails - the file will have default name
+    // }
 
     // Step 6: Open HTML to Figma plugin
     // Using multiple fallback methods for maximum reliability
@@ -1073,10 +798,16 @@ async function automateDesignCreation(
       }
     }
 
+    // Wait for plugin to open
+    // await driver.sleep(3000)
+
     // Step 7: Handle html.to.design plugin workflow in Manage Plugins modal
     console.log('Handling html.to.design plugin workflow in Manage Plugins modal...')
 
     try {
+      // Wait for Manage Plugins modal to fully load
+      // await driver.sleep(2000)
+
       // Step 7.1: Search for html.to.design plugin using specific XPath
       console.log('Searching for html.to.design plugin using specific XPath...')
       try {
@@ -1233,6 +964,13 @@ async function automateDesignCreation(
             console.log('JavaScript Editor tab click also failed:', jsError)
           }
         }
+
+        if (editorTabClicked) {
+          console.log('✓ Editor tab clicked successfully')
+          await driver.sleep(2000) // Wait for tab content to load
+        } else {
+          console.log('⚠️ Could not click Editor tab, continuing anyway...')
+        }
       } catch (e) {
         console.log('Error clicking Editor tab:', e)
       }
@@ -1251,34 +989,39 @@ async function automateDesignCreation(
         }
 
         try {
-          // Look for HTML textarea or input field with optimized approach
+          // Look for HTML textarea or input field
           const htmlSelectors = [
-            '//*[@id="container-tabs"]/div/div[2]/div[4]/section/div[1]/div[2]/div/div/div[2]/div[1]/div', // Specific XPath
             '#fullHtmlInput', // Specific ID from our plugin
-            'textarea[placeholder*="HTML" i]', // Case insensitive
-            'textarea[placeholder*="html" i]',
-            'input[placeholder*="HTML" i]',
-            'input[placeholder*="html" i]',
-            'textarea[id*="html" i]',
-            'textarea[class*="html" i]',
+            '.cm-activeLine.cm-line', // CodeMirror active line
+            'textarea[placeholder*="HTML"]',
+            'textarea[placeholder*="html"]',
+            'input[placeholder*="HTML"]',
+            'input[placeholder*="html"]',
+            'textarea[id*="html"]',
+            'textarea[id*="HTML"]',
+            'textarea[class*="html"]',
+            'textarea[class*="HTML"]',
             'textarea',
             'input[type="text"]',
           ]
 
           let htmlInput = null
-
-          // Try XPath first, then CSS selectors
+          try {
+            htmlInput = await driver.findElement(
+              By.xpath(
+                '//*[@id="container-tabs"]/div/div[2]/div[4]/section/div[1]/div[2]/div/div/div[2]/div[1]/div'
+              )
+            )
+          } catch (e) {
+            console.log('Could not find HTML input field, trying JavaScript injection...')
+          }
           for (const selector of htmlSelectors) {
             try {
-              if (selector.startsWith('//')) {
-                htmlInput = await driver.findElement(By.xpath(selector))
-              } else {
-                htmlInput = await driver.findElement(By.css(selector))
-              }
+              htmlInput = await driver.findElement(By.css(selector))
               console.log(`✓ Found HTML input using selector: ${selector}`)
               break
             } catch (e) {
-              // Continue to next selector silently
+              // Continue to next selector
             }
           }
 
@@ -1287,7 +1030,7 @@ async function automateDesignCreation(
             await htmlInput.clear()
             await htmlInput.sendKeys(fullHtml)
             console.log('✓ Pasted HTML into input field')
-            await sleep(500)
+            await driver.sleep(1000)
           } else {
             throw new Error('Could not find HTML input field')
           }
@@ -1337,7 +1080,7 @@ async function automateDesignCreation(
           }
         `)
           console.log('✓ Attempted JavaScript injection for HTML')
-          await sleep(500)
+          await driver.sleep(1000)
         }
       } // End of if (editorTabClicked) block
 
@@ -1349,11 +1092,11 @@ async function automateDesignCreation(
         console.log('⚠️ Editor tab was not clicked, skipping Create button search')
       } else {
         // Ensure we're still in the correct iframe context for Create button
-        let currentIframeState = switchedToIframe
-        if (!currentIframeState) {
-          currentIframeState = await switchToPluginIframe(driver)
-        }
-
+        // let currentIframeState = switchedToIframe
+        // if (!currentIframeState) {
+        //   currentIframeState = await switchToPluginIframe(driver)
+        // }
+        let createClicked = false
         try {
           const createButton = await driver.wait(
             until.elementLocated(
@@ -1363,10 +1106,8 @@ async function automateDesignCreation(
           )
           await createButton.click()
           console.log('✓ Clicked Create button')
-          await driver.sleep(5000) // Wait for design to be created
-
-          // Step 7.7: Click "Add to Canvas" button after design is created
-          await clickAddToCanvasButton(driver, 'primary path')
+          createClicked = true
+          await driver.sleep(3000) // Wait for design to be created
         } catch (e) {
           console.log('Create button not found, trying alternative selectors...')
           const createSelectors = [
@@ -1379,7 +1120,6 @@ async function automateDesignCreation(
             "//span[contains(text(), 'Create')]",
           ]
 
-          let createClicked = false
           for (const selector of createSelectors) {
             try {
               const createElement = await driver.findElement(By.xpath(selector))
@@ -1414,13 +1154,26 @@ async function automateDesignCreation(
           `)
           }
           await driver.sleep(5000)
+        }
 
-          // Step 7.7: Click "Add to Canvas" button after design is created (alternative path)
-          await clickAddToCanvasButton(driver, 'alternative path')
+        // Click "Add to Canvas" button
+        try {
+          console.log('Looking for Add to Canvas button...')
+          const addToCanvasButton = await driver.findElement(
+            By.xpath('/html/body/div[6]/div[1]/div[3]/div[1]/div[2]/button')
+          )
+          await addToCanvasButton.click()
+          console.log('✓ Clicked Add to Canvas button')
+          await driver.sleep(2000)
+        } catch (e) {
+          console.log(
+            'Could not find Add to Canvas button:',
+            e instanceof Error ? e.message : String(e)
+          )
         }
 
         // Switch back to main content if we switched to iframe
-        if (currentIframeState) {
+        if (switchedToIframe) {
           await switchToMainContent(driver)
         }
       } // End of if (editorTabClicked) block for Create button
@@ -1466,7 +1219,22 @@ async function automateDesignCreation(
     throw error
   } finally {
     // Keep browser open for debugging
-    await driver.quit()
+    // await driver.quit()
     console.log('Browser session kept open for inspection')
   }
+}
+
+/**
+ * Example usage function
+ */
+export async function exampleUsage() {
+  const result = await generateFigmaDesign({
+    projectId: '397940050',
+    fileName: 'AI Generated Landing Page',
+    prompt:
+      'Create a modern landing page for a SaaS product with a hero section, features section, and CTA buttons',
+    additionalInfo: 'Use blue and white color scheme, make it professional and clean',
+  })
+
+  console.log('Result:', result)
 }
