@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { renderOTPEmail } from '@/components/emails/render-email'
 import { sendEmail } from '@/lib/email/mailer'
+import { isEmailAllowed } from '@/lib/email-validation'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getRedisClient, markMessageAsProcessed, releaseLock } from '@/lib/redis'
 import { generateRequestId } from '@/lib/utils'
@@ -158,17 +159,7 @@ export async function POST(
         ? deployment.allowedEmails
         : []
 
-      const isEmailAllowed =
-        allowedEmails.includes(email) ||
-        allowedEmails.some((allowed: string) => {
-          if (allowed.startsWith('@')) {
-            const domain = email.split('@')[1]
-            return domain && allowed === `@${domain}`
-          }
-          return false
-        })
-
-      if (!isEmailAllowed) {
+      if (!isEmailAllowed(email, allowedEmails)) {
         return addCorsHeaders(
           createErrorResponse('Email not authorized for this chat', 403),
           request

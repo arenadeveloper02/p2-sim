@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { checkServerSideUsageLimits } from '@/lib/billing'
+import { isEmailAllowed } from '@/lib/email-validation'
 import { isDev } from '@/lib/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -262,17 +263,10 @@ export async function validateChatAuth(
 
       const allowedEmails = deployment.allowedEmails || []
 
-      // Check exact email matches
-      if (allowedEmails.includes(email)) {
+      // Check if email is allowed (supports exact matches, domain matches, and wildcard domain matches)
+      if (isEmailAllowed(email, allowedEmails)) {
         // Email is allowed but still needs OTP verification
         // Return a special error code that the client will recognize
-        return { authorized: false, error: 'otp_required' }
-      }
-
-      // Check domain matches (prefixed with @)
-      const domain = email.split('@')[1]
-      if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
-        // Domain is allowed but still needs OTP verification
         return { authorized: false, error: 'otp_required' }
       }
 

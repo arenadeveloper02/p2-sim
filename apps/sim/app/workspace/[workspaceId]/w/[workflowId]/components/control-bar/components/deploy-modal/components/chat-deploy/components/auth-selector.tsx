@@ -46,8 +46,15 @@ export function AuthSelector({
   }
 
   const handleAddEmail = () => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) && !newEmail.startsWith('@')) {
-      setEmailError('Please enter a valid email or domain (e.g., user@example.com or @example.com)')
+    // Validate email patterns: exact email, domain (@domain.com), or wildcard domain (*@domain.com)
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)
+    const isValidDomain = newEmail.startsWith('@') && newEmail.includes('.')
+    const isValidWildcard = newEmail.startsWith('*@') && newEmail.includes('.')
+
+    if (!isValidEmail && !isValidDomain && !isValidWildcard) {
+      setEmailError(
+        'Please enter a valid email, domain, or wildcard domain (e.g., user@example.com, @example.com, or *@example.com)'
+      )
       return
     }
 
@@ -231,7 +238,7 @@ export function AuthSelector({
 
             <div className='flex gap-2'>
               <Input
-                placeholder='user@example.com or @domain.com'
+                placeholder='user@example.com, @domain.com, or *@domain.com'
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 disabled={disabled}

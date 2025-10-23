@@ -348,6 +348,58 @@ describe('Chat API Utils', () => {
       expect(result3.authorized).toBe(false)
       expect(result3.error).toBe('Email not authorized')
     })
+
+    it('should support wildcard domain matches for email auth', async () => {
+      const { validateChatAuth } = await import('@/app/api/chat/utils')
+
+      const deployment = {
+        id: 'chat-id',
+        authType: 'email',
+        allowedEmails: ['user@example.com', '@company.com', '*@position2.com'],
+      }
+
+      const mockRequest = {
+        method: 'POST',
+        cookies: {
+          get: vi.fn().mockReturnValue(null),
+        },
+      } as any
+
+      // Test exact email match
+      const result1 = await validateChatAuth('request-id', deployment, mockRequest, {
+        email: 'user@example.com',
+      })
+      expect(result1.authorized).toBe(false)
+      expect(result1.error).toBe('otp_required')
+
+      // Test domain match (@company.com)
+      const result2 = await validateChatAuth('request-id', deployment, mockRequest, {
+        email: 'john@company.com',
+      })
+      expect(result2.authorized).toBe(false)
+      expect(result2.error).toBe('otp_required')
+
+      // Test wildcard domain match (*@position2.com)
+      const result3 = await validateChatAuth('request-id', deployment, mockRequest, {
+        email: 'anyone@position2.com',
+      })
+      expect(result3.authorized).toBe(false)
+      expect(result3.error).toBe('otp_required')
+
+      // Test another wildcard domain match
+      const result4 = await validateChatAuth('request-id', deployment, mockRequest, {
+        email: 'developer@position2.com',
+      })
+      expect(result4.authorized).toBe(false)
+      expect(result4.error).toBe('otp_required')
+
+      // Test unauthorized email
+      const result5 = await validateChatAuth('request-id', deployment, mockRequest, {
+        email: 'user@otherdomain.com',
+      })
+      expect(result5.authorized).toBe(false)
+      expect(result5.error).toBe('Email not authorized')
+    })
   })
 
   describe('Execution Result Processing', () => {
