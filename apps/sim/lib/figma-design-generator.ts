@@ -93,11 +93,12 @@ export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<Fi
 
     // Step 3: Clean the rendered data (remove markdown code blocks if present)
     let cleanedHtml = renderedData
-    cleanedHtml = cleanedHtml.replace(/```html\n?/g, '')
+    cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
     cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
-    cleanedHtml = cleanedHtml.replace(/\n?/g, '')
-    cleanedHtml = cleanedHtml.replace(/\?/g, '')
-    cleanedHtml = cleanedHtml.trim()
+    cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
+    cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
+    cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
+    cleanedHtml = cleanedHtml.trim() // trim ends
 
     // Step 4: Do Selenium automation
     console.log('Step 4: Starting Figma automation...')
@@ -989,6 +990,15 @@ async function automateDesignCreation(
         }
 
         try {
+          // Debug: Log HTML content details
+          console.log(`[NextJS] HTML content details:`, {
+            length: fullHtml.length,
+            firstChars: fullHtml.substring(0, 100),
+            lastChars: fullHtml.substring(Math.max(0, fullHtml.length - 100)),
+            hasNewlines: fullHtml.includes('\n'),
+            hasSpecialChars: /[^\x00-\x7F]/.test(fullHtml),
+          })
+
           // Look for HTML textarea or input field
           const htmlSelectors = [
             '#fullHtmlInput', // Specific ID from our plugin
@@ -1012,104 +1022,207 @@ async function automateDesignCreation(
                 '//*[@id="container-tabs"]/div/div[2]/div[4]/section/div[1]/div[2]/div/div/div[2]/div[1]/div'
               )
             )
+            console.log('[NextJS] ✓ Found HTML input using XPath')
           } catch (e) {
-            console.log('Could not find HTML input field, trying JavaScript injection...')
+            console.log('[NextJS] XPath selector failed, trying CSS selectors...')
           }
-          for (const selector of htmlSelectors) {
-            try {
-              htmlInput = await driver.findElement(By.css(selector))
-              console.log(`✓ Found HTML input using selector: ${selector}`)
-              break
-            } catch (e) {
-              // Continue to next selector
+
+          if (!htmlInput) {
+            for (const selector of htmlSelectors) {
+              try {
+                htmlInput = await driver.findElement(By.css(selector))
+                console.log(`[NextJS] ✓ Found HTML input using selector: ${selector}`)
+                break
+              } catch (e) {
+                // Continue to next selector
+              }
             }
           }
 
           if (htmlInput) {
-            // Clear and paste the HTML
-            await htmlInput.clear()
-            await htmlInput.sendKeys(fullHtml)
-            console.log('✓ Pasted HTML into input field')
-            await driver.sleep(1000)
+            console.log('[NextJS] Attempting to paste HTML content...')
+
+            // Try multiple methods to paste the HTML
+            try {
+              // Method 1: Clear and send keys
+              await htmlInput.clear()
+              console.log('[NextJS] ✓ Cleared input field')
+
+              // Split large content into chunks to avoid timeout
+              const chunkSize = 2000
+              if (fullHtml.length > chunkSize) {
+                console.log(
+                  `[NextJS] Large HTML content detected (${fullHtml.length} chars), sending in chunks...`
+                )
+                for (let i = 0; i < fullHtml.length; i += chunkSize) {
+                  const chunk = fullHtml.substring(i, i + chunkSize)
+                  await htmlInput.sendKeys(chunk)
+                  await driver.sleep(500) // Small delay between chunks
+                }
+              } else {
+                await htmlInput.sendKeys(fullHtml)
+              }
+              console.log('[NextJS] ✓ Pasted HTML into input field')
+
+              // Verify the content was pasted
+              const pastedValue = await htmlInput.getAttribute('value')
+              console.log(
+                `[NextJS] Verification - pasted content length: ${pastedValue?.length || 0}`
+              )
+            } catch (pasteError) {
+              console.log('[NextJS] Standard paste failed, trying alternative method...')
+              // Method 2: Use JavaScript to set value
+              await driver.executeScript(
+                `
+                const element = arguments[0];
+                element.value = arguments[1];
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+              `,
+                htmlInput,
+                fullHtml
+              )
+              console.log('[NextJS] ✓ Used JavaScript to set HTML content')
+            }
+
+            await driver.sleep(2000) // Increased wait time
           } else {
             throw new Error('Could not find HTML input field')
           }
         } catch (e) {
-          console.log('Could not find HTML input field, trying JavaScript injection...')
-          // Fallback: Try to inject via JavaScript
-          await driver.executeScript(`
-          const textareas = document.querySelectorAll('textarea');
-          const inputs = document.querySelectorAll('input[type="text"]');
-          
-          // Try to find HTML input field
-          let htmlField = null;
-          
-          // First try to find by ID
-          const fullHtmlInput = document.getElementById('fullHtmlInput');
-          if (fullHtmlInput) {
-            htmlField = fullHtmlInput;
-          } else {
-            // Try to find by placeholder
-            for (let textarea of textareas) {
-              if (textarea.placeholder && textarea.placeholder.toLowerCase().includes('html')) {
-                htmlField = textarea;
-                break;
-              }
-            }
-            
-            if (!htmlField) {
-              for (let input of inputs) {
-                if (input.placeholder && input.placeholder.toLowerCase().includes('html')) {
-                  htmlField = input;
-                  break;
+          console.log('[NextJS] Could not find HTML input field, trying JavaScript injection...')
+          // Enhanced fallback: Try to inject via JavaScript with better error handling
+          try {
+            const injectionResult = await driver.executeScript(
+              `
+              console.log('[JS] Starting HTML injection...');
+              
+              const textareas = document.querySelectorAll('textarea');
+              const inputs = document.querySelectorAll('input[type="text"]');
+              const codeMirrorElements = document.querySelectorAll('.cm-activeLine.cm-line');
+              
+              console.log('[JS] Found elements:', {
+                textareas: textareas.length,
+                inputs: inputs.length,
+                codeMirror: codeMirrorElements.length
+              });
+              
+              // Try to find HTML input field
+              let htmlField = null;
+              
+              // First try to find by ID
+              const fullHtmlInput = document.getElementById('fullHtmlInput');
+              if (fullHtmlInput) {
+                htmlField = fullHtmlInput;
+                console.log('[JS] Found by ID: fullHtmlInput');
+              } else {
+                // Try CodeMirror elements first
+                for (let cmElement of codeMirrorElements) {
+                  if (cmElement.contentEditable === 'true' || cmElement.tagName === 'DIV') {
+                    htmlField = cmElement;
+                    console.log('[JS] Found CodeMirror element');
+                    break;
+                  }
+                }
+                
+                // Try to find by placeholder
+                if (!htmlField) {
+                  for (let textarea of textareas) {
+                    if (textarea.placeholder && textarea.placeholder.toLowerCase().includes('html')) {
+                      htmlField = textarea;
+                      console.log('[JS] Found by placeholder in textarea');
+                      break;
+                    }
+                  }
+                }
+                
+                if (!htmlField) {
+                  for (let input of inputs) {
+                    if (input.placeholder && input.placeholder.toLowerCase().includes('html')) {
+                      htmlField = input;
+                      console.log('[JS] Found by placeholder in input');
+                      break;
+                    }
+                  }
+                }
+                
+                if (!htmlField && textareas.length > 0) {
+                  htmlField = textareas[0]; // Use first textarea as fallback
+                  console.log('[JS] Using first textarea as fallback');
                 }
               }
-            }
-            
-            if (!htmlField && textareas.length > 0) {
-              htmlField = textareas[0]; // Use first textarea as fallback
-            }
+              
+              if (htmlField) {
+                console.log('[JS] Setting HTML content...');
+                const htmlContent = arguments[0];
+                
+                if (htmlField.tagName === 'DIV' || htmlField.contentEditable === 'true') {
+                  // For contentEditable divs (like CodeMirror)
+                  htmlField.textContent = htmlContent;
+                  htmlField.innerHTML = htmlContent;
+                } else {
+                  // For regular input/textarea elements
+                  htmlField.value = htmlContent;
+                }
+                
+                // Trigger events
+                htmlField.dispatchEvent(new Event('input', { bubbles: true }));
+                htmlField.dispatchEvent(new Event('change', { bubbles: true }));
+                htmlField.dispatchEvent(new Event('keyup', { bubbles: true }));
+                
+                console.log('[JS] HTML content injected successfully');
+                return { success: true, elementType: htmlField.tagName };
+              } else {
+                console.error('[JS] Could not find HTML input field');
+                return { success: false, error: 'No suitable input field found' };
+              }
+            `,
+              fullHtml
+            )
+
+            console.log('[NextJS] JavaScript injection result:', injectionResult)
+            await driver.sleep(2000) // Increased wait time
+          } catch (injectionError) {
+            console.error('[NextJS] JavaScript injection failed:', injectionError)
+            throw new Error('All HTML input methods failed')
           }
-          
-          if (htmlField) {
-            htmlField.value = ${JSON.stringify(fullHtml)};
-            htmlField.dispatchEvent(new Event('input', { bubbles: true }));
-            console.log('Injected HTML via JavaScript');
-          } else {
-            console.error('Could not find HTML input field');
-          }
-        `)
-          console.log('✓ Attempted JavaScript injection for HTML')
-          await driver.sleep(1000)
         }
       } // End of if (editorTabClicked) block
 
       // Step 7.6: Click on "Create" button
-      console.log('Looking for Create button...')
+      console.log('[NextJS] Looking for Create button...')
 
       // Only proceed if Editor tab was clicked successfully
       if (!editorTabClicked) {
-        console.log('⚠️ Editor tab was not clicked, skipping Create button search')
+        console.log('[NextJS] ⚠️ Editor tab was not clicked, skipping Create button search')
       } else {
-        // Ensure we're still in the correct iframe context for Create button
-        // let currentIframeState = switchedToIframe
-        // if (!currentIframeState) {
-        //   currentIframeState = await switchToPluginIframe(driver)
-        // }
+        // Add timeout wrapper to prevent getting stuck
+        const createButtonTimeout = 15000 // 15 seconds timeout
+        const startTime = Date.now()
+
         let createClicked = false
         try {
-          const createButton = await driver.wait(
-            until.elementLocated(
-              By.xpath("//*[@id='container-tabs']/div/div[2]/div[4]/section/footer/div[2]/button")
+          console.log('[NextJS] Waiting for Create button...')
+
+          // Try the primary Create button selector with timeout
+          const createButton = await Promise.race([
+            driver.wait(
+              until.elementLocated(
+                By.xpath("//*[@id='container-tabs']/div/div[2]/div[4]/section/footer/div[2]/button")
+              ),
+              10000
             ),
-            5000
-          )
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Create button timeout')), createButtonTimeout)
+            ),
+          ])
+
           await createButton.click()
-          console.log('✓ Clicked Create button')
+          console.log('[NextJS] ✓ Clicked Create button')
           createClicked = true
-          await driver.sleep(3000) // Wait for design to be created
+          await driver.sleep(10000) // Wait for design to be created
         } catch (e) {
-          console.log('Create button not found, trying alternative selectors...')
+          console.log('[NextJS] Primary Create button not found, trying alternative selectors...')
           const createSelectors = [
             '#createBtn', // Specific ID from our plugin
             "//button[contains(text(), 'Create')]",
@@ -1120,11 +1233,18 @@ async function automateDesignCreation(
             "//span[contains(text(), 'Create')]",
           ]
 
+          // Try alternative selectors with timeout check
           for (const selector of createSelectors) {
             try {
+              // Check if we're still within timeout
+              if (Date.now() - startTime > createButtonTimeout) {
+                console.log('[NextJS] ⏰ Create button search timeout reached')
+                break
+              }
+
               const createElement = await driver.findElement(By.xpath(selector))
               await createElement.click()
-              console.log(`✓ Clicked Create using selector: ${selector}`)
+              console.log(`[NextJS] ✓ Clicked Create using selector: ${selector}`)
               createClicked = true
               break
             } catch (e) {
@@ -1133,31 +1253,58 @@ async function automateDesignCreation(
           }
 
           if (!createClicked) {
-            console.log('Could not find Create button, trying JavaScript...')
-            await driver.executeScript(`
-            // First try to find by ID
-            const createBtn = document.getElementById('createBtn');
-            if (createBtn) {
-              createBtn.click();
-              console.log('Clicked Create button via JavaScript (by ID)');
-            } else {
-              // Fallback to text search
-              const buttons = document.querySelectorAll('button');
-              for (let button of buttons) {
-                if (button.textContent && button.textContent.toLowerCase().includes('create')) {
-                  button.click();
-                  console.log('Clicked Create button via JavaScript (by text)');
-                  break;
+            console.log('[NextJS] Could not find Create button, trying JavaScript...')
+            try {
+              const jsResult = await driver.executeScript(`
+                console.log('[JS] Looking for Create button...');
+                
+                // First try to find by ID
+                const createBtn = document.getElementById('createBtn');
+                if (createBtn) {
+                  createBtn.click();
+                  console.log('[JS] Clicked Create button via JavaScript (by ID)');
+                  return { success: true, method: 'byId' };
+                } else {
+                  // Fallback to text search
+                  const buttons = document.querySelectorAll('button');
+                  for (let button of buttons) {
+                    if (button.textContent && button.textContent.toLowerCase().includes('create')) {
+                      button.click();
+                      console.log('[JS] Clicked Create button via JavaScript (by text)');
+                      return { success: true, method: 'byText' };
+                    }
+                  }
                 }
+                
+                console.log('[JS] No Create button found');
+                return { success: false, error: 'No Create button found' };
+              `)
+
+              console.log('[NextJS] JavaScript Create button result:', jsResult)
+              if (
+                jsResult &&
+                typeof jsResult === 'object' &&
+                'success' in jsResult &&
+                jsResult.success
+              ) {
+                createClicked = true
               }
+            } catch (jsError) {
+              console.error('[NextJS] JavaScript Create button failed:', jsError)
             }
-          `)
           }
-          await driver.sleep(5000)
+
+          if (createClicked) {
+            console.log('[NextJS] ✓ Create button clicked successfully')
+            await driver.sleep(5000) // Wait for design to be created
+          } else {
+            console.log('[NextJS] ⚠️ Could not find or click Create button')
+          }
         }
 
         // Click "Add to Canvas" button
         try {
+          await driver.sleep(2000)
           console.log('Looking for Add to Canvas button...')
           const addToCanvasButton = await driver.findElement(
             By.xpath('/html/body/div[6]/div[1]/div[3]/div[1]/div[2]/button')
@@ -1219,7 +1366,7 @@ async function automateDesignCreation(
     throw error
   } finally {
     // Keep browser open for debugging
-    // await driver.quit()
+    await driver.quit()
     console.log('Browser session kept open for inspection')
   }
 }

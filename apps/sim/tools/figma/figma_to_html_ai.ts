@@ -354,11 +354,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
 
       // Final cleanup of combined HTML
       let cleanedHtml = aiResult.combinedHtml
-      cleanedHtml = cleanedHtml.replace(/```html?/g, '')
-      cleanedHtml = cleanedHtml.replace(/```/g, '')
-      cleanedHtml = cleanedHtml.replace(/[\\\r\n\t]+/g, '') // remove \, newlines, tabs
-      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse multiple spaces
-      cleanedHtml = cleanedHtml.trim()
+      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
+      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
+      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
+      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
+      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
+      cleanedHtml = cleanedHtml.trim() // trim ends
 
       return {
         success: true,
@@ -384,11 +385,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
 
       // Final cleanup of fallback HTML
       let cleanedHtml = generateFallbackCombinedHTML()
-      cleanedHtml = cleanedHtml.replace(/```html?/g, '')
-      cleanedHtml = cleanedHtml.replace(/```/g, '')
-      cleanedHtml = cleanedHtml.replace(/[\\\r\n\t]+/g, '') // remove \, newlines, tabs
-      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse multiple spaces
-      cleanedHtml = cleanedHtml.trim()
+      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
+      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
+      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
+      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
+      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
+      cleanedHtml = cleanedHtml.trim() // trim ends
 
       return {
         success: false,
