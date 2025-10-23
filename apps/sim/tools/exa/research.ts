@@ -1,3 +1,5 @@
+import { env } from '@/lib/env'
+import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ExaResearchParams, ExaResearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
@@ -28,7 +30,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: !isHosted,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -39,7 +41,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': params.apiKey,
+      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
     }),
     body: (params) => {
       const body: any = {
