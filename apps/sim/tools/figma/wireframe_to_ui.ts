@@ -110,7 +110,8 @@ export const wireframeToUITool: ToolConfig<WireframeToUIParams, WireframeToUIRes
     url: 'https://api.figma.com/v1/me',
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
     }),
   },
   transformResponse: async (response, params) => {

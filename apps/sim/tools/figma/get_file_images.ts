@@ -86,7 +86,8 @@ export const getFileImagesTool: ToolConfig<GetFileImagesParams, GetFileImagesRes
     },
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
     }),
   },
   transformResponse: async (response) => {

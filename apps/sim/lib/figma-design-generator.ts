@@ -50,6 +50,8 @@ import fs from 'fs/promises'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
+import { PdfParser } from '@/lib/file-parsers/pdf-parser'
+import { downloadFile } from '@/lib/uploads/storage-client'
 
 interface FigmaDesignInputs {
   projectId: string
@@ -59,6 +61,7 @@ interface FigmaDesignInputs {
   wireframesFile?: string // Path to file
   additionalDataFile?: string // Path to file
   additionalInfo?: string // Text input
+  description?: string // Text input
 }
 
 interface FigmaDesignResult {
@@ -110,7 +113,7 @@ export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<Fi
 
     return {
       success: true,
-      renderedData,
+      renderedData: cleanedHtml,
       figmaFileUrl,
     }
   } catch (error) {
@@ -120,6 +123,52 @@ export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<Fi
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
+}
+
+/**
+ * Helper function to read file content from S3 or local filesystem
+ */
+async function readFileContent(filePath: string, fileType: string): Promise<string> {
+  // Check if it's an S3 URL or local file path
+  if (filePath.startsWith('s3://') || filePath.includes('/api/files/serve/')) {
+    console.log(`Reading ${fileType} from S3/cloud storage...`)
+
+    // Extract the S3 key from the URL
+    let s3Key: string
+    if (filePath.startsWith('s3://')) {
+      s3Key = filePath.replace('s3://', '').split('/').slice(1).join('/')
+    } else if (filePath.includes('/api/files/serve/s3/')) {
+      s3Key = decodeURIComponent(filePath.split('/api/files/serve/s3/')[1])
+    } else if (filePath.includes('/api/files/serve/blob/')) {
+      s3Key = decodeURIComponent(filePath.split('/api/files/serve/blob/')[1])
+    } else {
+      s3Key = decodeURIComponent(filePath.substring('/api/files/serve/'.length))
+    }
+
+    console.log(`S3 key extracted for ${fileType}:`, s3Key)
+
+    // Download file from S3
+    const fileBuffer = await downloadFile(s3Key)
+    console.log(`Downloaded ${fileType} from S3, size:`, fileBuffer.length)
+
+    // Check if it's a PDF file
+    const filename = s3Key.split('/').pop() || s3Key
+    const isPdf = filename.toLowerCase().endsWith('.pdf')
+
+    if (isPdf) {
+      console.log(`Parsing PDF ${fileType}...`)
+      const pdfParser = new PdfParser()
+      const pdfResult = await pdfParser.parseBuffer(fileBuffer)
+      console.log(
+        `PDF ${fileType} parsed successfully, extracted text length:`,
+        pdfResult.content.length
+      )
+      return pdfResult.content
+    }
+    return fileBuffer.toString('utf-8')
+  }
+  // Local file path
+  return await fs.readFile(filePath, 'utf-8')
 }
 
 /**
@@ -200,11 +249,11 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.wireframesFile) {
     console.log('Reading wireframes file:', inputs.wireframesFile)
     try {
-      const wireframes = await fs.readFile(inputs.wireframesFile, 'utf-8')
+      const wireframes = await readFileContent(inputs.wireframesFile, 'wireframes')
       systemPrompt += `\n=== WIREFRAMES (STRUCTURE TO FOLLOW) ===\n${wireframes}\n\n`
       hasWireframes = true
     } catch (error) {
-      console.warn('Could not read wireframes file:', inputs.wireframesFile)
+      console.warn('Could not read wireframes file:', inputs.wireframesFile, error)
     }
   }
 
@@ -212,11 +261,11 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.brandGuidelinesFile) {
     console.log('Reading brand guidelines file:', inputs.brandGuidelinesFile)
     try {
-      const brandGuidelines = await fs.readFile(inputs.brandGuidelinesFile, 'utf-8')
+      const brandGuidelines = await readFileContent(inputs.brandGuidelinesFile, 'brand guidelines')
       systemPrompt += `\n=== BRAND GUIDELINES (COLORS & STYLING TO USE) ===\n${brandGuidelines}\n\n`
       hasBrandGuidelines = true
     } catch (error) {
-      console.warn('Could not read brand guidelines file:', inputs.brandGuidelinesFile)
+      console.warn('Could not read brand guidelines file:', inputs.brandGuidelinesFile, error)
     }
   }
 
@@ -224,10 +273,10 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.additionalDataFile) {
     console.log('Reading additional data file:', inputs.additionalDataFile)
     try {
-      const additionalData = await fs.readFile(inputs.additionalDataFile, 'utf-8')
+      const additionalData = await readFileContent(inputs.additionalDataFile, 'additional data')
       systemPrompt += `\n=== ADDITIONAL DATA ===\n${additionalData}\n\n`
     } catch (error) {
-      console.warn('Could not read additional data file:', inputs.additionalDataFile)
+      console.warn('Could not read additional data file:', inputs.additionalDataFile, error)
     }
   }
 
@@ -235,6 +284,10 @@ RESPONSIVE CONSIDERATIONS:
   if (inputs.additionalInfo) {
     console.log('Reading additional information:', inputs.additionalInfo)
     systemPrompt += `\n=== ADDITIONAL INFORMATION ===\n${inputs.additionalInfo}\n\n`
+  }
+  if (inputs.description) {
+    console.log('Reading description:', inputs.description)
+    systemPrompt += `\n=== DESCRIPTION ===\n${inputs.description}\n\n`
   }
 
   // Add specific instructions based on what files were provided
@@ -610,6 +663,16 @@ async function automateDesignCreation(
   options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--no-sandbox')
   options.addArguments('--disable-dev-shm-usage')
+  // options.addArguments('--headless=new')
+  // options.addArguments('--use-angle=metal')
+  // options.addArguments('--use-gl=angle')
+  // options.addArguments('--enable-webgl')
+  // options.addArguments('--ignore-gpu-blacklist')
+  // options.addArguments('--enable-accelerated-2d-canvas')
+  // options.addArguments('--window-size=1920,1080')
+  // options.addArguments('--disable-blink-features=AutomationControlled')
+  // options.addArguments('--no-sandbox')
+  // options.addArguments('--disable-dev-shm-usage')
 
   // Set ChromeDriver path to use system installation
   const chromedriverPath = process.env.CHROMEDRIVER_PATH || '/opt/homebrew/bin/chromedriver'
@@ -638,7 +701,7 @@ async function automateDesignCreation(
 
     // Enter password
     const passwordInput = await driver.findElement(By.css('input[type="password"]'))
-    await passwordInput.sendKeys("64$G1f%'5pSs")
+    await passwordInput.sendKeys('qSSD4l3t<13e')
 
     // Click login button
     const loginButton = await driver.findElement(By.css('button[type="submit"]'))
@@ -847,7 +910,7 @@ async function automateDesignCreation(
         const pluginOption = await driver.wait(
           until.elementLocated(
             By.xpath(
-              "//*[@id='react-page']/div/div/div/div[1]/div[1]/div/div[1]/div[12]/div/div/div/div/div/div/div/div[3]/div/div/div/div/div/div/button[1]"
+              "//*[@id='react-page']/div/div/div/div[1]/div[1]/div/div[1]/div[12]/div/div/div/div/div/div/div/div[3]/div/div/div/div/div/div/div[1]/button[1]"
             )
           ),
           5000
@@ -1041,54 +1104,209 @@ async function automateDesignCreation(
 
           if (htmlInput) {
             console.log('[NextJS] Attempting to paste HTML content...')
-
-            // Try multiple methods to paste the HTML
             try {
-              // Method 1: Clear and send keys
+              console.log('[NextJS] Attempting fast JavaScript injection method...')
               await htmlInput.clear()
+              console.log('[NextJS] Full HTML ', fullHtml)
               console.log('[NextJS] ✓ Cleared input field')
 
-              // Split large content into chunks to avoid timeout
-              const chunkSize = 2000
-              if (fullHtml.length > chunkSize) {
-                console.log(
-                  `[NextJS] Large HTML content detected (${fullHtml.length} chars), sending in chunks...`
-                )
-                for (let i = 0; i < fullHtml.length; i += chunkSize) {
-                  const chunk = fullHtml.substring(i, i + chunkSize)
-                  await htmlInput.sendKeys(chunk)
-                  await driver.sleep(500) // Small delay between chunks
-                }
-              } else {
-                await htmlInput.sendKeys(fullHtml)
-              }
-              console.log('[NextJS] ✓ Pasted HTML into input field')
-
-              // Verify the content was pasted
-              const pastedValue = await htmlInput.getAttribute('value')
-              console.log(
-                `[NextJS] Verification - pasted content length: ${pastedValue?.length || 0}`
-              )
-            } catch (pasteError) {
-              console.log('[NextJS] Standard paste failed, trying alternative method...')
-              // Method 2: Use JavaScript to set value
-              await driver.executeScript(
+              // Method 1: Fast JavaScript injection with proper HTML handling
+              const result = await driver.executeScript(
                 `
-                const element = arguments[0];
-                element.value = arguments[1];
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-                element.dispatchEvent(new Event('change', { bubbles: true }));
-              `,
+                  const element = arguments[0];
+                  const content = arguments[1];
+                  
+                  console.log('[JS] Starting fast HTML injection...');
+                  console.log('[JS] Content length:', content.length);
+                  console.log('[JS] Element type:', element.tagName);
+                  console.log('[JS] Element classes:', element.className);
+                  
+                  // Focus the element first
+                  element.focus();
+                  
+                  // Clear existing content
+                  element.value = '';
+                  element.textContent = '';
+                  element.innerHTML = '';
+                  
+                  // Check if this is a CodeMirror editor
+                  const isCodeMirror = element.className.includes('cm-') || element.closest('.cm-editor');
+                  
+                  if (isCodeMirror) {
+                    console.log('[JS] Detected CodeMirror editor, using special handling');
+                    
+                    // For CodeMirror, try to find the editor instance
+                    const cmEditor = element.closest('.cm-editor');
+                    if (cmEditor && window.CodeMirror) {
+                      // Try to get CodeMirror instance
+                      const cmInstance = cmEditor.CodeMirror || cmEditor._cm;
+                      if (cmInstance) {
+                        cmInstance.setValue(content);
+                        console.log('[JS] Set content via CodeMirror API');
+                      } else {
+                        element.innerHTML = content;
+                        element.textContent = content;
+                      }
+                    } else {
+                      // Fallback for CodeMirror without API access
+                      element.innerHTML = content;
+                      element.textContent = content;
+                    }
+                  } else if (element.tagName === 'DIV' || element.contentEditable === 'true') {
+                    // For contentEditable divs - use innerHTML for HTML rendering
+                    console.log('[JS] Using innerHTML for HTML content');
+                    element.innerHTML = content;
+                    
+                    // Also set textContent as fallback
+                    element.textContent = content;
+                  } else if (element.tagName === 'TEXTAREA') {
+                    // For textarea elements - use value
+                    console.log('[JS] Using value for textarea');
+                    element.value = content;
+                  } else {
+                    // For other input elements - try both methods
+                    console.log('[JS] Using both value and innerHTML');
+                    element.value = content;
+                    element.innerHTML = content;
+                  }
+                  
+                  // Simulate proper HTML paste event
+                  const pasteEvent = new ClipboardEvent('paste', {
+                    bubbles: true,
+                    cancelable: true,
+                    clipboardData: new DataTransfer()
+                  });
+                  
+                  // Trigger all necessary events in sequence
+                  element.dispatchEvent(new Event('focus', { bubbles: true }));
+                  element.dispatchEvent(new Event('input', { bubbles: true }));
+                  element.dispatchEvent(pasteEvent);
+                  element.dispatchEvent(new Event('change', { bubbles: true }));
+                  element.dispatchEvent(new Event('keyup', { bubbles: true }));
+                  element.dispatchEvent(new Event('blur', { bubbles: true }));
+                  
+                  // Verify content was set
+                  const setContent = element.value || element.textContent || element.innerHTML;
+                  const success = setContent.length > 0 && setContent.length >= content.length * 0.8;
+                  
+                  console.log('[JS] Fast injection result:', {
+                    success,
+                    expectedLength: content.length,
+                    actualLength: setContent.length,
+                    elementType: element.tagName,
+                    hasHtmlTags: setContent.includes('<'),
+                    contentPreview: setContent.substring(0, 100)
+                  });
+                  
+                  return { 
+                    success, 
+                    method: 'fast_javascript',
+                    contentLength: setContent.length,
+                    expectedLength: content.length,
+                    hasHtmlTags: setContent.includes('<')
+                  };
+                `,
                 htmlInput,
                 fullHtml
               )
-              console.log('[NextJS] ✓ Used JavaScript to set HTML content')
+
+              if (result && typeof result === 'object' && 'success' in result && result.success) {
+                console.log('[NextJS] ✓ Fast JavaScript injection successful')
+              } else {
+                throw new Error('Fast injection failed')
+              }
+            } catch (pasteError) {
+              console.log('[NextJS] Fast method failed, trying clipboard simulation...')
+
+              // Method 2: Clipboard simulation with execCommand
+              try {
+                await driver.executeScript(
+                  `
+                    const element = arguments[0];
+                    const content = arguments[1];
+                    
+                    console.log('[JS] Trying clipboard simulation...');
+                    
+                    // Focus and select all
+                    element.focus();
+                    element.select();
+                    
+                    // Use execCommand for HTML pasting
+                    const success = document.execCommand('insertHTML', false, content);
+                    
+                    if (!success) {
+                      // Fallback to direct HTML setting
+                      if (element.tagName === 'DIV' || element.contentEditable === 'true' || element.className.includes('cm-')) {
+                        element.innerHTML = content;
+                        element.textContent = content;
+                      } else {
+                        element.value = content;
+                      }
+                    }
+                    
+                    // Trigger events
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    console.log('[JS] Clipboard simulation completed');
+                    return { success: true, method: 'clipboard' };
+                  `,
+                  htmlInput,
+                  fullHtml
+                )
+                console.log('[NextJS] ✓ Used clipboard simulation')
+              } catch (clipboardError) {
+                console.log('[NextJS] Clipboard simulation failed, trying direct HTML setting...')
+
+                // Method 3: Direct HTML setting (fastest fallback)
+                await driver.executeScript(
+                  `
+                    const element = arguments[0];
+                    const content = arguments[1];
+                    
+                    console.log('[JS] Direct HTML setting...');
+                    
+                    // Direct HTML assignment (fastest)
+                    if (element.tagName === 'DIV' || element.contentEditable === 'true' || element.className.includes('cm-')) {
+                      element.innerHTML = content;
+                      element.textContent = content;
+                    } else {
+                      element.value = content;
+                    }
+                    
+                    // Minimal event triggering
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    console.log('[JS] Direct HTML setting completed');
+                    return { success: true, method: 'direct' };
+                  `,
+                  htmlInput,
+                  fullHtml
+                )
+                console.log('[NextJS] ✓ Used direct HTML setting')
+              }
             }
 
-            await driver.sleep(2000) // Increased wait time
-          } else {
-            throw new Error('Could not find HTML input field')
+            // Verify the content was pasted
+            try {
+              const pastedValue =
+                (await htmlInput.getAttribute('value')) ||
+                (await htmlInput.getAttribute('textContent')) ||
+                (await htmlInput.getAttribute('innerHTML'))
+              console.log(
+                `[NextJS] Verification - pasted content length: ${pastedValue?.length || 0}`
+              )
+
+              if ((pastedValue?.length || 0) < fullHtml.length * 0.8) {
+                console.log('[NextJS] ⚠️ Warning: Content may not have been fully pasted')
+              }
+            } catch (verifyError) {
+              console.log('[NextJS] Could not verify pasted content:', verifyError)
+            }
           }
+
+          await driver.sleep(2000) // Increased wait time
         } catch (e) {
           console.log('[NextJS] Could not find HTML input field, trying JavaScript injection...')
           // Enhanced fallback: Try to inject via JavaScript with better error handling
@@ -1156,6 +1374,11 @@ async function automateDesignCreation(
                 console.log('[JS] Setting HTML content...');
                 const htmlContent = arguments[0];
                 
+                // Clear existing content first
+                htmlField.value = '';
+                htmlField.textContent = '';
+                htmlField.innerHTML = '';
+                
                 if (htmlField.tagName === 'DIV' || htmlField.contentEditable === 'true') {
                   // For contentEditable divs (like CodeMirror)
                   htmlField.textContent = htmlContent;
@@ -1165,13 +1388,29 @@ async function automateDesignCreation(
                   htmlField.value = htmlContent;
                 }
                 
-                // Trigger events
+                // Trigger all necessary events
                 htmlField.dispatchEvent(new Event('input', { bubbles: true }));
                 htmlField.dispatchEvent(new Event('change', { bubbles: true }));
                 htmlField.dispatchEvent(new Event('keyup', { bubbles: true }));
+                htmlField.dispatchEvent(new Event('blur', { bubbles: true }));
                 
-                console.log('[JS] HTML content injected successfully');
-                return { success: true, elementType: htmlField.tagName };
+                // Verify content was set
+                const setContent = htmlField.value || htmlField.textContent || htmlField.innerHTML;
+                const success = setContent.length > 0 && setContent.length >= htmlContent.length * 0.8;
+                
+                console.log('[JS] HTML content injection result:', {
+                  success,
+                  expectedLength: htmlContent.length,
+                  actualLength: setContent.length,
+                  elementType: htmlField.tagName
+                });
+                
+                return { 
+                  success, 
+                  elementType: htmlField.tagName,
+                  contentLength: setContent.length,
+                  expectedLength: htmlContent.length
+                };
               } else {
                 console.error('[JS] Could not find HTML input field');
                 return { success: false, error: 'No suitable input field found' };
@@ -1305,23 +1544,65 @@ async function automateDesignCreation(
         // Click "Add to Canvas" button
         try {
           await driver.sleep(2000)
-          console.log('Looking for Add to Canvas button...')
+          console.log('[NextJS] Looking for Add to Canvas button...')
           const addToCanvasButton = await driver.findElement(
             By.xpath('/html/body/div[6]/div[1]/div[3]/div[1]/div[2]/button')
           )
           await addToCanvasButton.click()
-          console.log('✓ Clicked Add to Canvas button')
-          await driver.sleep(2000)
+          console.log('[NextJS] ✓ Clicked Add to Canvas button')
+          await driver.sleep(5000)
         } catch (e) {
           console.log(
-            'Could not find Add to Canvas button:',
+            '[NextJS] Could not find Add to Canvas button:',
             e instanceof Error ? e.message : String(e)
           )
         }
 
-        // Switch back to main content if we switched to iframe
-        if (switchedToIframe) {
-          await switchToMainContent(driver)
+        await switchToMainContent(driver)
+
+        // Step 8: Navigate to Figma homepage and log out
+        try {
+          console.log('[NextJS] Navigating to Figma homepage...')
+          await driver.get('https://www.figma.com/')
+          await driver.sleep(3000) // Wait for page to load
+          console.log('[NextJS] ✓ Navigated to Figma homepage')
+
+          // Click on the user dropdown menu
+          console.log('[NextJS] Looking for user dropdown menu...')
+          await driver.sleep(2000) // Wait for dropdown to appear
+
+          // Look for "Arena Developer" text and click on it
+          console.log('[NextJS] Looking for Arena Developer text...')
+          try {
+            const arenaDeveloperOption = await driver.wait(
+              until.elementLocated(By.xpath("//*[contains(text(), 'Arena Developer')]")),
+              5000
+            )
+            await arenaDeveloperOption.click()
+            console.log('[NextJS] ✓ Clicked on Arena Developer')
+            await driver.sleep(2000) // Wait for submenu to appear
+          } catch (arenaError) {
+            console.log('[NextJS] Arena Developer not found, trying direct logout...')
+          }
+
+          // Click on Log out option using text search
+          console.log('[NextJS] Looking for Log out option...')
+          const logoutOption = await driver.wait(
+            until.elementLocated(
+              By.xpath(
+                "//*[contains(text(), 'Log out') or contains(text(), 'Logout') or contains(text(), 'Sign out')]"
+              )
+            ),
+            5000
+          )
+          await logoutOption.click()
+          console.log('[NextJS] ✓ Clicked Log out option')
+          await driver.sleep(3000) // Wait for logout to complete
+        } catch (e) {
+          console.log(
+            '[NextJS] Could not complete logout process:',
+            e instanceof Error ? e.message : String(e)
+          )
         }
       } // End of if (editorTabClicked) block for Create button
 
@@ -1366,7 +1647,7 @@ async function automateDesignCreation(
     throw error
   } finally {
     // Keep browser open for debugging
-    await driver.quit()
+    // await driver.quit()
     console.log('Browser session kept open for inspection')
   }
 }

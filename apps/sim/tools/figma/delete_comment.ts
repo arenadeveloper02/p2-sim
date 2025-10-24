@@ -25,7 +25,8 @@ export const deleteCommentTool: ToolConfig<DeleteCommentParams, DeleteCommentRes
       `https://api.figma.com/v1/files/${params.fileKey}/comments/${params.commentId}`,
     method: 'DELETE',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
     }),
   },
   transformResponse: async (response) => {

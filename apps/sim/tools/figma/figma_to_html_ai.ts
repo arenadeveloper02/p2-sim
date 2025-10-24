@@ -321,6 +321,7 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
   },
   request: {
     url: (params) => {
+      console.log('Figma data:', params.fileKey, params.nodeId, process.env.FIGMA_API_KEY)
       // Always use Figma API with file key
       if (params.nodeId) {
         return `https://api.figma.com/v1/files/${params.fileKey}/nodes?ids=${params.nodeId}`
@@ -329,7 +330,8 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
     },
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
     }),
   },
   transformResponse: async (response, params) => {
@@ -342,6 +344,7 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
     try {
       // Extract data from Figma API response
       const data = await response.json()
+      console.log('Figma data:', data)
       const figmaData = data
 
       // Generate AI prompt

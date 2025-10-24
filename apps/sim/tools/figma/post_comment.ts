@@ -45,7 +45,8 @@ export const postCommentTool: ToolConfig<PostCommentParams, PostCommentResponse>
     url: (params) => `https://api.figma.com/v1/files/${params.fileKey}/comments`,
     method: 'POST',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
       'Content-Type': 'application/json',
     }),
     body: (params) => {

@@ -25,7 +25,8 @@ export const getCommentsTool: ToolConfig<GetCommentsParams, GetCommentsResponse>
       `https://api.figma.com/v1/files/${params.fileKey}/comments${params.nodeId ? `?node_id=${params.nodeId}` : ''}`,
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
+      'X-Figma-Token':
+        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
     }),
   },
   transformResponse: async (response) => {
