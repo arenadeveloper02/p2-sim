@@ -65,8 +65,7 @@ export const getFileTool: ToolConfig<GetFileParams, GetFileResponse> = {
     },
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token':
-        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
+      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
     }),
   },
   transformResponse: async (response) => {

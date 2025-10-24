@@ -660,19 +660,23 @@ async function automateDesignCreation(
   const options = new chrome.Options()
   // Uncomment the following line to run in headless mode
   // options.addArguments('--headless');
-  options.addArguments('--disable-blink-features=AutomationControlled')
-  options.addArguments('--no-sandbox')
-  options.addArguments('--disable-dev-shm-usage')
-  // options.addArguments('--headless=new')
-  // options.addArguments('--use-angle=metal')
-  // options.addArguments('--use-gl=angle')
-  // options.addArguments('--enable-webgl')
-  // options.addArguments('--ignore-gpu-blacklist')
-  // options.addArguments('--enable-accelerated-2d-canvas')
-  // options.addArguments('--window-size=1920,1080')
   // options.addArguments('--disable-blink-features=AutomationControlled')
   // options.addArguments('--no-sandbox')
   // options.addArguments('--disable-dev-shm-usage')
+
+  // options.addArguments('--disable-blink-features=AutomationControlled')
+  options.addArguments('--start-maximized')
+
+  options.addArguments('--headless=new')
+  options.addArguments('--use-angle=metal')
+  options.addArguments('--use-gl=angle')
+  options.addArguments('--enable-webgl')
+  options.addArguments('--ignore-gpu-blacklist')
+  options.addArguments('--enable-accelerated-2d-canvas')
+  options.addArguments('--window-size=1920,1080')
+  options.addArguments('--disable-blink-features=AutomationControlled')
+  options.addArguments('--no-sandbox')
+  options.addArguments('--disable-dev-shm-usage')
 
   // Set ChromeDriver path to use system installation
   const chromedriverPath = process.env.CHROMEDRIVER_PATH || '/opt/homebrew/bin/chromedriver'
@@ -701,7 +705,7 @@ async function automateDesignCreation(
 
     // Enter password
     const passwordInput = await driver.findElement(By.css('input[type="password"]'))
-    await passwordInput.sendKeys('qSSD4l3t<13e')
+    await passwordInput.sendKeys('K50[<-Shzj9*')
 
     // Click login button
     const loginButton = await driver.findElement(By.css('button[type="submit"]'))
@@ -711,7 +715,7 @@ async function automateDesignCreation(
     await driver.wait(async () => {
       const currentUrl = await driver.getCurrentUrl()
       return currentUrl.includes('figma.com/files') || currentUrl.includes('figma.com/file')
-    }, 10000)
+    }, 60000)
 
     console.log('Login successful!')
 
@@ -1575,7 +1579,11 @@ async function automateDesignCreation(
           console.log('[NextJS] Looking for Arena Developer text...')
           try {
             const arenaDeveloperOption = await driver.wait(
-              until.elementLocated(By.xpath("//*[contains(text(), 'Arena Developer')]")),
+              until.elementLocated(
+                By.xpath(
+                  '/html/body/div[2]/div/div/div/div[1]/div[1]/nav/div[1]/div[1]/div/div[1]/button'
+                )
+              ),
               5000
             )
             await arenaDeveloperOption.click()
@@ -1588,11 +1596,7 @@ async function automateDesignCreation(
           // Click on Log out option using text search
           console.log('[NextJS] Looking for Log out option...')
           const logoutOption = await driver.wait(
-            until.elementLocated(
-              By.xpath(
-                "//*[contains(text(), 'Log out') or contains(text(), 'Logout') or contains(text(), 'Sign out')]"
-              )
-            ),
+            until.elementLocated(By.xpath('/html/body/div[4]/div/div/div/ul/div/ul[4]/li')),
             5000
           )
           await logoutOption.click()

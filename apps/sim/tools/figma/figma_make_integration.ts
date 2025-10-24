@@ -101,8 +101,7 @@ export const figmaMakeIntegrationTool: ToolConfig<
     url: 'https://api.figma.com/v1/me',
     method: 'GET',
     headers: () => ({
-      'X-Figma-Token':
-        process.env.FIGMA_API_KEY || 'figd_91mOtrt2ow4q2OWvwsROQYPB74fwOa6Vact1JFroc',
+      'X-Figma-Token': process.env.FIGMA_API_KEY || '',
     }),
   },
   transformResponse: async (response, params) => {
