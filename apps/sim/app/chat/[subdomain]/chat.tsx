@@ -16,7 +16,7 @@ import {
   ChatLoadingState,
   type ChatMessage,
   ChatMessageContainer,
-  EmailAuth,
+  // EmailAuth, // COMMENTED OUT: Bypass email authentication for now
   PasswordAuth,
   VoiceInterface,
   WorkflowInputForm,
@@ -396,10 +396,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
             setAuthRequired('password')
             return
           }
-          if (errorData.error === 'auth_required_email') {
-            setAuthRequired('email')
-            return
-          }
+          // COMMENTED OUT: Bypass email authentication for now
+          // if (errorData.error === 'auth_required_email') {
+          //   setAuthRequired('email')
+          //   return
+          // }
         }
 
         throw new Error(`Failed to load chat configuration: ${response.status}`)
@@ -858,16 +859,17 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         />
       )
     }
-    if (authRequired === 'email') {
-      return (
-        <EmailAuth
-          subdomain={subdomain}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
-    }
+    // COMMENTED OUT: Bypass email authentication for now
+    // if (authRequired === 'email') {
+    //   return (
+    //     <EmailAuth
+    //       subdomain={subdomain}
+    //       onAuthSuccess={handleAuthSuccess}
+    //       title={title}
+    //       primaryColor={primaryColor}
+    //     />
+    //   )
+    // }
   }
 
   // Loading state while fetching config using the extracted component

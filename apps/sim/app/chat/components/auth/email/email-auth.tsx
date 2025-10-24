@@ -40,96 +40,108 @@ export default function EmailAuth({
 
   // Handle sending OTP
   const handleSendOtp = async () => {
-    setAuthError(null)
-    setIsSendingOtp(true)
+    // COMMENTED OUT: Bypass email verification for now
+    // setAuthError(null)
+    // setIsSendingOtp(true)
 
-    try {
-      const response = await fetch(`/api/chat/${subdomain}/otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify({ email }),
-      })
+    // try {
+    //   const response = await fetch(`/api/chat/${subdomain}/otp`, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'X-Requested-With': 'XMLHttpRequest',
+    //     },
+    //     body: JSON.stringify({ email }),
+    //   })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        setAuthError(errorData.error || 'Failed to send verification code')
-        return
-      }
+    //   if (!response.ok) {
+    //     const errorData = await response.json()
+    //     setAuthError(errorData.error || 'Failed to send verification code')
+    //     return
+    //   }
 
-      setShowOtpVerification(true)
-    } catch (error) {
-      console.error('Error sending OTP:', error)
-      setAuthError('An error occurred while sending the verification code')
-    } finally {
-      setIsSendingOtp(false)
-    }
+    //   setShowOtpVerification(true)
+    // } catch (error) {
+    //   console.error('Error sending OTP:', error)
+    //   setAuthError('An error occurred while sending the verification code')
+    // } finally {
+    //   setIsSendingOtp(false)
+    // }
+
+    // BYPASS: Directly call onAuthSuccess without verification
+    onAuthSuccess()
   }
 
   const handleVerifyOtp = async (otp?: string) => {
-    const codeToVerify = otp || otpValue
+    // COMMENTED OUT: OTP verification bypassed
+    // const codeToVerify = otp || otpValue
 
-    if (!codeToVerify || codeToVerify.length !== 6) {
-      return
-    }
+    // if (!codeToVerify || codeToVerify.length !== 6) {
+    //   return
+    // }
 
-    setAuthError(null)
-    setIsVerifyingOtp(true)
+    // setAuthError(null)
+    // setIsVerifyingOtp(true)
 
-    try {
-      const response = await fetch(`/api/chat/${subdomain}/otp`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify({ email, otp: codeToVerify }),
-      })
+    // try {
+    //   const response = await fetch(`/api/chat/${subdomain}/otp`, {
+    //     method: 'PUT',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'X-Requested-With': 'XMLHttpRequest',
+    //     },
+    //     body: JSON.stringify({ email, otp: codeToVerify }),
+    //   })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        setAuthError(errorData.error || 'Invalid verification code')
-        return
-      }
+    //   if (!response.ok) {
+    //     const errorData = await response.json()
+    //     setAuthError(errorData.error || 'Invalid verification code')
+    //     return
+    //   }
 
-      onAuthSuccess()
-    } catch (error) {
-      console.error('Error verifying OTP:', error)
-      setAuthError('An error occurred during verification')
-    } finally {
-      setIsVerifyingOtp(false)
-    }
+    //   onAuthSuccess()
+    // } catch (error) {
+    //   console.error('Error verifying OTP:', error)
+    //   setAuthError('An error occurred during verification')
+    // } finally {
+    //   setIsVerifyingOtp(false)
+    // }
+
+    // BYPASS: Directly call onAuthSuccess without verification
+    onAuthSuccess()
   }
 
   const handleResendOtp = async () => {
-    setAuthError(null)
-    setIsSendingOtp(true)
+    // COMMENTED OUT: Resend OTP bypassed
+    // setAuthError(null)
+    // setIsSendingOtp(true)
 
-    try {
-      const response = await fetch(`/api/chat/${subdomain}/otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify({ email }),
-      })
+    // try {
+    //   const response = await fetch(`/api/chat/${subdomain}/otp`, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'X-Requested-With': 'XMLHttpRequest',
+    //     },
+    //     body: JSON.stringify({ email }),
+    //   })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        setAuthError(errorData.error || 'Failed to resend verification code')
-        return
-      }
+    //   if (!response.ok) {
+    //     const errorData = await response.json()
+    //     setAuthError(errorData.error || 'Failed to resend verification code')
+    //     return
+    //   }
 
-      setAuthError('Verification code sent. Please check your email.')
-    } catch (error) {
-      console.error('Error resending OTP:', error)
-      setAuthError('An error occurred while resending the verification code')
-    } finally {
-      setIsSendingOtp(false)
-    }
+    //   setAuthError('Verification code sent. Please check your email.')
+    // } catch (error) {
+    //   console.error('Error resending OTP:', error)
+    //   setAuthError('An error occurred while resending the verification code')
+    // } finally {
+    //   setIsSendingOtp(false)
+    // }
+
+    // BYPASS: Directly call onAuthSuccess without verification
+    onAuthSuccess()
   }
 
   return (
@@ -231,10 +243,10 @@ export default function EmailAuth({
                   {isSendingOtp ? (
                     <div className='flex items-center justify-center'>
                       <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                      Sending Code...
+                      Processing...
                     </div>
                   ) : (
-                    'Continue'
+                    'Continue (No Verification)'
                   )}
                 </Button>
               </form>
