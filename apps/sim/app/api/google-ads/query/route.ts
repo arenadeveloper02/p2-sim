@@ -151,46 +151,65 @@ async function generateSmartGAQL(
 // Helper function to extract date ranges from user input
 function extractDateRanges(input: string): Array<{ start: string; end: string }> {
   const dateRanges: Array<{ start: string; end: string }> = []
-  
+
   // First, try to match the full pattern with explicit dates
   // Pattern 1: "Sept 8 to 14 2025 and then 15 to 21 2025"
-  const fullPattern = /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})/i
+  const fullPattern =
+    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})/i
   const fullMatch = input.match(fullPattern)
-  
+
   if (fullMatch) {
     // Extract month from the beginning
     const monthStr = fullMatch[0].match(/^[A-Za-z]+/)?.[0] || ''
     const monthMap: Record<string, string> = {
-      'jan': '01', 'january': '01', 'feb': '02', 'february': '02',
-      'mar': '03', 'march': '03', 'apr': '04', 'april': '04',
-      'may': '05', 'jun': '06', 'june': '06', 'jul': '07', 'july': '07',
-      'aug': '08', 'august': '08', 'sep': '09', 'sept': '09', 'september': '09',
-      'oct': '10', 'october': '10', 'nov': '11', 'november': '11',
-      'dec': '12', 'december': '12'
+      jan: '01',
+      january: '01',
+      feb: '02',
+      february: '02',
+      mar: '03',
+      march: '03',
+      apr: '04',
+      april: '04',
+      may: '05',
+      jun: '06',
+      june: '06',
+      jul: '07',
+      july: '07',
+      aug: '08',
+      august: '08',
+      sep: '09',
+      sept: '09',
+      september: '09',
+      oct: '10',
+      october: '10',
+      nov: '11',
+      november: '11',
+      dec: '12',
+      december: '12',
     }
     const month = monthMap[monthStr.toLowerCase()] || '09'
-    
+
     // First range
     const start1 = fullMatch[1].padStart(2, '0')
     const end1 = fullMatch[2].padStart(2, '0')
     const year1 = fullMatch[3]
-    dateRanges.push({ 
-      start: `${year1}-${month}-${start1}`, 
-      end: `${year1}-${month}-${end1}` 
+    dateRanges.push({
+      start: `${year1}-${month}-${start1}`,
+      end: `${year1}-${month}-${end1}`,
     })
-    
+
     // Second range (same month)
     const start2 = fullMatch[4].padStart(2, '0')
     const end2 = fullMatch[5].padStart(2, '0')
     const year2 = fullMatch[6]
-    dateRanges.push({ 
-      start: `${year2}-${month}-${start2}`, 
-      end: `${year2}-${month}-${end2}` 
+    dateRanges.push({
+      start: `${year2}-${month}-${start2}`,
+      end: `${year2}-${month}-${end2}`,
     })
-    
+
     return dateRanges
   }
-  
+
   // Fallback to individual patterns
   const patterns = [
     // Month name patterns: "Sept 8 to 14 2025" or "September 8-14, 2025"
@@ -198,16 +217,16 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
     // Numeric patterns: "9/8 to 9/14 2025" or "9/8/2025 to 9/14/2025"
     /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+|-|–)(\d{1,2})\/(\d{1,2})\/(\d{4})/gi,
     // ISO format: "2025-09-08 to 2025-09-14"
-    /(\d{4})-(\d{2})-(\d{2})(?:\s+to\s+|-|–)(\d{4})-(\d{2})-(\d{2})/gi
+    /(\d{4})-(\d{2})-(\d{2})(?:\s+to\s+|-|–)(\d{4})-(\d{2})-(\d{2})/gi,
   ]
-  
+
   for (const pattern of patterns) {
     const matches = [...input.matchAll(pattern)]
     for (const match of matches) {
       try {
         let startDate: string
         let endDate: string
-        
+
         if (match[0].includes('/')) {
           // Numeric format: M/D/YYYY
           const month1 = match[1].padStart(2, '0')
@@ -226,12 +245,30 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
           // Month name format: "Sept 8 to 14 2025"
           const monthStr = match[0].match(/^[A-Za-z]+/)?.[0] || ''
           const monthMap: Record<string, string> = {
-            'jan': '01', 'january': '01', 'feb': '02', 'february': '02',
-            'mar': '03', 'march': '03', 'apr': '04', 'april': '04',
-            'may': '05', 'jun': '06', 'june': '06', 'jul': '07', 'july': '07',
-            'aug': '08', 'august': '08', 'sep': '09', 'sept': '09', 'september': '09',
-            'oct': '10', 'october': '10', 'nov': '11', 'november': '11',
-            'dec': '12', 'december': '12'
+            jan: '01',
+            january: '01',
+            feb: '02',
+            february: '02',
+            mar: '03',
+            march: '03',
+            apr: '04',
+            april: '04',
+            may: '05',
+            jun: '06',
+            june: '06',
+            jul: '07',
+            july: '07',
+            aug: '08',
+            august: '08',
+            sep: '09',
+            sept: '09',
+            september: '09',
+            oct: '10',
+            october: '10',
+            nov: '11',
+            november: '11',
+            dec: '12',
+            december: '12',
           }
           const month = monthMap[monthStr.toLowerCase()] || '01'
           const day1 = match[1].padStart(2, '0')
@@ -240,14 +277,14 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
           startDate = `${year}-${month}-${day1}`
           endDate = `${year}-${month}-${day2}`
         }
-        
+
         dateRanges.push({ start: startDate, end: endDate })
       } catch (e) {
         logger.warn('Failed to parse date range', { match: match[0], error: e })
       }
     }
   }
-  
+
   return dateRanges
 }
 
@@ -266,15 +303,15 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 
   // Step 1: Extract date ranges from user input
   const dateRanges = extractDateRanges(userInput)
-  logger.info('Extracted date ranges from user input', { 
-    userInput, 
+  logger.info('Extracted date ranges from user input', {
+    userInput,
     dateRangesFound: dateRanges.length,
-    dateRanges 
+    dateRanges,
   })
 
   // Step 2: Determine if this is a comparison query
   const isComparisonDetected = dateRanges.length === 2
-  
+
   // Step 3: Modify the prompt if comparison is detected
   let modifiedInput = userInput
   if (isComparisonDetected) {
@@ -285,10 +322,10 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 CRITICAL: You MUST set "is_comparison": true and provide both "gaql_query" (for main period) and "comparison_query" (for comparison period).
 
 Original question: ${userInput}`
-    
+
     logger.info('Comparison mode activated', {
       mainPeriod: `${dateRanges[1].start} to ${dateRanges[1].end}`,
-      comparisonPeriod: `${dateRanges[0].start} to ${dateRanges[0].end}`
+      comparisonPeriod: `${dateRanges[0].start} to ${dateRanges[0].end}`,
     })
   }
 
@@ -592,8 +629,8 @@ Example for "Sept 8-14 and then 15-21":
         },
       ],
       apiKey,
-      temperature: 0.0,  // Set to 0 for completely deterministic query generation
-      maxTokens: 1000,  // Increased for comparison queries which need more tokens
+      temperature: 0.0, // Set to 0 for completely deterministic query generation
+      maxTokens: 1000, // Increased for comparison queries which need more tokens
     })
 
     // Extract content from AI response
@@ -610,10 +647,10 @@ Example for "Sept 8-14 and then 15-21":
         aiContent = aiResponse.output.content as string
       }
     }
-    logger.info('===== AI RAW RESPONSE =====', { 
+    logger.info('===== AI RAW RESPONSE =====', {
       userInput,
       aiContent,
-      aiContentLength: aiContent.length 
+      aiContentLength: aiContent.length,
     })
 
     // Check if AI returned an error message instead of JSON
@@ -678,18 +715,18 @@ Example for "Sept 8-14 and then 15-21":
     cleanedGaqlQuery = cleanedGaqlQuery.replace(/\s+GROUP\s+BY\s+[^ORDER\s]+/gi, '')
 
     // CRITICAL FIX: If query uses segments.date in WHERE but not in SELECT, add it
-    if (cleanedGaqlQuery.includes('segments.date') && cleanedGaqlQuery.toUpperCase().includes('WHERE')) {
+    if (
+      cleanedGaqlQuery.includes('segments.date') &&
+      cleanedGaqlQuery.toUpperCase().includes('WHERE')
+    ) {
       // Check if segments.date is already in SELECT
       const selectMatch = cleanedGaqlQuery.match(/SELECT\s+(.*?)\s+FROM/is)
       if (selectMatch && !selectMatch[1].includes('segments.date')) {
         // Insert segments.date right after SELECT keyword
-        cleanedGaqlQuery = cleanedGaqlQuery.replace(
-          /SELECT\s+/i,
-          'SELECT segments.date, '
-        )
+        cleanedGaqlQuery = cleanedGaqlQuery.replace(/SELECT\s+/i, 'SELECT segments.date, ')
         logger.info('Auto-added segments.date to SELECT clause', {
           originalQuery: gaqlQuery,
-          fixedQuery: cleanedGaqlQuery
+          fixedQuery: cleanedGaqlQuery,
         })
       }
     }
@@ -701,7 +738,12 @@ Example for "Sept 8-14 and then 15-21":
     const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
     const hasOrOperator = /\bOR\b/i.test(cleanedGaqlQuery)
 
-    if (hasInvalidChars || hasGroupBy || hasOrOperator || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
+    if (
+      hasInvalidChars ||
+      hasGroupBy ||
+      hasOrOperator ||
+      !cleanedGaqlQuery.toUpperCase().includes('SELECT')
+    ) {
       logger.error('AI generated invalid GAQL query', {
         originalQuery: gaqlQuery,
         cleanedQuery: cleanedGaqlQuery,
@@ -710,7 +752,9 @@ Example for "Sept 8-14 and then 15-21":
         hasOrOperator,
         hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
       })
-      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}. GAQL does not support OR operators. For comparisons, use isComparison: true with separate queries.`)
+      throw new Error(
+        `AI generated invalid GAQL query: ${gaqlQuery}. GAQL does not support OR operators. For comparisons, use isComparison: true with separate queries.`
+      )
     }
 
     logger.info('AI generated GAQL successfully', {
@@ -731,7 +775,9 @@ Example for "Sept 8-14 and then 15-21":
         new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: parsedResponse.end_date || new Date().toISOString().split('T')[0],
       isComparison: parsedResponse.is_comparison || false,
-      comparisonQuery: parsedResponse.comparison_query ? fixSegmentsDateInQuery(parsedResponse.comparison_query) : undefined,
+      comparisonQuery: parsedResponse.comparison_query
+        ? fixSegmentsDateInQuery(parsedResponse.comparison_query)
+        : undefined,
       comparisonStartDate: parsedResponse.comparison_start_date,
       comparisonEndDate: parsedResponse.comparison_end_date,
     }
@@ -744,19 +790,16 @@ Example for "Sept 8-14 and then 15-21":
 // Helper function to fix segments.date in queries
 function fixSegmentsDateInQuery(query: string): string {
   let fixedQuery = query.trim()
-  
+
   // If query uses segments.date in WHERE but not in SELECT, add it
   if (fixedQuery.includes('segments.date') && fixedQuery.toUpperCase().includes('WHERE')) {
     const selectMatch = fixedQuery.match(/SELECT\s+(.*?)\s+FROM/is)
     if (selectMatch && !selectMatch[1].includes('segments.date')) {
-      fixedQuery = fixedQuery.replace(
-        /SELECT\s+/i,
-        'SELECT segments.date, '
-      )
+      fixedQuery = fixedQuery.replace(/SELECT\s+/i, 'SELECT segments.date, ')
       logger.info('Auto-added segments.date to comparison query SELECT clause')
     }
   }
-  
+
   return fixedQuery
 }
 
@@ -1233,7 +1276,7 @@ export async function POST(request: NextRequest) {
     // Make the API request(s) using the actual account ID and generated query
     logger.info(`[${requestId}] ===== MAIN WEEK QUERY =====`, {
       dateRange: `${startDate} to ${endDate}`,
-      query: gaqlQuery
+      query: gaqlQuery,
     })
     const apiResult = await makeGoogleAdsRequest(accountInfo.id, gaqlQuery)
     let comparisonApiResult = null
@@ -1242,7 +1285,7 @@ export async function POST(request: NextRequest) {
     if (isComparison && comparisonQuery) {
       logger.info(`[${requestId}] ===== COMPARISON WEEK QUERY =====`, {
         dateRange: `${comparisonStartDate} to ${comparisonEndDate}`,
-        query: comparisonQuery
+        query: comparisonQuery,
       })
       comparisonApiResult = await makeGoogleAdsRequest(accountInfo.id, comparisonQuery)
     }
@@ -1255,7 +1298,7 @@ export async function POST(request: NextRequest) {
       clicks: primaryResults.accountTotals.clicks,
       conversions: primaryResults.accountTotals.conversions,
       conversions_value: primaryResults.accountTotals.conversions_value,
-      campaigns: primaryResults.campaigns.length
+      campaigns: primaryResults.campaigns.length,
     })
 
     // Process comparison period results if available
@@ -1273,7 +1316,7 @@ export async function POST(request: NextRequest) {
         clicks: comparisonResults.accountTotals.clicks,
         conversions: comparisonResults.accountTotals.conversions,
         conversions_value: comparisonResults.accountTotals.conversions_value,
-        campaigns: comparisonResults.campaigns.length
+        campaigns: comparisonResults.campaigns.length,
       })
     }
 
@@ -1373,7 +1416,7 @@ export async function POST(request: NextRequest) {
       period_type: periodType,
       is_comparison: isComparison || false,
       accounts_found: 1,
-      
+
       // Main Week Data (Current/Requested Period)
       mainWeek: {
         dateRange: `${startDate} to ${endDate}`,
@@ -1408,13 +1451,14 @@ export async function POST(request: NextRequest) {
           cost_per_conversion:
             primaryResults.accountTotals.conversions > 0
               ? Math.round(
-                  (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100
+                  (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) *
+                    100
                 ) / 100
               : 0,
         },
         campaigns: primaryResults.campaigns,
       },
-      
+
       // Comparison Week Data (Previous Period) - Only if comparison requested
       comparisonWeek: comparisonResults
         ? {
@@ -1463,7 +1507,7 @@ export async function POST(request: NextRequest) {
             campaigns: comparisonResults.campaigns,
           }
         : null,
-      
+
       // Legacy fields for backward compatibility
       date_range: `${startDate} to ${endDate}`,
       comparison_date_range: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
@@ -1474,7 +1518,7 @@ export async function POST(request: NextRequest) {
         conversions: primaryResults.accountTotals.conversions,
         conversions_value: primaryResults.accountTotals.conversions_value || 0,
       },
-      
+
       results: [accountResult],
       data_availability: {
         overall_status: 'available',
