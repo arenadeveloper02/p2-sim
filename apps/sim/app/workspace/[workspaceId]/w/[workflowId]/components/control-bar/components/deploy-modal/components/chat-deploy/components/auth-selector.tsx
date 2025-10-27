@@ -257,9 +257,6 @@ export function AuthSelector({
             <h3 className='mb-2 font-medium text-sm'>Email Access Settings</h3>
             {approvalStatus?.status === 'APPROVED' && (
               <div className='mb-2 flex items-center text-green-600 text-xs'>
-                <div className='mr-2 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700'>
-                  Approved
-                </div>
                 <span>Internal access (@position2.com) is automatically included</span>
               </div>
             )}
