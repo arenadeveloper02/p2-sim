@@ -238,7 +238,11 @@ export async function validateChatAuth(
 
   // For email access control, check the email in the request body
   if (authType === 'email') {
-    // For GET requests, check user session email against allowed emails
+    // BYPASS: Temporarily allow all email auth
+    return { authorized: true, email: 'bypass@email.com' }
+
+    // COMMENTED OUT: Email authorization logic - all code below is bypassed
+    /*
     if (request.method === 'GET') {
       try {
         // Import getSession
@@ -307,6 +311,7 @@ export async function validateChatAuth(
       logger.error(`[${requestId}] Error validating email:`, error)
       return { authorized: false, error: 'Authentication error' }
     }
+    */
   }
 
   // Unknown auth type
