@@ -238,46 +238,71 @@ export async function validateChatAuth(
 
   // For email access control, check the email in the request body
   if (authType === 'email') {
-    // BYPASS: For GET requests, allow access without email authentication
+    // For GET requests, check user session email against allowed emails
     if (request.method === 'GET') {
-      return { authorized: true, email: 'bypass@email.com' }
+      try {
+        // Import getSession
+        const { getSession } = await import('@/lib/auth')
+        const session = await getSession()
+
+        if (!session?.user?.email) {
+          return { authorized: false, error: 'auth_required_email' }
+        }
+
+        const userEmail = session.user.email
+        const allowedEmails = deployment.allowedEmails || []
+
+        // Check exact email matches
+        if (allowedEmails.includes(userEmail)) {
+          return { authorized: true, email: userEmail }
+        }
+
+        // Check domain matches (prefixed with @)
+        const domain = userEmail.split('@')[1]
+        if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
+          return { authorized: true, email: userEmail }
+        }
+
+        // User email not in allowed list
+        logger.warn(`[${requestId}] User email ${userEmail} not authorized`)
+        return { authorized: false, error: 'Email not authorized' }
+      } catch (error) {
+        logger.error(`[${requestId}] Error checking email auth:`, error)
+        return { authorized: false, error: 'Authentication error' }
+      }
     }
 
     try {
-      // Use the parsed body if provided, otherwise allow access
+      // For POST requests, check email from request body
       if (!parsedBody) {
-        return { authorized: true, email: 'bypass@email.com' }
+        return { authorized: false, error: 'Email is required' }
       }
 
       const { email, input } = parsedBody
 
-      // BYPASS: Allow chat messages without email authentication
+      // If this is a chat message, not an auth attempt
       if (input && !email) {
-        return { authorized: true, email: 'bypass@email.com' }
+        return { authorized: false, error: 'auth_required_email' }
       }
 
-      // BYPASS: Allow access even without email
       if (!email) {
-        return { authorized: true, email: 'bypass@email.com' }
+        return { authorized: false, error: 'Email is required' }
       }
 
       const allowedEmails = deployment.allowedEmails || []
 
       // Check exact email matches
       if (allowedEmails.includes(email)) {
-        // BYPASS: Email is allowed, skip OTP verification for now
         return { authorized: true, email }
       }
 
       // Check domain matches (prefixed with @)
       const domain = email.split('@')[1]
       if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
-        // BYPASS: Domain is allowed, skip OTP verification for now
         return { authorized: true, email }
       }
 
-      // BYPASS: Allow access even if email is not in allowedEmails for now
-      return { authorized: true, email }
+      return { authorized: false, error: 'Email not authorized' }
     } catch (error) {
       logger.error(`[${requestId}] Error validating email:`, error)
       return { authorized: false, error: 'Authentication error' }

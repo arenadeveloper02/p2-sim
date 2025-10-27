@@ -16,7 +16,7 @@ import {
   ChatLoadingState,
   type ChatMessage,
   ChatMessageContainer,
-  // EmailAuth, // COMMENTED OUT: Bypass email authentication for now
+  EmailAuth,
   PasswordAuth,
   VoiceInterface,
   WorkflowInputForm,
@@ -388,19 +388,32 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       })
 
       if (!response.ok) {
-        // Check if auth is required
-        if (response.status === 401) {
+        // Check if auth is required or unauthorized
+        if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
 
           if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
             return
           }
-          // COMMENTED OUT: Bypass email authentication for now
-          // if (errorData.error === 'auth_required_email') {
-          //   setAuthRequired('email')
-          //   return
-          // }
+          if (errorData.error === 'auth_required_email') {
+            setAuthRequired('email')
+            return
+          }
+          // If user email is not authorized, show error and redirect
+          if (
+            errorData.error === 'Email not authorized' ||
+            errorData.message === 'Email not authorized'
+          ) {
+            setError('You do not have access to this chat.')
+            // Redirect after 3 seconds
+            setTimeout(() => {
+              if (typeof window !== 'undefined') {
+                window.history.back()
+              }
+            }, 3000)
+            return
+          }
         }
 
         throw new Error(`Failed to load chat configuration: ${response.status}`)
@@ -859,17 +872,16 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         />
       )
     }
-    // COMMENTED OUT: Bypass email authentication for now
-    // if (authRequired === 'email') {
-    //   return (
-    //     <EmailAuth
-    //       subdomain={subdomain}
-    //       onAuthSuccess={handleAuthSuccess}
-    //       title={title}
-    //       primaryColor={primaryColor}
-    //     />
-    //   )
-    // }
+    if (authRequired === 'email') {
+      return (
+        <EmailAuth
+          subdomain={subdomain}
+          onAuthSuccess={handleAuthSuccess}
+          title={title}
+          primaryColor={primaryColor}
+        />
+      )
+    }
   }
 
   // Loading state while fetching config using the extracted component

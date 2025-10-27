@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Copy, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 import { cn, generatePassword } from '@/lib/utils'
@@ -33,6 +33,30 @@ export function AuthSelector({
   const [newEmail, setNewEmail] = useState('')
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string }>>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+
+  // Fetch users list on component mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setLoadingUsers(true)
+      try {
+        const response = await fetch('/api/users/approval')
+        if (response.ok) {
+          const data = await response.json()
+          setUsers(data.users || [])
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error)
+      } finally {
+        setLoadingUsers(false)
+      }
+    }
+
+    if (authType === 'email') {
+      fetchUsers()
+    }
+  }, [authType])
 
   const handleGeneratePassword = () => {
     const password = generatePassword(24)
@@ -46,14 +70,25 @@ export function AuthSelector({
   }
 
   const handleAddEmail = () => {
+    // Validate email format
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) && !newEmail.startsWith('@')) {
       setEmailError('Please enter a valid email or domain (e.g., user@example.com or @example.com)')
       return
     }
 
+    // Check if already in list
     if (emails.includes(newEmail)) {
       setEmailError('This email or domain is already in the list')
       return
+    }
+
+    // Validate email against user list (only for non-domain entries)
+    if (!newEmail.startsWith('@') && users.length > 0) {
+      const userExists = users.some((user) => user.email.toLowerCase() === newEmail.toLowerCase())
+      if (!userExists) {
+        setEmailError('User does not have access to Agentic AI')
+        return
+      }
     }
 
     onEmailsChange([...emails, newEmail])
