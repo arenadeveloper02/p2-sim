@@ -151,15 +151,31 @@ export function ChatDeploy({
       currentEmails: formData.emails,
       isApproved: approvalStatus?.status === 'APPROVED',
     })
-    if (
-      !existingChat &&
-      approvalStatus?.status === 'APPROVED' &&
-      !formData.emails.includes('@position2.com')
-    ) {
-      console.log('Adding @position2.com to emails')
-      updateField('emails', ['@position2.com'])
+    const currentUserEmail = session?.user?.email
+
+    if (!existingChat) {
+      let updatedEmails = [...formData.emails]
+
+      // If NOT approved, add current user email to the list if not present
+      if (
+        approvalStatus?.status !== 'APPROVED' &&
+        currentUserEmail &&
+        !formData.emails.includes(currentUserEmail)
+      ) {
+        updatedEmails = [...formData.emails, currentUserEmail]
+      }
+
+      // If approved, add @position2.com if not already present
+      if (approvalStatus?.status === 'APPROVED' && !updatedEmails.includes('@position2.com')) {
+        updatedEmails = [...updatedEmails, '@position2.com']
+      }
+
+      // Only update if emails actually changed
+      if (JSON.stringify(updatedEmails) !== JSON.stringify(formData.emails)) {
+        updateField('emails', updatedEmails)
+      }
     }
-  }, [approvalStatus, existingChat, formData.emails, updateField])
+  }, [approvalStatus, existingChat, formData.emails, updateField, session?.user?.email])
 
   useEffect(() => {
     if (workflowId) {

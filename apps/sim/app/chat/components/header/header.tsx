@@ -24,6 +24,36 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
   const params = new URLSearchParams(window.location.search)
   const workspaceId = params.get('workspaceId')
+  const isFromControlBar = params.get('fromControlBar') === 'true'
+
+  // Determine environment and construct exit URL
+  const getExitUrl = () => {
+    // If opened from control bar, redirect to workspace
+    if (isFromControlBar && workspaceId && workflowId) {
+      return `/workspace/${workspaceId}/w/${workflowId}`
+    }
+
+    // Otherwise redirect based on environment
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname
+
+      if (hostname.includes('localhost')) {
+        return 'http://localhost:3001/hub/agents'
+      }
+      if (hostname.includes('dev-agent')) {
+        return 'https://dev.thearena.ai/hub/agents'
+      }
+      if (hostname.includes('test-agent')) {
+        return 'https://test.thearena.ai/hub/agents'
+      }
+      // prod - agent.thearena.ai
+      return 'https://app.thearena.ai/hub/agents'
+    }
+
+    return '/'
+  }
+
+  const exitUrl = getExitUrl()
 
   return (
     <div className='flex items-center justify-between bg-background/95 px-6 py-4 pt-6 pl-[18px] backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-8 md:pt-4 md:pl-[18px]'>
@@ -54,7 +84,7 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
         </h2>
       </div>
       <div className='flex items-center gap-2'>
-        <Link href={workspaceId && workflowId ? `/workspace/${workspaceId}/w/${workflowId}` : '/'}>
+        <Link href={exitUrl}>
           <Button
             variant='ghost'
             size='icon'
