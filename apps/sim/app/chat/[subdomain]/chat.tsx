@@ -403,7 +403,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           // If user email is not authorized, show error and redirect
           if (
             errorData.error === 'Email not authorized' ||
-            errorData.message === 'Email not authorized'
+            errorData.message === 'Email not authorized' ||
+            errorData.error === 'You do not have access to this chat' ||
+            errorData.message === 'You do not have access to this chat'
           ) {
             setError('You do not have access to this chat.')
             // Redirect after 3 seconds
