@@ -30,11 +30,7 @@ export function getBaseURL() {
 
 export const client = createAuthClient({
   baseURL: getBaseURL(),
-  cookies: {
-    domain: '.thearena.ai',
-    secure: true,
-    sameSite: 'lax',
-  },
+
   plugins: [
     emailOTPClient(),
     genericOAuthClient(),
