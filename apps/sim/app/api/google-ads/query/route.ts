@@ -358,8 +358,13 @@ Original question: ${userInput}`
 
 **METRICS:**
 - Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
-- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion, metrics.conversion_rate
+- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion
 - Quality: metrics.quality_score (keywords only), metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
+
+**CRITICAL - CALCULATED METRICS (NOT AVAILABLE IN API):**
+- ❌ metrics.conversion_rate - DOES NOT EXIST! Calculate as: (conversions / clicks) × 100
+- ❌ metrics.roas - DOES NOT EXIST! Calculate as: conversions_value / cost
+- To get conversion rate data, fetch metrics.conversions and metrics.clicks, then calculate it yourself
 
 **SEGMENTS:**
 - Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
