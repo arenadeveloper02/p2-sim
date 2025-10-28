@@ -40,10 +40,12 @@ export default function EmailAuth({
 
   // Handle sending OTP
   const handleSendOtp = async () => {
-    // COMMENTED OUT: Bypass email verification for now
+    // BYPASS: Directly call onAuthSuccess without verification for now
+    onAuthSuccess()
+
+    // COMMENTED OUT: Email verification temporarily bypassed
     // setAuthError(null)
     // setIsSendingOtp(true)
-
     // try {
     //   const response = await fetch(`/api/chat/${subdomain}/otp`, {
     //     method: 'POST',
@@ -53,13 +55,11 @@ export default function EmailAuth({
     //     },
     //     body: JSON.stringify({ email }),
     //   })
-
     //   if (!response.ok) {
     //     const errorData = await response.json()
     //     setAuthError(errorData.error || 'Failed to send verification code')
     //     return
     //   }
-
     //   setShowOtpVerification(true)
     // } catch (error) {
     //   console.error('Error sending OTP:', error)
@@ -67,9 +67,6 @@ export default function EmailAuth({
     // } finally {
     //   setIsSendingOtp(false)
     // }
-
-    // BYPASS: Directly call onAuthSuccess without verification
-    onAuthSuccess()
   }
 
   const handleVerifyOtp = async (otp?: string) => {

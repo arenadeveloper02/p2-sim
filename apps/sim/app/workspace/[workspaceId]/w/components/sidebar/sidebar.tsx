@@ -918,7 +918,7 @@ export function Sidebar() {
               <span
                 onClick={() => {
                   const hostname = window.location.hostname
-                  const redirectUrl = getRedirectUrl(hostname)
+                  const redirectUrl = `${getRedirectUrl(hostname)}hub/agents`
 
                   window.location.href = redirectUrl
                 }}

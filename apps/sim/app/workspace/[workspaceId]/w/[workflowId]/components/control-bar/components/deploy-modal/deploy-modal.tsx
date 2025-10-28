@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
+import { useSession } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -11,6 +12,7 @@ import {
   DeploymentInfo,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components'
 import { ChatDeploy } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/chat-deploy'
+import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -36,6 +38,7 @@ interface DeployModalProps {
   isSidebar?: boolean
   workspaceId?: string
   onDeploymentComplete?: () => void
+  approvalStatus?: any
 }
 
 interface ApiKey {
@@ -76,12 +79,29 @@ export function DeployModal({
   isSidebar = false,
   workspaceId,
   onDeploymentComplete,
+  approvalStatus,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
   )
   const isDeployed = deploymentStatus?.isDeployed || false
   const setDeploymentStatus = useWorkflowRegistry((state) => state.setDeploymentStatus)
+
+  // Get session for userId
+  const { data: session } = useSession()
+  const userId = session?.user?.id || 'unknown'
+
+  // Check if workflow has changes from saved/approved state
+  // If undo size is 0, we're at the saved/approved state (no changes)
+  // If undo size > 0, there are changes from the saved state
+  const stacks = useUndoRedoStore((s) => s.stacks)
+  const undoRedoSizes = (() => {
+    const key = workflowId && userId ? `${workflowId}:${userId}` : ''
+    const stack = (key && stacks[key]) || { undo: [], redo: [] }
+    return { undoSize: stack.undo.length, redoSize: stack.redo.length }
+  })()
+  const hasWorkflowChanges = undoRedoSizes.undoSize > 0
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUndeploying, setIsUndeploying] = useState(false)
   const [deploymentInfo, setDeploymentInfo] = useState<WorkflowDeploymentInfo | null>(null)
@@ -531,6 +551,7 @@ export function DeployModal({
                   isSidebar={isSidebar}
                   workspaceId={workspaceId}
                   onOpenChange={onOpenChange}
+                  approvalStatus={approvalStatus}
                 />
               )}
             </div>
@@ -574,7 +595,8 @@ export function DeployModal({
             </Button>
 
             <div className='flex gap-2'>
-              {chatExists && (
+              {/* Delete button hidden for now */}
+              {/* {chatExists && (
                 <Button
                   type='button'
                   onClick={() => {
@@ -599,12 +621,18 @@ export function DeployModal({
                 >
                   Delete
                 </Button>
-              )}
+              )} */}
               <Button
                 type='button'
                 onClick={handleChatFormSubmit}
                 disabled={
-                  chatSubmitting || (!chatExists && isLoading) || (chatExists && !isChatFormValid)
+                  chatSubmitting ||
+                  (!chatExists && isLoading) ||
+                  (chatExists && !isChatFormValid) ||
+                  // Disable for redeployment when approved and has workflow changes (needsRedeployment implies changes exist)
+                  (approvalStatus?.status === 'APPROVED' && chatExists && needsRedeployment) ||
+                  // Disable for first-time deployment when approved and user made changes from saved state
+                  (approvalStatus?.status === 'APPROVED' && !chatExists && hasWorkflowChanges)
                 }
                 className={cn(
                   'gap-2 font-medium',

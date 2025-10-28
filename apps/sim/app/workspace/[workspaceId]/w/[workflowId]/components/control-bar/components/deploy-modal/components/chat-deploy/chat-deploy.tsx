@@ -22,13 +22,14 @@ import {
   Skeleton,
   Textarea,
 } from '@/components/ui'
+import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/auth-selector'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useUndoRedoStore } from '@/stores/undo-redo'
 
 const logger = createLogger('ChatDeploy')
 
@@ -55,6 +56,7 @@ interface ChatDeployProps {
   isSidebar?: boolean
   workspaceId?: string
   onOpenChange?: any
+  approvalStatus?: any
 }
 
 interface ExistingChat {
@@ -88,6 +90,7 @@ export function ChatDeploy({
   isSidebar,
   workspaceId,
   onOpenChange,
+  approvalStatus,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -109,10 +112,23 @@ export function ChatDeploy({
 
   const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
-  const { getApprovalStatus } = useWorkflowRegistry()
   const formRef = useRef<HTMLFormElement>(null)
   const [isSubdomainValid, setIsSubdomainValid] = useState(true)
-  const [approvalStatus, setApprovalStatus] = useState<any>(null)
+
+  // Get session for userId
+  const { data: session } = useSession()
+  const userId = session?.user?.id || 'unknown'
+
+  // Check if workflow has changes from saved/approved state
+  // If undo size is 0, we're at the saved/approved state (no changes)
+  // If undo size > 0, there are changes from the saved state
+  const stacks = useUndoRedoStore((s: any) => s.stacks)
+  const undoRedoSizes = (() => {
+    const key = workflowId && userId ? `${workflowId}:${userId}` : ''
+    const stack = (key && stacks[key]) || { undo: [], redo: [] }
+    return { undoSize: stack.undo.length, redoSize: stack.redo.length }
+  })()
+  const hasWorkflowChanges = undoRedoSizes.undoSize > 0
   const isFormValid =
     isSubdomainValid &&
     Boolean(formData.title.trim()) &&
@@ -135,33 +151,37 @@ export function ChatDeploy({
       currentEmails: formData.emails,
       isApproved: approvalStatus?.status === 'APPROVED',
     })
-    if (
-      !existingChat &&
-      approvalStatus?.status === 'APPROVED' &&
-      !formData.emails.includes('@position2.com')
-    ) {
-      console.log('Adding @position2.com to emails')
-      updateField('emails', ['@position2.com'])
+    const currentUserEmail = session?.user?.email
+
+    if (!existingChat) {
+      let updatedEmails = [...formData.emails]
+
+      // If NOT approved, add current user email to the list if not present
+      if (
+        approvalStatus?.status !== 'APPROVED' &&
+        currentUserEmail &&
+        !formData.emails.includes(currentUserEmail)
+      ) {
+        updatedEmails = [...formData.emails, currentUserEmail]
+      }
+
+      // If approved, add @position2.com if not already present
+      if (approvalStatus?.status === 'APPROVED' && !updatedEmails.includes('@position2.com')) {
+        updatedEmails = [...updatedEmails, '@position2.com']
+      }
+
+      // Only update if emails actually changed
+      if (JSON.stringify(updatedEmails) !== JSON.stringify(formData.emails)) {
+        updateField('emails', updatedEmails)
+      }
     }
-  }, [approvalStatus, existingChat, formData.emails, updateField])
+  }, [approvalStatus, existingChat, formData.emails, updateField, session?.user?.email])
 
   useEffect(() => {
     if (workflowId) {
       fetchExistingChat()
-      fetchApprovalStatus()
     }
   }, [workflowId])
-
-  const fetchApprovalStatus = async () => {
-    try {
-      const approval = await getApprovalStatus(workflowId)
-      console.log('Approval status fetched:', approval)
-      setApprovalStatus(approval)
-    } catch (error) {
-      logger.error('Error fetching approval status:', error)
-      setApprovalStatus(null)
-    }
-  }
 
   const fetchExistingChat = async () => {
     try {
@@ -399,6 +419,26 @@ export function ChatDeploy({
           <Alert variant='destructive'>
             <AlertTriangle className='h-4 w-4' />
             <AlertDescription>{errors.general}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Show alert for redeployment of existing chat */}
+        {approvalStatus?.status === 'APPROVED' && needsRedeployment && existingChat && (
+          <Alert variant='destructive'>
+            <AlertTriangle className='h-4 w-4' />
+            <AlertDescription>
+              This agent is already published. Please send for approval before redeploying.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Show alert for first-time deployment with changes */}
+        {approvalStatus?.status === 'APPROVED' && !existingChat && hasWorkflowChanges && (
+          <Alert variant='destructive'>
+            <AlertTriangle className='h-4 w-4' />
+            <AlertDescription>
+              This agent has new changes. Please send for approval before deploying
+            </AlertDescription>
           </Alert>
         )}
 

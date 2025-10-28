@@ -73,10 +73,9 @@ export async function POST(
     })
 
     // Check if the chat is active
-    // BYPASS: Temporarily allow access even if chat is not marked as active
     if (!deployment.isActive) {
-      logger.warn(`[${requestId}] Chat is not active but allowing access: ${subdomain}`)
-      // return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
+      logger.warn(`[${requestId}] Chat is not active: ${subdomain}`)
+      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
     }
 
     // Validate authentication with the parsed body
@@ -280,10 +279,9 @@ export async function GET(
     const deployment = deploymentResult[0]
 
     // Check if the chat is active
-    // BYPASS: Temporarily allow access even if chat is not marked as active
     if (!deployment.isActive) {
-      logger.warn(`[${requestId}] Chat is not active but allowing access: ${subdomain}`)
-      // return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
+      logger.warn(`[${requestId}] Chat is not active: ${subdomain}`)
+      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
     }
 
     // Check for auth cookie first
