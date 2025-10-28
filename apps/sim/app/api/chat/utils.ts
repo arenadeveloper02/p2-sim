@@ -178,7 +178,7 @@ export async function validateChatAuth(
   deployment: any,
   request: NextRequest,
   parsedBody?: any
-): Promise<{ authorized: boolean; error?: string; email?: string }> {
+): Promise<{ authorized: boolean; error?: string }> {
   const authType = deployment.authType || 'public'
 
   // Public chats are accessible to everyone
@@ -232,6 +232,52 @@ export async function validateChatAuth(
       return { authorized: true }
     } catch (error) {
       logger.error(`[${requestId}] Error validating password:`, error)
+      return { authorized: false, error: 'Authentication error' }
+    }
+  }
+
+  // For email access control, check the email in the request body
+  if (authType === 'email') {
+    // For GET requests, just notify that authentication is required
+    if (request.method === 'GET') {
+      return { authorized: false, error: 'auth_required_email' }
+    }
+
+    try {
+      // Ensure request body is parsed
+      if (!parsedBody) {
+        return { authorized: false, error: 'Email is required' }
+      }
+
+      const { email, input } = parsedBody
+
+      // If chat message sent before email auth
+      if (input && !email) {
+        return { authorized: false, error: 'auth_required_email' }
+      }
+
+      if (!email) {
+        return { authorized: false, error: 'Email is required' }
+      }
+
+      const allowedEmails = deployment.allowedEmails || []
+
+      // Check if email is explicitly allowed
+      if (allowedEmails.includes(email)) {
+        // Directly authorize if email is in allowed list
+        return { authorized: true }
+      }
+
+      // Check if domain (e.g. "@example.com") is allowed
+      const domain = email.split('@')[1]
+      if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
+        return { authorized: true }
+      }
+
+      // If not allowed, deny access
+      return { authorized: false, error: 'Email not authorized' }
+    } catch (error) {
+      logger.error(`[${requestId}] Error validating email:`, error)
       return { authorized: false, error: 'Authentication error' }
     }
   }
