@@ -629,8 +629,11 @@ export function DeployModal({
                   chatSubmitting ||
                   (!chatExists && isLoading) ||
                   (chatExists && !isChatFormValid) ||
-                  // Disable for redeployment when approved and has workflow changes (needsRedeployment implies changes exist)
-                  (approvalStatus?.status === 'APPROVED' && chatExists && needsRedeployment) ||
+                  // Disable for redeployment when approved and has workflow changes
+                  (approvalStatus?.status === 'APPROVED' &&
+                    chatExists &&
+                    needsRedeployment &&
+                    hasWorkflowChanges) ||
                   // Disable for first-time deployment when approved and user made changes from saved state
                   (approvalStatus?.status === 'APPROVED' && !chatExists && hasWorkflowChanges)
                 }
