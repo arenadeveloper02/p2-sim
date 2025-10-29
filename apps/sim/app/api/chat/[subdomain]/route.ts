@@ -120,6 +120,19 @@ export async function POST(
       try {
         logger.debug(`[${requestId}] Attempting to store chat details for chatId: ${chatId}`)
 
+        // Try to get the executing user ID from session
+        let executingUserId: string | undefined
+        try {
+          const session = await getSession()
+          executingUserId = session?.user?.id
+          logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
+        } catch (error) {
+          logger.debug(
+            `[${requestId}] Could not get session (user may not be authenticated):`,
+            error
+          )
+        }
+
         // Check if chatId already exists in deployed_chat table
         const existingChat = await db
           .select({ id: deployedChat.id })
@@ -143,6 +156,7 @@ export async function POST(
             chatId: chatId,
             title: title,
             workflowId: subdomain,
+            executingUserId,
           })
 
           await db.insert(deployedChat).values({
@@ -150,6 +164,7 @@ export async function POST(
             chatId: chatId,
             title: title,
             workflowId: subdomain, // Using subdomain as workflow_id as per requirements
+            executingUserId,
             createdAt: new Date(),
             updatedAt: new Date(),
           })
@@ -165,7 +180,10 @@ export async function POST(
 
           await db
             .update(deployedChat)
-            .set({ updatedAt: new Date() })
+            .set({
+              updatedAt: new Date(),
+              executingUserId: executingUserId || null, // Update executing user ID if available
+            })
             .where(eq(deployedChat.id, existingChatId))
 
           logger.debug(`[${requestId}] Successfully updated updatedAt for existing chat: ${chatId}`)

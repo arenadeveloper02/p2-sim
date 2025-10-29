@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
@@ -74,10 +75,19 @@ export async function GET(
       )
     }
 
+    // Require authenticated user and use their id to filter records
+    const session = await getSession()
+    const executingUserId = session?.user?.id
+    if (!executingUserId) {
+      logger.info(`[${requestId}] Unauthorized request for history: missing session user`)
+      return addCorsHeaders(createErrorResponse('Authentication required', 401), request)
+    }
+
     // Build query conditions for external chat logs
     let conditions = and(
       eq(workflowExecutionLogs.workflowId, subdomain),
-      eq(workflowExecutionLogs.isExternalChat, true) // Only external chat logs
+      eq(workflowExecutionLogs.isExternalChat, true), // Only external chat logs
+      eq(workflowExecutionLogs.userId, executingUserId) // Filter by executing user
     )
 
     // Add date range filters if provided
@@ -107,6 +117,7 @@ export async function GET(
     const conditionsInfo = {
       workflowId: subdomain,
       isExternalChat: true,
+      executingUserId,
       startDate: startDate || null,
       endDate: endDate || null,
       level: level || null,
