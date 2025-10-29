@@ -343,12 +343,6 @@ export function LongInput({
   }
   //
 
-  // Ensure overlay visually accounts for a trailing newline so the caret doesn't appear one line above
-  const overlayDisplayText = (() => {
-    const stringValue = value?.toString() ?? ''
-    // If the text ends with a newline, add a zero-width space to force rendering of the final empty line
-    return stringValue.endsWith('\n') ? `${stringValue}\u200B` : stringValue
-  })()
 
   return (
     <>
@@ -414,7 +408,7 @@ export function LongInput({
             overflow: 'hidden',
           }}
         >
-          {formatDisplayText(overlayDisplayText, true)}
+          {formatDisplayText(value?.toString() ?? '', true)}
         </div>
 
         {/* Wand Button */}
