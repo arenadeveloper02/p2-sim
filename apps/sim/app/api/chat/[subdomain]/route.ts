@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import {
@@ -305,6 +306,55 @@ export async function GET(
         }),
         request
       )
+    }
+
+    // If no valid cookie, check if user is logged in and has email access
+    if (deployment.authType === 'email') {
+      try {
+        const session = await getSession()
+        const userEmail = session?.user?.email
+
+        if (userEmail) {
+          logger.debug(`[${requestId}] User is logged in with email: ${userEmail}`)
+          const allowedEmails = Array.isArray(deployment.allowedEmails)
+            ? (deployment.allowedEmails as string[])
+            : []
+
+          // Check if email is explicitly allowed or domain is allowed
+          const isEmailAllowed =
+            allowedEmails.includes(userEmail) ||
+            allowedEmails.some(
+              (allowed: string) => allowed.startsWith('@') && userEmail.endsWith(allowed)
+            )
+
+          if (isEmailAllowed) {
+            logger.debug(`[${requestId}] User email is in allowed list, granting access`)
+            // Set auth cookie and return chat info
+            const response = addCorsHeaders(
+              createSuccessResponse({
+                id: deployment.id,
+                title: deployment.title,
+                description: deployment.description,
+                customizations: deployment.customizations,
+                authType: deployment.authType,
+                outputConfigs: deployment.outputConfigs,
+              }),
+              request
+            )
+            setChatAuthCookie(response, deployment.id, deployment.authType)
+            return response
+          }
+
+          logger.warn(`[${requestId}] User email ${userEmail} is not in allowed list`)
+          return addCorsHeaders(
+            createErrorResponse('You do not have access to this chat', 403),
+            request
+          )
+        }
+      } catch (error) {
+        logger.error(`[${requestId}] Error checking session:`, error)
+        // Continue with standard auth check below
+      }
     }
 
     // If no valid cookie, proceed with standard auth check

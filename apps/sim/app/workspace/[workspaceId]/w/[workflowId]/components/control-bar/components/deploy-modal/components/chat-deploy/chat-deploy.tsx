@@ -143,14 +143,8 @@ export function ChatDeploy({
     onValidationChange?.(isFormValid)
   }, [isFormValid, onValidationChange])
 
-  // Update emails when approval status changes for new chats
+  // Update emails when approval status changes for new chats and existing chats
   useEffect(() => {
-    console.log('Approval status effect triggered:', {
-      approvalStatus,
-      existingChat: !!existingChat,
-      currentEmails: formData.emails,
-      isApproved: approvalStatus?.status === 'APPROVED',
-    })
     const currentUserEmail = session?.user?.email
 
     if (!existingChat) {
@@ -173,6 +167,18 @@ export function ChatDeploy({
       // Only update if emails actually changed
       if (JSON.stringify(updatedEmails) !== JSON.stringify(formData.emails)) {
         updateField('emails', updatedEmails)
+      }
+    } else {
+      // For existing chats, if status becomes APPROVED, add @position2.com
+      let updatedEmails = [...formData.emails]
+
+      if (approvalStatus?.status === 'APPROVED' && !updatedEmails.includes('@position2.com')) {
+        updatedEmails = [...updatedEmails, '@position2.com']
+
+        // Only update if emails actually changed
+        if (JSON.stringify(updatedEmails) !== JSON.stringify(formData.emails)) {
+          updateField('emails', updatedEmails)
+        }
       }
     }
   }, [approvalStatus, existingChat, formData.emails, updateField, session?.user?.email])
@@ -423,14 +429,18 @@ export function ChatDeploy({
         )}
 
         {/* Show alert for redeployment of existing chat */}
-        {approvalStatus?.status === 'APPROVED' && needsRedeployment && existingChat && (
-          <Alert variant='destructive'>
-            <AlertTriangle className='h-4 w-4' />
-            <AlertDescription>
-              This agent is already published. Please send for approval before redeploying.
-            </AlertDescription>
-          </Alert>
-        )}
+        {approvalStatus?.status === 'APPROVED' &&
+          needsRedeployment &&
+          existingChat &&
+          hasWorkflowChanges && (
+            <Alert variant='destructive'>
+              <AlertTriangle className='h-4 w-4' />
+              <AlertDescription>
+                This agent has new changes after approval. Please send for approval before
+                redeploying.
+              </AlertDescription>
+            </Alert>
+          )}
 
         {/* Show alert for first-time deployment with changes */}
         {approvalStatus?.status === 'APPROVED' && !existingChat && hasWorkflowChanges && (

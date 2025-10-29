@@ -40,33 +40,43 @@ export default function EmailAuth({
 
   // Handle sending OTP
   const handleSendOtp = async () => {
-    // BYPASS: Directly call onAuthSuccess without verification for now
-    onAuthSuccess()
+    if (!email.trim()) {
+      setAuthError('Email is required')
+      return
+    }
 
-    // COMMENTED OUT: Email verification temporarily bypassed
-    // setAuthError(null)
-    // setIsSendingOtp(true)
-    // try {
-    //   const response = await fetch(`/api/chat/${subdomain}/otp`, {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //       'X-Requested-With': 'XMLHttpRequest',
-    //     },
-    //     body: JSON.stringify({ email }),
-    //   })
-    //   if (!response.ok) {
-    //     const errorData = await response.json()
-    //     setAuthError(errorData.error || 'Failed to send verification code')
-    //     return
-    //   }
-    //   setShowOtpVerification(true)
-    // } catch (error) {
-    //   console.error('Error sending OTP:', error)
-    //   setAuthError('An error occurred while sending the verification code')
-    // } finally {
-    //   setIsSendingOtp(false)
-    // }
+    setAuthError(null)
+    setIsSendingOtp(true)
+
+    try {
+      // Send email to backend for authentication (similar to password auth)
+      const response = await fetch(`/api/chat/${subdomain}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({ email }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        setAuthError(errorData.error || 'Failed to authenticate')
+        return
+      }
+
+      // Authentication successful, notify parent
+      onAuthSuccess()
+
+      // Reset auth state
+      setEmail('')
+    } catch (error) {
+      console.error('Authentication error:', error)
+      setAuthError('An error occurred during authentication')
+    } finally {
+      setIsSendingOtp(false)
+    }
   }
 
   const handleVerifyOtp = async (otp?: string) => {
@@ -198,7 +208,7 @@ export default function EmailAuth({
             <>
               <div className='mb-4 text-center'>
                 <p className='text-muted-foreground'>
-                  This chat requires email verification. Please enter your email to continue.
+                  This chat requires email access. Please enter your email to continue.
                 </p>
               </div>
 
@@ -240,10 +250,10 @@ export default function EmailAuth({
                   {isSendingOtp ? (
                     <div className='flex items-center justify-center'>
                       <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                      Processing...
+                      Authenticating...
                     </div>
                   ) : (
-                    'Continue (No Verification)'
+                    'Continue'
                   )}
                 </Button>
               </form>
