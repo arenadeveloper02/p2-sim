@@ -595,10 +595,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     if (!messageToSend.trim() && !isFormSubmission && isLoading) return
 
     // For form submissions, use a default message if no message is provided
-    const finalMessage =
-      isFormSubmission && !messageToSend.trim()
-        ? 'Starting workflow with provided inputs...'
-        : messageToSend
+    const finalMessage = isFormSubmission && !messageToSend.trim() ? '' : messageToSend
 
     logger.info('Sending message:', {
       messageToSend: finalMessage,
@@ -750,7 +747,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       // Add a message indicating the workflow is starting
       const workflowStartMessage: ChatMessage = {
         id: crypto.randomUUID(),
-        content: 'Starting workflow with the provided inputs...',
+        content: '',
         type: 'assistant',
         timestamp: new Date(),
       }
@@ -769,7 +766,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       try {
         // Send the structured inputs to the workflow
         const payload = {
-          input: 'Starting workflow with provided inputs...', // Main input message
+          input: '', // Main input message
           workflowInputs: inputs, // Structured inputs for the workflow
           conversationId,
           chatId: currentChatId,
