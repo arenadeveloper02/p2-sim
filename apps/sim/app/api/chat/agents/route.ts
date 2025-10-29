@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         workflowName: workflow.name,
         workflowDescription: workflow.description,
         workspaceId: workflow.workspaceId,
+        createdAt: chat.createdAt,
       })
       .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
+      created_at: chatRecord.createdAt.toISOString(),
     }))
 
     logger.info(`Found ${agentList.length} accessible chats for user ${userId}`)
