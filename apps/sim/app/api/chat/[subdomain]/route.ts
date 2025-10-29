@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
+import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import {
   addCorsHeaders,
   executeWorkflowForChat,
@@ -303,6 +304,34 @@ export async function GET(
       return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
     }
 
+    // Extract input fields from the workflow's starter block
+    // This allows all authorized users to see input form without needing workflow permissions
+    let inputFields: any[] = []
+    try {
+      const workflowData = await loadWorkflowFromNormalizedTables(deployment.workflowId)
+      if (workflowData?.blocks) {
+        for (const blockId in workflowData.blocks) {
+          const block = workflowData.blocks[blockId]
+          if (block.type === 'starter') {
+            const inputFormat = block.subBlocks?.inputFormat?.value
+            if (Array.isArray(inputFormat) && inputFormat.length > 0) {
+              inputFields = inputFormat
+              logger.debug(
+                `[${requestId}] Found ${inputFields.length} input fields in starter block`
+              )
+              break
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        `[${requestId}] Failed to extract input fields from workflow, continuing without them:`,
+        error
+      )
+      // Non-fatal: continue without input fields
+    }
+
     // Check for auth cookie first
     const cookieName = `chat_auth_${deployment.id}`
     const authCookie = request.cookies.get(cookieName)
@@ -321,6 +350,7 @@ export async function GET(
           customizations: deployment.customizations,
           authType: deployment.authType,
           outputConfigs: deployment.outputConfigs,
+          inputFields, // Include input fields so all users can see the form
         }),
         request
       )
@@ -380,6 +410,7 @@ export async function GET(
                 customizations: deployment.customizations,
                 authType: deployment.authType,
                 outputConfigs: deployment.outputConfigs,
+                inputFields, // Include input fields so all users can see the form
               }),
               request
             )
@@ -421,6 +452,7 @@ export async function GET(
         customizations: deployment.customizations,
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
+        inputFields, // Include input fields so all users can see the form
       }),
       request
     )

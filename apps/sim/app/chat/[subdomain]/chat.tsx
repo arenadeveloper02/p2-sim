@@ -43,6 +43,7 @@ interface ChatConfig {
   }
   authType?: 'public' | 'password' | 'email'
   outputConfigs?: Array<{ blockId: string; path?: string }>
+  inputFields?: any[] // Input fields from workflow's starter block
 }
 
 interface ThreadRecord {
@@ -293,8 +294,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
         if (response.ok) {
           const data = await response.json()
-          // Always fetch input fields regardless of chat history
-          fetchInputFields()
+          // Fetch input fields as fallback if not in chatConfig
+          // (chatConfig should have them, but this ensures backwards compatibility)
+          if (inputFields.length === 0) {
+            fetchInputFields()
+          }
           if (data?.logs?.length === 0) {
             // Case 1: No chat history - mark this for form display
             setHasNoChatHistory(true)
@@ -341,12 +345,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                 scrollToBottom()
               }, 100)
             }, 500)
+            // History exists, so don't show input form
+            setHasNoChatHistory(false)
             setIsHistoryLoading(false)
           }
         } else {
+          // If history fetch fails (404, etc.), treat as no history to show input form
+          logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          setHasNoChatHistory(true)
           setIsHistoryLoading(false)
         }
       } catch (error) {
+        // If history fetch errors, treat as no history to show input form
+        logger.error('Error fetching history, treating as no history:', error)
+        setHasNoChatHistory(true)
         setIsHistoryLoading(false)
       }
     }
@@ -428,6 +440,13 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       console.log('<><><>Chat config data', data)
       setChatConfig(data)
 
+      // Set input fields from chat config (available to all authorized users)
+      // This avoids needing separate workflow API permissions
+      if (data?.inputFields && Array.isArray(data.inputFields) && data.inputFields.length > 0) {
+        logger.info(`Found ${data.inputFields.length} input fields in chat config`)
+        setInputFields(data.inputFields)
+      }
+
       if (data?.customizations?.welcomeMessage) {
         setMessages([
           {
@@ -461,6 +480,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   }
 
   // Fetch chat config on mount and generate new conversation ID
+  // Input fields are now included in chatConfig response (available to all authorized users)
   useEffect(() => {
     fetchChatConfig()
     setConversationId(uuidv4())
@@ -509,8 +529,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         return welcome ? [welcome] : []
       })
       // Reset form state when switching threads
+      // Reset hasNoChatHistory so history can be re-evaluated for the new thread
       setShowInputForm(false)
-      setHasNoChatHistory(false)
+      setInitialInputsSubmitted(false) // Allow form to show again for new thread if no history
+      setHasNoChatHistory(false) // Will be set to true by fetchHistory if no history exists
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
