@@ -148,6 +148,7 @@ import {
   pineconeSearchVectorTool,
   pineconeUpsertTextTool,
 } from '@/tools/pinecone'
+import { createTool as presentationCreateTool } from '@/tools/presentation'
 import {
   deleteTool as postgresDeleteTool,
   executeTool as postgresExecuteTool,
@@ -271,6 +272,7 @@ export const tools: Record<string, ToolConfig> = {
   postgresql_update: postgresUpdateTool,
   postgresql_delete: postgresDeleteTool,
   postgresql_execute: postgresExecuteTool,
+  presentation_create: presentationCreateTool,
   mongodb_query: mongodbQueryTool,
   mongodb_insert: mongodbInsertTool,
   mongodb_update: mongodbUpdateTool,
