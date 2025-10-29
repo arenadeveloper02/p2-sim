@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import { addCorsHeaders, validateChatAuth } from '@/app/api/chat/utils'
+import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
 import { chat, deployedChat } from '@/db/schema'
@@ -56,13 +56,13 @@ export async function GET(
     }
 
     // Validate authentication
-    const authResult = await validateChatAuth(requestId, deployment, request)
-    if (!authResult.authorized) {
-      return addCorsHeaders(
-        createErrorResponse(authResult.error || 'Authentication required', 401),
-        request
-      )
-    }
+    // const authResult = await validateChatAuth(requestId, deployment, request)
+    // if (!authResult.authorized) {
+    //   return addCorsHeaders(
+    //     createErrorResponse(authResult.error || 'Authentication required', 401),
+    //     request
+    //   )
+    // }
 
     // Fetch all deployed chat records for this workflow (subdomain)
     const deployedChatRecords = await db
