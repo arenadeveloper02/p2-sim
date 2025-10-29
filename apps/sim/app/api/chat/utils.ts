@@ -262,15 +262,31 @@ export async function validateChatAuth(
 
       const allowedEmails = deployment.allowedEmails || []
 
-      // Check if email is explicitly allowed
-      if (allowedEmails.includes(email)) {
-        // Directly authorize if email is in allowed list
-        return { authorized: true }
-      }
+      // Normalize email for case-insensitive comparison and trim whitespace
+      const normalizedEmail = email.toLowerCase().trim()
 
-      // Check if domain (e.g. "@example.com") is allowed
-      const domain = email.split('@')[1]
-      if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
+      logger.debug(`[${requestId}] Validating email for chat:`, {
+        submittedEmail: email,
+        normalizedEmail,
+        allowedEmails,
+      })
+
+      // Check if email is explicitly allowed (case-insensitive)
+      const isEmailAllowed =
+        allowedEmails.some((allowed: string) => allowed.toLowerCase().trim() === normalizedEmail) ||
+        // Check if domain (e.g. "@example.com") is allowed
+        allowedEmails.some(
+          (allowed: string) =>
+            allowed.startsWith('@') && normalizedEmail.endsWith(allowed.toLowerCase().trim())
+        )
+
+      logger.debug(`[${requestId}] Email validation result:`, {
+        isEmailAllowed,
+        email,
+      })
+
+      if (isEmailAllowed) {
+        // Directly authorize if email is in allowed list
         return { authorized: true }
       }
 
