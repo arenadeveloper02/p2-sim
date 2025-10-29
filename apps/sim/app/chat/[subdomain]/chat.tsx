@@ -286,6 +286,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       // Only fetch history if we have a chatId
       if (!chatId) {
         console.log('No chatId provided, skipping history fetch')
+        setIsHistoryLoading(false) // Ensure loading is reset when no chatId
+        setHasNoChatHistory(true) // Mark as no history to show input form
         return
       }
 
@@ -296,12 +298,14 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           const data = await response.json()
           // Fetch input fields as fallback if not in chatConfig
           // (chatConfig should have them, but this ensures backwards compatibility)
+          // Note: fetchInputFields is async but we don't need to wait for it
           if (inputFields.length === 0) {
-            fetchInputFields()
+            void fetchInputFields() // Fire and forget
           }
           if (data?.logs?.length === 0) {
             // Case 1: No chat history - mark this for form display
             setHasNoChatHistory(true)
+            setIsHistoryLoading(false)
           } else {
             const formatData = data.logs.flatMap((log: any) => {
               const messages = []
@@ -365,6 +369,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
+    } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
+      // Chat config loaded but no chatId yet - mark as no history to show input form
+      setIsHistoryLoading(false)
+      setHasNoChatHistory(true)
     }
   }, [subdomain, chatConfig, currentChatId])
 
@@ -445,6 +453,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       if (data?.inputFields && Array.isArray(data.inputFields) && data.inputFields.length > 0) {
         logger.info(`Found ${data.inputFields.length} input fields in chat config`)
         setInputFields(data.inputFields)
+        // If there's no history yet and we just loaded input fields, ensure form can show
+        // This handles the case where inputFields load after hasNoChatHistory is set
+        if (hasNoChatHistory && !initialInputsSubmitted) {
+          logger.debug('Input fields loaded, will trigger form display check via useEffect')
+        }
       }
 
       if (data?.customizations?.welcomeMessage) {
@@ -474,9 +487,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     } catch (error) {
       logger.error('Error fetching input fields:', error)
       // On error, proceed to chat anyway
-    } finally {
-      setIsHistoryLoading(false)
     }
+    // Note: Don't set isHistoryLoading here - it's managed by fetchHistory
   }
 
   // Fetch chat config on mount and generate new conversation ID
@@ -499,6 +511,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     if (hasNoChatHistory && inputFields.length > 0 && !initialInputsSubmitted) {
       logger.info('Case 1: Showing input form - no chat history and input fields available')
       setShowInputForm(true)
+    } else if (hasNoChatHistory && inputFields.length === 0) {
+      logger.debug('Waiting for input fields to load before showing form')
     }
   }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted])
 
