@@ -766,7 +766,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       try {
         // Send the structured inputs to the workflow
         const payload = {
-          input: '', // Main input message
+          input: inputMessage, // Formatted message so history threads display workflow inputs
           workflowInputs: inputs, // Structured inputs for the workflow
           conversationId,
           chatId: currentChatId,
