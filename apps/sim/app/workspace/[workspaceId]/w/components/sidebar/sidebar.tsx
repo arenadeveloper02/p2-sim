@@ -85,22 +85,6 @@ interface TemplateData {
   isStarred?: boolean
 }
 
-function getRedirectUrl(hostname: string) {
-  let redirectUrl = ''
-  if (hostname === 'dev-agent.thearena.ai') {
-    redirectUrl = 'https://dev.thearena.ai/'
-  } else if (hostname === 'test-agent.thearena.ai') {
-    redirectUrl = 'https://test.thearena.ai/'
-  } else if (hostname === 'sandbox-agent.thearena.ai') {
-    redirectUrl = 'https://sandbox.thearena.ai/'
-  } else if (hostname === 'agent.thearena.ai') {
-    redirectUrl = 'https://app.thearena.ai/'
-  } else {
-    redirectUrl = 'https://app.thearena.ai/'
-  }
-  return redirectUrl
-}
-
 export function Sidebar() {
   useGlobalShortcuts()
 
@@ -917,10 +901,7 @@ export function Sidebar() {
             <p className='pointer-events-auto w-full text-center text-gray-500 text-sm hover:cursor-pointer'>
               <span
                 onClick={() => {
-                  const hostname = window.location.hostname
-                  const redirectUrl = `${getRedirectUrl(hostname)}hub/agents`
-
-                  window.location.href = redirectUrl
+                  router.back()
                 }}
                 className='flex items-center justify-start gap-2 text-primary'
               >

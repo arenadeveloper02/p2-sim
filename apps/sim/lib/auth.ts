@@ -1448,11 +1448,6 @@ export const auth = betterAuth({
     verify: '/verify',
     verifyRequest: '/verify-request',
   },
-  defaultCookieOptions: {
-    domain: '.thearena.ai',
-    secure: true,
-    sameSite: 'lax',
-  },
 })
 
 // Server-side auth helpers
