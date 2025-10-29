@@ -330,6 +330,12 @@ export async function GET(
     if (deployment.authType === 'email') {
       try {
         const session = await getSession()
+        logger.debug(`[${requestId}] Session check:`, {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          userEmail: session?.user?.email,
+        })
+
         const userEmail = session?.user?.email
 
         if (userEmail) {
@@ -338,16 +344,34 @@ export async function GET(
             ? (deployment.allowedEmails as string[])
             : []
 
+          logger.debug(`[${requestId}] Allowed emails for this chat:`, allowedEmails)
+
+          // Normalize email for comparison (lowercase and trim to handle case differences and whitespace)
+          const normalizedUserEmail = userEmail.toLowerCase().trim()
+
           // Check if email is explicitly allowed or domain is allowed
-          const isEmailAllowed =
-            allowedEmails.includes(userEmail) ||
-            allowedEmails.some(
-              (allowed: string) => allowed.startsWith('@') && userEmail.endsWith(allowed)
-            )
+          const isEmailAllowed = allowedEmails.some((allowed: string) => {
+            const normalizedAllowed = allowed.toLowerCase().trim()
+            const exactMatch = normalizedAllowed === normalizedUserEmail
+            const domainMatch =
+              normalizedAllowed.startsWith('@') && normalizedUserEmail.endsWith(normalizedAllowed)
+
+            if (exactMatch || domainMatch) {
+              logger.debug(`[${requestId}] Email match found:`, {
+                userEmail: normalizedUserEmail,
+                allowedEmail: normalizedAllowed,
+                matchType: exactMatch ? 'exact' : 'domain',
+              })
+            }
+
+            return exactMatch || domainMatch
+          })
 
           if (isEmailAllowed) {
-            logger.debug(`[${requestId}] User email is in allowed list, granting access`)
-            // Set auth cookie and return chat info
+            logger.debug(
+              `[${requestId}] User email is in allowed list, automatically granting access without modal`
+            )
+            // Set auth cookie and return chat info - NO MODAL SHOWN
             const response = addCorsHeaders(
               createSuccessResponse({
                 id: deployment.id,
@@ -363,11 +387,12 @@ export async function GET(
             return response
           }
 
-          logger.warn(`[${requestId}] User email ${userEmail} is not in allowed list`)
-          return addCorsHeaders(
-            createErrorResponse('You do not have access to this chat', 403),
-            request
+          logger.warn(
+            `[${requestId}] User email ${userEmail} is not in allowed list. Will show modal for email entry.`
           )
+          logger.debug(`[${requestId}] User email: ${userEmail}, Allowed emails:`, allowedEmails)
+          // Don't return error here - let the modal show for manual email entry
+          // User might want to enter a different email that is in the allowed list
         }
       } catch (error) {
         logger.error(`[${requestId}] Error checking session:`, error)
@@ -375,7 +400,7 @@ export async function GET(
       }
     }
 
-    // If no valid cookie, proceed with standard auth check
+    // If no valid cookie and user wasn't auto-authenticated, proceed with standard auth check
     const authResult = await validateChatAuth(requestId, deployment, request)
     if (!authResult.authorized) {
       logger.info(
