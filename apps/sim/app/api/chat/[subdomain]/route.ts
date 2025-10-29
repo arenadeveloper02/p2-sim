@@ -418,12 +418,16 @@ export async function GET(
             return response
           }
 
+          // Logged-in user's email is NOT in allowed list - deny access immediately
+          // Show error modal instead of email input modal
           logger.warn(
-            `[${requestId}] User email ${userEmail} is not in allowed list. Will show modal for email entry.`
+            `[${requestId}] Logged-in user ${userEmail} is not in allowed list. Denying access immediately.`
           )
           logger.debug(`[${requestId}] User email: ${userEmail}, Allowed emails:`, allowedEmails)
-          // Don't return error here - let the modal show for manual email entry
-          // User might want to enter a different email that is in the allowed list
+          return addCorsHeaders(
+            createErrorResponse('You do not have access to this chat', 403),
+            request
+          )
         }
       } catch (error) {
         logger.error(`[${requestId}] Error checking session:`, error)
@@ -431,7 +435,19 @@ export async function GET(
       }
     }
 
-    // If no valid cookie and user wasn't auto-authenticated, proceed with standard auth check
+    // If no valid cookie and user wasn't auto-authenticated, check authentication
+    // For email auth type, deny access immediately (no email input modal since OTP is removed)
+    if (deployment.authType === 'email') {
+      logger.info(
+        `[${requestId}] Email auth required but no valid session/cookie found. Denying access.`
+      )
+      return addCorsHeaders(
+        createErrorResponse('You do not have access to this chat', 403),
+        request
+      )
+    }
+
+    // For other auth types (password, public), proceed with standard auth check
     const authResult = await validateChatAuth(requestId, deployment, request)
     if (!authResult.authorized) {
       logger.info(
