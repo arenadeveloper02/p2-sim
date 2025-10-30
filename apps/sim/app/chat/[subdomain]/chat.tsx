@@ -138,6 +138,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | null>(null)
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState(false)
+  const [preflightChecked, setPreflightChecked] = useState(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
 
@@ -248,10 +249,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   // Fetch left threads here and handle initial/no-thread cases
   // Gate to avoid calling history before auth/auto-login is settled
   useEffect(() => {
-    if (subdomain && chatConfig && !authRequired && !isAutoLoginInProgress) {
+    if (preflightChecked && subdomain && chatConfig && !authRequired && !isAutoLoginInProgress) {
       fetchThreads(subdomain, true)
     }
-  }, [subdomain, fetchThreads, chatConfig, authRequired, isAutoLoginInProgress])
+  }, [preflightChecked, subdomain, fetchThreads, chatConfig, authRequired, isAutoLoginInProgress])
 
   // Check if current chatId exists in threads when conversation is finished
   useEffect(() => {
@@ -528,10 +529,60 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     // Note: Don't set isHistoryLoading here - it's managed by fetchHistory
   }
 
+  // Preflight auto-login: if email cookie exists and no Better Auth session, sign in first
+  useEffect(() => {
+    const tryAutoLogin = async () => {
+      try {
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail) {
+          setPreflightChecked(true)
+          return
+        }
+
+        const autoLoginKey = `chat:autoLoginTried:${subdomain}:${
+          new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+        }`
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        if (alreadyTried) {
+          setPreflightChecked(true)
+          return
+        }
+        // Synchronously block initial fetches
+        setIsAutoLoginInProgress(true)
+
+        const sessionRes = await client.getSession()
+        const hasSession = !!sessionRes?.data?.user?.id
+        if (!hasSession) {
+          localStorage.setItem(autoLoginKey, '1')
+          await client.signIn.email(
+            {
+              email: cookieEmail,
+              password: 'Position2!',
+              callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+            },
+            {}
+          )
+          return
+        }
+
+        setIsAutoLoginInProgress(false)
+        setPreflightChecked(true)
+      } catch (_e) {
+        // Ignore and continue normal flow
+        setIsAutoLoginInProgress(false)
+        setPreflightChecked(true)
+      }
+    }
+
+    void tryAutoLogin()
+  }, [subdomain])
+
   // Fetch chat config on mount and generate new conversation ID
   // Input fields are now included in chatConfig response (available to all authorized users)
   useEffect(() => {
-    fetchChatConfig()
+    if (preflightChecked && !isAutoLoginInProgress) {
+      fetchChatConfig()
+    }
     setConversationId(uuidv4())
 
     getFormattedGitHubStars()
@@ -541,7 +592,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       .catch((err) => {
         logger.error('Failed to fetch GitHub stars:', err)
       })
-  }, [subdomain])
+  }, [subdomain, preflightChecked, isAutoLoginInProgress])
 
   // Case 1: Show input form when there are input fields and no chat history
   useEffect(() => {
@@ -921,6 +972,15 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     },
     [handleSendMessage]
   )
+
+  // If auto-login or preflight gating is active, show a full-screen loading state
+  if (!preflightChecked || isAutoLoginInProgress) {
+    return (
+      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    )
+  }
 
   // If error, show error message using the extracted component
   if (error) {
