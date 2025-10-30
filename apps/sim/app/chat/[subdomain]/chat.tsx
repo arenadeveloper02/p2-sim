@@ -375,9 +375,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
     } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
-      // Chat config loaded but no chatId yet - mark as no history to show input form
-      setIsHistoryLoading(false)
-      setHasNoChatHistory(true)
+      // Chat config loaded but no chatId yet.
+      // Do not mark as no history yet; wait for threads to load/select a thread.
+      setIsHistoryLoading(true)
     }
   }, [subdomain, chatConfig, currentChatId])
 
@@ -596,13 +596,25 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // Case 1: Show input form when there are input fields and no chat history
   useEffect(() => {
-    if (hasNoChatHistory && inputFields.length > 0 && !initialInputsSubmitted) {
+    if (
+      hasNoChatHistory &&
+      inputFields.length > 0 &&
+      !initialInputsSubmitted &&
+      threads.length === 0 &&
+      !isThreadsLoading
+    ) {
       logger.info('Case 1: Showing input form - no chat history and input fields available')
       setShowInputForm(true)
     } else if (hasNoChatHistory && inputFields.length === 0) {
       logger.debug('Waiting for input fields to load before showing form')
     }
-  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted])
+  }, [
+    hasNoChatHistory,
+    inputFields.length,
+    initialInputsSubmitted,
+    isThreadsLoading,
+    threads.length,
+  ])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -1050,7 +1062,17 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         {showInputForm && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
-              <div className='rounded-lg border bg-card p-6 shadow-sm'>
+              <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
+                {threads.length > 0 && (
+                  <button
+                    type='button'
+                    aria-label='Close'
+                    onClick={() => setShowInputForm(false)}
+                    className='absolute top-3 right-3 rounded-md px-2 py-1 text-sm hover:bg-muted'
+                  >
+                    ×
+                  </button>
+                )}
                 <div className='mb-6'>
                   <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
                   <p className='text-muted-foreground'>
