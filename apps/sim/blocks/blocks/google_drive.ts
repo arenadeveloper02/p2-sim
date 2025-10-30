@@ -50,6 +50,15 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       required: true,
     },
     {
+      id: 'fileName',
+      title: 'File Name',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'Name of the file',
+      condition: { field: 'operation', value: 'upload_file' },
+      required: true,
+    },
+    {
       id: 'file',
       title: 'File',
       type: 'short-input',
@@ -264,8 +273,8 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         let finalMimeType = mimeType
         let finalFileName = fileName
         if (file && typeof file === 'object') {
-          if (file.type && !mimeType) {
-            finalMimeType = file.type
+          if (file.fileType && !mimeType) {
+            finalMimeType = file.fileType
           }
           if (file.name && !fileName) {
             finalFileName = file.name

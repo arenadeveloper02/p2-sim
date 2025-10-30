@@ -1,4 +1,5 @@
 import type { ToolResponse } from '@/tools/types'
+import type { FileParseResult } from '@/tools/file/types'
 
 export interface GoogleDriveFile {
   id: string
@@ -38,7 +39,7 @@ export interface GoogleDriveToolParams {
   folderSelector?: string
   fileId?: string
   fileName?: string
-  file?: any // UserFile object from previous block
+  file?: FileParseResult // Parsed file object from previous block
   content?: string
   mimeType?: string
   query?: string

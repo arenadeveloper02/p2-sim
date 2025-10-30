@@ -78,15 +78,29 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
   ): Promise<PresentationCreateResponse> => {
     const data = await response.json()
 
-    // Ensure proper file format when present; no download flag needed
+    // Ensure proper file format when present; emit standard file shape
     let presentationFile = data.presentationFile
     if (presentationFile?.data) {
+      const base64Url = presentationFile.data as string
+      const filename = presentationFile.filename || 'presentation.pptx'
+      const mimeType =
+        presentationFile.mimetype ||
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+      // Best-effort size estimate from base64/base64url length (without decoding)
+      const unpaddedLen = base64Url.replace(/=+$/, '').length
+      const estimatedSize = Math.floor((unpaddedLen * 3) / 4)
+
       presentationFile = {
-        data: presentationFile.data, // base64Url string passed through as-is
-        name: presentationFile.filename || 'presentation.pptx',
-        mimeType:
-          presentationFile.mimetype ||
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        content: base64Url, // base64Url string passed through as-is
+        fileType: mimeType,
+        size: estimatedSize,
+        name: filename,
+        binary: true,
+        metadata: {
+          filename,
+          mimetype: mimeType,
+        },
       }
     }
 

@@ -67,15 +67,15 @@ export async function POST(req: NextRequest) {
           }
 
           logger.info(`Downloaded file: ${userFile.name} (${fileBuffer.length} bytes)`)
-        } else if ('data' in file && file.data) {
+        } else if ('content' in file && file.content) {
           // Raw file data (ToolFileData format) - hasn't been processed by FileToolProcessor yet
           logger.info(`Processing raw file data: ${file.name || 'unknown'}`)
 
           let fileBuffer: Buffer
 
           // Handle base64 string data
-          if (typeof file.data === 'string') {
-            let base64Data = file.data
+          if (typeof file.content === 'string') {
+            let base64Data = file.content
 
             // Convert base64url to base64 if needed
             if (base64Data && (base64Data.includes('-') || base64Data.includes('_'))) {
@@ -84,8 +84,8 @@ export async function POST(req: NextRequest) {
 
             fileBuffer = Buffer.from(base64Data, 'base64')
             logger.info(`Converted base64 string to Buffer (${fileBuffer.length} bytes)`)
-          } else if (Buffer.isBuffer(file.data)) {
-            fileBuffer = file.data
+          } else if (Buffer.isBuffer(file.content)) {
+            fileBuffer = file.content
           } else {
             return NextResponse.json(
               { error: 'Invalid file data format: data must be base64 string or Buffer' },
@@ -118,7 +118,8 @@ export async function POST(req: NextRequest) {
           }
 
           // Use file's name if fileName not provided or is default
-          const fileFileName = file.name || (file as any).filename || 'presentation.pptx'
+          const fileFileName =
+            fileName || file.name || (file as any).filename || 'presentation.pptx'
           if (fileFileName && (!fileName || fileName === 'upload')) {
             finalFileName = fileFileName
           }

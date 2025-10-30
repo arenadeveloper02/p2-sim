@@ -30,7 +30,7 @@ export const uploadFileTool: ToolConfig<GoogleDriveToolParams, GoogleDriveUpload
       description: 'The name of the file to upload',
     },
     file: {
-      type: 'json',
+      type: 'file',
       required: true,
       visibility: 'user-or-llm',
       description: 'File object (UserFile) from previous block to upload',
