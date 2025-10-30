@@ -49,13 +49,22 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       required: true,
     },
     {
+      id: 'file',
+      title: 'File from Previous Block',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'Enter <blockname.presentationFile> or leave empty to use content',
+      condition: { field: 'operation', value: 'upload' },
+      required: false,
+    },
+    {
       id: 'content',
       title: 'Content',
       type: 'long-input',
       layout: 'full',
-      placeholder: 'Content to upload to the file',
+      placeholder: 'Content to upload to the file (not needed if file is provided)',
       condition: { field: 'operation', value: 'upload' },
-      required: true,
+      required: false,
     },
     {
       id: 'mimeType',
@@ -67,8 +76,12 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         { label: 'Google Sheet', id: 'application/vnd.google-apps.spreadsheet' },
         { label: 'Google Slides', id: 'application/vnd.google-apps.presentation' },
         { label: 'PDF (application/pdf)', id: 'application/pdf' },
+        {
+          label: 'PowerPoint (pptx)',
+          id: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        },
       ],
-      placeholder: 'Select a file type',
+      placeholder: 'Select a file type (auto-detected from file if provided)',
       condition: { field: 'operation', value: 'upload' },
     },
     {
@@ -233,16 +246,31 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         }
       },
       params: (params) => {
-        const { credential, folderSelector, manualFolderId, mimeType, ...rest } = params
+        const { credential, folderSelector, manualFolderId, mimeType, file, fileName, ...rest } =
+          params
 
         // Use folderSelector if provided, otherwise use manualFolderId
         const effectiveFolderId = (folderSelector || manualFolderId || '').trim()
+
+        // If file is provided, extract mimeType and fileName from file if not specified
+        let finalMimeType = mimeType
+        let finalFileName = fileName
+        if (file && typeof file === 'object') {
+          if (file.type && !mimeType) {
+            finalMimeType = file.type
+          }
+          if (file.name && !fileName) {
+            finalFileName = file.name
+          }
+        }
 
         return {
           credential,
           folderId: effectiveFolderId || undefined,
           pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
-          mimeType: mimeType,
+          mimeType: finalMimeType,
+          fileName: finalFileName,
+          file: file || undefined,
           ...rest,
         }
       },
@@ -253,8 +281,12 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
     credential: { type: 'string', description: 'Google Drive access token' },
     // Upload and Create Folder operation inputs
     fileName: { type: 'string', description: 'File or folder name' },
-    content: { type: 'string', description: 'File content' },
-    mimeType: { type: 'string', description: 'File MIME type' },
+    file: { type: 'json', description: 'File object from previous block (UserFile)' },
+    content: { type: 'string', description: 'File content (used if file is not provided)' },
+    mimeType: {
+      type: 'string',
+      description: 'File MIME type (auto-detected from file if provided)',
+    },
     // List operation inputs
     folderSelector: { type: 'string', description: 'Selected folder' },
     manualFolderId: { type: 'string', description: 'Manual folder identifier' },
