@@ -146,7 +146,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
-  const [hasNoChatHistory, setHasNoChatHistory] = useState(false)
+  const [hasNoChatHistory, setHasNoChatHistory] = useState<boolean | undefined>(undefined)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -290,9 +290,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
       // Only fetch history if we have a chatId
       if (!chatId) {
-        console.log('No chatId provided, skipping history fetch')
-        setIsHistoryLoading(false) // Ensure loading is reset when no chatId
-        setHasNoChatHistory(true) // Mark as no history to show input form
+        setIsHistoryLoading(false)
+        setHasNoChatHistory(true)
         return
       }
 
@@ -308,53 +307,51 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
             void fetchInputFields() // Fire and forget
           }
           if (data?.logs?.length === 0) {
-            // Case 1: No chat history - mark this for form display
             setHasNoChatHistory(true)
             setIsHistoryLoading(false)
           } else {
-            const formatData = data.logs.flatMap((log: any) => {
-              const messages = []
-              // Add user message if userInput exists
-              if (log.userInput) {
-                messages.push({
-                  id: `${log.id}-user`,
-                  content: log.userInput,
-                  type: 'user',
-                  timestamp: new Date(log.startedAt),
-                })
-              }
-
-              // Add assistant message if modelOutput exists
-              if (log.modelOutput) {
-                messages.push({
-                  id: `${log.id}-assistant`,
-                  content: log.modelOutput,
-                  type: 'assistant',
-                  timestamp: new Date(log.endedAt || log.startedAt),
-                  isStreaming: false,
-                  executionId: log?.executionId || '',
-                  liked: log.liked,
-                })
-              }
-
-              return messages
-            })
-
+            // Flatten and process logs as before
+            setMessages([
+              ...(chatConfig?.customizations?.welcomeMessage
+                ? [
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
+                : []),
+              ...data.logs.flatMap((log: any) => {
+                const messages = []
+                if (log.userInput) {
+                  messages.push({
+                    id: `${log.id}-user`,
+                    content: log.userInput,
+                    type: 'user',
+                    timestamp: new Date(log.startedAt),
+                  })
+                }
+                if (log.modelOutput) {
+                  messages.push({
+                    id: `${log.id}-assistant`,
+                    content: log.modelOutput,
+                    type: 'assistant',
+                    timestamp: new Date(log.endedAt || log.startedAt),
+                    isStreaming: false,
+                    executionId: log?.executionId || '',
+                    liked: log.liked,
+                  })
+                }
+                return messages
+              }),
+            ])
             setTimeout(() => {
-              // Get the welcome message from current messages if it exists
-              setMessages((prevMessages) => {
-                const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
-
-                // Set messages: welcome message + history messages
-                return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
-              })
-
-              // Scroll to bottom after setting history messages
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
-            // History exists, so don't show input form
             setHasNoChatHistory(false)
             setIsHistoryLoading(false)
           }
@@ -596,13 +593,17 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // Case 1: Show input form when there are input fields and no chat history
   useEffect(() => {
-    if (hasNoChatHistory && inputFields.length > 0 && !initialInputsSubmitted) {
-      logger.info('Case 1: Showing input form - no chat history and input fields available')
+    if (
+      hasNoChatHistory === true &&
+      inputFields.length > 0 &&
+      !initialInputsSubmitted &&
+      !isHistoryLoading
+    ) {
       setShowInputForm(true)
-    } else if (hasNoChatHistory && inputFields.length === 0) {
-      logger.debug('Waiting for input fields to load before showing form')
+    } else {
+      setShowInputForm(false)
     }
-  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted])
+  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted, isHistoryLoading])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -1047,7 +1048,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {showInputForm && (
+        {showInputForm && !isHistoryLoading && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
               <div className='rounded-lg border bg-card p-6 shadow-sm'>
