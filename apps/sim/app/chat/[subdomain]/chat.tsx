@@ -137,6 +137,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const isUserScrollingRef = useRef(false)
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | null>(null)
+  const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
 
@@ -245,11 +246,12 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   )
 
   // Fetch left threads here and handle initial/no-thread cases
+  // Gate to avoid calling history before auth/auto-login is settled
   useEffect(() => {
-    if (subdomain) {
+    if (subdomain && chatConfig && !authRequired && !isAutoLoginInProgress) {
       fetchThreads(subdomain, true)
     }
-  }, [subdomain, fetchThreads])
+  }, [subdomain, fetchThreads, chatConfig, authRequired, isAutoLoginInProgress])
 
   // Check if current chatId exists in threads when conversation is finished
   useEffect(() => {
@@ -429,6 +431,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
                 const sessionRes = await client.getSession()
                 const hasSession = !!sessionRes?.data?.user?.id
                 if (!hasSession) {
+                  setIsAutoLoginInProgress(true)
                   localStorage.setItem(autoLoginKey, '1')
                   await client.signIn.email(
                     {
