@@ -1,11 +1,13 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Toaster } from '@/components/ui'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { client } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/utils'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -411,6 +413,38 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         // Check if auth is required or unauthorized
         if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
+
+          // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
+          if (errorData.error === 'auth_required_email') {
+            try {
+              const autoLoginKey = `chat:autoLoginTried:${subdomain}:${
+                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+              }`
+              const alreadyTried =
+                typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+              const cookieEmail = Cookies.get('email')
+
+              // Only attempt if we have an email cookie, have not tried already, and there is no active session
+              if (cookieEmail && !alreadyTried) {
+                const sessionRes = await client.getSession()
+                const hasSession = !!sessionRes?.data?.user?.id
+                if (!hasSession) {
+                  localStorage.setItem(autoLoginKey, '1')
+                  await client.signIn.email(
+                    {
+                      email: cookieEmail,
+                      password: 'Position2!',
+                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+                    },
+                    {}
+                  )
+                  return
+                }
+              }
+            } catch (_e) {
+              // Swallow and proceed to existing auth UI
+            }
+          }
 
           if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
