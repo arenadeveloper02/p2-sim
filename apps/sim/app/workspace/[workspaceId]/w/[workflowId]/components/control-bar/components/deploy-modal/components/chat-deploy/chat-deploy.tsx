@@ -143,6 +143,8 @@ export function ChatDeploy({
     onValidationChange?.(isFormValid)
   }, [isFormValid, onValidationChange])
 
+  // Approval flow now clears undo/redo centrally in the registry store after approval.
+
   // Update emails when approval status changes for new chats and existing chats
   useEffect(() => {
     const currentUserEmail = session?.user?.email

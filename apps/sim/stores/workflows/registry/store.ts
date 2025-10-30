@@ -1503,6 +1503,23 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         })
         if (response) {
           const data = await response.json()
+
+          // On approval, clear undo/redo stacks for this workflow to avoid false change detection
+          if (action === 'APPROVED' && workflowId) {
+            try {
+              const undoStore = useUndoRedoStore.getState()
+              const stackKeys = Object.keys(undoStore.stacks)
+              stackKeys.forEach((key) => {
+                const [wfId, userId] = key.split(':')
+                if (wfId === workflowId && userId) {
+                  undoStore.clear(workflowId, userId)
+                }
+              })
+            } catch (_e) {
+              // Non-fatal
+            }
+          }
+
           return data
         }
         return ''

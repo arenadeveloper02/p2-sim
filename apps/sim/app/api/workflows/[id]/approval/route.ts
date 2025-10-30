@@ -535,7 +535,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           throw new Error('Source workflow not found')
         }
 
-        // Delete the blocks and edges of the older data
+        // If the mapped (approver's) workflow is already deployed, do not rewrite its graph.
+        // This avoids introducing structural changes on approval for already-deployed agents.
+        const mappedWorkflow = await tx
+          .select({ isDeployed: workflow.isDeployed })
+          .from(workflow)
+          .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
+          .limit(1)
+
+        const shouldRewriteGraph = !(mappedWorkflow[0]?.isDeployed === true)
+
+        if (!shouldRewriteGraph) {
+          // Only bump updatedAt to reflect approval action; skip deletes/inserts below
+          await tx
+            .update(workflow)
+            .set({ updatedAt: now })
+            .where(eq(workflow.id, userWorkflowStatus[0].mappedWorkflowId))
+          return
+        }
+
+        // Delete the blocks and edges of the older data (only if not deployed)
         await tx
           .delete(workflowBlocks)
           .where(eq(workflowBlocks.workflowId, userWorkflowStatus[0].mappedWorkflowId))
