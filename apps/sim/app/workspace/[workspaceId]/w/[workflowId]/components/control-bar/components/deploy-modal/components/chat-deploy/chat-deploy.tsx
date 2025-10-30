@@ -429,21 +429,18 @@ export function ChatDeploy({
         )}
 
         {/* Show alert for redeployment of existing chat */}
-        {approvalStatus?.status === 'APPROVED' &&
-          needsRedeployment &&
-          existingChat &&
-          hasWorkflowChanges && (
-            <Alert variant='destructive'>
-              <AlertTriangle className='h-4 w-4' />
-              <AlertDescription>
-                This agent has new changes after approval. Please send for approval before
-                redeploying.
-              </AlertDescription>
-            </Alert>
-          )}
+        {approvalStatus?.status === 'APPROVED' && needsRedeployment && existingChat && (
+          <Alert variant='destructive'>
+            <AlertTriangle className='h-4 w-4' />
+            <AlertDescription>
+              This agent has new changes after approval. Please send for approval before
+              redeploying.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Show alert for first-time deployment with changes */}
-        {approvalStatus?.status === 'APPROVED' && !existingChat && hasWorkflowChanges && (
+        {approvalStatus?.status === 'APPROVED' && !existingChat && needsRedeployment && (
           <Alert variant='destructive'>
             <AlertTriangle className='h-4 w-4' />
             <AlertDescription>
