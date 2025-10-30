@@ -149,6 +149,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
   const [hasNoChatHistory, setHasNoChatHistory] = useState<boolean | undefined>(undefined)
   const [inputFormDismissed, setInputFormDismissed] = useState(false)
+  const [forceInputForm, setForceInputForm] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -600,6 +601,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // Show input form only when no existing thread is selected and there is no history
   useEffect(() => {
+    // Force-show (e.g., after New Chat) once history is not loading
+    if (forceInputForm && !isHistoryLoading) {
+      setShowInputForm(true)
+      return
+    }
     if (
       !isExistingThreadSelected &&
       hasNoChatHistory === true &&
@@ -616,6 +622,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       logger.debug('Waiting for input fields to load before showing form')
     }
   }, [
+    forceInputForm,
     isExistingThreadSelected,
     hasNoChatHistory,
     inputFields.length,
@@ -658,6 +665,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setInitialInputsSubmitted(false) // Allow form to show again for new thread if no history
       setHasNoChatHistory(false) // Will be set to true by fetchHistory if no history exists
       setInputFormDismissed(false)
+      setForceInputForm(false)
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
@@ -678,7 +686,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     // Reset input form state - Case 1 will handle showing the form
     setInitialInputsSubmitted(false)
     setHasNoChatHistory(true)
-    setShowInputForm(false)
+    setShowInputForm(true)
+    setForceInputForm(true)
     setInputFormDismissed(false)
   }, [updateUrlChatId])
 
@@ -686,6 +695,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const handleReRunWithNewInputs = useCallback(() => {
     logger.info('Re-running with new inputs')
     setShowInputForm(true)
+    setForceInputForm(true)
   }, [])
 
   const handleAuthSuccess = () => {
@@ -833,6 +843,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
       // Hide the form
       setShowInputForm(false)
+      setForceInputForm(false)
 
       // Format the inputs as a message for display
       const inputMessage = Object.entries(inputs)
@@ -1075,7 +1086,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
               <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
-                {threads.length > 0 && (
+                {threads.length > 0 && !forceInputForm && (
                   <button
                     aria-label='Close'
                     className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
