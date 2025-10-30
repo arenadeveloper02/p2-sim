@@ -108,6 +108,13 @@ export const ClientChatMessage = memo(
       }
     }
 
+    const hasRenderableText = useMemo(() => {
+      if (typeof cleanTextContent === 'string') {
+        return cleanTextContent.trim().length > 0
+      }
+      return !!cleanTextContent && !isBase64(cleanTextContent)
+    }, [cleanTextContent])
+
     const handleCopy = () => {
       const contentToCopy =
         typeof cleanTextContent === 'string'
@@ -234,129 +241,132 @@ export const ClientChatMessage = memo(
                 )} */}
               </div>
             </div>
-            {message.type === 'assistant' && !message.isStreaming && !message.isInitialMessage && (
-              <div className='relative flex items-center justify-start space-x-2'>
-                {/* Feedback Box Popover */}
-                <div
-                  ref={feedbackRef}
-                  className={`absolute bottom-full left-0 z-50 mb-2 w-[400px] transition-all duration-200 ease-out ${
-                    isFeedbackOpen
-                      ? 'translate-y-0 scale-100 opacity-100'
-                      : 'pointer-events-none translate-y-2 scale-95 opacity-0'
-                  }`}
-                >
-                  <FeedbackBox
-                    isOpen={isFeedbackOpen}
-                    onClose={() => setIsFeedbackOpen(false)}
-                    onSubmit={handleSubmitFeedback}
-                    currentExecutionId={message?.executionId || ''}
-                  />
-                </div>
+            {message.type === 'assistant' &&
+              !message.isStreaming &&
+              !message.isInitialMessage &&
+              hasRenderableText && (
+                <div className='relative flex items-center justify-start space-x-2'>
+                  {/* Feedback Box Popover */}
+                  <div
+                    ref={feedbackRef}
+                    className={`absolute bottom-full left-0 z-50 mb-2 w-[400px] transition-all duration-200 ease-out ${
+                      isFeedbackOpen
+                        ? 'translate-y-0 scale-100 opacity-100'
+                        : 'pointer-events-none translate-y-2 scale-95 opacity-0'
+                    }`}
+                  >
+                    <FeedbackBox
+                      isOpen={isFeedbackOpen}
+                      onClose={() => setIsFeedbackOpen(false)}
+                      onSubmit={handleSubmitFeedback}
+                      currentExecutionId={message?.executionId || ''}
+                    />
+                  </div>
 
-                {!isJsonObject && !isBase64(cleanTextContent) && (
-                  <TooltipProvider>
-                    <Tooltip delayDuration={300}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className='text-muted-foreground transition-colors hover:bg-muted'
-                          onClick={() => {
-                            handleCopy()
-                          }}
-                        >
-                          {isCopied ? (
-                            <Check className='h-4 w-4' strokeWidth={2} />
-                          ) : (
-                            <Copy className='h-4 w-4' strokeWidth={2} />
+                  {!isJsonObject && !isBase64(cleanTextContent) && hasRenderableText && (
+                    <TooltipProvider>
+                      <Tooltip delayDuration={300}>
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              handleCopy()
+                            }}
+                          >
+                            {isCopied ? (
+                              <Check className='h-4 w-4' strokeWidth={2} />
+                            ) : (
+                              <Copy className='h-4 w-4' strokeWidth={2} />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side='top' align='center' sideOffset={5}>
+                          {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {cleanTextContent && message?.executionId && (
+                    <>
+                      <TooltipProvider>
+                        <Tooltip delayDuration={300}>
+                          {(message?.liked === true || message?.liked === null) && (
+                            <TooltipTrigger asChild>
+                              <button
+                                className='text-muted-foreground transition-colors hover:bg-muted'
+                                onClick={() => {
+                                  if (message?.liked === true) {
+                                    return
+                                  }
+                                  handleLike(message?.executionId || '')
+                                }}
+                              >
+                                <ThumbsUp
+                                  stroke={'gray'}
+                                  fill={message?.liked === true ? 'gray' : 'white'}
+                                  className='h-4 w-4'
+                                  strokeWidth={2}
+                                />
+                              </button>
+                            </TooltipTrigger>
                           )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side='top' align='center' sideOffset={5}>
-                        {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {cleanTextContent && message?.executionId && (
-                  <>
+                          <TooltipContent side='top' align='center' sideOffset={5}>
+                            {message?.liked === true ? 'Liked' : 'Like'}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
+                      <TooltipProvider>
+                        <Tooltip delayDuration={300}>
+                          {(message?.liked === false || message?.liked === null) && (
+                            <TooltipTrigger asChild>
+                              <button
+                                className='text-muted-foreground transition-colors hover:bg-muted'
+                                onClick={() => {
+                                  if (message?.liked === false) {
+                                    return
+                                  }
+                                  handleDislike(message?.executionId || '')
+                                }}
+                              >
+                                <ThumbsDown
+                                  stroke={'gray'}
+                                  fill={message?.liked === false ? 'gray' : 'white'}
+                                  className='h-4 w-4'
+                                  strokeWidth={2}
+                                />
+                              </button>
+                            </TooltipTrigger>
+                          )}
+                          <TooltipContent side='top' align='center' sideOffset={5}>
+                            {message?.liked === false ? 'Disliked' : 'Dislike'}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </>
+                  )}
+
+                  {isBase64(cleanTextContent) && (
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
-                        {(message?.liked === true || message?.liked === null) && (
-                          <TooltipTrigger asChild>
-                            <button
-                              className='text-muted-foreground transition-colors hover:bg-muted'
-                              onClick={() => {
-                                if (message?.liked === true) {
-                                  return
-                                }
-                                handleLike(message?.executionId || '')
-                              }}
-                            >
-                              <ThumbsUp
-                                stroke={'gray'}
-                                fill={message?.liked === true ? 'gray' : 'white'}
-                                className='h-4 w-4'
-                                strokeWidth={2}
-                              />
-                            </button>
-                          </TooltipTrigger>
-                        )}
+                        <TooltipTrigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={() => {
+                              downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
+                            }}
+                          >
+                            <Download className='h-4 w-4' strokeWidth={2} />
+                          </button>
+                        </TooltipTrigger>
                         <TooltipContent side='top' align='center' sideOffset={5}>
-                          {message?.liked === true ? 'Liked' : 'Like'}
+                          Download
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-
-                    <TooltipProvider>
-                      <Tooltip delayDuration={300}>
-                        {(message?.liked === false || message?.liked === null) && (
-                          <TooltipTrigger asChild>
-                            <button
-                              className='text-muted-foreground transition-colors hover:bg-muted'
-                              onClick={() => {
-                                if (message?.liked === false) {
-                                  return
-                                }
-                                handleDislike(message?.executionId || '')
-                              }}
-                            >
-                              <ThumbsDown
-                                stroke={'gray'}
-                                fill={message?.liked === false ? 'gray' : 'white'}
-                                className='h-4 w-4'
-                                strokeWidth={2}
-                              />
-                            </button>
-                          </TooltipTrigger>
-                        )}
-                        <TooltipContent side='top' align='center' sideOffset={5}>
-                          {message?.liked === false ? 'Disliked' : 'Dislike'}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </>
-                )}
-
-                {isBase64(cleanTextContent) && (
-                  <TooltipProvider>
-                    <Tooltip delayDuration={300}>
-                      <TooltipTrigger asChild>
-                        <button
-                          className='text-muted-foreground transition-colors hover:bg-muted'
-                          onClick={() => {
-                            downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
-                          }}
-                        >
-                          <Download className='h-4 w-4' strokeWidth={2} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side='top' align='center' sideOffset={5}>
-                        Download
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
           </div>
         </div>
       </div>

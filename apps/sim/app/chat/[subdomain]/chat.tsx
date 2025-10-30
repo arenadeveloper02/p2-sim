@@ -2,6 +2,7 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import Cookies from 'js-cookie'
+import { X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Toaster } from '@/components/ui'
@@ -146,11 +147,18 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
-  const [hasNoChatHistory, setHasNoChatHistory] = useState(false)
+  const [hasNoChatHistory, setHasNoChatHistory] = useState<boolean | undefined>(undefined)
+  const [inputFormDismissed, setInputFormDismissed] = useState(false)
+  const [forceInputForm, setForceInputForm] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
+
+  // Whether the currently selected chatId corresponds to an existing thread
+  const isExistingThreadSelected = currentChatId
+    ? threads.some((thread) => thread.chatId === currentChatId)
+    : false
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -290,9 +298,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
       // Only fetch history if we have a chatId
       if (!chatId) {
-        console.log('No chatId provided, skipping history fetch')
-        setIsHistoryLoading(false) // Ensure loading is reset when no chatId
-        setHasNoChatHistory(true) // Mark as no history to show input form
+        setIsHistoryLoading(false)
+        setHasNoChatHistory(true)
         return
       }
 
@@ -308,53 +315,51 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
             void fetchInputFields() // Fire and forget
           }
           if (data?.logs?.length === 0) {
-            // Case 1: No chat history - mark this for form display
             setHasNoChatHistory(true)
             setIsHistoryLoading(false)
           } else {
-            const formatData = data.logs.flatMap((log: any) => {
-              const messages = []
-              // Add user message if userInput exists
-              if (log.userInput) {
-                messages.push({
-                  id: `${log.id}-user`,
-                  content: log.userInput,
-                  type: 'user',
-                  timestamp: new Date(log.startedAt),
-                })
-              }
-
-              // Add assistant message if modelOutput exists
-              if (log.modelOutput) {
-                messages.push({
-                  id: `${log.id}-assistant`,
-                  content: log.modelOutput,
-                  type: 'assistant',
-                  timestamp: new Date(log.endedAt || log.startedAt),
-                  isStreaming: false,
-                  executionId: log?.executionId || '',
-                  liked: log.liked,
-                })
-              }
-
-              return messages
-            })
-
+            // Flatten and process logs as before
+            setMessages([
+              ...(chatConfig?.customizations?.welcomeMessage
+                ? [
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
+                : []),
+              ...data.logs.flatMap((log: any) => {
+                const messages = []
+                if (log.userInput) {
+                  messages.push({
+                    id: `${log.id}-user`,
+                    content: log.userInput,
+                    type: 'user',
+                    timestamp: new Date(log.startedAt),
+                  })
+                }
+                if (log.modelOutput) {
+                  messages.push({
+                    id: `${log.id}-assistant`,
+                    content: log.modelOutput,
+                    type: 'assistant',
+                    timestamp: new Date(log.endedAt || log.startedAt),
+                    isStreaming: false,
+                    executionId: log?.executionId || '',
+                    liked: log.liked,
+                  })
+                }
+                return messages
+              }),
+            ])
             setTimeout(() => {
-              // Get the welcome message from current messages if it exists
-              setMessages((prevMessages) => {
-                const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
-
-                // Set messages: welcome message + history messages
-                return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
-              })
-
-              // Scroll to bottom after setting history messages
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
-            // History exists, so don't show input form
             setHasNoChatHistory(false)
             setIsHistoryLoading(false)
           }
@@ -375,9 +380,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
     } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
-      // Chat config loaded but no chatId yet.
-      // Do not mark as no history yet; wait for threads to load/select a thread.
-      setIsHistoryLoading(true)
+      // Chat config loaded but no chatId yet - mark as no history to show input form
+      setIsHistoryLoading(false)
+      setHasNoChatHistory(true)
     }
   }, [subdomain, chatConfig, currentChatId])
 
@@ -594,26 +599,38 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       })
   }, [subdomain, preflightChecked, isAutoLoginInProgress])
 
-  // Case 1: Show input form when there are input fields and no chat history
+  // Show input form only when no existing thread is selected and there is no history
   useEffect(() => {
+    // Force-show (e.g., after New Chat) once history is not loading
+    if (forceInputForm && !isHistoryLoading) {
+      setShowInputForm(true)
+      return
+    }
     if (
-      hasNoChatHistory &&
+      !isExistingThreadSelected &&
+      hasNoChatHistory === true &&
       inputFields.length > 0 &&
       !initialInputsSubmitted &&
-      threads.length === 0 &&
-      !isThreadsLoading
+      !isHistoryLoading &&
+      !inputFormDismissed
     ) {
-      logger.info('Case 1: Showing input form - no chat history and input fields available')
       setShowInputForm(true)
+    } else if (isExistingThreadSelected) {
+      // Do not show the form for selected existing threads even if they have no history
+      setShowInputForm(false)
     } else if (hasNoChatHistory && inputFields.length === 0) {
       logger.debug('Waiting for input fields to load before showing form')
     }
   }, [
+    isExistingThreadSelected,
     hasNoChatHistory,
     inputFields.length,
     initialInputsSubmitted,
-    isThreadsLoading,
-    threads.length,
+    isHistoryLoading,
+    inputFormDismissed,
+    threads,
+    currentChatId,
+    forceInputForm,
   ])
 
   const refreshChat = () => {
@@ -647,6 +664,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setShowInputForm(false)
       setInitialInputsSubmitted(false) // Allow form to show again for new thread if no history
       setHasNoChatHistory(false) // Will be set to true by fetchHistory if no history exists
+      setInputFormDismissed(false)
+      setForceInputForm(false)
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
@@ -667,7 +686,9 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     // Reset input form state - Case 1 will handle showing the form
     setInitialInputsSubmitted(false)
     setHasNoChatHistory(true)
-    setShowInputForm(false)
+    setShowInputForm(true)
+    setForceInputForm(true)
+    setInputFormDismissed(false)
   }, [updateUrlChatId])
 
   // Handle re-run with new inputs
@@ -821,6 +842,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
       // Hide the form
       setShowInputForm(false)
+      setForceInputForm(false)
 
       // Format the inputs as a message for display
       const inputMessage = Object.entries(inputs)
@@ -1059,18 +1081,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {showInputForm && (
+        {showInputForm && !isHistoryLoading && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
               <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
-                {threads.length > 0 && (
+                {threads.length > 0 && !forceInputForm && (
                   <button
-                    type='button'
                     aria-label='Close'
-                    onClick={() => setShowInputForm(false)}
-                    className='absolute top-3 right-3 rounded-md px-2 py-1 text-sm hover:bg-muted'
+                    className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
+                    onClick={() => {
+                      setShowInputForm(false)
+                      setInputFormDismissed(true)
+                    }}
                   >
-                    ×
+                    <X className='h-4 w-4' />
                   </button>
                 )}
                 <div className='mb-6'>
