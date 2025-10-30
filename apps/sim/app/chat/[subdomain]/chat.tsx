@@ -601,8 +601,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
   // Show input form only when no existing thread is selected and there is no history
   useEffect(() => {
-    // Force-show (e.g., after New Chat) once history is not loading
-    if (forceInputForm && !isHistoryLoading) {
+    // Force-show (e.g., after New Chat) once history is not loading and fields exist
+    if (forceInputForm && !isHistoryLoading && inputFields.length > 0) {
       setShowInputForm(true)
       return
     }
@@ -683,13 +683,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     })
     updateUrlChatId(id)
 
-    // Reset input form state - Case 1 will handle showing the form
+    // Reset input form state - Case 1 will handle showing the form when applicable
     setInitialInputsSubmitted(false)
     setHasNoChatHistory(true)
-    setShowInputForm(true)
-    setForceInputForm(true)
+    if (inputFields.length > 0) {
+      setShowInputForm(true)
+      setForceInputForm(true)
+    } else {
+      setShowInputForm(false)
+      setForceInputForm(false)
+      // Ensure fields are fetched so the form can appear if needed
+      void fetchInputFields()
+    }
     setInputFormDismissed(false)
-  }, [updateUrlChatId])
+  }, [updateUrlChatId, inputFields.length])
 
   // Handle re-run with new inputs
   const handleReRunWithNewInputs = useCallback(() => {
