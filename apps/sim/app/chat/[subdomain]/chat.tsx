@@ -154,6 +154,11 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
+  // Whether the currently selected chatId corresponds to an existing thread
+  const isExistingThreadSelected = currentChatId
+    ? threads.some((thread) => thread.chatId === currentChatId)
+    : false
+
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -593,9 +598,10 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       })
   }, [subdomain, preflightChecked, isAutoLoginInProgress])
 
-  // Case 1: Show input form when there are input fields and no chat history
+  // Show input form only when no existing thread is selected and there is no history
   useEffect(() => {
     if (
+      !isExistingThreadSelected &&
       hasNoChatHistory === true &&
       inputFields.length > 0 &&
       !initialInputsSubmitted &&
@@ -603,15 +609,21 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       !inputFormDismissed
     ) {
       setShowInputForm(true)
+    } else if (isExistingThreadSelected) {
+      // Do not show the form for selected existing threads even if they have no history
+      setShowInputForm(false)
     } else if (hasNoChatHistory && inputFields.length === 0) {
       logger.debug('Waiting for input fields to load before showing form')
     }
   }, [
+    isExistingThreadSelected,
     hasNoChatHistory,
     inputFields.length,
     initialInputsSubmitted,
     isHistoryLoading,
     inputFormDismissed,
+    threads,
+    currentChatId,
   ])
 
   const refreshChat = () => {
