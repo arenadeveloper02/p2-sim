@@ -21,7 +21,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       layout: 'full',
       options: [
         { label: 'Create Folder', id: 'create_folder' },
-        { label: 'Upload', id: 'upload' },
+        { label: 'Upload Content', id: 'upload' },
         { label: 'Upload File', id: 'upload_file' },
         { label: 'List Files', id: 'list' },
       ],
@@ -51,7 +51,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
     },
     {
       id: 'file',
-      title: 'File from Previous Block',
+      title: 'File',
       type: 'short-input',
       layout: 'full',
       placeholder: 'Enter <blockname.presentationFile>',

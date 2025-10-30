@@ -65,13 +65,6 @@ export const PresentationBlock: BlockConfig<PresentationResponse> = {
       condition: { field: 'operation', value: 'create' },
     },
     {
-      id: 'download',
-      title: 'Download',
-      type: 'switch',
-      layout: 'full',
-      condition: { field: 'operation', value: 'create' },
-    },
-    {
       id: 'content',
       title: 'Content',
       type: 'long-input',
@@ -99,7 +92,6 @@ export const PresentationBlock: BlockConfig<PresentationResponse> = {
     tone: { type: 'string', description: 'Tone of the presentation' },
     verbosity: { type: 'string', description: 'Verbosity level of the presentation' },
     template: { type: 'string', description: 'Presentation template' },
-    download: { type: 'boolean', description: 'Download the presentation' },
     content: { type: 'string', description: 'Presentation content' },
   },
   outputs: {

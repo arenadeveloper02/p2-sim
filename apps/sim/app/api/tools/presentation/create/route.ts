@@ -4,7 +4,7 @@ const PRESENTATION_API_BASE_URL = process.env.PRESENTATION_API_BASE_URL
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json()
-    const { operation, numberOfSlides, tone, verbosity, template, download, content } = data
+    const { operation, numberOfSlides, tone, verbosity, template, content } = data
 
     // Validate required parameters
     if (!operation) {
@@ -74,39 +74,37 @@ export async function POST(req: NextRequest) {
 
     // Step 2: Download the PPTX file if download is requested
     let presentationFile: any = undefined
-    if (download) {
-      const downloadResponse = await fetch(
-        `${PRESENTATION_API_BASE_URL}/p2-presenton/api/v1/ppt/presentation/download-pptx`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            file_path: filePath,
-          }),
-        }
-      )
-
-      if (!downloadResponse.ok) {
-        const errorText = await downloadResponse.text()
-        let errorData
-        try {
-          errorData = JSON.parse(errorText)
-        } catch {
-          errorData = errorText
-        }
-        return NextResponse.json(errorData, { status: downloadResponse.status })
+    const downloadResponse = await fetch(
+      `${PRESENTATION_API_BASE_URL}/p2-presenton/api/v1/ppt/presentation/download-pptx`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_path: filePath,
+        }),
       }
+    )
 
-      // Convert the file to base64
-      const fileBuffer = await downloadResponse.arrayBuffer()
-      const base64File = Buffer.from(fileBuffer).toString('base64')
-      presentationFile = {
-        data: base64File,
-        filename: filePath.split('/').pop() || 'presentation.pptx',
-        mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    if (!downloadResponse.ok) {
+      const errorText = await downloadResponse.text()
+      let errorData
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = errorText
       }
+      return NextResponse.json(errorData, { status: downloadResponse.status })
+    }
+
+    // Convert the file to base64
+    const fileBuffer = await downloadResponse.arrayBuffer()
+    const base64File = Buffer.from(fileBuffer).toString('base64')
+    presentationFile = {
+      data: base64File,
+      filename: filePath.split('/').pop() || 'presentation.pptx',
+      mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     }
 
     const responseData = {

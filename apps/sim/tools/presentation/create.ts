@@ -41,12 +41,6 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
       visibility: 'user-or-llm',
       description: 'Presentation template (e.g., Position2)',
     },
-    download: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Whether to download the presentation file',
-    },
     content: {
       type: 'string',
       required: false,
@@ -73,7 +67,6 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
         tone: params.tone,
         verbosity: params.verbosity,
         template: params.template,
-        download: params.download || false,
         content: params.content,
       }
     },
@@ -85,18 +78,15 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
   ): Promise<PresentationCreateResponse> => {
     const data = await response.json()
 
-    // If download is enabled and file is present, ensure proper file format
+    // Ensure proper file format when present; no download flag needed
     let presentationFile = data.presentationFile
-    if (params?.download && presentationFile) {
-      // Ensure the file is in the correct format for file processing
-      if (presentationFile.data) {
-        presentationFile = {
-          data: presentationFile.data,
-          name: presentationFile.filename || 'presentation.pptx',
-          mimeType:
-            presentationFile.mimetype ||
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        }
+    if (presentationFile?.data) {
+      presentationFile = {
+        data: presentationFile.data, // base64Url string passed through as-is
+        name: presentationFile.filename || 'presentation.pptx',
+        mimeType:
+          presentationFile.mimetype ||
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       }
     }
 
