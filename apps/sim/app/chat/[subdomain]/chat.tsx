@@ -2,6 +2,7 @@
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import Cookies from 'js-cookie'
+import { X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Toaster } from '@/components/ui'
@@ -147,6 +148,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [showInputForm, setShowInputForm] = useState(false)
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
   const [hasNoChatHistory, setHasNoChatHistory] = useState<boolean | undefined>(undefined)
+  const [inputFormDismissed, setInputFormDismissed] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -597,13 +599,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       hasNoChatHistory === true &&
       inputFields.length > 0 &&
       !initialInputsSubmitted &&
-      !isHistoryLoading
+      !isHistoryLoading &&
+      !inputFormDismissed
     ) {
       setShowInputForm(true)
-    } else {
-      setShowInputForm(false)
+    } else if (hasNoChatHistory && inputFields.length === 0) {
+      logger.debug('Waiting for input fields to load before showing form')
     }
-  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted, isHistoryLoading])
+  }, [
+    hasNoChatHistory,
+    inputFields.length,
+    initialInputsSubmitted,
+    isHistoryLoading,
+    inputFormDismissed,
+  ])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -636,6 +645,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       setShowInputForm(false)
       setInitialInputsSubmitted(false) // Allow form to show again for new thread if no history
       setHasNoChatHistory(false) // Will be set to true by fetchHistory if no history exists
+      setInputFormDismissed(false)
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
@@ -657,6 +667,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     setInitialInputsSubmitted(false)
     setHasNoChatHistory(true)
     setShowInputForm(false)
+    setInputFormDismissed(false)
   }, [updateUrlChatId])
 
   // Handle re-run with new inputs
@@ -1051,7 +1062,19 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         {showInputForm && !isHistoryLoading && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
-              <div className='rounded-lg border bg-card p-6 shadow-sm'>
+              <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
+                {threads.length > 0 && (
+                  <button
+                    aria-label='Close'
+                    className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
+                    onClick={() => {
+                      setShowInputForm(false)
+                      setInputFormDismissed(true)
+                    }}
+                  >
+                    <X className='h-4 w-4' />
+                  </button>
+                )}
                 <div className='mb-6'>
                   <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
                   <p className='text-muted-foreground'>
