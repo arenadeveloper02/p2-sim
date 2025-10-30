@@ -1,10 +1,10 @@
-import { eq } from 'drizzle-orm'
+import { eq, isNull, ne, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { apiKey as apiKeyTable, user } from '@/db/schema'
+import { apiKey as apiKeyTable, user, userArenaDetails } from '@/db/schema'
 
 const logger = createLogger('RateLimitAPI')
 
@@ -35,8 +35,16 @@ export async function GET(request: NextRequest) {
       return createErrorResponse('Authentication required', 401)
     }
 
-    // Get user subscription
-    const users = await db.select().from(user)
+    // Get users joined with user_arena_details and filter out client_stakeholder
+    const rows = await db
+      .select({ user, userType: userArenaDetails.userType })
+      .from(user)
+      .leftJoin(userArenaDetails, eq(userArenaDetails.userIdRef, user.id))
+      .where(
+        or(isNull(userArenaDetails.userType), ne(userArenaDetails.userType, 'client_stakeholder'))
+      )
+
+    const users = rows.map((r) => ({ ...r.user, userType: r.userType ?? null }))
 
     return NextResponse.json({
       success: true,
