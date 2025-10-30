@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
-import { chat, user, workflow } from '@/db/schema'
+import { chat, templates, user, workflow } from '@/db/schema'
 
 const logger = createLogger('ChatAgentsAPI')
 
@@ -85,11 +85,13 @@ export async function GET(request: NextRequest) {
         allowedEmails: chat.allowedEmails,
         workflowName: workflow.name,
         workflowDescription: workflow.description,
+        templateDescription: templates.description,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
       .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
+      .leftJoin(templates, eq(templates.workflowId, workflow.id))
       .where(eq(chat.isActive, true))
 
     // Step 3: Filter chats based on access rules
@@ -128,7 +130,7 @@ export async function GET(request: NextRequest) {
       workflow_id: chatRecord.workflowId,
       subdomain: chatRecord.subdomain,
       workflow_name: chatRecord.workflowName,
-      workflow_description: chatRecord.workflowDescription,
+      workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
       created_at: chatRecord.createdAt.toISOString(),
     }))
