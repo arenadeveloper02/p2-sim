@@ -64,6 +64,7 @@ import {
   googleDriveGetContentTool,
   googleDriveListTool,
   googleDriveUploadTool,
+  googleDriveUploadFileTool,
 } from '@/tools/google_drive'
 import {
   googleSheetsAppendTool,
@@ -297,6 +298,7 @@ export const tools: Record<string, ToolConfig> = {
   google_drive_get_content: googleDriveGetContentTool,
   google_drive_list: googleDriveListTool,
   google_drive_upload: googleDriveUploadTool,
+  google_drive_upload_file: googleDriveUploadFileTool,
   google_drive_create_folder: googleDriveCreateFolderTool,
   google_docs_read: googleDocsReadTool,
   google_docs_write: googleDocsWriteTool,

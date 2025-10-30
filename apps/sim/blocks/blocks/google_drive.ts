@@ -21,7 +21,8 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       layout: 'full',
       options: [
         { label: 'Create Folder', id: 'create_folder' },
-        { label: 'Upload File', id: 'upload' },
+        { label: 'Upload', id: 'upload' },
+        { label: 'Upload File', id: 'upload_file' },
         { label: 'List Files', id: 'list' },
       ],
       value: () => 'create_folder',
@@ -53,18 +54,18 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       title: 'File from Previous Block',
       type: 'short-input',
       layout: 'full',
-      placeholder: 'Enter <blockname.presentationFile> or leave empty to use content',
-      condition: { field: 'operation', value: 'upload' },
-      required: false,
+      placeholder: 'Enter <blockname.presentationFile>',
+      condition: { field: 'operation', value: 'upload_file' },
+      required: true,
     },
     {
       id: 'content',
       title: 'Content',
       type: 'long-input',
       layout: 'full',
-      placeholder: 'Content to upload to the file (not needed if file is provided)',
+      placeholder: 'Content to upload to the file',
       condition: { field: 'operation', value: 'upload' },
-      required: false,
+      required: true,
     },
     {
       id: 'mimeType',
@@ -82,7 +83,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         },
       ],
       placeholder: 'Select a file type (auto-detected from file if provided)',
-      condition: { field: 'operation', value: 'upload' },
+      condition: { field: 'operation', value: ['upload', 'upload_file'] },
     },
     {
       id: 'folderSelector',
@@ -97,7 +98,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       placeholder: 'Select a parent folder',
       mode: 'basic',
       dependsOn: ['credential'],
-      condition: { field: 'operation', value: 'upload' },
+      condition: { field: 'operation', value: ['upload', 'upload_file'] },
     },
     {
       id: 'manualFolderId',
@@ -231,12 +232,19 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
     },
   ],
   tools: {
-    access: ['google_drive_upload', 'google_drive_create_folder', 'google_drive_list'],
+    access: [
+      'google_drive_upload',
+      'google_drive_upload_file',
+      'google_drive_create_folder',
+      'google_drive_list',
+    ],
     config: {
       tool: (params) => {
         switch (params.operation) {
           case 'upload':
             return 'google_drive_upload'
+          case 'upload_file':
+            return 'google_drive_upload_file'
           case 'create_folder':
             return 'google_drive_create_folder'
           case 'list':

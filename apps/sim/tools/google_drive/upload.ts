@@ -1,5 +1,6 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import type { GoogleDriveToolParams, GoogleDriveUploadResponse } from '@/tools/google_drive/types'
+import { GOOGLE_WORKSPACE_MIME_TYPES, SOURCE_MIME_TYPES } from '@/tools/google_drive/utils'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('GoogleDriveUploadTool')
@@ -29,17 +30,11 @@ export const uploadTool: ToolConfig<GoogleDriveToolParams, GoogleDriveUploadResp
       visibility: 'user-or-llm',
       description: 'The name of the file to upload',
     },
-    file: {
-      type: 'json',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'File object (UserFile) from previous block to upload',
-    },
     content: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-or-llm',
-      description: 'The content of the file to upload (used if file is not provided)',
+      description: 'The content of the file to upload',
     },
     mimeType: {
       type: 'string',
@@ -62,22 +57,29 @@ export const uploadTool: ToolConfig<GoogleDriveToolParams, GoogleDriveUploadResp
   },
 
   request: {
-    url: () => '/api/tools/google_drive/upload',
+    url: 'https://www.googleapis.com/drive/v3/files?supportsAllDrives=true',
     method: 'POST',
-    headers: () => ({
-      Accept: 'application/json',
+    headers: (params) => ({
+      Authorization: `Bearer ${params.accessToken}`,
       'Content-Type': 'application/json',
     }),
-    body: (params: GoogleDriveToolParams) => {
-      return {
-        accessToken: params.accessToken,
-        fileName: params.fileName,
-        file: params.file,
-        content: params.content,
-        mimeType: params.mimeType,
-        folderSelector: params.folderSelector,
-        folderId: params.folderId,
+    body: (params) => {
+      const metadata: {
+        name: string | undefined
+        mimeType: string
+        parents?: string[]
+      } = {
+        name: params.fileName, // Important: Always include the filename in metadata
+        mimeType: params.mimeType || 'text/plain',
       }
+
+      // Add parent folder if specified (prefer folderSelector over folderId)
+      const parentFolderId = params.folderSelector || params.folderId
+      if (parentFolderId && parentFolderId.trim() !== '') {
+        metadata.parents = [parentFolderId]
+      }
+
+      return metadata
     },
   },
 
@@ -86,18 +88,111 @@ export const uploadTool: ToolConfig<GoogleDriveToolParams, GoogleDriveUploadResp
       const data = await response.json()
 
       if (!response.ok) {
-        logger.error('Failed to upload file to Google Drive', {
+        logger.error('Failed to create file in Google Drive', {
           status: response.status,
           statusText: response.statusText,
           data,
         })
-        throw new Error(
-          data.error?.message || data.error || 'Failed to upload file to Google Drive'
-        )
+        throw new Error(data.error?.message || 'Failed to create file in Google Drive')
       }
 
-      // The internal API route already handles all the upload logic
-      return data
+      // Now upload content to the created file
+      const fileId = data.id
+      const requestedMimeType = params?.mimeType || 'text/plain'
+      const authHeader =
+        response.headers.get('Authorization') || `Bearer ${params?.accessToken || ''}`
+
+      // For Google Workspace formats, use the appropriate source MIME type for content upload
+      const uploadMimeType = GOOGLE_WORKSPACE_MIME_TYPES.includes(requestedMimeType)
+        ? SOURCE_MIME_TYPES[requestedMimeType] || 'text/plain'
+        : requestedMimeType
+
+      logger.info('Uploading content to file', {
+        fileId,
+        fileName: params?.fileName,
+        requestedMimeType,
+        uploadMimeType,
+      })
+
+      const uploadResponse = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&supportsAllDrives=true`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': uploadMimeType,
+          },
+          body: params?.content || '',
+        }
+      )
+
+      if (!uploadResponse.ok) {
+        const uploadError = await uploadResponse.json()
+        logger.error('Failed to upload content to file', {
+          status: uploadResponse.status,
+          statusText: uploadResponse.statusText,
+          error: uploadError,
+        })
+        throw new Error(uploadError.error?.message || 'Failed to upload content to file')
+      }
+
+      // For Google Workspace documents, update the name again to ensure it sticks after conversion
+      if (GOOGLE_WORKSPACE_MIME_TYPES.includes(requestedMimeType)) {
+        logger.info('Updating file name to ensure it persists after conversion', {
+          fileId,
+          fileName: params?.fileName,
+        })
+
+        const updateNameResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: authHeader,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: params?.fileName,
+            }),
+          }
+        )
+
+        if (!updateNameResponse.ok) {
+          logger.warn('Failed to update filename after conversion, but content was uploaded', {
+            status: updateNameResponse.status,
+            statusText: updateNameResponse.statusText,
+          })
+        }
+      }
+
+      // Get the final file data
+      const finalFileResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name,mimeType,webViewLink,webContentLink,size,createdTime,modifiedTime,parents`,
+        {
+          headers: {
+            Authorization: authHeader,
+          },
+        }
+      )
+
+      const finalFile = await finalFileResponse.json()
+
+      return {
+        success: true,
+        output: {
+          file: {
+            id: finalFile.id,
+            name: finalFile.name,
+            mimeType: finalFile.mimeType,
+            webViewLink: finalFile.webViewLink,
+            webContentLink: finalFile.webContentLink,
+            size: finalFile.size,
+            createdTime: finalFile.createdTime,
+            modifiedTime: finalFile.modifiedTime,
+            parents: finalFile.parents,
+          },
+        },
+      }
     } catch (error: any) {
       logger.error('Error in upload transformation', {
         error: error.message,
