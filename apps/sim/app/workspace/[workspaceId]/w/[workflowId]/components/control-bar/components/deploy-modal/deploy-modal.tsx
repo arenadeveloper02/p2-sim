@@ -629,10 +629,13 @@ export function DeployModal({
                   chatSubmitting ||
                   (!chatExists && isLoading) ||
                   (chatExists && !isChatFormValid) ||
-                  // Disable for redeployment when approved and needs redeployment
-                  (approvalStatus?.status === 'APPROVED' && chatExists && needsRedeployment) ||
-                  // Disable for first-time deployment when approved and server indicates changes
-                  (approvalStatus?.status === 'APPROVED' && !chatExists && needsRedeployment)
+                  // Disable for redeployment when approved and has workflow changes
+                  (approvalStatus?.status === 'APPROVED' &&
+                    chatExists &&
+                    needsRedeployment &&
+                    hasWorkflowChanges) ||
+                  // Disable for first-time deployment when approved and user made changes from saved state
+                  (approvalStatus?.status === 'APPROVED' && !chatExists && hasWorkflowChanges)
                 }
                 className={cn(
                   'gap-2 font-medium',
