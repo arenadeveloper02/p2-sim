@@ -73,7 +73,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 2: Download the PPTX file if download is requested
-    let presentationFile: any = undefined
     const downloadResponse = await fetch(
       `${PRESENTATION_API_BASE_URL}/p2-presenton/api/v1/ppt/presentation/download-pptx`,
       {
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
     // Convert the file to base64
     const fileBuffer = await downloadResponse.arrayBuffer()
     const base64File = Buffer.from(fileBuffer).toString('base64')
-    presentationFile = {
+    const presentationFile = {
       data: base64File,
       filename: filePath.split('/').pop() || 'presentation.pptx',
       mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
