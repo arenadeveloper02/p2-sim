@@ -318,7 +318,8 @@ export async function executeWorkflowForChat(
   input: string,
   conversationId?: string,
   workflowInputs?: Record<string, any>,
-  logChatId?: string
+  logChatId?: string,
+  executingUserId?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
@@ -569,7 +570,7 @@ export async function executeWorkflowForChat(
 
   // Start logging session
   await loggingSession.safeStart({
-    userId: deployment.userId,
+    userId: executingUserId || deployment.userId,
     workspaceId: '', // TODO: Get from workflow
     variables: workflowVariables,
   })

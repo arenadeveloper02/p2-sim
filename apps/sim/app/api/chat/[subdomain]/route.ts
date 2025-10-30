@@ -116,13 +116,15 @@ export async function POST(
       return addCorsHeaders(createErrorResponse('No input provided', 400), request)
     }
 
+    // Determine executing user from session if available (used for logging)
+    let executingUserId: string | undefined
+
     // Store chat details in deployed_chat table if chatId is provided and not already exists
     if (chatId) {
       try {
         logger.debug(`[${requestId}] Attempting to store chat details for chatId: ${chatId}`)
 
         // Try to get the executing user ID from session
-        let executingUserId: string | undefined
         try {
           const session = await getSession()
           executingUserId = session?.user?.id
@@ -232,7 +234,8 @@ export async function POST(
         input,
         conversationId,
         workflowInputs,
-        chatId // Pass the chatId from payload for logging
+        chatId, // Pass the chatId from payload for logging
+        executingUserId
       )
 
       // The result is always a ReadableStream that we can pipe to the client
