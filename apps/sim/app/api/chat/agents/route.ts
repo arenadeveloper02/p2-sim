@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         workflowName: workflow.name,
         workflowDescription: workflow.description,
         templateDescription: templates.description,
+        department: templates.category,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
@@ -132,6 +133,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
+      department: chatRecord.department,
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
