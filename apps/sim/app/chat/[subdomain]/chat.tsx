@@ -1,11 +1,14 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
+import { X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Toaster } from '@/components/ui'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { client } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/utils'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -43,6 +46,7 @@ interface ChatConfig {
   }
   authType?: 'public' | 'password' | 'email'
   outputConfigs?: Array<{ blockId: string; path?: string }>
+  inputFields?: any[] // Input fields from workflow's starter block
 }
 
 interface ThreadRecord {
@@ -134,6 +138,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const isUserScrollingRef = useRef(false)
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | null>(null)
+  const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState(false)
+  const [preflightChecked, setPreflightChecked] = useState(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
 
@@ -141,11 +147,18 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   const [inputFields, setInputFields] = useState<any[]>([])
   const [showInputForm, setShowInputForm] = useState(false)
   const [initialInputsSubmitted, setInitialInputsSubmitted] = useState(false)
-  const [hasNoChatHistory, setHasNoChatHistory] = useState(false)
+  const [hasNoChatHistory, setHasNoChatHistory] = useState<boolean | undefined>(undefined)
+  const [inputFormDismissed, setInputFormDismissed] = useState(false)
+  const [forceInputForm, setForceInputForm] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
+
+  // Whether the currently selected chatId corresponds to an existing thread
+  const isExistingThreadSelected = currentChatId
+    ? threads.some((thread) => thread.chatId === currentChatId)
+    : false
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -242,11 +255,12 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   )
 
   // Fetch left threads here and handle initial/no-thread cases
+  // Gate to avoid calling history before auth/auto-login is settled
   useEffect(() => {
-    if (subdomain) {
+    if (preflightChecked && subdomain && chatConfig && !authRequired && !isAutoLoginInProgress) {
       fetchThreads(subdomain, true)
     }
-  }, [subdomain, fetchThreads])
+  }, [preflightChecked, subdomain, fetchThreads, chatConfig, authRequired, isAutoLoginInProgress])
 
   // Check if current chatId exists in threads when conversation is finished
   useEffect(() => {
@@ -284,7 +298,8 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
       // Only fetch history if we have a chatId
       if (!chatId) {
-        console.log('No chatId provided, skipping history fetch')
+        setIsHistoryLoading(false)
+        setHasNoChatHistory(true)
         return
       }
 
@@ -293,66 +308,81 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
         if (response.ok) {
           const data = await response.json()
-          // Always fetch input fields regardless of chat history
-          fetchInputFields()
+          // Fetch input fields as fallback if not in chatConfig
+          // (chatConfig should have them, but this ensures backwards compatibility)
+          // Note: fetchInputFields is async but we don't need to wait for it
+          if (inputFields.length === 0) {
+            void fetchInputFields() // Fire and forget
+          }
           if (data?.logs?.length === 0) {
-            // Case 1: No chat history - mark this for form display
             setHasNoChatHistory(true)
+            setIsHistoryLoading(false)
           } else {
-            const formatData = data.logs.flatMap((log: any) => {
-              const messages = []
-              // Add user message if userInput exists
-              if (log.userInput) {
-                messages.push({
-                  id: `${log.id}-user`,
-                  content: log.userInput,
-                  type: 'user',
-                  timestamp: new Date(log.startedAt),
-                })
-              }
-
-              // Add assistant message if modelOutput exists
-              if (log.modelOutput) {
-                messages.push({
-                  id: `${log.id}-assistant`,
-                  content: log.modelOutput,
-                  type: 'assistant',
-                  timestamp: new Date(log.endedAt || log.startedAt),
-                  isStreaming: false,
-                  executionId: log?.executionId || '',
-                  liked: log.liked,
-                })
-              }
-
-              return messages
-            })
-
+            // Flatten and process logs as before
+            setMessages([
+              ...(chatConfig?.customizations?.welcomeMessage
+                ? [
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
+                : []),
+              ...data.logs.flatMap((log: any) => {
+                const messages = []
+                if (log.userInput) {
+                  messages.push({
+                    id: `${log.id}-user`,
+                    content: log.userInput,
+                    type: 'user',
+                    timestamp: new Date(log.startedAt),
+                  })
+                }
+                if (log.modelOutput) {
+                  messages.push({
+                    id: `${log.id}-assistant`,
+                    content: log.modelOutput,
+                    type: 'assistant',
+                    timestamp: new Date(log.endedAt || log.startedAt),
+                    isStreaming: false,
+                    executionId: log?.executionId || '',
+                    liked: log.liked,
+                  })
+                }
+                return messages
+              }),
+            ])
             setTimeout(() => {
-              // Get the welcome message from current messages if it exists
-              setMessages((prevMessages) => {
-                const welcomeMessage = prevMessages.find((msg) => msg.isInitialMessage)
-
-                // Set messages: welcome message + history messages
-                return welcomeMessage ? [welcomeMessage, ...formatData] : formatData
-              })
-
-              // Scroll to bottom after setting history messages
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
+            setHasNoChatHistory(false)
             setIsHistoryLoading(false)
           }
         } else {
+          // If history fetch fails (404, etc.), treat as no history to show input form
+          logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          setHasNoChatHistory(true)
           setIsHistoryLoading(false)
         }
       } catch (error) {
+        // If history fetch errors, treat as no history to show input form
+        logger.error('Error fetching history, treating as no history:', error)
+        setHasNoChatHistory(true)
         setIsHistoryLoading(false)
       }
     }
 
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
+    } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
+      // Chat config loaded but no chatId yet - mark as no history to show input form
+      setIsHistoryLoading(false)
+      setHasNoChatHistory(true)
     }
   }, [subdomain, chatConfig, currentChatId])
 
@@ -388,9 +418,42 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       })
 
       if (!response.ok) {
-        // Check if auth is required
-        if (response.status === 401) {
+        // Check if auth is required or unauthorized
+        if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
+
+          // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
+          if (errorData.error === 'auth_required_email') {
+            try {
+              const autoLoginKey = `chat:autoLoginTried:${subdomain}:${
+                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+              }`
+              const alreadyTried =
+                typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+              const cookieEmail = Cookies.get('email')
+
+              // Only attempt if we have an email cookie, have not tried already, and there is no active session
+              if (cookieEmail && !alreadyTried) {
+                const sessionRes = await client.getSession()
+                const hasSession = !!sessionRes?.data?.user?.id
+                if (!hasSession) {
+                  setIsAutoLoginInProgress(true)
+                  localStorage.setItem(autoLoginKey, '1')
+                  await client.signIn.email(
+                    {
+                      email: cookieEmail,
+                      password: 'Position2!',
+                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+                    },
+                    {}
+                  )
+                  return
+                }
+              }
+            } catch (_e) {
+              // Swallow and proceed to existing auth UI
+            }
+          }
 
           if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
@@ -398,6 +461,22 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           }
           if (errorData.error === 'auth_required_email') {
             setAuthRequired('email')
+            return
+          }
+          // If user email is not authorized, show error and redirect
+          if (
+            errorData.error === 'Email not authorized' ||
+            errorData.message === 'Email not authorized' ||
+            errorData.error === 'You do not have access to this chat' ||
+            errorData.message === 'You do not have access to this chat'
+          ) {
+            setError('You do not have access to this chat.')
+            // Redirect after 3 seconds
+            setTimeout(() => {
+              if (typeof window !== 'undefined') {
+                window.history.back()
+              }
+            }, 3000)
             return
           }
         }
@@ -411,6 +490,18 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       const data = await response.json()
       console.log('<><><>Chat config data', data)
       setChatConfig(data)
+
+      // Set input fields from chat config (available to all authorized users)
+      // This avoids needing separate workflow API permissions
+      if (data?.inputFields && Array.isArray(data.inputFields) && data.inputFields.length > 0) {
+        logger.info(`Found ${data.inputFields.length} input fields in chat config`)
+        setInputFields(data.inputFields)
+        // If there's no history yet and we just loaded input fields, ensure form can show
+        // This handles the case where inputFields load after hasNoChatHistory is set
+        if (hasNoChatHistory && !initialInputsSubmitted) {
+          logger.debug('Input fields loaded, will trigger form display check via useEffect')
+        }
+      }
 
       if (data?.customizations?.welcomeMessage) {
         setMessages([
@@ -439,14 +530,64 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     } catch (error) {
       logger.error('Error fetching input fields:', error)
       // On error, proceed to chat anyway
-    } finally {
-      setIsHistoryLoading(false)
     }
+    // Note: Don't set isHistoryLoading here - it's managed by fetchHistory
   }
 
-  // Fetch chat config on mount and generate new conversation ID
+  // Preflight auto-login: if email cookie exists and no Better Auth session, sign in first
   useEffect(() => {
-    fetchChatConfig()
+    const tryAutoLogin = async () => {
+      try {
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail) {
+          setPreflightChecked(true)
+          return
+        }
+
+        const autoLoginKey = `chat:autoLoginTried:${subdomain}:${
+          new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+        }`
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        if (alreadyTried) {
+          setPreflightChecked(true)
+          return
+        }
+        // Synchronously block initial fetches
+        setIsAutoLoginInProgress(true)
+
+        const sessionRes = await client.getSession()
+        const hasSession = !!sessionRes?.data?.user?.id
+        if (!hasSession) {
+          localStorage.setItem(autoLoginKey, '1')
+          await client.signIn.email(
+            {
+              email: cookieEmail,
+              password: 'Position2!',
+              callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+            },
+            {}
+          )
+          return
+        }
+
+        setIsAutoLoginInProgress(false)
+        setPreflightChecked(true)
+      } catch (_e) {
+        // Ignore and continue normal flow
+        setIsAutoLoginInProgress(false)
+        setPreflightChecked(true)
+      }
+    }
+
+    void tryAutoLogin()
+  }, [subdomain])
+
+  // Fetch chat config on mount and generate new conversation ID
+  // Input fields are now included in chatConfig response (available to all authorized users)
+  useEffect(() => {
+    if (preflightChecked && !isAutoLoginInProgress) {
+      fetchChatConfig()
+    }
     setConversationId(uuidv4())
 
     getFormattedGitHubStars()
@@ -456,15 +597,41 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       .catch((err) => {
         logger.error('Failed to fetch GitHub stars:', err)
       })
-  }, [subdomain])
+  }, [subdomain, preflightChecked, isAutoLoginInProgress])
 
-  // Case 1: Show input form when there are input fields and no chat history
+  // Show input form only when no existing thread is selected and there is no history
   useEffect(() => {
-    if (hasNoChatHistory && inputFields.length > 0 && !initialInputsSubmitted) {
-      logger.info('Case 1: Showing input form - no chat history and input fields available')
+    // Force-show (e.g., after New Chat) once history is not loading and fields exist
+    if (forceInputForm && !isHistoryLoading && inputFields.length > 0) {
       setShowInputForm(true)
+      return
     }
-  }, [hasNoChatHistory, inputFields.length, initialInputsSubmitted])
+    if (
+      !isExistingThreadSelected &&
+      hasNoChatHistory === true &&
+      inputFields.length > 0 &&
+      !initialInputsSubmitted &&
+      !isHistoryLoading &&
+      !inputFormDismissed
+    ) {
+      setShowInputForm(true)
+    } else if (isExistingThreadSelected) {
+      // Do not show the form for selected existing threads even if they have no history
+      setShowInputForm(false)
+    } else if (hasNoChatHistory && inputFields.length === 0) {
+      logger.debug('Waiting for input fields to load before showing form')
+    }
+  }, [
+    isExistingThreadSelected,
+    hasNoChatHistory,
+    inputFields.length,
+    initialInputsSubmitted,
+    isHistoryLoading,
+    inputFormDismissed,
+    threads,
+    currentChatId,
+    forceInputForm,
+  ])
 
   const refreshChat = () => {
     fetchChatConfig()
@@ -493,8 +660,12 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         return welcome ? [welcome] : []
       })
       // Reset form state when switching threads
+      // Reset hasNoChatHistory so history can be re-evaluated for the new thread
       setShowInputForm(false)
-      setHasNoChatHistory(false)
+      setInitialInputsSubmitted(false) // Allow form to show again for new thread if no history
+      setHasNoChatHistory(false) // Will be set to true by fetchHistory if no history exists
+      setInputFormDismissed(false)
+      setForceInputForm(false)
       updateUrlChatId(chatId)
     },
     [currentChatId, updateUrlChatId]
@@ -512,11 +683,20 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     })
     updateUrlChatId(id)
 
-    // Reset input form state - Case 1 will handle showing the form
+    // Reset input form state - Case 1 will handle showing the form when applicable
     setInitialInputsSubmitted(false)
     setHasNoChatHistory(true)
-    setShowInputForm(false)
-  }, [updateUrlChatId])
+    if (inputFields.length > 0) {
+      setShowInputForm(true)
+      setForceInputForm(true)
+    } else {
+      setShowInputForm(false)
+      setForceInputForm(false)
+      // Ensure fields are fetched so the form can appear if needed
+      void fetchInputFields()
+    }
+    setInputFormDismissed(false)
+  }, [updateUrlChatId, inputFields.length])
 
   // Handle re-run with new inputs
   const handleReRunWithNewInputs = useCallback(() => {
@@ -543,10 +723,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     if (!messageToSend.trim() && !isFormSubmission && isLoading) return
 
     // For form submissions, use a default message if no message is provided
-    const finalMessage =
-      isFormSubmission && !messageToSend.trim()
-        ? 'Starting workflow with provided inputs...'
-        : messageToSend
+    const finalMessage = isFormSubmission && !messageToSend.trim() ? '' : messageToSend
 
     logger.info('Sending message:', {
       messageToSend: finalMessage,
@@ -672,6 +849,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
 
       // Hide the form
       setShowInputForm(false)
+      setForceInputForm(false)
 
       // Format the inputs as a message for display
       const inputMessage = Object.entries(inputs)
@@ -698,7 +876,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       // Add a message indicating the workflow is starting
       const workflowStartMessage: ChatMessage = {
         id: crypto.randomUUID(),
-        content: 'Starting workflow with the provided inputs...',
+        content: '',
         type: 'assistant',
         timestamp: new Date(),
       }
@@ -717,7 +895,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
       try {
         // Send the structured inputs to the workflow
         const payload = {
-          input: 'Starting workflow with provided inputs...', // Main input message
+          input: inputMessage, // Formatted message so history threads display workflow inputs
           workflowInputs: inputs, // Structured inputs for the workflow
           conversationId,
           chatId: currentChatId,
@@ -836,6 +1014,15 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
     [handleSendMessage]
   )
 
+  // If auto-login or preflight gating is active, show a full-screen loading state
+  if (!preflightChecked || isAutoLoginInProgress) {
+    return (
+      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    )
+  }
+
   // If error, show error message using the extracted component
   if (error) {
     return <ChatErrorState error={error} starCount={starCount} workflowId={subdomain} />
@@ -901,10 +1088,22 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {showInputForm && (
+        {showInputForm && !isHistoryLoading && (
           <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
             <div className='mx-auto w-full max-w-2xl'>
-              <div className='rounded-lg border bg-card p-6 shadow-sm'>
+              <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
+                {threads.length > 0 && !forceInputForm && (
+                  <button
+                    aria-label='Close'
+                    className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
+                    onClick={() => {
+                      setShowInputForm(false)
+                      setInputFormDismissed(true)
+                    }}
+                  >
+                    <X className='h-4 w-4' />
+                  </button>
+                )}
                 <div className='mb-6'>
                   <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
                   <p className='text-muted-foreground'>
