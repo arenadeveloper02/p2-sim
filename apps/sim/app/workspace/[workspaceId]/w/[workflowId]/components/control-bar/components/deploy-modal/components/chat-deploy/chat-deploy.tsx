@@ -29,7 +29,6 @@ import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
-import { useUndoRedoStore } from '@/stores/undo-redo'
 
 const logger = createLogger('ChatDeploy')
 
@@ -119,16 +118,71 @@ export function ChatDeploy({
   const { data: session } = useSession()
   const userId = session?.user?.id || 'unknown'
 
-  // Check if workflow has changes from saved/approved state
-  // If undo size is 0, we're at the saved/approved state (no changes)
-  // If undo size > 0, there are changes from the saved state
-  const stacks = useUndoRedoStore((s: any) => s.stacks)
-  const undoRedoSizes = (() => {
-    const key = workflowId && userId ? `${workflowId}:${userId}` : ''
-    const stack = (key && stacks[key]) || { undo: [], redo: [] }
-    return { undoSize: stack.undo.length, redoSize: stack.redo.length }
-  })()
-  const hasWorkflowChanges = undoRedoSizes.undoSize > 0
+  // State for approved template comparison
+  const [approvedTemplateState, setApprovedTemplateState] = useState<any>(null)
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
+  const [hasChangesFromApproved, setHasChangesFromApproved] = useState(false)
+
+  // Fetch approved template and compare with current workflow
+  useEffect(() => {
+    const checkChangesFromApproved = async () => {
+      if (!workflowId || approvalStatus?.status !== 'APPROVED') {
+        setHasChangesFromApproved(false)
+        return
+      }
+
+      try {
+        setIsLoadingTemplate(true)
+        // Fetch approved template
+        const templateResponse = await fetch(`/api/templates?workflowId=${workflowId}&limit=1`)
+        if (!templateResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const templateData = await templateResponse.json()
+        const template = templateData.data?.[0]
+        if (!template?.state) {
+          // No approved template found, no changes to detect
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const approvedState = template.state
+        setApprovedTemplateState(approvedState)
+
+        // Fetch current workflow state from normalized tables
+        const workflowResponse = await fetch(`/api/workflows/${workflowId}`)
+        if (!workflowResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const workflowData = await workflowResponse.json()
+        const currentState = workflowData.data?.state
+
+        if (!currentState || !approvedState) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        // Import hasWorkflowChanged for comparison
+        const { hasWorkflowChanged } = await import('@/lib/workflows/comparison')
+        const hasChanges = hasWorkflowChanged(currentState, approvedState)
+        setHasChangesFromApproved(hasChanges)
+      } catch (error) {
+        logger.error('Error checking changes from approved template:', error)
+        setHasChangesFromApproved(false)
+      } finally {
+        setIsLoadingTemplate(false)
+      }
+    }
+
+    void checkChangesFromApproved()
+  }, [workflowId, approvalStatus?.status])
+
+  // Use changes from approved template
+  const hasWorkflowChanges = hasChangesFromApproved
   const isFormValid =
     isSubdomainValid &&
     Boolean(formData.title.trim()) &&
