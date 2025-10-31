@@ -339,6 +339,7 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
+    userId: text('user_id'),
     isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
     chatId: text('chat_id'), // chat_id for tracking conversation context
 
@@ -1517,6 +1518,7 @@ export const deployedChat = pgTable(
     chatId: text('chat_id'),
     title: text('title'),
     workflowId: text('workflow_id'),
+    executingUserId: text('executing_user_id'),
   },
   (table) => ({
     chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),

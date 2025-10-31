@@ -48,6 +48,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     workflowState: WorkflowState
     isExternalChat?: boolean
     chatId?: string
+    userId?: string
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
@@ -60,6 +61,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       workflowState,
       isExternalChat = false,
       chatId,
+      userId,
     } = params
 
     logger.debug(`Starting workflow execution ${executionId} for workflow ${workflowId}`)
@@ -80,6 +82,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         stateSnapshotId: snapshotResult.snapshot.id,
         level: 'info',
         trigger: trigger.type,
+        userId,
         isExternalChat,
         chatId,
         startedAt: startTime,
@@ -102,6 +105,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         stateSnapshotId: workflowLog.stateSnapshotId,
         level: workflowLog.level as 'info' | 'error',
         trigger: workflowLog.trigger as ExecutionTrigger['type'],
+        userId: (workflowLog as any).userId || undefined,
         isExternalChat: workflowLog.isExternalChat,
         startedAt: workflowLog.startedAt.toISOString(),
         endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
@@ -327,6 +331,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       stateSnapshotId: updatedLog.stateSnapshotId,
       level: updatedLog.level as 'info' | 'error',
       trigger: updatedLog.trigger as ExecutionTrigger['type'],
+      userId: (updatedLog as any).userId || undefined,
       isExternalChat: updatedLog.isExternalChat,
       startedAt: updatedLog.startedAt.toISOString(),
       endedAt: updatedLog.endedAt?.toISOString() || endedAt,
@@ -362,6 +367,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       stateSnapshotId: workflowLog.stateSnapshotId,
       level: workflowLog.level as 'info' | 'error',
       trigger: workflowLog.trigger as ExecutionTrigger['type'],
+      userId: (workflowLog as any).userId || undefined,
       isExternalChat: workflowLog.isExternalChat,
       startedAt: workflowLog.startedAt.toISOString(),
       endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
