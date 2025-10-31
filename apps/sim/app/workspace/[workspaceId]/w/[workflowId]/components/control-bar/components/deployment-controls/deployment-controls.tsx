@@ -41,9 +41,11 @@ export function DeploymentControls({
   const isDeployed = deploymentStatus?.isDeployed || false
 
   const workflowNeedsRedeployment = needsRedeployment
+  const { getApprovalStatus } = useWorkflowRegistry()
 
   const [isDeploying, _setIsDeploying] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [approvalStatus, setApprovalStatus] = useState<any>(null)
 
   const lastWorkflowIdRef = useRef<string | null>(null)
 
@@ -52,6 +54,17 @@ export function DeploymentControls({
       lastWorkflowIdRef.current = activeWorkflowId
     }
   }, [activeWorkflowId])
+
+  // Fetch approval status
+  useEffect(() => {
+    const fetchApprovalStatus = async () => {
+      if (activeWorkflowId) {
+        const status = await getApprovalStatus(activeWorkflowId)
+        setApprovalStatus(status)
+      }
+    }
+    fetchApprovalStatus()
+  }, [activeWorkflowId, getApprovalStatus])
 
   const refetchWithErrorHandling = async () => {
     if (!activeWorkflowId) return
@@ -138,6 +151,7 @@ export function DeploymentControls({
         initialTab={initialTab}
         workspaceId={workspaceId}
         onDeploymentComplete={onDeploymentComplete}
+        approvalStatus={approvalStatus}
       />
     </>
   )

@@ -388,7 +388,8 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     const isNewUserMessage = lastMessage?.type === 'user'
 
     // Always scroll for new user messages, or only if near bottom for assistant messages
-    if ((isNewUserMessage || isNearBottom) && messagesEndRef.current) {
+    //for handle scroll to bottom for new user messages the logic is avaliable in handleSendMessage() function scrollToBottom()
+    if (isNearBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
       // Let the scroll event handler update the state naturally after animation completes
     }
@@ -404,6 +405,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     )
       return
 
+    scrollToBottom()
     // Store the message being sent for reference
     const sentMessage = chatMessage.trim()
     // Add to prompt history if it's not already the most recent

@@ -4,6 +4,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { generateCreativeWorkflowName } from '@/lib/naming'
 import { API_ENDPOINTS } from '@/stores/constants'
 import { useVariablesStore } from '@/stores/panel/variables/store'
+import { useUndoRedoStore } from '@/stores/undo-redo/store'
 import type {
   DeploymentStatus,
   WorkflowMetadata,
@@ -539,6 +540,20 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         set({ activeWorkflowId: id, error: null })
         useWorkflowStore.setState(workflowState)
         useSubBlockStore.getState().initializeFromWorkflow(id, (workflowState as any).blocks || {})
+
+        // Clear undo/redo stacks for this workflow (all users) to avoid false change detection
+        try {
+          const undoStore = useUndoRedoStore.getState()
+          const stackKeys = Object.keys(undoStore.stacks)
+          stackKeys.forEach((key) => {
+            const [wfId, userId] = key.split(':')
+            if (wfId === id && userId) {
+              undoStore.clear(id, userId)
+            }
+          })
+        } catch (_e) {
+          // Non-fatal: if undo store not initialized yet, skip
+        }
 
         window.dispatchEvent(
           new CustomEvent('active-workflow-changed', {
