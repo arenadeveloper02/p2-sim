@@ -45,7 +45,7 @@ export function AuthSelector({
     const fetchUsers = async () => {
       setLoadingUsers(true)
       try {
-        const response = await fetch('/api/users/approval')
+        const response = await fetch('/api/users')
         if (response.ok) {
           const data = await response.json()
           setUsers(data.users || [])
