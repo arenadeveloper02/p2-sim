@@ -12,7 +12,6 @@ import {
   DeploymentInfo,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components'
 import { ChatDeploy } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/chat-deploy'
-import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -91,16 +90,72 @@ export function DeployModal({
   const { data: session } = useSession()
   const userId = session?.user?.id || 'unknown'
 
-  // Check if workflow has changes from saved/approved state
-  // If undo size is 0, we're at the saved/approved state (no changes)
-  // If undo size > 0, there are changes from the saved state
-  const stacks = useUndoRedoStore((s) => s.stacks)
-  const undoRedoSizes = (() => {
-    const key = workflowId && userId ? `${workflowId}:${userId}` : ''
-    const stack = (key && stacks[key]) || { undo: [], redo: [] }
-    return { undoSize: stack.undo.length, redoSize: stack.redo.length }
-  })()
-  const hasWorkflowChanges = undoRedoSizes.undoSize > 0
+  // Check if workflow has changes from approved state using state comparison
+  // This matches the logic in chat-deploy.tsx for consistent behavior
+  // Only checks approved workflows - non-approved workflows use needsRedeployment flag instead
+  const [hasChangesFromApproved, setHasChangesFromApproved] = useState(false)
+  const [isLoadingChanges, setIsLoadingChanges] = useState(false)
+
+  // Compare current workflow state with approved template (only for approved workflows)
+  useEffect(() => {
+    const checkWorkflowChanges = async () => {
+      // Only check for approved workflows - same logic as chat-deploy
+      if (!workflowId || approvalStatus?.status !== 'APPROVED') {
+        setHasChangesFromApproved(false)
+        return
+      }
+
+      try {
+        setIsLoadingChanges(true)
+
+        // Fetch approved template
+        const templateResponse = await fetch(`/api/templates?workflowId=${workflowId}&limit=1`)
+        if (!templateResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const templateData = await templateResponse.json()
+        const template = templateData.data?.[0]
+        if (!template?.state) {
+          // No approved template found, no changes to detect
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const approvedState = template.state as WorkflowState
+
+        // Fetch current workflow state
+        const workflowResponse = await fetch(`/api/workflows/${workflowId}`)
+        if (!workflowResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const workflowData = await workflowResponse.json()
+        const currentState = workflowData.data?.state
+
+        if (!currentState || !approvedState) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        // Compare states using the same function as chat-deploy
+        const { hasWorkflowChanged } = await import('@/lib/workflows/comparison')
+        const hasChanges = hasWorkflowChanged(currentState, approvedState)
+        setHasChangesFromApproved(hasChanges)
+      } catch (error) {
+        logger.error('Error checking workflow changes:', error)
+        setHasChangesFromApproved(false)
+      } finally {
+        setIsLoadingChanges(false)
+      }
+    }
+
+    void checkWorkflowChanges()
+  }, [workflowId, approvalStatus?.status])
+
+  const hasWorkflowChanges = hasChangesFromApproved
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUndeploying, setIsUndeploying] = useState(false)
