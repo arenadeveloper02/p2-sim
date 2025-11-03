@@ -697,7 +697,7 @@ Response Format:
   try {
     // Try Grok first, fallback to Claude, then OpenAI if not available
     let provider: 'anthropic' | 'openai' | 'xai' = 'xai'
-    let model: string = 'grok-3-fast-latest'
+    let model = 'grok-3-fast-latest'
     let apiKey: string
 
     try {
@@ -905,7 +905,7 @@ Example for "Sept 8-14 and then 15-21":
 
 // Helper function to fix segments.date in queries
 function fixSegmentsDateInQuery(query: string): string {
-  let fixedQuery = query.trim()
+  const fixedQuery = query.trim()
 
   // DO NOT auto-add segments.date to SELECT - this causes daily breakdown
   // segments.date should only be in WHERE clause for date filtering
