@@ -83,6 +83,7 @@ export interface WorkflowExecutionLog {
   stateSnapshotId: string
   level: 'info' | 'error'
   trigger: ExecutionTrigger['type']
+  userId?: string
   isExternalChat: boolean
   startedAt: string
   endedAt: string
@@ -311,6 +312,7 @@ export interface ExecutionLoggerService {
     workflowState: WorkflowState
     isExternalChat?: boolean
     chatId?: string
+    userId?: string
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
