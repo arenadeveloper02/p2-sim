@@ -377,6 +377,9 @@ export async function executeWorkflowForChat(
     logChatId || chatId
   )
 
+  // Store the initial input for logging into execution_data.traceSpans.initial_input
+  loggingSession.setInitialInput(input)
+
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>
   let outputBlockIds: string[] = []

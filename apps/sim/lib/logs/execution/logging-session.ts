@@ -49,6 +49,7 @@ export class LoggingSession {
   private trigger?: ExecutionTrigger
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
+  private initialInput?: string
 
   constructor(
     workflowId: string,
@@ -64,6 +65,10 @@ export class LoggingSession {
     this.requestId = requestId
     this.isExternalChat = isExternalChat
     this.chatId = chatId
+  }
+
+  setInitialInput(value?: string): void {
+    this.initialInput = value
   }
 
   async start(params: SessionStartParams = {}): Promise<void> {
@@ -126,6 +131,7 @@ export class LoggingSession {
         costSummary,
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
+        initialInput: this.initialInput,
       })
 
       if (this.requestId) {
