@@ -86,13 +86,23 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         { label: 'Google Sheet', id: 'application/vnd.google-apps.spreadsheet' },
         { label: 'Google Slides', id: 'application/vnd.google-apps.presentation' },
         { label: 'PDF (application/pdf)', id: 'application/pdf' },
+      ],
+      placeholder: 'Select a file type (auto-detected from file if provided)',
+      condition: { field: 'operation', value: ['upload'] },
+    },
+    {
+      id: 'mimeType',
+      title: 'MIME Type',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
         {
           label: 'PowerPoint (pptx)',
           id: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         },
       ],
       placeholder: 'Select a file type (auto-detected from file if provided)',
-      condition: { field: 'operation', value: ['upload', 'upload_file'] },
+      condition: { field: 'operation', value: ['upload_file'] },
     },
     {
       id: 'folderSelector',
