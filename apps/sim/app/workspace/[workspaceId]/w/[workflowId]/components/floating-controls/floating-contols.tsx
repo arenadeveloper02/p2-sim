@@ -1,6 +1,6 @@
 'use client'
 
-import { Minus, Plus, Redo2, Undo2 } from 'lucide-react'
+import { Expand, Minus, Plus, Redo2, Undo2 } from 'lucide-react'
 import { useReactFlow, useStore } from 'reactflow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -12,7 +12,7 @@ import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 export function FloatingControls() {
-  const { zoomIn, zoomOut } = useReactFlow()
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
   // Subscribe to React Flow store so zoom % live-updates while zooming
   const zoom = useStore((s: any) =>
     Array.isArray(s.transform) ? s.transform[2] : s.viewport?.zoom
@@ -39,6 +39,10 @@ export function FloatingControls() {
 
   const handleZoomOut = () => {
     zoomOut({ duration: 200 })
+  }
+
+  const handleFitView = () => {
+    fitView({ duration: 200, padding: 0.2 })
   }
 
   return (
@@ -84,6 +88,27 @@ export function FloatingControls() {
             </Button>
           </TooltipTrigger>
           <TooltipContent>Zoom In</TooltipContent>
+        </Tooltip>
+
+        <div className='mx-1 h-6 w-px bg-border' />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              onClick={handleFitView}
+              className={cn('h-9 w-9 rounded-[10px]', 'hover:bg-muted/80')}
+            >
+              <Expand className='h-4 w-4' />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className='text-center'>
+              <p>Fit View</p>
+              <p className='text-muted-foreground text-xs'>Fit all nodes</p>
+            </div>
+          </TooltipContent>
         </Tooltip>
 
         <div className='mx-1 h-6 w-px bg-border' />
