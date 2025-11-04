@@ -1,16 +1,19 @@
-import type { NextRequest } from 'next/server'
 import { desc, eq, inArray } from 'drizzle-orm'
+import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chatPromptFeedback, workflowExecutionLogs, user, workflow } from '@/db/schema'
+import { chatPromptFeedback, user, workflow, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatFeedbackByWorkflowAPI')
 
 /**
  * Extract user prompt and response from executionData
  */
-function extractChatData(executionData: any): { userPrompt: string | null; response: string | null } {
+function extractChatData(executionData: any): {
+  userPrompt: string | null
+  response: string | null
+} {
   let userPrompt = null
   let response = null
 
@@ -35,10 +38,7 @@ function extractChatData(executionData: any): { userPrompt: string | null; respo
  * GET /api/chat/feedback/workflow/[id]
  * Fetch all chat feedback records for a given workflowId
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: workflowId } = await params
     if (!workflowId) {
