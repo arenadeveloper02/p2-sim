@@ -589,32 +589,70 @@ export async function executeWorkflowForChat(
 
         const blockId = streamingExecution.execution?.blockId
         const reader = streamingExecution.stream.getReader()
+
+        // Check if this block should stream content to the client
+        // Only stream if the selected path is "content" (or undefined/default)
+        let shouldStreamToClient = true
+        if (blockId && selectedOutputIds.length > 0) {
+          const matchingOutputId = selectedOutputIds.find((outputId) => {
+            const blockIdForOutput = outputId.includes('_')
+              ? outputId.split('_')[0]
+              : outputId.split('.')[0]
+            return blockIdForOutput === blockId
+          })
+
+          if (matchingOutputId) {
+            // Extract the path from the outputId
+            const path = matchingOutputId.includes('_')
+              ? matchingOutputId.substring(blockId.length + 1)
+              : matchingOutputId.includes('.')
+                ? matchingOutputId.substring(blockId.length + 1)
+                : 'content' // Default to content if no path specified
+
+            // Only stream to client if the selected path is "content" or undefined
+            // For other paths (like "model", "tokens", etc.), we'll extract them from the final output
+            shouldStreamToClient = path === 'content' || path === ''
+          } else {
+            // Block is not in selectedOutputIds, don't stream
+            shouldStreamToClient = false
+          }
+        }
+
         if (blockId) {
           streamedContent.set(blockId, '')
 
-          // Add separator if this is not the first block to stream
-          if (streamedBlocks.size > 0) {
-            // Send separator before the new block starts
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ blockId, chunk: '\n\n' })}\n\n`)
-            )
+          // Only send separator and track streaming if we're actually streaming to client
+          if (shouldStreamToClient) {
+            // Add separator if this is not the first block to stream
+            if (streamedBlocks.size > 0) {
+              // Send separator before the new block starts
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ blockId, chunk: '\n\n' })}\n\n`)
+              )
+            }
+            streamedBlocks.add(blockId)
           }
-          streamedBlocks.add(blockId)
         }
         try {
           while (true) {
             const { done, value } = await reader.read()
             if (done) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ blockId, event: 'end' })}\n\n`)
-              )
+              if (shouldStreamToClient) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ blockId, event: 'end' })}\n\n`)
+                )
+              }
               break
             }
             const chunk = new TextDecoder().decode(value)
             if (blockId) {
+              // Always accumulate streamed content for executor processing
               streamedContent.set(blockId, (streamedContent.get(blockId) || '') + chunk)
             }
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ blockId, chunk })}\n\n`))
+            // Only send chunks to client if we should stream this block's content
+            if (shouldStreamToClient) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ blockId, chunk })}\n\n`))
+            }
           }
         } catch (error) {
           logger.error('Error while reading from stream:', error)
@@ -890,9 +928,9 @@ export async function executeWorkflowForChat(
                 let extractedContent: string | undefined
                 if (path && path !== 'content') {
                   // Extract specific path (e.g., "model", "tokens", etc.)
-                  const parsedContent = parseOutputContentSafely(log.output)
+                  // For non-content paths, access directly from log.output (not from parsed content)
                   const pathParts = path.split('.')
-                  let extractedValue = parsedContent
+                  let extractedValue: any = log.output
 
                   for (const part of pathParts) {
                     if (
@@ -915,7 +953,12 @@ export async function executeWorkflowForChat(
                   }
                 } else {
                   // Default to content field
-                  extractedContent = log.output.content
+                  // For streamed blocks, use streamedContent; for non-streamed, use log.output.content
+                  if (streamedContent.has(blockIdForLog)) {
+                    extractedContent = streamedContent.get(blockIdForLog)
+                  } else {
+                    extractedContent = log.output.content
+                  }
                 }
 
                 if (extractedContent) {
