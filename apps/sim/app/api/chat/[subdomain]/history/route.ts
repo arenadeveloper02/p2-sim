@@ -6,7 +6,7 @@ import { generateRequestId } from '@/lib/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
+import { chat, chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatHistoryAPI')
 
@@ -171,27 +171,247 @@ export async function GET(
 
     const totalCount = totalCountResult[0]?.count || 0
 
+    // Get chat deployment to access output_configs
+    const deploymentResult = await db
+      .select({
+        outputConfigs: chat.outputConfigs,
+      })
+      .from(chat)
+      .where(eq(chat.subdomain, subdomain))
+      .limit(1)
+
+    const deployment = deploymentResult[0]
+    const outputConfigs =
+      (deployment?.outputConfigs as Array<{ blockId: string; path: string }>) || []
+
+    // Helper functions to extract block ID and path from outputId (same as in utils.ts)
+    const extractBlockIdFromOutputId = (outputId: string): string => {
+      return outputId.includes('_') ? outputId.split('_')[0] : outputId.split('.')[0]
+    }
+
+    const extractPathFromOutputId = (outputId: string, blockId: string): string => {
+      return outputId.substring(blockId.length + 1)
+    }
+
+    const parseOutputContentSafely = (output: any): any => {
+      if (!output?.content) {
+        return output
+      }
+
+      if (typeof output.content === 'string') {
+        try {
+          return JSON.parse(output.content)
+        } catch (e) {
+          return output
+        }
+      }
+
+      return output
+    }
+
     // Format the response data
     const formattedLogs = logs.map((log) => {
       const executionData = log.executionData as any
 
-      // Extract input and output from traceSpans children
+      // Extract userInput:
+      // 1. First check traceSpans.initialInput
+      // 2. If null, check traceSpans.spans -> workflow -> children -> agent -> input.userPrompt
       let userInput = null
-      let modelOutput = null
       let conversationId = null
 
-      if (executionData?.traceSpans && Array.isArray(executionData.traceSpans)) {
-        // Look for workflow execution span
-        const workflowSpan = executionData.traceSpans.find((span: any) => span.type === 'workflow')
-        if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-          // Look for agent spans in children
-          const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
-          if (agentSpans.length > 0) {
-            const agentSpan = agentSpans[0] // Get first agent span
-            userInput = agentSpan.input?.userPrompt || null
-            modelOutput = agentSpan.output?.content || null
-            // Try to extract conversationId from input if available
-            conversationId = agentSpan.input?.conversationId || null
+      if (executionData?.traceSpans) {
+        // Check for initialInput first
+        if (
+          executionData.traceSpans.initialInput &&
+          typeof executionData.traceSpans.initialInput === 'string'
+        ) {
+          userInput = executionData.traceSpans.initialInput
+        } else if (
+          executionData.traceSpans.spans &&
+          Array.isArray(executionData.traceSpans.spans)
+        ) {
+          // Look for workflow execution span in spans array
+          const workflowSpan = executionData.traceSpans.spans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            // Look for agent spans in children
+            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
+            if (agentSpans.length > 0) {
+              const agentSpan = agentSpans[0] // Get first agent span
+              userInput = agentSpan.input?.userPrompt || null
+              conversationId = agentSpan.input?.conversationId || null
+            }
+          }
+        } else if (Array.isArray(executionData.traceSpans)) {
+          // Fallback: if traceSpans is directly an array (old format)
+          const workflowSpan = executionData.traceSpans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
+            if (agentSpans.length > 0) {
+              const agentSpan = agentSpans[0]
+              userInput = agentSpan.input?.userPrompt || null
+              conversationId = agentSpan.input?.conversationId || null
+            }
+          }
+        }
+      }
+
+      // Extract modelOutput based on output_configs
+      let modelOutput = null
+
+      if (outputConfigs.length > 0) {
+        // Extract selectedOutputIds from outputConfigs (same format as in utils.ts)
+        const selectedOutputIds = outputConfigs.map((config) => {
+          return config.path ? `${config.blockId}_${config.path}` : `${config.blockId}.content`
+        })
+
+        const selectedOutputs: string[] = []
+
+        // Get blocks from traceSpans.spans (database format)
+        // The execution_data in DB has traceSpans.spans array with workflow span containing children
+        let blocks: any[] = []
+        if (executionData?.traceSpans?.spans && Array.isArray(executionData.traceSpans.spans)) {
+          const workflowSpan = executionData.traceSpans.spans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            blocks = workflowSpan.children
+          }
+        } else if (Array.isArray(executionData?.traceSpans)) {
+          // Fallback: old format where traceSpans is directly an array
+          const workflowSpan = executionData.traceSpans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            blocks = workflowSpan.children
+          }
+        }
+
+        // Also check executionData.logs if available (for newer format)
+        const logs = executionData?.logs || []
+        const finalOutput = executionData?.finalOutput || executionData?.output || {}
+
+        // Extract outputs from selected blocks
+        selectedOutputIds.forEach((outputId) => {
+          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+          const path = extractPathFromOutputId(outputId, blockIdForOutput)
+
+          let outputValue: any
+
+          // First try to find in blocks (from traceSpans.spans)
+          const block = blocks.find((b: any) => b.blockId === blockIdForOutput)
+          if (block && block.output) {
+            let blockOutput = block.output
+
+            if (path && path !== 'content') {
+              // Extract specific path (e.g., "model", "tokens", etc.)
+              const pathParts = path.split('.')
+              for (const part of pathParts) {
+                if (blockOutput && typeof blockOutput === 'object' && part in blockOutput) {
+                  blockOutput = blockOutput[part]
+                } else {
+                  blockOutput = undefined
+                  break
+                }
+              }
+              outputValue = blockOutput
+            } else {
+              // Default to content field
+              outputValue = blockOutput.content
+            }
+          } else {
+            // Try to find in logs (for newer format)
+            const log = logs.find((l: any) => l.blockId === blockIdForOutput)
+            if (log && log.output) {
+              let logOutput = log.output
+
+              if (path && path !== 'content') {
+                const pathParts = path.split('.')
+                for (const part of pathParts) {
+                  if (logOutput && typeof logOutput === 'object' && part in logOutput) {
+                    logOutput = logOutput[part]
+                  } else {
+                    logOutput = undefined
+                    break
+                  }
+                }
+                outputValue = logOutput
+              } else {
+                outputValue = logOutput.content
+              }
+            } else if (finalOutput && Object.keys(finalOutput).length > 0) {
+              // Fallback to finalOutput if block/log not found
+              let finalOutputValue = finalOutput
+
+              if (path && path !== 'content') {
+                const pathParts = path.split('.')
+                for (const part of pathParts) {
+                  if (
+                    finalOutputValue &&
+                    typeof finalOutputValue === 'object' &&
+                    part in finalOutputValue
+                  ) {
+                    finalOutputValue = finalOutputValue[part]
+                  } else {
+                    finalOutputValue = undefined
+                    break
+                  }
+                }
+                outputValue = finalOutputValue
+              } else {
+                outputValue = finalOutput.content
+              }
+            }
+          }
+
+          if (outputValue !== undefined && outputValue !== null) {
+            const formattedOutput =
+              typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue, null, 2)
+            if (selectedOutputs.length > 0) {
+              selectedOutputs.push('\n\n')
+            }
+            selectedOutputs.push(formattedOutput)
+          }
+        })
+
+        if (selectedOutputs.length > 0) {
+          modelOutput = selectedOutputs.join('')
+        }
+      } else {
+        // Fallback: if no output_configs, use finalOutput.content or first agent span output
+        if (executionData?.finalOutput?.content) {
+          modelOutput = executionData.finalOutput.content
+        } else if (executionData?.output?.content) {
+          modelOutput = executionData.output.content
+        } else if (executionData?.traceSpans) {
+          // Try to get from traceSpans (backward compatibility)
+          if (executionData.traceSpans.spans && Array.isArray(executionData.traceSpans.spans)) {
+            const workflowSpan = executionData.traceSpans.spans.find(
+              (span: any) => span.type === 'workflow'
+            )
+            if (workflowSpan?.children) {
+              const agentSpans = workflowSpan.children.filter(
+                (child: any) => child.type === 'agent'
+              )
+              if (agentSpans.length > 0) {
+                modelOutput = agentSpans[0].output?.content || null
+              }
+            }
+          } else if (Array.isArray(executionData.traceSpans)) {
+            const workflowSpan = executionData.traceSpans.find(
+              (span: any) => span.type === 'workflow'
+            )
+            if (workflowSpan?.children) {
+              const agentSpans = workflowSpan.children.filter(
+                (child: any) => child.type === 'agent'
+              )
+              if (agentSpans.length > 0) {
+                modelOutput = agentSpans[0].output?.content || null
+              }
+            }
           }
         }
       }
