@@ -878,7 +878,9 @@ Example for "Sept 8-14 and then 15-21":
     // Ensure gaqlQuery is a string (handle cases where AI returns an object)
     if (typeof gaqlQuery !== 'string') {
       logger.error('GAQL query is not a string', { gaqlQuery, type: typeof gaqlQuery })
-      throw new Error(`AI returned invalid GAQL query type: ${typeof gaqlQuery}. Expected string, got: ${JSON.stringify(gaqlQuery)}`)
+      throw new Error(
+        `AI returned invalid GAQL query type: ${typeof gaqlQuery}. Expected string, got: ${JSON.stringify(gaqlQuery)}`
+      )
     }
 
     // Clean and validate the AI-generated GAQL query
