@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
 
     logger.info(`User found: ${userId}, email domain: ${userEmailDomain}`)
 
-    // Step 2: Fetch all chats with workflow details
+    // Step 2: Fetch chats with workflow details that have matching templates
+    // We only fetch chats where there's a corresponding template entry
     // We need to check:
     // 1. userId matches
     // 2. email is in allowedEmails
@@ -83,6 +84,8 @@ export async function GET(request: NextRequest) {
         subdomain: chat.subdomain,
         userId: chat.userId,
         allowedEmails: chat.allowedEmails,
+        name: templates.name,
+        author: templates.author,
         workflowName: workflow.name,
         workflowDescription: workflow.description,
         templateDescription: templates.description,
@@ -90,17 +93,17 @@ export async function GET(request: NextRequest) {
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
-      .from(chat)
+      .from(templates)
+      .innerJoin(chat, eq(chat.workflowId, templates.workflowId))
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
-      .leftJoin(templates, eq(templates.workflowId, workflow.id))
       .where(eq(chat.isActive, true))
 
     // Step 3: Filter chats based on access rules
     const accessibleChats = chats.filter((chatRecord) => {
       // Rule 1: User owns the chat
-      if (chatRecord.userId === userId) {
-        return true
-      }
+      // if (chatRecord.userId === userId) {
+      //   return true
+      // }
 
       // Rule 2 & 3: Check allowedEmails array
       if (chatRecord.allowedEmails) {
@@ -127,7 +130,7 @@ export async function GET(request: NextRequest) {
 
     // Step 4: Format response
     const agentList = accessibleChats.map((chatRecord) => ({
-      title: chatRecord.title,
+      title: chatRecord.name,
       workflow_id: chatRecord.workflowId,
       subdomain: chatRecord.subdomain,
       workflow_name: chatRecord.workflowName,
