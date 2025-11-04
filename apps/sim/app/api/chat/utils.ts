@@ -673,29 +673,13 @@ export async function executeWorkflowForChat(
           ? (result.execution as ExecutionResult)
           : (result as ExecutionResult)
 
+      // Initialize enrichedResult early to ensure it's always available
+      let enrichedResult: ExecutionResult & { traceSpans?: any; totalDuration?: number } =
+        executionResult
+
       if (executionResult?.logs) {
         // Update streamed content and apply tokenization - process regardless of overall success
         // This ensures partial successes (some agents succeed, some fail) still return results
-
-        // Add newlines between different agent outputs for better readability
-        const processedOutputs = new Set<string>()
-        executionResult.logs.forEach((log: BlockLog) => {
-          if (streamedContent.has(log.blockId)) {
-            const content = streamedContent.get(log.blockId)
-            if (log.output && content) {
-              // Add newline separation between different outputs (but not before the first one)
-              const separator = processedOutputs.size > 0 ? '\n\n' : ''
-              log.output.content = separator + content
-              processedOutputs.add(log.blockId)
-            }
-          }
-        })
-
-        // Also process non-streamed outputs from selected blocks (like function blocks)
-        // This uses the same logic as the chat panel to ensure identical behavior
-        const nonStreamingLogs = executionResult.logs.filter(
-          (log: BlockLog) => !streamedContent.has(log.blockId)
-        )
 
         // Extract the exact same functions used by the chat panel
         const extractBlockIdFromOutputId = (outputId: string): string => {
@@ -723,11 +707,106 @@ export async function executeWorkflowForChat(
           return output
         }
 
+        // Add newlines between different agent outputs for better readability
+        // Only process streamed blocks that are in the selected outputs
+        const processedOutputs = new Set<string>()
+
+        // First, filter to only selected streaming blocks
+        if (selectedOutputIds.length > 0) {
+          executionResult.logs.forEach((log: BlockLog) => {
+            if (streamedContent.has(log.blockId)) {
+              // Check if this block is in the selected outputs
+              const blockIdForLog = log.blockId
+              const isSelected = selectedOutputIds.some((outputId) => {
+                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                return blockIdForOutput === blockIdForLog
+              })
+
+              if (isSelected) {
+                const content = streamedContent.get(log.blockId)
+                if (log.output && content) {
+                  // Extract the path from the selected output ID if it exists
+                  const matchingOutputId = selectedOutputIds.find((outputId) => {
+                    const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                    return blockIdForOutput === blockIdForLog
+                  })
+
+                  if (matchingOutputId) {
+                    const path = extractPathFromOutputId(matchingOutputId, blockIdForLog)
+
+                    // If a specific path is selected (not just "content"), extract it
+                    if (path && path !== 'content') {
+                      // Parse the content to extract the specific path
+                      const parsedContent = parseOutputContentSafely(log.output)
+                      const pathParts = path.split('.')
+                      let extractedValue = parsedContent
+
+                      for (const part of pathParts) {
+                        if (
+                          extractedValue &&
+                          typeof extractedValue === 'object' &&
+                          part in extractedValue
+                        ) {
+                          extractedValue = extractedValue[part]
+                        } else {
+                          extractedValue = undefined
+                          break
+                        }
+                      }
+
+                      if (extractedValue !== undefined) {
+                        const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                        const formattedOutput =
+                          typeof extractedValue === 'string'
+                            ? extractedValue
+                            : JSON.stringify(extractedValue, null, 2)
+                        log.output.content = separator + formattedOutput
+                        processedOutputs.add(log.blockId)
+                      }
+                    } else {
+                      // Default to content field
+                      const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                      log.output.content = separator + content
+                      processedOutputs.add(log.blockId)
+                    }
+                  } else {
+                    // Fallback: if no matching output ID found, use content as-is
+                    const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                    log.output.content = separator + content
+                    processedOutputs.add(log.blockId)
+                  }
+                }
+              }
+            }
+          })
+        } else {
+          // If no output configs are set, process all streamed blocks (legacy behavior)
+          executionResult.logs.forEach((log: BlockLog) => {
+            if (streamedContent.has(log.blockId)) {
+              const content = streamedContent.get(log.blockId)
+              if (log.output && content) {
+                const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                log.output.content = separator + content
+                processedOutputs.add(log.blockId)
+              }
+            }
+          })
+        }
+
+        // Also process non-streamed outputs from selected blocks (like function blocks)
+        // This uses the same logic as the chat panel to ensure identical behavior
+        const nonStreamingLogs = executionResult.logs.filter(
+          (log: BlockLog) => !streamedContent.has(log.blockId)
+        )
+
         // Filter outputs that have matching logs (exactly like chat panel)
-        const outputsToRender = selectedOutputIds.filter((outputId) => {
-          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
-          return nonStreamingLogs.some((log) => log.blockId === blockIdForOutput)
-        })
+        const outputsToRender =
+          selectedOutputIds.length > 0
+            ? selectedOutputIds.filter((outputId) => {
+                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                return nonStreamingLogs.some((log) => log.blockId === blockIdForOutput)
+              })
+            : []
 
         // Process each selected output (exactly like chat panel)
         for (const outputId of outputsToRender) {
@@ -776,8 +855,166 @@ export async function executeWorkflowForChat(
         const processedCount = processStreamingBlockLogs(executionResult.logs, streamedContent)
         logger.info(`Processed ${processedCount} blocks for streaming tokenization`)
 
+        // Construct executionResult.output from selected blocks if outputConfigs are set
+        // This ensures output.content matches what was streamed and respects selectedOutputIds
+        if (selectedOutputIds.length > 0) {
+          const selectedOutputs: string[] = []
+          const aggregatedTokens = {
+            prompt: 0,
+            completion: 0,
+            total: 0,
+          }
+          const aggregatedToolCalls: any[] = []
+          let aggregatedModel: string | undefined
+          const aggregatedFiles: any[] = []
+
+          // Collect outputs from all selected blocks (both streamed and non-streamed)
+          executionResult.logs.forEach((log: BlockLog) => {
+            const blockIdForLog = log.blockId
+            const isSelected = selectedOutputIds.some((outputId) => {
+              const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+              return blockIdForOutput === blockIdForLog
+            })
+
+            if (isSelected && log.output) {
+              // Find the matching outputId for this block to get the path
+              const matchingOutputId = selectedOutputIds.find((outputId) => {
+                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                return blockIdForOutput === blockIdForLog
+              })
+
+              if (matchingOutputId) {
+                const path = extractPathFromOutputId(matchingOutputId, blockIdForLog)
+
+                // Extract the content based on the selected path
+                let extractedContent: string | undefined
+                if (path && path !== 'content') {
+                  // Extract specific path (e.g., "model", "tokens", etc.)
+                  const parsedContent = parseOutputContentSafely(log.output)
+                  const pathParts = path.split('.')
+                  let extractedValue = parsedContent
+
+                  for (const part of pathParts) {
+                    if (
+                      extractedValue &&
+                      typeof extractedValue === 'object' &&
+                      part in extractedValue
+                    ) {
+                      extractedValue = extractedValue[part]
+                    } else {
+                      extractedValue = undefined
+                      break
+                    }
+                  }
+
+                  if (extractedValue !== undefined) {
+                    extractedContent =
+                      typeof extractedValue === 'string'
+                        ? extractedValue
+                        : JSON.stringify(extractedValue, null, 2)
+                  }
+                } else {
+                  // Default to content field
+                  extractedContent = log.output.content
+                }
+
+                if (extractedContent) {
+                  // Add separator if not the first output
+                  if (selectedOutputs.length > 0) {
+                    selectedOutputs.push('\n\n')
+                  }
+                  selectedOutputs.push(extractedContent)
+                }
+
+                // Aggregate tokens from selected blocks
+                if (log.output.tokens) {
+                  aggregatedTokens.prompt += log.output.tokens.prompt || 0
+                  aggregatedTokens.completion += log.output.tokens.completion || 0
+                  aggregatedTokens.total += log.output.tokens.total || 0
+                }
+
+                // Aggregate tool calls
+                if (log.output.toolCalls?.list && Array.isArray(log.output.toolCalls.list)) {
+                  aggregatedToolCalls.push(...log.output.toolCalls.list)
+                }
+
+                // Use model from first selected block (or last if multiple)
+                if (log.output.model) {
+                  aggregatedModel = log.output.model
+                }
+
+                // Aggregate files
+                if (log.output.files && Array.isArray(log.output.files)) {
+                  aggregatedFiles.push(...log.output.files)
+                }
+              }
+            }
+          })
+
+          // Construct the final output from selected blocks
+          if (selectedOutputs.length > 0) {
+            executionResult.output = {
+              content: selectedOutputs.join(''),
+              ...(aggregatedTokens.total > 0 && { tokens: aggregatedTokens }),
+              ...(aggregatedToolCalls.length > 0 && {
+                toolCalls: {
+                  list: aggregatedToolCalls,
+                  count: aggregatedToolCalls.length,
+                },
+              }),
+              ...(aggregatedModel && { model: aggregatedModel }),
+              ...(aggregatedFiles.length > 0 && { files: aggregatedFiles }),
+            }
+
+            logger.debug(
+              `[${requestId}] Constructed executionResult.output from ${selectedOutputIds.length} selected blocks`
+            )
+          } else {
+            // If no content was extracted, set output to empty to avoid showing wrong content
+            executionResult.output = {
+              content: '',
+              ...(aggregatedTokens.total > 0 && { tokens: aggregatedTokens }),
+              ...(aggregatedToolCalls.length > 0 && {
+                toolCalls: {
+                  list: aggregatedToolCalls,
+                  count: aggregatedToolCalls.length,
+                },
+              }),
+              ...(aggregatedModel && { model: aggregatedModel }),
+            }
+            logger.debug(
+              `[${requestId}] No content extracted from selected blocks, setting empty output`
+            )
+          }
+
+          // Clear content from non-selected blocks to prevent UI from displaying them
+          // The UI iterates through logs and displays any log with output.content
+          // So we need to remove content from non-selected blocks
+          executionResult.logs.forEach((log: BlockLog) => {
+            const blockIdForLog = log.blockId
+            const isSelected = selectedOutputIds.some((outputId) => {
+              const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+              return blockIdForOutput === blockIdForLog
+            })
+
+            // If this block is not selected, clear its content so UI won't display it
+            if (!isSelected && log.output && log.output.content !== undefined) {
+              // Remove content property from non-selected blocks
+              // Preserve other output fields (tokens, model, etc.) for logging
+              // This ensures logging still works but UI won't display the content
+              const { content, ...outputWithoutContent } = log.output
+              log.output = outputWithoutContent
+            }
+          })
+
+          logger.debug(
+            `[${requestId}] Cleared content from non-selected blocks to prevent UI display`
+          )
+        }
+        // If selectedOutputIds.length === 0, keep the original executionResult.output (last block's output)
+
         const { traceSpans, totalDuration } = buildTraceSpans(executionResult)
-        const enrichedResult = { ...executionResult, traceSpans, totalDuration }
+        enrichedResult = { ...executionResult, traceSpans, totalDuration }
         if (conversationId) {
           if (!enrichedResult.metadata) {
             enrichedResult.metadata = {
@@ -787,8 +1024,6 @@ export async function executeWorkflowForChat(
           }
           ;(enrichedResult.metadata as any).conversationId = conversationId
         }
-        const executionId = uuidv4()
-        logger.debug(`Generated execution ID for deployed chat: ${executionId}`)
 
         if (executionResult.success) {
           try {
@@ -804,19 +1039,34 @@ export async function executeWorkflowForChat(
             logger.error(`Failed to update user stats for deployed chat:`, error)
           }
         }
+      } else {
+        // If no logs, still build traceSpans and enrichedResult for consistency
+        const { traceSpans, totalDuration } = buildTraceSpans(executionResult)
+        enrichedResult = { ...executionResult, traceSpans, totalDuration }
+        if (conversationId) {
+          if (!enrichedResult.metadata) {
+            enrichedResult.metadata = {
+              duration: totalDuration,
+              startTime: new Date().toISOString(),
+            }
+          }
+          ;(enrichedResult.metadata as any).conversationId = conversationId
+        }
       }
 
-      if (!(result && typeof result === 'object' && 'stream' in result)) {
-        // Include executionId in the final event payload for traceability
-        const finalPayload = {
-          event: 'final',
-          data: {
-            ...(typeof result === 'object' && result !== null ? result : { value: result }),
-            executionId,
-          },
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
+      const executionId = uuidv4()
+      logger.debug(`Generated execution ID for deployed chat: ${executionId}`)
+
+      // Always send the final event with executionResult (whether streaming or not)
+      // This ensures the UI receives the complete execution data including metadata and logs
+      const finalPayload = {
+        event: 'final',
+        data: {
+          ...enrichedResult,
+          executionId,
+        },
       }
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
 
       // Complete logging session (for both success and failure)
       if (executionResult?.logs) {
