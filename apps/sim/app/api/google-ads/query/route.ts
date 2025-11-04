@@ -558,6 +558,39 @@ Note:
 - This query returns ALL RSA ads across ALL campaigns and ad groups in the account.
 - Do NOT add LIMIT clause - we need complete data for gap analysis.
 
+**AD EXTENSIONS GAP ANALYSIS:**
+When user asks for "ad extensions", "sitelinks", "callouts", "structured snippets", or "extension gap analysis":
+
+CRITICAL: Ad extensions can be at ACCOUNT, CAMPAIGN, or AD GROUP level. Use CAMPAIGN-LEVEL query to get the most comprehensive view.
+
+**IMPORTANT: Return ONLY ONE query - the campaign-level query below. Do NOT return multiple queries.**
+
+**Campaign-Level Extensions Query (USE THIS ONE):**
+SELECT campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status
+FROM campaign_asset
+WHERE campaign.status != 'REMOVED'
+AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET')
+AND campaign_asset.status = 'ENABLED'
+ORDER BY campaign.name, asset.type
+
+**EXTENSION COUNTING LOGIC:**
+- Count unique campaign_asset.asset per campaign per asset.type
+- Each row represents one extension asset attached to a campaign
+- Group by campaign.name and asset.type to count extensions per campaign
+- Note: Account-level extensions are inherited by all campaigns and will appear in this query
+
+**Optimal Counts:**
+- Sitelinks: 4-6 per campaign
+- Callouts: 4-6 per campaign  
+- Structured Snippets: 2+ per campaign
+
+**Gap Status:**
+- ✅ OPTIMAL: Within optimal range
+- ⚠️ GAP: 50-75% of optimal (e.g., 2-3 sitelinks when optimal is 4-6)
+- ❌ CRITICAL GAP: <50% of optimal or 0 assets
+
+Note: This query does NOT support segments.date (no date filtering)
+
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
 
@@ -810,7 +843,19 @@ Example for "Sept 8-14 and then 15-21":
     // Validate required fields - check for multiple possible formats
     let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
 
-    // Handle queries array format
+    // Handle case where AI returns an array directly (for multi-level queries like ad extensions)
+    if (!gaqlQuery && Array.isArray(parsedResponse) && parsedResponse.length > 0) {
+      // AI returned array of queries for different levels (account, campaign, ad_group)
+      // Use the first query from the array
+      gaqlQuery = parsedResponse[0].query || parsedResponse[0].gaql_query
+      logger.info('AI returned array of queries (multi-level), using first query', {
+        totalQueries: parsedResponse.length,
+        levels: parsedResponse.map((q: any) => q.level),
+        selectedQuery: gaqlQuery,
+      })
+    }
+
+    // Handle queries array format (wrapped in queries field)
     if (
       !gaqlQuery &&
       parsedResponse.queries &&
@@ -828,6 +873,12 @@ Example for "Sept 8-14 and then 15-21":
     if (!gaqlQuery) {
       logger.error('AI response missing GAQL query field', { parsedResponse })
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
+    }
+
+    // Ensure gaqlQuery is a string (handle cases where AI returns an object)
+    if (typeof gaqlQuery !== 'string') {
+      logger.error('GAQL query is not a string', { gaqlQuery, type: typeof gaqlQuery })
+      throw new Error(`AI returned invalid GAQL query type: ${typeof gaqlQuery}. Expected string, got: ${JSON.stringify(gaqlQuery)}`)
     }
 
     // Clean and validate the AI-generated GAQL query
@@ -848,9 +899,12 @@ Example for "Sept 8-14 and then 15-21":
     // If it's in SELECT, it will return one row per day instead of aggregated totals
 
     // Validate that the query doesn't contain invalid characters or OR operators
-    const hasInvalidChars = /[(){}[\]]/.test(
-      cleanedGaqlQuery.replace(/BETWEEN '[^']*' AND '[^']*'/g, '')
-    ) // Allow parentheses in BETWEEN clauses, allow < > for comparisons
+    // Allow parentheses in BETWEEN, IN, and comparison clauses
+    const queryWithoutValidParens = cleanedGaqlQuery
+      .replace(/BETWEEN '[^']*' AND '[^']*'/g, '') // Remove BETWEEN clauses
+      .replace(/IN\s*\([^)]+\)/gi, '') // Remove IN (...) clauses - CRITICAL for extensions
+      .replace(/[<>]=?/g, '') // Remove comparison operators
+    const hasInvalidChars = /[(){}[\]]/.test(queryWithoutValidParens)
     const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
     const hasOrOperator = /\bOR\b/i.test(cleanedGaqlQuery)
 
