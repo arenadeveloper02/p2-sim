@@ -1,9 +1,16 @@
-import { desc, eq, inArray } from 'drizzle-orm'
+import { count, desc, eq, inArray } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chatPromptFeedback, user, workflow, workflowExecutionLogs } from '@/db/schema'
+import {
+  chatPromptFeedback,
+  templates,
+  user,
+  workflow,
+  workflowExecutionLogs,
+  workflowTemplateMapper,
+} from '@/db/schema'
 
 const logger = createLogger('ChatFeedbackByWorkflowAPI')
 
@@ -52,6 +59,50 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const pageSize = Number.isFinite(pageSizeParam) ? Math.min(Math.max(pageSizeParam, 1), 100) : 20
     const pageNumber = Number.isFinite(pageParam) ? Math.max(pageParam, 1) : 1
     const offset = (pageNumber - 1) * pageSize
+
+    // Fetch author email via: workflow → workflow_template_mapper → templates → user
+    // Step 1: Get templateId from workflow_template_mapper
+    const templateMapper = await db
+      .select({
+        templateId: workflowTemplateMapper.templateId,
+      })
+      .from(workflowTemplateMapper)
+      .where(eq(workflowTemplateMapper.workflowId, workflowId))
+      .limit(1)
+
+    let authorEmail: string | null = null
+    if (templateMapper.length > 0 && templateMapper[0].templateId) {
+      // Step 2: Get userId from templates table
+      const template = await db
+        .select({
+          userId: templates.userId,
+        })
+        .from(templates)
+        .where(eq(templates.id, templateMapper[0].templateId))
+        .limit(1)
+
+      if (template.length > 0 && template[0].userId) {
+        // Step 3: Get email from user table
+        const author = await db
+          .select({ email: user.email })
+          .from(user)
+          .where(eq(user.id, template[0].userId))
+          .limit(1)
+
+        if (author.length > 0) {
+          authorEmail = author[0].email
+        }
+      }
+    }
+
+    // Get total count of feedback records for pagination
+    const totalCountResult = await db
+      .select({ count: count() })
+      .from(chatPromptFeedback)
+      .where(eq(chatPromptFeedback.workflowId, workflowId))
+
+    const totalCount = totalCountResult[0]?.count || 0
+    const totalPages = Math.ceil(totalCount / pageSize)
 
     // Fetch all feedback for the workflow, ordered by creation date descending, with user email and workflow name
     const feedbackRecords = await db
@@ -107,6 +158,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         response: response || null,
         userId: record.userId,
         userEmail: record.userEmail,
+        authorEmail,
         agentName: record.agentName,
         createdAt: record.createdAt,
         inComplete: record.inComplete || false,
@@ -122,7 +174,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return createSuccessResponse({
       feedback,
-      pagination: { count: feedback.length, pageSize, pageNumber },
+      pagination: {
+        count: feedback.length,
+        pageSize,
+        pageNumber,
+        totalCount,
+        totalPages,
+      },
     })
   } catch (error: any) {
     logger.error('Error fetching chat feedback by workflowId:', error)
