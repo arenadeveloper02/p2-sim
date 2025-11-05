@@ -566,7 +566,7 @@ CRITICAL: Ad extensions can be at ACCOUNT, CAMPAIGN, or AD GROUP level. Use CAMP
 **IMPORTANT: Return ONLY ONE query - the campaign-level query below. Do NOT return multiple queries.**
 
 **Campaign-Level Extensions Query (USE THIS ONE):**
-SELECT campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status
 FROM campaign_asset
 WHERE campaign.status != 'REMOVED'
 AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET')
@@ -578,6 +578,8 @@ ORDER BY campaign.name, asset.type
 - Each row represents one extension asset attached to a campaign
 - Group by campaign.name and asset.type to count extensions per campaign
 - Note: Account-level extensions are inherited by all campaigns and will appear in this query
+- Use campaign.advertising_channel_type to filter: SEARCH campaigns use extensions, PERFORMANCE_MAX uses asset groups
+- To exclude Performance Max: Filter results where campaign.advertising_channel_type != 'PERFORMANCE_MAX'
 
 **Optimal Counts:**
 - Sitelinks: 4-6 per campaign
