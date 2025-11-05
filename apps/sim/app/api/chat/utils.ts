@@ -385,6 +385,7 @@ export async function executeWorkflowForChat(
   let outputBlockIds: string[] = []
 
   // Extract output configs from the new schema format
+  // Remove duplicates to prevent processing the same outputId multiple times
   let selectedOutputIds: string[] = []
   if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
     // Extract output IDs in the format expected by the streaming processor
@@ -392,17 +393,21 @@ export async function executeWorkflowForChat(
       `[${requestId}] Found ${deployment.outputConfigs.length} output configs in deployment`
     )
 
-    selectedOutputIds = deployment.outputConfigs.map((config) => {
-      const outputId = config.path
-        ? `${config.blockId}_${config.path}`
-        : `${config.blockId}.content`
+    selectedOutputIds = Array.from(
+      new Set(
+        deployment.outputConfigs.map((config) => {
+          const outputId = config.path
+            ? `${config.blockId}_${config.path}`
+            : `${config.blockId}.content`
 
-      logger.debug(
-        `[${requestId}] Processing output config: blockId=${config.blockId}, path=${config.path || 'content'} -> outputId=${outputId}`
+          logger.debug(
+            `[${requestId}] Processing output config: blockId=${config.blockId}, path=${config.path || 'content'} -> outputId=${outputId}`
+          )
+
+          return outputId
+        })
       )
-
-      return outputId
-    })
+    )
 
     // Also extract block IDs for legacy compatibility
     outputBlockIds = deployment.outputConfigs.map((config) => config.blockId)
@@ -905,70 +910,111 @@ export async function executeWorkflowForChat(
           const aggregatedToolCalls: any[] = []
           let aggregatedModel: string | undefined
           const aggregatedFiles: any[] = []
+          const processedBlocks = new Set<string>() // Track which blocks we've already processed for aggregation
+          const processedOutputIds = new Set<string>() // Track processed outputIds to prevent duplicates
+          const addedContentValues = new Set<string>() // Track added content values to prevent duplicates
 
           // Collect outputs from all selected blocks (both streamed and non-streamed)
-          executionResult.logs.forEach((log: BlockLog) => {
-            const blockIdForLog = log.blockId
-            const isSelected = selectedOutputIds.some((outputId) => {
-              const blockIdForOutput = extractBlockIdFromOutputId(outputId)
-              return blockIdForOutput === blockIdForLog
-            })
+          // Iterate through selectedOutputIds to ensure all selected paths are processed
+          // This handles cases where multiple paths are selected for the same block (e.g., both "content" and "model")
+          selectedOutputIds.forEach((outputId) => {
+            // Skip if we've already processed this exact outputId (prevent duplicates)
+            if (processedOutputIds.has(outputId)) {
+              return
+            }
 
-            if (isSelected && log.output) {
-              // Find the matching outputId for this block to get the path
-              const matchingOutputId = selectedOutputIds.find((outputId) => {
-                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
-                return blockIdForOutput === blockIdForLog
-              })
+            const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+            const path = extractPathFromOutputId(outputId, blockIdForOutput)
 
-              if (matchingOutputId) {
-                const path = extractPathFromOutputId(matchingOutputId, blockIdForLog)
+            // Find the log for this block
+            const log = executionResult.logs?.find((l: BlockLog) => l.blockId === blockIdForOutput)
 
-                // Extract the content based on the selected path
-                let extractedContent: string | undefined
-                if (path && path !== 'content') {
-                  // Extract specific path (e.g., "model", "tokens", etc.)
-                  // For non-content paths, access directly from log.output (not from parsed content)
-                  const pathParts = path.split('.')
-                  let extractedValue: any = log.output
+            if (log && log.output) {
+              // Extract the content based on the selected path
+              let extractedContent: string | undefined
+              if (path && path !== 'content') {
+                // Extract specific path (e.g., "model", "tokens", etc.)
+                // For non-content paths, access directly from log.output (not from parsed content)
+                const pathParts = path.split('.')
+                let extractedValue: any = log.output
 
-                  for (const part of pathParts) {
-                    if (
-                      extractedValue &&
-                      typeof extractedValue === 'object' &&
-                      part in extractedValue
-                    ) {
-                      extractedValue = extractedValue[part]
-                    } else {
-                      extractedValue = undefined
-                      break
-                    }
-                  }
-
-                  if (extractedValue !== undefined) {
-                    extractedContent =
-                      typeof extractedValue === 'string'
-                        ? extractedValue
-                        : JSON.stringify(extractedValue, null, 2)
-                  }
-                } else {
-                  // Default to content field
-                  // For streamed blocks, use streamedContent; for non-streamed, use log.output.content
-                  if (streamedContent.has(blockIdForLog)) {
-                    extractedContent = streamedContent.get(blockIdForLog)
+                for (const part of pathParts) {
+                  if (
+                    extractedValue &&
+                    typeof extractedValue === 'object' &&
+                    part in extractedValue
+                  ) {
+                    extractedValue = extractedValue[part]
                   } else {
-                    extractedContent = log.output.content
+                    extractedValue = undefined
+                    break
                   }
                 }
 
-                if (extractedContent) {
+                if (extractedValue !== undefined) {
+                  extractedContent =
+                    typeof extractedValue === 'string'
+                      ? extractedValue
+                      : JSON.stringify(extractedValue, null, 2)
+                }
+              } else {
+                // Default to content field
+                // IMPORTANT: For streamed content paths, DO NOT include in final output.content
+                // because it's already been streamed to the client. Only include non-streamed content.
+                // This prevents duplication where the UI shows streamed content + final output.content
+                const wasStreamed = streamedContent.has(blockIdForOutput)
+                if (wasStreamed) {
+                  // This content was streamed, so skip adding it to final output.content
+                  // The UI will use the accumulated streamed text instead
+                  extractedContent = undefined
+                  logger.debug(
+                    `[${requestId}] Skipping streamed content for block ${blockIdForOutput} in final output.content`
+                  )
+                } else {
+                  // Non-streamed content, include it in final output
+                  extractedContent = log.output.content
+                  logger.debug(
+                    `[${requestId}] Including non-streamed content for block ${blockIdForOutput} in final output.content`
+                  )
+                }
+              }
+
+              // Only add if we got a valid value and it's not a duplicate
+              // Skip if content was streamed (to prevent duplication)
+              if (
+                extractedContent &&
+                typeof extractedContent === 'string' &&
+                extractedContent.trim().length > 0
+              ) {
+                // Check if this exact content value was already added (prevent duplicates)
+                if (!addedContentValues.has(extractedContent)) {
                   // Add separator if not the first output
                   if (selectedOutputs.length > 0) {
                     selectedOutputs.push('\n\n')
                   }
                   selectedOutputs.push(extractedContent)
+                  addedContentValues.add(extractedContent)
+                  processedOutputIds.add(outputId)
                 }
+              } else if (extractedContent) {
+                // For non-string values (like JSON objects), check stringified version
+                const stringifiedContent = JSON.stringify(extractedContent, null, 2)
+                if (!addedContentValues.has(stringifiedContent)) {
+                  if (selectedOutputs.length > 0) {
+                    selectedOutputs.push('\n\n')
+                  }
+                  selectedOutputs.push(stringifiedContent)
+                  addedContentValues.add(stringifiedContent)
+                  processedOutputIds.add(outputId)
+                }
+              } else {
+                // Mark as processed even if we didn't add content (e.g., streamed content)
+                processedOutputIds.add(outputId)
+              }
 
+              // Aggregate tokens, tool calls, and files (only count once per block)
+              // Check if we've already processed this block for aggregation
+              if (!processedBlocks.has(blockIdForOutput)) {
                 // Aggregate tokens from selected blocks
                 if (log.output.tokens) {
                   aggregatedTokens.prompt += log.output.tokens.prompt || 0
@@ -981,15 +1027,18 @@ export async function executeWorkflowForChat(
                   aggregatedToolCalls.push(...log.output.toolCalls.list)
                 }
 
-                // Use model from first selected block (or last if multiple)
-                if (log.output.model) {
-                  aggregatedModel = log.output.model
-                }
-
                 // Aggregate files
                 if (log.output.files && Array.isArray(log.output.files)) {
                   aggregatedFiles.push(...log.output.files)
                 }
+
+                // Mark this block as processed for aggregation
+                processedBlocks.add(blockIdForOutput)
+              }
+
+              // Use model from first selected block (or last if multiple)
+              if (log.output.model) {
+                aggregatedModel = log.output.model
               }
             }
           })

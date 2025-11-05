@@ -264,11 +264,17 @@ export async function GET(
 
       if (outputConfigs.length > 0) {
         // Extract selectedOutputIds from outputConfigs (same format as in utils.ts)
-        const selectedOutputIds = outputConfigs.map((config) => {
-          return config.path ? `${config.blockId}_${config.path}` : `${config.blockId}.content`
-        })
+        // Remove duplicates to prevent processing the same outputId multiple times
+        const selectedOutputIds = Array.from(
+          new Set(
+            outputConfigs.map((config) => {
+              return config.path ? `${config.blockId}_${config.path}` : `${config.blockId}.content`
+            })
+          )
+        )
 
         const selectedOutputs: string[] = []
+        const processedOutputIds = new Set<string>() // Track processed outputIds to prevent duplicates
 
         // Get blocks from traceSpans.spans (database format)
         // The execution_data in DB has traceSpans.spans array with workflow span containing children
@@ -295,7 +301,14 @@ export async function GET(
         const finalOutput = executionData?.finalOutput || executionData?.output || {}
 
         // Extract outputs from selected blocks
+        // Iterate through selectedOutputIds to ensure all selected paths are processed
+        // This handles cases where multiple paths are selected for the same block (e.g., both "content" and "model")
         selectedOutputIds.forEach((outputId) => {
+          // Skip if we've already processed this exact outputId (prevent duplicates)
+          if (processedOutputIds.has(outputId)) {
+            return
+          }
+
           const blockIdForOutput = extractBlockIdFromOutputId(outputId)
           const path = extractPathFromOutputId(outputId, blockIdForOutput)
 
@@ -308,6 +321,7 @@ export async function GET(
 
             if (path && path !== 'content') {
               // Extract specific path (e.g., "model", "tokens", etc.)
+              // For non-content paths, access directly from block.output (same as utils.ts)
               const pathParts = path.split('.')
               for (const part of pathParts) {
                 if (blockOutput && typeof blockOutput === 'object' && part in blockOutput) {
@@ -320,7 +334,23 @@ export async function GET(
               outputValue = blockOutput
             } else {
               // Default to content field
+              // For content path, use block.output.content directly
               outputValue = blockOutput.content
+
+              // Only use finalOutput as fallback if:
+              // 1. Content is missing/empty
+              // 2. Content equals model value (likely incorrect)
+              // 3. finalOutput.content exists and is different from model
+              if (
+                (!outputValue || outputValue === blockOutput.model) &&
+                finalOutput &&
+                finalOutput.content &&
+                finalOutput.content !== blockOutput.model &&
+                typeof finalOutput.content === 'string' &&
+                finalOutput.content.trim().length > 0
+              ) {
+                outputValue = finalOutput.content
+              }
             }
           } else {
             // Try to find in logs (for newer format)
@@ -329,6 +359,8 @@ export async function GET(
               let logOutput = log.output
 
               if (path && path !== 'content') {
+                // Extract specific path (e.g., "model", "tokens", etc.)
+                // For non-content paths, access directly from log.output (same as utils.ts)
                 const pathParts = path.split('.')
                 for (const part of pathParts) {
                   if (logOutput && typeof logOutput === 'object' && part in logOutput) {
@@ -340,10 +372,24 @@ export async function GET(
                 }
                 outputValue = logOutput
               } else {
+                // Default to content field
                 outputValue = logOutput.content
+
+                // Only use finalOutput as fallback if content is missing/incorrect
+                if (
+                  (!outputValue || outputValue === logOutput.model) &&
+                  finalOutput &&
+                  finalOutput.content &&
+                  finalOutput.content !== logOutput.model &&
+                  typeof finalOutput.content === 'string' &&
+                  finalOutput.content.trim().length > 0
+                ) {
+                  outputValue = finalOutput.content
+                }
               }
             } else if (finalOutput && Object.keys(finalOutput).length > 0) {
-              // Fallback to finalOutput if block/log not found
+              // Fallback to finalOutput only if block/log not found
+              // Only use finalOutput if the selected path matches what's in finalOutput
               let finalOutputValue = finalOutput
 
               if (path && path !== 'content') {
@@ -362,18 +408,35 @@ export async function GET(
                 }
                 outputValue = finalOutputValue
               } else {
-                outputValue = finalOutput.content
+                // For content path, only use finalOutput if it's different from model
+                // This prevents using model value when content is requested
+                if (
+                  finalOutput.content &&
+                  finalOutput.content !== finalOutput.model &&
+                  typeof finalOutput.content === 'string' &&
+                  finalOutput.content.trim().length > 0
+                ) {
+                  outputValue = finalOutput.content
+                } else {
+                  outputValue = undefined
+                }
               }
             }
           }
 
+          // Only add if we got a valid value and it's not a duplicate
           if (outputValue !== undefined && outputValue !== null) {
             const formattedOutput =
               typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue, null, 2)
-            if (selectedOutputs.length > 0) {
-              selectedOutputs.push('\n\n')
+
+            // Skip if this exact value was already added (prevent duplicates)
+            if (!selectedOutputs.includes(formattedOutput)) {
+              if (selectedOutputs.length > 0) {
+                selectedOutputs.push('\n\n')
+              }
+              selectedOutputs.push(formattedOutput)
+              processedOutputIds.add(outputId)
             }
-            selectedOutputs.push(formattedOutput)
           }
         })
 
