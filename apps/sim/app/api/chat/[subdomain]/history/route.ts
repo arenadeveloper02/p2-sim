@@ -6,7 +6,7 @@ import { generateRequestId } from '@/lib/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
+import { chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatHistoryAPI')
 
@@ -138,6 +138,7 @@ export async function GET(
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         cost: workflowExecutionLogs.cost,
         executionData: workflowExecutionLogs.executionData,
+        finalChatOutput: workflowExecutionLogs.finalChatOutput,
         createdAt: workflowExecutionLogs.createdAt,
       })
       .from(workflowExecutionLogs)
@@ -170,44 +171,6 @@ export async function GET(
       .where(conditions)
 
     const totalCount = totalCountResult[0]?.count || 0
-
-    // Get chat deployment to access output_configs
-    const deploymentResult = await db
-      .select({
-        outputConfigs: chat.outputConfigs,
-      })
-      .from(chat)
-      .where(eq(chat.subdomain, subdomain))
-      .limit(1)
-
-    const deployment = deploymentResult[0]
-    const outputConfigs =
-      (deployment?.outputConfigs as Array<{ blockId: string; path: string }>) || []
-
-    // Helper functions to extract block ID and path from outputId (same as in utils.ts)
-    const extractBlockIdFromOutputId = (outputId: string): string => {
-      return outputId.includes('_') ? outputId.split('_')[0] : outputId.split('.')[0]
-    }
-
-    const extractPathFromOutputId = (outputId: string, blockId: string): string => {
-      return outputId.substring(blockId.length + 1)
-    }
-
-    const parseOutputContentSafely = (output: any): any => {
-      if (!output?.content) {
-        return output
-      }
-
-      if (typeof output.content === 'string') {
-        try {
-          return JSON.parse(output.content)
-        } catch (e) {
-          return output
-        }
-      }
-
-      return output
-    }
 
     // Format the response data
     const formattedLogs = logs.map((log) => {
@@ -259,192 +222,14 @@ export async function GET(
         }
       }
 
-      // Extract modelOutput based on output_configs
-      let modelOutput = null
+      // Extract modelOutput directly from final_chat_output column
+      // This is the output that was streamed/shown based on output_configs
+      let modelOutput = log.finalChatOutput || null
 
-      if (outputConfigs.length > 0) {
-        // Extract selectedOutputIds from outputConfigs (same format as in utils.ts)
-        // Remove duplicates to prevent processing the same outputId multiple times
-        const selectedOutputIds = Array.from(
-          new Set(
-            outputConfigs.map((config) => {
-              return config.path ? `${config.blockId}_${config.path}` : `${config.blockId}.content`
-            })
-          )
-        )
-
-        const selectedOutputs: string[] = []
-        const processedOutputIds = new Set<string>() // Track processed outputIds to prevent duplicates
-
-        // Get blocks from traceSpans.spans (database format)
-        // The execution_data in DB has traceSpans.spans array with workflow span containing children
-        let blocks: any[] = []
-        if (executionData?.traceSpans?.spans && Array.isArray(executionData.traceSpans.spans)) {
-          const workflowSpan = executionData.traceSpans.spans.find(
-            (span: any) => span.type === 'workflow'
-          )
-          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-            blocks = workflowSpan.children
-          }
-        } else if (Array.isArray(executionData?.traceSpans)) {
-          // Fallback: old format where traceSpans is directly an array
-          const workflowSpan = executionData.traceSpans.find(
-            (span: any) => span.type === 'workflow'
-          )
-          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-            blocks = workflowSpan.children
-          }
-        }
-
-        // Also check executionData.logs if available (for newer format)
-        const logs = executionData?.logs || []
-        const finalOutput = executionData?.finalOutput || executionData?.output || {}
-
-        // Extract outputs from selected blocks
-        // Iterate through selectedOutputIds to ensure all selected paths are processed
-        // This handles cases where multiple paths are selected for the same block (e.g., both "content" and "model")
-        selectedOutputIds.forEach((outputId) => {
-          // Skip if we've already processed this exact outputId (prevent duplicates)
-          if (processedOutputIds.has(outputId)) {
-            return
-          }
-
-          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
-          const path = extractPathFromOutputId(outputId, blockIdForOutput)
-
-          let outputValue: any
-
-          // First try to find in blocks (from traceSpans.spans)
-          const block = blocks.find((b: any) => b.blockId === blockIdForOutput)
-          if (block?.output) {
-            let blockOutput = block.output
-
-            if (path && path !== 'content') {
-              // Extract specific path (e.g., "model", "tokens", etc.)
-              // For non-content paths, access directly from block.output (same as utils.ts)
-              const pathParts = path.split('.')
-              for (const part of pathParts) {
-                if (blockOutput && typeof blockOutput === 'object' && part in blockOutput) {
-                  blockOutput = blockOutput[part]
-                } else {
-                  blockOutput = undefined
-                  break
-                }
-              }
-              outputValue = blockOutput
-            } else {
-              // Default to content field
-              // For content path, use block.output.content directly
-              outputValue = blockOutput.content
-
-              // Only use finalOutput as fallback if:
-              // 1. Content is missing/empty
-              // 2. Content equals model value (likely incorrect)
-              // 3. finalOutput.content exists and is different from model
-              if (
-                (!outputValue || outputValue === blockOutput.model) &&
-                finalOutput &&
-                finalOutput.content &&
-                finalOutput.content !== blockOutput.model &&
-                typeof finalOutput.content === 'string' &&
-                finalOutput.content.trim().length > 0
-              ) {
-                outputValue = finalOutput.content
-              }
-            }
-          } else {
-            // Try to find in logs (for newer format)
-            const log = logs.find((l: any) => l.blockId === blockIdForOutput)
-            if (log?.output) {
-              let logOutput = log.output
-
-              if (path && path !== 'content') {
-                // Extract specific path (e.g., "model", "tokens", etc.)
-                // For non-content paths, access directly from log.output (same as utils.ts)
-                const pathParts = path.split('.')
-                for (const part of pathParts) {
-                  if (logOutput && typeof logOutput === 'object' && part in logOutput) {
-                    logOutput = logOutput[part]
-                  } else {
-                    logOutput = undefined
-                    break
-                  }
-                }
-                outputValue = logOutput
-              } else {
-                // Default to content field
-                outputValue = logOutput.content
-
-                // Only use finalOutput as fallback if content is missing/incorrect
-                if (
-                  (!outputValue || outputValue === logOutput.model) &&
-                  finalOutput &&
-                  finalOutput.content &&
-                  finalOutput.content !== logOutput.model &&
-                  typeof finalOutput.content === 'string' &&
-                  finalOutput.content.trim().length > 0
-                ) {
-                  outputValue = finalOutput.content
-                }
-              }
-            } else if (finalOutput && Object.keys(finalOutput).length > 0) {
-              // Fallback to finalOutput only if block/log not found
-              // Only use finalOutput if the selected path matches what's in finalOutput
-              let finalOutputValue = finalOutput
-
-              if (path && path !== 'content') {
-                const pathParts = path.split('.')
-                for (const part of pathParts) {
-                  if (
-                    finalOutputValue &&
-                    typeof finalOutputValue === 'object' &&
-                    part in finalOutputValue
-                  ) {
-                    finalOutputValue = finalOutputValue[part]
-                  } else {
-                    finalOutputValue = undefined
-                    break
-                  }
-                }
-                outputValue = finalOutputValue
-              } else {
-                // For content path, only use finalOutput if it's different from model
-                // This prevents using model value when content is requested
-                if (
-                  finalOutput.content &&
-                  finalOutput.content !== finalOutput.model &&
-                  typeof finalOutput.content === 'string' &&
-                  finalOutput.content.trim().length > 0
-                ) {
-                  outputValue = finalOutput.content
-                } else {
-                  outputValue = undefined
-                }
-              }
-            }
-          }
-
-          // Only add if we got a valid value and it's not a duplicate
-          if (outputValue !== undefined && outputValue !== null) {
-            const formattedOutput =
-              typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue, null, 2)
-
-            // Skip if this exact value was already added (prevent duplicates)
-            if (!selectedOutputs.includes(formattedOutput)) {
-              if (selectedOutputs.length > 0) {
-                selectedOutputs.push('\n\n')
-              }
-              selectedOutputs.push(formattedOutput)
-              processedOutputIds.add(outputId)
-            }
-          }
-        })
-
-        if (selectedOutputs.length > 0) {
-          modelOutput = selectedOutputs.join('')
-        }
-      } else {
-        // Fallback: if no output_configs, use finalOutput.content or first agent span output
+      // Fallback: if final_chat_output is not available (for older records),
+      // fall back to the old extraction logic
+      if (!modelOutput) {
+        // Fallback logic for backward compatibility with older records
         if (executionData?.finalOutput?.content) {
           modelOutput = executionData.finalOutput.content
         } else if (executionData?.output?.content) {

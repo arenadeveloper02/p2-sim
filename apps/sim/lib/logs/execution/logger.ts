@@ -143,6 +143,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
     initialInput?: string
+    finalChatOutput?: string // Final chat output based on output_configs
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -152,6 +153,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       finalOutput,
       traceSpans,
       initialInput,
+      finalChatOutput,
     } = params
 
     logger.debug(`Completing workflow execution ${executionId}`)
@@ -188,6 +190,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         endedAt: new Date(endedAt),
         totalDurationMs,
         files: executionFiles.length > 0 ? executionFiles : null,
+        finalChatOutput: finalChatOutput || null,
         executionData: {
           traceSpans: traceSpansToStore,
           finalOutput,

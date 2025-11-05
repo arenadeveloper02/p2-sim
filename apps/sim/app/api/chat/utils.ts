@@ -720,6 +720,9 @@ export async function executeWorkflowForChat(
       let enrichedResult: ExecutionResult & { traceSpans?: any; totalDuration?: number } =
         executionResult
 
+      // Declare finalChatOutputs in outer scope so it's accessible later
+      let finalChatOutputs: string[] = [] // For final_chat_output column (includes ALL selected outputs)
+
       if (executionResult?.logs) {
         // Update streamed content and apply tokenization - process regardless of overall success
         // This ensures partial successes (some agents succeed, some fail) still return results
@@ -901,7 +904,8 @@ export async function executeWorkflowForChat(
         // Construct executionResult.output from selected blocks if outputConfigs are set
         // This ensures output.content matches what was streamed and respects selectedOutputIds
         if (selectedOutputIds.length > 0) {
-          const selectedOutputs: string[] = []
+          const selectedOutputs: string[] = [] // For executionResult.output.content (excludes streamed content)
+          finalChatOutputs = [] // Initialize for final_chat_output column (includes ALL selected outputs)
           const aggregatedTokens = {
             prompt: 0,
             completion: 0,
@@ -913,6 +917,7 @@ export async function executeWorkflowForChat(
           const processedBlocks = new Set<string>() // Track which blocks we've already processed for aggregation
           const processedOutputIds = new Set<string>() // Track processed outputIds to prevent duplicates
           const addedContentValues = new Set<string>() // Track added content values to prevent duplicates
+          const addedFinalChatValues = new Set<string>() // Track added values for finalChatOutput
 
           // Collect outputs from all selected blocks (both streamed and non-streamed)
           // Iterate through selectedOutputIds to ensure all selected paths are processed
@@ -932,6 +937,8 @@ export async function executeWorkflowForChat(
             if (log?.output) {
               // Extract the content based on the selected path
               let extractedContent: string | undefined
+              let extractedContentForFinalChat: string | undefined // Always extract for finalChatOutput
+
               if (path && path !== 'content') {
                 // Extract specific path (e.g., "model", "tokens", etc.)
                 // For non-content paths, access directly from log.output (not from parsed content)
@@ -952,13 +959,22 @@ export async function executeWorkflowForChat(
                 }
 
                 if (extractedValue !== undefined) {
-                  extractedContent =
+                  const formattedValue =
                     typeof extractedValue === 'string'
                       ? extractedValue
                       : JSON.stringify(extractedValue, null, 2)
+                  extractedContent = formattedValue
+                  extractedContentForFinalChat = formattedValue
                 }
               } else {
                 // Default to content field
+                // For finalChatOutput: Always include content (streamed or not)
+                if (streamedContent.has(blockIdForOutput)) {
+                  extractedContentForFinalChat = streamedContent.get(blockIdForOutput) || undefined
+                } else {
+                  extractedContentForFinalChat = log.output.content
+                }
+
                 // IMPORTANT: For streamed content paths, DO NOT include in final output.content
                 // because it's already been streamed to the client. Only include non-streamed content.
                 // This prevents duplication where the UI shows streamed content + final output.content
@@ -979,6 +995,31 @@ export async function executeWorkflowForChat(
                 }
               }
 
+              // Add to finalChatOutputs (includes ALL selected outputs, streamed or not)
+              if (
+                extractedContentForFinalChat &&
+                typeof extractedContentForFinalChat === 'string' &&
+                extractedContentForFinalChat.trim().length > 0
+              ) {
+                if (!addedFinalChatValues.has(extractedContentForFinalChat)) {
+                  if (finalChatOutputs.length > 0) {
+                    finalChatOutputs.push('\n\n')
+                  }
+                  finalChatOutputs.push(extractedContentForFinalChat)
+                  addedFinalChatValues.add(extractedContentForFinalChat)
+                }
+              } else if (extractedContentForFinalChat) {
+                const stringifiedContent = JSON.stringify(extractedContentForFinalChat, null, 2)
+                if (!addedFinalChatValues.has(stringifiedContent)) {
+                  if (finalChatOutputs.length > 0) {
+                    finalChatOutputs.push('\n\n')
+                  }
+                  finalChatOutputs.push(stringifiedContent)
+                  addedFinalChatValues.add(stringifiedContent)
+                }
+              }
+
+              // Add to selectedOutputs (only non-streamed content for executionResult.output.content)
               // Only add if we got a valid value and it's not a duplicate
               // Skip if content was streamed (to prevent duplication)
               if (
@@ -1146,6 +1187,22 @@ export async function executeWorkflowForChat(
         }
       }
 
+      // Store the final chat output for history API
+      // This should include ALL selected outputs (both streamed and non-streamed)
+      // Use finalChatOutputs if available, otherwise fall back to executionResult.output.content
+      let finalChatOutput: string | undefined
+      if (
+        selectedOutputIds.length > 0 &&
+        Array.isArray(finalChatOutputs) &&
+        finalChatOutputs.length > 0
+      ) {
+        // Use finalChatOutputs which includes all selected outputs
+        finalChatOutput = finalChatOutputs.join('')
+      } else if (executionResult.output?.content) {
+        // Fallback: if finalChatOutputs is empty or no output_configs, use executionResult.output.content
+        finalChatOutput = executionResult.output.content
+      }
+
       const executionId = uuidv4()
       logger.debug(`Generated execution ID for deployed chat: ${executionId}`)
 
@@ -1168,6 +1225,7 @@ export async function executeWorkflowForChat(
           totalDurationMs: executionResult.metadata?.duration || 0,
           finalOutput: executionResult.output,
           traceSpans,
+          finalChatOutput,
         })
       }
 

@@ -28,6 +28,7 @@ export interface SessionCompleteParams {
   totalDurationMs?: number
   finalOutput?: any
   traceSpans?: any[]
+  finalChatOutput?: string // Final chat output based on output_configs
 }
 
 export interface SessionErrorCompleteParams {
@@ -119,7 +120,7 @@ export class LoggingSession {
   }
 
   async complete(params: SessionCompleteParams = {}): Promise<void> {
-    const { endedAt, totalDurationMs, finalOutput, traceSpans } = params
+    const { endedAt, totalDurationMs, finalOutput, traceSpans, finalChatOutput } = params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])
@@ -132,6 +133,7 @@ export class LoggingSession {
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
         initialInput: this.initialInput,
+        finalChatOutput,
       })
 
       if (this.requestId) {
