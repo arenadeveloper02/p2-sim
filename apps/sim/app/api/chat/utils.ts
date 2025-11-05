@@ -929,7 +929,7 @@ export async function executeWorkflowForChat(
             // Find the log for this block
             const log = executionResult.logs?.find((l: BlockLog) => l.blockId === blockIdForOutput)
 
-            if (log && log.output) {
+            if (log?.output) {
               // Extract the content based on the selected path
               let extractedContent: string | undefined
               if (path && path !== 'content') {

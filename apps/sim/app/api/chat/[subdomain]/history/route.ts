@@ -316,7 +316,7 @@ export async function GET(
 
           // First try to find in blocks (from traceSpans.spans)
           const block = blocks.find((b: any) => b.blockId === blockIdForOutput)
-          if (block && block.output) {
+          if (block?.output) {
             let blockOutput = block.output
 
             if (path && path !== 'content') {
@@ -355,7 +355,7 @@ export async function GET(
           } else {
             // Try to find in logs (for newer format)
             const log = logs.find((l: any) => l.blockId === blockIdForOutput)
-            if (log && log.output) {
+            if (log?.output) {
               let logOutput = log.output
 
               if (path && path !== 'content') {
