@@ -4,12 +4,11 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
 import {
+  chat,
   chatPromptFeedback,
-  templates,
   user,
   workflow,
   workflowExecutionLogs,
-  workflowTemplateMapper,
 } from '@/db/schema'
 
 const logger = createLogger('ChatFeedbackByWorkflowAPI')
@@ -60,38 +59,28 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const pageNumber = Number.isFinite(pageParam) ? Math.max(pageParam, 1) : 1
     const offset = (pageNumber - 1) * pageSize
 
-    // Fetch author email via: workflow → workflow_template_mapper → templates → user
-    // Step 1: Get templateId from workflow_template_mapper
-    const templateMapper = await db
+    // Fetch author email from chat table (same approach as agents route)
+    let authorEmail: string | null = null
+
+    // Get chat record for the workflow
+    const chatRecord = await db
       .select({
-        templateId: workflowTemplateMapper.templateId,
+        userId: chat.userId,
       })
-      .from(workflowTemplateMapper)
-      .where(eq(workflowTemplateMapper.workflowId, workflowId))
+      .from(chat)
+      .where(eq(chat.workflowId, workflowId))
       .limit(1)
 
-    let authorEmail: string | null = null
-    if (templateMapper.length > 0 && templateMapper[0].templateId) {
-      // Step 2: Get userId from templates table
-      const template = await db
-        .select({
-          userId: templates.userId,
-        })
-        .from(templates)
-        .where(eq(templates.id, templateMapper[0].templateId))
+    if (chatRecord.length > 0 && chatRecord[0].userId) {
+      // Get email from user table using chat.userId
+      const author = await db
+        .select({ email: user.email })
+        .from(user)
+        .where(eq(user.id, chatRecord[0].userId))
         .limit(1)
 
-      if (template.length > 0 && template[0].userId) {
-        // Step 3: Get email from user table
-        const author = await db
-          .select({ email: user.email })
-          .from(user)
-          .where(eq(user.id, template[0].userId))
-          .limit(1)
-
-        if (author.length > 0) {
-          authorEmail = author[0].email
-        }
+      if (author.length > 0) {
+        authorEmail = author[0].email
       }
     }
 
