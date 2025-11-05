@@ -158,6 +158,7 @@ import {
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import { redditGetCommentsTool, redditGetPostsTool, redditHotPostsTool } from '@/tools/reddit'
 import { s3GetObjectTool } from '@/tools/s3'
+import { semrushQueryTool } from '@/tools/semrush'
 import { searchTool as serperSearch } from '@/tools/serper'
 import {
   sharepointCreatePageTool,
@@ -232,6 +233,7 @@ export const tools: Record<string, ToolConfig> = {
   slack_canvas: slackCanvasTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
+  semrush_query: semrushQueryTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,

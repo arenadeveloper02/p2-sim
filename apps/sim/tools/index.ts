@@ -484,6 +484,9 @@ async function handleInternalRequest(
 
     const response = await fetch(fullUrl, requestOptions)
 
+    // Log response details for debugging (especially for Semrush)
+    const responseContentType = response.headers.get('content-type') || ''
+
     // For non-OK responses, attempt JSON first; if parsing fails, preserve legacy error expected by tests
     if (!response.ok) {
       let errorData: any
@@ -516,9 +519,114 @@ async function handleInternalRequest(
       // Many APIs (e.g., Microsoft Graph) return 202 with empty body
       responseData = { status }
     } else {
+      // If tool has transformResponse, check content-type first to avoid consuming body unnecessarily
+      // Use the contentType we already got from headers
+      const contentType = responseContentType
+      const hasTransformResponse = !!tool.transformResponse
+      // For Semrush specifically, always treat as text if it has transformResponse
+      // Also check if content-type is missing or doesn't explicitly say JSON
+      const isNonJsonContent =
+        hasTransformResponse &&
+        (toolId === 'semrush_query' || !contentType.includes('application/json'))
+
+      // Debug logging for Semrush
+      if (toolId === 'semrush_query') {
+        const checkInfo = {
+          contentType,
+          hasTransformResponse,
+          isNonJsonContent,
+          isSemrushTool: toolId === 'semrush_query',
+          willReadAsText: isNonJsonContent && tool.transformResponse,
+          willTryJSON: !isNonJsonContent,
+        }
+        console.log(`[${requestId}] Semrush Content-Type Check:`, checkInfo)
+        logger.info(`[${requestId}] Semrush Content-Type Check`, checkInfo)
+      }
+
+      if (isNonJsonContent && tool.transformResponse) {
+        // For non-JSON content with transformResponse, read as text and let transformResponse handle it
+        const responseText = await response.text()
+
+        // Log the actual response for Semrush debugging
+        if (toolId === 'semrush_query') {
+          const rawResponseInfo = {
+            contentType,
+            length: responseText.length,
+            preview: responseText.substring(0, 500),
+            fullResponse: responseText,
+          }
+          console.log(`[${requestId}] Semrush API Raw Response:`, rawResponseInfo)
+          logger.info(`[${requestId}] Semrush API Raw Response`, {
+            ...rawResponseInfo,
+            fullResponse: responseText, // Full response in logs
+          })
+        }
+
+        const mockResponse = {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+          url: fullUrl,
+          json: async () => {
+            try {
+              return JSON.parse(responseText)
+            } catch {
+              throw new Error('Response is not valid JSON')
+            }
+          },
+          text: async () => responseText,
+        } as unknown as Response
+
+        const data = await tool.transformResponse(mockResponse, params)
+        return data
+      }
+
+      // For JSON responses or tools without transformResponse, parse as JSON
       try {
+        // For Semrush, this should NOT happen - it should have been handled above
+        if (toolId === 'semrush_query') {
+          logger.error(
+            `[${requestId}] Semrush: ERROR - Should not be parsing as JSON! Content-type: ${contentType}, isNonJsonContent was: ${isNonJsonContent}`
+          )
+          // Try to peek at the response to see what we're getting
+          const clonedForPeek = response.clone()
+          const peekText = await clonedForPeek.text()
+          logger.error(`[${requestId}] Semrush: Response preview before JSON parse:`, {
+            length: peekText.length,
+            firstChars: peekText.substring(0, 200),
+            looksLikeCSV: peekText.includes(';') && peekText.includes('\n'),
+            fullResponse: peekText,
+          })
+        }
         responseData = await response.json()
       } catch (jsonError) {
+        // If transformResponse exists but we're here, try reading as text as fallback
+        if (hasTransformResponse && tool.transformResponse) {
+          try {
+            const clonedResponse = response.clone()
+            const responseText = await clonedResponse.text()
+            const mockResponse = {
+              ok: response.ok,
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              url: fullUrl,
+              json: async () => {
+                throw new Error('Response is not valid JSON')
+              },
+              text: async () => responseText,
+            } as unknown as Response
+            const data = await tool.transformResponse(mockResponse, params)
+            return data
+          } catch (transformError) {
+            logger.error(`[${requestId}] Transform response error for ${toolId}:`, {
+              error:
+                transformError instanceof Error ? transformError.message : String(transformError),
+            })
+            throw transformError
+          }
+        }
         logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
           error: jsonError instanceof Error ? jsonError.message : String(jsonError),
         })
