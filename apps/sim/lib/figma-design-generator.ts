@@ -86,6 +86,11 @@ export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<Fi
     // Step 2: Call Claude API to generate HTML and CSS
     console.log('Step 2: Calling Claude API to generate design...')
     const renderedData = await generateHTMLCSS(systemPrompt, inputs.prompt)
+    // const renderedData = `<html>
+    // <body>
+    // <h1>Hello World</h1>
+    // </body>
+    // </html>`
 
     if (!renderedData) {
       return {
@@ -402,42 +407,6 @@ async function generateHTMLCSS(systemPrompt: string, userPrompt: string): Promis
 }
 
 /**
- * Parse the rendered data to extract HTML and CSS
- * NOTE: This function is no longer used. The plugin now accepts full HTML with embedded <style> tags.
- * Keeping for backward compatibility if needed.
- */
-function parseRenderedData(renderedData: string): { html: string; css: string } {
-  // If the response contains code blocks, extract them
-  let cleanedHtml = renderedData
-
-  // Remove markdown code blocks if present
-  cleanedHtml = cleanedHtml.replace(/```html\n?/g, '')
-  cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
-  cleanedHtml = cleanedHtml.trim()
-
-  // Extract CSS from <style> tags
-  const cssMatch = cleanedHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/)
-  let css = ''
-
-  if (cssMatch) {
-    css = cssMatch[1].trim()
-  }
-
-  // For Figma compatibility, we need to extract just the body content
-  const bodyMatch = cleanedHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/)
-  let html = ''
-
-  if (bodyMatch) {
-    html = bodyMatch[1].trim()
-  } else {
-    // If no body tag, use the entire cleaned HTML
-    html = cleanedHtml
-  }
-
-  return { html, css }
-}
-
-/**
  * Helper function to switch back to main content from nested iframe structure
  */
 async function switchToMainContent(driver: WebDriver): Promise<void> {
@@ -480,10 +449,10 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
     if (!mainIframe) {
       throw new Error('Could not find main plugin iframe')
     }
-
+    await driver.sleep(2000)
     await driver.switchTo().frame(mainIframe)
     console.log('✓ Switched to main plugin iframe')
-
+    await driver.sleep(2000)
     // Step 2: Find the Network Plugin Iframe with multiple possible selectors
     let networkIframe = null
     const networkIframeSelectors = [
@@ -500,16 +469,17 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
         break
       } catch (e) {
         // Continue to next selector
+        console.log(`Could not find Network Plugin Iframe using selector: ${selector.toString()}`)
       }
     }
 
     if (!networkIframe) {
-      throw new Error('Could not find Network Plugin Iframe')
+      console.log('Could not find Network Plugin Iframe')
     }
 
     await driver.switchTo().frame(networkIframe)
     console.log('✓ Switched to Network Plugin Iframe')
-
+    await driver.sleep(2000)
     // Step 3: Find the Inner Plugin Iframe with multiple possible selectors
     let innerIframe = null
     const innerIframeSelectors = [
@@ -536,7 +506,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
     await driver.switchTo().frame(innerIframe)
     console.log('✓ Switched to Inner Plugin Iframe')
-
+    await driver.sleep(2000)
     // Verify we're in the correct iframe by checking for Editor tab
     try {
       const editorTab = await driver.findElement(
@@ -553,6 +523,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
     // Fallback: Try to find any iframe with plugin content
     try {
+      await driver.sleep(2000)
       await driver.switchTo().defaultContent()
       console.log('Falling back to generic iframe detection...')
 
@@ -575,6 +546,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 
           // Also check for nested iframes within this iframe
           try {
+            await driver.sleep(2000)
             const nestedIframes = await driver.findElements(By.tagName('iframe'))
             console.log(`Found ${nestedIframes.length} nested iframe(s) in iframe ${i}`)
 
@@ -664,7 +636,7 @@ async function automateDesignCreation(
   // options.addArguments('--no-sandbox')
   // options.addArguments('--disable-dev-shm-usage')
 
-  // options.addArguments('--disable-blink-features=AutomationControlled')
+  options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--start-maximized')
 
   options.addArguments('--headless=new')
@@ -730,7 +702,6 @@ async function automateDesignCreation(
     // Step 3: Click on "Create" option
     console.log('Clicking on Create option...')
     // Try to find and click the create/new file button
-    // Note: Figma's UI may change, so we might need to adjust selectors
     try {
       // Look for create button - adjust selector based on actual Figma UI
       const createButton = await driver.wait(
@@ -760,62 +731,13 @@ async function automateDesignCreation(
     const currentUrl = await driver.getCurrentUrl()
     console.log(`New file created: ${currentUrl}`)
 
-    // Step 5.5: Rename the file
-    // console.log(`Renaming file to: ${fileName}`);
-    // try {
-    //   // Method 1: Try to find and click the file name input
-    //   try {
-    //     const fileNameElement = await driver.wait(
-    //       until.elementLocated(
-    //         By.xpath("//input[@placeholder='Untitled' or contains(@class, 'filename') or @aria-label='File name']")
-    //       ),
-    //       3000
-    //     );
-
-    //     // Triple-click to select all text
-    //     await driver.actions()
-    //       .click(fileNameElement)
-    //       .click(fileNameElement)
-    //       .click(fileNameElement)
-    //       .perform();
-
-    //     await driver.sleep(300);
-
-    //     // Clear and type new name
-    //     await fileNameElement.sendKeys(Key.chord(Key.COMMAND, "a")); // Select all
-    //     await fileNameElement.sendKeys(fileName);
-    //     await fileNameElement.sendKeys(Key.RETURN); // Press Enter to save
-
-    //     console.log(`File renamed successfully to: ${fileName}`);
-    //     await driver.sleep(500);
-    //   } catch (innerError) {
-    //     // Method 2: Try keyboard shortcut to rename (Cmd+R on Mac)
-    //     console.log("Trying keyboard shortcut to rename...");
-    //     await driver.actions().sendKeys(Key.chord(Key.COMMAND, "r")).perform();
-    //     await driver.sleep(500);
-
-    //     // Type the new name
-    //     await driver.actions()
-    //       .sendKeys(Key.chord(Key.COMMAND, "a")) // Select all
-    //       .sendKeys(fileName)
-    //       .sendKeys(Key.RETURN)
-    //       .perform();
-
-    //     console.log(`File renamed using keyboard shortcut: ${fileName}`);
-    //     await driver.sleep(500);
-    //   }
-    // } catch (error) {
-    //   console.log("Could not rename file automatically, continuing with default name...", error);
-    //   // Continue even if renaming fails - the file will have default name
-    // }
-
     // Step 6: Open HTML to Figma plugin
     // Using multiple fallback methods for maximum reliability
 
     const pluginName = process.env.FIGMA_HTML_PLUGIN_NAME || 'html.to.design'
     console.log(`Opening plugin: ${pluginName}...`)
-
     try {
+      await driver.sleep(2000)
       // Method 1: Direct click on plugin button using specific XPath
       console.log('Clicking on plugin button using specific XPath...')
 
@@ -831,25 +753,6 @@ async function automateDesignCreation(
       await pluginButton.click()
       console.log('✓ Clicked on plugin button - modal should open')
       await driver.sleep(3000) // Wait for modal to open
-
-      // Verify modal opened by looking for search input
-      try {
-        await driver.wait(
-          until.elementLocated(By.css('input[placeholder*="Search"], input[type="search"]')),
-          5000
-        )
-        console.log('✓ Plugin modal confirmed open - search input found')
-      } catch (modalError) {
-        console.log('⚠️ Plugin modal may not have opened - trying keyboard shortcut...')
-        // Try keyboard shortcut as fallback
-        try {
-          await driver.actions().sendKeys(Key.chord(Key.COMMAND, 'p')).perform()
-          await driver.sleep(2000)
-          console.log('✓ Used keyboard shortcut to open plugins')
-        } catch (keyboardError) {
-          console.log('Keyboard shortcut also failed')
-        }
-      }
     } catch (error) {
       console.log(
         'Direct plugin button click failed, trying keyboard shortcut...',
@@ -862,20 +765,36 @@ async function automateDesignCreation(
         await driver.sleep(2000)
         console.log('✓ Used keyboard shortcut as fallback')
       } catch (e) {
-        console.log('All methods failed - manual intervention may be required')
+        // For Linux/Windows
+        try {
+          await driver.actions().sendKeys(Key.chord(Key.CONTROL, 'p')).perform()
+          await driver.sleep(2000)
+          console.log('All methods failed - manual intervention may be required')
+        } catch (e) {
+          console.log('Keyboard shortcut also failed')
+        }
       }
     }
 
+    // Verify modal opened by looking for search input
+    await driver.sleep(2000)
+    try {
+      await driver.wait(
+        until.elementLocated(By.css('input[placeholder*="Search"], input[type="search"]')),
+        5000
+      )
+      console.log('✓ Plugin modal confirmed open - search input found')
+    } catch (modalError) {
+      console.log('⚠️ error in searching for plugin', modalError)
+    }
+
     // Wait for plugin to open
-    // await driver.sleep(3000)
+    await driver.sleep(3000)
 
     // Step 7: Handle html.to.design plugin workflow in Manage Plugins modal
     console.log('Handling html.to.design plugin workflow in Manage Plugins modal...')
 
     try {
-      // Wait for Manage Plugins modal to fully load
-      // await driver.sleep(2000)
-
       // Step 7.1: Search for html.to.design plugin using specific XPath
       console.log('Searching for html.to.design plugin using specific XPath...')
       try {
@@ -1654,19 +1573,4 @@ async function automateDesignCreation(
     // await driver.quit()
     console.log('Browser session kept open for inspection')
   }
-}
-
-/**
- * Example usage function
- */
-export async function exampleUsage() {
-  const result = await generateFigmaDesign({
-    projectId: '397940050',
-    fileName: 'AI Generated Landing Page',
-    prompt:
-      'Create a modern landing page for a SaaS product with a hero section, features section, and CTA buttons',
-    additionalInfo: 'Use blue and white color scheme, make it professional and clean',
-  })
-
-  console.log('Result:', result)
 }
