@@ -651,7 +651,7 @@ export function DeployModal({
 
             <div className='flex gap-2'>
               {/* Delete button hidden for now */}
-              {/* {chatExists && (
+              {chatExists && (
                 <Button
                   type='button'
                   onClick={() => {
@@ -676,7 +676,7 @@ export function DeployModal({
                 >
                   Delete
                 </Button>
-              )} */}
+              )}
               <Button
                 type='button'
                 onClick={handleChatFormSubmit}
