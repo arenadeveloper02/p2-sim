@@ -3,13 +3,7 @@ import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import {
-  chat,
-  chatPromptFeedback,
-  user,
-  workflow,
-  workflowExecutionLogs,
-} from '@/db/schema'
+import { chat, chatPromptFeedback, user, workflow, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatFeedbackByWorkflowAPI')
 
