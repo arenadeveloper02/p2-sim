@@ -88,6 +88,9 @@ export const env = createEnv({
     // Exa API key
     EXA_API_KEY:                         z.string().min(1).optional(),           // Exa AI API key
 
+    //Presentation API URL
+    PRESENTATION_API_BASE_URL:             z.string().url().optional(),            // Presentation API base URL
+
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
     AZURE_OPENAI_API_VERSION:              z.string().optional(),                  // Shared Azure OpenAI API version

@@ -63,6 +63,7 @@ import {
   googleDriveCreateFolderTool,
   googleDriveGetContentTool,
   googleDriveListTool,
+  googleDriveUploadFileTool,
   googleDriveUploadTool,
 } from '@/tools/google_drive'
 import {
@@ -155,6 +156,7 @@ import {
   queryTool as postgresQueryTool,
   updateTool as postgresUpdateTool,
 } from '@/tools/postgresql'
+import { createTool as presentationCreateTool } from '@/tools/presentation'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import { redditGetCommentsTool, redditGetPostsTool, redditHotPostsTool } from '@/tools/reddit'
 import { s3GetObjectTool } from '@/tools/s3'
@@ -273,6 +275,7 @@ export const tools: Record<string, ToolConfig> = {
   postgresql_update: postgresUpdateTool,
   postgresql_delete: postgresDeleteTool,
   postgresql_execute: postgresExecuteTool,
+  presentation_create: presentationCreateTool,
   mongodb_query: mongodbQueryTool,
   mongodb_insert: mongodbInsertTool,
   mongodb_update: mongodbUpdateTool,
@@ -297,6 +300,7 @@ export const tools: Record<string, ToolConfig> = {
   google_drive_get_content: googleDriveGetContentTool,
   google_drive_list: googleDriveListTool,
   google_drive_upload: googleDriveUploadTool,
+  google_drive_upload_file: googleDriveUploadFileTool,
   google_drive_create_folder: googleDriveCreateFolderTool,
   google_docs_read: googleDocsReadTool,
   google_docs_write: googleDocsWriteTool,
