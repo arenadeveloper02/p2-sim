@@ -26,14 +26,14 @@ function extractChatData(executionData: any): {
       if (agentSpans.length > 0) {
         const agentSpan = agentSpans[0] // Get first agent span
         const rawUserPrompt = agentSpan.input?.userPrompt || null
-        
+
         // Strip "user input: " prefix if present
         if (rawUserPrompt && typeof rawUserPrompt === 'string') {
           userPrompt = rawUserPrompt.replace(/^user input:\s*/i, '').trim()
         } else {
           userPrompt = rawUserPrompt
         }
-        
+
         response = agentSpan.output?.content || null
       }
     }
