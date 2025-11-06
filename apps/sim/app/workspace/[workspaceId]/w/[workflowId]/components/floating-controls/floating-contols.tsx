@@ -1,6 +1,6 @@
 'use client'
 
-import { Expand, Minus, Plus, Redo2, Undo2 } from 'lucide-react'
+import { Minus, Plus, Redo2, RefreshCw, Undo2 } from 'lucide-react'
 import { useReactFlow, useStore } from 'reactflow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -100,7 +100,7 @@ export function FloatingControls() {
               onClick={handleFitView}
               className={cn('h-9 w-9 rounded-[10px]', 'hover:bg-muted/80')}
             >
-              <Expand className='h-4 w-4' />
+              <RefreshCw className='h-4 w-4' />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
