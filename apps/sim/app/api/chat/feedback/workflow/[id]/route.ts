@@ -1,4 +1,4 @@
-import { count, desc, eq, inArray } from 'drizzle-orm'
+import { and, count, desc, eq, inArray } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -78,11 +78,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    // Get total count of feedback records for pagination
+    // Get total count of feedback records for pagination (only where liked is false)
     const totalCountResult = await db
       .select({ count: count() })
       .from(chatPromptFeedback)
-      .where(eq(chatPromptFeedback.workflowId, workflowId))
+      .where(
+        and(eq(chatPromptFeedback.workflowId, workflowId), eq(chatPromptFeedback.liked, false))
+      )
 
     const totalCount = totalCountResult[0]?.count || 0
     const totalPages = Math.ceil(totalCount / pageSize)
@@ -107,7 +109,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .from(chatPromptFeedback)
       .leftJoin(user, eq(user.id, chatPromptFeedback.userId))
       .leftJoin(workflow, eq(workflow.id, chatPromptFeedback.workflowId))
-      .where(eq(chatPromptFeedback.workflowId, workflowId))
+      .where(
+        and(eq(chatPromptFeedback.workflowId, workflowId), eq(chatPromptFeedback.liked, false))
+      )
       .orderBy(desc(chatPromptFeedback.createdAt))
       .limit(pageSize)
       .offset(offset)
