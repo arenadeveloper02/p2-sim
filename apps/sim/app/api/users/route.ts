@@ -1,4 +1,4 @@
-import { eq, isNull, ne, or } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -6,7 +6,7 @@ import { createErrorResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
 import { apiKey as apiKeyTable, user, userArenaDetails } from '@/db/schema'
 
-const logger = createLogger('RateLimitAPI')
+const logger = createLogger('UsersAPI')
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,14 +35,12 @@ export async function GET(request: NextRequest) {
       return createErrorResponse('Authentication required', 401)
     }
 
-    // Get users joined with user_arena_details and filter out client_stakeholder
+    // Get all users (including client_stakeholder) with user_arena_details
+    // This endpoint returns ALL users, unlike /api/users/approval which filters out client_stakeholder
     const rows = await db
       .select({ user, userType: userArenaDetails.userType })
       .from(user)
       .leftJoin(userArenaDetails, eq(userArenaDetails.userIdRef, user.id))
-      .where(
-        or(isNull(userArenaDetails.userType), ne(userArenaDetails.userType, 'client_stakeholder'))
-      )
 
     const users = rows.map((r) => ({ ...r.user, userType: r.userType ?? null }))
 
@@ -51,7 +49,7 @@ export async function GET(request: NextRequest) {
       users: users,
     })
   } catch (error: any) {
-    logger.error('Error checking rate limit:', error)
-    return createErrorResponse(error.message || 'Failed to check rate limit', 500)
+    logger.error('Error fetching users:', error)
+    return createErrorResponse(error.message || 'Failed to fetch users', 500)
   }
 }

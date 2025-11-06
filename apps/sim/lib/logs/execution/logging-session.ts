@@ -88,6 +88,7 @@ export class LoggingSession {
         workflowState: this.workflowState,
         isExternalChat: this.isExternalChat,
         chatId: this.chatId,
+        userId,
       })
 
       if (this.requestId) {
@@ -229,6 +230,7 @@ export class LoggingSession {
           trigger: this.trigger,
           environment: this.environment,
           workflowState: this.workflowState,
+          userId,
         })
 
         if (this.requestId) {

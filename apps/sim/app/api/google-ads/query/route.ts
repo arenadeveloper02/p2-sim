@@ -94,6 +94,7 @@ interface AccountResult {
     impressions: number
     cost: number
     conversions: number
+    conversions_value: number
     ctr: number
     avg_cpc: number
     conversion_rate: number
@@ -147,6 +148,179 @@ async function generateSmartGAQL(
   }
 }
 
+// Helper function to extract date ranges from user input
+function extractDateRanges(input: string): Array<{ start: string; end: string }> {
+  const dateRanges: Array<{ start: string; end: string }> = []
+
+  // First, try to match numeric format with "and then": "10/8/2025 to 10/14/2025 and then 10/15/2025 to 10/21/2025"
+  const numericFullPattern =
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+and\s+then\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})/i
+  const numericFullMatch = input.match(numericFullPattern)
+
+  if (numericFullMatch) {
+    // First range
+    const month1 = numericFullMatch[1].padStart(2, '0')
+    const day1 = numericFullMatch[2].padStart(2, '0')
+    const year1 = numericFullMatch[3]
+    const month2 = numericFullMatch[4].padStart(2, '0')
+    const day2 = numericFullMatch[5].padStart(2, '0')
+    const year2 = numericFullMatch[6]
+    dateRanges.push({
+      start: `${year1}-${month1}-${day1}`,
+      end: `${year2}-${month2}-${day2}`,
+    })
+
+    // Second range
+    const month3 = numericFullMatch[7].padStart(2, '0')
+    const day3 = numericFullMatch[8].padStart(2, '0')
+    const year3 = numericFullMatch[9]
+    const month4 = numericFullMatch[10].padStart(2, '0')
+    const day4 = numericFullMatch[11].padStart(2, '0')
+    const year4 = numericFullMatch[12]
+    dateRanges.push({
+      start: `${year3}-${month3}-${day3}`,
+      end: `${year4}-${month4}-${day4}`,
+    })
+
+    logger.info('Extracted numeric date ranges with "and then"', { dateRanges })
+    return dateRanges
+  }
+
+  // Second, try to match the month name pattern with "and then": "Sept 8 to 14 2025 and then 15 to 21 2025"
+  const fullPattern =
+    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})/i
+  const fullMatch = input.match(fullPattern)
+
+  if (fullMatch) {
+    // Extract month from the beginning
+    const monthStr = fullMatch[0].match(/^[A-Za-z]+/)?.[0] || ''
+    const monthMap: Record<string, string> = {
+      jan: '01',
+      january: '01',
+      feb: '02',
+      february: '02',
+      mar: '03',
+      march: '03',
+      apr: '04',
+      april: '04',
+      may: '05',
+      jun: '06',
+      june: '06',
+      jul: '07',
+      july: '07',
+      aug: '08',
+      august: '08',
+      sep: '09',
+      sept: '09',
+      september: '09',
+      oct: '10',
+      october: '10',
+      nov: '11',
+      november: '11',
+      dec: '12',
+      december: '12',
+    }
+    const month = monthMap[monthStr.toLowerCase()] || '09'
+
+    // First range
+    const start1 = fullMatch[1].padStart(2, '0')
+    const end1 = fullMatch[2].padStart(2, '0')
+    const year1 = fullMatch[3]
+    dateRanges.push({
+      start: `${year1}-${month}-${start1}`,
+      end: `${year1}-${month}-${end1}`,
+    })
+
+    // Second range (same month)
+    const start2 = fullMatch[4].padStart(2, '0')
+    const end2 = fullMatch[5].padStart(2, '0')
+    const year2 = fullMatch[6]
+    dateRanges.push({
+      start: `${year2}-${month}-${start2}`,
+      end: `${year2}-${month}-${end2}`,
+    })
+
+    return dateRanges
+  }
+
+  // Fallback to individual patterns
+  const patterns = [
+    // Month name patterns: "Sept 8 to 14 2025" or "September 8-14, 2025"
+    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:\s+to\s+|-|–)(\d{1,2})(?:,?\s+)?(\d{4})/gi,
+    // Numeric patterns: "9/8 to 9/14 2025" or "9/8/2025 to 9/14/2025"
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+|-|–)(\d{1,2})\/(\d{1,2})\/(\d{4})/gi,
+    // ISO format: "2025-09-08 to 2025-09-14"
+    /(\d{4})-(\d{2})-(\d{2})(?:\s+to\s+|-|–)(\d{4})-(\d{2})-(\d{2})/gi,
+  ]
+
+  for (const pattern of patterns) {
+    const matches = [...input.matchAll(pattern)]
+    for (const match of matches) {
+      try {
+        let startDate: string
+        let endDate: string
+
+        if (match[0].includes('/')) {
+          // Numeric format: M/D/YYYY
+          const month1 = match[1].padStart(2, '0')
+          const day1 = match[2].padStart(2, '0')
+          const year1 = match[3]
+          const month2 = match[4].padStart(2, '0')
+          const day2 = match[5].padStart(2, '0')
+          const year2 = match[6]
+          startDate = `${year1}-${month1}-${day1}`
+          endDate = `${year2}-${month2}-${day2}`
+        } else if (match[0].match(/^\d{4}-\d{2}-\d{2}/)) {
+          // ISO format
+          startDate = `${match[1]}-${match[2]}-${match[3]}`
+          endDate = `${match[4]}-${match[5]}-${match[6]}`
+        } else {
+          // Month name format: "Sept 8 to 14 2025"
+          const monthStr = match[0].match(/^[A-Za-z]+/)?.[0] || ''
+          const monthMap: Record<string, string> = {
+            jan: '01',
+            january: '01',
+            feb: '02',
+            february: '02',
+            mar: '03',
+            march: '03',
+            apr: '04',
+            april: '04',
+            may: '05',
+            jun: '06',
+            june: '06',
+            jul: '07',
+            july: '07',
+            aug: '08',
+            august: '08',
+            sep: '09',
+            sept: '09',
+            september: '09',
+            oct: '10',
+            october: '10',
+            nov: '11',
+            november: '11',
+            dec: '12',
+            december: '12',
+          }
+          const month = monthMap[monthStr.toLowerCase()] || '01'
+          const day1 = match[1].padStart(2, '0')
+          const day2 = match[2].padStart(2, '0')
+          const year = match[3]
+          startDate = `${year}-${month}-${day1}`
+          endDate = `${year}-${month}-${day2}`
+        }
+
+        dateRanges.push({ start: startDate, end: endDate })
+      } catch (e) {
+        logger.warn('Failed to parse date range', { match: match[0], error: e })
+      }
+    }
+  }
+
+  return dateRanges
+}
+
 async function generateGAQLWithAI(userInput: string): Promise<{
   gaqlQuery: string
   queryType: string
@@ -160,6 +334,54 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 }> {
   logger.info('Generating complete GAQL query with AI', { userInput })
 
+  // Step 1: Extract date ranges from user input
+  const dateRanges = extractDateRanges(userInput)
+  logger.info('Extracted date ranges from user input', {
+    userInput,
+    dateRangesFound: dateRanges.length,
+    dateRanges,
+  })
+
+  // Step 2: Determine if this is a comparison query
+  const isComparisonDetected = dateRanges.length === 2
+
+  // Step 3: Modify the prompt if comparison is detected
+  let modifiedInput = userInput
+  if (isComparisonDetected) {
+    modifiedInput = `COMPARISON QUERY DETECTED - Generate TWO separate queries with EXACT field names:
+
+CRITICAL FIELD NAMES (DO NOT USE ANY OTHER NAMES):
+- "gaql_query" - for the MAIN/CURRENT period (${dateRanges[1].start} to ${dateRanges[1].end})
+- "comparison_query" - for the COMPARISON/PRIOR period (${dateRanges[0].start} to ${dateRanges[0].end})
+- "is_comparison" - MUST be true
+- "start_date" - ${dateRanges[1].start}
+- "end_date" - ${dateRanges[1].end}
+- "comparison_start_date" - ${dateRanges[0].start}
+- "comparison_end_date" - ${dateRanges[0].end}
+
+DO NOT use: query_1, query_2, main_query, prior_query, or any other field names.
+
+Example JSON structure:
+{
+  "gaql_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${dateRanges[1].start}' AND '${dateRanges[1].end}' AND campaign.status != 'REMOVED'",
+  "comparison_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${dateRanges[0].start}' AND '${dateRanges[0].end}' AND campaign.status != 'REMOVED'",
+  "is_comparison": true,
+  "start_date": "${dateRanges[1].start}",
+  "end_date": "${dateRanges[1].end}",
+  "comparison_start_date": "${dateRanges[0].start}",
+  "comparison_end_date": "${dateRanges[0].end}",
+  "query_type": "campaign_performance",
+  "period_type": "custom"
+}
+
+Original question: ${userInput}`
+
+    logger.info('Comparison mode activated', {
+      mainPeriod: `${dateRanges[1].start} to ${dateRanges[1].end}`,
+      comparisonPeriod: `${dateRanges[0].start} to ${dateRanges[0].end}`,
+    })
+  }
+
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
 
@@ -168,6 +390,8 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 **IMPORTANT RULE**: When users ask about asset performance or data over time, use campaign or ad_group resources instead of asset resources. Asset resources don't support date segments, but campaign/ad_group resources do.
 
 **NEVER REFUSE**: Always generate a valid GAQL query. Never return error messages or refuse to generate queries.
+
+**CRITICAL: ACCOUNT CONTEXT**: The user has already selected a specific Google Ads account (e.g., CA - Eventgroove Products, AMI, Heartland). When they mention the account name in their query, DO NOT add it as a campaign.name filter. The account is already selected by the API. Only filter by campaign.name when the user explicitly asks for specific campaign types (Brand, PMax, Shopping, etc.).
 
 ## RESOURCES & METRICS
 
@@ -189,8 +413,20 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 
 **METRICS:**
 - Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
-- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion, metrics.conversion_rate
-- Quality: metrics.quality_score (keywords only), metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
+- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion
+- Impression Share: metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
+
+**QUALITY SCORE (Keywords Only - NOT in metrics):**
+- ❌ WRONG: metrics.quality_score (DOES NOT EXIST)
+- ✅ CORRECT: ad_group_criterion.quality_info.quality_score (1-10 scale)
+- Ad Relevance: ad_group_criterion.quality_info.creative_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
+- Landing Page Experience: ad_group_criterion.quality_info.post_click_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
+- CRITICAL: Quality Score is part of ad_group_criterion in keyword_view resource, NOT a metric
+
+**CRITICAL - CALCULATED METRICS (NOT AVAILABLE IN API):**
+- ❌ metrics.conversion_rate - DOES NOT EXIST! Calculate as: (conversions / clicks) × 100
+- ❌ metrics.roas - DOES NOT EXIST! Calculate as: conversions_value / cost
+- To get conversion rate data, fetch metrics.conversions and metrics.clicks, then calculate it yourself
 
 **SEGMENTS:**
 - Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
@@ -204,17 +440,26 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
 - Asset queries show structure (what exists), not performance (how it performed)
 
+**CRITICAL SEGMENTS.DATE RULE:**
+- **DO NOT include segments.date in SELECT clause** - This causes daily breakdown (one row per day)
+- **USE segments.date ONLY in WHERE clause** for date filtering to get aggregated totals
+- ❌ WRONG: SELECT segments.date, campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2025-09-01' AND '2025-09-30'
+- ✅ CORRECT: SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2025-09-01' AND '2025-09-30'
+- Exception: Only include segments.date in SELECT if user explicitly asks for "daily breakdown", "by date", or "day-by-day"
+
 ## SYNTAX RULES
 
 **CRITICAL:**
 1. Always generate valid GAQL - never refuse or error
 2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
-3. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
-4. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
-5. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
-6. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
-7. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
-8. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
+3. **ABSOLUTELY FORBIDDEN IN SELECT CLAUSE**: segments.date, segments.week, segments.month, segments.quarter, segments.day_of_week, segments.hour - NEVER include these in SELECT unless user explicitly asks for "daily breakdown" or "by date"
+4. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
+5. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
+6. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
+7. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
+8. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
+9. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
+10. **DYNAMIC LIMIT**: Extract the number from user queries like "top 10", "top 20", "top 50", "best 15", etc. Use that exact number in the LIMIT clause. Examples: "top 10 keywords" → LIMIT 10, "top 20 campaigns" → LIMIT 20, "best 50 keywords" → LIMIT 50. Default to LIMIT 10 if no number is specified.
 
 **FIELD-SPECIFIC OPERATORS:**
 - STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
@@ -232,10 +477,24 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 - geographic_view: + campaign.id + campaign.status
 
 **DATE FILTERING:**
-- Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, LAST_90_DAYS, THIS_MONTH, LAST_MONTH
+- Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, THIS_MONTH, LAST_MONTH, THIS_WEEK, LAST_WEEK
 - Custom: BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
 - Single: segments.date = '2025-09-30'
 - NEVER use >=, <=, or open-ended ranges
+- **CRITICAL**: LAST_90_DAYS is NOT supported - use BETWEEN with calculated dates instead
+- **CRITICAL**: For "last 90 days" or "last 3 months", calculate dates and use BETWEEN
+- **CRITICAL**: NEVER use OR to combine multiple date ranges in one query
+- **CRITICAL**: For comparisons, return TWO separate queries with isComparison: true
+
+**COMPARISON DETECTION - CRITICAL:**
+If the user mentions ANY of these patterns, you MUST set isComparison: true and return TWO queries:
+- "and then" (e.g., "Sept 8-14 and then 15-21")
+- "compare" or "comparison" (e.g., "compare this week to last week")
+- "vs" or "versus" (e.g., "Sept 15-21 vs Sept 8-14")
+- "previous week" or "prior week" or "last week" when asking for current week
+- TWO date ranges mentioned (e.g., "Sept 8-14 2025 and Sept 15-21 2025")
+- "week over week" or "WoW"
+When detected, the SECOND date range is the main week, the FIRST date range is the comparison week.
 
 **STATUS FILTERING:**
 - campaign.status != 'REMOVED' (exclude deleted)
@@ -248,7 +507,18 @@ async function generateGAQLWithAI(userInput: string): Promise<{
 SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
 
 **Keyword Analysis:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.name, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, metrics.clicks, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC LIMIT 10
+
+**Keyword Analysis with Quality Score (Underperforming Keywords - Last 3 Months):**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions, metrics.ctr FROM keyword_view WHERE segments.date BETWEEN '2025-08-01' AND '2025-10-30' AND campaign.status != 'REMOVED' AND ad_group_criterion.quality_info.quality_score < 6 AND metrics.cost_micros > 50000000 ORDER BY metrics.cost_micros DESC
+
+Note: 
+- Quality Score: ad_group_criterion.quality_info.quality_score (1-10)
+- Ad Relevance: ad_group_criterion.quality_info.creative_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
+- Landing Page Experience: ad_group_criterion.quality_info.post_click_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
+- Expected CTR: Use metrics.ctr as proxy (actual expected CTR not directly available in GAQL)
+- Filter: Quality Score < 6 AND spend > $50 (50,000,000 micros) in last 3 months
+- IMPORTANT: Use BETWEEN with calculated dates instead of LAST_90_DAYS (not supported)
 
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
@@ -270,6 +540,58 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 - **SOLUTION**: Use campaign or ad_group resources for asset performance data
 - Asset queries show structure (what assets exist) not performance (how they performed)
 - For performance data with date segments, always use campaign or ad_group resources
+
+**RSA AD GROUP ANALYSIS:**
+When user asks for "RSA counts", "headline/description counts", or "responsive search ads by ad group":
+
+CRITICAL: Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
+
+SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.status
+FROM ad_group_ad 
+WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' 
+AND ad_group_ad.status = 'ENABLED'
+AND campaign.status != 'REMOVED'
+ORDER BY campaign.name, ad_group.name
+
+Note: 
+- The headlines and descriptions fields return arrays. Count the array length to get counts per ad group (max 15 headlines, max 4 descriptions).
+- This query returns ALL RSA ads across ALL campaigns and ad groups in the account.
+- Do NOT add LIMIT clause - we need complete data for gap analysis.
+
+**AD EXTENSIONS GAP ANALYSIS:**
+When user asks for "ad extensions", "sitelinks", "callouts", "structured snippets", or "extension gap analysis":
+
+CRITICAL: Ad extensions can be at ACCOUNT, CAMPAIGN, or AD GROUP level. Use CAMPAIGN-LEVEL query to get the most comprehensive view.
+
+**IMPORTANT: Return ONLY ONE query - the campaign-level query below. Do NOT return multiple queries.**
+
+**Campaign-Level Extensions Query (USE THIS ONE):**
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status
+FROM campaign_asset
+WHERE campaign.status != 'REMOVED'
+AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET')
+AND campaign_asset.status = 'ENABLED'
+ORDER BY campaign.name, asset.type
+
+**EXTENSION COUNTING LOGIC:**
+- Count unique campaign_asset.asset per campaign per asset.type
+- Each row represents one extension asset attached to a campaign
+- Group by campaign.name and asset.type to count extensions per campaign
+- Note: Account-level extensions are inherited by all campaigns and will appear in this query
+- Use campaign.advertising_channel_type to filter: SEARCH campaigns use extensions, PERFORMANCE_MAX uses asset groups
+- To exclude Performance Max: Filter results where campaign.advertising_channel_type != 'PERFORMANCE_MAX'
+
+**Optimal Counts:**
+- Sitelinks: 4-6 per campaign
+- Callouts: 4-6 per campaign  
+- Structured Snippets: 2+ per campaign
+
+**Gap Status:**
+- ✅ OPTIMAL: Within optimal range
+- ⚠️ GAP: 50-75% of optimal (e.g., 2-3 sitelinks when optimal is 4-6)
+- ❌ CRITICAL GAP: <50% of optimal or 0 assets
+
+Note: This query does NOT support segments.date (no date filtering)
 
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
@@ -373,38 +695,106 @@ TRAVEL
 - ✅ CORRECT: campaign.status = 'ENABLED' (use exact match for ENUM)
 - ❌ WRONG: campaign.name = 'Brand Campaign' (STRING field should use LIKE for partial matches)
 - ✅ CORRECT: campaign.name LIKE '%Brand%' (use LIKE for STRING pattern matching)
+- ❌ WRONG: WHERE (segments.date BETWEEN '2025-09-08' AND '2025-09-14' OR segments.date BETWEEN '2025-09-15' AND '2025-09-21')
+- ✅ CORRECT: Return TWO separate queries with isComparison: true
+
+**CRITICAL: ACCOUNT NAME vs CAMPAIGN NAME:**
+- ❌ WRONG: "for CA - Eventgroove Products" → campaign.name LIKE '%CA - Eventgroove Products%'
+- ✅ CORRECT: Account names (AU/CA/UK - Eventgroove Products, AMI, Heartland, etc.) are NOT campaign filters
+- The account is already selected by the API - DO NOT add campaign.name filters for account names
+- Only filter by campaign.name when user explicitly asks for specific campaign names (e.g., "Brand campaigns", "PMax campaigns")
+- Example: "Show performance for CA - Eventgroove Products" → Query ALL campaigns, no name filter
+
+## COMPARISON QUERIES
+
+**CRITICAL RULE**: GAQL does NOT support OR operators. For date comparisons, you MUST return TWO separate queries.
+
+**When user asks to compare two date ranges:**
+
+Example Input: "Compare performance from September 8-14 to September 15-21, 2025"
+
+Response Format:
+{
+  "gaql_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
+  "query_type": "campaign_performance",
+  "period_type": "custom",
+  "start_date": "2025-09-15",
+  "end_date": "2025-09-21",
+  "isComparison": true,
+  "comparisonQuery": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
+  "comparisonStartDate": "2025-09-08",
+  "comparisonEndDate": "2025-09-14"
+}
 
 **NOTE: Include ad_group.name for all ad-related queries**
 }`
 
   try {
-    // Get API key for OpenAI hosted provider
+    // Try Grok first, fallback to Claude, then OpenAI if not available
+    let provider: 'anthropic' | 'openai' | 'xai' = 'xai'
+    let model = 'grok-3-fast-latest'
     let apiKey: string
+
     try {
-      apiKey = getApiKey('openai', 'gpt-4o')
-    } catch (keyError) {
-      logger.error('Failed to get OpenAI API key', { keyError })
-      throw new Error('OpenAI API key not available')
+      apiKey = getApiKey('xai', 'grok-3-fast-latest')
+      logger.info('Using Grok for query parsing', { model })
+    } catch (grokError) {
+      logger.warn('Grok API key not available, falling back to Claude', { grokError })
+      try {
+        provider = 'anthropic'
+        model = 'claude-sonnet-4-20250514'
+        apiKey = getApiKey('anthropic', 'claude-sonnet-4-20250514')
+        logger.info('Using Claude for query parsing', { model })
+      } catch (claudeError) {
+        logger.warn('Claude API key not available, falling back to OpenAI', { claudeError })
+        try {
+          provider = 'openai'
+          model = 'gpt-4o'
+          apiKey = getApiKey('openai', 'gpt-4o')
+          logger.info('Using OpenAI for query parsing', { model })
+        } catch (openaiError) {
+          logger.error('No AI provider available', { grokError, claudeError, openaiError })
+          throw new Error('No AI API key available (tried Grok, Claude, and OpenAI)')
+        }
+      }
     }
 
     logger.info('Making AI request for query parsing', {
+      provider,
+      model,
       hasApiKey: !!apiKey,
-      model: 'gpt-4o',
     })
 
-    const aiResponse = await executeProviderRequest('openai', {
-      model: 'gpt-4o',
-      systemPrompt: `${systemPrompt}\n\nRespond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.`,
-      context: `Parse this Google Ads question: "${userInput}"`,
+    const aiResponse = await executeProviderRequest(provider, {
+      model,
+      systemPrompt: `${systemPrompt}\n\nRespond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.
+
+CRITICAL: If the user's question contains TWO date ranges or words like "and then", "compare", "vs", "previous week", you MUST:
+1. Set "is_comparison": true
+2. Provide "comparison_query" with the FIRST date range
+3. Provide "comparison_start_date" and "comparison_end_date" for the FIRST date range
+4. The main "gaql_query" should use the SECOND date range
+
+Example for "Sept 8-14 and then 15-21":
+{
+  "gaql_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' ...",
+  "is_comparison": true,
+  "comparison_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' ...",
+  "comparison_start_date": "2025-09-08",
+  "comparison_end_date": "2025-09-14",
+  "start_date": "2025-09-15",
+  "end_date": "2025-09-21"
+}`,
+      context: `Parse this Google Ads question: "${modifiedInput}"`,
       messages: [
         {
           role: 'user',
-          content: `Parse this Google Ads question: "${userInput}"`,
+          content: `Parse this Google Ads question: "${modifiedInput}"`,
         },
       ],
       apiKey,
-      temperature: 0.1,
-      maxTokens: 500,
+      temperature: 0.0, // Set to 0 for completely deterministic query generation
+      maxTokens: provider === 'anthropic' ? 8192 : provider === 'xai' ? 16000 : 16000, // Claude: 8,192, Grok: 16,000, GPT-4o: 16,384
     })
 
     // Extract content from AI response
@@ -421,7 +811,11 @@ TRAVEL
         aiContent = aiResponse.output.content as string
       }
     }
-    logger.info('AI Content', { aiContent })
+    logger.info('===== AI RAW RESPONSE =====', {
+      userInput,
+      aiContent,
+      aiContentLength: aiContent.length,
+    })
 
     // Check if AI returned an error message instead of JSON
     if (
@@ -451,7 +845,19 @@ TRAVEL
     // Validate required fields - check for multiple possible formats
     let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
 
-    // Handle queries array format
+    // Handle case where AI returns an array directly (for multi-level queries like ad extensions)
+    if (!gaqlQuery && Array.isArray(parsedResponse) && parsedResponse.length > 0) {
+      // AI returned array of queries for different levels (account, campaign, ad_group)
+      // Use the first query from the array
+      gaqlQuery = parsedResponse[0].query || parsedResponse[0].gaql_query
+      logger.info('AI returned array of queries (multi-level), using first query', {
+        totalQueries: parsedResponse.length,
+        levels: parsedResponse.map((q: any) => q.level),
+        selectedQuery: gaqlQuery,
+      })
+    }
+
+    // Handle queries array format (wrapped in queries field)
     if (
       !gaqlQuery &&
       parsedResponse.queries &&
@@ -471,6 +877,14 @@ TRAVEL
       throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
     }
 
+    // Ensure gaqlQuery is a string (handle cases where AI returns an object)
+    if (typeof gaqlQuery !== 'string') {
+      logger.error('GAQL query is not a string', { gaqlQuery, type: typeof gaqlQuery })
+      throw new Error(
+        `AI returned invalid GAQL query type: ${typeof gaqlQuery}. Expected string, got: ${JSON.stringify(gaqlQuery)}`
+      )
+    }
+
     // Clean and validate the AI-generated GAQL query
     let cleanedGaqlQuery = gaqlQuery || ''
 
@@ -484,21 +898,37 @@ TRAVEL
     // Remove invalid GROUP BY clauses (GAQL doesn't support GROUP BY)
     cleanedGaqlQuery = cleanedGaqlQuery.replace(/\s+GROUP\s+BY\s+[^ORDER\s]+/gi, '')
 
-    // Validate that the query doesn't contain invalid characters
-    const hasInvalidChars = /[(){}[\]<>]/.test(
-      cleanedGaqlQuery.replace(/BETWEEN '[^']*' AND '[^']*'/g, '')
-    ) // Allow parentheses in BETWEEN clauses
-    const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
+    // DO NOT auto-add segments.date to SELECT - this causes daily breakdown
+    // segments.date should only be in WHERE clause for date filtering
+    // If it's in SELECT, it will return one row per day instead of aggregated totals
 
-    if (hasInvalidChars || hasGroupBy || !cleanedGaqlQuery.toUpperCase().includes('SELECT')) {
+    // Validate that the query doesn't contain invalid characters or OR operators
+    // Allow parentheses in BETWEEN, IN, and comparison clauses
+    const queryWithoutValidParens = cleanedGaqlQuery
+      .replace(/BETWEEN '[^']*' AND '[^']*'/g, '') // Remove BETWEEN clauses
+      .replace(/IN\s*\([^)]+\)/gi, '') // Remove IN (...) clauses - CRITICAL for extensions
+      .replace(/[<>]=?/g, '') // Remove comparison operators
+    const hasInvalidChars = /[(){}[\]]/.test(queryWithoutValidParens)
+    const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
+    const hasOrOperator = /\bOR\b/i.test(cleanedGaqlQuery)
+
+    if (
+      hasInvalidChars ||
+      hasGroupBy ||
+      hasOrOperator ||
+      !cleanedGaqlQuery.toUpperCase().includes('SELECT')
+    ) {
       logger.error('AI generated invalid GAQL query', {
         originalQuery: gaqlQuery,
         cleanedQuery: cleanedGaqlQuery,
         hasInvalidChars,
         hasGroupBy,
+        hasOrOperator,
         hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
       })
-      throw new Error(`AI generated invalid GAQL query: ${gaqlQuery}`)
+      throw new Error(
+        `AI generated invalid GAQL query: ${gaqlQuery}. GAQL does not support OR operators. For comparisons, use isComparison: true with separate queries.`
+      )
     }
 
     logger.info('AI generated GAQL successfully', {
@@ -519,7 +949,9 @@ TRAVEL
         new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: parsedResponse.end_date || new Date().toISOString().split('T')[0],
       isComparison: parsedResponse.is_comparison || false,
-      comparisonQuery: parsedResponse.comparison_query,
+      comparisonQuery: parsedResponse.comparison_query
+        ? fixSegmentsDateInQuery(parsedResponse.comparison_query)
+        : undefined,
       comparisonStartDate: parsedResponse.comparison_start_date,
       comparisonEndDate: parsedResponse.comparison_end_date,
     }
@@ -527,6 +959,16 @@ TRAVEL
     logger.error('AI query parsing failed, using manual fallback', { error })
     throw error // Let the calling function handle the fallback
   }
+}
+
+// Helper function to fix segments.date in queries
+function fixSegmentsDateInQuery(query: string): string {
+  const fixedQuery = query.trim()
+
+  // DO NOT auto-add segments.date to SELECT - this causes daily breakdown
+  // segments.date should only be in WHERE clause for date filtering
+
+  return fixedQuery
 }
 
 function calculateDynamicDates(periodType: string): { startDate: string; endDate: string } {
@@ -795,6 +1237,7 @@ function processGoogleAdsResults(
     impressions: number
     cost: number
     conversions: number
+    conversions_value: number
   }
 } {
   const campaigns: Campaign[] = []
@@ -803,6 +1246,7 @@ function processGoogleAdsResults(
   let accountImpressions = 0
   let accountCost = 0
   let accountConversions = 0
+  let accountConversionsValue = 0
 
   if (apiResult.results && Array.isArray(apiResult.results)) {
     logger.info(
@@ -882,6 +1326,7 @@ function processGoogleAdsResults(
       accountImpressions += impressions
       accountCost += costMicros
       accountConversions += conversions
+      accountConversionsValue += conversionsValue
 
       const campaignInfo: Campaign = {
         name: campaignData.name || 'Unknown',
@@ -924,6 +1369,7 @@ function processGoogleAdsResults(
       impressions: accountImpressions,
       cost: Math.round((accountCost / 1000000) * 100) / 100,
       conversions: accountConversions,
+      conversions_value: Math.round(accountConversionsValue * 100) / 100,
     },
   }
 }
@@ -996,19 +1442,32 @@ export async function POST(request: NextRequest) {
     })
 
     // Make the API request(s) using the actual account ID and generated query
+    logger.info(`[${requestId}] ===== MAIN WEEK QUERY =====`, {
+      dateRange: `${startDate} to ${endDate}`,
+      query: gaqlQuery,
+    })
     const apiResult = await makeGoogleAdsRequest(accountInfo.id, gaqlQuery)
     let comparisonApiResult = null
 
     // If this is a comparison query, make a second API call for the comparison period
     if (isComparison && comparisonQuery) {
-      logger.info(
-        `[${requestId}] Making comparison query for period: ${comparisonStartDate} to ${comparisonEndDate}`
-      )
+      logger.info(`[${requestId}] ===== COMPARISON WEEK QUERY =====`, {
+        dateRange: `${comparisonStartDate} to ${comparisonEndDate}`,
+        query: comparisonQuery,
+      })
       comparisonApiResult = await makeGoogleAdsRequest(accountInfo.id, comparisonQuery)
     }
 
     // Process primary period results
     const primaryResults = processGoogleAdsResults(apiResult, requestId, gaqlQuery, 'primary')
+    logger.info(`[${requestId}] ===== MAIN WEEK TOTALS =====`, {
+      dateRange: `${startDate} to ${endDate}`,
+      cost: primaryResults.accountTotals.cost,
+      clicks: primaryResults.accountTotals.clicks,
+      conversions: primaryResults.accountTotals.conversions,
+      conversions_value: primaryResults.accountTotals.conversions_value,
+      campaigns: primaryResults.campaigns.length,
+    })
 
     // Process comparison period results if available
     let comparisonResults = null
@@ -1019,6 +1478,14 @@ export async function POST(request: NextRequest) {
         comparisonQuery,
         'comparison'
       )
+      logger.info(`[${requestId}] ===== COMPARISON WEEK TOTALS =====`, {
+        dateRange: `${comparisonStartDate} to ${comparisonEndDate}`,
+        cost: comparisonResults.accountTotals.cost,
+        clicks: comparisonResults.accountTotals.clicks,
+        conversions: comparisonResults.accountTotals.conversions,
+        conversions_value: comparisonResults.accountTotals.conversions_value,
+        campaigns: comparisonResults.campaigns.length,
+      })
     }
 
     const accountResult: AccountResult = {
@@ -1033,6 +1500,7 @@ export async function POST(request: NextRequest) {
         impressions: primaryResults.accountTotals.impressions,
         cost: primaryResults.accountTotals.cost,
         conversions: primaryResults.accountTotals.conversions,
+        conversions_value: primaryResults.accountTotals.conversions_value,
         ctr:
           primaryResults.accountTotals.impressions > 0
             ? Math.round(
@@ -1072,6 +1540,7 @@ export async function POST(request: NextRequest) {
         impressions: comparisonResults.accountTotals.impressions,
         cost: comparisonResults.accountTotals.cost,
         conversions: comparisonResults.accountTotals.conversions,
+        conversions_value: comparisonResults.accountTotals.conversions_value,
         ctr:
           comparisonResults.accountTotals.impressions > 0
             ? Math.round(
@@ -1108,90 +1577,116 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Build response with clear main week and comparison week structure
     const response = {
       query,
       query_type: queryType,
       period_type: periodType,
-      date_range: `${startDate} to ${endDate}`,
       is_comparison: isComparison || false,
-      comparison_date_range: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
       accounts_found: 1,
+
+      // Main Week Data (Current/Requested Period)
+      mainWeek: {
+        dateRange: `${startDate} to ${endDate}`,
+        totals: {
+          clicks: primaryResults.accountTotals.clicks,
+          impressions: primaryResults.accountTotals.impressions,
+          cost: primaryResults.accountTotals.cost,
+          conversions: primaryResults.accountTotals.conversions,
+          conversions_value: primaryResults.accountTotals.conversions_value || 0,
+          ctr:
+            primaryResults.accountTotals.impressions > 0
+              ? Math.round(
+                  (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
+                    100 *
+                    100
+                ) / 100
+              : 0,
+          avg_cpc:
+            primaryResults.accountTotals.clicks > 0
+              ? Math.round(
+                  (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
+                ) / 100
+              : 0,
+          conversion_rate:
+            primaryResults.accountTotals.clicks > 0
+              ? Math.round(
+                  (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
+                    100 *
+                    100
+                ) / 100
+              : 0,
+          cost_per_conversion:
+            primaryResults.accountTotals.conversions > 0
+              ? Math.round(
+                  (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) *
+                    100
+                ) / 100
+              : 0,
+        },
+        campaigns: primaryResults.campaigns,
+      },
+
+      // Comparison Week Data (Previous Period) - Only if comparison requested
+      comparisonWeek: comparisonResults
+        ? {
+            dateRange: `${comparisonStartDate} to ${comparisonEndDate}`,
+            totals: {
+              clicks: comparisonResults.accountTotals.clicks,
+              impressions: comparisonResults.accountTotals.impressions,
+              cost: comparisonResults.accountTotals.cost,
+              conversions: comparisonResults.accountTotals.conversions,
+              conversions_value: comparisonResults.accountTotals.conversions_value || 0,
+              ctr:
+                comparisonResults.accountTotals.impressions > 0
+                  ? Math.round(
+                      (comparisonResults.accountTotals.clicks /
+                        comparisonResults.accountTotals.impressions) *
+                        100 *
+                        100
+                    ) / 100
+                  : 0,
+              avg_cpc:
+                comparisonResults.accountTotals.clicks > 0
+                  ? Math.round(
+                      (comparisonResults.accountTotals.cost /
+                        comparisonResults.accountTotals.clicks) *
+                        100
+                    ) / 100
+                  : 0,
+              conversion_rate:
+                comparisonResults.accountTotals.clicks > 0
+                  ? Math.round(
+                      (comparisonResults.accountTotals.conversions /
+                        comparisonResults.accountTotals.clicks) *
+                        100 *
+                        100
+                    ) / 100
+                  : 0,
+              cost_per_conversion:
+                comparisonResults.accountTotals.conversions > 0
+                  ? Math.round(
+                      (comparisonResults.accountTotals.cost /
+                        comparisonResults.accountTotals.conversions) *
+                        100
+                    ) / 100
+                  : 0,
+            },
+            campaigns: comparisonResults.campaigns,
+          }
+        : null,
+
+      // Legacy fields for backward compatibility
+      date_range: `${startDate} to ${endDate}`,
+      comparison_date_range: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
       grand_totals: {
         clicks: primaryResults.accountTotals.clicks,
         impressions: primaryResults.accountTotals.impressions,
         cost: primaryResults.accountTotals.cost,
         conversions: primaryResults.accountTotals.conversions,
-        ctr:
-          primaryResults.accountTotals.impressions > 0
-            ? Math.round(
-                (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
-                  100 *
-                  100
-              ) / 100
-            : 0,
-        avg_cpc:
-          primaryResults.accountTotals.clicks > 0
-            ? Math.round(
-                (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
-              ) / 100
-            : 0,
-        conversion_rate:
-          primaryResults.accountTotals.clicks > 0
-            ? Math.round(
-                (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
-                  100 *
-                  100
-              ) / 100
-            : 0,
-        cost_per_conversion:
-          primaryResults.accountTotals.conversions > 0
-            ? Math.round(
-                (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100
-              ) / 100
-            : 0,
+        conversions_value: primaryResults.accountTotals.conversions_value || 0,
       },
-      comparison_totals: comparisonResults
-        ? {
-            clicks: comparisonResults.accountTotals.clicks,
-            impressions: comparisonResults.accountTotals.impressions,
-            cost: comparisonResults.accountTotals.cost,
-            conversions: comparisonResults.accountTotals.conversions,
-            ctr:
-              comparisonResults.accountTotals.impressions > 0
-                ? Math.round(
-                    (comparisonResults.accountTotals.clicks /
-                      comparisonResults.accountTotals.impressions) *
-                      100 *
-                      100
-                  ) / 100
-                : 0,
-            avg_cpc:
-              comparisonResults.accountTotals.clicks > 0
-                ? Math.round(
-                    (comparisonResults.accountTotals.cost /
-                      comparisonResults.accountTotals.clicks) *
-                      100
-                  ) / 100
-                : 0,
-            conversion_rate:
-              comparisonResults.accountTotals.clicks > 0
-                ? Math.round(
-                    (comparisonResults.accountTotals.conversions /
-                      comparisonResults.accountTotals.clicks) *
-                      100 *
-                      100
-                  ) / 100
-                : 0,
-            cost_per_conversion:
-              comparisonResults.accountTotals.conversions > 0
-                ? Math.round(
-                    (comparisonResults.accountTotals.cost /
-                      comparisonResults.accountTotals.conversions) *
-                      100
-                  ) / 100
-                : 0,
-          }
-        : null,
+
       results: [accountResult],
       data_availability: {
         overall_status: 'available',
