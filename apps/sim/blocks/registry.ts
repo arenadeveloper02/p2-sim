@@ -24,6 +24,7 @@ import { GitHubBlock } from '@/blocks/blocks/github'
 import { GmailBlock } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
+import { GoogleAdsGoMarbleBlock } from '@/blocks/blocks/google_ads_go_marble'
 import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
@@ -105,6 +106,7 @@ export const registry: Record<string, BlockConfig> = {
   github: GitHubBlock,
   gmail: GmailBlock,
   google_ads: GoogleAdsBlock,
+  google_ads_go_marble: GoogleAdsGoMarbleBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
