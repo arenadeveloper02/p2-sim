@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toastError, toastSuccess } from '@/components/ui'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   downloadImage,
@@ -50,7 +51,8 @@ export const ClientChatMessage = memo(
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
-    const feedbackRef = useRef<HTMLDivElement>(null)
+    const [popoverSide, setPopoverSide] = useState<'top' | 'bottom'>('top')
+    const dislikeButtonRef = useRef<HTMLButtonElement>(null)
 
     const isJsonObject = useMemo(() => {
       return typeof message.content === 'object' && message.content !== null
@@ -69,22 +71,6 @@ export const ClientChatMessage = memo(
         window.removeEventListener('p2-close-feedback', handleCloseFeedback)
       }
     }, [])
-
-    // Close feedback box when clicking outside
-    useEffect(() => {
-      if (!isFeedbackOpen) return
-
-      const handleClickOutside = (event: MouseEvent) => {
-        if (feedbackRef.current && !feedbackRef.current.contains(event.target as Node)) {
-          setIsFeedbackOpen(false)
-        }
-      }
-
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside)
-      }
-    }, [isFeedbackOpen])
 
     const renderContent = (content: any) => {
       if (!content) {
@@ -245,24 +231,7 @@ export const ClientChatMessage = memo(
               !message.isStreaming &&
               !message.isInitialMessage &&
               hasRenderableText && (
-                <div className='relative flex items-center justify-start space-x-2'>
-                  {/* Feedback Box Popover */}
-                  <div
-                    ref={feedbackRef}
-                    className={`absolute bottom-full left-0 z-50 mb-2 w-[400px] transition-all duration-200 ease-out ${
-                      isFeedbackOpen
-                        ? 'translate-y-0 scale-100 opacity-100'
-                        : 'pointer-events-none translate-y-2 scale-95 opacity-0'
-                    }`}
-                  >
-                    <FeedbackBox
-                      isOpen={isFeedbackOpen}
-                      onClose={() => setIsFeedbackOpen(false)}
-                      onSubmit={handleSubmitFeedback}
-                      currentExecutionId={message?.executionId || ''}
-                    />
-                  </div>
-
+                <div className='flex items-center justify-start space-x-2'>
                   {!isJsonObject && !isBase64(cleanTextContent) && hasRenderableText && (
                     <TooltipProvider>
                       <Tooltip delayDuration={300}>
@@ -316,33 +285,59 @@ export const ClientChatMessage = memo(
                         </Tooltip>
                       </TooltipProvider>
 
-                      <TooltipProvider>
-                        <Tooltip delayDuration={300}>
-                          {(message?.liked === false || message?.liked === null) && (
-                            <TooltipTrigger asChild>
-                              <button
-                                className='text-muted-foreground transition-colors hover:bg-muted'
-                                onClick={() => {
-                                  if (message?.liked === false) {
-                                    return
-                                  }
-                                  handleDislike(message?.executionId || '')
+                      {(message?.liked === false || message?.liked === null) && (
+                        <TooltipProvider>
+                          <Tooltip delayDuration={300}>
+                            <Popover
+                              open={isFeedbackOpen && message?.liked !== false}
+                              onOpenChange={setIsFeedbackOpen}
+                            >
+                              <PopoverTrigger asChild>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    ref={dislikeButtonRef}
+                                    className='text-muted-foreground transition-colors hover:bg-muted'
+                                    onClick={() => {
+                                      if (message?.liked === false) {
+                                        return
+                                      }
+                                      handleDislike(message?.executionId || '')
+                                    }}
+                                  >
+                                    <ThumbsDown
+                                      stroke={'gray'}
+                                      fill={message?.liked === false ? 'gray' : 'white'}
+                                      className='h-4 w-4'
+                                      strokeWidth={2}
+                                    />
+                                  </button>
+                                </TooltipTrigger>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                className='z-[9999] w-[400px]'
+                                align='start'
+                                side={popoverSide}
+                                sideOffset={-15}
+                                avoidCollisions={true}
+                                collisionPadding={16}
+                                style={{
+                                  padding: 0,
                                 }}
                               >
-                                <ThumbsDown
-                                  stroke={'gray'}
-                                  fill={message?.liked === false ? 'gray' : 'white'}
-                                  className='h-4 w-4'
-                                  strokeWidth={2}
+                                <FeedbackBox
+                                  isOpen={true}
+                                  onClose={() => setIsFeedbackOpen(false)}
+                                  onSubmit={handleSubmitFeedback}
+                                  currentExecutionId={message?.executionId || ''}
                                 />
-                              </button>
-                            </TooltipTrigger>
-                          )}
-                          <TooltipContent side='top' align='center' sideOffset={5}>
-                            {message?.liked === false ? 'Disliked' : 'Dislike'}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                              </PopoverContent>
+                            </Popover>
+                            <TooltipContent side='top' align='center' sideOffset={5}>
+                              {message?.liked === false ? 'Disliked' : 'Dislike'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </>
                   )}
 

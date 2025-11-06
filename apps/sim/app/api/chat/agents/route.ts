@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
         workflowId: chat.workflowId,
         subdomain: chat.subdomain,
         userId: chat.userId,
+        authorEmail: user.email,
         allowedEmails: chat.allowedEmails,
         name: templates.name,
         author: templates.author,
@@ -96,6 +97,7 @@ export async function GET(request: NextRequest) {
       .from(templates)
       .innerJoin(chat, eq(chat.workflowId, templates.workflowId))
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
+      .innerJoin(user, eq(user.id, chat.userId))
       .where(eq(chat.isActive, true))
 
     // Step 3: Filter chats based on access rules
@@ -131,6 +133,7 @@ export async function GET(request: NextRequest) {
     // Step 4: Format response
     const agentList = accessibleChats.map((chatRecord) => ({
       title: chatRecord.name,
+      author_email: chatRecord.authorEmail,
       workflow_id: chatRecord.workflowId,
       subdomain: chatRecord.subdomain,
       workflow_name: chatRecord.workflowName,
