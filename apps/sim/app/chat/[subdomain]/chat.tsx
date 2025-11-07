@@ -1088,35 +1088,40 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
   return (
     <TooltipProvider>
       <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-        {showInputForm && !isHistoryLoading && (
-          <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
-            <div className='mx-auto w-full max-w-2xl'>
-              <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
-                {threads.length > 0 && !forceInputForm && (
-                  <button
-                    aria-label='Close'
-                    className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
-                    onClick={() => {
-                      setShowInputForm(false)
-                      setInputFormDismissed(true)
-                    }}
-                  >
-                    <X className='h-4 w-4' />
-                  </button>
-                )}
-                <div className='mb-6'>
-                  <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
-                  <p className='text-muted-foreground'>
-                    Please provide the required inputs to start the workflow chat.
-                  </p>
+        {showInputForm &&
+          inputFields?.filter((field) => field.name !== '')?.length > 0 &&
+          !isHistoryLoading && (
+            <div className='absolute z-[100] mt-[65px] flex h-full w-full flex-1 items-center justify-center bg-white/60 p-4 pb-[7%]'>
+              <div className='mx-auto w-full max-w-2xl'>
+                <div className='relative rounded-lg border bg-card p-6 shadow-sm'>
+                  {threads.length > 0 && !forceInputForm && (
+                    <button
+                      aria-label='Close'
+                      className='absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50'
+                      onClick={() => {
+                        setShowInputForm(false)
+                        setInputFormDismissed(true)
+                      }}
+                    >
+                      <X className='h-4 w-4' />
+                    </button>
+                  )}
+                  <div className='mb-6'>
+                    <h2 className='mb-2 font-semibold text-2xl'>Workflow Inputs</h2>
+                    <p className='text-muted-foreground'>
+                      Please provide the required inputs to start the workflow chat.
+                    </p>
+                  </div>
+                  <TooltipProvider>
+                    <WorkflowInputForm
+                      fields={inputFields?.filter((field) => field.name !== '')}
+                      onSubmit={handleWorkflowInputSubmit}
+                    />
+                  </TooltipProvider>
                 </div>
-                <TooltipProvider>
-                  <WorkflowInputForm fields={inputFields} onSubmit={handleWorkflowInputSubmit} />
-                </TooltipProvider>
               </div>
             </div>
-          </div>
-        )}
+          )}
         {isHistoryLoading && (
           <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
             <LoadingAgentP2 size='lg' />
@@ -1134,7 +1139,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
           onNewChat={handleNewChat}
           onReRunWithNewInputs={handleReRunWithNewInputs}
           isStreaming={isStreamingResponse || isLoading}
-          hasInputFields={inputFields.length > 0}
+          hasInputFields={inputFields?.filter((field) => field.name !== '')?.length > 0}
         />
         {/* Message Container component */}
         <ChatMessageContainer

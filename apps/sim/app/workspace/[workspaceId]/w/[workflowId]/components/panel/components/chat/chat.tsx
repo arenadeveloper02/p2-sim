@@ -972,10 +972,10 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
       {/* Add 'relative' here */}
       {/* Input Form Overlay - contained within the chat component */}
       <WorkflowInputOverlay
-        fields={inputFields}
+        fields={inputFields?.filter((field) => field.name !== '')}
         onSubmit={handleInputFormSubmit}
         onClose={handleHideInputForm}
-        isVisible={showInputForm}
+        isVisible={showInputForm && inputFields?.filter((field) => field.name !== '')?.length > 0}
         workflowId={activeWorkflowId || undefined}
         selectedOutputs={selectedOutputs}
         onOutputSelect={handleOutputSelection}
@@ -998,7 +998,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             {/* Action buttons */}
             <div className='flex items-center space-x-2'>
               {/* Re-run workflow button - only show if inputs have been submitted at least once */}
-              {inputFields && inputFields.length > 0 && (
+              {inputFields && inputFields?.filter((field) => field.name !== '')?.length > 0 && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
