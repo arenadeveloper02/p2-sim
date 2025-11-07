@@ -139,6 +139,33 @@ export const workflowTemplateMapper = pgTable('workflow_template_mapper', {
   name: text('name'),
 })
 
+export const chatPromptFeedback = pgTable(
+  'chat_prompt_feedback',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    inComplete: boolean('in_complete').default(false),
+    inAccurate: boolean('in_accurate').default(false),
+    outOfDate: boolean('out_of_date').default(false),
+    tooLong: boolean('too_long').default(false),
+    tooShort: boolean('too_short').default(false),
+    liked: boolean('liked').default(false),
+    executionId: text('execution_id').notNull(),
+    workflowId: text('workflow_id').notNull(),
+  },
+  (table) => ({
+    // Access patterns
+    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
+    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
+    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
+    // Ordering indexes
+    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
+  })
+)
+
 export const workflow = pgTable(
   'workflow',
   {
@@ -312,6 +339,7 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
+    userId: text('user_id'),
     isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
     chatId: text('chat_id'), // chat_id for tracking conversation context
 
@@ -1490,6 +1518,7 @@ export const deployedChat = pgTable(
     chatId: text('chat_id'),
     title: text('title'),
     workflowId: text('workflow_id'),
+    executingUserId: text('executing_user_id'),
   },
   (table) => ({
     chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),

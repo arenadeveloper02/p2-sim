@@ -1376,7 +1376,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}`}>
+            <Link
+              href={`/chat/${chatDeployment.subdomain}?workspaceId=${workspaceId}&fromControlBar=true`}
+            >
               <Button
                 variant='outline'
                 className={cn(

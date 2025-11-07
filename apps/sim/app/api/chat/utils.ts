@@ -238,20 +238,20 @@ export async function validateChatAuth(
 
   // For email access control, check the email in the request body
   if (authType === 'email') {
-    // For GET requests, we just notify the client that authentication is required
+    // For GET requests, just notify that authentication is required
     if (request.method === 'GET') {
       return { authorized: false, error: 'auth_required_email' }
     }
 
     try {
-      // Use the parsed body if provided, otherwise the auth check is not applicable
+      // Ensure request body is parsed
       if (!parsedBody) {
         return { authorized: false, error: 'Email is required' }
       }
 
       const { email, input } = parsedBody
 
-      // If this is a chat message, not an auth attempt
+      // If chat message sent before email auth
       if (input && !email) {
         return { authorized: false, error: 'auth_required_email' }
       }
@@ -262,20 +262,35 @@ export async function validateChatAuth(
 
       const allowedEmails = deployment.allowedEmails || []
 
-      // Check exact email matches
-      if (allowedEmails.includes(email)) {
-        // Email is allowed but still needs OTP verification
-        // Return a special error code that the client will recognize
-        return { authorized: false, error: 'otp_required' }
+      // Normalize email for case-insensitive comparison and trim whitespace
+      const normalizedEmail = email.toLowerCase().trim()
+
+      logger.debug(`[${requestId}] Validating email for chat:`, {
+        submittedEmail: email,
+        normalizedEmail,
+        allowedEmails,
+      })
+
+      // Check if email is explicitly allowed (case-insensitive)
+      const isEmailAllowed =
+        allowedEmails.some((allowed: string) => allowed.toLowerCase().trim() === normalizedEmail) ||
+        // Check if domain (e.g. "@example.com") is allowed
+        allowedEmails.some(
+          (allowed: string) =>
+            allowed.startsWith('@') && normalizedEmail.endsWith(allowed.toLowerCase().trim())
+        )
+
+      logger.debug(`[${requestId}] Email validation result:`, {
+        isEmailAllowed,
+        email,
+      })
+
+      if (isEmailAllowed) {
+        // Directly authorize if email is in allowed list
+        return { authorized: true }
       }
 
-      // Check domain matches (prefixed with @)
-      const domain = email.split('@')[1]
-      if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
-        // Domain is allowed but still needs OTP verification
-        return { authorized: false, error: 'otp_required' }
-      }
-
+      // If not allowed, deny access
       return { authorized: false, error: 'Email not authorized' }
     } catch (error) {
       logger.error(`[${requestId}] Error validating email:`, error)
@@ -303,7 +318,8 @@ export async function executeWorkflowForChat(
   input: string,
   conversationId?: string,
   workflowInputs?: Record<string, any>,
-  logChatId?: string
+  logChatId?: string,
+  executingUserId?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
@@ -554,7 +570,7 @@ export async function executeWorkflowForChat(
 
   // Start logging session
   await loggingSession.safeStart({
-    userId: deployment.userId,
+    userId: executingUserId || deployment.userId,
     workspaceId: '', // TODO: Get from workflow
     variables: workflowVariables,
   })
@@ -788,9 +804,15 @@ export async function executeWorkflowForChat(
       }
 
       if (!(result && typeof result === 'object' && 'stream' in result)) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ event: 'final', data: result })}\n\n`)
-        )
+        // Include executionId in the final event payload for traceability
+        const finalPayload = {
+          event: 'final',
+          data: {
+            ...(typeof result === 'object' && result !== null ? result : { value: result }),
+            executionId,
+          },
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
       }
 
       // Complete logging session (for both success and failure)

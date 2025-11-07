@@ -388,7 +388,8 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     const isNewUserMessage = lastMessage?.type === 'user'
 
     // Always scroll for new user messages, or only if near bottom for assistant messages
-    if ((isNewUserMessage || isNearBottom) && messagesEndRef.current) {
+    //for handle scroll to bottom for new user messages the logic is avaliable in handleSendMessage() function scrollToBottom()
+    if (isNearBottom && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
       // Let the scroll event handler update the state naturally after animation completes
     }
@@ -404,9 +405,9 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     )
       return
 
+    scrollToBottom()
     // Store the message being sent for reference
     const sentMessage = chatMessage.trim()
-
     // Add to prompt history if it's not already the most recent
     if (
       sentMessage &&
@@ -474,6 +475,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     // Check if we got a streaming response
     if (result && 'stream' in result && result.stream instanceof ReadableStream) {
       const messageIdMap = new Map<string, string>()
+      const executionId = (result as any).executionId
 
       const reader = result.stream.getReader()
       const decoder = new TextDecoder()
@@ -494,7 +496,16 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             if (line.startsWith('data: ')) {
               try {
                 const json = JSON.parse(line.substring(6))
-                const { blockId, chunk: contentChunk, event, data } = json
+                const {
+                  blockId,
+                  chunk: contentChunk,
+                  event,
+                  data,
+                  executionId: streamExecutionId,
+                } = json
+
+                // Use executionId from stream data if available, otherwise fall back to the one from result
+                const currentExecutionId = streamExecutionId || executionId
 
                 if (event === 'final' && data) {
                   const result = data as ExecutionResult
@@ -550,13 +561,15 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
                   if (!messageIdMap.has(blockId)) {
                     const newMessageId = crypto.randomUUID()
                     messageIdMap.set(blockId, newMessageId)
-                    addMessage({
+                    const messageData = {
                       id: newMessageId,
                       content: contentChunk,
                       workflowId: activeWorkflowId,
-                      type: 'workflow',
+                      type: 'workflow' as const,
                       isStreaming: true,
-                    })
+                      executionId: currentExecutionId,
+                    }
+                    addMessage(messageData)
                   } else {
                     const existingMessageId = messageIdMap.get(blockId)
                     if (existingMessageId) {
@@ -636,6 +649,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             content,
             workflowId: activeWorkflowId,
             type: 'workflow',
+            executionId: (result as any).executionId,
           })
         }
       })
@@ -644,6 +658,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
         content: `Error: ${'error' in result ? result.error : 'Workflow execution failed.'}`,
         workflowId: activeWorkflowId,
         type: 'workflow',
+        executionId: (result as any).executionId,
       })
     }
 
@@ -957,10 +972,10 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
       {/* Add 'relative' here */}
       {/* Input Form Overlay - contained within the chat component */}
       <WorkflowInputOverlay
-        fields={inputFields}
+        fields={inputFields?.filter((field) => field.name !== '')}
         onSubmit={handleInputFormSubmit}
         onClose={handleHideInputForm}
-        isVisible={showInputForm}
+        isVisible={showInputForm && inputFields?.filter((field) => field.name !== '')?.length > 0}
         workflowId={activeWorkflowId || undefined}
         selectedOutputs={selectedOutputs}
         onOutputSelect={handleOutputSelection}
@@ -983,7 +998,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
             {/* Action buttons */}
             <div className='flex items-center space-x-2'>
               {/* Re-run workflow button - only show if inputs have been submitted at least once */}
-              {inputFields && inputFields.length > 0 && (
+              {inputFields && inputFields?.filter((field) => field.name !== '')?.length > 0 && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>

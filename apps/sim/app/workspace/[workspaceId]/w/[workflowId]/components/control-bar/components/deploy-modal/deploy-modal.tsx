@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
+import { useSession } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -36,6 +37,7 @@ interface DeployModalProps {
   isSidebar?: boolean
   workspaceId?: string
   onDeploymentComplete?: () => void
+  approvalStatus?: any
 }
 
 interface ApiKey {
@@ -76,12 +78,85 @@ export function DeployModal({
   isSidebar = false,
   workspaceId,
   onDeploymentComplete,
+  approvalStatus,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
   )
   const isDeployed = deploymentStatus?.isDeployed || false
   const setDeploymentStatus = useWorkflowRegistry((state) => state.setDeploymentStatus)
+
+  // Get session for userId
+  const { data: session } = useSession()
+  const userId = session?.user?.id || 'unknown'
+
+  // Check if workflow has changes from approved state using state comparison
+  // This matches the logic in chat-deploy.tsx for consistent behavior
+  // Only checks approved workflows - non-approved workflows use needsRedeployment flag instead
+  const [hasChangesFromApproved, setHasChangesFromApproved] = useState(false)
+  const [isLoadingChanges, setIsLoadingChanges] = useState(false)
+
+  // Compare current workflow state with approved template (only for approved workflows)
+  useEffect(() => {
+    const checkWorkflowChanges = async () => {
+      // Only check for approved workflows - same logic as chat-deploy
+      if (!workflowId || approvalStatus?.status !== 'APPROVED') {
+        setHasChangesFromApproved(false)
+        return
+      }
+
+      try {
+        setIsLoadingChanges(true)
+
+        // Fetch approved template
+        const templateResponse = await fetch(`/api/templates?workflowId=${workflowId}&limit=1`)
+        if (!templateResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const templateData = await templateResponse.json()
+        const template = templateData.data?.[0]
+        if (!template?.state) {
+          // No approved template found, no changes to detect
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const approvedState = template.state as WorkflowState
+
+        // Fetch current workflow state
+        const workflowResponse = await fetch(`/api/workflows/${workflowId}`)
+        if (!workflowResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const workflowData = await workflowResponse.json()
+        const currentState = workflowData.data?.state
+
+        if (!currentState || !approvedState) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        // Compare states using the same function as chat-deploy
+        const { hasWorkflowChanged } = await import('@/lib/workflows/comparison')
+        const hasChanges = hasWorkflowChanged(currentState, approvedState)
+        setHasChangesFromApproved(hasChanges)
+      } catch (error) {
+        logger.error('Error checking workflow changes:', error)
+        setHasChangesFromApproved(false)
+      } finally {
+        setIsLoadingChanges(false)
+      }
+    }
+
+    void checkWorkflowChanges()
+  }, [workflowId, approvalStatus?.status])
+
+  const hasWorkflowChanges = hasChangesFromApproved
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUndeploying, setIsUndeploying] = useState(false)
   const [deploymentInfo, setDeploymentInfo] = useState<WorkflowDeploymentInfo | null>(null)
@@ -531,6 +606,7 @@ export function DeployModal({
                   isSidebar={isSidebar}
                   workspaceId={workspaceId}
                   onOpenChange={onOpenChange}
+                  approvalStatus={approvalStatus}
                 />
               )}
             </div>
@@ -574,6 +650,7 @@ export function DeployModal({
             </Button>
 
             <div className='flex gap-2'>
+              {/* Delete button hidden for now */}
               {chatExists && (
                 <Button
                   type='button'
@@ -604,7 +681,12 @@ export function DeployModal({
                 type='button'
                 onClick={handleChatFormSubmit}
                 disabled={
-                  chatSubmitting || (!chatExists && isLoading) || (chatExists && !isChatFormValid)
+                  chatSubmitting ||
+                  (!chatExists && isLoading) ||
+                  (chatExists && !isChatFormValid) ||
+                  // Disable when approved and has workflow changes - button should be disabled whenever error shows
+                  // This ensures button is disabled when hasWorkflowChanges is true, regardless of needsRedeployment
+                  (approvalStatus?.status === 'APPROVED' && hasWorkflowChanges)
                 }
                 className={cn(
                   'gap-2 font-medium',

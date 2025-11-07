@@ -1,11 +1,12 @@
-import { and, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { workflowExecutionLogs } from '@/db/schema'
+import { chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatHistoryAPI')
 
@@ -74,10 +75,19 @@ export async function GET(
       )
     }
 
+    // Require authenticated user and use their id to filter records
+    const session = await getSession()
+    const executingUserId = session?.user?.id
+    if (!executingUserId) {
+      logger.info(`[${requestId}] Unauthorized request for history: missing session user`)
+      return addCorsHeaders(createErrorResponse('Authentication required', 401), request)
+    }
+
     // Build query conditions for external chat logs
     let conditions = and(
       eq(workflowExecutionLogs.workflowId, subdomain),
-      eq(workflowExecutionLogs.isExternalChat, true) // Only external chat logs
+      eq(workflowExecutionLogs.isExternalChat, true), // Only external chat logs
+      eq(workflowExecutionLogs.userId, executingUserId) // Filter by executing user
     )
 
     // Add date range filters if provided
@@ -107,6 +117,7 @@ export async function GET(
     const conditionsInfo = {
       workflowId: subdomain,
       isExternalChat: true,
+      executingUserId,
       startDate: startDate || null,
       endDate: endDate || null,
       level: level || null,
@@ -134,6 +145,23 @@ export async function GET(
       .orderBy(workflowExecutionLogs.startedAt)
       .limit(limit)
       .offset(offset)
+
+    // Batch fetch feedback status (liked) for all executionIds in this page
+    const executionIds = logs.map((l) => l.executionId)
+    let likedByExecutionId = new Map<string, boolean>()
+    if (executionIds.length > 0) {
+      // Aggregate to a single boolean per executionId for efficiency
+      const feedbackRows = await db
+        .select({
+          executionId: chatPromptFeedback.executionId,
+          liked: sql<boolean>`bool_or(${chatPromptFeedback.liked})`,
+        })
+        .from(chatPromptFeedback)
+        .where(inArray(chatPromptFeedback.executionId, executionIds))
+        .groupBy(chatPromptFeedback.executionId)
+
+      likedByExecutionId = new Map(feedbackRows.map((r) => [r.executionId, !!r.liked]))
+    }
 
     // Get total count for pagination
     const totalCountResult = await db
@@ -180,6 +208,9 @@ export async function GET(
         conversationId,
         userInput,
         modelOutput,
+        liked: likedByExecutionId.has(log.executionId)
+          ? likedByExecutionId.get(log.executionId)!
+          : null,
         createdAt: log.createdAt.toISOString(),
       }
     })

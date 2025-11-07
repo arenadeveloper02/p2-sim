@@ -1,8 +1,9 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import { addCorsHeaders, validateChatAuth } from '@/app/api/chat/utils'
+import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
 import { chat, deployedChat } from '@/db/schema'
@@ -56,15 +57,23 @@ export async function GET(
     }
 
     // Validate authentication
-    const authResult = await validateChatAuth(requestId, deployment, request)
-    if (!authResult.authorized) {
-      return addCorsHeaders(
-        createErrorResponse(authResult.error || 'Authentication required', 401),
-        request
-      )
+    // const authResult = await validateChatAuth(requestId, deployment, request)
+    // if (!authResult.authorized) {
+    //   return addCorsHeaders(
+    //     createErrorResponse(authResult.error || 'Authentication required', 401),
+    //     request
+    //   )
+    // }
+
+    // Require authenticated user and use their id to filter records
+    const session = await getSession()
+    const executingUserId = session?.user?.id
+    if (!executingUserId) {
+      logger.info(`[${requestId}] Unauthorized request for all-history: missing session user`)
+      return addCorsHeaders(createErrorResponse('Authentication required', 401), request)
     }
 
-    // Fetch all deployed chat records for this workflow (subdomain)
+    // Fetch all deployed chat records for this workflow (subdomain) and executing user
     const deployedChatRecords = await db
       .select({
         chatId: deployedChat.chatId,
@@ -74,7 +83,12 @@ export async function GET(
         updatedAt: deployedChat.updatedAt,
       })
       .from(deployedChat)
-      .where(eq(deployedChat.workflowId, subdomain))
+      .where(
+        and(
+          eq(deployedChat.workflowId, subdomain),
+          eq(deployedChat.executingUserId, executingUserId)
+        )
+      )
       .orderBy(desc(deployedChat.updatedAt))
 
     logger.debug(`[${requestId}] Found ${deployedChatRecords.length} deployed chat records`)
