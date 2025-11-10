@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import type { ChatMessage, ChatStore } from '@/stores/panel/chat/types'
 
 // MAX across all workflows
@@ -247,6 +248,7 @@ export const useChatStore = create<ChatStore>()(
       }),
       {
         name: 'chat-store',
+        storage: createSafeStorage(),
       }
     )
   )

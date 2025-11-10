@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 
 interface UiFlagsState {
   // Controls if global actions are disabled
@@ -18,6 +19,7 @@ export const useUiFlagsStore = create<UiFlagsState>()(
     }),
     {
       name: 'ui-flags',
+      storage: createSafeStorage(),
     }
   )
 )
