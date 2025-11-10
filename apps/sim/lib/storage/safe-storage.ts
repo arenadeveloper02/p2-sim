@@ -3,13 +3,7 @@
  * Handles cases where localStorage might be unavailable (SSR, disabled storage, quota exceeded, etc.)
  */
 
-type StorageValue = string | null
-
-interface Storage {
-  getItem: (name: string) => StorageValue | Promise<StorageValue>
-  setItem: (name: string, value: string) => void | Promise<void>
-  removeItem: (name: string) => void | Promise<void>
-}
+import { createJSONStorage } from 'zustand/middleware'
 
 /**
  * Checks if localStorage is available and accessible
@@ -33,12 +27,12 @@ function isLocalStorageAvailable(): boolean {
  * Creates a safe storage adapter that gracefully handles unavailable storage
  * Falls back to a no-op storage if localStorage is not available
  */
-export function createSafeStorage(): Storage {
+export function createSafeStorage() {
   const available = isLocalStorageAvailable()
 
   if (!available) {
     // Return a no-op storage adapter that silently fails
-    return {
+    const noOpStorage = {
       getItem: () => null,
       setItem: () => {
         // Silently fail - storage is unavailable
@@ -47,11 +41,12 @@ export function createSafeStorage(): Storage {
         // Silently fail - storage is unavailable
       },
     }
+    return createJSONStorage(() => noOpStorage)
   }
 
-  // Return a safe wrapper around localStorage that handles errors
-  return {
-    getItem: (name: string): StorageValue => {
+  // Create a safe wrapper around localStorage that handles errors
+  const safeLocalStorage = {
+    getItem: (name: string): string | null => {
       try {
         return localStorage.getItem(name)
       } catch (error) {
@@ -80,10 +75,14 @@ export function createSafeStorage(): Storage {
       } catch (error) {
         // Log error in development, but don't throw
         if (process.env.NODE_ENV === 'development') {
-          console.warn(`[zustand persist] Failed to remove item '${name}' from localStorage:`, error)
+          console.warn(
+            `[zustand persist] Failed to remove item '${name}' from localStorage:`,
+            error
+          )
         }
       }
     },
   }
-}
 
+  return createJSONStorage(() => safeLocalStorage)
+}
