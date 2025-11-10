@@ -350,6 +350,7 @@ export const workflowExecutionLogs = pgTable(
     executionData: jsonb('execution_data').notNull().default('{}'),
     cost: jsonb('cost'),
     files: jsonb('files'), // File metadata for execution files
+    finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({

@@ -142,8 +142,19 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
+    initialInput?: string
+    finalChatOutput?: string // Final chat output based on output_configs
   }): Promise<WorkflowExecutionLog> {
-    const { executionId, endedAt, totalDurationMs, costSummary, finalOutput, traceSpans } = params
+    const {
+      executionId,
+      endedAt,
+      totalDurationMs,
+      costSummary,
+      finalOutput,
+      traceSpans,
+      initialInput,
+      finalChatOutput,
+    } = params
 
     logger.debug(`Completing workflow execution ${executionId}`)
 
@@ -164,6 +175,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
     // Extract files from trace spans and final output
     const executionFiles = this.extractFilesFromExecution(traceSpans, finalOutput)
 
+    // Prepare traceSpans object with optional initialInput
+    const traceSpansToStore: any = Array.isArray(traceSpans)
+      ? { spans: traceSpans }
+      : traceSpans || {}
+    if (typeof initialInput === 'string' && initialInput.length > 0) {
+      traceSpansToStore.initialInput = initialInput
+    }
+
     const [updatedLog] = await db
       .update(workflowExecutionLogs)
       .set({
@@ -171,8 +190,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
         endedAt: new Date(endedAt),
         totalDurationMs,
         files: executionFiles.length > 0 ? executionFiles : null,
+        finalChatOutput: finalChatOutput || null,
         executionData: {
-          traceSpans,
+          traceSpans: traceSpansToStore,
           finalOutput,
           tokenBreakdown: {
             prompt: costSummary.totalPromptTokens,
