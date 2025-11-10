@@ -398,7 +398,7 @@ Original question: ${userInput}`
 **RESOURCES:**
 - campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
 - ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
-- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
+- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
 - search_term_view (search query reports) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
@@ -422,6 +422,14 @@ Original question: ${userInput}`
 - Ad Relevance: ad_group_criterion.quality_info.creative_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
 - Landing Page Experience: ad_group_criterion.quality_info.post_click_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
 - CRITICAL: Quality Score is part of ad_group_criterion in keyword_view resource, NOT a metric
+
+**AD STRENGTH (RSA Ads Only - Google's Official Rating):**
+- ✅ CORRECT: ad_group_ad.ad_strength
+- ❌ WRONG: ad_group_ad.ad.responsive_search_ad.ad_strength (DOES NOT EXIST)
+- Values: EXCELLENT, GOOD, AVERAGE, POOR, PENDING, UNSPECIFIED, UNKNOWN
+- Available in ad_group_ad resource when ad.type = 'RESPONSIVE_SEARCH_AD'
+- This is Google's proprietary algorithm rating based on headlines, descriptions, keywords, and relevance
+- Use this instead of calculating your own ad strength
 
 **CRITICAL - CALCULATED METRICS (NOT AVAILABLE IN API):**
 - ❌ metrics.conversion_rate - DOES NOT EXIST! Calculate as: (conversions / clicks) × 100
@@ -542,21 +550,30 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 - For performance data with date segments, always use campaign or ad_group resources
 
 **RSA AD GROUP ANALYSIS:**
-When user asks for "RSA counts", "headline/description counts", or "responsive search ads by ad group":
+When user asks for "RSA counts", "headline/description counts", "ad strength", or "responsive search ads by ad group":
 
 CRITICAL: Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
 
-SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.status
+**ALWAYS INCLUDE PERFORMANCE METRICS** - Add segments.date and metrics fields to show spend, clicks, conversions, CTR.
+
+SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr
 FROM ad_group_ad 
 WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' 
 AND ad_group_ad.status = 'ENABLED'
 AND campaign.status != 'REMOVED'
+AND segments.date DURING LAST_30_DAYS
 ORDER BY campaign.name, ad_group.name
 
 Note: 
-- The headlines and descriptions fields return arrays. Count the array length to get counts per ad group (max 15 headlines, max 4 descriptions).
+- **CRITICAL - HEADLINE/DESCRIPTION COUNTING**: The headlines and descriptions fields return ARRAYS of objects. You MUST count the array length in your analysis.
+  - Example: If headlines array has 12 items, display as "12/15" in your table
+  - Example: If descriptions array has 3 items, display as "3/4" in your table
+  - DO NOT display the raw array or "N/A" - always show the count as "X/15" for headlines and "X/4" for descriptions
+- ad_strength field returns Google's official rating: EXCELLENT, GOOD, AVERAGE, POOR, PENDING, UNSPECIFIED, UNKNOWN
 - This query returns ALL RSA ads across ALL campaigns and ad groups in the account.
 - Do NOT add LIMIT clause - we need complete data for gap analysis.
+- **CRITICAL**: ALWAYS include metrics (impressions, clicks, cost_micros, conversions, ctr) and segments.date for performance data.
+- **CRITICAL - SPEND AGGREGATION**: Individual ads may show $0 spend if they have no impressions. You MUST aggregate spend by ad_group.id to show total ad group spend in your table. Group all ads by ad_group.id and sum their metrics.cost_micros to get the ad group total spend.
 
 **AD EXTENSIONS GAP ANALYSIS:**
 When user asks for "ad extensions", "sitelinks", "callouts", "structured snippets", or "extension gap analysis":
