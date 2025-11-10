@@ -190,17 +190,6 @@ export async function POST(request: Request) {
       throw new Error('Missing toolId in request')
     }
 
-    // Immediate console log for Semrush - this should ALWAYS show
-    if (toolId === 'semrush_query') {
-      console.log('\n\n')
-      console.log('='.repeat(80))
-      console.log(`[${requestId}] 🔍 SEMRUSH DETECTED IN PROXY ROUTE!`)
-      console.log(`[${requestId}] ToolId: ${toolId}`)
-      console.log(`[${requestId}] Params keys:`, Object.keys(params || {}))
-      console.log('='.repeat(80))
-      console.log('\n\n')
-    }
-
     logger.info(`[${requestId}] Processing tool: ${toolId}`)
 
     const tool = getTool(toolId)
@@ -233,15 +222,6 @@ export async function POST(request: Request) {
       Object.values(tool.outputs).some(
         (output) => output.type === 'file' || output.type === 'file[]'
       )
-
-    // Log for Semrush
-    if (toolId === 'semrush_query') {
-      console.log(`[${requestId}] ===== PROXY ROUTE: About to execute semrush_query =====`)
-      console.log(`[${requestId}] Proxy Params:`, JSON.stringify(params, null, 2))
-      logger.info(`[${requestId}] ===== PROXY ROUTE: About to execute semrush_query =====`, {
-        params,
-      })
-    }
 
     const result = await executeTool(
       toolId,

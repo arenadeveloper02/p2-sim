@@ -94,10 +94,8 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       }
       if (params.exportColumns) {
         queryParams.append('export_columns', params.exportColumns)
-        console.log('Semrush: Adding export_columns:', params.exportColumns)
         logger.info('Semrush: Adding export_columns', { exportColumns: params.exportColumns })
       } else {
-        console.log('Semrush: No export_columns specified - will use API defaults')
         logger.info('Semrush: No export_columns specified')
       }
 
@@ -117,7 +115,6 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       }
 
       const finalUrl = `${baseUrl}?${queryParams.toString()}`
-      console.log('Semrush: Final API URL:', finalUrl)
       logger.info('Semrush: Final API URL', { url: finalUrl })
       return finalUrl
     },
@@ -149,7 +146,6 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
     let csvText: string
     try {
       csvText = await response.text()
-      console.log('Semrush API Response:', csvText)
     } catch (error) {
       // If text() fails (body already consumed), try json() and stringify it
       // This handles the case where tools/index.ts already parsed it as JSON
@@ -174,14 +170,6 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       }
     }
 
-    console.log('Semrush API Response:', {
-      contentType,
-      isTextResponse,
-      length: csvText.length,
-      preview: csvText.substring(0, 200),
-      fullResponse: csvText,
-    })
-
     // Extract report type from URL or params
     const url = new URL(response.url)
     const reportType = url.searchParams.get('type') || params?.reportType || ''
@@ -193,16 +181,6 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       skipEmptyLines: true,
       trimHeaders: true,
       trimValues: true,
-    })
-
-    // Log parsing details for debugging
-    console.log('Semrush CSV Parsing Result:', {
-      totalRows: parseResult.totalRows,
-      headers: parseResult.headers,
-      headerCount: parseResult.headers.length,
-      firstRow: parseResult.data.length > 0 ? (parseResult.data[0] as Record<string, string>) : {},
-      hasErrors: parseResult.errors.length > 0,
-      errors: parseResult.errors,
     })
 
     logger.info('Semrush API response parsed', {

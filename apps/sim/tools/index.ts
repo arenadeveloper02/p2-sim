@@ -539,7 +539,6 @@ async function handleInternalRequest(
           willReadAsText: isNonJsonContent && tool.transformResponse,
           willTryJSON: !isNonJsonContent,
         }
-        console.log(`[${requestId}] Semrush Content-Type Check:`, checkInfo)
         logger.info(`[${requestId}] Semrush Content-Type Check`, checkInfo)
       }
 
@@ -555,7 +554,6 @@ async function handleInternalRequest(
             preview: responseText.substring(0, 500),
             fullResponse: responseText,
           }
-          console.log(`[${requestId}] Semrush API Raw Response:`, rawResponseInfo)
           logger.info(`[${requestId}] Semrush API Raw Response`, {
             ...rawResponseInfo,
             fullResponse: responseText, // Full response in logs
