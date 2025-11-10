@@ -926,6 +926,7 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
         if (!response.body) {
           throw new Error('Response body is missing')
         }
+        setIsConversationFinished(true)
 
         // Use the streaming hook to handle the response
         await handleStreamedResponse(
@@ -942,7 +943,6 @@ export default function ChatClient({ subdomain }: { subdomain: string }) {
             },
           }
         )
-        setIsConversationFinished(true)
       } catch (error: any) {
         // Clear timeout in case of error
         clearTimeout(timeoutId)
