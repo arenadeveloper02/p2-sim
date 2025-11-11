@@ -911,6 +911,32 @@ export const knowledgeBase = pgTable(
   })
 )
 
+export const knowledgeBaseAccess = pgTable(
+  'knowledge_base_access',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseId: text('knowledge_base_id')
+      .notNull()
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Access patterns for finding knowledge bases by user or workspace
+    userIdIdx: index('kb_access_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('kb_access_workspace_id_idx').on(table.workspaceId),
+    knowledgeBaseIdIdx: index('kb_access_kb_id_idx').on(table.knowledgeBaseId),
+    // Composite indexes for common queries
+    userKbIdx: index('kb_access_user_kb_idx').on(table.userId, table.knowledgeBaseId),
+    workspaceKbIdx: index('kb_access_workspace_kb_idx').on(
+      table.workspaceId,
+      table.knowledgeBaseId
+    ),
+  })
+)
+
 export const document = pgTable(
   'document',
   {

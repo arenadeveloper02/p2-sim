@@ -8,7 +8,7 @@ import type {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, knowledgeBase, permissions } from '@/db/schema'
+import { document, knowledgeBase, knowledgeBaseAccess, permissions } from '@/db/schema'
 
 const logger = createLogger('KnowledgeBaseService')
 
@@ -46,6 +46,7 @@ export async function getKnowledgeBases(
         eq(permissions.userId, userId)
       )
     )
+    .leftJoin(knowledgeBaseAccess, eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBase.id))
     .where(
       and(
         isNull(knowledgeBase.deletedAt),
@@ -55,14 +56,22 @@ export async function getKnowledgeBases(
               // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
               and(eq(knowledgeBase.workspaceId, workspaceId), isNotNull(permissions.userId)),
               // Fallback: User-owned knowledge bases without workspace (legacy)
-              and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId))
+              and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId)),
+              // Knowledge bases accessible through knowledge_base_access by user
+              eq(knowledgeBaseAccess.userId, userId),
+              // Knowledge bases accessible through knowledge_base_access by workspace
+              eq(knowledgeBaseAccess.workspaceId, workspaceId)
             )
           : // When not filtering by workspace, use original logic
             or(
               // User owns the knowledge base directly
               eq(knowledgeBase.userId, userId),
               // User has permissions on the knowledge base's workspace
-              isNotNull(permissions.userId)
+              isNotNull(permissions.userId),
+              // Knowledge bases accessible through knowledge_base_access by user
+              eq(knowledgeBaseAccess.userId, userId),
+              // Knowledge bases accessible through knowledge_base_access by workspace (if user has workspace permissions)
+              and(isNotNull(knowledgeBaseAccess.workspaceId), isNotNull(permissions.userId))
             )
       )
     )
@@ -241,18 +250,7 @@ export async function getKnowledgeBaseById(
       and(eq(document.knowledgeBaseId, knowledgeBase.id), isNull(document.deletedAt))
     )
     .where(and(eq(knowledgeBase.id, knowledgeBaseId), isNull(knowledgeBase.deletedAt)))
-    .groupBy(
-      knowledgeBase.id,
-      knowledgeBase.name,
-      knowledgeBase.description,
-      knowledgeBase.tokenCount,
-      knowledgeBase.embeddingModel,
-      knowledgeBase.embeddingDimension,
-      knowledgeBase.chunkingConfig,
-      knowledgeBase.createdAt,
-      knowledgeBase.updatedAt,
-      knowledgeBase.workspaceId
-    )
+    .groupBy(knowledgeBase.id)
     .limit(1)
 
   if (result.length === 0) {
