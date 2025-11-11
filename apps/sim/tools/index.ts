@@ -529,49 +529,32 @@ async function handleInternalRequest(
         (toolId === 'semrush_query' || !contentType.includes('application/json'))
 
       if (isNonJsonContent && tool.transformResponse) {
-        // For non-JSON content with transformResponse, read as text and let transformResponse handle it
-        const responseText = await response.text()
-
-        const mockResponse = {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-          url: fullUrl,
-          json: async () => {
-            try {
-              return JSON.parse(responseText)
-            } catch {
-              throw new Error('Response is not valid JSON')
-            }
-          },
-          text: async () => responseText,
-        } as unknown as Response
-
-        const data = await tool.transformResponse(mockResponse, params)
+        // For non-JSON content with transformResponse, pass the response directly
+        // The transformResponse function will read the body as needed
+        const data = await tool.transformResponse(response, params)
         return data
       }
 
       // For JSON responses or tools without transformResponse, parse as JSON
+      // Clone the response BEFORE attempting JSON parse, so we have a backup if it fails
+      let clonedResponseForTransform: Response | null = null
+      if (hasTransformResponse && tool.transformResponse) {
+        try {
+          clonedResponseForTransform = response.clone()
+        } catch (cloneError) {
+          logger.warn(`[${requestId}] Failed to clone response for ${toolId}:`, {
+            error: cloneError instanceof Error ? cloneError.message : String(cloneError),
+          })
+        }
+      }
+
       try {
         responseData = await response.json()
       } catch (jsonError) {
-        if (hasTransformResponse && tool.transformResponse) {
+        if (hasTransformResponse && tool.transformResponse && clonedResponseForTransform) {
           try {
-            const clonedResponse = response.clone()
-            const responseText = await clonedResponse.text()
-            const mockResponse = {
-              ok: response.ok,
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              url: fullUrl,
-              json: async () => {
-                throw new Error('Response is not valid JSON')
-              },
-              text: async () => responseText,
-            } as unknown as Response
-            const data = await tool.transformResponse(mockResponse, params)
+            // Use the cloned response
+            const data = await tool.transformResponse(clonedResponseForTransform, params)
             return data
           } catch (transformError) {
             logger.error(`[${requestId}] Transform response error for ${toolId}:`, {

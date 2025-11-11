@@ -1,5 +1,4 @@
 import { env } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'
@@ -52,7 +51,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: !isHosted,
+      required: false,
       visibility: 'user-only',
       description: 'Semrush API key',
     },
@@ -65,18 +64,11 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
 
       // Get API key: env.SEMRUSH_API_KEY first, then params.apiKey (user input)
       // This matches the pattern used by agent blocks for API keys
-      const envApiKey = env.SEMRUSH_API_KEY
-      const apiKey = envApiKey || params.apiKey
-
-      if (!apiKey) {
-        throw new Error(
-          'Semrush API key is required. Set SEMRUSH_API_KEY environment variable or provide it in the block configuration.'
-        )
-      }
+      const envApiKey = env.SEMRUSH_API_KEY || ''
 
       // Required parameters
       queryParams.append('type', params.reportType)
-      queryParams.append('key', apiKey)
+      queryParams.append('key', envApiKey)
 
       // Determine if target is URL or domain based on report type
       if (params.reportType.startsWith('url_')) {
