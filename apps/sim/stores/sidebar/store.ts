@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 
 interface SidebarState {
   // Track workspace dropdown state
@@ -17,6 +18,7 @@ export const useSidebarStore = create<SidebarState>()(
     }),
     {
       name: 'sidebar-state',
+      storage: createSafeStorage(),
     }
   )
 )

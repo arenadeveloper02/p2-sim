@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import { redactApiKeys } from '@/lib/utils'
 import type { NormalizedBlockOutput } from '@/executor/types'
 import type { ConsoleEntry, ConsoleStore } from '@/stores/panel/console/types'
@@ -351,6 +352,7 @@ export const useConsoleStore = create<ConsoleStore>()(
       }),
       {
         name: 'console-store',
+        storage: createSafeStorage(),
         partialize: (state) => {
           const sanitizedEntries = state.entries.slice(0, MAX_ENTRIES).map((entry) => {
             const sanitizedEntry = {
