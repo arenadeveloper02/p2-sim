@@ -59,6 +59,19 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
   icon: GoogleIcon,
   subBlocks: [
     {
+      id: 'mode',
+      title: 'Mode',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Basic', id: 'basic' },
+        { label: 'Advanced', id: 'advanced' },
+      ],
+      placeholder: 'Select mode...',
+      required: true,
+      defaultValue: 'basic',
+    },
+    {
       id: 'accounts',
       title: 'Google Ads Account',
       type: 'dropdown',
@@ -66,10 +79,41 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
         label: account.name,
         id: key,
-        value: account.id,
       })),
       placeholder: 'Select account...',
       required: true,
+      condition: {
+        field: 'mode',
+        value: 'basic',
+      },
+    },
+    {
+      id: 'search_client',
+      title: 'Search Client',
+      type: 'short-input',
+      layout: 'full',
+      placeholder: 'Type to search clients (e.g., "AMI", "Eventgroove", "Dental")...',
+      required: false,
+      condition: {
+        field: 'mode',
+        value: 'advanced',
+      },
+    },
+    {
+      id: 'advanced_accounts',
+      title: 'Select Client',
+      type: 'combobox',
+      layout: 'full',
+      options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
+        label: `${account.name} (${account.id})`,
+        id: key,
+      })),
+      placeholder: 'Search and select client...',
+      required: true,
+      condition: {
+        field: 'mode',
+        value: 'advanced',
+      },
     },
     {
       id: 'question',
@@ -116,7 +160,7 @@ Generate a clear, specific question about Google Ads performance based on the us
     config: {
       tool: () => 'google_ads_query',
       params: (params) => ({
-        accounts: params.accounts,
+        accounts: params.mode === 'advanced' ? params.advanced_accounts : params.accounts,
         question: params.question, // Pass the user's question
         query_type: 'campaigns', // Default fallback
         period_type: 'last_30_days', // Default fallback
