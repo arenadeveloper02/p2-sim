@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import type { PanelStore, PanelTab } from '@/stores/panel/types'
 
 export const usePanelStore = create<PanelStore>()(
@@ -35,6 +36,7 @@ export const usePanelStore = create<PanelStore>()(
       }),
       {
         name: 'panel-store',
+        storage: createSafeStorage(),
       }
     )
   )

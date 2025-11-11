@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import { COPILOT_TOOL_IDS } from './constants'
 import type { CopilotMessage, CopilotToolCall } from './types'
 
@@ -223,6 +224,7 @@ export const usePreviewStore = create<PreviewStore>()(
     }),
     {
       name: 'copilot-preview-store',
+      storage: createSafeStorage(),
       partialize: (state) => ({
         previews: Object.fromEntries(
           Object.entries(state.previews).filter(
