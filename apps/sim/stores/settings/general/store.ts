@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import { syncThemeToNextThemes } from '@/lib/theme-sync'
 import type { General, GeneralStore, UserSettings } from '@/stores/settings/general/types'
 
@@ -282,6 +283,7 @@ export const useGeneralStore = create<GeneralStore>()(
       },
       {
         name: 'general-settings',
+        storage: createSafeStorage(),
       }
     ),
     { name: 'general-store' }
