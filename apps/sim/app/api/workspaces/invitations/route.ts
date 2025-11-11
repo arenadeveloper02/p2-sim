@@ -80,6 +80,8 @@ export async function POST(req: NextRequest) {
     if (!workspaceId || !email) {
       return NextResponse.json({ error: 'Workspace ID and email are required' }, { status: 400 })
     }
+    // Normalize email to lowercase for consistent comparison
+    const normalizedEmail = email.trim().toLowerCase()
 
     // Validate permission type
     const validPermissions: PermissionType[] = ['admin', 'write', 'read']
@@ -122,37 +124,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
     }
 
-    // Check if the user is already a member
-    // First find if a user with this email exists
+    // Check if the user exists in the user table - MUST exist before creating invitation
     const existingUser = await db
       .select()
       .from(user)
-      .where(eq(user.email, email))
+      .where(eq(user.email, normalizedEmail))
       .then((rows) => rows[0])
 
-    if (existingUser) {
-      // Check if the user already has permissions for this workspace
-      const existingPermission = await db
-        .select()
-        .from(permissions)
-        .where(
-          and(
-            eq(permissions.entityId, workspaceId),
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.userId, existingUser.id)
-          )
-        )
-        .then((rows) => rows[0])
+    // Validate that user exists - return error BEFORE creating any database records
+    if (!existingUser || !existingUser.id || typeof existingUser.id !== 'string') {
+      return NextResponse.json(
+        {
+          error: `User with email ${normalizedEmail} does not exist. Please ensure the user has an account before inviting them.`,
+          email: normalizedEmail,
+        },
+        { status: 400 }
+      )
+    }
 
-      if (existingPermission) {
-        return NextResponse.json(
-          {
-            error: `${email} already has access to this workspace`,
-            email,
-          },
-          { status: 400 }
+    // Check if the user already has permissions for this workspace
+    const existingPermission = await db
+      .select()
+      .from(permissions)
+      .where(
+        and(
+          eq(permissions.entityId, workspaceId),
+          eq(permissions.entityType, 'workspace'),
+          eq(permissions.userId, existingUser.id)
         )
-      }
+      )
+      .then((rows) => rows[0])
+
+    if (existingPermission) {
+      return NextResponse.json(
+        {
+          error: `${normalizedEmail} already has access to this workspace`,
+          email: normalizedEmail,
+        },
+        { status: 400 }
+      )
     }
 
     // Check if there's already a pending invitation
@@ -162,7 +172,7 @@ export async function POST(req: NextRequest) {
       .where(
         and(
           eq(workspaceInvitation.workspaceId, workspaceId),
-          eq(workspaceInvitation.email, email),
+          eq(workspaceInvitation.email, normalizedEmail),
           eq(workspaceInvitation.status, 'pending' as WorkspaceInvitationStatus)
         )
       )
@@ -171,8 +181,8 @@ export async function POST(req: NextRequest) {
     if (existingInvitation) {
       return NextResponse.json(
         {
-          error: `${email} has already been invited to this workspace`,
-          email,
+          error: `${normalizedEmail} has already been invited to this workspace`,
+          email: normalizedEmail,
         },
         { status: 400 }
       )
@@ -187,7 +197,7 @@ export async function POST(req: NextRequest) {
     const invitationData = {
       id: randomUUID(),
       workspaceId,
-      email,
+      email: normalizedEmail,
       inviterId: session.user.id,
       role,
       status: 'pending' as WorkspaceInvitationStatus,
@@ -201,9 +211,22 @@ export async function POST(req: NextRequest) {
     // Create invitation
     await db.insert(workspaceInvitation).values(invitationData)
 
+    // Insert permissions record for the user
+    const permissionData = {
+      id: randomUUID(),
+      userId: existingUser.id,
+      entityType: 'workspace' as const,
+      entityId: workspaceId,
+      permissionType: permission as PermissionType,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    await db.insert(permissions).values(permissionData)
+
     // Send the invitation email
     await sendInvitationEmail({
-      to: email,
+      to: normalizedEmail,
       inviterName: session.user.name || session.user.email || 'A user',
       workspaceName: workspaceDetails.name,
       invitationId: invitationData.id,
