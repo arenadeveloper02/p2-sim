@@ -133,11 +133,14 @@ export async function extractInputFieldsByWorkflowId(workflowId: string): Promis
 
     // If not the active workflow or not found in registry, fetch from database
     if (!workflows[workflowId]) {
-      logger.warn(`Workflow ${workflowId} not found in registry, fetching from database`)
+      logger.warn(
+        `Workflow ${workflowId} not found in registry, fetching deployed state from database`
+      )
     }
 
-    // Fetch workflow data from database
-    const response = await fetch(`/api/workflows/${workflowId}`, {
+    // Fetch deployed workflow state from database (not current/live state)
+    // This ensures variables/inputs only appear after redeployment
+    const response = await fetch(`/api/workflows/${workflowId}/deployed`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -145,23 +148,31 @@ export async function extractInputFieldsByWorkflowId(workflowId: string): Promis
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch workflow: ${response.statusText}`)
-    }
-
-    const result = await response.json()
-    const blocks = result?.data?.state?.blocks
-
-    if (!blocks) {
-      logger.warn(`No blocks found for workflow ${workflowId}`)
+      // If deployed endpoint fails, log warning but don't throw
+      // This allows the function to return empty array gracefully
+      logger.warn(
+        `Failed to fetch deployed workflow state: ${response.statusText}, workflow may not be deployed yet`
+      )
       return []
     }
 
-    // Find the starter block and extract input fields
-    for (const blockId in blocks) {
-      const block = blocks[blockId]
+    const result = await response.json()
+    const deployedState = result?.data?.deployedState
+
+    if (!deployedState?.blocks) {
+      logger.warn(`No deployed blocks found for workflow ${workflowId}`)
+      return []
+    }
+
+    // Find the starter block and extract input fields from deployed state
+    for (const blockId in deployedState.blocks) {
+      const block = deployedState.blocks[blockId]
       if (block.type === 'starter') {
         const inputFormat = block.subBlocks?.inputFormat?.value
         if (Array.isArray(inputFormat)) {
+          logger.debug(
+            `Extracted ${inputFormat.length} input fields from deployed state for workflow ${workflowId}`
+          )
           return inputFormat
         }
       }

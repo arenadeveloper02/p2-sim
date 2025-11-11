@@ -4,7 +4,10 @@ import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import {
+  loadDeployedWorkflowState,
+  loadWorkflowFromNormalizedTables,
+} from '@/lib/workflows/db-helpers'
 import {
   addCorsHeaders,
   executeWorkflowForChat,
@@ -308,10 +311,27 @@ export async function GET(
     }
 
     // Extract input fields from the workflow's starter block
+    // Use deployed state to ensure variables/inputs only appear after redeployment
     // This allows all authorized users to see input form without needing workflow permissions
     let inputFields: any[] = []
     try {
-      const workflowData = await loadWorkflowFromNormalizedTables(deployment.workflowId)
+      // Try to load from deployed state first (this is what's actually running in chat)
+      let workflowData
+      try {
+        workflowData = await loadDeployedWorkflowState(deployment.workflowId)
+        logger.debug(
+          `[${requestId}] Loaded input fields from deployed state for workflow: ${deployment.workflowId}`
+        )
+      } catch (deployedError) {
+        // If deployed state is not available, fall back to normalized tables
+        // This handles edge cases where workflow might not be fully deployed yet
+        logger.debug(
+          `[${requestId}] Deployed state not available, falling back to normalized tables:`,
+          deployedError
+        )
+        workflowData = await loadWorkflowFromNormalizedTables(deployment.workflowId)
+      }
+
       if (workflowData?.blocks) {
         for (const blockId in workflowData.blocks) {
           const block = workflowData.blocks[blockId]
@@ -320,7 +340,7 @@ export async function GET(
             if (Array.isArray(inputFormat) && inputFormat.length > 0) {
               inputFields = inputFormat
               logger.debug(
-                `[${requestId}] Found ${inputFields.length} input fields in starter block`
+                `[${requestId}] Found ${inputFields.length} input fields in starter block (from ${workflowData.isFromNormalizedTables ? 'normalized tables' : 'deployed state'})`
               )
               break
             }
