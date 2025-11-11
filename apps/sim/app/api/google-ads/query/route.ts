@@ -152,6 +152,45 @@ async function generateSmartGAQL(
 function extractDateRanges(input: string): Array<{ start: string; end: string }> {
   const dateRanges: Array<{ start: string; end: string }> = []
 
+  // NEW: Handle "Month Year and Month Year" pattern: "October 2025 and October 2024"
+  const monthYearAndPattern = /(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\s+and\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i
+  const monthYearAndMatch = input.match(monthYearAndPattern)
+  
+  if (monthYearAndMatch) {
+    const monthMap: Record<string, number> = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+      apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
+      aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+    }
+    
+    const month1 = monthMap[monthYearAndMatch[1].toLowerCase()]
+    const year1 = parseInt(monthYearAndMatch[2])
+    const month2 = monthMap[monthYearAndMatch[3].toLowerCase()]
+    const year2 = parseInt(monthYearAndMatch[4])
+    
+    // Use UTC dates to avoid timezone issues
+    const period1Start = new Date(Date.UTC(year1, month1, 1))
+    const period1End = new Date(Date.UTC(year1, month1 + 1, 0))
+    const period2Start = new Date(Date.UTC(year2, month2, 1))
+    const period2End = new Date(Date.UTC(year2, month2 + 1, 0))
+    
+    // Always put earlier period first (comparison), later period second (main)
+    if (period1Start < period2Start) {
+      dateRanges.push(
+        { start: period1Start.toISOString().split('T')[0], end: period1End.toISOString().split('T')[0] },
+        { start: period2Start.toISOString().split('T')[0], end: period2End.toISOString().split('T')[0] }
+      )
+    } else {
+      dateRanges.push(
+        { start: period2Start.toISOString().split('T')[0], end: period2End.toISOString().split('T')[0] },
+        { start: period1Start.toISOString().split('T')[0], end: period1End.toISOString().split('T')[0] }
+      )
+    }
+    logger.info('Extracted month-year and month-year comparison', { dateRanges })
+    return dateRanges
+  }
+
   // First, try to match numeric format with "and then": "10/8/2025 to 10/14/2025 and then 10/15/2025 to 10/21/2025"
   const numericFullPattern =
     /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+and\s+then\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})/i
@@ -747,33 +786,17 @@ Response Format:
 }`
 
   try {
-    // Try Grok first, fallback to Claude, then OpenAI if not available
-    let provider: 'anthropic' | 'openai' | 'xai' = 'xai'
-    let model = 'grok-3-fast-latest'
+    // Use OpenAI directly (working key with credits)
+    let provider: 'anthropic' | 'openai' | 'xai' = 'openai'
+    let model = 'gpt-4o'
     let apiKey: string
 
     try {
-      apiKey = getApiKey('xai', 'grok-3-fast-latest')
-      logger.info('Using Grok for query parsing', { model })
-    } catch (grokError) {
-      logger.warn('Grok API key not available, falling back to Claude', { grokError })
-      try {
-        provider = 'anthropic'
-        model = 'claude-sonnet-4-20250514'
-        apiKey = getApiKey('anthropic', 'claude-sonnet-4-20250514')
-        logger.info('Using Claude for query parsing', { model })
-      } catch (claudeError) {
-        logger.warn('Claude API key not available, falling back to OpenAI', { claudeError })
-        try {
-          provider = 'openai'
-          model = 'gpt-4o'
-          apiKey = getApiKey('openai', 'gpt-4o')
-          logger.info('Using OpenAI for query parsing', { model })
-        } catch (openaiError) {
-          logger.error('No AI provider available', { grokError, claudeError, openaiError })
-          throw new Error('No AI API key available (tried Grok, Claude, and OpenAI)')
-        }
-      }
+      apiKey = getApiKey('openai', 'gpt-4o')
+      logger.info('Using OpenAI for query parsing', { model })
+    } catch (openaiError) {
+      logger.error('OpenAI API key not available', { openaiError })
+      throw new Error('No AI API key available')
     }
 
     logger.info('Making AI request for query parsing', {
@@ -811,7 +834,7 @@ Example for "Sept 8-14 and then 15-21":
       ],
       apiKey,
       temperature: 0.0, // Set to 0 for completely deterministic query generation
-      maxTokens: provider === 'anthropic' ? 8192 : provider === 'xai' ? 16000 : 16000, // Claude: 8,192, Grok: 16,000, GPT-4o: 16,384
+      maxTokens: 16000, // GPT-4o: 16,384
     })
 
     // Extract content from AI response
