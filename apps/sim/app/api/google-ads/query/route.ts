@@ -2,7 +2,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { executeProviderRequest } from '@/providers'
-import { getApiKey } from '@/providers/utils'
+import { buildSystemPrompt } from './prompt-fragments'
+import { detectIntents } from './intent-detector'
+import { resolveProvider } from './ai-provider'
+import { parseAiResponse } from './ai-response'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -151,6 +154,55 @@ async function generateSmartGAQL(
 // Helper function to extract date ranges from user input
 function extractDateRanges(input: string): Array<{ start: string; end: string }> {
   const dateRanges: Array<{ start: string; end: string }> = []
+  const lower = input.toLowerCase()
+
+  // Check for "this week" or "current week" - calculate dates immediately
+  if (lower.includes('this week') || lower.includes('current week')) {
+    const today = new Date()
+    const currentDay = today.getDay()
+    // Calculate Monday of current week (0 = Sunday, 1 = Monday, etc.)
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
+    const startDate = new Date(today)
+    startDate.setDate(today.getDate() + mondayOffset)
+    // End date is yesterday (Google Ads data is typically 1 day behind)
+    const endDate = new Date(today)
+    endDate.setDate(today.getDate() - 1)
+
+    dateRanges.push({
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0],
+    })
+
+    logger.info('Extracted "this week" date range', {
+      start: dateRanges[0].start,
+      end: dateRanges[0].end,
+    })
+    return dateRanges
+  }
+
+  // Check for "last week" - calculate dates immediately
+  if (lower.includes('last week')) {
+    const today = new Date()
+    // Calculate last Sunday
+    const daysToLastSunday = today.getDay() === 0 ? 7 : today.getDay()
+    const lastWeekEnd = new Date(today)
+    lastWeekEnd.setDate(today.getDate() - daysToLastSunday)
+    const endDate = lastWeekEnd
+    // Calculate Monday of last week
+    const startDate = new Date(lastWeekEnd)
+    startDate.setDate(lastWeekEnd.getDate() - 6)
+
+    dateRanges.push({
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0],
+    })
+
+    logger.info('Extracted "last week" date range', {
+      start: dateRanges[0].start,
+      end: dateRanges[0].end,
+    })
+    return dateRanges
+  }
 
   // First, try to match numeric format with "and then": "10/8/2025 to 10/14/2025 and then 10/15/2025 to 10/21/2025"
   const numericFullPattern =
@@ -342,439 +394,68 @@ async function generateGAQLWithAI(userInput: string): Promise<{
     dateRanges,
   })
 
-  // Step 2: Determine if this is a comparison query
-  const isComparisonDetected = dateRanges.length === 2
+  // Step 2: Detect query intents and comparison context
+  const { intents, promptContext } = detectIntents(userInput, dateRanges)
+  
+  // If we extracted a single date range (e.g., "this week"), add it to prompt context
+  if (dateRanges.length === 1 && !promptContext.comparison) {
+    promptContext.dateRange = dateRanges[0]
+  }
+  
+  logger.info('Detected query intents', { intents, hasComparisonContext: !!promptContext.comparison, hasDateRange: !!promptContext.dateRange })
 
-  // Step 3: Modify the prompt if comparison is detected
-  let modifiedInput = userInput
-  if (isComparisonDetected) {
-    modifiedInput = `COMPARISON QUERY DETECTED - Generate TWO separate queries with EXACT field names:
-
-CRITICAL FIELD NAMES (DO NOT USE ANY OTHER NAMES):
-- "gaql_query" - for the MAIN/CURRENT period (${dateRanges[1].start} to ${dateRanges[1].end})
-- "comparison_query" - for the COMPARISON/PRIOR period (${dateRanges[0].start} to ${dateRanges[0].end})
-- "is_comparison" - MUST be true
-- "start_date" - ${dateRanges[1].start}
-- "end_date" - ${dateRanges[1].end}
-- "comparison_start_date" - ${dateRanges[0].start}
-- "comparison_end_date" - ${dateRanges[0].end}
-
-DO NOT use: query_1, query_2, main_query, prior_query, or any other field names.
-
-Example JSON structure:
-{
-  "gaql_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${dateRanges[1].start}' AND '${dateRanges[1].end}' AND campaign.status != 'REMOVED'",
-  "comparison_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${dateRanges[0].start}' AND '${dateRanges[0].end}' AND campaign.status != 'REMOVED'",
-  "is_comparison": true,
-  "start_date": "${dateRanges[1].start}",
-  "end_date": "${dateRanges[1].end}",
-  "comparison_start_date": "${dateRanges[0].start}",
-  "comparison_end_date": "${dateRanges[0].end}",
-  "query_type": "campaign_performance",
-  "period_type": "custom"
-}
-
-Original question: ${userInput}`
-
+  if (promptContext.comparison) {
     logger.info('Comparison mode activated', {
-      mainPeriod: `${dateRanges[1].start} to ${dateRanges[1].end}`,
-      comparisonPeriod: `${dateRanges[0].start} to ${dateRanges[0].end}`,
+      mainPeriod: `${promptContext.comparison.main.start} to ${promptContext.comparison.main.end}`,
+      comparisonPeriod: `${promptContext.comparison.comparison.start} to ${promptContext.comparison.comparison.end}`,
     })
   }
 
-  const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
-
-  const systemPrompt = `You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries for ANY Google Ads question.
-
-**IMPORTANT RULE**: When users ask about asset performance or data over time, use campaign or ad_group resources instead of asset resources. Asset resources don't support date segments, but campaign/ad_group resources do.
-
-**NEVER REFUSE**: Always generate a valid GAQL query. Never return error messages or refuse to generate queries.
-
-**CRITICAL: ACCOUNT CONTEXT**: The user has already selected a specific Google Ads account (e.g., CA - Eventgroove Products, AMI, Heartland). When they mention the account name in their query, DO NOT add it as a campaign.name filter. The account is already selected by the API. Only filter by campaign.name when the user explicitly asks for specific campaign types (Brand, PMax, Shopping, etc.).
-
-## RESOURCES & METRICS
-
-**RESOURCES:**
-- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
-- ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
-- ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
-- keyword_view (performance data) + campaign.id + campaign.status required
-- search_term_view (search query reports) + campaign.id + campaign.status required
-- campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
-- asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
-- asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
-- customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
-- gender_view (demographic performance by gender)
-- ad_group_criterion (criterion details including gender, location targeting)
-- geo_target_constant (location targeting constants and details)
-- geographic_view (geographic performance data) + campaign.id + campaign.status required
-- campaign_criterion (campaign-level targeting criteria)
-
-**METRICS:**
-- Core: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.average_cpc, metrics.ctr
-- Conversions: metrics.conversions, metrics.conversions_value, metrics.all_conversions, metrics.all_conversions_value, metrics.cost_per_conversion
-- Impression Share: metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share
-
-**QUALITY SCORE (Keywords Only - NOT in metrics):**
-- ❌ WRONG: metrics.quality_score (DOES NOT EXIST)
-- ✅ CORRECT: ad_group_criterion.quality_info.quality_score (1-10 scale)
-- Ad Relevance: ad_group_criterion.quality_info.creative_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
-- Landing Page Experience: ad_group_criterion.quality_info.post_click_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
-- CRITICAL: Quality Score is part of ad_group_criterion in keyword_view resource, NOT a metric
-
-**AD STRENGTH (RSA Ads Only - Google's Official Rating):**
-- ✅ CORRECT: ad_group_ad.ad_strength
-- ❌ WRONG: ad_group_ad.ad.responsive_search_ad.ad_strength (DOES NOT EXIST)
-- Values: EXCELLENT, GOOD, AVERAGE, POOR, PENDING, UNSPECIFIED, UNKNOWN
-- Available in ad_group_ad resource when ad.type = 'RESPONSIVE_SEARCH_AD'
-- This is Google's proprietary algorithm rating based on headlines, descriptions, keywords, and relevance
-- Use this instead of calculating your own ad strength
-
-**CRITICAL - CALCULATED METRICS (NOT AVAILABLE IN API):**
-- ❌ metrics.conversion_rate - DOES NOT EXIST! Calculate as: (conversions / clicks) × 100
-- ❌ metrics.roas - DOES NOT EXIST! Calculate as: conversions_value / cost
-- To get conversion rate data, fetch metrics.conversions and metrics.clicks, then calculate it yourself
-
-**SEGMENTS:**
-- Time: segments.date, segments.day_of_week, segments.hour, segments.month, segments.quarter, segments.year
-- Device/Network: segments.device, segments.ad_network_type
-- Demographics: segments.age_range, segments.gender
-- Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
-
-**SEGMENT COMPATIBILITY RULES:**
-- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, ad_group_ad, geographic_view, gender_view
-- segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion
-- **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
-- Asset queries show structure (what exists), not performance (how it performed)
-
-**CRITICAL SEGMENTS.DATE RULE:**
-- **DO NOT include segments.date in SELECT clause** - This causes daily breakdown (one row per day)
-- **USE segments.date ONLY in WHERE clause** for date filtering to get aggregated totals
-- ❌ WRONG: SELECT segments.date, campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2025-09-01' AND '2025-09-30'
-- ✅ CORRECT: SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '2025-09-01' AND '2025-09-30'
-- Exception: Only include segments.date in SELECT if user explicitly asks for "daily breakdown", "by date", or "day-by-day"
-
-## SYNTAX RULES
-
-**CRITICAL:**
-1. Always generate valid GAQL - never refuse or error
-2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
-3. **ABSOLUTELY FORBIDDEN IN SELECT CLAUSE**: segments.date, segments.week, segments.month, segments.quarter, segments.day_of_week, segments.hour - NEVER include these in SELECT unless user explicitly asks for "daily breakdown" or "by date"
-4. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
-5. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
-6. Use LIKE '%text%' for pattern matching on STRING fields only (NOT CONTAINS)
-7. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
-8. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
-9. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
-10. **DYNAMIC LIMIT**: Extract the number from user queries like "top 10", "top 20", "top 50", "best 15", etc. Use that exact number in the LIMIT clause. Examples: "top 10 keywords" → LIMIT 10, "top 20 campaigns" → LIMIT 20, "best 50 keywords" → LIMIT 50. Default to LIMIT 10 if no number is specified.
-
-**FIELD-SPECIFIC OPERATORS:**
-- STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
-- ENUM fields (campaign.status, asset_group_asset.status, etc.): =, !=, IN, NOT IN, IS NULL, IS NOT NULL
-- ID fields (campaign.id, asset_group_asset.asset_group, etc.): =, !=, IN, NOT IN, IS NULL, IS NOT NULL
-- **CRITICAL**: NEVER use LIKE on ENUM or ID fields - use = or IN instead
-- **SPECIFIC WARNING**: asset_group_asset.asset_group is an ID field - only use =, !=, IN, NOT IN, IS NULL, IS NOT NULL
-
-**REQUIRED FIELDS:**
-- ad_group: + campaign.id + campaign.status
-- keyword_view: + campaign.id + campaign.status
-- search_term_view: + campaign.id + campaign.status
-- ad_group_ad: + campaign.id + campaign.status + ad_group.name
-- campaign_asset: + campaign.id + campaign.status
-- geographic_view: + campaign.id + campaign.status
-
-**DATE FILTERING:**
-- Predefined: DURING LAST_7_DAYS, LAST_30_DAYS, THIS_MONTH, LAST_MONTH, THIS_WEEK, LAST_WEEK
-- Custom: BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
-- Single: segments.date = '2025-09-30'
-- NEVER use >=, <=, or open-ended ranges
-- **CRITICAL**: LAST_90_DAYS is NOT supported - use BETWEEN with calculated dates instead
-- **CRITICAL**: For "last 90 days" or "last 3 months", calculate dates and use BETWEEN
-- **CRITICAL**: NEVER use OR to combine multiple date ranges in one query
-- **CRITICAL**: For comparisons, return TWO separate queries with isComparison: true
-
-**COMPARISON DETECTION - CRITICAL:**
-If the user mentions ANY of these patterns, you MUST set isComparison: true and return TWO queries:
-- "and then" (e.g., "Sept 8-14 and then 15-21")
-- "compare" or "comparison" (e.g., "compare this week to last week")
-- "vs" or "versus" (e.g., "Sept 15-21 vs Sept 8-14")
-- "previous week" or "prior week" or "last week" when asking for current week
-- TWO date ranges mentioned (e.g., "Sept 8-14 2025 and Sept 15-21 2025")
-- "week over week" or "WoW"
-When detected, the SECOND date range is the main week, the FIRST date range is the comparison week.
-
-**STATUS FILTERING:**
-- campaign.status != 'REMOVED' (exclude deleted)
-- campaign.status = 'ENABLED' (active only)
-- Valid: 'ENABLED', 'PAUSED', 'REMOVED'
-
-## QUERY EXAMPLES
-
-**Basic Campaign Performance:**
-SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
-
-**Keyword Analysis:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC LIMIT 10
-
-**Keyword Analysis with Quality Score (Underperforming Keywords - Last 3 Months):**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions, metrics.ctr FROM keyword_view WHERE segments.date BETWEEN '2025-08-01' AND '2025-10-30' AND campaign.status != 'REMOVED' AND ad_group_criterion.quality_info.quality_score < 6 AND metrics.cost_micros > 50000000 ORDER BY metrics.cost_micros DESC
-
-Note: 
-- Quality Score: ad_group_criterion.quality_info.quality_score (1-10)
-- Ad Relevance: ad_group_criterion.quality_info.creative_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
-- Landing Page Experience: ad_group_criterion.quality_info.post_click_quality_score (BELOW_AVERAGE, AVERAGE, ABOVE_AVERAGE)
-- Expected CTR: Use metrics.ctr as proxy (actual expected CTR not directly available in GAQL)
-- Filter: Quality Score < 6 AND spend > $50 (50,000,000 micros) in last 3 months
-- IMPORTANT: Use BETWEEN with calculated dates instead of LAST_90_DAYS (not supported)
-
-**Device Performance:**
-SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
-
-**Campaign Assets (NO DATE SEGMENTS):**
-SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
-
-**Asset Group Assets (NO DATE SEGMENTS):**
-SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
-
-**Asset Group Assets with Filtering (NO DATE SEGMENTS):**
-SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.field_type = 'HEADLINE'
-
-**Asset Group Assets by Specific Asset Group (NO DATE SEGMENTS):**
-SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED' AND asset_group_asset.asset_group = '1234567890'
-
-**CRITICAL ASSET RESOURCE RULES:**
-- asset, campaign_asset, asset_group_asset resources DO NOT support segments.date
-- **SOLUTION**: Use campaign or ad_group resources for asset performance data
-- Asset queries show structure (what assets exist) not performance (how they performed)
-- For performance data with date segments, always use campaign or ad_group resources
-
-**RSA AD GROUP ANALYSIS:**
-When user asks for "RSA counts", "headline/description counts", "ad strength", or "responsive search ads by ad group":
-
-CRITICAL: Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
-
-**ALWAYS INCLUDE PERFORMANCE METRICS** - Add segments.date and metrics fields to show spend, clicks, conversions, CTR.
-
-SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr
-FROM ad_group_ad 
-WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' 
-AND ad_group_ad.status = 'ENABLED'
-AND campaign.status != 'REMOVED'
-AND segments.date DURING LAST_30_DAYS
-ORDER BY campaign.name, ad_group.name
-
-Note: 
-- **CRITICAL - HEADLINE/DESCRIPTION COUNTING**: The headlines and descriptions fields return ARRAYS of objects. You MUST count the array length in your analysis.
-  - Example: If headlines array has 12 items, display as "12/15" in your table
-  - Example: If descriptions array has 3 items, display as "3/4" in your table
-  - DO NOT display the raw array or "N/A" - always show the count as "X/15" for headlines and "X/4" for descriptions
-- ad_strength field returns Google's official rating: EXCELLENT, GOOD, AVERAGE, POOR, PENDING, UNSPECIFIED, UNKNOWN
-- This query returns ALL RSA ads across ALL campaigns and ad groups in the account.
-- Do NOT add LIMIT clause - we need complete data for gap analysis.
-- **CRITICAL**: ALWAYS include metrics (impressions, clicks, cost_micros, conversions, ctr) and segments.date for performance data.
-- **CRITICAL - SPEND AGGREGATION**: Individual ads may show $0 spend if they have no impressions. You MUST aggregate spend by ad_group.id to show total ad group spend in your table. Group all ads by ad_group.id and sum their metrics.cost_micros to get the ad group total spend.
-
-**AD EXTENSIONS GAP ANALYSIS:**
-When user asks for "ad extensions", "sitelinks", "callouts", "structured snippets", or "extension gap analysis":
-
-CRITICAL: Ad extensions can be at ACCOUNT, CAMPAIGN, or AD GROUP level. Use CAMPAIGN-LEVEL query to get the most comprehensive view.
-
-**IMPORTANT: Return ONLY ONE query - the campaign-level query below. Do NOT return multiple queries.**
-
-**Campaign-Level Extensions Query (USE THIS ONE):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status
-FROM campaign_asset
-WHERE campaign.status != 'REMOVED'
-AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET')
-AND campaign_asset.status = 'ENABLED'
-ORDER BY campaign.name, asset.type
-
-**EXTENSION COUNTING LOGIC:**
-- Count unique campaign_asset.asset per campaign per asset.type
-- Each row represents one extension asset attached to a campaign
-- Group by campaign.name and asset.type to count extensions per campaign
-- Note: Account-level extensions are inherited by all campaigns and will appear in this query
-- Use campaign.advertising_channel_type to filter: SEARCH campaigns use extensions, PERFORMANCE_MAX uses asset groups
-- To exclude Performance Max: Filter results where campaign.advertising_channel_type != 'PERFORMANCE_MAX'
-
-**Optimal Counts:**
-- Sitelinks: 4-6 per campaign
-- Callouts: 4-6 per campaign  
-- Structured Snippets: 2+ per campaign
-
-**Gap Status:**
-- ✅ OPTIMAL: Within optimal range
-- ⚠️ GAP: 50-75% of optimal (e.g., 2-3 sitelinks when optimal is 4-6)
-- ❌ CRITICAL GAP: <50% of optimal or 0 assets
-
-Note: This query does NOT support segments.date (no date filtering)
-
-**Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
-
-**Gender Demographics:**
-SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
-
-**Geographic Performance:**
-SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
-
-**Location Targeting:**
-SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
-
-## ANALYSIS USE CASES
-
-**1. PERFORMANCE HIGHLIGHTS (CPL Monitoring)**
-- Multi-account CPL analysis with month-by-month breakdown
-- Include: campaign.name, segments.date, metrics.cost_micros, metrics.conversions
-- Date range: May-July 2025 for comprehensive analysis
-
-**2. ASSET GAP ANALYSIS**  
-- Responsive search ads: ad_group_ad resource + ad_group.name
-- Ad extensions: campaign_asset resource
-- Check optimal counts: 15 headlines, 4 descriptions
-
-**3. SEARCH QUERY REPORTS (SQR)**
-- Keyword discovery: search_term_view resource
-- Filter: cost > $0, CPA ≤ $80, business-relevant terms
-- Cross-reference existing keywords for new opportunities
-
-**4. TOP SPENDING KEYWORDS**
-- Week-on-week analysis: segments.week
-- Pivot tables: Keyword, Week, Cost, CPC, Leads, Cost/Conversion, Impression Share
-- Status tracking: Yes/No for top 30 keywords
-
-**5. SEGMENT ANALYSIS**
-- Demographics: segments.device, age_range, gender, hour, day_of_week
-- Location: segments.geo_target_city
-- Campaign types: Brand Search, Non-Brand Search, PMax
-
-**6. GEO PERFORMANCE**
-- Use geographic_view resource with: geographic_view.country_criterion_id, geographic_view.location_type
-- Calculate: CPL (Cost/Conversions), ROAS (Conversion Value/Cost)
-- Identify high-spend, low-conversion locations for optimization
-- Note: Use campaign_criterion for location targeting settings
-
-**7. BRAND vs NON-BRAND vs PMAX**
-- Search: campaign.advertising_channel_type = 'SEARCH'
-- Brand: campaign.name LIKE '%Brand%'
-- Non-Brand: campaign.name NOT LIKE '%Brand%'  
-- PMax: campaign.advertising_channel_type = 'MULTI_CHANNEL'
-
-AdvertisingChannelTypeEnum.AdvertisingChannelType
-
-UNSPECIFIED
-→ Not specified.
-
-UNKNOWN
-→ Value unknown in this version.
-
-SEARCH
-→ Standard Google search campaigns (text ads, dynamic search, etc.).
-
-DISPLAY
-→ Google Display Network campaigns.
-
-SHOPPING
-→ Shopping campaigns (Product Listing Ads, Performance Max product feeds).
-
-HOTEL
-→ Hotel Ads campaigns.
-
-VIDEO
-→ YouTube/Video campaigns.
-
-MULTI_CHANNEL (Deprecated)
-→ Old mixed channel campaigns (not used anymore).
-
-LOCAL
-→ Local campaigns (ads optimized for local store visits).
-
-SMART
-→ Smart campaigns (simplified automated campaigns).
-
-PERFORMANCE_MAX
-→ Performance Max campaigns (all-in-one, across Search, Display, YouTube, Gmail, Discover).
-
-LOCAL_SERVICES
-→ Local Services Ads campaigns (region-limited categories like plumbers, electricians).
-
-DISCOVERY
-→ Discovery campaigns (YouTube feed, Gmail Promotions/Social tabs, Discover feed).
-
-TRAVEL
-→ Travel campaigns (newer, structured for travel ads).
-
-**COMMON MISTAKES TO AVOID:**
-- ❌ WRONG: asset_group_asset.asset_group LIKE '%123%' (ID field cannot use LIKE)
-- ✅ CORRECT: asset_group_asset.asset_group = '1234567890' (use exact match for ID)
-- ❌ WRONG: campaign.status LIKE '%ENABLED%' (ENUM field cannot use LIKE)
-- ✅ CORRECT: campaign.status = 'ENABLED' (use exact match for ENUM)
-- ❌ WRONG: campaign.name = 'Brand Campaign' (STRING field should use LIKE for partial matches)
-- ✅ CORRECT: campaign.name LIKE '%Brand%' (use LIKE for STRING pattern matching)
-- ❌ WRONG: WHERE (segments.date BETWEEN '2025-09-08' AND '2025-09-14' OR segments.date BETWEEN '2025-09-15' AND '2025-09-21')
-- ✅ CORRECT: Return TWO separate queries with isComparison: true
-
-**CRITICAL: ACCOUNT NAME vs CAMPAIGN NAME:**
-- ❌ WRONG: "for CA - Eventgroove Products" → campaign.name LIKE '%CA - Eventgroove Products%'
-- ✅ CORRECT: Account names (AU/CA/UK - Eventgroove Products, AMI, Heartland, etc.) are NOT campaign filters
-- The account is already selected by the API - DO NOT add campaign.name filters for account names
-- Only filter by campaign.name when user explicitly asks for specific campaign names (e.g., "Brand campaigns", "PMax campaigns")
-- Example: "Show performance for CA - Eventgroove Products" → Query ALL campaigns, no name filter
-
-## COMPARISON QUERIES
-
-**CRITICAL RULE**: GAQL does NOT support OR operators. For date comparisons, you MUST return TWO separate queries.
-
-**When user asks to compare two date ranges:**
-
-Example Input: "Compare performance from September 8-14 to September 15-21, 2025"
-
-Response Format:
+  const systemPrompt = buildSystemPrompt(intents, promptContext)
+  const modifiedInput = userInput
+
+  logger.debug('Constructed system prompt for GAQL generation', {
+    promptLength: systemPrompt.length,
+    intentsIncluded: intents,
+  })
+
+  const comparisonExample = promptContext.comparison
+    ? `Example with detected ranges (${promptContext.comparison.comparison.start} to ${promptContext.comparison.comparison.end} vs ${promptContext.comparison.main.start} to ${promptContext.comparison.main.end}):
 {
-  "gaql_query": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
-  "query_type": "campaign_performance",
-  "period_type": "custom",
+  "gaql_query": "SELECT ... WHERE segments.date BETWEEN '${promptContext.comparison.main.start}' AND '${promptContext.comparison.main.end}' ...",
+  "comparison_query": "SELECT ... WHERE segments.date BETWEEN '${promptContext.comparison.comparison.start}' AND '${promptContext.comparison.comparison.end}' ...",
+  "is_comparison": true,
+  "start_date": "${promptContext.comparison.main.start}",
+  "end_date": "${promptContext.comparison.main.end}",
+  "comparison_start_date": "${promptContext.comparison.comparison.start}",
+  "comparison_end_date": "${promptContext.comparison.comparison.end}"
+}`
+    : `Example for "Sept 8-14 and then 15-21":
+{
+  "gaql_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' ...",
+  "is_comparison": true,
+  "comparison_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' ...",
+  "comparison_start_date": "2025-09-08",
+  "comparison_end_date": "2025-09-14",
   "start_date": "2025-09-15",
-  "end_date": "2025-09-21",
-  "isComparison": true,
-  "comparisonQuery": "SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC",
-  "comparisonStartDate": "2025-09-08",
-  "comparisonEndDate": "2025-09-14"
-}
-
-**NOTE: Include ad_group.name for all ad-related queries**
+  "end_date": "2025-09-21"
 }`
 
-  try {
-    // Try Grok first, fallback to Claude, then OpenAI if not available
-    let provider: 'anthropic' | 'openai' | 'xai' = 'xai'
-    let model = 'grok-3-fast-latest'
-    let apiKey: string
+  const responseInstructions = [
+    'Respond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.',
+    'CRITICAL: If the user\'s question contains TWO date ranges or words like "and then", "compare", "vs", "previous week", you MUST:',
+    '1. Set "is_comparison": true',
+    '2. Provide "comparison_query" with the FIRST date range',
+    '3. Provide "comparison_start_date" and "comparison_end_date" for the FIRST date range',
+    '4. The main "gaql_query" should use the SECOND date range',
+    comparisonExample,
+  ].join('\n')
 
-    try {
-      apiKey = getApiKey('xai', 'grok-3-fast-latest')
-      logger.info('Using Grok for query parsing', { model })
-    } catch (grokError) {
-      logger.warn('Grok API key not available, falling back to Claude', { grokError })
-      try {
-        provider = 'anthropic'
-        model = 'claude-sonnet-4-20250514'
-        apiKey = getApiKey('anthropic', 'claude-sonnet-4-20250514')
-        logger.info('Using Claude for query parsing', { model })
-      } catch (claudeError) {
-        logger.warn('Claude API key not available, falling back to OpenAI', { claudeError })
-        try {
-          provider = 'openai'
-          model = 'gpt-4o'
-          apiKey = getApiKey('openai', 'gpt-4o')
-          logger.info('Using OpenAI for query parsing', { model })
-        } catch (openaiError) {
-          logger.error('No AI provider available', { grokError, claudeError, openaiError })
-          throw new Error('No AI API key available (tried Grok, Claude, and OpenAI)')
-        }
-      }
-    }
+  const fullSystemPrompt = `${systemPrompt}\n\n${responseInstructions}`
+
+
+  try {
+    const { provider, model, apiKey } = resolveProvider(logger)
 
     logger.info('Making AI request for query parsing', {
       provider,
@@ -784,24 +465,7 @@ Response Format:
 
     const aiResponse = await executeProviderRequest(provider, {
       model,
-      systemPrompt: `${systemPrompt}\n\nRespond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.
-
-CRITICAL: If the user's question contains TWO date ranges or words like "and then", "compare", "vs", "previous week", you MUST:
-1. Set "is_comparison": true
-2. Provide "comparison_query" with the FIRST date range
-3. Provide "comparison_start_date" and "comparison_end_date" for the FIRST date range
-4. The main "gaql_query" should use the SECOND date range
-
-Example for "Sept 8-14 and then 15-21":
-{
-  "gaql_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' ...",
-  "is_comparison": true,
-  "comparison_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-08' AND '2025-09-14' ...",
-  "comparison_start_date": "2025-09-08",
-  "comparison_end_date": "2025-09-14",
-  "start_date": "2025-09-15",
-  "end_date": "2025-09-21"
-}`,
+      systemPrompt: fullSystemPrompt,
       context: `Parse this Google Ads question: "${modifiedInput}"`,
       messages: [
         {
@@ -814,178 +478,25 @@ Example for "Sept 8-14 and then 15-21":
       maxTokens: provider === 'anthropic' ? 8192 : provider === 'xai' ? 16000 : 16000, // Claude: 8,192, Grok: 16,000, GPT-4o: 16,384
     })
 
-    // Extract content from AI response
-    let aiContent = ''
-    if (typeof aiResponse === 'object' && aiResponse !== null) {
-      if ('content' in aiResponse) {
-        aiContent = aiResponse.content as string
-      } else if (
-        'output' in aiResponse &&
-        aiResponse.output &&
-        typeof aiResponse.output === 'object' &&
-        'content' in aiResponse.output
-      ) {
-        aiContent = aiResponse.output.content as string
-      }
-    }
-    logger.info('===== AI RAW RESPONSE =====', {
-      userInput,
-      aiContent,
-      aiContentLength: aiContent.length,
-    })
-
-    // Check if AI returned an error message instead of JSON
-    if (
-      aiContent.includes('"error"') &&
-      !aiContent.includes('"gaql_query"') &&
-      !aiContent.includes('"query"')
-    ) {
-      logger.error('AI returned error instead of GAQL query', { aiContent })
-      throw new Error(`AI refused to generate query: ${aiContent}`)
-    }
-
-    // Parse AI response - handle multiple JSON objects if present
-    const cleanedContent = aiContent.replace(/```json\n?|\n?```/g, '').trim()
-    let parsedResponse
-
-    try {
-      // First, try to parse as single JSON
-      parsedResponse = JSON.parse(cleanedContent)
-    } catch (parseError) {
-      // If that fails, try to extract the first valid JSON object from multiple objects
-      logger.warn('Failed to parse as single JSON, trying to extract first valid JSON object', {
-        aiContent: `${cleanedContent.substring(0, 200)}...`,
-        parseError,
-      })
-    }
-
-    // Validate required fields - check for multiple possible formats
-    let gaqlQuery = parsedResponse.gaql_query || parsedResponse.query
-
-    // Handle case where AI returns an array directly (for multi-level queries like ad extensions)
-    if (!gaqlQuery && Array.isArray(parsedResponse) && parsedResponse.length > 0) {
-      // AI returned array of queries for different levels (account, campaign, ad_group)
-      // Use the first query from the array
-      gaqlQuery = parsedResponse[0].query || parsedResponse[0].gaql_query
-      logger.info('AI returned array of queries (multi-level), using first query', {
-        totalQueries: parsedResponse.length,
-        levels: parsedResponse.map((q: any) => q.level),
-        selectedQuery: gaqlQuery,
-      })
-    }
-
-    // Handle queries array format (wrapped in queries field)
-    if (
-      !gaqlQuery &&
-      parsedResponse.queries &&
-      Array.isArray(parsedResponse.queries) &&
-      parsedResponse.queries.length > 0
-    ) {
-      // Use the first query from the array
-      gaqlQuery = parsedResponse.queries[0].query || parsedResponse.queries[0].gaql_query
-      logger.info('Using first query from queries array', {
-        totalQueries: parsedResponse.queries.length,
-        selectedQuery: gaqlQuery,
-      })
-    }
-
-    if (!gaqlQuery) {
-      logger.error('AI response missing GAQL query field', { parsedResponse })
-      throw new Error(`AI response missing GAQL query: ${JSON.stringify(parsedResponse)}`)
-    }
-
-    // Ensure gaqlQuery is a string (handle cases where AI returns an object)
-    if (typeof gaqlQuery !== 'string') {
-      logger.error('GAQL query is not a string', { gaqlQuery, type: typeof gaqlQuery })
-      throw new Error(
-        `AI returned invalid GAQL query type: ${typeof gaqlQuery}. Expected string, got: ${JSON.stringify(gaqlQuery)}`
-      )
-    }
-
-    // Clean and validate the AI-generated GAQL query
-    let cleanedGaqlQuery = gaqlQuery || ''
-
-    // Remove any malformed characters or syntax
-    cleanedGaqlQuery = cleanedGaqlQuery
-      .replace(/```sql\n?|\n?```/g, '') // Remove SQL code blocks
-      .replace(/```gaql\n?|\n?```/g, '') // Remove GAQL code blocks
-      .replace(/```\n?|\n?```/g, '') // Remove any other code blocks
-      .trim()
-
-    // Remove invalid GROUP BY clauses (GAQL doesn't support GROUP BY)
-    cleanedGaqlQuery = cleanedGaqlQuery.replace(/\s+GROUP\s+BY\s+[^ORDER\s]+/gi, '')
-
-    // DO NOT auto-add segments.date to SELECT - this causes daily breakdown
-    // segments.date should only be in WHERE clause for date filtering
-    // If it's in SELECT, it will return one row per day instead of aggregated totals
-
-    // Validate that the query doesn't contain invalid characters or OR operators
-    // Allow parentheses in BETWEEN, IN, and comparison clauses
-    const queryWithoutValidParens = cleanedGaqlQuery
-      .replace(/BETWEEN '[^']*' AND '[^']*'/g, '') // Remove BETWEEN clauses
-      .replace(/IN\s*\([^)]+\)/gi, '') // Remove IN (...) clauses - CRITICAL for extensions
-      .replace(/[<>]=?/g, '') // Remove comparison operators
-    const hasInvalidChars = /[(){}[\]]/.test(queryWithoutValidParens)
-    const hasGroupBy = /\bGROUP\s+BY\b/i.test(cleanedGaqlQuery)
-    const hasOrOperator = /\bOR\b/i.test(cleanedGaqlQuery)
-
-    if (
-      hasInvalidChars ||
-      hasGroupBy ||
-      hasOrOperator ||
-      !cleanedGaqlQuery.toUpperCase().includes('SELECT')
-    ) {
-      logger.error('AI generated invalid GAQL query', {
-        originalQuery: gaqlQuery,
-        cleanedQuery: cleanedGaqlQuery,
-        hasInvalidChars,
-        hasGroupBy,
-        hasOrOperator,
-        hasSelect: cleanedGaqlQuery.toUpperCase().includes('SELECT'),
-      })
-      throw new Error(
-        `AI generated invalid GAQL query: ${gaqlQuery}. GAQL does not support OR operators. For comparisons, use isComparison: true with separate queries.`
-      )
-    }
-
-    logger.info('AI generated GAQL successfully', {
-      query_type: parsedResponse.query_type,
-      period_type: parsedResponse.period_type,
-      start_date: parsedResponse.start_date,
-      end_date: parsedResponse.end_date,
-      original_gaql: gaqlQuery,
-      cleaned_gaql: cleanedGaqlQuery,
-    })
+    const parsed = parseAiResponse(aiResponse, userInput, logger)
 
     return {
-      gaqlQuery: cleanedGaqlQuery,
-      queryType: parsedResponse.query_type || 'campaigns',
-      periodType: parsedResponse.period_type || 'last_30_days',
+      gaqlQuery: parsed.gaqlQuery,
+      queryType: parsed.queryType || 'campaigns',
+      periodType: parsed.periodType || 'last_30_days',
       startDate:
-        parsedResponse.start_date ||
+        parsed.startDate ||
         new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      endDate: parsedResponse.end_date || new Date().toISOString().split('T')[0],
-      isComparison: parsedResponse.is_comparison || false,
-      comparisonQuery: parsedResponse.comparison_query
-        ? fixSegmentsDateInQuery(parsedResponse.comparison_query)
-        : undefined,
-      comparisonStartDate: parsedResponse.comparison_start_date,
-      comparisonEndDate: parsedResponse.comparison_end_date,
+      endDate: parsed.endDate || new Date().toISOString().split('T')[0],
+      isComparison: parsed.isComparison || false,
+      comparisonQuery: parsed.comparisonQuery,
+      comparisonStartDate: parsed.comparisonStartDate,
+      comparisonEndDate: parsed.comparisonEndDate,
     }
   } catch (error) {
     logger.error('AI query parsing failed, using manual fallback', { error })
     throw error // Let the calling function handle the fallback
   }
-}
-
-// Helper function to fix segments.date in queries
-function fixSegmentsDateInQuery(query: string): string {
-  const fixedQuery = query.trim()
-
-  // DO NOT auto-add segments.date to SELECT - this causes daily breakdown
-  // segments.date should only be in WHERE clause for date filtering
-
-  return fixedQuery
 }
 
 function calculateDynamicDates(periodType: string): { startDate: string; endDate: string } {
