@@ -289,6 +289,7 @@ export async function getKnowledgeBaseById(
 
 /**
  * Delete a knowledge base (soft delete)
+ * Also soft deletes all corresponding entries in user_knowledge_base table
  */
 export async function deleteKnowledgeBase(
   knowledgeBaseId: string,
@@ -296,6 +297,7 @@ export async function deleteKnowledgeBase(
 ): Promise<void> {
   const now = new Date()
 
+  // Soft delete the knowledge base
   await db
     .update(knowledgeBase)
     .set({
@@ -304,5 +306,16 @@ export async function deleteKnowledgeBase(
     })
     .where(eq(knowledgeBase.id, knowledgeBaseId))
 
-  logger.info(`[${requestId}] Soft deleted knowledge base: ${knowledgeBaseId}`)
+  // Soft delete all corresponding user_knowledge_base entries
+  await db
+    .update(userKnowledgeBase)
+    .set({
+      deletedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId))
+
+  logger.info(
+    `[${requestId}] Soft deleted knowledge base and user_knowledge_base entries: ${knowledgeBaseId}`
+  )
 }
