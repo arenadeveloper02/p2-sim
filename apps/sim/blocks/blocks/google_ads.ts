@@ -88,28 +88,17 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       },
     },
     {
-      id: 'search_client',
-      title: 'Search Client',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: 'Type to search clients (e.g., "AMI", "Eventgroove", "Dental")...',
-      required: false,
-      condition: {
-        field: 'mode',
-        value: 'advanced',
-      },
-    },
-    {
       id: 'advanced_accounts',
-      title: 'Select Client',
+      title: 'Search Client',
       type: 'combobox',
       layout: 'full',
       options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
         label: `${account.name} (${account.id})`,
         id: key,
       })),
-      placeholder: 'Search and select client...',
+      placeholder: 'Type client key (e.g., "dynamic_dental", "ami", "heartland") or search by name...',
       required: true,
+      description: `Available keys: ${Object.keys(GOOGLE_ADS_ACCOUNTS).slice(0, 10).join(', ')}... (${Object.keys(GOOGLE_ADS_ACCOUNTS).length} total)`,
       condition: {
         field: 'mode',
         value: 'advanced',
