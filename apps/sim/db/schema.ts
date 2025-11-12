@@ -939,9 +939,7 @@ export const userKnowledgeBase = pgTable(
   (table) => ({
     // Access patterns for finding knowledge bases by user or workspace
     userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
-    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(
-      table.userWorkspaceIdRef
-    ),
+    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(table.userWorkspaceIdRef),
     kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
     kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
     // Composite indexes for common queries

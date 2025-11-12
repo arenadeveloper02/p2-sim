@@ -607,7 +607,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
               const blockKey = `${block.type}_${block.name}`
               const originalBlock = originalBlocksMap.get(blockKey)
 
-              if (originalBlock && originalBlock.subBlocks) {
+              if (originalBlock?.subBlocks) {
                 const sourceSubBlocks = block.subBlocks as any
                 const originalSubBlocks = originalBlock.subBlocks as any
                 const mergedSubBlocks = { ...sourceSubBlocks }
@@ -619,7 +619,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
                     // Preserve values for file-selector and oauth-input (credentials) types
                     if (subBlockType === 'file-selector' || subBlockType === 'oauth-input') {
                       // Check if original block has this subBlock with a value
-                      if (originalSubBlocks[subBlockKey] && originalSubBlocks[subBlockKey].value) {
+                      if (originalSubBlocks[subBlockKey]?.value) {
                         mergedSubBlocks[subBlockKey] = {
                           ...subBlockValue,
                           value: originalSubBlocks[subBlockKey].value,
