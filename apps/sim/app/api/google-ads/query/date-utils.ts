@@ -69,7 +69,10 @@ export function isValidDateRange(range: DateRange): boolean {
  * Formats a Date object to YYYY-MM-DD string
  */
 export function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0]
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 /**
@@ -94,11 +97,11 @@ export function getYesterday(): Date {
  * Calculates Monday of current week
  */
 export function getCurrentWeekStart(): Date {
-  const today = getToday()
-  const currentDay = today.getDay()
+  const reference = new Date()
+  const currentDay = reference.getDay()
   const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
-  const monday = new Date(today)
-  monday.setDate(today.getDate() + mondayOffset)
+  const monday = new Date(reference)
+  monday.setDate(reference.getDate() + mondayOffset)
   return monday
 }
 

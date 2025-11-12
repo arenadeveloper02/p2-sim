@@ -2,8 +2,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { executeProviderRequest } from '@/providers'
-import { buildSystemPrompt } from './prompt-fragments'
-import { detectIntents } from './intent-detector'
 import { resolveProvider } from './ai-provider'
 import { parseAiResponse } from './ai-response'
 import {
@@ -25,6 +23,8 @@ import {
   getYearRange,
   isValidDateRange,
 } from './date-utils'
+import { detectIntents } from './intent-detector'
+import { buildSystemPrompt } from './prompt-fragments'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -219,12 +219,23 @@ function extractDateRanges(input: string): Array<DateRange> {
   // PRIORITY 2: Week-based queries
   // ============================================
   if (/\b(this week|current week)\b/.test(lower)) {
-    const start = getCurrentWeekStart()
-    const end = getToday()
-    const range: DateRange = {
-      start: formatDate(start),
-      end: formatDate(end),
+    const startDate = getCurrentWeekStart()
+    let endDate = getToday()
+    let range: DateRange = {
+      start: formatDate(startDate),
+      end: formatDate(endDate),
     }
+
+    // If start is ahead of end (e.g., Monday morning with limited data),
+    // fall back to using today's date as the end to keep the range valid.
+    if (!isValidDateRange(range)) {
+      endDate = new Date()
+      range = {
+        start: formatDate(startDate),
+        end: formatDate(endDate),
+      }
+    }
+
     if (isValidDateRange(range)) {
       logger.info('Extracted "this week" date range', range)
       return [range]
@@ -389,7 +400,34 @@ function extractDateRanges(input: string): Array<DateRange> {
   }
 
   // ============================================
-  // PRIORITY 9: Year-only queries
+  // PRIORITY 9: Day-Month-Year single date queries (e.g., "8 Nov 2025")
+  // ============================================
+  const dayMonthYearPattern =
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?),?\s*(\d{4})\b/gi
+  const dayMonthYearMatches = [...input.matchAll(dayMonthYearPattern)]
+  if (dayMonthYearMatches.length > 0) {
+    for (const match of dayMonthYearMatches) {
+      const dayStr = match[1]
+      const monthStr = match[2].toLowerCase() as keyof typeof MONTH_MAP
+      const yearStr = match[3]
+      const month = MONTH_MAP[monthStr]
+      if (!month) continue
+
+      const day = dayStr.padStart(2, '0')
+      const range: DateRange = {
+        start: `${yearStr}-${month}-${day}`,
+        end: `${yearStr}-${month}-${day}`,
+      }
+
+      if (isValidDateRange(range)) {
+        logger.info('Extracted single date (day month year) range', { range })
+        return [range]
+      }
+    }
+  }
+
+  // ============================================
+  // PRIORITY 10: Year-only queries
   // ============================================
   // "2025", "for 2025", "in 2025", "during 2025"
   // Match "for/in/during 2025" first (more specific)
@@ -496,7 +534,7 @@ function extractDateRanges(input: string): Array<DateRange> {
       logger.info('Extracted month name date ranges with "and then"', {
         range1,
         range2,
-      })
+    })
       return [range1, range2]
     }
     logger.warn('Invalid date ranges in comparison query, skipping', {
@@ -745,8 +783,8 @@ Please re-run the agent with a smaller date range.`
         helpfulMessage 
       })
       throw new Error(helpfulMessage)
-    }
-    
+}
+
     // For other AI errors, throw the original error
     throw error
   }
@@ -1531,8 +1569,8 @@ export async function POST(request: NextRequest) {
     
     // If it's a user-friendly error (date extraction or token limit), return it as-is
     if (isDateExtractionError || isTokenLimitError) {
-      return NextResponse.json(
-        {
+    return NextResponse.json(
+      {
           error: errorMessage,
           details: isDateExtractionError 
             ? 'Date extraction failed - please provide a clearer date specification'
