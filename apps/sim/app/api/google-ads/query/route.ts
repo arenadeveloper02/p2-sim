@@ -28,6 +28,12 @@ import { buildSystemPrompt } from './prompt-fragments'
 
 const logger = createLogger('GoogleAdsAPI')
 
+// Constants
+const MAX_DAYS_FOR_LAST_N_DAYS = 365
+const MAX_MONTHS_FOR_LAST_N_MONTHS = 24
+const MICROS_PER_DOLLAR = 1_000_000
+const DEFAULT_DATE_RANGE_DAYS = 7
+
 // Google Ads accounts configuration - matching Python script
 const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   ami: { id: '7284380454', name: 'AMI' },
@@ -227,9 +233,9 @@ function extractDateRanges(input: string): Array<DateRange> {
     }
 
     // If start is ahead of end (e.g., Monday morning with limited data),
-    // fall back to using today's date as the end to keep the range valid.
+    // fall back to using getToday() for consistency with Google Ads data lag.
     if (!isValidDateRange(range)) {
-      endDate = new Date()
+      endDate = getToday() // Use getToday() instead of new Date() for consistency
       range = {
         start: formatDate(startDate),
         end: formatDate(endDate),
@@ -295,7 +301,7 @@ function extractDateRanges(input: string): Array<DateRange> {
   const lastNDaysMatch = lower.match(/\blast\s+(\d+)\s+days?\b/)
   if (lastNDaysMatch) {
     const days = Number.parseInt(lastNDaysMatch[1])
-    if (days > 0 && days <= 365) {
+    if (days > 0 && days <= MAX_DAYS_FOR_LAST_N_DAYS) {
       const range = getLastNDaysRange(days)
       if (isValidDateRange(range)) {
         logger.info('Extracted "last N days" date range', { days, range })
@@ -311,7 +317,7 @@ function extractDateRanges(input: string): Array<DateRange> {
   const lastNMonthsMatch = lower.match(/\blast\s+(\d+)\s+months?\b/)
   if (lastNMonthsMatch) {
     const months = Number.parseInt(lastNMonthsMatch[1])
-    if (months > 0 && months <= 24) {
+    if (months > 0 && months <= MAX_MONTHS_FOR_LAST_N_MONTHS) {
       const range = getLastNMonthsRange(months)
       if (isValidDateRange(range)) {
         logger.info('Extracted "last N months" date range', { months, range })
@@ -602,12 +608,25 @@ function extractDateRanges(input: string): Array<DateRange> {
 
   // Validate all extracted ranges before returning
   const validRanges = dateRanges.filter(isValidDateRange)
-  if (validRanges.length > 0) {
+  
+  // Deduplicate ranges (same start and end date)
+  const uniqueRanges = new Map<string, DateRange>()
+  for (const range of validRanges) {
+    const key = `${range.start}-${range.end}`
+    if (!uniqueRanges.has(key)) {
+      uniqueRanges.set(key, range)
+    }
+  }
+  
+  const deduplicatedRanges = Array.from(uniqueRanges.values())
+  
+  if (deduplicatedRanges.length > 0) {
     logger.info('Extracted explicit date ranges', {
-      count: validRanges.length,
-      ranges: validRanges,
+      count: deduplicatedRanges.length,
+      ranges: deduplicatedRanges,
+      duplicatesRemoved: validRanges.length - deduplicatedRanges.length,
     })
-    return validRanges
+    return deduplicatedRanges
   }
 
   return []
@@ -620,22 +639,31 @@ function extractDateRanges(input: string): Array<DateRange> {
 function containsDateMentions(input: string): boolean {
   const lower = input.toLowerCase()
   
-  // Date-related keywords
-  const dateKeywords = [
-    'today', 'yesterday', 'tomorrow',
-    'week', 'month', 'year', 'quarter',
-    'day', 'days',
-    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
-    'january', 'february', 'march', 'april', 'june',
-    'july', 'august', 'september', 'october', 'november', 'december',
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-    'ytd', 'mtd', 'q1', 'q2', 'q3', 'q4',
-    '2024', '2025', '2026', // Common years
+  // Use specific date patterns first (more accurate, fewer false positives)
+  const specificDatePatterns = [
+    /\b(today|yesterday|tomorrow)\b/,
+    /\b(this|last|next|current)\s+(week|month|year|quarter)\b/,
+    /\b(last|next|past|previous)\s+\d+\s+(days?|months?|weeks?|years?)\b/,
+    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(uary|ruary|ch|il|e|y|ust|tember|ober|ember)?\s+\d{1,2},?\s+\d{4}\b/i,
+    /\b(january|february|march|april|june|july|august|september|october|november|december)\s+\d{4}\b/i,
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    /\b(ytd|mtd)\b/,
+    /\bq[1-4]\s+\d{4}\b/i,
   ]
   
-  // Check for date keywords
-  if (dateKeywords.some(keyword => lower.includes(keyword))) {
+  // Check for specific date patterns first (more accurate)
+  if (specificDatePatterns.some(pattern => pattern.test(input))) {
+    return true
+  }
+  
+  // Fallback: Check for standalone date keywords (less specific, but catches edge cases)
+  const dateKeywords = [
+    'today', 'yesterday', 'tomorrow',
+    'ytd', 'mtd',
+  ]
+  
+  // Only check standalone keywords with word boundaries
+  if (dateKeywords.some(keyword => new RegExp(`\\b${keyword}\\b`).test(lower))) {
     return true
   }
   
@@ -702,7 +730,7 @@ Please re-run the agent with a clearer date specification.`
     
     // No dates mentioned - default to last 7 days
     logger.info('No date range mentioned in query, defaulting to last 7 days', { userInput })
-    const defaultRange = getLastNDaysRange(7)
+    const defaultRange = getLastNDaysRange(DEFAULT_DATE_RANGE_DAYS)
     dateRanges.push(defaultRange) // Add default range so rest of function can proceed
   }
 
@@ -1208,21 +1236,21 @@ function processGoogleAdsResults(
         status: campaignData.status || 'Unknown',
         clicks,
         impressions,
-        cost: Math.round((costMicros / 1000000) * 100) / 100,
+        cost: Math.round((costMicros / MICROS_PER_DOLLAR) * 100) / 100,
         conversions,
         conversions_value: Math.round(conversionsValue * 100) / 100,
         ctr: Math.round(Number.parseFloat(metricsData.ctr || '0') * 10000) / 100,
-        avg_cpc: Math.round((avgCpcMicros / 1000000) * 100) / 100,
+        avg_cpc: Math.round((avgCpcMicros / MICROS_PER_DOLLAR) * 100) / 100,
         cost_per_conversion:
           costPerConversionMicros > 0
-            ? Math.round((costPerConversionMicros / 1000000) * 100) / 100
+            ? Math.round((costPerConversionMicros / MICROS_PER_DOLLAR) * 100) / 100
             : 0,
         conversion_rate: Math.round(conversionRate * 100) / 100,
         impression_share: Math.round(impressionShare * 10000) / 100,
         budget_lost_share: Math.round(budgetLostShare * 10000) / 100,
         rank_lost_share: Math.round(rankLostShare * 10000) / 100,
         roas:
-          costMicros > 0 ? Math.round((conversionsValue / (costMicros / 1000000)) * 100) / 100 : 0,
+          costMicros > 0 ? Math.round((conversionsValue / (costMicros / MICROS_PER_DOLLAR)) * 100) / 100 : 0,
       }
       campaigns.push(campaignInfo)
     }
@@ -1242,7 +1270,7 @@ function processGoogleAdsResults(
     accountTotals: {
       clicks: accountClicks,
       impressions: accountImpressions,
-      cost: Math.round((accountCost / 1000000) * 100) / 100,
+      cost: Math.round((accountCost / MICROS_PER_DOLLAR) * 100) / 100,
       conversions: accountConversions,
       conversions_value: Math.round(accountConversionsValue * 100) / 100,
     },

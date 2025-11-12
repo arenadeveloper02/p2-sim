@@ -95,13 +95,14 @@ export function getYesterday(): Date {
 
 /**
  * Calculates Monday of current week
+ * Uses getToday() as reference to account for Google Ads data lag
  */
 export function getCurrentWeekStart(): Date {
-  const reference = new Date()
-  const currentDay = reference.getDay()
+  const today = getToday() // Use Google Ads "today" for consistency
+  const currentDay = today.getDay()
   const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
-  const monday = new Date(reference)
-  monday.setDate(reference.getDate() + mondayOffset)
+  const monday = new Date(today)
+  monday.setDate(today.getDate() + mondayOffset)
   return monday
 }
 
