@@ -613,6 +613,52 @@ function extractDateRanges(input: string): Array<DateRange> {
   return []
 }
 
+/**
+ * Checks if the user query contains any date-related keywords or patterns
+ * Returns true if dates are mentioned, false otherwise
+ */
+function containsDateMentions(input: string): boolean {
+  const lower = input.toLowerCase()
+  
+  // Date-related keywords
+  const dateKeywords = [
+    'today', 'yesterday', 'tomorrow',
+    'week', 'month', 'year', 'quarter',
+    'day', 'days',
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+    'january', 'february', 'march', 'april', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december',
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+    'ytd', 'mtd', 'q1', 'q2', 'q3', 'q4',
+    '2024', '2025', '2026', // Common years
+  ]
+  
+  // Check for date keywords
+  if (dateKeywords.some(keyword => lower.includes(keyword))) {
+    return true
+  }
+  
+  // Check for date patterns: MM/DD/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc.
+  const datePatterns = [
+    /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/, // MM/DD/YYYY or DD-MM-YYYY
+    /\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/, // YYYY-MM-DD
+    /\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i, // 8 Nov or 8th Nov
+    /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/i, // Nov 8
+  ]
+  
+  if (datePatterns.some(pattern => pattern.test(input))) {
+    return true
+  }
+  
+  // Check for "last N" or "next N" patterns
+  if (/\b(last|next|past|previous|since|until|from|to)\s+\d+/.test(lower)) {
+    return true
+  }
+  
+  return false
+}
+
 async function generateGAQLWithAI(userInput: string): Promise<{
   gaqlQuery: string
   queryType: string
@@ -634,9 +680,13 @@ async function generateGAQLWithAI(userInput: string): Promise<{
     dateRanges,
   })
 
-  // Check if date extraction failed - provide helpful error message
+  // Step 1.5: Check if dates were mentioned but extraction failed
+  const hasDateMentions = containsDateMentions(userInput)
+  
   if (dateRanges.length === 0) {
-    const errorMessage = `Unable to extract a date range from your query: "${userInput}"
+    if (hasDateMentions) {
+      // Dates were mentioned but extraction failed - throw error
+      const errorMessage = `Unable to extract a date range from your query: "${userInput}"
 
 Please try one of these formats:
 • Relative periods: "today", "yesterday", "this week", "last week", "this month", "last month"
@@ -645,9 +695,15 @@ Please try one of these formats:
 • Explicit dates: "9/1/2025 to 9/30/2025" or "Sept 1 to 30 2025"
 
 Please re-run the agent with a clearer date specification.`
+      
+      logger.warn('Date extraction failed but dates were mentioned', { userInput, errorMessage })
+      throw new Error(errorMessage)
+    }
     
-    logger.warn('Date extraction failed', { userInput, errorMessage })
-    throw new Error(errorMessage)
+    // No dates mentioned - default to last 7 days
+    logger.info('No date range mentioned in query, defaulting to last 7 days', { userInput })
+    const defaultRange = getLastNDaysRange(7)
+    dateRanges.push(defaultRange) // Add default range so rest of function can proceed
   }
 
   // Step 2: Detect query intents and comparison context
