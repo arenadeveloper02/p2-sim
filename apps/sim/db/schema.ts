@@ -911,29 +911,46 @@ export const knowledgeBase = pgTable(
   })
 )
 
-export const knowledgeBaseAccess = pgTable(
-  'knowledge_base_access',
+export const userKnowledgeBase = pgTable(
+  'user_knowledge_base',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
-    knowledgeBaseId: text('knowledge_base_id')
+    userIdRef: text('user_id_ref')
       .notNull()
+      .default('')
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userWorkspaceIdRef: text('user_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseIdRef: text('knowledge_base_id_ref')
+      .notNull()
+      .default('')
       .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    kbWorkspaceIdRef: text('kb_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at').defaultNow(),
   },
   (table) => ({
     // Access patterns for finding knowledge bases by user or workspace
-    userIdIdx: index('kb_access_user_id_idx').on(table.userId),
-    workspaceIdIdx: index('kb_access_workspace_id_idx').on(table.workspaceId),
-    knowledgeBaseIdIdx: index('kb_access_kb_id_idx').on(table.knowledgeBaseId),
-    // Composite indexes for common queries
-    userKbIdx: index('kb_access_user_kb_idx').on(table.userId, table.knowledgeBaseId),
-    workspaceKbIdx: index('kb_access_workspace_kb_idx').on(
-      table.workspaceId,
-      table.knowledgeBaseId
+    userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
+    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(
+      table.userWorkspaceIdRef
     ),
+    kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
+    kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
+    // Composite indexes for common queries
+    userKbIdx: index('user_kb_user_kb_idx').on(table.userIdRef, table.knowledgeBaseIdRef),
+    userWorkspaceKbIdx: index('user_kb_user_workspace_kb_idx').on(
+      table.userWorkspaceIdRef,
+      table.knowledgeBaseIdRef
+    ),
+    // Index for soft delete filtering
+    deletedAtIdx: index('user_kb_deleted_at_idx').on(table.deletedAt),
   })
 )
 

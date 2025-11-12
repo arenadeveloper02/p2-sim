@@ -8,7 +8,7 @@ import type {
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, knowledgeBase, knowledgeBaseAccess, permissions } from '@/db/schema'
+import { document, knowledgeBase, permissions, userKnowledgeBase } from '@/db/schema'
 
 const logger = createLogger('KnowledgeBaseService')
 
@@ -46,7 +46,13 @@ export async function getKnowledgeBases(
         eq(permissions.userId, userId)
       )
     )
-    .leftJoin(knowledgeBaseAccess, eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBase.id))
+    .leftJoin(
+      userKnowledgeBase,
+      and(
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBase.id),
+        isNull(userKnowledgeBase.deletedAt)
+      )
+    )
     .where(
       and(
         isNull(knowledgeBase.deletedAt),
@@ -57,10 +63,10 @@ export async function getKnowledgeBases(
               and(eq(knowledgeBase.workspaceId, workspaceId), isNotNull(permissions.userId)),
               // Fallback: User-owned knowledge bases without workspace (legacy)
               and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId)),
-              // Knowledge bases accessible through knowledge_base_access by user
-              eq(knowledgeBaseAccess.userId, userId),
-              // Knowledge bases accessible through knowledge_base_access by workspace
-              eq(knowledgeBaseAccess.workspaceId, workspaceId)
+              // Knowledge bases accessible through user_knowledge_base by user
+              eq(userKnowledgeBase.userIdRef, userId),
+              // Knowledge bases accessible through user_knowledge_base by workspace
+              eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
             )
           : // When not filtering by workspace, use original logic
             or(
@@ -68,10 +74,10 @@ export async function getKnowledgeBases(
               eq(knowledgeBase.userId, userId),
               // User has permissions on the knowledge base's workspace
               isNotNull(permissions.userId),
-              // Knowledge bases accessible through knowledge_base_access by user
-              eq(knowledgeBaseAccess.userId, userId),
-              // Knowledge bases accessible through knowledge_base_access by workspace (if user has workspace permissions)
-              and(isNotNull(knowledgeBaseAccess.workspaceId), isNotNull(permissions.userId))
+              // Knowledge bases accessible through user_knowledge_base by user
+              eq(userKnowledgeBase.userIdRef, userId),
+              // Knowledge bases accessible through user_knowledge_base by workspace (if user has workspace permissions)
+              and(isNotNull(userKnowledgeBase.userWorkspaceIdRef), isNotNull(permissions.userId))
             )
       )
     )
@@ -129,7 +135,24 @@ export async function createKnowledgeBase(
 
   await db.insert(knowledgeBase).values(newKnowledgeBase)
 
-  logger.info(`[${requestId}] Created knowledge base: ${data.name} (${kbId})`)
+  // Create corresponding entry in user_knowledge_base table
+  const userKbId = randomUUID()
+  const userKbEntry = {
+    id: userKbId,
+    userIdRef: data.userId,
+    userWorkspaceIdRef: data.workspaceId ?? '',
+    knowledgeBaseIdRef: kbId,
+    kbWorkspaceIdRef: data.workspaceId ?? '',
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  }
+
+  await db.insert(userKnowledgeBase).values(userKbEntry)
+
+  logger.info(
+    `[${requestId}] Created knowledge base: ${data.name} (${kbId}) and user_knowledge_base entry (${userKbId})`
+  )
 
   return {
     id: kbId,

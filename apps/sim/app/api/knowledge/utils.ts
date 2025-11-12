@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, embedding, knowledgeBase, knowledgeBaseAccess } from '@/db/schema'
+import { document, embedding, knowledgeBase, userKnowledgeBase } from '@/db/schema'
 
 export interface KnowledgeBaseData {
   id: string
@@ -149,14 +149,15 @@ export async function checkKnowledgeBaseAccess(
     }
   }
 
-  // Case 3: User has direct access through knowledge_base_access table
+  // Case 3: User has direct access through user_knowledge_base table
   const directAccessEntry = await db
     .select()
-    .from(knowledgeBaseAccess)
+    .from(userKnowledgeBase)
     .where(
       and(
-        eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBaseId),
-        eq(knowledgeBaseAccess.userId, userId)
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        eq(userKnowledgeBase.userIdRef, userId),
+        isNull(userKnowledgeBase.deletedAt)
       )
     )
     .limit(1)
@@ -165,20 +166,24 @@ export async function checkKnowledgeBaseAccess(
     return { hasAccess: true, knowledgeBase: kbData }
   }
 
-  // Case 4: User has workspace-based access through knowledge_base_access table
+  // Case 4: User has workspace-based access through user_knowledge_base table
   const workspaceAccessEntry = await db
     .select()
-    .from(knowledgeBaseAccess)
+    .from(userKnowledgeBase)
     .where(
       and(
-        eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBaseId),
-        isNull(knowledgeBaseAccess.userId)
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        isNull(userKnowledgeBase.deletedAt)
       )
     )
 
   for (const access of workspaceAccessEntry) {
-    if (access.workspaceId) {
-      const userPermission = await getUserEntityPermissions(userId, 'workspace', access.workspaceId)
+    if (access.userWorkspaceIdRef) {
+      const userPermission = await getUserEntityPermissions(
+        userId,
+        'workspace',
+        access.userWorkspaceIdRef
+      )
       if (userPermission !== null) {
         return { hasAccess: true, knowledgeBase: kbData }
       }
@@ -228,14 +233,15 @@ export async function checkKnowledgeBaseWriteAccess(
     }
   }
 
-  // Case 3: User has direct access through knowledge_base_access table
+  // Case 3: User has direct access through user_knowledge_base table
   const directAccessEntry = await db
     .select()
-    .from(knowledgeBaseAccess)
+    .from(userKnowledgeBase)
     .where(
       and(
-        eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBaseId),
-        eq(knowledgeBaseAccess.userId, userId)
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        eq(userKnowledgeBase.userIdRef, userId),
+        isNull(userKnowledgeBase.deletedAt)
       )
     )
     .limit(1)
@@ -244,20 +250,24 @@ export async function checkKnowledgeBaseWriteAccess(
     return { hasAccess: true, knowledgeBase: kbData }
   }
 
-  // Case 4: User has workspace-based access through knowledge_base_access table
+  // Case 4: User has workspace-based access through user_knowledge_base table
   const workspaceAccessEntry = await db
     .select()
-    .from(knowledgeBaseAccess)
+    .from(userKnowledgeBase)
     .where(
       and(
-        eq(knowledgeBaseAccess.knowledgeBaseId, knowledgeBaseId),
-        isNull(knowledgeBaseAccess.userId)
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        isNull(userKnowledgeBase.deletedAt)
       )
     )
 
   for (const access of workspaceAccessEntry) {
-    if (access.workspaceId) {
-      const userPermission = await getUserEntityPermissions(userId, 'workspace', access.workspaceId)
+    if (access.userWorkspaceIdRef) {
+      const userPermission = await getUserEntityPermissions(
+        userId,
+        'workspace',
+        access.userWorkspaceIdRef
+      )
       if (userPermission === 'write' || userPermission === 'admin') {
         return { hasAccess: true, knowledgeBase: kbData }
       }
