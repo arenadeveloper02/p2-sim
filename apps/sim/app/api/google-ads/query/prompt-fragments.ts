@@ -153,8 +153,9 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-**Campaign Assets (NO DATE SEGMENTS):**
-SELECT customer.id, customer.descriptive_name, campaign.id, campaign.name, campaign.status, campaign_asset.asset, asset.name, asset.sitelink_asset.link_text, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED'
+**Campaign Assets / Ad Extensions (NO DATE SEGMENTS):**
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement
 
 **Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
@@ -182,6 +183,10 @@ SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_crit
 
 **Location Targeting:**
 SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
+
+**Asset Group Analysis / Add Extentions :**
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+
 
 **Brand vs Non-Brand vs PMAX:**
 - Search: campaign.advertising_channel_type = 'SEARCH'
@@ -288,14 +293,13 @@ const rsaFragment: FragmentBuilder = () => `
 const extensionsFragment: FragmentBuilder = () => `
 **AD EXTENSIONS GAP ANALYSIS:**
 - Use CAMPAIGN-LEVEL query to capture account and inherited extensions.
-- **MANDATORY SELECT fields**: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status.
-- **CRITICAL**: ALWAYS include campaign.advertising_channel_type in SELECT clause - it's required by Google Ads API.
-- Filter: campaign.status != 'REMOVED', asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET'), campaign_asset.status = 'ENABLED'.
-- **OPTIONAL FILTER**: To exclude Performance Max campaigns, add: campaign.advertising_channel_type != 'PERFORMANCE_MAX' (only if user requests it).
-- **IMPORTANT**: If you use campaign.advertising_channel_type in WHERE clause, it MUST be in SELECT clause (Google Ads API requirement).
-- ORDER BY campaign.name, asset.type.
-- No date segments allowed.
-- Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap).
+- **CRITICAL - GOOGLE ADS API REQUIREMENT**: You MUST include campaign.advertising_channel_type in the SELECT clause. The API will reject the query without it.
+
+**IMPORTANT NOTES:**
+- campaign.advertising_channel_type MUST be in SELECT (4th field after campaign.status)
+- Do NOT add campaign.advertising_channel_type filter in WHERE unless user explicitly asks to exclude Performance Max
+- No date segments allowed (campaign_asset does not support segments.date)
+- Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
 `.trim()
 
 const searchTermsFragment: FragmentBuilder = () => `
