@@ -1,4 +1,5 @@
-import type { DateRange, Intent, PromptContext } from './prompt-fragments'
+import type { DateRange } from './date-utils'
+import type { Intent, PromptContext } from './prompt-fragments'
 
 const COMPARISON_KEYWORDS = [
   'compare',

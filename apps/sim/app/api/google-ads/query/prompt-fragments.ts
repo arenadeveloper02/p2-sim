@@ -1,4 +1,4 @@
-export type DateRange = { start: string; end: string }
+import type { DateRange } from './date-utils'
 
 export type Intent =
   | 'comparison'

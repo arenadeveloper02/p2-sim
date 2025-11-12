@@ -6,6 +6,25 @@ import { buildSystemPrompt } from './prompt-fragments'
 import { detectIntents } from './intent-detector'
 import { resolveProvider } from './ai-provider'
 import { parseAiResponse } from './ai-response'
+import {
+  type DateRange,
+  MONTH_MAP,
+  formatDate,
+  getCurrentWeekStart,
+  getLastWeekRange,
+  getToday,
+  getYesterday,
+  getThisMonthRange,
+  getLastMonthRange,
+  getLastNDaysRange,
+  getLastNMonthsRange,
+  getYearToDateRange,
+  getMonthToDateRange,
+  getMonthRange,
+  getQuarterRange,
+  getYearRange,
+  isValidDateRange,
+} from './date-utils'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -152,56 +171,249 @@ async function generateSmartGAQL(
 }
 
 // Helper function to extract date ranges from user input
-function extractDateRanges(input: string): Array<{ start: string; end: string }> {
-  const dateRanges: Array<{ start: string; end: string }> = []
-  const lower = input.toLowerCase()
+function extractDateRanges(input: string): Array<DateRange> {
+  const dateRanges: Array<DateRange> = []
+  const lower = input.toLowerCase().trim()
 
-  // Check for "this week" or "current week" - calculate dates immediately
-  if (lower.includes('this week') || lower.includes('current week')) {
-    const today = new Date()
-    const currentDay = today.getDay()
-    // Calculate Monday of current week (0 = Sunday, 1 = Monday, etc.)
-    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay
-    const startDate = new Date(today)
-    startDate.setDate(today.getDate() + mondayOffset)
-    // End date is yesterday (Google Ads data is typically 1 day behind)
-    const endDate = new Date(today)
-    endDate.setDate(today.getDate() - 1)
-
-    dateRanges.push({
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0],
-    })
-
-    logger.info('Extracted "this week" date range', {
-      start: dateRanges[0].start,
-      end: dateRanges[0].end,
-    })
-    return dateRanges
+  // ============================================
+  // PRIORITY 1: Single-day queries (early return)
+  // ============================================
+  if (/\b(today)\b/.test(lower)) {
+    const today = getToday()
+    const range: DateRange = {
+      start: formatDate(today),
+      end: formatDate(today),
+    }
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "today" date range', range)
+      return [range]
+    }
   }
 
-  // Check for "last week" - calculate dates immediately
-  if (lower.includes('last week')) {
-    const today = new Date()
-    // Calculate last Sunday
-    const daysToLastSunday = today.getDay() === 0 ? 7 : today.getDay()
-    const lastWeekEnd = new Date(today)
-    lastWeekEnd.setDate(today.getDate() - daysToLastSunday)
-    const endDate = lastWeekEnd
-    // Calculate Monday of last week
-    const startDate = new Date(lastWeekEnd)
-    startDate.setDate(lastWeekEnd.getDate() - 6)
+  if (/\b(yesterday)\b/.test(lower)) {
+    const yesterday = getYesterday()
+    const range: DateRange = {
+      start: formatDate(yesterday),
+      end: formatDate(yesterday),
+    }
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "yesterday" date range', range)
+      return [range]
+    }
+  }
 
-    dateRanges.push({
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0],
-    })
+  // ============================================
+  // PRIORITY 2: Week-based queries
+  // ============================================
+  if (/\b(this week|current week)\b/.test(lower)) {
+    const start = getCurrentWeekStart()
+    const end = getToday()
+    const range: DateRange = {
+      start: formatDate(start),
+      end: formatDate(end),
+    }
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "this week" date range', range)
+      return [range]
+    }
+  }
 
-    logger.info('Extracted "last week" date range', {
-      start: dateRanges[0].start,
-      end: dateRanges[0].end,
-    })
-    return dateRanges
+  if (/\b(last week|past week)\b/.test(lower)) {
+    const range = getLastWeekRange()
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "last week" date range', range)
+      return [range]
+    }
+  }
+
+  // ============================================
+  // PRIORITY 3: Month-based queries
+  // ============================================
+  if (/\b(this month|current month)\b/.test(lower)) {
+    const range = getThisMonthRange()
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "this month" date range', range)
+      return [range]
+    }
+  }
+
+  if (/\b(last month)\b/.test(lower)) {
+    const range = getLastMonthRange()
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "last month" date range', range)
+      return [range]
+    }
+  }
+
+  // ============================================
+  // PRIORITY 4: Business intelligence terms
+  // ============================================
+  if (/\b(year to date|ytd)\b/.test(lower)) {
+    const range = getYearToDateRange()
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "YTD" date range', range)
+      return [range]
+    }
+  }
+
+  if (/\b(month to date|mtd)\b/.test(lower)) {
+    const range = getMonthToDateRange()
+    if (isValidDateRange(range)) {
+      logger.info('Extracted "MTD" date range', range)
+      return [range]
+    }
+  }
+
+  // ============================================
+  // PRIORITY 5: Relative period queries ("last N days")
+  // ============================================
+  // "last 7 days", "last 30 days", "last 90 days", "last N days"
+  const lastNDaysMatch = lower.match(/\blast\s+(\d+)\s+days?\b/)
+  if (lastNDaysMatch) {
+    const days = Number.parseInt(lastNDaysMatch[1])
+    if (days > 0 && days <= 365) {
+      const range = getLastNDaysRange(days)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted "last N days" date range', { days, range })
+        return [range]
+      }
+    }
+  }
+
+  // ============================================
+  // PRIORITY 6: Relative period queries ("last N months")
+  // ============================================
+  // "last 3 months", "last 6 months", "last N months"
+  const lastNMonthsMatch = lower.match(/\blast\s+(\d+)\s+months?\b/)
+  if (lastNMonthsMatch) {
+    const months = Number.parseInt(lastNMonthsMatch[1])
+    if (months > 0 && months <= 24) {
+      const range = getLastNMonthsRange(months)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted "last N months" date range', { months, range })
+        return [range]
+      }
+    }
+  }
+
+  // ============================================
+  // PRIORITY 7: Month name queries
+  // ============================================
+  // "January 2025", "Jan 2025", "for January", "in January 2025"
+  const monthYearMatch = lower.match(
+    /\b(?:for|in|during)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(\d{4}))?\b/
+  )
+  if (monthYearMatch) {
+    const monthStr = monthYearMatch[1]
+    const yearStr = monthYearMatch[2]
+    const year = yearStr ? Number.parseInt(yearStr) : new Date().getFullYear()
+    const month = Number.parseInt(MONTH_MAP[monthStr] || '1')
+
+    if (month >= 1 && month <= 12 && year >= 2000 && year <= new Date().getFullYear()) {
+      const range = getMonthRange(month, year)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted month name date range', { month: monthStr, year, range })
+        return [range]
+      }
+    }
+  }
+
+  // Also match "January 2025" without "for/in/during" prefix
+  const monthYearDirectMatch = lower.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/
+  )
+  if (monthYearDirectMatch) {
+    const monthStr = monthYearDirectMatch[1]
+    const year = Number.parseInt(monthYearDirectMatch[2])
+    const month = Number.parseInt(MONTH_MAP[monthStr] || '1')
+
+    if (month >= 1 && month <= 12 && year >= 2000 && year <= new Date().getFullYear()) {
+      const range = getMonthRange(month, year)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted month name date range (direct)', { month: monthStr, year, range })
+        return [range]
+      }
+    }
+  }
+
+  // ============================================
+  // PRIORITY 8: Quarter queries
+  // ============================================
+  // "Q1 2025", "Q2 2025", "first quarter 2025", "Q1 of 2025"
+  const quarterMatch = lower.match(
+    /\b(?:q|quarter)\s*(\d)\s+(?:of\s+)?(\d{4})\b|\b(first|second|third|fourth)\s+quarter(?:\s+of)?\s+(\d{4})\b/
+  )
+  if (quarterMatch) {
+    let quarter: number
+    let year: number
+
+    if (quarterMatch[1] && quarterMatch[2]) {
+      // "Q1 2025" format
+      quarter = Number.parseInt(quarterMatch[1])
+      year = Number.parseInt(quarterMatch[2])
+    } else if (quarterMatch[3] && quarterMatch[4]) {
+      // "first quarter 2025" format
+      const quarterNames: Record<string, number> = {
+        first: 1,
+        second: 2,
+        third: 3,
+        fourth: 4,
+      }
+      quarter = quarterNames[quarterMatch[3].toLowerCase()]
+      year = Number.parseInt(quarterMatch[4])
+    } else {
+      quarter = 0
+      year = 0
+    }
+
+    if (quarter >= 1 && quarter <= 4 && year >= 2000 && year <= new Date().getFullYear()) {
+      const range = getQuarterRange(quarter, year)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted quarter date range', { quarter, year, range })
+        return [range]
+      }
+    }
+  }
+
+  // ============================================
+  // PRIORITY 9: Year-only queries
+  // ============================================
+  // "2025", "for 2025", "in 2025", "during 2025"
+  // Match "for/in/during 2025" first (more specific)
+  const yearWithPrefixMatch = lower.match(/\b(?:for|in|during)\s+(20\d{2}|19\d{2})\b/)
+  if (yearWithPrefixMatch) {
+    const year = Number.parseInt(yearWithPrefixMatch[1])
+    if (year >= 2000 && year <= new Date().getFullYear()) {
+      const range = getYearRange(year)
+      if (isValidDateRange(range)) {
+        logger.info('Extracted year-only date range (with prefix)', { year, range })
+        return [range]
+      }
+    }
+  }
+
+  // Match standalone year (only if no other date patterns matched)
+  // This is less specific, so we check it last and only if no ranges found
+  if (dateRanges.length === 0) {
+    const standaloneYearMatch = lower.match(/\b(20\d{2}|19\d{2})\b/)
+    if (standaloneYearMatch) {
+      const year = Number.parseInt(standaloneYearMatch[1])
+      // Only match if it's clearly a year (not part of a date range or other number)
+      const context = lower.substring(
+        Math.max(0, standaloneYearMatch.index! - 10),
+        Math.min(lower.length, standaloneYearMatch.index! + standaloneYearMatch[0].length + 10)
+      )
+      // Don't match if it's part of a date (e.g., "2025-01-01" or "01/01/2025")
+      if (!context.match(/\d{1,2}[-\/]\d{1,2}[-\/]|\d{4}[-\/]/)) {
+        if (year >= 2000 && year <= new Date().getFullYear()) {
+          const range = getYearRange(year)
+          if (isValidDateRange(range)) {
+            logger.info('Extracted year-only date range (standalone)', { year, range })
+            return [range]
+          }
+        }
+      }
+    }
   }
 
   // First, try to match numeric format with "and then": "10/8/2025 to 10/14/2025 and then 10/15/2025 to 10/21/2025"
@@ -246,53 +458,38 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
   if (fullMatch) {
     // Extract month from the beginning
     const monthStr = fullMatch[0].match(/^[A-Za-z]+/)?.[0] || ''
-    const monthMap: Record<string, string> = {
-      jan: '01',
-      january: '01',
-      feb: '02',
-      february: '02',
-      mar: '03',
-      march: '03',
-      apr: '04',
-      april: '04',
-      may: '05',
-      jun: '06',
-      june: '06',
-      jul: '07',
-      july: '07',
-      aug: '08',
-      august: '08',
-      sep: '09',
-      sept: '09',
-      september: '09',
-      oct: '10',
-      october: '10',
-      nov: '11',
-      november: '11',
-      dec: '12',
-      december: '12',
-    }
-    const month = monthMap[monthStr.toLowerCase()] || '09'
+    const month = MONTH_MAP[monthStr.toLowerCase()] || '09'
 
     // First range
     const start1 = fullMatch[1].padStart(2, '0')
     const end1 = fullMatch[2].padStart(2, '0')
     const year1 = fullMatch[3]
-    dateRanges.push({
+    const range1: DateRange = {
       start: `${year1}-${month}-${start1}`,
       end: `${year1}-${month}-${end1}`,
-    })
+    }
 
     // Second range (same month)
     const start2 = fullMatch[4].padStart(2, '0')
     const end2 = fullMatch[5].padStart(2, '0')
     const year2 = fullMatch[6]
-    dateRanges.push({
+    const range2: DateRange = {
       start: `${year2}-${month}-${start2}`,
       end: `${year2}-${month}-${end2}`,
-    })
+    }
 
-    return dateRanges
+    // Validate both ranges
+    if (isValidDateRange(range1) && isValidDateRange(range2)) {
+      logger.info('Extracted month name date ranges with "and then"', {
+        range1,
+        range2,
+      })
+      return [range1, range2]
+    }
+    logger.warn('Invalid date ranges in comparison query, skipping', {
+      range1,
+      range2,
+    })
   }
 
   // Fallback to individual patterns
@@ -329,33 +526,7 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
         } else {
           // Month name format: "Sept 8 to 14 2025"
           const monthStr = match[0].match(/^[A-Za-z]+/)?.[0] || ''
-          const monthMap: Record<string, string> = {
-            jan: '01',
-            january: '01',
-            feb: '02',
-            february: '02',
-            mar: '03',
-            march: '03',
-            apr: '04',
-            april: '04',
-            may: '05',
-            jun: '06',
-            june: '06',
-            jul: '07',
-            july: '07',
-            aug: '08',
-            august: '08',
-            sep: '09',
-            sept: '09',
-            september: '09',
-            oct: '10',
-            october: '10',
-            nov: '11',
-            november: '11',
-            dec: '12',
-            december: '12',
-          }
-          const month = monthMap[monthStr.toLowerCase()] || '01'
+          const month = MONTH_MAP[monthStr.toLowerCase()] || '01'
           const day1 = match[1].padStart(2, '0')
           const day2 = match[2].padStart(2, '0')
           const year = match[3]
@@ -363,14 +534,32 @@ function extractDateRanges(input: string): Array<{ start: string; end: string }>
           endDate = `${year}-${month}-${day2}`
         }
 
-        dateRanges.push({ start: startDate, end: endDate })
+        const range: DateRange = { start: startDate, end: endDate }
+        if (isValidDateRange(range)) {
+          dateRanges.push(range)
+        } else {
+          logger.warn('Invalid date range extracted, skipping', {
+            match: match[0],
+            range,
+          })
+        }
       } catch (e) {
         logger.warn('Failed to parse date range', { match: match[0], error: e })
       }
     }
   }
 
-  return dateRanges
+  // Validate all extracted ranges before returning
+  const validRanges = dateRanges.filter(isValidDateRange)
+  if (validRanges.length > 0) {
+    logger.info('Extracted explicit date ranges', {
+      count: validRanges.length,
+      ranges: validRanges,
+    })
+    return validRanges
+  }
+
+  return []
 }
 
 async function generateGAQLWithAI(userInput: string): Promise<{
@@ -486,8 +675,8 @@ async function generateGAQLWithAI(userInput: string): Promise<{
       periodType: parsed.periodType || 'last_30_days',
       startDate:
         parsed.startDate ||
-        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      endDate: parsed.endDate || new Date().toISOString().split('T')[0],
+        formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+      endDate: parsed.endDate || formatDate(new Date()),
       isComparison: parsed.isComparison || false,
       comparisonQuery: parsed.comparisonQuery,
       comparisonStartDate: parsed.comparisonStartDate,
@@ -606,8 +795,8 @@ function calculateDynamicDates(periodType: string): { startDate: string; endDate
   }
 
   return {
-    startDate: startDate.toISOString().split('T')[0],
-    endDate: endDate.toISOString().split('T')[0],
+    startDate: formatDate(startDate),
+    endDate: formatDate(endDate),
   }
 }
 
