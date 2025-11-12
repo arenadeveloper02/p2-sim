@@ -290,6 +290,8 @@ const extensionsFragment: FragmentBuilder = () => `
 - Use CAMPAIGN-LEVEL query to capture account and inherited extensions.
 - Important fields: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status.
 - Filter: campaign.status != 'REMOVED', asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET'), campaign_asset.status = 'ENABLED'.
+- **CRITICAL**: Use campaign.advertising_channel_type to filter - SEARCH campaigns use extensions, PERFORMANCE_MAX uses asset groups.
+- To exclude Performance Max campaigns: Add filter campaign.advertising_channel_type != 'PERFORMANCE_MAX'.
 - ORDER BY campaign.name, asset.type.
 - No date segments allowed.
 - Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap).
