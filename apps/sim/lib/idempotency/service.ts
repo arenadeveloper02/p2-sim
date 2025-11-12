@@ -354,13 +354,15 @@ export class IdempotencyService {
       return `${webhookId}:${payloadId}`
     }
 
+    // For generic webhooks without specific IDs, include timestamp to allow multiple executions
+    const timestamp = Date.now()
     const payloadHash = crypto
       .createHash('sha256')
       .update(JSON.stringify(payload))
       .digest('hex')
       .substring(0, 16)
 
-    return `${webhookId}:${payloadHash}`
+    return `${webhookId}:${payloadHash}:${timestamp}`
   }
 
   /**
