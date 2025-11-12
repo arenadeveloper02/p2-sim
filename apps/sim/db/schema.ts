@@ -931,6 +931,7 @@ export const userKnowledgeBase = pgTable(
       .notNull()
       .default('')
       .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     deletedAt: timestamp('deleted_at').defaultNow(),

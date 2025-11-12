@@ -4,6 +4,7 @@ import type {
   ChunkingConfig,
   CreateKnowledgeBaseData,
   KnowledgeBaseWithCounts,
+  UserKnowledgeBaseAccess,
 } from '@/lib/knowledge/types'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
@@ -11,6 +12,70 @@ import { db } from '@/db'
 import { document, knowledgeBase, permissions, userKnowledgeBase } from '@/db/schema'
 
 const logger = createLogger('KnowledgeBaseService')
+
+/**
+ * Get knowledge bases that user has direct access to via user_knowledge_base table only
+ * Returns minimal data with default values for missing fields
+ */
+export async function getUserKnowledgeBaseAccess(
+  userId: string,
+  workspaceId: string | null,
+  requestId: string
+): Promise<UserKnowledgeBaseAccess[]> {
+  const results = await db
+    .select({
+      id: userKnowledgeBase.knowledgeBaseIdRef,
+      name: userKnowledgeBase.knowledgeBaseNameRef,
+      userIdRef: userKnowledgeBase.userIdRef,
+      userWorkspaceIdRef: userKnowledgeBase.userWorkspaceIdRef,
+      kbWorkspaceIdRef: userKnowledgeBase.kbWorkspaceIdRef,
+      createdAt: userKnowledgeBase.createdAt,
+      updatedAt: userKnowledgeBase.updatedAt,
+      docCount: count(document.id),
+    })
+    .from(userKnowledgeBase)
+    .leftJoin(
+      document,
+      and(
+        eq(document.knowledgeBaseId, userKnowledgeBase.knowledgeBaseIdRef),
+        isNull(document.deletedAt)
+      )
+    )
+    .where(
+      and(
+        isNull(userKnowledgeBase.deletedAt),
+        workspaceId
+          ? or(
+              eq(userKnowledgeBase.userIdRef, userId),
+              eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
+            )
+          : eq(userKnowledgeBase.userIdRef, userId)
+      )
+    )
+    .groupBy(
+      userKnowledgeBase.id,
+      userKnowledgeBase.knowledgeBaseIdRef,
+      userKnowledgeBase.knowledgeBaseNameRef,
+      userKnowledgeBase.userIdRef,
+      userKnowledgeBase.userWorkspaceIdRef,
+      userKnowledgeBase.kbWorkspaceIdRef,
+      userKnowledgeBase.createdAt,
+      userKnowledgeBase.updatedAt
+    )
+    .orderBy(userKnowledgeBase.createdAt)
+
+  logger.info(
+    `[${requestId}] Retrieved ${results.length} knowledge base access entries for user ${userId}`
+  )
+
+  // Return simplified user knowledge base access data
+  return results.map((row) => ({
+    id: row.id,
+    name: row.name,
+    workspaceId: row.kbWorkspaceIdRef || null,
+    docCount: Number(row.docCount),
+  }))
+}
 
 /**
  * Get knowledge bases that a user can access
@@ -143,6 +208,7 @@ export async function createKnowledgeBase(
     userWorkspaceIdRef: data.workspaceId ?? '',
     knowledgeBaseIdRef: kbId,
     kbWorkspaceIdRef: data.workspaceId ?? '',
+    knowledgeBaseNameRef: data.name,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,

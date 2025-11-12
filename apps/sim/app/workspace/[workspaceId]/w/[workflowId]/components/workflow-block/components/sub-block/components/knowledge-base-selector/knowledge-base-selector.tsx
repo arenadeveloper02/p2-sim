@@ -16,7 +16,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
-import { type KnowledgeBaseData, useKnowledgeStore } from '@/stores/knowledge/store'
+import { useKnowledgeStore } from '@/stores/knowledge/store'
+import type { UserKnowledgeBaseAccess } from '@/lib/knowledge/types'
 
 interface KnowledgeBaseSelectorProps {
   blockId: string
@@ -40,7 +41,7 @@ export function KnowledgeBaseSelector({
 
   const { loadingKnowledgeBasesList } = useKnowledgeStore()
 
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseData[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<UserKnowledgeBaseAccess[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -78,7 +79,9 @@ export function KnowledgeBaseSelector({
     setError(null)
 
     try {
-      const url = workspaceId ? `/api/knowledge?workspaceId=${workspaceId}` : '/api/knowledge'
+      const url = workspaceId
+        ? `/api/knowledge/user-access?workspaceId=${workspaceId}`
+        : '/api/knowledge/user-access'
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +125,7 @@ export function KnowledgeBaseSelector({
   }
 
   // Handle single knowledge base selection (for backward compatibility)
-  const handleSelectSingleKnowledgeBase = (knowledgeBase: KnowledgeBaseData) => {
+  const handleSelectSingleKnowledgeBase = (knowledgeBase: UserKnowledgeBaseAccess) => {
     if (isPreview) return
 
     // Use the hook's setter which handles collaborative updates
@@ -133,11 +136,11 @@ export function KnowledgeBaseSelector({
   }
 
   // Handle multi-select knowledge base selection
-  const handleToggleKnowledgeBase = (knowledgeBase: KnowledgeBaseData) => {
+  const handleToggleKnowledgeBase = (knowledgeBase: UserKnowledgeBaseAccess) => {
     if (isPreview) return
 
     const isCurrentlySelected = selectedKnowledgeBases.some((kb) => kb.id === knowledgeBase.id)
-    let newSelected: KnowledgeBaseData[]
+    let newSelected: UserKnowledgeBaseAccess[]
 
     if (isCurrentlySelected) {
       // Remove from selection
@@ -192,16 +195,12 @@ export function KnowledgeBaseSelector({
     isPreview,
   ])
 
-  const formatKnowledgeBaseName = (knowledgeBase: KnowledgeBaseData) => {
+  const formatKnowledgeBaseName = (knowledgeBase: UserKnowledgeBaseAccess) => {
     return knowledgeBase.name
   }
 
-  const getKnowledgeBaseDescription = (knowledgeBase: KnowledgeBaseData) => {
-    const docCount = (knowledgeBase as any).docCount
-    if (docCount !== undefined) {
-      return `${docCount} document${docCount !== 1 ? 's' : ''}`
-    }
-    return knowledgeBase.description || 'No description'
+  const getKnowledgeBaseDescription = (knowledgeBase: UserKnowledgeBaseAccess) => {
+    return `${knowledgeBase.docCount} document${knowledgeBase.docCount !== 1 ? 's' : ''}`
   }
 
   const isKnowledgeBaseSelected = (knowledgeBaseId: string) => {
