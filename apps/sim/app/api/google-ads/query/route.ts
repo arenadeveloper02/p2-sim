@@ -166,7 +166,20 @@ async function generateSmartGAQL(
     }
   } catch (error) {
     logger.error('AI GAQL generation failed', { error, userQuestion, accountName })
-    throw new Error(`Failed to generate GAQL query: ${error}`)
+    
+    // Preserve user-friendly error messages (date extraction, token limits)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const isUserFriendlyError = 
+      errorMessage.includes('Unable to extract a date range') ||
+      errorMessage.includes('date range in your query is too large')
+    
+    if (isUserFriendlyError) {
+      // Re-throw the original helpful error message
+      throw error
+    }
+    
+    // For other errors, wrap with generic message
+    throw new Error(`Failed to generate GAQL query: ${errorMessage}`)
   }
 }
 
@@ -583,6 +596,22 @@ async function generateGAQLWithAI(userInput: string): Promise<{
     dateRanges,
   })
 
+  // Check if date extraction failed - provide helpful error message
+  if (dateRanges.length === 0) {
+    const errorMessage = `Unable to extract a date range from your query: "${userInput}"
+
+Please try one of these formats:
+• Relative periods: "today", "yesterday", "this week", "last week", "this month", "last month"
+• Specific periods: "last 7 days", "last 30 days", "last 3 months"
+• Date ranges: "January 2025", "Q1 2025", "2025-01-01 to 2025-01-31"
+• Explicit dates: "9/1/2025 to 9/30/2025" or "Sept 1 to 30 2025"
+
+Please re-run the agent with a clearer date specification.`
+    
+    logger.warn('Date extraction failed', { userInput, errorMessage })
+    throw new Error(errorMessage)
+  }
+
   // Step 2: Detect query intents and comparison context
   const { intents, promptContext } = detectIntents(userInput, dateRanges)
   
@@ -683,8 +712,43 @@ async function generateGAQLWithAI(userInput: string): Promise<{
       comparisonEndDate: parsed.comparisonEndDate,
     }
   } catch (error) {
-    logger.error('AI query parsing failed, using manual fallback', { error })
-    throw error // Let the calling function handle the fallback
+    logger.error('AI query parsing failed', { error })
+    
+    // Check for token limit errors
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorLower = errorMessage.toLowerCase()
+    
+    // Common token limit error patterns across providers
+    const isTokenLimitError =
+      errorLower.includes('token') && (errorLower.includes('limit') || errorLower.includes('exceeded')) ||
+      errorLower.includes('context length') ||
+      errorLower.includes('maximum context') ||
+      errorLower.includes('too many tokens') ||
+      errorLower.includes('input too long') ||
+      errorMessage.includes('429') || // Rate limit (often related to token limits)
+      errorMessage.includes('400') && errorLower.includes('token')
+    
+    if (isTokenLimitError) {
+      const helpfulMessage = `The date range in your query is too large, causing the AI model to exceed token limits.
+
+**Suggestions to fix this:**
+• Reduce the date range: Try "last 30 days" instead of "last 90 days"
+• Use shorter periods: "this month" instead of "last 6 months"
+• Split large queries: Ask for specific months separately (e.g., "January 2025" then "February 2025")
+• Avoid year-long queries: Instead of "2025", try "Q1 2025" or "last 3 months"
+
+Please re-run the agent with a smaller date range.`
+      
+      logger.error('Token limit error detected', { 
+        originalError: errorMessage,
+        userInput,
+        helpfulMessage 
+      })
+      throw new Error(helpfulMessage)
+    }
+    
+    // For other AI errors, throw the original error
+    throw error
   }
 }
 
@@ -1452,15 +1516,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response)
   } catch (error) {
     const executionTime = Date.now() - startTime
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    
     logger.error(`[${requestId}] Google Ads query failed`, {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
       executionTime,
     })
 
+    // Check if this is a date extraction error (already has helpful message)
+    const isDateExtractionError = errorMessage.includes('Unable to extract a date range')
+    
+    // Check if this is a token limit error (already has helpful message)
+    const isTokenLimitError = errorMessage.includes('date range in your query is too large')
+    
+    // If it's a user-friendly error (date extraction or token limit), return it as-is
+    if (isDateExtractionError || isTokenLimitError) {
+      return NextResponse.json(
+        {
+          error: errorMessage,
+          details: isDateExtractionError 
+            ? 'Date extraction failed - please provide a clearer date specification'
+            : 'Token limit exceeded - please use a smaller date range',
+          suggestion: 'Please re-run the agent with the suggested changes.',
+        },
+        { status: 400 } // 400 Bad Request for user input issues
+      )
+    }
+
+    // For other errors, return generic error message
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: errorMessage,
         details: 'Failed to process Google Ads query',
+        suggestion: 'Please check your query and try again. If the issue persists, try using a smaller date range or rephrasing your question.',
       },
       { status: 500 }
     )
