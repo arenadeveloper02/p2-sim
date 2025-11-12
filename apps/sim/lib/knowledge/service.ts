@@ -111,13 +111,6 @@ export async function getKnowledgeBases(
         eq(permissions.userId, userId)
       )
     )
-    .leftJoin(
-      userKnowledgeBase,
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBase.id),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
     .where(
       and(
         isNull(knowledgeBase.deletedAt),
@@ -127,22 +120,14 @@ export async function getKnowledgeBases(
               // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
               and(eq(knowledgeBase.workspaceId, workspaceId), isNotNull(permissions.userId)),
               // Fallback: User-owned knowledge bases without workspace (legacy)
-              and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId)),
-              // Knowledge bases accessible through user_knowledge_base by user
-              eq(userKnowledgeBase.userIdRef, userId),
-              // Knowledge bases accessible through user_knowledge_base by workspace
-              eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
+              and(eq(knowledgeBase.userId, userId), isNull(knowledgeBase.workspaceId))
             )
           : // When not filtering by workspace, use original logic
             or(
               // User owns the knowledge base directly
               eq(knowledgeBase.userId, userId),
               // User has permissions on the knowledge base's workspace
-              isNotNull(permissions.userId),
-              // Knowledge bases accessible through user_knowledge_base by user
-              eq(userKnowledgeBase.userIdRef, userId),
-              // Knowledge bases accessible through user_knowledge_base by workspace (if user has workspace permissions)
-              and(isNotNull(userKnowledgeBase.userWorkspaceIdRef), isNotNull(permissions.userId))
+              isNotNull(permissions.userId)
             )
       )
     )
