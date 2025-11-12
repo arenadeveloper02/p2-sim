@@ -187,6 +187,10 @@ SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_cri
 **Asset Group Analysis / Add Extentions :**
 SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
 
+**RSA Ad Analysis with Ad Strength:**
+SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status != 'REMOVED' AND segments.date DURING LAST_30_DAYS ORDER BY campaign.name, ad_group.name
+Note: Count headlines array length as "X/15", descriptions array length as "X/4". ad_strength values: EXCELLENT, GOOD, AVERAGE, POOR, PENDING
+
 
 **Brand vs Non-Brand vs PMAX:**
 - Search: campaign.advertising_channel_type = 'SEARCH'
@@ -282,12 +286,22 @@ Example JSON structure:
 const rsaFragment: FragmentBuilder = () => `
 **RSA AD GROUP ANALYSIS:**
 - Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
+- Use ad_group_ad resource (NOT ad_group_criterion) for RSA ads.
 - ALWAYS include performance metrics: impressions, clicks, cost_micros, conversions, ctr.
 - Include ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad_strength.
 - Filter: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD', ad_group_ad.status = 'ENABLED', campaign.status != 'REMOVED', segments.date DURING LAST_30_DAYS.
 - ORDER BY campaign.name, ad_group.name.
 - Count RSA headlines/descriptions: headline count formatted "X/15", description count formatted "X/4". Do NOT output raw arrays.
 - Aggregate spend by ad_group.id (sum metrics.cost_micros) to show total ad-group spend.
+
+**CRITICAL - QUALITY SCORE vs AD STRENGTH:**
+- ❌ WRONG: You CANNOT query quality_score with RSA ads - they are incompatible resources
+- Quality Score (ad_group_criterion.quality_info.quality_score) is for KEYWORDS in keyword_view resource
+- Ad Strength (ad_group_ad.ad_strength) is for RSA ADS in ad_group_ad resource
+- If user asks for "RSA with quality scores", return TWO SEPARATE queries:
+  1. RSA query from ad_group_ad (with ad_strength)
+  2. Keyword quality score query from keyword_view (with quality_info.quality_score)
+- NEVER try to SELECT ad_group_criterion fields when using ad_group_ad resource
 `.trim()
 
 const extensionsFragment: FragmentBuilder = () => `
