@@ -476,7 +476,7 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => {
       abortController.abort()
-    }, 10000) // 10 second timeout
+    }, 15000) // 15 second timeout
 
     try {
       set({ loadingKnowledgeBasesList: true })
