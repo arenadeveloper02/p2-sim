@@ -61,19 +61,20 @@ export async function POST(request: NextRequest) {
     // Step 3: Build context
     const context = buildContext(dateRanges)
 
-    // Step 4: Generate GA4 query using AI
-    const ga4Query = await generateGA4Query(query, intent, context)
+    // Step 4: Generate GA4 query using AI (without date validation)
+    const ga4Query = await generateGA4Query(query, intent, context, false)
 
-    // Add property ID and date ranges to query
+    // Override date ranges with extracted dates (AI might generate incorrect format)
     ga4Query.dateRanges = dateRanges.map((range) => ({
       startDate: range.start,
       endDate: range.end,
     }))
 
-    logger.info(`[${requestId}] GA4 query generated`, {
+    logger.info(`[${requestId}] GA4 query generated with date ranges`, {
       dimensions: ga4Query.dimensions?.length || 0,
       metrics: ga4Query.metrics?.length || 0,
       dateRanges: ga4Query.dateRanges.length,
+      dates: ga4Query.dateRanges,
     })
 
     // Step 5: Execute query against GA4 API
