@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { document, embedding, knowledgeBase, userKnowledgeBase } from '@/db/schema'
+import { document, embedding, knowledgeBase } from '@/db/schema'
 
 export interface KnowledgeBaseData {
   id: string
@@ -149,47 +149,6 @@ export async function checkKnowledgeBaseAccess(
     }
   }
 
-  // Case 3: User has direct access through user_knowledge_base table
-  const directAccessEntry = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        eq(userKnowledgeBase.userIdRef, userId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-    .limit(1)
-
-  if (directAccessEntry.length > 0) {
-    return { hasAccess: true, knowledgeBase: kbData }
-  }
-
-  // Case 4: User has workspace-based access through user_knowledge_base table
-  const workspaceAccessEntry = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-
-  for (const access of workspaceAccessEntry) {
-    if (access.userWorkspaceIdRef) {
-      const userPermission = await getUserEntityPermissions(
-        userId,
-        'workspace',
-        access.userWorkspaceIdRef
-      )
-      if (userPermission !== null) {
-        return { hasAccess: true, knowledgeBase: kbData }
-      }
-    }
-  }
-
   return { hasAccess: false }
 }
 
@@ -197,8 +156,7 @@ export async function checkKnowledgeBaseAccess(
  * Check if a user has write access to a knowledge base
  * Write access is granted if:
  * 1. User owns the knowledge base directly, OR
- * 2. User has write or admin permissions on the knowledge base's workspace, OR
- * 3. User has access through knowledge_base_access table (with write/admin workspace permissions)
+ * 2. User has write or admin permissions on the knowledge base's workspace
  */
 export async function checkKnowledgeBaseWriteAccess(
   knowledgeBaseId: string,
@@ -230,47 +188,6 @@ export async function checkKnowledgeBaseWriteAccess(
     const userPermission = await getUserEntityPermissions(userId, 'workspace', kbData.workspaceId)
     if (userPermission === 'write' || userPermission === 'admin') {
       return { hasAccess: true, knowledgeBase: kbData }
-    }
-  }
-
-  // Case 3: User has direct access through user_knowledge_base table
-  const directAccessEntry = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        eq(userKnowledgeBase.userIdRef, userId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-    .limit(1)
-
-  if (directAccessEntry.length > 0) {
-    return { hasAccess: true, knowledgeBase: kbData }
-  }
-
-  // Case 4: User has workspace-based access through user_knowledge_base table
-  const workspaceAccessEntry = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-
-  for (const access of workspaceAccessEntry) {
-    if (access.userWorkspaceIdRef) {
-      const userPermission = await getUserEntityPermissions(
-        userId,
-        'workspace',
-        access.userWorkspaceIdRef
-      )
-      if (userPermission === 'write' || userPermission === 'admin') {
-        return { hasAccess: true, knowledgeBase: kbData }
-      }
     }
   }
 

@@ -15,6 +15,7 @@ const logger = createLogger('KnowledgeBaseService')
 
 /**
  * Get knowledge bases that user has direct access to via user_knowledge_base table only
+ * Filters by userId AND workspaceId (both must match)
  * Returns minimal data with default values for missing fields
  */
 export async function getUserKnowledgeBaseAccess(
@@ -44,12 +45,8 @@ export async function getUserKnowledgeBaseAccess(
     .where(
       and(
         isNull(userKnowledgeBase.deletedAt),
-        workspaceId
-          ? or(
-              eq(userKnowledgeBase.userIdRef, userId),
-              eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
-            )
-          : eq(userKnowledgeBase.userIdRef, userId)
+        eq(userKnowledgeBase.userIdRef, userId),
+        workspaceId ? eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId) : undefined
       )
     )
     .groupBy(
