@@ -288,11 +288,23 @@ const rsaFragment: FragmentBuilder = () => `
 - Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
 - Use ad_group_ad resource (NOT ad_group_criterion) for RSA ads.
 - ALWAYS include performance metrics: impressions, clicks, cost_micros, conversions, ctr.
-- Include ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad_strength.
+- **MANDATORY SELECT FIELDS**: ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions
 - Filter: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD', ad_group_ad.status = 'ENABLED', campaign.status != 'REMOVED', segments.date DURING LAST_30_DAYS.
 - ORDER BY campaign.name, ad_group.name.
-- Count RSA headlines/descriptions: headline count formatted "X/15", description count formatted "X/4". Do NOT output raw arrays.
-- Aggregate spend by ad_group.id (sum metrics.cost_micros) to show total ad-group spend.
+
+**CRITICAL - HEADLINE/DESCRIPTION COUNTING:**
+- ✅ ALWAYS include ad_group_ad.ad.responsive_search_ad.headlines in SELECT
+- ✅ ALWAYS include ad_group_ad.ad.responsive_search_ad.descriptions in SELECT
+- These fields return ARRAYS - you MUST count the array length
+- Display headline count as "X/15" (e.g., "12/15" if 12 headlines)
+- Display description count as "X/4" (e.g., "3/4" if 3 descriptions)
+- ❌ NEVER display "N/A" for headline/description counts
+- ❌ NEVER omit these fields from the SELECT clause
+
+**CRITICAL - SPEND AGGREGATION:**
+- Individual ads may show $0.00 spend if they have no impressions
+- You MUST aggregate spend by ad_group.id (sum metrics.cost_micros)
+- Display the total ad group spend in your table, not individual ad spend
 
 **CRITICAL - QUALITY SCORE vs AD STRENGTH:**
 - ❌ WRONG: You CANNOT query quality_score with RSA ads - they are incompatible resources
