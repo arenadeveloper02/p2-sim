@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
     // Step 3: Build context
     const context = buildContext(dateRanges)
 
-    // Step 4: Generate GA4 query using AI (without date validation)
-    const ga4Query = await generateGA4Query(query, intent, context, false)
+    // Step 4: Generate GA4 query using AI (skip date validation, we'll add dates after)
+    const ga4Query = await generateGA4Query(query, intent, context, true)
 
     // Override date ranges with extracted dates (AI might generate incorrect format)
     ga4Query.dateRanges = dateRanges.map((range) => ({
