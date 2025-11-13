@@ -934,7 +934,7 @@ export const userKnowledgeBase = pgTable(
     knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at').defaultNow(),
+    deletedAt: timestamp('deleted_at'),
   },
   (table) => ({
     // Access patterns for finding knowledge bases by user or workspace
