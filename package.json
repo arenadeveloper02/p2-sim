@@ -37,6 +37,7 @@
     "@vercel/analytics": "1.5.0",
     "bcryptjs": "3.0.2",
     "geist": "^1.4.2",
+    "googleapis": "166.0.0",
     "mongodb": "6.19.0",
     "react-colorful": "5.6.1",
     "remark-gfm": "4.0.1",
