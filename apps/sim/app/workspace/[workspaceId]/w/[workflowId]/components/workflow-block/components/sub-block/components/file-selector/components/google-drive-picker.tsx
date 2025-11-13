@@ -209,19 +209,6 @@ export function GoogleDrivePicker({
   // Fetch the selected file metadata once credentials are loaded or changed
   useEffect(() => {
     // Only fetch if we have both a file ID and credentials, credentials are loaded, but no file info yet
-    console.log(
-      'fetching file by id ' +
-        '\nvalue: ' +
-        value +
-        '\nselectedCredentialId: ' +
-        selectedCredentialId +
-        '\ncredentialsLoaded: ' +
-        credentialsLoaded +
-        '\nselectedFile: ' +
-        selectedFile +
-        '\nisLoadingSelectedFile: ' +
-        isLoadingSelectedFile
-    )
     if (
       value &&
       selectedCredentialId &&
