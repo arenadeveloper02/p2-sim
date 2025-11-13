@@ -1,6 +1,6 @@
 import { createLogger } from '@/lib/logs/console/logger'
-import type { Campaign, ProcessedResults } from './types'
 import { MICROS_PER_DOLLAR } from './constants'
+import type { Campaign, ProcessedResults } from './types'
 
 const logger = createLogger('ResultProcessing')
 
@@ -95,7 +95,9 @@ export function processGoogleAdsResults(
         budget_lost_share: Math.round(budgetLostShare * 10000) / 100,
         rank_lost_share: Math.round(rankLostShare * 10000) / 100,
         roas:
-          costMicros > 0 ? Math.round((conversionsValue / (costMicros / MICROS_PER_DOLLAR)) * 100) / 100 : 0,
+          costMicros > 0
+            ? Math.round((conversionsValue / (costMicros / MICROS_PER_DOLLAR)) * 100) / 100
+            : 0,
       }
       campaigns.push(campaignInfo)
     }
@@ -121,4 +123,3 @@ export function processGoogleAdsResults(
     },
   }
 }
-

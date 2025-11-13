@@ -245,7 +245,7 @@ The user requested data for a specific date range. Use these exact dates in your
 DO NOT use DURING THIS_WEEK, DURING LAST_WEEK, or any other predefined range - these dates are already calculated for you.
 `.trim()
   }
-  
+
   if (!context.comparison) {
     return `
 ## COMPARISON QUERIES
@@ -283,7 +283,8 @@ Example JSON structure:
 `.trim()
 }
 
-const rsaFragment: FragmentBuilder = () => `
+const rsaFragment: FragmentBuilder = () =>
+  `
 **RSA AD GROUP ANALYSIS:**
 - Return ALL campaigns and ad groups across the ENTIRE account. Do NOT limit results.
 - Use ad_group_ad resource (NOT ad_group_criterion) for RSA ads.
@@ -316,7 +317,8 @@ const rsaFragment: FragmentBuilder = () => `
 - NEVER try to SELECT ad_group_criterion fields when using ad_group_ad resource
 `.trim()
 
-const extensionsFragment: FragmentBuilder = () => `
+const extensionsFragment: FragmentBuilder = () =>
+  `
 **AD EXTENSIONS GAP ANALYSIS:**
 - Use CAMPAIGN-LEVEL query to capture account and inherited extensions.
 - **CRITICAL - GOOGLE ADS API REQUIREMENT**: You MUST include campaign.advertising_channel_type in the SELECT clause. The API will reject the query without it.
@@ -328,7 +330,8 @@ const extensionsFragment: FragmentBuilder = () => `
 - Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
 `.trim()
 
-const searchTermsFragment: FragmentBuilder = () => `
+const searchTermsFragment: FragmentBuilder = () =>
+  `
 **SEARCH QUERY REPORTS:**
 - Use search_term_view with campaign.id, campaign.name, campaign.status, search_term_view.search_term.
 - Include metrics: metrics.clicks, metrics.cost_micros, metrics.conversions (add others when useful).
@@ -336,7 +339,8 @@ const searchTermsFragment: FragmentBuilder = () => `
 - ORDER results by spend or conversions (cost_micros or conversions) and respect any LIMIT requested by the user.
 `.trim()
 
-const demographicsFragment: FragmentBuilder = () => `
+const demographicsFragment: FragmentBuilder = () =>
+  `
 **DEMOGRAPHIC PERFORMANCE:**
 - Use gender_view or age_range segments when user asks for gender/age breakdowns.
 - Required: segments.date DURING/BETWEEN requested range.
@@ -344,14 +348,16 @@ const demographicsFragment: FragmentBuilder = () => `
 - Remember demographic views require campaign.status in SELECT.
 `.trim()
 
-const geographicFragment: FragmentBuilder = () => `
+const geographicFragment: FragmentBuilder = () =>
+  `
 **GEOGRAPHIC PERFORMANCE:**
 - Use geographic_view for location performance metrics.
 - Include campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id (or requested geo field), geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros.
 - Filter on segments.date DURING/BETWEEN requested range and campaign.status != 'REMOVED'.
 `.trim()
 
-const locationTargetingFragment: FragmentBuilder = () => `
+const locationTargetingFragment: FragmentBuilder = () =>
+  `
 **LOCATION TARGETING SETTINGS:**
 - Use campaign_criterion with campaign_criterion.type = 'LOCATION'.
 - Include campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative.
@@ -359,7 +365,8 @@ const locationTargetingFragment: FragmentBuilder = () => `
 - Provide both include/exclude (negative) targeting details as requested.
 `.trim()
 
-const brandVsNonBrandFragment: FragmentBuilder = () => `
+const brandVsNonBrandFragment: FragmentBuilder = () =>
+  `
 **BRAND vs NON-BRAND vs PMAX:**
 - Use campaign.advertising_channel_type to distinguish SEARCH vs PERFORMANCE_MAX vs others.
 - Apply campaign.name LIKE filters only when the user explicitly asks for brand naming conventions.
@@ -392,4 +399,3 @@ export function buildSystemPrompt(intents: Intent[], context: PromptContext): st
 
   return sections.filter(Boolean).join('\n\n')
 }
-

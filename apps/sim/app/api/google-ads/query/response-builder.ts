@@ -1,4 +1,4 @@
-import type { AccountResult, ProcessedResults, GaqlQueryResult } from './types'
+import type { AccountResult, GaqlQueryResult, ProcessedResults } from './types'
 
 /**
  * Builds the account result object with totals and calculated metrics
@@ -24,23 +24,30 @@ export function buildAccountResult(
       ctr:
         primaryResults.accountTotals.impressions > 0
           ? Math.round(
-              (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) * 100 * 100
+              (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
+                100 *
+                100
             ) / 100
           : 0,
       avg_cpc:
         primaryResults.accountTotals.clicks > 0
-          ? Math.round((primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100) / 100
+          ? Math.round(
+              (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
+            ) / 100
           : 0,
       conversion_rate:
         primaryResults.accountTotals.clicks > 0
           ? Math.round(
-              (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) * 100 * 100
+              (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
+                100 *
+                100
             ) / 100
           : 0,
       cost_per_conversion:
         primaryResults.accountTotals.conversions > 0
-          ? Math.round((primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100) /
-            100
+          ? Math.round(
+              (primaryResults.accountTotals.cost / primaryResults.accountTotals.conversions) * 100
+            ) / 100
           : 0,
     },
   }
@@ -85,7 +92,8 @@ export function addComparisonToAccountResult(
     cost_per_conversion:
       comparisonResults.accountTotals.conversions > 0
         ? Math.round(
-            (comparisonResults.accountTotals.cost / comparisonResults.accountTotals.conversions) * 100
+            (comparisonResults.accountTotals.cost / comparisonResults.accountTotals.conversions) *
+              100
           ) / 100
         : 0,
   }
@@ -102,8 +110,15 @@ export function buildApiResponse(
   comparisonResults: ProcessedResults | null,
   accountResult: AccountResult
 ) {
-  const { startDate, endDate, isComparison, comparisonStartDate, comparisonEndDate, queryType, periodType } =
-    queryResult
+  const {
+    startDate,
+    endDate,
+    isComparison,
+    comparisonStartDate,
+    comparisonEndDate,
+    queryType,
+    periodType,
+  } = queryResult
 
   return {
     query,
@@ -124,18 +139,23 @@ export function buildApiResponse(
         ctr:
           primaryResults.accountTotals.impressions > 0
             ? Math.round(
-                (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) * 100 * 100
+                (primaryResults.accountTotals.clicks / primaryResults.accountTotals.impressions) *
+                  100 *
+                  100
               ) / 100
             : 0,
         avg_cpc:
           primaryResults.accountTotals.clicks > 0
-            ? Math.round((primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100) /
-              100
+            ? Math.round(
+                (primaryResults.accountTotals.cost / primaryResults.accountTotals.clicks) * 100
+              ) / 100
             : 0,
         conversion_rate:
           primaryResults.accountTotals.clicks > 0
             ? Math.round(
-                (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) * 100 * 100
+                (primaryResults.accountTotals.conversions / primaryResults.accountTotals.clicks) *
+                  100 *
+                  100
               ) / 100
             : 0,
         cost_per_conversion:
@@ -170,7 +190,9 @@ export function buildApiResponse(
             avg_cpc:
               comparisonResults.accountTotals.clicks > 0
                 ? Math.round(
-                    (comparisonResults.accountTotals.cost / comparisonResults.accountTotals.clicks) * 100
+                    (comparisonResults.accountTotals.cost /
+                      comparisonResults.accountTotals.clicks) *
+                      100
                   ) / 100
                 : 0,
             conversion_rate:
@@ -217,9 +239,7 @@ export function buildApiResponse(
           data_available: true,
           latest_data_date: endDate,
           requested_range: `${startDate} to ${endDate}`,
-          comparison_range: isComparison
-            ? `${comparisonStartDate} to ${comparisonEndDate}`
-            : null,
+          comparison_range: isComparison ? `${comparisonStartDate} to ${comparisonEndDate}` : null,
           days_behind: 1,
           message: isComparison
             ? `Data available for both periods: ${startDate} to ${endDate} and ${comparisonStartDate} to ${comparisonEndDate}`
@@ -230,4 +250,3 @@ export function buildApiResponse(
     },
   }
 }
-

@@ -42,11 +42,7 @@ export function isValidDate(dateStr: string): boolean {
   }
   // Check if date matches the input string (catches invalid dates like Feb 30)
   const [year, month, day] = dateStr.split('-').map(Number)
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() + 1 !== month ||
-    date.getDate() !== day
-  ) {
+  if (date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) {
     return false
   }
   // Don't allow future dates (Google Ads data is historical)
@@ -238,4 +234,3 @@ export function getYearRange(year: number): DateRange {
     end: formatDate(end),
   }
 }
-

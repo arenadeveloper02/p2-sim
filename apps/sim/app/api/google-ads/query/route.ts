@@ -2,11 +2,15 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { generateSmartGAQL } from './ai-query-generation'
-import { makeGoogleAdsRequest } from './google-ads-api'
-import { processGoogleAdsResults } from './result-processing'
-import { buildAccountResult, addComparisonToAccountResult, buildApiResponse } from './response-builder'
 import { GOOGLE_ADS_ACCOUNTS } from './constants'
-import type { GoogleAdsRequest, AccountResult } from './types'
+import { makeGoogleAdsRequest } from './google-ads-api'
+import {
+  addComparisonToAccountResult,
+  buildAccountResult,
+  buildApiResponse,
+} from './response-builder'
+import { processGoogleAdsResults } from './result-processing'
+import type { AccountResult, GoogleAdsRequest } from './types'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -87,7 +91,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Process primary period results
-    const primaryResults = processGoogleAdsResults(apiResult, requestId, queryResult.gaqlQuery, 'primary')
+    const primaryResults = processGoogleAdsResults(
+      apiResult,
+      requestId,
+      queryResult.gaqlQuery,
+      'primary'
+    )
     logger.info(`[${requestId}] ===== MAIN WEEK TOTALS =====`, {
       dateRange: `${queryResult.startDate} to ${queryResult.endDate}`,
       cost: primaryResults.accountTotals.cost,

@@ -145,4 +145,3 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     throw error
   }
 }
-

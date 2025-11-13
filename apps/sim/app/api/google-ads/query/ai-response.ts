@@ -118,25 +118,15 @@ function parseJsonResponse(cleanedContent: string, logger: Logger): any {
       }
     }
 
-    throw new Error(
-      `AI response missing GAQL query: ${cleanedContent.substring(0, 200)}...`
-    )
+    throw new Error(`AI response missing GAQL query: ${cleanedContent.substring(0, 200)}...`)
   }
 }
 
 function extractGaqlQuery(parsedResponse: any, logger: Logger): string {
-  let gaqlQuery =
-    parsedResponse?.gaql_query ||
-    parsedResponse?.query ||
-    undefined
+  let gaqlQuery = parsedResponse?.gaql_query || parsedResponse?.query || undefined
 
-  if (
-    !gaqlQuery &&
-    Array.isArray(parsedResponse) &&
-    parsedResponse.length > 0
-  ) {
-    gaqlQuery =
-      parsedResponse[0]?.query || parsedResponse[0]?.gaql_query || undefined
+  if (!gaqlQuery && Array.isArray(parsedResponse) && parsedResponse.length > 0) {
+    gaqlQuery = parsedResponse[0]?.query || parsedResponse[0]?.gaql_query || undefined
     logger.info('AI returned array of queries (multi-level), using first query', {
       totalQueries: parsedResponse.length,
       levels: parsedResponse.map((q: any) => q?.level),
@@ -151,9 +141,7 @@ function extractGaqlQuery(parsedResponse: any, logger: Logger): string {
     parsedResponse.queries.length > 0
   ) {
     gaqlQuery =
-      parsedResponse.queries[0]?.query ||
-      parsedResponse.queries[0]?.gaql_query ||
-      undefined
+      parsedResponse.queries[0]?.query || parsedResponse.queries[0]?.gaql_query || undefined
     logger.info('Using first query from queries array', {
       totalQueries: parsedResponse.queries.length,
       selectedQuery: gaqlQuery,
@@ -228,4 +216,3 @@ function validateGaqlQuery(gaqlQuery: string, logger: Logger): void {
 function fixSegmentsDateInQuery(query: string): string {
   return query.trim()
 }
-

@@ -1,24 +1,24 @@
 import { createLogger } from '@/lib/logs/console/logger'
+import { MAX_DAYS_FOR_LAST_N_DAYS, MAX_MONTHS_FOR_LAST_N_MONTHS } from './constants'
 import {
   type DateRange,
-  MONTH_MAP,
   formatDate,
   getCurrentWeekStart,
-  getLastWeekRange,
-  getToday,
-  getYesterday,
-  getThisMonthRange,
   getLastMonthRange,
   getLastNDaysRange,
   getLastNMonthsRange,
-  getYearToDateRange,
-  getMonthToDateRange,
+  getLastWeekRange,
   getMonthRange,
+  getMonthToDateRange,
   getQuarterRange,
+  getThisMonthRange,
+  getToday,
   getYearRange,
+  getYearToDateRange,
+  getYesterday,
   isValidDateRange,
+  MONTH_MAP,
 } from './date-utils'
-import { MAX_DAYS_FOR_LAST_N_DAYS, MAX_MONTHS_FOR_LAST_N_MONTHS } from './constants'
 
 const logger = createLogger('DateExtraction')
 
@@ -296,7 +296,7 @@ export function extractDateRanges(input: string): Array<DateRange> {
         Math.min(lower.length, standaloneYearMatch.index! + standaloneYearMatch[0].length + 10)
       )
       // Don't match if it's part of a date (e.g., "2025-01-01" or "01/01/2025")
-      if (!context.match(/\d{1,2}[-\/]\d{1,2}[-\/]|\d{4}[-\/]/)) {
+      if (!context.match(/\d{1,2}[-/]\d{1,2}[-/]|\d{4}[-/]/)) {
         if (year >= 2000 && year <= new Date().getFullYear()) {
           const range = getYearRange(year)
           if (isValidDateRange(range)) {
@@ -487,30 +487,27 @@ export function containsDateMentions(input: string): boolean {
   ]
 
   // Check for specific date patterns first (more accurate)
-  if (specificDatePatterns.some(pattern => pattern.test(input))) {
+  if (specificDatePatterns.some((pattern) => pattern.test(input))) {
     return true
   }
 
   // Fallback: Check for standalone date keywords (less specific, but catches edge cases)
-  const dateKeywords = [
-    'today', 'yesterday', 'tomorrow',
-    'ytd', 'mtd',
-  ]
+  const dateKeywords = ['today', 'yesterday', 'tomorrow', 'ytd', 'mtd']
 
   // Only check standalone keywords with word boundaries
-  if (dateKeywords.some(keyword => new RegExp(`\\b${keyword}\\b`).test(lower))) {
+  if (dateKeywords.some((keyword) => new RegExp(`\\b${keyword}\\b`).test(lower))) {
     return true
   }
 
   // Check for date patterns: MM/DD/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc.
   const datePatterns = [
-    /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/, // MM/DD/YYYY or DD-MM-YYYY
-    /\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/, // YYYY-MM-DD
+    /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/, // MM/DD/YYYY or DD-MM-YYYY
+    /\d{4}[-/]\d{1,2}[-/]\d{1,2}/, // YYYY-MM-DD
     /\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i, // 8 Nov or 8th Nov
     /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/i, // Nov 8
   ]
 
-  if (datePatterns.some(pattern => pattern.test(input))) {
+  if (datePatterns.some((pattern) => pattern.test(input))) {
     return true
   }
 
@@ -521,4 +518,3 @@ export function containsDateMentions(input: string): boolean {
 
   return false
 }
-

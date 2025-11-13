@@ -2,11 +2,11 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { executeProviderRequest } from '@/providers'
 import { resolveProvider } from './ai-provider'
 import { parseAiResponse } from './ai-response'
+import { DEFAULT_DATE_RANGE_DAYS } from './constants'
+import { containsDateMentions, extractDateRanges } from './date-extraction'
+import { formatDate, getLastNDaysRange } from './date-utils'
 import { detectIntents } from './intent-detector'
 import { buildSystemPrompt } from './prompt-fragments'
-import { extractDateRanges, containsDateMentions } from './date-extraction'
-import { getLastNDaysRange, formatDate } from './date-utils'
-import { DEFAULT_DATE_RANGE_DAYS } from './constants'
 import type { GaqlQueryResult } from './types'
 
 const logger = createLogger('AIQueryGeneration')
@@ -195,9 +195,7 @@ Please re-run the agent with a clearer date specification.`
       gaqlQuery: parsed.gaqlQuery,
       queryType: parsed.queryType || 'campaigns',
       periodType: parsed.periodType || 'last_30_days',
-      startDate:
-        parsed.startDate ||
-        formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+      startDate: parsed.startDate || formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
       endDate: parsed.endDate || formatDate(new Date()),
       isComparison: parsed.isComparison || false,
       comparisonQuery: parsed.comparisonQuery,
@@ -213,7 +211,8 @@ Please re-run the agent with a clearer date specification.`
 
     // Common token limit error patterns across providers
     const isTokenLimitError =
-      (errorLower.includes('token') && (errorLower.includes('limit') || errorLower.includes('exceeded'))) ||
+      (errorLower.includes('token') &&
+        (errorLower.includes('limit') || errorLower.includes('exceeded'))) ||
       errorLower.includes('context length') ||
       errorLower.includes('maximum context') ||
       errorLower.includes('too many tokens') ||
@@ -244,4 +243,3 @@ Please re-run the agent with a smaller date range.`
     throw error
   }
 }
-

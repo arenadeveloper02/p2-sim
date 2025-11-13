@@ -71,4 +71,3 @@ export interface ProcessedResults {
     conversions_value: number
   }
 }
-

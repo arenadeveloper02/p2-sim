@@ -60,4 +60,3 @@ export function resolveProvider(logger: Logger): ProviderSelection {
   logger.error('No AI provider available', { errors })
   throw new Error('No AI API key available (tried Grok, Claude, and OpenAI)')
 }
-

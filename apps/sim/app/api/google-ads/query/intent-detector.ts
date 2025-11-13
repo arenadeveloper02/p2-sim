@@ -14,7 +14,13 @@ const COMPARISON_KEYWORDS = [
   'and then',
 ] as const
 
-const RSA_KEYWORDS = ['rsa', 'responsive search ad', 'ad strength', 'headlines', 'descriptions'] as const
+const RSA_KEYWORDS = [
+  'rsa',
+  'responsive search ad',
+  'ad strength',
+  'headlines',
+  'descriptions',
+] as const
 
 const EXTENSION_KEYWORDS = [
   'extension',
@@ -28,9 +34,22 @@ const SEARCH_TERMS_KEYWORDS = ['search term', 'search query', 'sqr'] as const
 
 const DEMOGRAPHIC_KEYWORDS = ['gender', 'age range', 'demographic'] as const
 
-const GEOGRAPHIC_KEYWORDS = ['geo', 'geographic', 'country', 'city', 'region', 'state', 'location performance'] as const
+const GEOGRAPHIC_KEYWORDS = [
+  'geo',
+  'geographic',
+  'country',
+  'city',
+  'region',
+  'state',
+  'location performance',
+] as const
 
-const LOCATION_TARGETING_KEYWORDS = ['location targeting', 'targeting settings', 'geo target', 'geo targeting'] as const
+const LOCATION_TARGETING_KEYWORDS = [
+  'location targeting',
+  'targeting settings',
+  'geo target',
+  'geo targeting',
+] as const
 
 const BRAND_KEYWORDS = ['brand vs', 'non-brand', 'non brand', 'pmax', 'brand campaign'] as const
 
@@ -90,4 +109,3 @@ export function detectIntents(userInput: string, dateRanges: DateRange[]): Detec
     promptContext,
   }
 }
-
