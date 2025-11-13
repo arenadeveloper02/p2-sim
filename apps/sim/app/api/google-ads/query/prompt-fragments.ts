@@ -154,8 +154,8 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
 **Campaign Assets / Ad Extensions (NO DATE SEGMENTS):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
-Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement. Include asset.final_urls for broken sitelink detection.
 
 **Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
@@ -185,7 +185,7 @@ SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_crit
 SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
 
 **Asset Group Analysis / Add Extentions :**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
 
 **RSA Ad Analysis with Ad Strength:**
 SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status != 'REMOVED' AND segments.date DURING LAST_30_DAYS ORDER BY campaign.name, ad_group.name
@@ -323,11 +323,99 @@ const extensionsFragment: FragmentBuilder = () =>
 - Use CAMPAIGN-LEVEL query to capture account and inherited extensions.
 - **CRITICAL - GOOGLE ADS API REQUIREMENT**: You MUST include campaign.advertising_channel_type in the SELECT clause. The API will reject the query without it.
 
+**MANDATORY SELECT FIELDS FOR SITELINK ANALYSIS:**
+- campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type
+- campaign_asset.asset, asset.type, campaign_asset.status
+- asset.sitelink_asset.link_text (display text)
+- asset.final_urls (destination URLs - CRITICAL for broken sitelink detection)
+- asset.sitelink_asset.description1, asset.sitelink_asset.description2 (optional but recommended)
+
 **IMPORTANT NOTES:**
 - campaign.advertising_channel_type MUST be in SELECT (4th field after campaign.status)
 - Do NOT add campaign.advertising_channel_type filter in WHERE unless user explicitly asks to exclude Performance Max
 - No date segments allowed (campaign_asset does not support segments.date)
 - Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
+
+**BROKEN SITELINK DETECTION (When user asks to "analyze", "detect broken", or "identify issues"):**
+
+**CRITICAL - TWO-TABLE OUTPUT FORMAT:**
+When analyzing sitelinks for issues, you MUST present data in TWO separate tables:
+
+**TABLE 1 - WORKING SITELINKS:**
+| Campaign | Sitelink Text | Final URL | Status | Health |
+|----------|---------------|-----------|--------|--------|
+| [Name]   | [Text]        | [URL]     | ✅ ENABLED | ✅ HEALTHY |
+
+**TABLE 2 - BROKEN SITELINKS:**
+| Campaign | Sitelink Text | Final URL | Issue Type | Status | Priority | Action Required |
+|----------|---------------|-----------|------------|--------|----------|-----------------|
+| [Name]   | [Text]        | [URL or "MISSING"] | ❌ Missing URL | ENABLED | 🔴 HIGH | Add valid destination URL |
+| [Name]   | [Text]        | [URL]     | ⚠️ Duplicate URL | ENABLED | 🟡 MED | Use unique URL |
+
+**VALIDATION RULES FOR BROKEN SITELINK DETECTION:**
+
+1. **❌ CRITICAL - Missing Final URL:**
+   - Check if asset.final_urls is empty, null, or undefined
+   - Priority: 🔴 HIGH
+   - Action: "Add valid destination URL starting with https://"
+
+2. **❌ CRITICAL - Invalid URL Format:**
+   - URL doesn't start with "http://" or "https://"
+   - URL contains "example.com", "test.com", "placeholder"
+   - Priority: 🔴 HIGH
+   - Action: "Fix URL format - must start with https://"
+
+3. **❌ CRITICAL - Missing Sitelink Text:**
+   - Check if asset.sitelink_asset.link_text is empty or null
+   - Priority: 🔴 HIGH
+   - Action: "Add sitelink display text"
+
+4. **⚠️ WARNING - Duplicate URLs:**
+   - Multiple sitelinks in same campaign pointing to identical final_urls
+   - Priority: 🟡 MEDIUM
+   - Action: "Use unique URLs or remove duplicate sitelinks"
+
+5. **⚠️ WARNING - Disabled Status:**
+   - campaign_asset.status = 'PAUSED' or 'REMOVED'
+   - Priority: 🟡 MEDIUM
+   - Action: "Enable sitelink or remove if not needed"
+
+6. **⚠️ WARNING - Potentially Not Serving:**
+   - Sitelink has valid URL and text but may not be serving due to:
+     * Campaign is paused (campaign.status = 'PAUSED')
+     * Campaign has low budget or is not running
+     * Ad group or campaign targeting issues
+   - Priority: 🟡 MEDIUM
+   - Action: "Check campaign status and targeting settings"
+   - Note: "Campaign asset resource does not support performance metrics. Sitelinks shown as 'working' have valid configuration but may not be actively serving impressions."
+
+**ISSUE TYPE INDICATORS:**
+- ❌ CRITICAL = Missing URL, Invalid Format, Missing Text (prevents serving)
+- ⚠️ WARNING = Duplicate URL, Suspicious Pattern, Disabled Status
+- 🔴 HIGH Priority = Fix immediately (prevents sitelink from serving)
+- 🟡 MEDIUM Priority = Fix this week (may impact performance)
+- ✅ HEALTHY = No issues detected
+
+**ANALYSIS OUTPUT STRUCTURE:**
+1. Executive Summary (total analyzed, broken count, health rate %)
+2. **IMPORTANT DISCLAIMER:** "Note: 'Working Sitelinks' have valid configuration (URL, text, status) but this does NOT guarantee they are actively serving impressions. The campaign_asset resource does not support performance metrics. To verify actual serving status, check campaign status and review impression data separately."
+3. TABLE 1: Working Sitelinks (valid configuration - URL exists, format correct, text present)
+4. TABLE 2: Broken Sitelinks (configuration issues preventing proper setup)
+5. Issue Breakdown by Type (grouped by issue category)
+6. Campaign Health Summary (per-campaign health rate based on configuration, not performance)
+7. Immediate Actions Required (prioritized fix list)
+
+**CRITICAL RULES:**
+- ✅ ALWAYS check asset.final_urls field for every sitelink
+- ✅ ALWAYS separate working vs broken into TWO tables
+- ✅ ALWAYS validate URL format (must start with http:// or https://)
+- ✅ ALWAYS detect duplicates within same campaign
+- ✅ ALWAYS provide specific action required for each broken sitelink
+- ✅ ALWAYS include disclaimer that "working" = valid configuration, not guaranteed serving
+- ✅ ALWAYS check campaign.status and flag paused campaigns in the analysis
+- ❌ NEVER skip validation even if most sitelinks are working
+- ❌ NEVER combine working and broken sitelinks in one table
+- ❌ NEVER claim sitelinks are "serving impressions" - only validate configuration
 `.trim()
 
 const searchTermsFragment: FragmentBuilder = () =>
