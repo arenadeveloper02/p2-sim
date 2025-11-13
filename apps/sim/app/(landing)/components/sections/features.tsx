@@ -16,6 +16,7 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
+import type { ImageProps } from 'next/image'
 import { AgentIcon, ConnectIcon, StartIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { DotPattern } from '@/app/(landing)/components/dot-pattern'
@@ -23,7 +24,11 @@ import { HeroBlock } from '@/app/(landing)/components/hero-block'
 
 // --- Types ---
 type Feature = {
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>> | typeof CodeXml
+  icon:
+    | React.ReactNode
+    | React.ComponentType<React.SVGProps<SVGSVGElement>>
+    | typeof CodeXml
+    | React.ComponentType<Omit<ImageProps, 'src' | 'alt' | 'fill'>>
   color: string
   name: string
   feature: {
@@ -51,7 +56,7 @@ const features: FeaturesArray = [
     feature: {
       icon: (
         <div className='flex h-8 w-8 items-center justify-center rounded'>
-          <AgentIcon className='h-5 w-5 text-[#F3F8FE]' />
+          <AgentIcon />
         </div>
       ),
       title: 'Agents',

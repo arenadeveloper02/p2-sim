@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import type { ChatMessage, ChatStore } from '@/stores/panel/chat/types'
 
 // MAX across all workflows
@@ -15,13 +16,16 @@ export const useChatStore = create<ChatStore>()(
         conversationIds: {},
 
         addMessage: (message) => {
+          console.log('Chat store addMessage received:', message)
           set((state) => {
             const newMessage: ChatMessage = {
               ...message,
               // Preserve provided id and timestamp if they exist; otherwise generate new ones
               id: (message as any).id ?? crypto.randomUUID(),
               timestamp: (message as any).timestamp ?? new Date().toISOString(),
+              executionId: (message as any).executionId,
             }
+            console.log('Chat store creating new message:', newMessage)
 
             // Keep only the last MAX_MESSAGES
             const newMessages = [newMessage, ...state.messages].slice(0, MAX_MESSAGES)
@@ -176,6 +180,37 @@ export const useChatStore = create<ChatStore>()(
           return newId
         },
 
+        lookupExecutionIdForMessage: async (messageId, workflowId) => {
+          try {
+            // Find the message to get its timestamp
+            const message = get().messages.find((m) => m.id === messageId)
+            if (!message) {
+              return null
+            }
+
+            // Call the API endpoint to lookup the executionId
+            const response = await fetch(
+              `/api/chat/execution-id/${messageId}?workflowId=${encodeURIComponent(workflowId)}&timestamp=${encodeURIComponent(message.timestamp)}`
+            )
+
+            if (!response.ok) {
+              console.error('Failed to lookup executionId:', response.status, response.statusText)
+              return null
+            }
+
+            const data = await response.json()
+
+            if (data?.executionId) {
+              return data.executionId
+            }
+
+            return null
+          } catch (error) {
+            console.error('Error looking up executionId for message:', messageId, error)
+            return null
+          }
+        },
+
         appendMessageContent: (messageId, content) => {
           set((state) => {
             const newMessages = state.messages.map((message) => {
@@ -213,6 +248,7 @@ export const useChatStore = create<ChatStore>()(
       }),
       {
         name: 'chat-store',
+        storage: createSafeStorage(),
       }
     )
   )

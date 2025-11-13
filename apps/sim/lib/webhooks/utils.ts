@@ -433,10 +433,13 @@ export function formatWebhookInput(
       // Extract event text with fallbacks for different event types
       let input = ''
 
-      if (event.text) {
+      if (event.text && event.text.trim() !== '') {
         input = event.text
       } else if (event.type === 'app_mention') {
         input = 'App mention received'
+      } else if (event.type === 'message') {
+        // For message events, if text is empty, use a default message
+        input = 'Message received (no text content)'
       } else {
         input = 'Slack event received'
       }

@@ -5,9 +5,10 @@ import { ChatHeader } from '../'
 interface ChatErrorStateProps {
   error: string
   starCount: string
+  workflowId?: string
 }
 
-export function ChatErrorState({ error, starCount }: ChatErrorStateProps) {
+export function ChatErrorState({ error, starCount, workflowId }: ChatErrorStateProps) {
   return (
     <div className='flex min-h-screen items-center justify-center bg-gray-50'>
       <div className='mx-auto max-w-md rounded-xl bg-white p-6 shadow-md'>
@@ -52,7 +53,7 @@ export function ChatErrorState({ error, starCount }: ChatErrorStateProps) {
               <circle cx='25' cy='11' r='2' fill='var(--brand-primary-hex)' />
             </svg>
           </a>
-          <ChatHeader chatConfig={null} starCount={starCount} />
+          <ChatHeader chatConfig={null} starCount={starCount} workflowId={workflowId} />
         </div>
         <h2 className='mb-2 font-bold text-red-500 text-xl'>Error</h2>
         <p className='text-gray-700'>{error}</p>

@@ -1,7 +1,10 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
+import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import {
   addCorsHeaders,
   executeWorkflowForChat,
@@ -11,7 +14,7 @@ import {
 } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, workflow } from '@/db/schema'
+import { chat, deployedChat, workflow } from '@/db/schema'
 
 const logger = createLogger('ChatSubdomainAPI')
 
@@ -30,7 +33,14 @@ export async function POST(
     let parsedBody
     try {
       parsedBody = await request.json()
+      logger.debug(`[${requestId}] Parsed request body:`, {
+        chatId: parsedBody.chatId,
+        input: parsedBody.input ? `${parsedBody.input.substring(0, 100)}...` : 'No input',
+        conversationId: parsedBody.conversationId,
+        hasWorkflowInputs: !!parsedBody.workflowInputs,
+      })
     } catch (_error) {
+      logger.error(`[${requestId}] Failed to parse request body:`, _error)
       return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
     }
 
@@ -56,6 +66,13 @@ export async function POST(
     }
 
     const deployment = deploymentResult[0]
+    logger.debug(`[${requestId}] Found deployment:`, {
+      id: deployment.id,
+      workflowId: deployment.workflowId,
+      userId: deployment.userId,
+      isActive: deployment.isActive,
+      authType: deployment.authType,
+    })
 
     // Check if the chat is active
     if (!deployment.isActive) {
@@ -73,7 +90,15 @@ export async function POST(
     }
 
     // Use the already parsed body
-    const { input, password, email, conversationId } = parsedBody
+    const { input, password, email, conversationId, workflowInputs, chatId } = parsedBody
+    logger.debug(`[${requestId}] Extracted request parameters:`, {
+      hasInput: !!input,
+      hasPassword: !!password,
+      hasEmail: !!email,
+      conversationId,
+      hasWorkflowInputs: !!workflowInputs,
+      chatId,
+    })
 
     // If this is an authentication request (has password or email but no input),
     // set auth cookie and return success
@@ -89,6 +114,94 @@ export async function POST(
     // For chat messages, create regular response
     if (!input) {
       return addCorsHeaders(createErrorResponse('No input provided', 400), request)
+    }
+
+    // Determine executing user from session if available (used for logging)
+    let executingUserId: string | undefined
+
+    // Store chat details in deployed_chat table if chatId is provided and not already exists
+    if (chatId) {
+      try {
+        logger.debug(`[${requestId}] Attempting to store chat details for chatId: ${chatId}`)
+
+        // Try to get the executing user ID from session
+        try {
+          const session = await getSession()
+          executingUserId = session?.user?.id
+          logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
+        } catch (error) {
+          logger.debug(
+            `[${requestId}] Could not get session (user may not be authenticated):`,
+            error
+          )
+        }
+
+        // Check if chatId already exists in deployed_chat table
+        const existingChat = await db
+          .select({ id: deployedChat.id })
+          .from(deployedChat)
+          .where(eq(deployedChat.chatId, chatId))
+          .limit(1)
+
+        logger.debug(`[${requestId}] Existing chat check result:`, existingChat)
+
+        // If chatId doesn't exist, create a new record
+        if (existingChat.length === 0) {
+          // Generate title from first 4-5 words of input
+          const words = input.trim().split(/\s+/)
+          const title = words.slice(0, 5).join(' ')
+
+          // Generate a unique ID for the deployed_chat record
+          const deployedChatId = uuidv4()
+
+          logger.debug(`[${requestId}] Inserting new deployed_chat record:`, {
+            id: deployedChatId,
+            chatId: chatId,
+            title: title,
+            workflowId: subdomain,
+            executingUserId,
+          })
+
+          await db.insert(deployedChat).values({
+            id: deployedChatId,
+            chatId: chatId,
+            title: title,
+            workflowId: subdomain, // Using subdomain as workflow_id as per requirements
+            executingUserId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+
+          logger.debug(
+            `[${requestId}] Successfully stored new chat details in deployed_chat table: ${chatId}`
+          )
+        } else {
+          // Update the updatedAt timestamp for existing chat
+          const existingChatId = existingChat[0].id
+
+          logger.debug(`[${requestId}] Updating updatedAt for existing chat: ${chatId}`)
+
+          await db
+            .update(deployedChat)
+            .set({
+              updatedAt: new Date(),
+              executingUserId: executingUserId || null, // Update executing user ID if available
+            })
+            .where(eq(deployedChat.id, existingChatId))
+
+          logger.debug(`[${requestId}] Successfully updated updatedAt for existing chat: ${chatId}`)
+        }
+      } catch (error: any) {
+        // Log error but don't fail the request
+        logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, error)
+        logger.error(`[${requestId}] Error details:`, {
+          message: error.message,
+          stack: error.stack,
+          code: error.code,
+        })
+      }
+    } else {
+      logger.debug(`[${requestId}] No chatId provided in request body`)
     }
 
     // Get the workflow for this chat
@@ -107,7 +220,23 @@ export async function POST(
 
     try {
       // Execute workflow with structured input (input + conversationId for context)
-      const result = await executeWorkflowForChat(deployment.id, input, conversationId)
+      logger.debug(`[${requestId}] Executing workflow for chat:`, {
+        deploymentId: deployment.id,
+        workflowId: deployment.workflowId,
+        hasInput: !!input,
+        conversationId,
+        hasWorkflowInputs: !!workflowInputs,
+        chatId,
+      })
+
+      const result = await executeWorkflowForChat(
+        deployment.id,
+        input,
+        conversationId,
+        workflowInputs,
+        chatId, // Pass the chatId from payload for logging
+        executingUserId
+      )
 
       // The result is always a ReadableStream that we can pipe to the client
       const streamResponse = new NextResponse(result, {
@@ -178,6 +307,34 @@ export async function GET(
       return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
     }
 
+    // Extract input fields from the workflow's starter block
+    // This allows all authorized users to see input form without needing workflow permissions
+    let inputFields: any[] = []
+    try {
+      const workflowData = await loadWorkflowFromNormalizedTables(deployment.workflowId)
+      if (workflowData?.blocks) {
+        for (const blockId in workflowData.blocks) {
+          const block = workflowData.blocks[blockId]
+          if (block.type === 'starter') {
+            const inputFormat = block.subBlocks?.inputFormat?.value
+            if (Array.isArray(inputFormat) && inputFormat.length > 0) {
+              inputFields = inputFormat
+              logger.debug(
+                `[${requestId}] Found ${inputFields.length} input fields in starter block`
+              )
+              break
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        `[${requestId}] Failed to extract input fields from workflow, continuing without them:`,
+        error
+      )
+      // Non-fatal: continue without input fields
+    }
+
     // Check for auth cookie first
     const cookieName = `chat_auth_${deployment.id}`
     const authCookie = request.cookies.get(cookieName)
@@ -196,12 +353,104 @@ export async function GET(
           customizations: deployment.customizations,
           authType: deployment.authType,
           outputConfigs: deployment.outputConfigs,
+          inputFields, // Include input fields so all users can see the form
         }),
         request
       )
     }
 
-    // If no valid cookie, proceed with standard auth check
+    // If no valid cookie, check if user is logged in and has email access
+    if (deployment.authType === 'email') {
+      try {
+        const session = await getSession()
+        logger.debug(`[${requestId}] Session check:`, {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          userEmail: session?.user?.email,
+        })
+
+        const userEmail = session?.user?.email
+
+        if (userEmail) {
+          logger.debug(`[${requestId}] User is logged in with email: ${userEmail}`)
+          const allowedEmails = Array.isArray(deployment.allowedEmails)
+            ? (deployment.allowedEmails as string[])
+            : []
+
+          logger.debug(`[${requestId}] Allowed emails for this chat:`, allowedEmails)
+
+          // Normalize email for comparison (lowercase and trim to handle case differences and whitespace)
+          const normalizedUserEmail = userEmail.toLowerCase().trim()
+
+          // Check if email is explicitly allowed or domain is allowed
+          const isEmailAllowed = allowedEmails.some((allowed: string) => {
+            const normalizedAllowed = allowed.toLowerCase().trim()
+            const exactMatch = normalizedAllowed === normalizedUserEmail
+            const domainMatch =
+              normalizedAllowed.startsWith('@') && normalizedUserEmail.endsWith(normalizedAllowed)
+
+            if (exactMatch || domainMatch) {
+              logger.debug(`[${requestId}] Email match found:`, {
+                userEmail: normalizedUserEmail,
+                allowedEmail: normalizedAllowed,
+                matchType: exactMatch ? 'exact' : 'domain',
+              })
+            }
+
+            return exactMatch || domainMatch
+          })
+
+          if (isEmailAllowed) {
+            logger.debug(
+              `[${requestId}] User email is in allowed list, automatically granting access without modal`
+            )
+            // Set auth cookie and return chat info - NO MODAL SHOWN
+            const response = addCorsHeaders(
+              createSuccessResponse({
+                id: deployment.id,
+                title: deployment.title,
+                description: deployment.description,
+                customizations: deployment.customizations,
+                authType: deployment.authType,
+                outputConfigs: deployment.outputConfigs,
+                inputFields, // Include input fields so all users can see the form
+              }),
+              request
+            )
+            setChatAuthCookie(response, deployment.id, deployment.authType)
+            return response
+          }
+
+          // Logged-in user's email is NOT in allowed list - deny access immediately
+          // Show error modal instead of email input modal
+          logger.warn(
+            `[${requestId}] Logged-in user ${userEmail} is not in allowed list. Denying access immediately.`
+          )
+          logger.debug(`[${requestId}] User email: ${userEmail}, Allowed emails:`, allowedEmails)
+          return addCorsHeaders(
+            createErrorResponse('You do not have access to this chat', 403),
+            request
+          )
+        }
+      } catch (error) {
+        logger.error(`[${requestId}] Error checking session:`, error)
+        // Continue with standard auth check below
+      }
+    }
+
+    // If no valid cookie and user wasn't auto-authenticated, check authentication
+    // For email auth type, deny access immediately (no email input modal since OTP is removed)
+    if (deployment.authType === 'email') {
+      logger.info(
+        `[${requestId}] Email auth required but no valid session/cookie found. Denying access.`
+      )
+      return addCorsHeaders(
+        createErrorResponse('You do not have access to this chat', 403),
+        request
+      )
+    }
+
+    // For other auth types (password, public), proceed with standard auth check
     const authResult = await validateChatAuth(requestId, deployment, request)
     if (!authResult.authorized) {
       logger.info(
@@ -222,6 +471,7 @@ export async function GET(
         customizations: deployment.customizations,
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
+        inputFields, // Include input fields so all users can see the form
       }),
       request
     )

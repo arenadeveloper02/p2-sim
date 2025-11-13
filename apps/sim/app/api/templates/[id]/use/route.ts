@@ -112,9 +112,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Create a mapping from old block IDs to new block IDs for reference updates
         const blockIdMap = new Map<string, string>()
 
+        Object.values(templateState.blocks).forEach((block: any) => {
+          blockIdMap.set(block.id, uuidv4())
+        })
+
         const blockEntries = Object.values(templateState.blocks).map((block: any) => {
-          const newBlockId = uuidv4()
-          blockIdMap.set(block.id, newBlockId)
+          const newBlockId = blockIdMap.get(block.id)
 
           return {
             id: newBlockId,
@@ -177,7 +180,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         // Insert blocks and edges
         if (blockEntries.length > 0) {
-          await tx.insert(workflowBlocks).values(blockEntries)
+          // Filter out any entries where id is undefined before inserting
+          const validBlockEntries = blockEntries.filter((entry) => entry.id !== undefined)
+          if (validBlockEntries.length > 0) {
+            await tx.insert(workflowBlocks).values(validBlockEntries as any)
+          }
         }
         if (edgeEntries.length > 0) {
           await tx.insert(workflowEdges).values(edgeEntries)

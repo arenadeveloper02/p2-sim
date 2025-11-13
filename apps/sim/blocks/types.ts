@@ -1,7 +1,10 @@
 import type { JSX, SVGProps } from 'react'
+import type { ImageProps } from 'next/image'
 import type { ToolResponse } from '@/tools/types'
 
-export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
+export type BlockIcon =
+  | ((props: SVGProps<SVGSVGElement>) => JSX.Element) // for Lucide SVGs
+  | ((props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => JSX.Element) // for Next Image
 export type ParamType = 'string' | 'number' | 'boolean' | 'json'
 export type PrimitiveValueType = 'string' | 'number' | 'boolean' | 'json' | 'array' | 'any'
 
@@ -25,6 +28,7 @@ export type GenerationType =
 export type SubBlockType =
   | 'short-input' // Single line input
   | 'long-input' // Multi-line input
+  | 'mention-input' // Multi-line input with @ mention autocomplete
   | 'dropdown' // Select menu
   | 'combobox' // Searchable dropdown with text input
   | 'slider' // Range input
@@ -43,6 +47,7 @@ export type SubBlockType =
   | 'file-selector' // File selector for Google Drive, etc.
   | 'project-selector' // Project selector for Jira, Discord, etc.
   | 'channel-selector' // Channel selector for Slack, Discord, etc.
+  | 'user-selector' // User selector for Slack, Discord, etc.
   | 'folder-selector' // Folder selector for Gmail, etc.
   | 'knowledge-base-selector' // Knowledge base selector
   | 'knowledge-tag-filters' // Multiple tag filters for knowledge bases
@@ -54,6 +59,14 @@ export type SubBlockType =
   | 'input-format' // Input structure format
   | 'response-format' // Response structure format
   | 'file-upload' // File uploader
+  | 'date-picker'
+  | 'arena-client-selector'
+  | 'radio-input'
+  | 'arena-project-selector'
+  | 'arena-group-selector'
+  | 'arena-assignee-selector'
+  | 'arena-task-selector'
+  | 'arena-states-selector'
 
 export type SubBlockLayout = 'full' | 'half'
 

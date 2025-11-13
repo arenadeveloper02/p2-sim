@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
+import { createSafeStorage } from '@/lib/storage/safe-storage'
 import type { CustomToolsStore } from '@/stores/custom-tools/types'
 
 const logger = createLogger('CustomToolsStore')
@@ -206,6 +207,7 @@ export const useCustomToolsStore = create<CustomToolsStore>()(
       }),
       {
         name: 'custom-tools-store',
+        storage: createSafeStorage(),
         onRehydrateStorage: () => {
           return (state) => {
             // We'll load via the central initialization system in stores/index.ts

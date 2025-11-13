@@ -271,10 +271,11 @@ export function useWorkflowExecution() {
 
       // For chat executions, we'll use a streaming approach
       if (isChatExecution) {
+        const executionId = uuidv4()
+        console.log('Generated executionId for streaming:', executionId)
         const stream = new ReadableStream({
           async start(controller) {
             const encoder = new TextEncoder()
-            const executionId = uuidv4()
             const streamedContent = new Map<string, string>()
             const streamReadingPromises: Promise<void>[] = []
 
@@ -378,6 +379,7 @@ export function useWorkflowExecution() {
                         `data: ${JSON.stringify({
                           blockId,
                           chunk,
+                          executionId,
                         })}\n\n`
                       )
                     )
@@ -456,11 +458,12 @@ export function useWorkflowExecution() {
             }
           },
         })
-        return { success: true, stream }
+        return { success: true, stream, executionId }
       }
 
       // For manual (non-chat) execution
       const executionId = uuidv4()
+      console.log('Generated executionId for non-streaming:', executionId)
       try {
         const result = await executeWorkflow(workflowInput, undefined, executionId)
         if (result && 'metadata' in result && result.metadata?.isDebugSession) {
@@ -487,13 +490,14 @@ export function useWorkflowExecution() {
             logger.error('Error persisting logs:', { error: err })
           })
         }
-        return result
+        console.log('Returning non-streaming result with executionId:', executionId)
+        return { ...result, executionId }
       } catch (error: any) {
         const errorResult = handleExecutionError(error, { executionId })
         persistLogs(executionId, errorResult).catch((err) => {
           logger.error('Error persisting logs:', { error: err })
         })
-        return errorResult
+        return { ...errorResult, executionId }
       }
     },
     [
@@ -521,6 +525,7 @@ export function useWorkflowExecution() {
     // Use currentWorkflow but check if we're in diff mode
     const { blocks: workflowBlocks, edges: workflowEdges } = currentWorkflow
 
+    logger.info('>>>>>>>>>Preparing to execute workflow')
     // Filter out blocks without type (these are layout-only blocks)
     const validBlocks = Object.entries(workflowBlocks).reduce(
       (acc, [blockId, block]) => {

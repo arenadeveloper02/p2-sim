@@ -94,12 +94,6 @@ export const slackMessageReaderTool: ToolConfig<
   transformResponse: async (response: Response) => {
     const data = await response.json()
 
-    if (!response.ok || !data.ok) {
-      const errorMessage =
-        data.error || `Slack API error: ${response.status} ${response.statusText}`
-      throw new Error(errorMessage)
-    }
-
     const messages = (data.messages || []).map((message: any) => ({
       ts: message.ts,
       text: message.text || '',

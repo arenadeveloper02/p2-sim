@@ -18,6 +18,9 @@ interface DeploymentControlsProps {
   isLoadingDeployedState: boolean
   refetchDeployedState: () => Promise<void>
   userPermissions: WorkspaceUserPermissions
+  workspaceId?: string
+  initialTab: 'api' | 'chat'
+  onDeploymentComplete?: () => void
 }
 
 export function DeploymentControls({
@@ -28,6 +31,9 @@ export function DeploymentControls({
   isLoadingDeployedState,
   refetchDeployedState,
   userPermissions,
+  workspaceId,
+  initialTab,
+  onDeploymentComplete,
 }: DeploymentControlsProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(activeWorkflowId)
@@ -35,9 +41,11 @@ export function DeploymentControls({
   const isDeployed = deploymentStatus?.isDeployed || false
 
   const workflowNeedsRedeployment = needsRedeployment
+  const { getApprovalStatus } = useWorkflowRegistry()
 
   const [isDeploying, _setIsDeploying] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [approvalStatus, setApprovalStatus] = useState<any>(null)
 
   const lastWorkflowIdRef = useRef<string | null>(null)
 
@@ -46,6 +54,17 @@ export function DeploymentControls({
       lastWorkflowIdRef.current = activeWorkflowId
     }
   }, [activeWorkflowId])
+
+  // Fetch approval status
+  useEffect(() => {
+    const fetchApprovalStatus = async () => {
+      if (activeWorkflowId) {
+        const status = await getApprovalStatus(activeWorkflowId)
+        setApprovalStatus(status)
+      }
+    }
+    fetchApprovalStatus()
+  }, [activeWorkflowId, getApprovalStatus])
 
   const refetchWithErrorHandling = async () => {
     if (!activeWorkflowId) return
@@ -74,10 +93,10 @@ export function DeploymentControls({
     if (isDeployed && workflowNeedsRedeployment) {
       return 'Workflow changes detected'
     }
-    if (isDeployed) {
-      return 'Deployment Settings'
-    }
-    return 'Deploy as API'
+    // if (isDeployed) {
+    //   return 'Deploy agent'
+    // }
+    return 'Deploy agent'
   }
 
   return (
@@ -129,6 +148,10 @@ export function DeploymentControls({
         deployedState={deployedState as WorkflowState}
         isLoadingDeployedState={isLoadingDeployedState}
         refetchDeployedState={refetchWithErrorHandling}
+        initialTab={initialTab}
+        workspaceId={workspaceId}
+        onDeploymentComplete={onDeploymentComplete}
+        approvalStatus={approvalStatus}
       />
     </>
   )

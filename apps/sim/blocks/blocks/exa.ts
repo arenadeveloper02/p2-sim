@@ -1,4 +1,5 @@
 import { ExaAIIcon } from '@/components/icons'
+import { isHosted } from '@/lib/environment'
 import type { BlockConfig } from '@/blocks/types'
 import type { ExaResponse } from '@/tools/exa/types'
 
@@ -36,6 +37,20 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
       placeholder: 'Enter your search query...',
       condition: { field: 'operation', value: 'exa_search' },
       required: true,
+    },
+    {
+      id: 'dateFilter',
+      title: 'Published Date Filter',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Last 24 hours', id: 'last_24_hours' },
+        { label: 'Last 7 days', id: 'last_7_days' },
+        { label: 'Last 30 days', id: 'last_30_days' },
+        { label: 'Auto', id: 'auto' },
+      ],
+      value: () => 'auto',
+      condition: { field: 'operation', value: 'exa_search' },
     },
     {
       id: 'numResults',
@@ -158,7 +173,8 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
       layout: 'full',
       placeholder: 'Enter your Exa API key',
       password: true,
-      required: true,
+      required: false,
+      hidden: isHosted,
     },
   ],
   tools: {
@@ -198,6 +214,7 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
     apiKey: { type: 'string', description: 'Exa API key' },
     // Search operation
     query: { type: 'string', description: 'Search query terms' },
+    dateFilter: { type: 'string', description: 'Date filter' },
     numResults: { type: 'number', description: 'Number of results' },
     useAutoprompt: { type: 'boolean', description: 'Use autoprompt feature' },
     type: { type: 'string', description: 'Search type' },

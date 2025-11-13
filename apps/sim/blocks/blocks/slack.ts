@@ -94,16 +94,44 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
       mode: 'advanced',
     },
+    // {
+    //   id: 'text',
+    //   title: 'Message',
+    //   type: 'long-input',
+    //   layout: 'full',
+    //   placeholder: 'Enter your message (supports Slack mrkdwn)',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'send',
+    //   },
+    //   dependsOn: ['credential', 'authMethod'],
+    //   required: true,
+    // },
+    // {
+    //   id: 'mentionUser',
+    //   title: 'Mention Users',
+    //   type: 'user-selector',
+    //   layout: 'full',
+    //   provider: 'slack',
+    //   multiple: true,
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'send',
+    //   },
+    //   dependsOn: ['credential', 'authMethod'],
+    //   required: false,
+    // },
     {
       id: 'text',
       title: 'Message',
-      type: 'long-input',
+      type: 'mention-input',
       layout: 'full',
-      placeholder: 'Enter your message (supports Slack mrkdwn)',
+      placeholder: 'Enter the message to send to the channel',
       condition: {
         field: 'operation',
         value: 'send',
       },
+      dependsOn: ['credential', 'authMethod'],
       required: true,
     },
     // Canvas specific fields
@@ -191,6 +219,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           content,
           limit,
           oldest,
+          mentionUser,
+          mergeMessages,
+          additionalMessages,
           ...rest
         } = params
 
@@ -225,7 +256,30 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             if (!rest.text) {
               throw new Error('Message text is required for send operation')
             }
+
             baseParams.text = rest.text
+
+            // Add message merging parameters
+            if (mergeMessages) {
+              baseParams.mergeMessages = true
+            }
+
+            if (additionalMessages) {
+              // Split additional messages by newlines and filter out empty lines
+              const messages = additionalMessages
+                .split('\n')
+                .map((msg: string) => msg.trim())
+                .filter((msg: string) => msg.length > 0)
+              if (messages.length > 0) {
+                baseParams.additionalMessages = messages
+              }
+            }
+
+            // Add user mentions
+            if (mentionUser) {
+              const mentions = Array.isArray(mentionUser) ? mentionUser : [mentionUser]
+              baseParams.mentionUsers = mentions
+            }
             break
 
           case 'canvas':
@@ -260,7 +314,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     botToken: { type: 'string', description: 'Bot token' },
     channel: { type: 'string', description: 'Channel identifier' },
     manualChannel: { type: 'string', description: 'Manual channel identifier' },
-    text: { type: 'string', description: 'Message text' },
+    text: { type: 'string', description: 'Message text with embedded mentions' },
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },

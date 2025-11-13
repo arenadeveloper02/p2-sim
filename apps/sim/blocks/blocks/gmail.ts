@@ -151,14 +151,8 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       type: 'short-input',
       layout: 'full',
       placeholder: 'Enter message ID to read (optional)',
-      condition: {
-        field: 'operation',
-        value: 'read_gmail',
-        and: {
-          field: 'folder',
-          value: '',
-        },
-      },
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'read_gmail' },
     },
     // Search Fields
     {
@@ -206,13 +200,19 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
         }
       },
       params: (params) => {
-        const { credential, folder, manualFolder, ...rest } = params
+        const { credential, folder, manualFolder, messageId, ...rest } = params
 
         // Handle both selector and manual folder input
         const effectiveFolder = (folder || manualFolder || '').trim()
+        const effectiveMessageId = (messageId || '').trim()
 
         if (rest.operation === 'read_gmail') {
-          rest.folder = effectiveFolder || 'INBOX'
+          // If messageId is provided, prioritize it and avoid forcing a folder default
+          if (effectiveMessageId) {
+            ;(rest as any).messageId = effectiveMessageId
+          } else {
+            rest.folder = effectiveFolder || 'INBOX'
+          }
         }
 
         return {

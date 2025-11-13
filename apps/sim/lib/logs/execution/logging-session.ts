@@ -28,6 +28,7 @@ export interface SessionCompleteParams {
   totalDurationMs?: number
   finalOutput?: any
   traceSpans?: any[]
+  finalChatOutput?: string // Final chat output based on output_configs
 }
 
 export interface SessionErrorCompleteParams {
@@ -44,20 +45,31 @@ export class LoggingSession {
   private executionId: string
   private triggerType: ExecutionTrigger['type']
   private requestId?: string
+  private isExternalChat: boolean
+  private chatId?: string
   private trigger?: ExecutionTrigger
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
+  private initialInput?: string
 
   constructor(
     workflowId: string,
     executionId: string,
     triggerType: ExecutionTrigger['type'],
-    requestId?: string
+    requestId?: string,
+    isExternalChat = false,
+    chatId?: string
   ) {
     this.workflowId = workflowId
     this.executionId = executionId
     this.triggerType = triggerType
     this.requestId = requestId
+    this.isExternalChat = isExternalChat
+    this.chatId = chatId
+  }
+
+  setInitialInput(value?: string): void {
+    this.initialInput = value
   }
 
   async start(params: SessionStartParams = {}): Promise<void> {
@@ -80,6 +92,9 @@ export class LoggingSession {
         trigger: this.trigger,
         environment: this.environment,
         workflowState: this.workflowState,
+        isExternalChat: this.isExternalChat,
+        chatId: this.chatId,
+        userId,
       })
 
       if (this.requestId) {
@@ -105,7 +120,7 @@ export class LoggingSession {
   }
 
   async complete(params: SessionCompleteParams = {}): Promise<void> {
-    const { endedAt, totalDurationMs, finalOutput, traceSpans } = params
+    const { endedAt, totalDurationMs, finalOutput, traceSpans, finalChatOutput } = params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])
@@ -117,6 +132,8 @@ export class LoggingSession {
         costSummary,
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
+        initialInput: this.initialInput,
+        finalChatOutput,
       })
 
       if (this.requestId) {
@@ -221,6 +238,7 @@ export class LoggingSession {
           trigger: this.trigger,
           environment: this.environment,
           workflowState: this.workflowState,
+          userId,
         })
 
         if (this.requestId) {

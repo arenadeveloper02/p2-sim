@@ -166,6 +166,19 @@ export function OutputSelect({
     return outputs
   }, [workflowBlocks, workflowId, isShowingDiff, isDiffReady, diffWorkflow, blocks, subBlockValues])
 
+  // Ensure selected outputs stay in sync with available workflow outputs
+  useEffect(() => {
+    if (!selectedOutputs || selectedOutputs.length === 0) {
+      return
+    }
+
+    const validOutputs = selectedOutputs.filter((id) => workflowOutputs.some((o) => o.id === id))
+
+    if (validOutputs.length !== selectedOutputs.length) {
+      onOutputSelect(validOutputs)
+    }
+  }, [selectedOutputs, workflowOutputs, onOutputSelect])
+
   // Get selected outputs display text
   const selectedOutputsDisplayText = useMemo(() => {
     if (!selectedOutputs || selectedOutputs.length === 0) {

@@ -1,0 +1,65 @@
+{
+  "hash": "0092_create_deployed_chat_table",
+  "prevHash": "0091_add_chat_id_to_workflow_execution_logs",
+  "version": 92,
+  "dialect": "postgresql",
+  "tables": [
+    {
+      "name": "deployed_chat",
+      "schema": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "text",
+            "primaryKey": true,
+            "notNull": true
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp",
+            "default": "now()",
+            "notNull": true
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamp",
+            "default": "now()",
+            "notNull": true
+          },
+          {
+            "name": "chat_id",
+            "type": "text",
+            "notNull": false
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "notNull": false
+          },
+          {
+            "name": "workflow_id",
+            "type": "text",
+            "notNull": false
+          }
+        ],
+        "indexes": [
+          {
+            "name": "deployed_chat_chat_id_idx",
+            "columns": ["chat_id"]
+          },
+          {
+            "name": "deployed_chat_workflow_id_idx",
+            "columns": ["workflow_id"]
+          }
+        ]
+      }
+    }
+  ],
+  "enums": [],
+  "schemas": [],
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

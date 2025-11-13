@@ -4,7 +4,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Send, Square } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const PLACEHOLDER_MOBILE = 'Enter a message'
@@ -18,7 +18,15 @@ export const ChatInput: React.FC<{
   onStopStreaming?: () => void
   onVoiceStart?: () => void
   voiceOnly?: boolean
-}> = ({ onSubmit, isStreaming = false, onStopStreaming, onVoiceStart, voiceOnly = false }) => {
+  currentChatId?: string | any
+}> = ({
+  onSubmit,
+  isStreaming = false,
+  onStopStreaming,
+  onVoiceStart,
+  voiceOnly = false,
+  currentChatId,
+}) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null) // Ref for the textarea
   const [isActive, setIsActive] = useState(false)
@@ -80,6 +88,13 @@ export const ChatInput: React.FC<{
     }
   }, [isActive])
 
+  // Focus textarea on component mount
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [currentChatId])
+
   const handleActivate = () => {
     setIsActive(true)
     // Focus is now handled by the useEffect above
@@ -111,18 +126,16 @@ export const ChatInput: React.FC<{
       <div className='flex items-center justify-center'>
         {/* Voice Input Only */}
         {isSttAvailable && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} large={true} />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side='top'>
-                <p>Start voice conversation</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} large={true} />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side='top'>
+              <p>Start voice conversation</p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     )
@@ -130,7 +143,7 @@ export const ChatInput: React.FC<{
 
   return (
     <>
-      <div className='fixed right-0 bottom-0 left-0 flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
+      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Text Input Area with Controls */}
           <motion.div
@@ -143,23 +156,17 @@ export const ChatInput: React.FC<{
             <div className='flex items-center gap-2 p-3 md:p-4'>
               {/* Voice Input */}
               {isSttAvailable && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <VoiceInput
-                          onVoiceStart={handleVoiceStart}
-                          disabled={isStreaming}
-                          minimal
-                        />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side='top'>
-                      <p>Start voice conversation</p>
-                      <span className='text-gray-500 text-xs'>Click to enter voice mode</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} minimal />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side='top'>
+                    <p>Start voice conversation</p>
+                    <span className='text-gray-500 text-xs'>Click to enter voice mode</span>
+                  </TooltipContent>
+                </Tooltip>
               )}
 
               {/* Text Input Container */}
@@ -180,7 +187,9 @@ export const ChatInput: React.FC<{
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      handleSubmit()
+                      if (!isStreaming) {
+                        handleSubmit()
+                      }
                     }
                   }}
                 />

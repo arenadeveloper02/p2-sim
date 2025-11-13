@@ -89,6 +89,7 @@ export const useEnvironmentStore = create<EnvironmentStore>()((set, get) => ({
   },
 
   loadWorkspaceEnvironment: async (workspaceId: string) => {
+    logger.info('Loading workspace environment for workspaceId:', workspaceId)
     try {
       set({ isLoading: true, error: null })
 
@@ -112,6 +113,12 @@ export const useEnvironmentStore = create<EnvironmentStore>()((set, get) => ({
   },
 
   upsertWorkspaceEnvironment: async (workspaceId: string, variables: Record<string, string>) => {
+    logger.info(
+      'Upserting workspace environment for workspaceId:',
+      workspaceId,
+      'with variables:',
+      variables
+    )
     try {
       set({ isLoading: true, error: null })
       const response = await fetch(API_ENDPOINTS.WORKSPACE_ENVIRONMENT(workspaceId), {

@@ -2116,7 +2116,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           {/* Textarea Field with overlay */}
           <div className='relative'>
             {/* Highlight overlay */}
-            <div className='pointer-events-none absolute inset-0 z-[1] px-[2px] py-1'>
+            <div className='pointer-events-none absolute inset-0 z-[1] hidden px-[2px] py-1 '>
               <pre className='whitespace-pre-wrap font-sans text-foreground text-sm leading-[1.25rem]'>
                 {(() => {
                   const elements: React.ReactNode[] = []
@@ -2163,7 +2163,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
               placeholder={isDragging ? 'Drop files here...' : effectivePlaceholder}
               disabled={disabled}
               rows={1}
-              className='relative z-[2] mb-2 min-h-[32px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-[2px] py-1 font-sans text-sm text-transparent leading-[1.25rem] caret-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
+              className='relative z-[2] mb-2 min-h-[32px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-[2px] py-1 font-sans text-sm leading-[1.25rem] caret-foreground focus-visible:ring-0 focus-visible:ring-offset-0'
               style={{ height: 'auto' }}
             />
 

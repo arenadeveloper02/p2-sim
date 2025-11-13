@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Copy, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
+import { useSession } from '@/lib/auth-client'
 import { cn, generatePassword } from '@/lib/utils'
 import type { AuthType } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 
@@ -14,6 +15,7 @@ interface AuthSelectorProps {
   disabled?: boolean
   isExistingChat?: boolean
   error?: string
+  approvalStatus?: any
 }
 
 export function AuthSelector({
@@ -26,11 +28,39 @@ export function AuthSelector({
   disabled = false,
   isExistingChat = false,
   error,
+  approvalStatus,
 }: AuthSelectorProps) {
+  const { data: session } = useSession()
+  const currentUserEmail = session?.user?.email || ''
+
   const [showPassword, setShowPassword] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string }>>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+
+  // Fetch users list on component mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setLoadingUsers(true)
+      try {
+        const response = await fetch('/api/users')
+        if (response.ok) {
+          const data = await response.json()
+          setUsers(data.users || [])
+        }
+      } catch (error) {
+        console.error('Error fetching users:', error)
+      } finally {
+        setLoadingUsers(false)
+      }
+    }
+
+    if (authType === 'email') {
+      fetchUsers()
+    }
+  }, [authType])
 
   const handleGeneratePassword = () => {
     const password = generatePassword(24)
@@ -44,14 +74,25 @@ export function AuthSelector({
   }
 
   const handleAddEmail = () => {
+    // Validate email format
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) && !newEmail.startsWith('@')) {
       setEmailError('Please enter a valid email or domain (e.g., user@example.com or @example.com)')
       return
     }
 
+    // Check if already in list
     if (emails.includes(newEmail)) {
       setEmailError('This email or domain is already in the list')
       return
+    }
+
+    // Validate email against user list (only for non-domain entries)
+    if (!newEmail.startsWith('@') && users.length > 0) {
+      const userExists = users.some((user) => user.email.toLowerCase() === newEmail.toLowerCase())
+      if (!userExists) {
+        setEmailError('User does not have access to Agentic AI')
+        return
+      }
     }
 
     onEmailsChange([...emails, newEmail])
@@ -60,6 +101,14 @@ export function AuthSelector({
   }
 
   const handleRemoveEmail = (email: string) => {
+    // Prevent deletion of @position2.com if workflow is approved
+    if (email === '@position2.com' && approvalStatus?.status === 'APPROVED') {
+      return
+    }
+    // Prevent deletion of current user's email when workflow is not approved
+    if (email === currentUserEmail && approvalStatus?.status !== 'APPROVED') {
+      return
+    }
     onEmailsChange(emails.filter((e) => e !== email))
   }
 
@@ -68,7 +117,7 @@ export function AuthSelector({
       <Label className='font-medium text-sm'>Access Control</Label>
 
       {/* Auth Type Selection */}
-      <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+      {/* <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
         {(['public', 'password', 'email'] as const).map((type) => (
           <Card
             key={type}
@@ -102,7 +151,7 @@ export function AuthSelector({
             </CardContent>
           </Card>
         ))}
-      </div>
+      </div> */}
 
       {/* Auth Settings */}
       {authType === 'password' && (
@@ -214,6 +263,11 @@ export function AuthSelector({
         <Card className='rounded-[8px] shadow-none'>
           <CardContent className='p-4'>
             <h3 className='mb-2 font-medium text-sm'>Email Access Settings</h3>
+            {approvalStatus?.status === 'APPROVED' && (
+              <div className='mb-2 flex items-center text-green-600 text-xs'>
+                <span>Internal access (@position2.com) is automatically included</span>
+              </div>
+            )}
 
             <div className='flex gap-2'>
               <Input
@@ -245,23 +299,32 @@ export function AuthSelector({
             {emails.length > 0 && (
               <div className='mt-3 max-h-[150px] overflow-y-auto rounded-md border bg-background px-2 py-0 shadow-none'>
                 <ul className='divide-y divide-border'>
-                  {emails.map((email) => (
-                    <li key={email} className='relative'>
-                      <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
-                        <span className='font-medium text-foreground'>{email}</span>
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          size='icon'
-                          onClick={() => handleRemoveEmail(email)}
-                          disabled={disabled}
-                          className='h-7 w-7 opacity-70'
-                        >
-                          <Trash2 className='h-4 w-4' />
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                  {emails.map((email) => {
+                    const isNonDeletable =
+                      (email === '@position2.com' && approvalStatus?.status === 'APPROVED') ||
+                      (email === currentUserEmail && approvalStatus?.status !== 'APPROVED')
+                    return (
+                      <li key={email} className='relative'>
+                        <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
+                          <div className='flex items-center gap-2'>
+                            <span className='font-medium text-foreground'>{email}</span>
+                          </div>
+                          {!isNonDeletable && (
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='icon'
+                              onClick={() => handleRemoveEmail(email)}
+                              disabled={disabled}
+                              className='h-7 w-7 opacity-70'
+                            >
+                              <Trash2 className='h-4 w-4' />
+                            </Button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}

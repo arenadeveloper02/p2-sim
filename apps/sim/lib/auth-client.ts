@@ -30,6 +30,7 @@ export function getBaseURL() {
 
 export const client = createAuthClient({
   baseURL: getBaseURL(),
+
   plugins: [
     emailOTPClient(),
     genericOAuthClient(),

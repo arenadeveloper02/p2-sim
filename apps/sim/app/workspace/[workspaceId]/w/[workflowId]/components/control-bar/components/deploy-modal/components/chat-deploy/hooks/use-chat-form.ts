@@ -26,7 +26,7 @@ const initialFormData: ChatFormData = {
   subdomain: '',
   title: '',
   description: '',
-  authType: 'public',
+  authType: 'email',
   password: '',
   emails: [],
   welcomeMessage: 'Hi there! How can I help you today?',

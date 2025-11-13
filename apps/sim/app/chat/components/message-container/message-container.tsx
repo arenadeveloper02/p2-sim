@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, type RefObject } from 'react'
+import { type Dispatch, memo, type RefObject, type SetStateAction } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type ChatMessage, ClientChatMessage } from '@/app/chat/components/message/message'
@@ -16,6 +16,8 @@ interface ChatMessageContainerProps {
   chatConfig: {
     description?: string
   } | null
+  workflowId: string
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -27,6 +29,8 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   scrollToBottom,
   scrollToMessage,
   chatConfig,
+  workflowId,
+  setMessages,
 }: ChatMessageContainerProps) {
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
@@ -48,9 +52,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
-        className='absolute inset-0 touch-pan-y overflow-y-auto overscroll-auto scroll-smooth'
+        className='!scroll-smooth absolute inset-0 h-[calc(100%-50px)] touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='mx-auto max-w-3xl px-4 pt-10 pb-20'>
+        <div className='ml-64 w-[calc(100%-270px)] px-4 pb-8'>
           {messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
@@ -61,7 +65,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               </div>
             </div>
           ) : (
-            messages.map((message) => <ClientChatMessage key={message.id} message={message} />)
+            messages.map((message) => (
+              <ClientChatMessage key={message.id} message={message} setMessages={setMessages} />
+            ))
           )}
 
           {/* Loading indicator (shows only when executing) */}
@@ -86,7 +92,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
 
       {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 transform'>
+        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[9%] transform'>
           <Button
             onClick={scrollToBottom}
             size='sm'

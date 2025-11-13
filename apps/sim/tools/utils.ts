@@ -41,7 +41,10 @@ interface RequestParams {
 /**
  * Format request parameters based on tool configuration and provided params
  */
-export function formatRequestParams(tool: ToolConfig, params: Record<string, any>): RequestParams {
+export async function formatRequestParams(
+  tool: ToolConfig,
+  params: Record<string, any>
+): Promise<RequestParams> {
   // Process URL
   const url = typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
 
@@ -62,10 +65,16 @@ export function formatRequestParams(tool: ToolConfig, params: Record<string, any
   const isPreformattedContent =
     headers['Content-Type'] === 'application/x-ndjson' ||
     headers['Content-Type'] === 'application/x-www-form-urlencoded'
+  let resolvedBodyResult = bodyResult
+
+  if (typeof bodyResult?.then === 'function') {
+    resolvedBodyResult = await bodyResult
+  }
+
   const body = hasBody
-    ? isPreformattedContent && typeof bodyResult === 'string'
-      ? bodyResult
-      : JSON.stringify(bodyResult)
+    ? isPreformattedContent && typeof resolvedBodyResult === 'string'
+      ? resolvedBodyResult
+      : JSON.stringify(resolvedBodyResult)
     : undefined
 
   return { url, method, headers, body }
@@ -82,28 +91,7 @@ export async function executeRequest(
   try {
     const { url, method, headers, body } = requestParams
 
-    // Check if this is a Slack API call and use rate limiting handler
-    const isSlackApiCall = url.includes('slack.com/api/')
-
-    let externalResponse: Response
-
-    if (isSlackApiCall) {
-      // Import SlackRateLimitHandler dynamically to avoid circular dependencies
-      const { SlackRateLimitHandler } = await import('@/lib/slack/rate-limit-handler')
-
-      // Use the rate limiting handler for Slack API calls
-      externalResponse = await SlackRateLimitHandler.executeWithRetry(
-        () => fetch(url, { method, headers, body }),
-        {
-          maxRetries: 3,
-          baseDelay: 1000,
-          maxDelay: 30000,
-        }
-      )
-    } else {
-      // Regular fetch for non-Slack APIs
-      externalResponse = await fetch(url, { method, headers, body })
-    }
+    const externalResponse = await fetch(url, { method, headers, body })
 
     if (!externalResponse.ok) {
       let errorContent

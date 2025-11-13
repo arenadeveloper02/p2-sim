@@ -7,6 +7,7 @@ import { isProd } from '@/lib/environment'
  */
 export function getBaseUrl(): string {
   if (typeof window !== 'undefined') {
+    // Always use the current origin for static assets to avoid cross-domain issues
     return window.location.origin
   }
 

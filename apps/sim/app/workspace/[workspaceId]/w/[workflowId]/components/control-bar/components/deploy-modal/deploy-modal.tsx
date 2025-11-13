@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
+import { useSession } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,16 @@ interface DeployModalProps {
   deployedState: WorkflowState
   isLoadingDeployedState: boolean
   refetchDeployedState: () => Promise<void>
+  /**
+   * Initial tab to show when modal opens
+   * - 'api': Default for control bar deployment
+   * - 'chat': Used when opening from sidebar chat icon
+   */
+  initialTab?: TabView
+  isSidebar?: boolean
+  workspaceId?: string
+  onDeploymentComplete?: () => void
+  approvalStatus?: any
 }
 
 interface ApiKey {
@@ -63,19 +74,97 @@ export function DeployModal({
   deployedState,
   isLoadingDeployedState,
   refetchDeployedState,
+  initialTab = 'chat', // Default to API tab unless overridden (e.g., from sidebar chat icon)
+  isSidebar = false,
+  workspaceId,
+  onDeploymentComplete,
+  approvalStatus,
 }: DeployModalProps) {
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(workflowId)
   )
   const isDeployed = deploymentStatus?.isDeployed || false
   const setDeploymentStatus = useWorkflowRegistry((state) => state.setDeploymentStatus)
+
+  // Get session for userId
+  const { data: session } = useSession()
+  const userId = session?.user?.id || 'unknown'
+
+  // Check if workflow has changes from approved state using state comparison
+  // This matches the logic in chat-deploy.tsx for consistent behavior
+  // Only checks approved workflows - non-approved workflows use needsRedeployment flag instead
+  const [hasChangesFromApproved, setHasChangesFromApproved] = useState(false)
+  const [isLoadingChanges, setIsLoadingChanges] = useState(false)
+
+  // Compare current workflow state with approved template (only for approved workflows)
+  useEffect(() => {
+    const checkWorkflowChanges = async () => {
+      // Only check for approved workflows - same logic as chat-deploy
+      if (!workflowId || approvalStatus?.status !== 'APPROVED') {
+        setHasChangesFromApproved(false)
+        return
+      }
+
+      try {
+        setIsLoadingChanges(true)
+
+        // Fetch approved template
+        const templateResponse = await fetch(`/api/templates?workflowId=${workflowId}&limit=1`)
+        if (!templateResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const templateData = await templateResponse.json()
+        const template = templateData.data?.[0]
+        if (!template?.state) {
+          // No approved template found, no changes to detect
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const approvedState = template.state as WorkflowState
+
+        // Fetch current workflow state
+        const workflowResponse = await fetch(`/api/workflows/${workflowId}`)
+        if (!workflowResponse.ok) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        const workflowData = await workflowResponse.json()
+        const currentState = workflowData.data?.state
+
+        if (!currentState || !approvedState) {
+          setHasChangesFromApproved(false)
+          return
+        }
+
+        // Compare states using the same function as chat-deploy
+        const { hasWorkflowChanged } = await import('@/lib/workflows/comparison')
+        const hasChanges = hasWorkflowChanged(currentState, approvedState)
+        setHasChangesFromApproved(hasChanges)
+      } catch (error) {
+        logger.error('Error checking workflow changes:', error)
+        setHasChangesFromApproved(false)
+      } finally {
+        setIsLoadingChanges(false)
+      }
+    }
+
+    void checkWorkflowChanges()
+  }, [workflowId, approvalStatus?.status])
+
+  const hasWorkflowChanges = hasChangesFromApproved
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUndeploying, setIsUndeploying] = useState(false)
   const [deploymentInfo, setDeploymentInfo] = useState<WorkflowDeploymentInfo | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [keysLoaded, setKeysLoaded] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabView>('api')
+  // Initialize active tab based on the initialTab prop (allows sidebar to open directly to chat)
+  const [activeTab, setActiveTab] = useState<TabView>(initialTab)
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [apiDeployError, setApiDeployError] = useState<string | null>(null)
   const [chatExists, setChatExists] = useState(false)
@@ -172,9 +261,10 @@ export function DeployModal({
       setIsLoading(true)
       fetchApiKeys()
       fetchChatDeploymentInfo()
-      setActiveTab('api')
+      // Set the initial tab based on how the modal was opened
+      setActiveTab(initialTab)
     }
-  }, [open, workflowId])
+  }, [open, workflowId, initialTab])
 
   useEffect(() => {
     async function fetchDeploymentInfo() {
@@ -415,30 +505,36 @@ export function DeployModal({
         </DialogHeader>
 
         <div className='flex flex-1 flex-col overflow-hidden'>
-          <div className='flex h-14 flex-none items-center border-b px-6'>
-            <div className='flex gap-2'>
-              <button
-                onClick={() => setActiveTab('api')}
-                className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                  activeTab === 'api'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                }`}
-              >
-                API
-              </button>
-              <button
-                onClick={() => setActiveTab('chat')}
-                className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                  activeTab === 'chat'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                }`}
-              >
-                Chat
-              </button>
+          {!isSidebar && (
+            <div className='flex h-14 flex-none items-center border-b px-6'>
+              <div className='flex gap-2'>
+                {initialTab === 'chat' && (
+                  <button
+                    onClick={() => setActiveTab('chat')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'chat'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    Chat
+                  </button>
+                )}
+                {initialTab === 'api' && (
+                  <button
+                    onClick={() => setActiveTab('api')}
+                    className={`rounded-md px-3 py-1 text-sm transition-colors ${
+                      activeTab === 'api'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                    }`}
+                  >
+                    API
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className='flex-1 overflow-y-auto'>
             <div className='p-6'>
@@ -489,8 +585,28 @@ export function DeployModal({
                   chatSubmitting={chatSubmitting}
                   setChatSubmitting={setChatSubmitting}
                   onValidationChange={setIsChatFormValid}
-                  onPreDeployWorkflow={handleWorkflowPreDeploy}
-                  onDeploymentComplete={handleCloseModal}
+                  onPreDeployWorkflow={handleWorkflowPreDeploy} // For initial deployments
+                  onRedeployWorkflow={handleRedeploy} // For updating existing deployments
+                  onDeploymentComplete={() => {
+                    handleCloseModal()
+                    onDeploymentComplete?.()
+                  }}
+                  needsRedeployment={needsRedeployment} // Indicates if workflow has changes
+                  onRedeploymentComplete={() => {
+                    // Clear the needsRedeployment flag after successful redeployment
+                    setNeedsRedeployment(false)
+                    if (workflowId) {
+                      useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
+                    }
+                    // Also trigger a refetch of deployed state to ensure consistency
+                    refetchDeployedState()
+                    // Trigger chat deployment refresh
+                    onDeploymentComplete?.()
+                  }}
+                  isSidebar={isSidebar}
+                  workspaceId={workspaceId}
+                  onOpenChange={onOpenChange}
+                  approvalStatus={approvalStatus}
                 />
               )}
             </div>
@@ -534,6 +650,7 @@ export function DeployModal({
             </Button>
 
             <div className='flex gap-2'>
+              {/* Delete button hidden for now */}
               {chatExists && (
                 <Button
                   type='button'
@@ -563,7 +680,14 @@ export function DeployModal({
               <Button
                 type='button'
                 onClick={handleChatFormSubmit}
-                disabled={chatSubmitting || !isChatFormValid}
+                disabled={
+                  chatSubmitting ||
+                  (!chatExists && isLoading) ||
+                  (chatExists && !isChatFormValid) ||
+                  // Disable when approved and has workflow changes - button should be disabled whenever error shows
+                  // This ensures button is disabled when hasWorkflowChanges is true, regardless of needsRedeployment
+                  (approvalStatus?.status === 'APPROVED' && hasWorkflowChanges)
+                }
                 className={cn(
                   'gap-2 font-medium',
                   'bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]',

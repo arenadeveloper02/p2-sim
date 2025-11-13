@@ -46,11 +46,23 @@ export class ExecutionLogger implements IExecutionLoggerService {
     trigger: ExecutionTrigger
     environment: ExecutionEnvironment
     workflowState: WorkflowState
+    isExternalChat?: boolean
+    chatId?: string
+    userId?: string
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
   }> {
-    const { workflowId, executionId, trigger, environment, workflowState } = params
+    const {
+      workflowId,
+      executionId,
+      trigger,
+      environment,
+      workflowState,
+      isExternalChat = false,
+      chatId,
+      userId,
+    } = params
 
     logger.debug(`Starting workflow execution ${executionId} for workflow ${workflowId}`)
 
@@ -70,6 +82,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
         stateSnapshotId: snapshotResult.snapshot.id,
         level: 'info',
         trigger: trigger.type,
+        userId,
+        isExternalChat,
+        chatId,
         startedAt: startTime,
         endedAt: null,
         totalDurationMs: null,
@@ -90,6 +105,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
         stateSnapshotId: workflowLog.stateSnapshotId,
         level: workflowLog.level as 'info' | 'error',
         trigger: workflowLog.trigger as ExecutionTrigger['type'],
+        userId: (workflowLog as any).userId || undefined,
+        isExternalChat: workflowLog.isExternalChat,
         startedAt: workflowLog.startedAt.toISOString(),
         endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
         totalDurationMs: workflowLog.totalDurationMs || 0,
@@ -125,8 +142,19 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
+    initialInput?: string
+    finalChatOutput?: string // Final chat output based on output_configs
   }): Promise<WorkflowExecutionLog> {
-    const { executionId, endedAt, totalDurationMs, costSummary, finalOutput, traceSpans } = params
+    const {
+      executionId,
+      endedAt,
+      totalDurationMs,
+      costSummary,
+      finalOutput,
+      traceSpans,
+      initialInput,
+      finalChatOutput,
+    } = params
 
     logger.debug(`Completing workflow execution ${executionId}`)
 
@@ -147,6 +175,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
     // Extract files from trace spans and final output
     const executionFiles = this.extractFilesFromExecution(traceSpans, finalOutput)
 
+    // Prepare traceSpans object with optional initialInput
+    const traceSpansToStore: any = Array.isArray(traceSpans)
+      ? { spans: traceSpans }
+      : traceSpans || {}
+    if (typeof initialInput === 'string' && initialInput.length > 0) {
+      traceSpansToStore.initialInput = initialInput
+    }
+
     const [updatedLog] = await db
       .update(workflowExecutionLogs)
       .set({
@@ -154,8 +190,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
         endedAt: new Date(endedAt),
         totalDurationMs,
         files: executionFiles.length > 0 ? executionFiles : null,
+        finalChatOutput: finalChatOutput || null,
         executionData: {
-          traceSpans,
+          traceSpans: traceSpansToStore,
           finalOutput,
           tokenBreakdown: {
             prompt: costSummary.totalPromptTokens,
@@ -314,6 +351,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       stateSnapshotId: updatedLog.stateSnapshotId,
       level: updatedLog.level as 'info' | 'error',
       trigger: updatedLog.trigger as ExecutionTrigger['type'],
+      userId: (updatedLog as any).userId || undefined,
+      isExternalChat: updatedLog.isExternalChat,
       startedAt: updatedLog.startedAt.toISOString(),
       endedAt: updatedLog.endedAt?.toISOString() || endedAt,
       totalDurationMs: updatedLog.totalDurationMs || totalDurationMs,
@@ -348,6 +387,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       stateSnapshotId: workflowLog.stateSnapshotId,
       level: workflowLog.level as 'info' | 'error',
       trigger: workflowLog.trigger as ExecutionTrigger['type'],
+      userId: (workflowLog as any).userId || undefined,
+      isExternalChat: workflowLog.isExternalChat,
       startedAt: workflowLog.startedAt.toISOString(),
       endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
       totalDurationMs: workflowLog.totalDurationMs || 0,
