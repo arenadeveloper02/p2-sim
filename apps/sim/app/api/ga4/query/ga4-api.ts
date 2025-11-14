@@ -140,5 +140,28 @@ export class GA4ApiClient {
  * Create GA4 API client from environment variables or provided credentials
  */
 export function createGA4Client(propertyId: string, credentials?: any): GA4ApiClient {
-  return new GA4ApiClient(propertyId, credentials)
+  // Try to load credentials from environment if not provided
+  let finalCredentials = credentials
+
+  if (!finalCredentials) {
+    // Check for GOOGLE_APPLICATION_CREDENTIALS path
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+    if (credentialsPath) {
+      logger.info('Loading credentials from GOOGLE_APPLICATION_CREDENTIALS', { credentialsPath })
+      // googleapis will automatically load from this path
+    }
+    
+    // Check for inline JSON credentials
+    const credentialsJson = process.env.GA4_SERVICE_ACCOUNT_KEY
+    if (credentialsJson) {
+      try {
+        finalCredentials = JSON.parse(credentialsJson)
+        logger.info('Loaded credentials from GA4_SERVICE_ACCOUNT_KEY environment variable')
+      } catch (error) {
+        logger.error('Failed to parse GA4_SERVICE_ACCOUNT_KEY', { error })
+      }
+    }
+  }
+
+  return new GA4ApiClient(propertyId, finalCredentials)
 }

@@ -111,10 +111,15 @@ Generate a clear, specific question about GA4 analytics based on the user's requ
     access: ['ga4'],
     config: {
       tool: () => 'ga4',
-      params: (params: any) => ({
-        query: params.question,
-        propertyId: params.properties,
-      }),
+      params: (params: any) => {
+        // If properties is a key (like 'acalvio'), look up the ID
+        const propertyKey = params.properties as string
+        const propertyId = GA4_PROPERTIES[propertyKey as keyof typeof GA4_PROPERTIES]?.id || propertyKey
+        return {
+          query: params.question,
+          propertyId: propertyId,
+        }
+      },
     },
   },
   inputs: {
