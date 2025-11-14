@@ -10,7 +10,7 @@ export const GA4_API_BASE_URL = 'https://analyticsdata.googleapis.com'
  * Property IDs from Google Analytics 4 accounts
  */
 export const GA4_PROPERTIES: Record<string, { id: string; name: string }> = {
-  acalvio: { id: '89249870', name: 'Acalvio' },
+  acalvio: { id: '336427429', name: 'Acalvio - GA4' },
   al_fire: { id: '108820304', name: 'Al Fire' },
   altula: { id: '30134064', name: 'Altula' },
   aptc: { id: '44022520', name: 'APTC' },
