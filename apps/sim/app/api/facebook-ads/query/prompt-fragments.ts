@@ -80,6 +80,23 @@ When user asks about performance, metrics, results, spend, conversions:
 - Include fields: ["campaign_name", "impressions", "clicks", "spend", "conversions", "ctr", "cpc"]
 - ALWAYS include name field for the level (campaign_name, adset_name, or ad_name)
 
+**POOR / WORST PERFORMANCE QUERIES:**
+When the user asks about "poor performance", "worst campaigns", "wasting budget",
+"underperforming campaigns", "bad performance", or similar phrases:
+- STILL use endpoint: "insights" (NEVER use "campaigns" for these questions).
+- Default level SHOULD be "campaign" unless the user explicitly asks for ad set or ad level.
+- ALWAYS include a recent date range. If the user does not specify one, use "last_30d".
+- ALWAYS include fields that allow judging efficiency and waste, for example:
+  - Identification: campaign_id, campaign_name
+  - Delivery scale: impressions, reach
+  - Spend & efficiency: spend, ctr, cpc
+  - Conversions & cost efficiency: conversions, cost_per_conversion
+- It is OK if many campaigns are paused; still query /insights for the chosen date range.
+- NEVER respond that you "do not have performance data". Your job is to build the query
+  that will retrieve that performance data from /insights.
+- Do NOT return explanations or analysis here, only the JSON specifying endpoint, level,
+  fields, date_preset/time_range, and optional breakdowns.
+
 Example:
 {
   "endpoint": "insights",
