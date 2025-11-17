@@ -21,24 +21,11 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       required: true,
       options: [
         { label: 'Get Organic Keywords for URL', id: 'url_organic' },
-        { label: 'Get AdWords Keywords for URL', id: 'url_adwords' },
         { label: 'Get Domain Organic Keywords', id: 'domain_organic' },
-        { label: 'Get Domain AdWords Keywords', id: 'domain_adwords' },
         { label: 'Get Organic Competitors', id: 'domain_organic_organic' },
-        { label: 'Get AdWords Competitors', id: 'domain_adwords_adwords' },
         { label: 'Get Domain Rank', id: 'domain_rank' },
       ],
       value: () => 'url_organic',
-    },
-    // Report Type - only shown for custom
-    {
-      id: 'reportType',
-      title: 'Report Type',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: 'url_organic, domain_rank, backlinks_overview, etc.',
-      required: true,
-      condition: { field: 'operation', value: 'custom' },
     },
     // URL input - shown for URL-based reports
     {
@@ -50,7 +37,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       required: true,
       condition: {
         field: 'operation',
-        value: ['url_organic', 'url_adwords'],
+        value: ['url_organic'],
       },
     },
     // Domain input - shown for domain-based reports
@@ -63,27 +50,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       required: true,
       condition: {
         field: 'operation',
-        value: [
-          'domain_organic',
-          'domain_adwords',
-          'domain_organic_organic',
-          'domain_adwords_adwords',
-          'backlinks_overview',
-          'backlinks_refdomains',
-          'backlinks_backlinks',
-          'domain_rank',
-        ],
+        value: ['domain_organic', 'domain_organic_organic', 'domain_rank'],
       },
-    },
-    // Target input - shown for custom reports (can be URL or domain)
-    {
-      id: 'target',
-      title: 'Target (URL or Domain)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: 'example.com or https://example.com/page',
-      required: true,
-      condition: { field: 'operation', value: 'custom' },
     },
     // Database
     {
@@ -137,17 +105,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       value: () => 'us',
       condition: {
         field: 'operation',
-        value: [
-          'url_organic',
-          'url_adwords',
-          'domain_organic',
-          'domain_adwords',
-          'domain_organic_organic',
-          'domain_adwords_adwords',
-          'backlinks_overview',
-          'backlinks_refdomains',
-          'backlinks_backlinks',
-        ],
+        value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
       },
     },
     // Display Limit
@@ -184,28 +142,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       description: 'Comma-separated column codes (e.g., Ph=Phrase, Nq=Search Volume, Cp=CPC)',
       condition: {
         field: 'operation',
-        value: [
-          'url_organic',
-          'url_adwords',
-          'domain_organic',
-          'domain_adwords',
-          'domain_organic_organic',
-          'domain_adwords_adwords',
-          'backlinks_overview',
-          'backlinks_refdomains',
-          'backlinks_backlinks',
-        ],
+        value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
       },
-    },
-    // Additional Parameters - only for custom
-    {
-      id: 'additionalParams',
-      title: 'Additional Parameters',
-      type: 'long-input',
-      layout: 'full',
-      placeholder: 'param1=value1&param2=value2',
-      description: 'Additional Semrush API parameters as URL query string format',
-      condition: { field: 'operation', value: 'custom' },
     },
     {
       id: 'apiKey',
@@ -224,21 +162,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     config: {
       tool: () => 'semrush_query',
       params: (params: Record<string, any>) => {
-        // Determine report type based on operation
-        let reportType = params.operation || 'url_organic'
-        if (reportType === 'custom') {
-          reportType = params.reportType || ''
-        }
-
-        // Determine target based on operation
-        let target = ''
-        if (reportType === 'custom') {
-          target = params.target || ''
-        } else if (reportType.startsWith('url_')) {
-          target = params.url || ''
-        } else {
-          target = params.domain || ''
-        }
+        const reportType = params.operation || 'url_organic'
+        const target = reportType.startsWith('url_') ? params.url || '' : params.domain || ''
 
         // Set default export columns to Ph,Nq,Cp if not specified
         // Ph = Phrase (Keyword), Nq = Search Volume, Cp = CPC
@@ -254,7 +179,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
           database: params.database || 'us', // Default to 'us' for all operations
           displayLimit,
           exportColumns: exportColumns || undefined,
-          additionalParams: params.additionalParams || undefined,
           apiKey: params.apiKey || undefined,
         }
         return toolParams
@@ -263,14 +187,11 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
   },
   inputs: {
     operation: { type: 'string', description: 'Semrush operation selection' },
-    reportType: { type: 'string', description: 'Semrush report type (for custom)' },
     url: { type: 'string', description: 'URL to analyze' },
     domain: { type: 'string', description: 'Domain to analyze' },
-    target: { type: 'string', description: 'Target URL or domain (for custom)' },
     database: { type: 'string', description: 'Geographic database code' },
     displayLimit: { type: 'string', description: 'Number of results to return' },
     exportColumns: { type: 'string', description: 'Comma-separated column codes' },
-    additionalParams: { type: 'string', description: 'Additional API parameters' },
     apiKey: {
       type: 'string',
       description: 'Semrush API key',
