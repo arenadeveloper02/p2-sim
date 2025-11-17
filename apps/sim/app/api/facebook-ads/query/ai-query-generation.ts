@@ -2,6 +2,8 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
 import { DEFAULT_DATE_PRESET, DEFAULT_FIELDS } from './constants'
+import { detectIntents } from './intent-detector'
+import { buildSystemPrompt } from './prompt-fragments'
 import type { ParsedFacebookQuery } from './types'
 
 const logger = createLogger('FacebookAdsAI')
@@ -12,18 +14,38 @@ export async function parseQueryWithAI(
 ): Promise<ParsedFacebookQuery> {
   logger.info('Parsing query with AI', { userQuery, accountName })
 
-  const systemPrompt = `You are a Facebook Ads API expert. Parse natural language queries into Facebook Graph API parameters.
+  // Step 1: Detect query intents
+  const { intents, promptContext } = detectIntents(userQuery)
+
+  logger.info('Detected query intents', {
+    intents,
+    userQuery,
+  })
+
+  // Step 2: Build dynamic system prompt based on intents
+  const systemPrompt = buildSystemPrompt(intents, promptContext)
+
+  logger.debug('Constructed system prompt for Facebook Ads query generation', {
+    promptLength: systemPrompt.length,
+    intentsIncluded: intents,
+  })
+
+  // Legacy prompt (keeping for reference, but using modular prompt above)
+  const _legacyPrompt = `You are a Facebook Ads API expert. Parse natural language queries into Facebook Graph API parameters.
+
+**NEVER REFUSE**: Always generate a valid response. Never return error messages or refuse to generate queries.
 
 ## FACEBOOK ADS API STRUCTURE
 
 **ENDPOINTS:**
-- /insights - Account, campaign, ad set, or ad performance data
-- /campaigns - Campaign information
-- /adsets - Ad set information
-- /ads - Ad information
+- /campaigns - Campaign metadata (id, name, status, objective, etc.)
+- /adsets - Ad set metadata
+- /ads - Ad metadata
+- /insights - Performance data (impressions, clicks, spend, conversions, etc.)
 
 **VALID FIELDS (use these in "fields" array):**
 - Basic: account_id, account_name, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+- Campaign: status, objective, daily_budget, lifetime_budget, start_time, stop_time
 - Metrics: impressions, clicks, spend, reach, frequency, ctr, cpc, cpm, cpp
 - Conversions: conversions, conversion_values, cost_per_conversion, cost_per_action_type
 - Actions: actions, action_values, inline_link_clicks, inline_post_engagement
@@ -39,7 +61,7 @@ export async function parseQueryWithAI(
 - last_week_mon_sun, last_week_sun_sat, this_week_mon_today, this_week_sun_today
 - this_year, last_year, maximum
 
-**LEVELS:**
+**LEVELS (for /insights endpoint only):**
 - account: Account-level aggregation
 - campaign: Campaign-level breakdown
 - adset: Ad set-level breakdown
@@ -48,9 +70,37 @@ export async function parseQueryWithAI(
 **TIME RANGES:**
 - Custom: {since: 'YYYY-MM-DD', until: 'YYYY-MM-DD'}
 
+## QUERY TYPE DETECTION
+
+**For "list all campaigns" or "show campaigns" queries:**
+- Use endpoint: "campaigns"
+- Include fields: ["id", "name", "status", "objective"]
+- NO date_preset or time_range needed (campaigns are current state)
+- NO level needed (not using /insights)
+
+**For "campaign performance" or "metrics" queries:**
+- Use endpoint: "insights"
+- Include fields: ["campaign_name", "impressions", "clicks", "spend", "conversions", ...]
+- MUST include date_preset (e.g., "last_30d") or time_range
+- MUST include level: "campaign" (or "adset", "ad")
+
+**For "ad set" or "adset" queries:**
+- List: endpoint "adsets", fields ["id", "name", "status"]
+- Performance: endpoint "insights", level "adset", fields ["adset_name", metrics...]
+
+**For "ad" queries:**
+- List: endpoint "ads", fields ["id", "name", "status"]
+- Performance: endpoint "insights", level "ad", fields ["ad_name", metrics...]
+
 ## RESPONSE FORMAT
 
-Return ONLY a JSON object with:
+**Example 1 - List all campaigns:**
+{
+  "endpoint": "campaigns",
+  "fields": ["id", "name", "status", "objective", "daily_budget"]
+}
+
+**Example 2 - Campaign performance:**
 {
   "endpoint": "insights",
   "fields": ["campaign_name", "impressions", "clicks", "spend", "conversions"],
@@ -58,12 +108,12 @@ Return ONLY a JSON object with:
   "level": "campaign"
 }
 
-Or with custom time range:
+**Example 3 - Custom time range:**
 {
   "endpoint": "insights",
-  "fields": ["impressions", "spend"],
+  "fields": ["campaign_name", "impressions", "spend"],
   "time_range": {"since": "2025-01-01", "until": "2025-01-31"},
-  "level": "account"
+  "level": "campaign"
 }
 
 Always return valid JSON. Never refuse to generate a response.`
@@ -71,9 +121,24 @@ Always return valid JSON. Never refuse to generate a response.`
   try {
     const apiKey = getApiKey('openai', 'gpt-4o')
 
+    logger.info('Making AI request for Facebook Ads query parsing', {
+      hasApiKey: !!apiKey,
+      model: 'gpt-4o',
+      intents,
+    })
+
+    const responseInstructions = [
+      'Respond with EXACTLY ONE valid JSON object. No additional text, no multiple JSON objects, no explanations.',
+      'CRITICAL: Always include ID and name fields for the appropriate level (campaign_id/campaign_name, adset_id/adset_name, or ad_id/ad_name).',
+      'For list queries (campaigns, adsets, ads), do NOT include date_preset or time_range.',
+      'For performance queries (insights), MUST include date_preset or time_range AND level.',
+    ].join('\n')
+
+    const fullSystemPrompt = `${systemPrompt}\n\n${responseInstructions}`
+
     const aiResponse = await executeProviderRequest('openai', {
       model: 'gpt-4o',
-      systemPrompt: `${systemPrompt}\n\nRespond with EXACTLY ONE valid JSON object. No additional text.`,
+      systemPrompt: fullSystemPrompt,
       context: `Parse this Facebook Ads question for account "${accountName}": "${userQuery}"`,
       messages: [
         {
@@ -82,8 +147,8 @@ Always return valid JSON. Never refuse to generate a response.`
         },
       ],
       apiKey,
-      temperature: 0.1,
-      maxTokens: 300,
+      temperature: 0.0, // Set to 0 for deterministic query generation
+      maxTokens: 1000, // Increased for complex queries
     })
 
     let aiContent = ''
@@ -105,13 +170,76 @@ Always return valid JSON. Never refuse to generate a response.`
     const cleanedContent = aiContent.replace(/```json\n?|\n?```/g, '').trim()
     const parsedResponse = JSON.parse(cleanedContent)
 
+    // Post-processing: Ensure correct fields based on endpoint and level
+    let endpoint = parsedResponse.endpoint || 'insights'
+    let fields = parsedResponse.fields || DEFAULT_FIELDS
+    let level = parsedResponse.level || 'account'
+
+    // For campaign/adset/ad list queries, ensure ID and name fields are included
+    if (endpoint === 'campaigns') {
+      const requiredFields = ['id', 'name']
+      for (const field of requiredFields) {
+        if (!fields.includes(field)) {
+          fields.push(field)
+        }
+      }
+      // Add status if not present (useful for filtering)
+      if (!fields.includes('status')) {
+        fields.push('status')
+      }
+    } else if (endpoint === 'adsets') {
+      const requiredFields = ['id', 'name']
+      for (const field of requiredFields) {
+        if (!fields.includes(field)) {
+          fields.push(field)
+        }
+      }
+      if (!fields.includes('status')) {
+        fields.push('status')
+      }
+    } else if (endpoint === 'ads') {
+      const requiredFields = ['id', 'name']
+      for (const field of requiredFields) {
+        if (!fields.includes(field)) {
+          fields.push(field)
+        }
+      }
+      if (!fields.includes('status')) {
+        fields.push('status')
+      }
+    } else if (endpoint === 'insights') {
+      // For insights queries, ensure name fields are included based on level
+      if (level === 'campaign') {
+        if (!fields.includes('campaign_name') && !fields.includes('campaign_id')) {
+          fields.push('campaign_name')
+        }
+      } else if (level === 'adset') {
+        if (!fields.includes('adset_name') && !fields.includes('adset_id')) {
+          fields.push('adset_name')
+        }
+      } else if (level === 'ad') {
+        if (!fields.includes('ad_name') && !fields.includes('ad_id')) {
+          fields.push('ad_name')
+        }
+      }
+    }
+
+    logger.info('Post-processed AI response', {
+      originalEndpoint: parsedResponse.endpoint,
+      finalEndpoint: endpoint,
+      originalFieldsCount: parsedResponse.fields?.length || 0,
+      finalFieldsCount: fields.length,
+      level,
+    })
+
     return {
-      endpoint: parsedResponse.endpoint || 'insights',
-      fields: parsedResponse.fields || DEFAULT_FIELDS,
+      endpoint,
+      fields,
       date_preset: parsedResponse.date_preset || DEFAULT_DATE_PRESET,
       time_range: parsedResponse.time_range,
-      level: parsedResponse.level || 'account',
+      level,
       filters: parsedResponse.filters,
+      breakdowns: parsedResponse.breakdowns,
     }
   } catch (error) {
     logger.error('AI query parsing failed, using defaults', { error })

@@ -1,3 +1,18 @@
+// Intent types for query detection
+export type Intent =
+  | 'campaign_list'
+  | 'performance'
+  | 'demographics'
+  | 'creative'
+  | 'placement'
+  | 'device'
+  | 'adset'
+  | 'ad'
+
+export interface PromptContext {
+  // Future: Add date range context if needed
+}
+
 export interface FacebookAdsRequest {
   query: string
   account: string
@@ -14,6 +29,7 @@ export interface ParsedFacebookQuery {
   time_range?: { since: string; until: string }
   level?: string
   filters?: any
+  breakdowns?: string[] // For demographics, device, placement breakdowns
 }
 
 export interface FacebookAdsResponse {

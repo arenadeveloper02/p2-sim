@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
       parsedQuery.date_preset || date_preset,
       parsedQuery.time_range || time_range,
       parsedQuery.level || level,
-      parsedQuery.filters
+      parsedQuery.filters,
+      parsedQuery.breakdowns
     )
 
     const response: FacebookAdsResponse = {

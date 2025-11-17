@@ -10,7 +10,8 @@ export async function makeFacebookAdsRequest(
   date_preset: string,
   time_range?: { since: string; until: string },
   level?: string,
-  filters?: any
+  filters?: any,
+  breakdowns?: string[]
 ): Promise<any> {
   logger.info('Making Facebook Graph API request', {
     accountId,
@@ -18,6 +19,7 @@ export async function makeFacebookAdsRequest(
     fields,
     date_preset,
     level,
+    breakdowns,
   })
 
   try {
@@ -52,6 +54,10 @@ export async function makeFacebookAdsRequest(
 
     if (filters) {
       params.append('filtering', JSON.stringify(filters))
+    }
+
+    if (breakdowns && breakdowns.length > 0) {
+      params.append('breakdowns', breakdowns.join(','))
     }
 
     const fullUrl = `${apiUrl}?${params.toString()}`
