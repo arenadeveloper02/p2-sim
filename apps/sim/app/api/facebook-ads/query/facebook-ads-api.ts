@@ -26,10 +26,12 @@ export async function makeFacebookAdsRequest(
     const accessToken = process.env.FB_ACCESS_TOKEN
 
     if (!accessToken) {
-      throw new Error('Missing Facebook access token. Please set FB_ACCESS_TOKEN environment variable.')
+      throw new Error(
+        'Missing Facebook access token. Please set FB_ACCESS_TOKEN environment variable.'
+      )
     }
 
-    let apiUrl = `${FB_GRAPH_URL}/${accountId}/${endpoint}`
+    const apiUrl = `${FB_GRAPH_URL}/${accountId}/${endpoint}`
 
     const params = new URLSearchParams({
       access_token: accessToken,

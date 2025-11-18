@@ -171,9 +171,9 @@ Always return valid JSON. Never refuse to generate a response.`
     const parsedResponse = JSON.parse(cleanedContent)
 
     // Post-processing: Ensure correct fields based on endpoint and level
-    let endpoint = parsedResponse.endpoint || 'insights'
-    let fields = parsedResponse.fields || DEFAULT_FIELDS
-    let level = parsedResponse.level || 'account'
+    const endpoint = parsedResponse.endpoint || 'insights'
+    const fields = parsedResponse.fields || DEFAULT_FIELDS
+    const level = parsedResponse.level || 'account'
 
     // For campaign/adset/ad list queries, ensure ID and name fields are included
     if (endpoint === 'campaigns') {

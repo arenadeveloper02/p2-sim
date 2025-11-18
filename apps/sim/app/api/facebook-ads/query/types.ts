@@ -9,9 +9,7 @@ export type Intent =
   | 'adset'
   | 'ad'
 
-export interface PromptContext {
-  // Future: Add date range context if needed
-}
+export type PromptContext = Record<string, never>
 
 export interface FacebookAdsRequest {
   query: string

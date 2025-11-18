@@ -23,6 +23,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import {
   figmaConvertTool,
   figmaCreateStylesVariablesTool,
@@ -50,7 +51,6 @@ import {
 } from '@/tools/github'
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
-import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,

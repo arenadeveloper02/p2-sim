@@ -344,7 +344,7 @@ export function extractDateRanges(input: string): Array<DateRange> {
   }
 
   // Second, try to match the month name pattern with "and then": "Sept 8 to 14 2025 and then 15 to 21 2025"
- 
+
   const fullPattern =
     /(?:from\s+)?(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\s+to\s+(\d{1,2})\s+(\d{4})/i
   const fullMatch = input.match(fullPattern)
