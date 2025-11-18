@@ -1,6 +1,6 @@
 import { MetaIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads'
+import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads/index'
 
 export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
   type: 'facebook_ads',
