@@ -69,6 +69,18 @@ const azureEmailClient =
     ? new EmailClient(azureConnectionString)
     : null
 
+// AWS SES runtime placeholder and credentials detection (we initialize lazily)
+let sesClient: any | null = null
+const rawAwsRegion = (env.AWS_REGION as string | undefined) ?? process.env.AWS_REGION
+const rawAwsAccessKeyId =
+  (env.AWS_ACCESS_KEY_ID as string | undefined) ?? process.env.AWS_ACCESS_KEY_ID
+const rawAwsSecretAccessKey =
+  (env.AWS_SECRET_ACCESS_KEY as string | undefined) ?? process.env.AWS_SECRET_ACCESS_KEY
+const awsRegion = rawAwsRegion ? String(rawAwsRegion).trim() : undefined
+const awsAccessKeyId = rawAwsAccessKeyId ? String(rawAwsAccessKeyId).trim() : undefined
+const awsSecretAccessKey = rawAwsSecretAccessKey ? String(rawAwsSecretAccessKey).trim() : undefined
+const awsCredsPresent = Boolean(awsRegion && awsAccessKeyId && awsSecretAccessKey)
+
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
   try {
     // Check if user has unsubscribed (skip for critical transactional emails)
@@ -108,10 +120,20 @@ export async function sendEmail(options: EmailOptions): Promise<SendEmailResult>
       try {
         return await sendWithAzure(processedData)
       } catch (error) {
-        logger.error('Azure Communication Services also failed:', error)
+        logger.warn('Azure Communication Services failed, attempting AWS SES fallback:', error)
+        // continue to attempt SES below
+      }
+    }
+
+    // Fallback to AWS SES if AWS credentials are present
+    if (awsCredsPresent) {
+      try {
+        return await sendWithSes(processedData)
+      } catch (error) {
+        logger.error('AWS SES also failed:', error)
         return {
           success: false,
-          message: 'Both Resend and Azure Communication Services failed',
+          message: 'All configured email providers failed',
         }
       }
     }
@@ -267,6 +289,71 @@ async function sendWithAzure(data: ProcessedEmailData): Promise<SendEmailResult>
     }
   }
   throw new Error(`Azure Communication Services failed with status: ${result.status}`)
+}
+
+// Ensure SES client is initialized (lazy, dynamic import)
+async function ensureSesClient(): Promise<void> {
+  if (sesClient) return
+  if (!awsCredsPresent) return
+  try {
+    // Dynamically import AWS SES at runtime. Ignore TS errors if the package isn't installed.
+    // @ts-ignore
+    const awsModule = await import('@aws-sdk/client-ses')
+    const { SESClient } = awsModule
+    // awsCredsPresent ensures region and credentials are defined, assert non-null to satisfy types
+    sesClient = new SESClient({
+      region: awsRegion!,
+      credentials: { accessKeyId: awsAccessKeyId!, secretAccessKey: awsSecretAccessKey! },
+    })
+    logger.info('AWS SES client initialized')
+  } catch (err) {
+    logger.error('Failed to dynamically import or initialize AWS SES client:', err)
+    sesClient = null
+  }
+}
+
+async function sendWithSes(data: ProcessedEmailData): Promise<SendEmailResult> {
+  if (!awsCredsPresent) throw new Error('AWS credentials not configured')
+  await ensureSesClient()
+  if (!sesClient) throw new Error('AWS SES client not available')
+
+  // Basic SES send
+  if (data.attachments && data.attachments.length > 0) {
+    throw new Error('SES send does not support attachments in this implementation')
+  }
+
+  const toAddresses = Array.isArray(data.to) ? data.to : [data.to]
+  const body: any = {}
+  if (data.html) body.Html = { Data: data.html }
+  if (data.text) body.Text = { Data: data.text }
+
+  const params = {
+    Destination: {
+      ToAddresses: toAddresses,
+    },
+    Message: {
+      Subject: { Data: data.subject },
+      Body: body,
+    },
+    Source: data.senderEmail,
+    ReplyToAddresses: data.replyTo ? [data.replyTo] : undefined,
+    // Headers like List-Unsubscribe are not directly supported here; SES can use Tags or Raw messages.
+  }
+
+  try {
+    // @ts-ignore
+    const { SendEmailCommand } = await import('@aws-sdk/client-ses')
+    const command = new SendEmailCommand(params)
+    const resp = await sesClient.send(command)
+    return {
+      success: true,
+      message: 'Email sent successfully via AWS SES',
+      data: resp,
+    }
+  } catch (err) {
+    logger.error('AWS SES send error:', err)
+    throw err
+  }
 }
 
 export async function sendBatchEmails(options: BatchEmailOptions): Promise<BatchSendEmailResult> {
