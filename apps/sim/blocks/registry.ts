@@ -60,6 +60,7 @@ import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock } from '@/blocks/blocks/router'
 import { S3Block } from '@/blocks/blocks/s3'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
+import { SemrushBlock } from '@/blocks/blocks/semrush'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { SlackBlock } from '@/blocks/blocks/slack'
@@ -143,6 +144,7 @@ export const registry: Record<string, BlockConfig> = {
   router: RouterBlock,
   schedule: ScheduleBlock,
   s3: S3Block,
+  semrush: SemrushBlock,
   serper: SerperBlock,
   sharepoint: SharepointBlock,
   stagehand: StagehandBlock,

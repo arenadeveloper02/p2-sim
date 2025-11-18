@@ -484,6 +484,8 @@ async function handleInternalRequest(
 
     const response = await fetch(fullUrl, requestOptions)
 
+    const responseContentType = response.headers.get('content-type') || ''
+
     // For non-OK responses, attempt JSON first; if parsing fails, preserve legacy error expected by tests
     if (!response.ok) {
       let errorData: any
@@ -516,9 +518,52 @@ async function handleInternalRequest(
       // Many APIs (e.g., Microsoft Graph) return 202 with empty body
       responseData = { status }
     } else {
+      // If tool has transformResponse, check content-type first to avoid consuming body unnecessarily
+      // Use the contentType we already got from headers
+      const contentType = responseContentType
+      const hasTransformResponse = !!tool.transformResponse
+      // For Semrush specifically, always treat as text if it has transformResponse
+      // Also check if content-type is missing or doesn't explicitly say JSON
+      const isNonJsonContent =
+        hasTransformResponse &&
+        (toolId === 'semrush_query' || !contentType.includes('application/json'))
+
+      if (isNonJsonContent && tool.transformResponse) {
+        // For non-JSON content with transformResponse, pass the response directly
+        // The transformResponse function will read the body as needed
+        const data = await tool.transformResponse(response, params)
+        return data
+      }
+
+      // For JSON responses or tools without transformResponse, parse as JSON
+      // Clone the response BEFORE attempting JSON parse, so we have a backup if it fails
+      let clonedResponseForTransform: Response | null = null
+      if (hasTransformResponse && tool.transformResponse) {
+        try {
+          clonedResponseForTransform = response.clone()
+        } catch (cloneError) {
+          logger.warn(`[${requestId}] Failed to clone response for ${toolId}:`, {
+            error: cloneError instanceof Error ? cloneError.message : String(cloneError),
+          })
+        }
+      }
+
       try {
         responseData = await response.json()
       } catch (jsonError) {
+        if (hasTransformResponse && tool.transformResponse && clonedResponseForTransform) {
+          try {
+            // Use the cloned response
+            const data = await tool.transformResponse(clonedResponseForTransform, params)
+            return data
+          } catch (transformError) {
+            logger.error(`[${requestId}] Transform response error for ${toolId}:`, {
+              error:
+                transformError instanceof Error ? transformError.message : String(transformError),
+            })
+            throw transformError
+          }
+        }
         logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
           error: jsonError instanceof Error ? jsonError.message : String(jsonError),
         })
