@@ -5,7 +5,8 @@ import type { ToolConfig } from '@/tools/types'
 export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> = {
   id: 'google_docs_read',
   name: 'Read Google Docs Document',
-  description: 'Read content from a Google Docs document',
+  description:
+    'Read content from a Google Docs document. Automatically handles both native Google Docs and other document formats (like .docx files) by falling back to Google Drive API when needed.',
   version: '1.0',
 
   oauth: {
@@ -52,7 +53,51 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
     },
   },
 
-  transformResponse: async (response: Response) => {
+  transformResponse: async (response: Response, params?: GoogleDocsToolParams) => {
+    // Check if the response is successful
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+
+      // Handle the specific case where the document is not in native Google Docs format
+      if (
+        response.status === 400 &&
+        errorData.error?.message === 'This operation is not supported for this document'
+      ) {
+        // Fall back to Google Drive API to get the file content
+        try {
+          const { executeTool } = await import('@/tools')
+          const driveResult = await executeTool('google_drive_get_content', {
+            accessToken: params?.accessToken,
+            fileId: params?.documentId,
+          })
+
+          if (driveResult.success) {
+            return {
+              success: true,
+              output: {
+                content: driveResult.output?.content || '',
+                metadata: {
+                  documentId: params?.documentId,
+                  title: driveResult.output?.metadata?.name || 'Untitled Document',
+                  mimeType:
+                    driveResult.output?.metadata?.mimeType ||
+                    'application/vnd.google-apps.document',
+                  url: `https://docs.google.com/document/d/${params?.documentId}/edit`,
+                  isExported: true, // Indicate this was exported from Drive API
+                },
+              },
+            }
+          }
+        } catch (fallbackError) {
+          // If fallback also fails, return the original error
+          console.warn('Fallback to Google Drive API failed:', fallbackError)
+        }
+      }
+
+      // Return the original error if fallback failed or it's a different error
+      throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`)
+    }
+
     const data = await response.json()
 
     // Extract document content from the response

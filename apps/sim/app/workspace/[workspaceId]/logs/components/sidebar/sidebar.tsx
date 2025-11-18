@@ -209,14 +209,28 @@ export function Sidebar({
     }
   }, [log?.id])
 
+  // Helper function to extract traceSpans array from either format
+  const getTraceSpansArray = useMemo(() => {
+    if (!log?.executionData?.traceSpans) return undefined
+    const traceSpans = log.executionData.traceSpans
+    // Handle both formats: { spans: [...] } or [...]
+    if (Array.isArray(traceSpans)) {
+      return traceSpans
+    }
+    if (traceSpans && typeof traceSpans === 'object' && 'spans' in traceSpans) {
+      return Array.isArray(traceSpans.spans) ? traceSpans.spans : undefined
+    }
+    return undefined
+  }, [log?.executionData?.traceSpans])
+
   const isLoadingDetails = useMemo(() => {
     if (!log) return false
     // Only show while we expect details to arrive (has executionId)
     if (!log.executionId) return false
     const hasEnhanced = !!log.executionData?.enhanced
-    const hasAnyDetails = hasEnhanced || !!log.cost || Array.isArray(log.executionData?.traceSpans)
+    const hasAnyDetails = hasEnhanced || !!log.cost || !!getTraceSpansArray
     return !hasAnyDetails
-  }, [log])
+  }, [log, getTraceSpansArray])
 
   const formattedContent = useMemo(() => {
     if (!log) return null
@@ -225,15 +239,15 @@ export function Sidebar({
 
     if (log.executionData?.blockInput) {
       blockInput = log.executionData.blockInput
-    } else if (log.executionData?.traceSpans) {
-      const firstSpanWithInput = log.executionData.traceSpans.find((s) => s.input)
+    } else if (getTraceSpansArray) {
+      const firstSpanWithInput = getTraceSpansArray.find((s) => s.input)
       if (firstSpanWithInput?.input) {
         blockInput = firstSpanWithInput.input as any
       }
     }
 
     return null
-  }, [log])
+  }, [log, getTraceSpansArray])
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -246,9 +260,9 @@ export function Sidebar({
     if (!log) return false
     return (
       (log.trigger === 'manual' && !!log.duration) ||
-      (log.executionData?.enhanced && log.executionData?.traceSpans)
+      (log.executionData?.enhanced && !!getTraceSpansArray)
     )
-  }, [log])
+  }, [log, getTraceSpansArray])
 
   // Helper to determine if we have cost information to display
   // All workflow executions now have cost info (base charge + any model costs)
@@ -547,11 +561,11 @@ export function Sidebar({
                 {/* end suspense */}
 
                 {/* Trace Spans (if available and this is a workflow execution log) */}
-                {isWorkflowExecutionLog && log.executionData?.traceSpans && (
+                {isWorkflowExecutionLog && getTraceSpansArray && (
                   <div className='w-full'>
                     <div className='w-full overflow-x-hidden'>
                       <TraceSpansDisplay
-                        traceSpans={log.executionData.traceSpans}
+                        traceSpans={getTraceSpansArray}
                         totalDuration={log.executionData.totalDuration}
                         onExpansionChange={handleTraceSpanToggle}
                       />
@@ -580,7 +594,7 @@ export function Sidebar({
           executionId={log.executionId}
           workflowName={log.workflow?.name}
           trigger={log.trigger || undefined}
-          traceSpans={log.executionData?.traceSpans}
+          traceSpans={getTraceSpansArray}
           isOpen={isFrozenCanvasOpen}
           onClose={() => setIsFrozenCanvasOpen(false)}
         />

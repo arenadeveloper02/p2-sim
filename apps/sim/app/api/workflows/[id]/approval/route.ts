@@ -535,6 +535,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           throw new Error('Source workflow not found')
         }
 
+        // Get original workflow blocks BEFORE deleting (to preserve file-selector values)
+        const originalBlocks = await tx
+          .select()
+          .from(workflowBlocks)
+          .where(eq(workflowBlocks.workflowId, userWorkflowStatus[0].mappedWorkflowId))
+
+        // Create a map of original blocks by type and name for easy lookup
+        const originalBlocksMap = new Map<string, any>()
+        originalBlocks.forEach((block) => {
+          const key = `${block.type}_${block.name}`
+          originalBlocksMap.set(key, block)
+        })
+
         // Delete the blocks and edges of the older data
         await tx
           .delete(workflowBlocks)
@@ -587,6 +600,42 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
                 }
               }
             }
+
+            // Preserve file-selector values from original workflow
+            let updatedSubBlocks = block.subBlocks
+            if (block.subBlocks && typeof block.subBlocks === 'object') {
+              const blockKey = `${block.type}_${block.name}`
+              const originalBlock = originalBlocksMap.get(blockKey)
+
+              if (originalBlock?.subBlocks) {
+                const sourceSubBlocks = block.subBlocks as any
+                const originalSubBlocks = originalBlock.subBlocks as any
+                const mergedSubBlocks = { ...sourceSubBlocks }
+
+                // Iterate through subBlocks and preserve file-selector and credential values
+                for (const [subBlockKey, subBlockValue] of Object.entries(sourceSubBlocks)) {
+                  if (subBlockValue && typeof subBlockValue === 'object') {
+                    const subBlockType = (subBlockValue as any).type
+                    // Preserve values for file-selector and oauth-input (credentials) types
+                    if (subBlockType === 'file-selector' || subBlockType === 'oauth-input') {
+                      // Check if original block has this subBlock with a value
+                      if (originalSubBlocks[subBlockKey]?.value) {
+                        mergedSubBlocks[subBlockKey] = {
+                          ...subBlockValue,
+                          value: originalSubBlocks[subBlockKey].value,
+                        }
+                        logger.info(
+                          `[${requestId}] Preserved ${subBlockType} value for ${block.name}.${subBlockKey}`
+                        )
+                      }
+                    }
+                  }
+                }
+
+                updatedSubBlocks = mergedSubBlocks
+              }
+            }
+
             return {
               ...block,
               id: newBlockId,
@@ -594,6 +643,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
               parentId: newParentId,
               extent: newExtent,
               data: updatedData,
+              subBlocks: updatedSubBlocks,
               createdAt: now,
               updatedAt: now,
             }

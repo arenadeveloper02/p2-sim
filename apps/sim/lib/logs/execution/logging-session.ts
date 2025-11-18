@@ -28,6 +28,7 @@ export interface SessionCompleteParams {
   totalDurationMs?: number
   finalOutput?: any
   traceSpans?: any[]
+  finalChatOutput?: string // Final chat output based on output_configs
 }
 
 export interface SessionErrorCompleteParams {
@@ -49,6 +50,7 @@ export class LoggingSession {
   private trigger?: ExecutionTrigger
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
+  private initialInput?: string
 
   constructor(
     workflowId: string,
@@ -64,6 +66,10 @@ export class LoggingSession {
     this.requestId = requestId
     this.isExternalChat = isExternalChat
     this.chatId = chatId
+  }
+
+  setInitialInput(value?: string): void {
+    this.initialInput = value
   }
 
   async start(params: SessionStartParams = {}): Promise<void> {
@@ -114,7 +120,7 @@ export class LoggingSession {
   }
 
   async complete(params: SessionCompleteParams = {}): Promise<void> {
-    const { endedAt, totalDurationMs, finalOutput, traceSpans } = params
+    const { endedAt, totalDurationMs, finalOutput, traceSpans, finalChatOutput } = params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])
@@ -126,6 +132,8 @@ export class LoggingSession {
         costSummary,
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
+        initialInput: this.initialInput,
+        finalChatOutput,
       })
 
       if (this.requestId) {

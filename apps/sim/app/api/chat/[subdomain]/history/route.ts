@@ -138,6 +138,7 @@ export async function GET(
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         cost: workflowExecutionLogs.cost,
         executionData: workflowExecutionLogs.executionData,
+        finalChatOutput: workflowExecutionLogs.finalChatOutput,
         createdAt: workflowExecutionLogs.createdAt,
       })
       .from(workflowExecutionLogs)
@@ -175,23 +176,90 @@ export async function GET(
     const formattedLogs = logs.map((log) => {
       const executionData = log.executionData as any
 
-      // Extract input and output from traceSpans children
+      // Extract userInput:
+      // 1. First check traceSpans.initialInput
+      // 2. If null, check traceSpans.spans -> workflow -> children -> agent -> input.userPrompt
       let userInput = null
-      let modelOutput = null
       let conversationId = null
 
-      if (executionData?.traceSpans && Array.isArray(executionData.traceSpans)) {
-        // Look for workflow execution span
-        const workflowSpan = executionData.traceSpans.find((span: any) => span.type === 'workflow')
-        if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-          // Look for agent spans in children
-          const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
-          if (agentSpans.length > 0) {
-            const agentSpan = agentSpans[0] // Get first agent span
-            userInput = agentSpan.input?.userPrompt || null
-            modelOutput = agentSpan.output?.content || null
-            // Try to extract conversationId from input if available
-            conversationId = agentSpan.input?.conversationId || null
+      if (executionData?.traceSpans) {
+        // Check for initialInput first
+        if (
+          executionData.traceSpans.initialInput &&
+          typeof executionData.traceSpans.initialInput === 'string'
+        ) {
+          userInput = executionData.traceSpans.initialInput
+        } else if (
+          executionData.traceSpans.spans &&
+          Array.isArray(executionData.traceSpans.spans)
+        ) {
+          // Look for workflow execution span in spans array
+          const workflowSpan = executionData.traceSpans.spans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            // Look for agent spans in children
+            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
+            if (agentSpans.length > 0) {
+              const agentSpan = agentSpans[0] // Get first agent span
+              userInput = agentSpan.input?.userPrompt || null
+              conversationId = agentSpan.input?.conversationId || null
+            }
+          }
+        } else if (Array.isArray(executionData.traceSpans)) {
+          // Fallback: if traceSpans is directly an array (old format)
+          const workflowSpan = executionData.traceSpans.find(
+            (span: any) => span.type === 'workflow'
+          )
+          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
+            if (agentSpans.length > 0) {
+              const agentSpan = agentSpans[0]
+              userInput = agentSpan.input?.userPrompt || null
+              conversationId = agentSpan.input?.conversationId || null
+            }
+          }
+        }
+      }
+
+      // Extract modelOutput directly from final_chat_output column
+      // This is the output that was streamed/shown based on output_configs
+      let modelOutput = log.finalChatOutput || null
+
+      // Fallback: if final_chat_output is not available (for older records),
+      // fall back to the old extraction logic
+      if (!modelOutput) {
+        // Fallback logic for backward compatibility with older records
+        if (executionData?.finalOutput?.content) {
+          modelOutput = executionData.finalOutput.content
+        } else if (executionData?.output?.content) {
+          modelOutput = executionData.output.content
+        } else if (executionData?.traceSpans) {
+          // Try to get from traceSpans (backward compatibility)
+          if (executionData.traceSpans.spans && Array.isArray(executionData.traceSpans.spans)) {
+            const workflowSpan = executionData.traceSpans.spans.find(
+              (span: any) => span.type === 'workflow'
+            )
+            if (workflowSpan?.children) {
+              const agentSpans = workflowSpan.children.filter(
+                (child: any) => child.type === 'agent'
+              )
+              if (agentSpans.length > 0) {
+                modelOutput = agentSpans[0].output?.content || null
+              }
+            }
+          } else if (Array.isArray(executionData.traceSpans)) {
+            const workflowSpan = executionData.traceSpans.find(
+              (span: any) => span.type === 'workflow'
+            )
+            if (workflowSpan?.children) {
+              const agentSpans = workflowSpan.children.filter(
+                (child: any) => child.type === 'agent'
+              )
+              if (agentSpans.length > 0) {
+                modelOutput = agentSpans[0].output?.content || null
+              }
+            }
           }
         }
       }

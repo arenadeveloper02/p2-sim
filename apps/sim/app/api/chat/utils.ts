@@ -377,11 +377,15 @@ export async function executeWorkflowForChat(
     logChatId || chatId
   )
 
+  // Store the initial input for logging into execution_data.traceSpans.initial_input
+  loggingSession.setInitialInput(input)
+
   // Check for multi-output configuration in customizations
   const customizations = (deployment.customizations || {}) as Record<string, any>
   let outputBlockIds: string[] = []
 
   // Extract output configs from the new schema format
+  // Remove duplicates to prevent processing the same outputId multiple times
   let selectedOutputIds: string[] = []
   if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
     // Extract output IDs in the format expected by the streaming processor
@@ -389,17 +393,21 @@ export async function executeWorkflowForChat(
       `[${requestId}] Found ${deployment.outputConfigs.length} output configs in deployment`
     )
 
-    selectedOutputIds = deployment.outputConfigs.map((config) => {
-      const outputId = config.path
-        ? `${config.blockId}_${config.path}`
-        : `${config.blockId}.content`
+    selectedOutputIds = Array.from(
+      new Set(
+        deployment.outputConfigs.map((config) => {
+          const outputId = config.path
+            ? `${config.blockId}_${config.path}`
+            : `${config.blockId}.content`
 
-      logger.debug(
-        `[${requestId}] Processing output config: blockId=${config.blockId}, path=${config.path || 'content'} -> outputId=${outputId}`
+          logger.debug(
+            `[${requestId}] Processing output config: blockId=${config.blockId}, path=${config.path || 'content'} -> outputId=${outputId}`
+          )
+
+          return outputId
+        })
       )
-
-      return outputId
-    })
+    )
 
     // Also extract block IDs for legacy compatibility
     outputBlockIds = deployment.outputConfigs.map((config) => config.blockId)
@@ -586,32 +594,70 @@ export async function executeWorkflowForChat(
 
         const blockId = streamingExecution.execution?.blockId
         const reader = streamingExecution.stream.getReader()
+
+        // Check if this block should stream content to the client
+        // Only stream if the selected path is "content" (or undefined/default)
+        let shouldStreamToClient = true
+        if (blockId && selectedOutputIds.length > 0) {
+          const matchingOutputId = selectedOutputIds.find((outputId) => {
+            const blockIdForOutput = outputId.includes('_')
+              ? outputId.split('_')[0]
+              : outputId.split('.')[0]
+            return blockIdForOutput === blockId
+          })
+
+          if (matchingOutputId) {
+            // Extract the path from the outputId
+            const path = matchingOutputId.includes('_')
+              ? matchingOutputId.substring(blockId.length + 1)
+              : matchingOutputId.includes('.')
+                ? matchingOutputId.substring(blockId.length + 1)
+                : 'content' // Default to content if no path specified
+
+            // Only stream to client if the selected path is "content" or undefined
+            // For other paths (like "model", "tokens", etc.), we'll extract them from the final output
+            shouldStreamToClient = path === 'content' || path === ''
+          } else {
+            // Block is not in selectedOutputIds, don't stream
+            shouldStreamToClient = false
+          }
+        }
+
         if (blockId) {
           streamedContent.set(blockId, '')
 
-          // Add separator if this is not the first block to stream
-          if (streamedBlocks.size > 0) {
-            // Send separator before the new block starts
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ blockId, chunk: '\n\n' })}\n\n`)
-            )
+          // Only send separator and track streaming if we're actually streaming to client
+          if (shouldStreamToClient) {
+            // Add separator if this is not the first block to stream
+            if (streamedBlocks.size > 0) {
+              // Send separator before the new block starts
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ blockId, chunk: '\n\n' })}\n\n`)
+              )
+            }
+            streamedBlocks.add(blockId)
           }
-          streamedBlocks.add(blockId)
         }
         try {
           while (true) {
             const { done, value } = await reader.read()
             if (done) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ blockId, event: 'end' })}\n\n`)
-              )
+              if (shouldStreamToClient) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ blockId, event: 'end' })}\n\n`)
+                )
+              }
               break
             }
             const chunk = new TextDecoder().decode(value)
             if (blockId) {
+              // Always accumulate streamed content for executor processing
               streamedContent.set(blockId, (streamedContent.get(blockId) || '') + chunk)
             }
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ blockId, chunk })}\n\n`))
+            // Only send chunks to client if we should stream this block's content
+            if (shouldStreamToClient) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ blockId, chunk })}\n\n`))
+            }
           }
         } catch (error) {
           logger.error('Error while reading from stream:', error)
@@ -670,29 +716,16 @@ export async function executeWorkflowForChat(
           ? (result.execution as ExecutionResult)
           : (result as ExecutionResult)
 
+      // Initialize enrichedResult early to ensure it's always available
+      let enrichedResult: ExecutionResult & { traceSpans?: any; totalDuration?: number } =
+        executionResult
+
+      // Declare finalChatOutputs in outer scope so it's accessible later
+      let finalChatOutputs: string[] = [] // For final_chat_output column (includes ALL selected outputs)
+
       if (executionResult?.logs) {
         // Update streamed content and apply tokenization - process regardless of overall success
         // This ensures partial successes (some agents succeed, some fail) still return results
-
-        // Add newlines between different agent outputs for better readability
-        const processedOutputs = new Set<string>()
-        executionResult.logs.forEach((log: BlockLog) => {
-          if (streamedContent.has(log.blockId)) {
-            const content = streamedContent.get(log.blockId)
-            if (log.output && content) {
-              // Add newline separation between different outputs (but not before the first one)
-              const separator = processedOutputs.size > 0 ? '\n\n' : ''
-              log.output.content = separator + content
-              processedOutputs.add(log.blockId)
-            }
-          }
-        })
-
-        // Also process non-streamed outputs from selected blocks (like function blocks)
-        // This uses the same logic as the chat panel to ensure identical behavior
-        const nonStreamingLogs = executionResult.logs.filter(
-          (log: BlockLog) => !streamedContent.has(log.blockId)
-        )
 
         // Extract the exact same functions used by the chat panel
         const extractBlockIdFromOutputId = (outputId: string): string => {
@@ -720,11 +753,106 @@ export async function executeWorkflowForChat(
           return output
         }
 
+        // Add newlines between different agent outputs for better readability
+        // Only process streamed blocks that are in the selected outputs
+        const processedOutputs = new Set<string>()
+
+        // First, filter to only selected streaming blocks
+        if (selectedOutputIds.length > 0) {
+          executionResult.logs.forEach((log: BlockLog) => {
+            if (streamedContent.has(log.blockId)) {
+              // Check if this block is in the selected outputs
+              const blockIdForLog = log.blockId
+              const isSelected = selectedOutputIds.some((outputId) => {
+                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                return blockIdForOutput === blockIdForLog
+              })
+
+              if (isSelected) {
+                const content = streamedContent.get(log.blockId)
+                if (log.output && content) {
+                  // Extract the path from the selected output ID if it exists
+                  const matchingOutputId = selectedOutputIds.find((outputId) => {
+                    const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                    return blockIdForOutput === blockIdForLog
+                  })
+
+                  if (matchingOutputId) {
+                    const path = extractPathFromOutputId(matchingOutputId, blockIdForLog)
+
+                    // If a specific path is selected (not just "content"), extract it
+                    if (path && path !== 'content') {
+                      // Parse the content to extract the specific path
+                      const parsedContent = parseOutputContentSafely(log.output)
+                      const pathParts = path.split('.')
+                      let extractedValue = parsedContent
+
+                      for (const part of pathParts) {
+                        if (
+                          extractedValue &&
+                          typeof extractedValue === 'object' &&
+                          part in extractedValue
+                        ) {
+                          extractedValue = extractedValue[part]
+                        } else {
+                          extractedValue = undefined
+                          break
+                        }
+                      }
+
+                      if (extractedValue !== undefined) {
+                        const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                        const formattedOutput =
+                          typeof extractedValue === 'string'
+                            ? extractedValue
+                            : JSON.stringify(extractedValue, null, 2)
+                        log.output.content = separator + formattedOutput
+                        processedOutputs.add(log.blockId)
+                      }
+                    } else {
+                      // Default to content field
+                      const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                      log.output.content = separator + content
+                      processedOutputs.add(log.blockId)
+                    }
+                  } else {
+                    // Fallback: if no matching output ID found, use content as-is
+                    const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                    log.output.content = separator + content
+                    processedOutputs.add(log.blockId)
+                  }
+                }
+              }
+            }
+          })
+        } else {
+          // If no output configs are set, process all streamed blocks (legacy behavior)
+          executionResult.logs.forEach((log: BlockLog) => {
+            if (streamedContent.has(log.blockId)) {
+              const content = streamedContent.get(log.blockId)
+              if (log.output && content) {
+                const separator = processedOutputs.size > 0 ? '\n\n' : ''
+                log.output.content = separator + content
+                processedOutputs.add(log.blockId)
+              }
+            }
+          })
+        }
+
+        // Also process non-streamed outputs from selected blocks (like function blocks)
+        // This uses the same logic as the chat panel to ensure identical behavior
+        const nonStreamingLogs = executionResult.logs.filter(
+          (log: BlockLog) => !streamedContent.has(log.blockId)
+        )
+
         // Filter outputs that have matching logs (exactly like chat panel)
-        const outputsToRender = selectedOutputIds.filter((outputId) => {
-          const blockIdForOutput = extractBlockIdFromOutputId(outputId)
-          return nonStreamingLogs.some((log) => log.blockId === blockIdForOutput)
-        })
+        const outputsToRender =
+          selectedOutputIds.length > 0
+            ? selectedOutputIds.filter((outputId) => {
+                const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+                return nonStreamingLogs.some((log) => log.blockId === blockIdForOutput)
+              })
+            : []
 
         // Process each selected output (exactly like chat panel)
         for (const outputId of outputsToRender) {
@@ -773,8 +901,253 @@ export async function executeWorkflowForChat(
         const processedCount = processStreamingBlockLogs(executionResult.logs, streamedContent)
         logger.info(`Processed ${processedCount} blocks for streaming tokenization`)
 
+        // Construct executionResult.output from selected blocks if outputConfigs are set
+        // This ensures output.content matches what was streamed and respects selectedOutputIds
+        if (selectedOutputIds.length > 0) {
+          const selectedOutputs: string[] = [] // For executionResult.output.content (excludes streamed content)
+          finalChatOutputs = [] // Initialize for final_chat_output column (includes ALL selected outputs)
+          const aggregatedTokens = {
+            prompt: 0,
+            completion: 0,
+            total: 0,
+          }
+          const aggregatedToolCalls: any[] = []
+          let aggregatedModel: string | undefined
+          const aggregatedFiles: any[] = []
+          const processedBlocks = new Set<string>() // Track which blocks we've already processed for aggregation
+          const processedOutputIds = new Set<string>() // Track processed outputIds to prevent duplicates
+          const addedContentValues = new Set<string>() // Track added content values to prevent duplicates
+          const addedFinalChatValues = new Set<string>() // Track added values for finalChatOutput
+
+          // Collect outputs from all selected blocks (both streamed and non-streamed)
+          // Iterate through selectedOutputIds to ensure all selected paths are processed
+          // This handles cases where multiple paths are selected for the same block (e.g., both "content" and "model")
+          selectedOutputIds.forEach((outputId) => {
+            // Skip if we've already processed this exact outputId (prevent duplicates)
+            if (processedOutputIds.has(outputId)) {
+              return
+            }
+
+            const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+            const path = extractPathFromOutputId(outputId, blockIdForOutput)
+
+            // Find the log for this block
+            const log = executionResult.logs?.find((l: BlockLog) => l.blockId === blockIdForOutput)
+
+            if (log?.output) {
+              // Extract the content based on the selected path
+              let extractedContent: string | undefined
+              let extractedContentForFinalChat: string | undefined // Always extract for finalChatOutput
+
+              if (path && path !== 'content') {
+                // Extract specific path (e.g., "model", "tokens", etc.)
+                // For non-content paths, access directly from log.output (not from parsed content)
+                const pathParts = path.split('.')
+                let extractedValue: any = log.output
+
+                for (const part of pathParts) {
+                  if (
+                    extractedValue &&
+                    typeof extractedValue === 'object' &&
+                    part in extractedValue
+                  ) {
+                    extractedValue = extractedValue[part]
+                  } else {
+                    extractedValue = undefined
+                    break
+                  }
+                }
+
+                if (extractedValue !== undefined) {
+                  const formattedValue =
+                    typeof extractedValue === 'string'
+                      ? extractedValue
+                      : JSON.stringify(extractedValue, null, 2)
+                  extractedContent = formattedValue
+                  extractedContentForFinalChat = formattedValue
+                }
+              } else {
+                // Default to content field
+                // For finalChatOutput: Always include content (streamed or not)
+                if (streamedContent.has(blockIdForOutput)) {
+                  extractedContentForFinalChat = streamedContent.get(blockIdForOutput) || undefined
+                } else {
+                  extractedContentForFinalChat = log.output.content
+                }
+
+                // IMPORTANT: For streamed content paths, DO NOT include in final output.content
+                // because it's already been streamed to the client. Only include non-streamed content.
+                // This prevents duplication where the UI shows streamed content + final output.content
+                const wasStreamed = streamedContent.has(blockIdForOutput)
+                if (wasStreamed) {
+                  // This content was streamed, so skip adding it to final output.content
+                  // The UI will use the accumulated streamed text instead
+                  extractedContent = undefined
+                  logger.debug(
+                    `[${requestId}] Skipping streamed content for block ${blockIdForOutput} in final output.content`
+                  )
+                } else {
+                  // Non-streamed content, include it in final output
+                  extractedContent = log.output.content
+                  logger.debug(
+                    `[${requestId}] Including non-streamed content for block ${blockIdForOutput} in final output.content`
+                  )
+                }
+              }
+
+              // Add to finalChatOutputs (includes ALL selected outputs, streamed or not)
+              if (
+                extractedContentForFinalChat &&
+                typeof extractedContentForFinalChat === 'string' &&
+                extractedContentForFinalChat.trim().length > 0
+              ) {
+                if (!addedFinalChatValues.has(extractedContentForFinalChat)) {
+                  if (finalChatOutputs.length > 0) {
+                    finalChatOutputs.push('\n\n')
+                  }
+                  finalChatOutputs.push(extractedContentForFinalChat)
+                  addedFinalChatValues.add(extractedContentForFinalChat)
+                }
+              } else if (extractedContentForFinalChat) {
+                const stringifiedContent = JSON.stringify(extractedContentForFinalChat, null, 2)
+                if (!addedFinalChatValues.has(stringifiedContent)) {
+                  if (finalChatOutputs.length > 0) {
+                    finalChatOutputs.push('\n\n')
+                  }
+                  finalChatOutputs.push(stringifiedContent)
+                  addedFinalChatValues.add(stringifiedContent)
+                }
+              }
+
+              // Add to selectedOutputs (only non-streamed content for executionResult.output.content)
+              // Only add if we got a valid value and it's not a duplicate
+              // Skip if content was streamed (to prevent duplication)
+              if (
+                extractedContent &&
+                typeof extractedContent === 'string' &&
+                extractedContent.trim().length > 0
+              ) {
+                // Check if this exact content value was already added (prevent duplicates)
+                if (!addedContentValues.has(extractedContent)) {
+                  // Add separator if not the first output
+                  if (selectedOutputs.length > 0) {
+                    selectedOutputs.push('\n\n')
+                  }
+                  selectedOutputs.push(extractedContent)
+                  addedContentValues.add(extractedContent)
+                  processedOutputIds.add(outputId)
+                }
+              } else if (extractedContent) {
+                // For non-string values (like JSON objects), check stringified version
+                const stringifiedContent = JSON.stringify(extractedContent, null, 2)
+                if (!addedContentValues.has(stringifiedContent)) {
+                  if (selectedOutputs.length > 0) {
+                    selectedOutputs.push('\n\n')
+                  }
+                  selectedOutputs.push(stringifiedContent)
+                  addedContentValues.add(stringifiedContent)
+                  processedOutputIds.add(outputId)
+                }
+              } else {
+                // Mark as processed even if we didn't add content (e.g., streamed content)
+                processedOutputIds.add(outputId)
+              }
+
+              // Aggregate tokens, tool calls, and files (only count once per block)
+              // Check if we've already processed this block for aggregation
+              if (!processedBlocks.has(blockIdForOutput)) {
+                // Aggregate tokens from selected blocks
+                if (log.output.tokens) {
+                  aggregatedTokens.prompt += log.output.tokens.prompt || 0
+                  aggregatedTokens.completion += log.output.tokens.completion || 0
+                  aggregatedTokens.total += log.output.tokens.total || 0
+                }
+
+                // Aggregate tool calls
+                if (log.output.toolCalls?.list && Array.isArray(log.output.toolCalls.list)) {
+                  aggregatedToolCalls.push(...log.output.toolCalls.list)
+                }
+
+                // Aggregate files
+                if (log.output.files && Array.isArray(log.output.files)) {
+                  aggregatedFiles.push(...log.output.files)
+                }
+
+                // Mark this block as processed for aggregation
+                processedBlocks.add(blockIdForOutput)
+              }
+
+              // Use model from first selected block (or last if multiple)
+              if (log.output.model) {
+                aggregatedModel = log.output.model
+              }
+            }
+          })
+
+          // Construct the final output from selected blocks
+          if (selectedOutputs.length > 0) {
+            executionResult.output = {
+              content: selectedOutputs.join(''),
+              ...(aggregatedTokens.total > 0 && { tokens: aggregatedTokens }),
+              ...(aggregatedToolCalls.length > 0 && {
+                toolCalls: {
+                  list: aggregatedToolCalls,
+                  count: aggregatedToolCalls.length,
+                },
+              }),
+              ...(aggregatedModel && { model: aggregatedModel }),
+              ...(aggregatedFiles.length > 0 && { files: aggregatedFiles }),
+            }
+
+            logger.debug(
+              `[${requestId}] Constructed executionResult.output from ${selectedOutputIds.length} selected blocks`
+            )
+          } else {
+            // If no content was extracted, set output to empty to avoid showing wrong content
+            executionResult.output = {
+              content: '',
+              ...(aggregatedTokens.total > 0 && { tokens: aggregatedTokens }),
+              ...(aggregatedToolCalls.length > 0 && {
+                toolCalls: {
+                  list: aggregatedToolCalls,
+                  count: aggregatedToolCalls.length,
+                },
+              }),
+              ...(aggregatedModel && { model: aggregatedModel }),
+            }
+            logger.debug(
+              `[${requestId}] No content extracted from selected blocks, setting empty output`
+            )
+          }
+
+          // Clear content from non-selected blocks to prevent UI from displaying them
+          // The UI iterates through logs and displays any log with output.content
+          // So we need to remove content from non-selected blocks
+          executionResult.logs.forEach((log: BlockLog) => {
+            const blockIdForLog = log.blockId
+            const isSelected = selectedOutputIds.some((outputId) => {
+              const blockIdForOutput = extractBlockIdFromOutputId(outputId)
+              return blockIdForOutput === blockIdForLog
+            })
+
+            // If this block is not selected, clear its content so UI won't display it
+            if (!isSelected && log.output && log.output.content !== undefined) {
+              // Remove content property from non-selected blocks
+              // Preserve other output fields (tokens, model, etc.) for logging
+              // This ensures logging still works but UI won't display the content
+              const { content, ...outputWithoutContent } = log.output
+              log.output = outputWithoutContent
+            }
+          })
+
+          logger.debug(
+            `[${requestId}] Cleared content from non-selected blocks to prevent UI display`
+          )
+        }
+        // If selectedOutputIds.length === 0, keep the original executionResult.output (last block's output)
+
         const { traceSpans, totalDuration } = buildTraceSpans(executionResult)
-        const enrichedResult = { ...executionResult, traceSpans, totalDuration }
+        enrichedResult = { ...executionResult, traceSpans, totalDuration }
         if (conversationId) {
           if (!enrichedResult.metadata) {
             enrichedResult.metadata = {
@@ -784,8 +1157,6 @@ export async function executeWorkflowForChat(
           }
           ;(enrichedResult.metadata as any).conversationId = conversationId
         }
-        const executionId = uuidv4()
-        logger.debug(`Generated execution ID for deployed chat: ${executionId}`)
 
         if (executionResult.success) {
           try {
@@ -801,19 +1172,50 @@ export async function executeWorkflowForChat(
             logger.error(`Failed to update user stats for deployed chat:`, error)
           }
         }
+      } else {
+        // If no logs, still build traceSpans and enrichedResult for consistency
+        const { traceSpans, totalDuration } = buildTraceSpans(executionResult)
+        enrichedResult = { ...executionResult, traceSpans, totalDuration }
+        if (conversationId) {
+          if (!enrichedResult.metadata) {
+            enrichedResult.metadata = {
+              duration: totalDuration,
+              startTime: new Date().toISOString(),
+            }
+          }
+          ;(enrichedResult.metadata as any).conversationId = conversationId
+        }
       }
 
-      if (!(result && typeof result === 'object' && 'stream' in result)) {
-        // Include executionId in the final event payload for traceability
-        const finalPayload = {
-          event: 'final',
-          data: {
-            ...(typeof result === 'object' && result !== null ? result : { value: result }),
-            executionId,
-          },
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
+      // Store the final chat output for history API
+      // This should include ALL selected outputs (both streamed and non-streamed)
+      // Use finalChatOutputs if available, otherwise fall back to executionResult.output.content
+      let finalChatOutput: string | undefined
+      if (
+        selectedOutputIds.length > 0 &&
+        Array.isArray(finalChatOutputs) &&
+        finalChatOutputs.length > 0
+      ) {
+        // Use finalChatOutputs which includes all selected outputs
+        finalChatOutput = finalChatOutputs.join('')
+      } else if (executionResult.output?.content) {
+        // Fallback: if finalChatOutputs is empty or no output_configs, use executionResult.output.content
+        finalChatOutput = executionResult.output.content
       }
+
+      const executionId = uuidv4()
+      logger.debug(`Generated execution ID for deployed chat: ${executionId}`)
+
+      // Always send the final event with executionResult (whether streaming or not)
+      // This ensures the UI receives the complete execution data including metadata and logs
+      const finalPayload = {
+        event: 'final',
+        data: {
+          ...enrichedResult,
+          executionId,
+        },
+      }
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(finalPayload)}\n\n`))
 
       // Complete logging session (for both success and failure)
       if (executionResult?.logs) {
@@ -823,6 +1225,7 @@ export async function executeWorkflowForChat(
           totalDurationMs: executionResult.metadata?.duration || 0,
           finalOutput: executionResult.output,
           traceSpans,
+          finalChatOutput,
         })
       }
 
