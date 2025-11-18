@@ -53,6 +53,18 @@ const LOCATION_TARGETING_KEYWORDS = [
 
 const BRAND_KEYWORDS = ['brand vs', 'non-brand', 'non brand', 'pmax', 'brand campaign'] as const
 
+const AD_COPY_KEYWORDS = [
+  'ad copy',
+  'poor ad',
+  'average ad',
+  'improve ad',
+  'optimize ad',
+  'ad suggestion',
+  'headline suggestion',
+  'description suggestion',
+  'keyword-aligned',
+] as const
+
 export interface DetectedIntents {
   intents: Intent[]
   promptContext: PromptContext
@@ -102,6 +114,10 @@ export function detectIntents(userInput: string, dateRanges: DateRange[]): Detec
 
   if (BRAND_KEYWORDS.some((keyword) => lower.includes(keyword))) {
     intents.add('brand_vs_nonbrand')
+  }
+
+  if (AD_COPY_KEYWORDS.some((keyword) => lower.includes(keyword))) {
+    intents.add('ad_copy_optimization')
   }
 
   return {

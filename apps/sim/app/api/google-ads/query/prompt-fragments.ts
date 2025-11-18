@@ -9,6 +9,7 @@ export type Intent =
   | 'geographic'
   | 'location_targeting'
   | 'brand_vs_nonbrand'
+  | 'ad_copy_optimization'
 
 export interface PromptContext {
   comparison?: {
@@ -28,6 +29,15 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 **NEVER REFUSE**: Always generate a valid GAQL query. Never return error messages or refuse to generate queries.
 
 **CRITICAL: ACCOUNT CONTEXT**: The user has already selected a specific Google Ads account (e.g., CA - Eventgroove Products, AMI, Heartland). When they mention the account name in their query, DO NOT add it as a campaign.name filter. The account is already selected by the API. Only filter by campaign.name when the user explicitly asks for specific campaign types (Brand, PMax, Shopping, etc.).
+
+**CRITICAL: CAMPAIGN FILTERING**: When the user asks for ad groups or ads within a specific campaign (e.g., "show me ad groups in Colorado-Springs-Central-NB campaign"), you MUST add a WHERE clause filter: campaign.name LIKE '%CampaignName%'. This ensures only ad groups/ads from that specific campaign are returned. The same applies when filtering by ad group name.
+
+**ABSOLUTE RULE - ENABLED CAMPAIGNS ONLY**: 
+- ALWAYS use campaign.status = 'ENABLED' in EVERY query
+- NEVER use campaign.status != 'REMOVED' 
+- This applies to ALL queries: campaigns, ad groups, ads, keywords, everything
+- PAUSED and REMOVED campaigns must NEVER appear in results
+- This is NON-NEGOTIABLE - only show active, running campaigns and their data
 
 ## RESOURCES & METRICS
 
@@ -130,31 +140,32 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 - **CRITICAL**: NEVER use OR to combine multiple date ranges in one query
 - **CRITICAL**: If user asks for "this week" or "current week", calculate Monday to yesterday (or today if it's Monday) and use BETWEEN
 
-**STATUS FILTERING:**
-- campaign.status != 'REMOVED' (exclude deleted)
-- campaign.status = 'ENABLED' (active only)
-- Valid: 'ENABLED', 'PAUSED', 'REMOVED'
+**STATUS FILTERS:**
+- campaign.status = 'ENABLED' (MANDATORY - ONLY active campaigns)
+- Valid values: 'ENABLED', 'PAUSED', 'REMOVED'
+- **ABSOLUTE RULE**: ALWAYS use campaign.status = 'ENABLED' in EVERY query
+- NEVER show PAUSED or REMOVED campaigns - ONLY ENABLED campaigns
 
 ## EXAMPLES
 
 **Basic Campaign Performance:**
-SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 
 **This Week Performance (MUST use BETWEEN, NOT DURING THIS_WEEK):**
-SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-01-06' AND '2025-01-12' AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date BETWEEN '2025-01-06' AND '2025-01-12' AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 Note: For "this week" or "current week", calculate Monday to yesterday and use BETWEEN, never use DURING THIS_WEEK
 
 **Keyword Analysis:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.conversions DESC LIMIT 10
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC LIMIT 10
 
 **Keyword Analysis with Quality Score (Underperforming Keywords - Last 3 Months):**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions, metrics.ctr FROM keyword_view WHERE segments.date BETWEEN '2025-08-01' AND '2025-10-30' AND campaign.status != 'REMOVED' AND ad_group_criterion.quality_info.quality_score < 6 AND metrics.cost_micros > 50000000 ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions, metrics.ctr FROM keyword_view WHERE segments.date BETWEEN '2025-08-01' AND '2025-10-30' AND campaign.status = 'ENABLED' AND ad_group_criterion.quality_info.quality_score < 6 AND metrics.cost_micros > 50000000 ORDER BY metrics.cost_micros DESC
 
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
 **Campaign Assets / Ad Extensions (NO DATE SEGMENTS):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
 Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement. Include asset.final_urls for broken sitelink detection.
 
 **Asset Group Assets (NO DATE SEGMENTS):**
@@ -173,23 +184,35 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 - For performance data with date segments, always use campaign or ad_group resources
 
 **Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
 
 **Geographic Performance:**
-SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status != 'REMOVED'
+SELECT campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED'
 
 **Location Targeting:**
-SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status != 'REMOVED'
+SELECT campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type = 'LOCATION' AND campaign.status = 'ENABLED'
 
 **Asset Group Analysis / Add Extentions :**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status != 'REMOVED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
 
 **RSA Ad Analysis with Ad Strength:**
-SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status != 'REMOVED' AND segments.date DURING LAST_30_DAYS ORDER BY campaign.name, ad_group.name
+SELECT ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.ad_strength, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_30_DAYS ORDER BY campaign.name, ad_group.name
 Note: Count headlines array length as "X/15", descriptions array length as "X/4". ad_strength values: EXCELLENT, GOOD, AVERAGE, POOR, PENDING
+
+**CRITICAL: Ad Groups for Specific Campaign:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM ad_group WHERE campaign.name LIKE '%Colorado-Springs-Central-NB%' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_30_DAYS ORDER BY ad_group.name
+Note: When user asks for ad groups in a specific campaign, ALWAYS add campaign.name LIKE filter with the campaign name
+
+**CRITICAL: Ads for Specific Campaign:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.status, ad_group_ad.ad.type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM ad_group_ad WHERE campaign.name LIKE '%Colorado-Springs-Central-NB%' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_30_DAYS ORDER BY ad_group.name, ad_group_ad.ad.id
+Note: When user asks for ads in a specific campaign, ALWAYS add campaign.name LIKE filter with the campaign name
+
+**CRITICAL: Ads for Specific Ad Group:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.status, ad_group_ad.ad.type, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, metrics.impressions, metrics.clicks, metrics.cost_micros FROM ad_group_ad WHERE ad_group.name LIKE '%Physical Therapy%' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_30_DAYS ORDER BY ad_group_ad.ad.id
+Note: When user asks for ads in a specific ad group, ALWAYS add ad_group.name LIKE filter with the ad group name
 
 
 **Brand vs Non-Brand vs PMAX:**
@@ -290,7 +313,7 @@ const rsaFragment: FragmentBuilder = () =>
 - Use ad_group_ad resource (NOT ad_group_criterion) for RSA ads.
 - ALWAYS include performance metrics: impressions, clicks, cost_micros, conversions, ctr.
 - **MANDATORY SELECT FIELDS**: ad_group.id, ad_group.name, campaign.id, campaign.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions
-- Filter: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD', ad_group_ad.status = 'ENABLED', campaign.status != 'REMOVED', segments.date DURING LAST_30_DAYS.
+- Filter: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD', ad_group_ad.status = 'ENABLED', campaign.status = 'ENABLED', segments.date DURING LAST_30_DAYS.
 - ORDER BY campaign.name, ad_group.name.
 
 **CRITICAL - HEADLINE/DESCRIPTION COUNTING:**
@@ -423,7 +446,7 @@ const searchTermsFragment: FragmentBuilder = () =>
 **SEARCH QUERY REPORTS:**
 - Use search_term_view with campaign.id, campaign.name, campaign.status, search_term_view.search_term.
 - Include metrics: metrics.clicks, metrics.cost_micros, metrics.conversions (add others when useful).
-- Filter by segments.date DURING or BETWEEN requested range and campaign.status != 'REMOVED'.
+- Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
 - ORDER results by spend or conversions (cost_micros or conversions) and respect any LIMIT requested by the user.
 `.trim()
 
@@ -441,7 +464,7 @@ const geographicFragment: FragmentBuilder = () =>
 **GEOGRAPHIC PERFORMANCE:**
 - Use geographic_view for location performance metrics.
 - Include campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id (or requested geo field), geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros.
-- Filter on segments.date DURING/BETWEEN requested range and campaign.status != 'REMOVED'.
+- Filter on segments.date DURING/BETWEEN requested range and campaign.status = 'ENABLED'.
 `.trim()
 
 const locationTargetingFragment: FragmentBuilder = () =>
@@ -461,6 +484,52 @@ const brandVsNonBrandFragment: FragmentBuilder = () =>
 - Return metrics and fields consistent with campaign performance guidance.
 `.trim()
 
+const adCopyOptimizationFragment: FragmentBuilder = () =>
+  `
+**AD COPY OPTIMIZATION - POOR & AVERAGE ADS:**
+
+**CRITICAL INSTRUCTIONS:**
+- Generate TWO separate queries: one for POOR ads (LIMIT 5), one for AVERAGE ads (LIMIT 5)
+- Use ad_group_ad resource with ad_group_ad.ad_strength filter
+- ALWAYS include: campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.ad.id
+- ALWAYS include: ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions
+- ALWAYS include performance metrics: metrics.impressions, metrics.clicks, metrics.ctr, metrics.conversions, metrics.cost_micros
+- Filter: ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD', ad_group_ad.status = 'ENABLED', campaign.status = 'ENABLED'
+- **CRITICAL**: If user mentions a specific campaign name, ADD campaign.name LIKE '%CampaignName%' filter to ensure only ads from that campaign are returned
+- ORDER BY metrics.ctr DESC (to prioritize ads with traffic)
+
+**QUERY 1 - POOR ADS (Account-wide):**
+SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, metrics.impressions, metrics.clicks, metrics.ctr, metrics.conversions, metrics.cost_micros FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status = 'ENABLED' AND ad_group_ad.ad_strength = 'POOR' AND segments.date DURING LAST_7_DAYS ORDER BY metrics.ctr DESC LIMIT 5
+
+**QUERY 1 - POOR ADS (Specific Campaign):**
+SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, metrics.impressions, metrics.clicks, metrics.ctr, metrics.conversions, metrics.cost_micros FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status = 'ENABLED' AND campaign.name LIKE '%Colorado-Springs-Central-NB%' AND ad_group_ad.ad_strength = 'POOR' AND segments.date DURING LAST_7_DAYS ORDER BY metrics.ctr DESC LIMIT 5
+
+**QUERY 2 - AVERAGE ADS (Account-wide):**
+SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, metrics.impressions, metrics.clicks, metrics.ctr, metrics.conversions, metrics.cost_micros FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status = 'ENABLED' AND ad_group_ad.ad_strength = 'AVERAGE' AND segments.date DURING LAST_7_DAYS ORDER BY metrics.ctr DESC LIMIT 5
+
+**QUERY 2 - AVERAGE ADS (Specific Campaign):**
+SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad_strength, ad_group_ad.ad.responsive_search_ad.headlines, ad_group_ad.ad.responsive_search_ad.descriptions, metrics.impressions, metrics.clicks, metrics.ctr, metrics.conversions, metrics.cost_micros FROM ad_group_ad WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD' AND ad_group_ad.status = 'ENABLED' AND campaign.status = 'ENABLED' AND campaign.name LIKE '%Colorado-Springs-Central-NB%' AND ad_group_ad.ad_strength = 'AVERAGE' AND segments.date DURING LAST_7_DAYS ORDER BY metrics.ctr DESC LIMIT 5
+
+**QUERY 3 - TOP KEYWORDS BY CTR (for each ad group found):**
+For each unique ad_group.id from queries 1 & 2, generate:
+SELECT campaign.id, ad_group.id, ad_group_criterion.keyword.text, metrics.ctr FROM keyword_view WHERE ad_group.id = 'ADGROUP_ID' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_7_DAYS ORDER BY metrics.ctr DESC LIMIT 3
+
+**RESPONSE FORMAT:**
+Return JSON with THREE query arrays:
+{
+  "poor_ads_query": "...",
+  "average_ads_query": "...",
+  "keyword_queries_needed": true
+}
+
+**IMPORTANT NOTES:**
+- ✅ Use ad_group_ad.ad_strength (NOT ad.responsive_search_ad.ad_strength)
+- ✅ Use ad.responsive_search_ad.headlines (plural, NOT headline_1)
+- ✅ Use ad.responsive_search_ad.descriptions (plural, NOT description)
+- The downstream processor will fetch keywords and generate suggestions
+- Focus on returning the correct ad data with all required fields
+`.trim()
+
 const FRAGMENT_MAP: Record<Intent, FragmentBuilder> = {
   comparison: comparisonFragment,
   rsa: rsaFragment,
@@ -470,6 +539,7 @@ const FRAGMENT_MAP: Record<Intent, FragmentBuilder> = {
   geographic: geographicFragment,
   location_targeting: locationTargetingFragment,
   brand_vs_nonbrand: brandVsNonBrandFragment,
+  ad_copy_optimization: adCopyOptimizationFragment,
 }
 
 export function buildSystemPrompt(intents: Intent[], context: PromptContext): string {
