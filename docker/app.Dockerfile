@@ -51,11 +51,26 @@ RUN bun run build
 # ========================================
 # Runner Stage: Run the actual app
 # ========================================
-
 FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+
+# 🟢 Install Chromium + ChromeDriver inside the container
+RUN apk add --no-cache \
+      chromium \
+      chromium-chromedriver \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont \
+    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+
+# (Optional, if any code reads these env vars)
+ENV CHROME_BIN=/usr/bin/chromium-browser \
+    CHROME_PATH=/usr/lib/chromium/ \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 COPY --from=builder /app/apps/sim/public ./apps/sim/public
 COPY --from=builder /app/apps/sim/.next/standalone ./
