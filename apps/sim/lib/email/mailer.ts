@@ -4,7 +4,6 @@ import { generateUnsubscribeToken, isUnsubscribed } from '@/lib/email/unsubscrib
 import { getFromEmailAddress } from '@/lib/email/utils'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('Mailer')
 
@@ -70,12 +69,17 @@ const azureEmailClient =
     ? new EmailClient(azureConnectionString)
     : null
 
-/**
- * Check if any email service is configured and available
- */
-export function hasEmailService(): boolean {
-  return !!(resend || azureEmailClient)
-}
+// AWS SES runtime placeholder and credentials detection (we initialize lazily)
+let sesClient: any | null = null
+const rawAwsRegion = (env.AWS_REGION as string | undefined) ?? process.env.AWS_REGION
+const rawAwsAccessKeyId =
+  (env.AWS_ACCESS_KEY_ID as string | undefined) ?? process.env.AWS_ACCESS_KEY_ID
+const rawAwsSecretAccessKey =
+  (env.AWS_SECRET_ACCESS_KEY as string | undefined) ?? process.env.AWS_SECRET_ACCESS_KEY
+const awsRegion = rawAwsRegion ? String(rawAwsRegion).trim() : undefined
+const awsAccessKeyId = rawAwsAccessKeyId ? String(rawAwsAccessKeyId).trim() : undefined
+const awsSecretAccessKey = rawAwsSecretAccessKey ? String(rawAwsSecretAccessKey).trim() : undefined
+const awsCredsPresent = Boolean(awsRegion && awsAccessKeyId && awsSecretAccessKey)
 
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
   try {
@@ -116,10 +120,20 @@ export async function sendEmail(options: EmailOptions): Promise<SendEmailResult>
       try {
         return await sendWithAzure(processedData)
       } catch (error) {
-        logger.error('Azure Communication Services also failed:', error)
+        logger.warn('Azure Communication Services failed, attempting AWS SES fallback:', error)
+        // continue to attempt SES below
+      }
+    }
+
+    // Fallback to AWS SES if AWS credentials are present
+    if (awsCredsPresent) {
+      try {
+        return await sendWithSes(processedData)
+      } catch (error) {
+        logger.error('AWS SES also failed:', error)
         return {
           success: false,
-          message: 'Both Resend and Azure Communication Services failed',
+          message: 'All configured email providers failed',
         }
       }
     }
@@ -168,7 +182,7 @@ async function processEmailData(options: EmailOptions): Promise<ProcessedEmailDa
     // For arrays, use the first email for unsubscribe (batch emails typically go to similar recipients)
     const primaryEmail = Array.isArray(to) ? to[0] : to
     const unsubscribeToken = generateUnsubscribeToken(primaryEmail, emailType)
-    const baseUrl = getBaseUrl()
+    const baseUrl = env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
     const unsubscribeUrl = `${baseUrl}/unsubscribe?token=${unsubscribeToken}&email=${encodeURIComponent(primaryEmail)}`
 
     headers['List-Unsubscribe'] = `<${unsubscribeUrl}>`
@@ -275,6 +289,155 @@ async function sendWithAzure(data: ProcessedEmailData): Promise<SendEmailResult>
     }
   }
   throw new Error(`Azure Communication Services failed with status: ${result.status}`)
+}
+
+// Ensure SES client is initialized (lazy, dynamic import)
+async function ensureSesClient(): Promise<void> {
+  if (sesClient) return
+  if (!awsCredsPresent) return
+  try {
+    // Dynamically import AWS SES at runtime. Ignore TS errors if the package isn't installed.
+    // @ts-ignore
+    const awsModule = await import('@aws-sdk/client-ses')
+    const { SESClient } = awsModule
+    // awsCredsPresent ensures region and credentials are defined, assert non-null to satisfy types
+    sesClient = new SESClient({
+      region: awsRegion!,
+      credentials: { accessKeyId: awsAccessKeyId!, secretAccessKey: awsSecretAccessKey! },
+    })
+    logger.info('AWS SES client initialized')
+  } catch (err) {
+    logger.error('Failed to dynamically import or initialize AWS SES client:', err)
+    sesClient = null
+  }
+}
+
+async function sendWithSes(data: ProcessedEmailData): Promise<SendEmailResult> {
+  if (!awsCredsPresent) throw new Error('AWS credentials not configured')
+  await ensureSesClient()
+  if (!sesClient) throw new Error('AWS SES client not available')
+
+  // Basic SES send
+  if (data.attachments && data.attachments.length > 0) {
+    throw new Error('SES send does not support attachments in this implementation')
+  }
+
+  const toAddresses = Array.isArray(data.to) ? data.to : [data.to]
+  const body: any = {}
+  if (data.html) body.Html = { Data: data.html }
+  if (data.text) body.Text = { Data: data.text }
+
+  // SES requires a plain email address for Source (no display name). Extract the
+  // email address if a display name is present (e.g. "Name <email@domain>").
+  const extractAddress = (addr?: string | undefined): string | null => {
+    if (!addr) return null
+    const angle = addr.match(/<(.+?)>/)
+    if (angle?.[1]) return angle[1].trim()
+    const m = addr.match(/([^\s<>]+@[^\s<>]+)/)
+    if (m?.[1]) return m[1].trim()
+    return null
+  }
+
+  const sourceEmailOnly = extractAddress(data.senderEmail) || data.senderEmail?.trim()
+  if (!sourceEmailOnly) throw new Error('Invalid From address for SES')
+  if (/\s/.test(sourceEmailOnly)) throw new Error('Invalid From address contains whitespace')
+
+  let replyToAddresses: string[] | undefined
+  if (data.replyTo) {
+    const rawReply = Array.isArray(data.replyTo) ? data.replyTo : [data.replyTo]
+    replyToAddresses = rawReply
+      .map((r) => extractAddress(r) || r.trim())
+      .filter(Boolean) as string[]
+    if (replyToAddresses.length === 0) replyToAddresses = undefined
+  }
+
+  const params = {
+    Destination: {
+      ToAddresses: toAddresses,
+    },
+    Message: {
+      Subject: { Data: data.subject },
+      Body: body,
+    },
+    Source: sourceEmailOnly,
+    ReplyToAddresses: replyToAddresses,
+    // Headers like List-Unsubscribe are not directly supported here; SES can use Tags or Raw messages.
+  }
+
+  try {
+    // If the provided sender contains a display name (e.g. "Name <email@domain>")
+    // we must send a raw MIME message so the display name is preserved. The
+    // SendEmail API requires a plain email address for Source and will not
+    // preserve a display name. Compose a simple multipart/alternative MIME
+    // message (text + html) and send via SendRawEmail.
+    const hasDisplayName = /<.+>/.test(data.senderEmail)
+
+    if (hasDisplayName) {
+      // Build a raw MIME message
+      const CRLF = '\r\n'
+      const boundary = `----=_sim_mailer_${Date.now()}`
+
+      const headers: string[] = []
+      headers.push(`From: ${data.senderEmail}`)
+      headers.push(`To: ${toAddresses.join(', ')}`)
+      headers.push(`Subject: ${data.subject}`)
+      headers.push('MIME-Version: 1.0')
+      headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`)
+      if (replyToAddresses && replyToAddresses.length > 0) {
+        headers.push(`Reply-To: ${replyToAddresses.join(', ')}`)
+      }
+      // Include any custom headers (e.g., List-Unsubscribe)
+      for (const [k, v] of Object.entries(data.headers || {})) {
+        headers.push(`${k}: ${v}`)
+      }
+
+      let mime = headers.join(CRLF) + CRLF + CRLF
+
+      // Plain text part
+      mime += `--${boundary}${CRLF}`
+      mime += `Content-Type: text/plain; charset=UTF-8${CRLF}`
+      mime += `Content-Transfer-Encoding: 7bit${CRLF}${CRLF}`
+      mime += (data.text || stripHtml(data.html || '')) + CRLF + CRLF
+
+      // HTML part
+      mime += `--${boundary}${CRLF}`
+      mime += `Content-Type: text/html; charset=UTF-8${CRLF}`
+      mime += `Content-Transfer-Encoding: 7bit${CRLF}${CRLF}`
+      mime += (data.html || '') + CRLF + CRLF
+
+      mime += `--${boundary}--${CRLF}`
+
+      // Send as raw
+      // @ts-ignore
+      const { SendRawEmailCommand } = await import('@aws-sdk/client-ses')
+      const rawCommand = new SendRawEmailCommand({ RawMessage: { Data: Buffer.from(mime) } })
+      const resp = await sesClient.send(rawCommand)
+      return {
+        success: true,
+        message: 'Email sent successfully via AWS SES (raw)',
+        data: resp,
+      }
+    }
+
+    // Fallback to SendEmail API when no display name is present
+    // @ts-ignore
+    const { SendEmailCommand } = await import('@aws-sdk/client-ses')
+    const command = new SendEmailCommand(params)
+    const resp = await sesClient.send(command)
+    return {
+      success: true,
+      message: 'Email sent successfully via AWS SES',
+      data: resp,
+    }
+  } catch (err) {
+    logger.error('AWS SES send error:', err)
+    throw err
+  }
+}
+
+// Small utility to strip HTML tags for the plain-text fallback in the MIME body
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, '')
 }
 
 export async function sendBatchEmails(options: BatchEmailOptions): Promise<BatchSendEmailResult> {
