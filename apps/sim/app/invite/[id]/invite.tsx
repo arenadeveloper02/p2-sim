@@ -63,10 +63,13 @@ export default function Invite() {
   }
 
   useEffect(() => {
-    if (!token) return
-    if (!session?.user) {
+    if (!session?.user && userEmail) {
       handleAutoLogin()
     }
+  }, [session?.user])
+
+  useEffect(() => {
+    if (!token) return
 
     async function fetchInvitationDetails() {
       setIsLoading(true)
