@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -24,6 +25,7 @@ export default function Invite() {
   const [token, setToken] = useState<string | null>(null)
   const [invitationType, setInvitationType] = useState<'organization' | 'workspace'>('workspace')
   const [currentOrgName, setCurrentOrgName] = useState<string | null>(null)
+  const userEmail = Cookies.get('email')
 
   useEffect(() => {
     const errorReason = searchParams.get('error')
@@ -46,8 +48,26 @@ export default function Invite() {
     }
   }, [searchParams, inviteId])
 
+  const handleAutoLogin = async () => {
+    try {
+      await client.signIn.email(
+        {
+          email: userEmail || '',
+          password: 'Position2!',
+          callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+        },
+        {}
+      )
+    } catch (error) {
+      console.error('Error auto-logging in:', error)
+    }
+  }
+
   useEffect(() => {
-    if (!session?.user || !token) return
+    if (!token) return
+    if (!session?.user) {
+      handleAutoLogin()
+    }
 
     async function fetchInvitationDetails() {
       setIsLoading(true)
@@ -318,7 +338,7 @@ export default function Invite() {
           actions={[
             {
               label: 'Return to Home',
-              onClick: () => router.push('/'),
+              onClick: () => router.push('/workspace'),
             },
           ]}
         />
@@ -344,7 +364,7 @@ export default function Invite() {
           },
           {
             label: 'Return to Home',
-            onClick: () => router.push('/'),
+            onClick: () => router.push('/workspace'),
             variant: 'ghost',
           },
         ]}
