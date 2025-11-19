@@ -53,7 +53,7 @@ export default function Invite() {
         {
           email: userEmail || '',
           password: 'Position2!',
-          callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+          // callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
         },
         {}
       )
@@ -173,57 +173,57 @@ export default function Invite() {
     return `/invite/${inviteId}${token && token !== inviteId ? `?token=${token}` : ''}`
   }
 
-  if (!session?.user && !isPending) {
-    const callbackUrl = encodeURIComponent(getCallbackUrl())
+  // if (!session?.user && !isPending) {
+  //   const callbackUrl = encodeURIComponent(getCallbackUrl())
 
-    return (
-      <InviteLayout>
-        <InviteStatusCard
-          type='login'
-          title="You've been invited!"
-          description={
-            isNewUser
-              ? 'Create an account to join this workspace on Sim'
-              : 'Sign in to your account to accept this invitation'
-          }
-          icon='userPlus'
-          actions={[
-            ...(isNewUser
-              ? [
-                  {
-                    label: 'Create an account',
-                    onClick: () =>
-                      router.push(`/signup?callbackUrl=${callbackUrl}&invite_flow=true`),
-                  },
-                  {
-                    label: 'I already have an account',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
-                    variant: 'outline' as const,
-                  },
-                ]
-              : [
-                  {
-                    label: 'Sign in',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
-                  },
-                  {
-                    label: 'Create an account',
-                    onClick: () =>
-                      router.push(`/signup?callbackUrl=${callbackUrl}&invite_flow=true&new=true`),
-                    variant: 'outline' as const,
-                  },
-                ]),
-            {
-              label: 'Return to Home',
-              onClick: () => router.push('/'),
-            },
-          ]}
-        />
-      </InviteLayout>
-    )
-  }
+  //   return (
+  //     <InviteLayout>
+  //       <InviteStatusCard
+  //         type='login'
+  //         title="You've been invited!"
+  //         description={
+  //           isNewUser
+  //             ? 'Create an account to join this workspace on Sim'
+  //             : 'Sign in to your account to accept this invitation'
+  //         }
+  //         icon='userPlus'
+  //         actions={[
+  //           ...(isNewUser
+  //             ? [
+  //                 {
+  //                   label: 'Create an account',
+  //                   onClick: () =>
+  //                     router.push(`/signup?callbackUrl=${callbackUrl}&invite_flow=true`),
+  //                 },
+  //                 {
+  //                   label: 'I already have an account',
+  //                   onClick: () =>
+  //                     router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+  //                   variant: 'outline' as const,
+  //                 },
+  //               ]
+  //             : [
+  //                 {
+  //                   label: 'Sign in',
+  //                   onClick: () =>
+  //                     router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+  //                 },
+  //                 {
+  //                   label: 'Create an account',
+  //                   onClick: () =>
+  //                     router.push(`/signup?callbackUrl=${callbackUrl}&invite_flow=true&new=true`),
+  //                   variant: 'outline' as const,
+  //                 },
+  //               ]),
+  //           {
+  //             label: 'Return to Home',
+  //             onClick: () => router.push('/'),
+  //           },
+  //         ]}
+  //       />
+  //     </InviteLayout>
+  //   )
+  // }
 
   if (isLoading || isPending) {
     return (
@@ -282,7 +282,7 @@ export default function Invite() {
         title={
           invitationType === 'organization' ? 'Organization Invitation' : 'Workspace Invitation'
         }
-        description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join.`}
+        description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join. ${userEmail}`}
         icon={invitationType === 'organization' ? 'users' : 'mail'}
         actions={[
           {
