@@ -1083,6 +1083,24 @@ export function GithubIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function SemrushIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns='http://www.w3.org/2000/svg'
+      width='30'
+      height='18'
+      viewBox='0 0 30 18'
+      fill='none'
+    >
+      <path
+        d='M25.87 8.88c0 .56-.28.65-.98.65-.75 0-.89-.12-.97-.68-.14-1.45-1.11-2.67-2.75-2.8-.5-.04-.65-.24-.65-.89 0-.6.08-.87.56-.87a4.69 4.69 0 014.8 4.6zm4.13 0C30 4.56 27.08 0 20.33 0H6.95c-.55 0-.65.48-.17.78 1.22.8 2.93 1.71 4.44 2.29.64.23.5.8-.13.8H.5c-.52 0-.67.44-.24.83a37.05 37.05 0 009.84 6.4c.64.28.51.85-.12.85H5.22c-.54 0-.68.44-.24.8C7.54 14.67 13.5 18 20.33 18S30 12.87 30 8.88zM21.08 15a6.16 6.16 0 01-6.14-6.14 6.1 6.1 0 016.14-6.03 6.08 6.08 0 110 12.17z'
+        fill='#FF642D'
+      />
+    </svg>
+  )
+}
+
 export function SerperIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox='0 0 654 600' xmlns='http://www.w3.org/2000/svg' {...props}>
@@ -1892,6 +1910,21 @@ export function DocumentIcon(props: SVGProps<SVGSVGElement>) {
         strokeWidth='2.25'
         strokeLinejoin='round'
       />
+    </svg>
+  )
+}
+
+export function MetaIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns='http://www.w3.org/2000/svg'
+      width='24'
+      height='24'
+      viewBox='0 0 24 24'
+      fill='currentColor'
+    >
+      <path d='M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z' />
     </svg>
   )
 }
