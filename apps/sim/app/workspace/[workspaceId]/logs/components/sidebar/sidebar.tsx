@@ -218,7 +218,8 @@ export function Sidebar({
       return traceSpans
     }
     if (traceSpans && typeof traceSpans === 'object' && 'spans' in traceSpans) {
-      return Array.isArray(traceSpans.spans) ? traceSpans.spans : undefined
+      const spans = (traceSpans as { spans?: unknown }).spans
+      return Array.isArray(spans) ? spans : undefined
     }
     return undefined
   }, [log?.executionData?.traceSpans])
@@ -240,7 +241,7 @@ export function Sidebar({
     if (log.executionData?.blockInput) {
       blockInput = log.executionData.blockInput
     } else if (getTraceSpansArray) {
-      const firstSpanWithInput = getTraceSpansArray.find((s) => s.input)
+      const firstSpanWithInput = getTraceSpansArray.find((s: any) => s.input)
       if (firstSpanWithInput?.input) {
         blockInput = firstSpanWithInput.input as any
       }
@@ -566,7 +567,7 @@ export function Sidebar({
                     <div className='w-full overflow-x-hidden'>
                       <TraceSpansDisplay
                         traceSpans={getTraceSpansArray}
-                        totalDuration={log.executionData.totalDuration}
+                        totalDuration={log.executionData?.totalDuration ?? 0}
                         onExpansionChange={handleTraceSpanToggle}
                       />
                     </div>
