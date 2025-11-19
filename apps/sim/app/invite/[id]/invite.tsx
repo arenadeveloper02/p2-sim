@@ -282,7 +282,7 @@ export default function Invite() {
         title={
           invitationType === 'organization' ? 'Organization Invitation' : 'Workspace Invitation'
         }
-        description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join. ${userEmail}`}
+        description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join.`}
         icon={invitationType === 'organization' ? 'users' : 'mail'}
         actions={[
           {
