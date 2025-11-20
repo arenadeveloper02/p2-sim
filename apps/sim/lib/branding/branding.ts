@@ -11,6 +11,7 @@ export interface ThemeColors {
 export interface BrandConfig {
   name: string
   logoUrl?: string
+  logoUrlBlacktext?: string
   faviconUrl?: string
   customCssUrl?: string
   supportEmail?: string
@@ -24,9 +25,11 @@ export interface BrandConfig {
  * Default brand configuration values
  */
 const defaultConfig: BrandConfig = {
-  name: 'Sim',
-  logoUrl: undefined,
-  faviconUrl: '/favicon/favicon.ico',
+  name: 'Agentic AI',
+  logoUrl: 'https://arenav2image.s3.us-west-1.amazonaws.com/arena_svg_white.svg',
+  logoUrlBlacktext:
+    'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg',
+  faviconUrl: '/sim.svg',
   customCssUrl: undefined,
   supportEmail: 'help@sim.ai',
   documentationUrl: undefined,
@@ -62,6 +65,7 @@ export const getBrandConfig = (): BrandConfig => {
   return {
     name: getEnv('NEXT_PUBLIC_BRAND_NAME') || defaultConfig.name,
     logoUrl: getEnv('NEXT_PUBLIC_BRAND_LOGO_URL') || defaultConfig.logoUrl,
+    logoUrlBlacktext: getEnv('NEXT_PUBLIC_BRAND_LOGO_URL_DARK') || defaultConfig.logoUrlBlacktext,
     faviconUrl: getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL') || defaultConfig.faviconUrl,
     customCssUrl: getEnv('NEXT_PUBLIC_CUSTOM_CSS_URL') || defaultConfig.customCssUrl,
     supportEmail: getEnv('NEXT_PUBLIC_SUPPORT_EMAIL') || defaultConfig.supportEmail,
