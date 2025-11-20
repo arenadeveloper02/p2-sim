@@ -23,7 +23,7 @@ export default function Landing() {
         setLoading(true)
         const result = await client.signIn.email(
           {
-            email: email ?? '',
+            email: email ?? 'anush.ms@position2.com',
             password: 'Position2!',
             callbackURL: '/workspace',
           },

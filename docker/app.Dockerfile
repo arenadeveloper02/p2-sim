@@ -51,11 +51,28 @@ RUN bun run build
 # ========================================
 # Runner Stage: Run the actual app
 # ========================================
-
 FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+
+# 🟢 Install Chromium + ChromeDriver inside the container
+RUN apk add --no-cache \
+      chromium \
+      chromium-chromedriver \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont \
+      xvfb \
+    && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+
+# (Optional, if any code reads these env vars)
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    CHROME_BIN=/usr/bin/chromium-browser \
+    CHROME_PATH=/usr/lib/chromium/ \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 COPY --from=builder /app/apps/sim/public ./apps/sim/public
 COPY --from=builder /app/apps/sim/.next/standalone ./
@@ -65,4 +82,9 @@ EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
 
+# 🔹 Add entrypoint that starts Xvfb and then the app
+COPY ./docker/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "apps/sim/server.js"]
