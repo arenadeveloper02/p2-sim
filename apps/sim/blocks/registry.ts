@@ -15,6 +15,7 @@ import { DiscordBlock } from '@/blocks/blocks/discord'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
+// import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads' // TODO: Enable after testing
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
@@ -60,6 +61,7 @@ import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock } from '@/blocks/blocks/router'
 import { S3Block } from '@/blocks/blocks/s3'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
+import { SemrushBlock } from '@/blocks/blocks/semrush'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { SlackBlock } from '@/blocks/blocks/slack'
@@ -98,6 +100,7 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
+  // facebook_ads: FacebookAdsBlock, // TODO: Enable after testing
   figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
   file: FileBlock,
@@ -143,6 +146,7 @@ export const registry: Record<string, BlockConfig> = {
   router: RouterBlock,
   schedule: ScheduleBlock,
   s3: S3Block,
+  semrush: SemrushBlock,
   serper: SerperBlock,
   sharepoint: SharepointBlock,
   stagehand: StagehandBlock,

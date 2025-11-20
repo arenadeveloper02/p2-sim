@@ -23,6 +23,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+// import { facebookAdsQueryTool } from '@/tools/facebook_ads' // TODO: Enable after testing
 import {
   figmaConvertTool,
   figmaCreateStylesVariablesTool,
@@ -160,6 +161,7 @@ import { createTool as presentationCreateTool } from '@/tools/presentation'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import { redditGetCommentsTool, redditGetPostsTool, redditHotPostsTool } from '@/tools/reddit'
 import { s3GetObjectTool } from '@/tools/s3'
+import { semrushQueryTool } from '@/tools/semrush'
 import { searchTool as serperSearch } from '@/tools/serper'
 import {
   sharepointCreatePageTool,
@@ -234,6 +236,7 @@ export const tools: Record<string, ToolConfig> = {
   slack_canvas: slackCanvasTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
+  semrush_query: semrushQueryTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
@@ -307,6 +310,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  // facebook_ads_query: facebookAdsQueryTool, // TODO: Enable after testing
   google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,

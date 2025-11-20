@@ -54,6 +54,9 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
   },
 
   transformResponse: async (response: Response, params?: GoogleDocsToolParams) => {
+    const resolvedDocumentId =
+      params?.documentId?.trim() || params?.manualDocumentId?.trim() || undefined
+
     // Check if the response is successful
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
@@ -68,7 +71,7 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
           const { executeTool } = await import('@/tools')
           const driveResult = await executeTool('google_drive_get_content', {
             accessToken: params?.accessToken,
-            fileId: params?.documentId,
+            fileId: resolvedDocumentId,
           })
 
           if (driveResult.success) {
@@ -77,12 +80,12 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
               output: {
                 content: driveResult.output?.content || '',
                 metadata: {
-                  documentId: params?.documentId,
+                  documentId: resolvedDocumentId ?? '',
                   title: driveResult.output?.metadata?.name || 'Untitled Document',
                   mimeType:
                     driveResult.output?.metadata?.mimeType ||
                     'application/vnd.google-apps.document',
-                  url: `https://docs.google.com/document/d/${params?.documentId}/edit`,
+                  url: `https://docs.google.com/document/d/${resolvedDocumentId}/edit`,
                   isExported: true, // Indicate this was exported from Drive API
                 },
               },
