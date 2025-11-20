@@ -86,4 +86,5 @@ ENV PORT=3000 \
 COPY ./docker/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "apps/sim/server.js"]
