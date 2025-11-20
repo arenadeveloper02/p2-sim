@@ -1,7 +1,6 @@
-import { Container, Img, Link, Section, Text } from '@react-email/components'
+import { Section, Text } from '@react-email/components'
 import { getBrandConfig } from '@/lib/branding/branding'
 import { env } from '@/lib/env'
-import { getAssetUrl } from '@/lib/utils'
 
 interface UnsubscribeOptions {
   unsubscribeToken?: string
@@ -20,10 +19,9 @@ export const EmailFooter = ({
   const brand = getBrandConfig()
 
   return (
-    <Container>
-      <Section style={{ maxWidth: '580px', margin: '0 auto', padding: '20px 0' }}>
-        <table style={{ width: '100%' }}>
-          <tr>
+    <Section style={{ padding: '20px 0' }}>
+      <table style={{ width: '100%' }}>
+        {/* <tr>
             <td align='center'>
               <table cellPadding={0} cellSpacing={0} style={{ border: 0 }}>
                 <tr>
@@ -55,19 +53,20 @@ export const EmailFooter = ({
                 </tr>
               </table>
             </td>
-          </tr>
-          <tr>
-            <td align='center' style={{ paddingTop: '12px' }}>
-              <Text
-                style={{
-                  fontSize: '12px',
-                  color: '#706a7b',
-                  margin: '8px 0 0 0',
-                }}
-              >
-                © {new Date().getFullYear()} {brand.name}, All Rights Reserved
-                <br />
-                If you have any questions, please contact us at{' '}
+          </tr> */}
+        <tr>
+          <td align='center' style={{ paddingTop: '12px', borderTop: '1px solid #E2E3E5' }}>
+            <Text
+              style={{
+                fontSize: '12px',
+                color: '#9A9A9A',
+                margin: '4px 0 0 0',
+              }}
+            >
+              © {new Date().getFullYear()} {brand.name}, All Rights Reserved - ARENA® Privacy Policy
+              | Terms of Service
+              <br />
+              {/* If you have any questions, please contact us at{' '}
                 <a
                   href={`mailto:${brand.supportEmail}`}
                   style={{
@@ -78,9 +77,9 @@ export const EmailFooter = ({
                   }}
                 >
                   {brand.supportEmail}
-                </a>
-              </Text>
-              <table cellPadding={0} cellSpacing={0} style={{ width: '100%', marginTop: '4px' }}>
+                </a> */}
+            </Text>
+            {/* <table cellPadding={0} cellSpacing={0} style={{ width: '100%', marginTop: '4px' }}>
                 <tr>
                   <td align='center'>
                     <p
@@ -136,12 +135,11 @@ export const EmailFooter = ({
                     </p>
                   </td>
                 </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </Section>
-    </Container>
+              </table> */}
+          </td>
+        </tr>
+      </table>
+    </Section>
   )
 }
 

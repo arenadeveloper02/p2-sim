@@ -75,9 +75,9 @@ export function InviteStatusCard({
         </div>
       )}
 
-      <h1 className='mb-2 font-semibold text-[32px] text-white tracking-tight'>{title}</h1>
+      <h1 className='mb-2 font-semibold text-[32px] text-black tracking-tight'>{title}</h1>
 
-      <p className='mb-6 text-neutral-400 text-sm leading-relaxed'>{description}</p>
+      <p className='mb-6 text-muted-foreground text-sm leading-relaxed'>{description}</p>
 
       <div className='flex w-full flex-col gap-3'>
         {isExpiredError && (
