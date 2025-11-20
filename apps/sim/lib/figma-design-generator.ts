@@ -46,6 +46,7 @@
  * 8. Returns the Figma file URL
  */
 
+import { existsSync } from 'fs'
 import fs from 'fs/promises'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
@@ -761,6 +762,8 @@ async function automateDesignCreation(
   fileName: string,
   fullHtml: string
 ): Promise<string> {
+  const isLinux = process.platform === 'linux'
+
   // Configure Chrome options
   const options = new chrome.Options()
   // Uncomment the following line to run in headless mode
@@ -773,19 +776,26 @@ async function automateDesignCreation(
   options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--start-maximized')
 
-  // options.addArguments('--headless=new')
-  options.addArguments('--use-angle=metal')
-  options.addArguments('--use-gl=angle')
-  options.addArguments('--enable-webgl')
-  options.addArguments('--ignore-gpu-blacklist')
-  options.addArguments('--enable-accelerated-2d-canvas')
+  if (isLinux) {
+    options.addArguments('--disable-gpu')
+    options.addArguments('--disable-software-rasterizer')
+    options.addArguments('--use-gl=swiftshader')
+  } else {
+    options.addArguments('--use-angle=metal')
+    options.addArguments('--use-gl=angle')
+    options.addArguments('--enable-webgl')
+    options.addArguments('--ignore-gpu-blacklist')
+    options.addArguments('--enable-accelerated-2d-canvas')
+  }
   options.addArguments('--window-size=1920,1080')
   options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--no-sandbox')
   options.addArguments('--disable-dev-shm-usage')
 
-  // Set ChromeDriver path to use system installation
-  const chromedriverPath = process.env.CHROMEDRIVER_PATH || '/opt/homebrew/bin/chromedriver'
+  const chromeBinaryPath = resolveChromeBinaryPath()
+  const chromedriverPath = resolveChromedriverPath()
+
+  options.setChromeBinaryPath(chromeBinaryPath)
 
   // Create Chrome service with explicit driver path
   const service = new chrome.ServiceBuilder(chromedriverPath)
@@ -1708,4 +1718,46 @@ async function automateDesignCreation(
     // await driver.quit()
     console.log('Browser session kept open for inspection')
   }
+}
+
+function resolveChromedriverPath(): string {
+  const candidates = [
+    process.env.CHROMEDRIVER_PATH,
+    '/usr/bin/chromedriver',
+    '/usr/lib/chromium/chromedriver',
+    '/usr/local/bin/chromedriver',
+    '/opt/homebrew/bin/chromedriver',
+  ].filter(Boolean) as string[]
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return path
+    }
+  }
+
+  throw new Error(
+    'Could not locate ChromeDriver. Set CHROMEDRIVER_PATH or install chromedriver in a standard location.'
+  )
+}
+
+function resolveChromeBinaryPath(): string {
+  const candidates = [
+    process.env.CHROME_BIN,
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/lib/chromium/chrome',
+    '/usr/bin/google-chrome',
+    '/opt/google/chrome/chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ].filter(Boolean) as string[]
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return path
+    }
+  }
+
+  throw new Error(
+    'Could not locate a Chrome/Chromium binary. Set CHROME_BIN or install Chrome/Chromium in the container/host.'
+  )
 }

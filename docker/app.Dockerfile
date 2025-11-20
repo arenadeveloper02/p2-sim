@@ -69,7 +69,8 @@ RUN apk add --no-cache \
     && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
 
 # (Optional, if any code reads these env vars)
-ENV CHROME_BIN=/usr/bin/chromium-browser \
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    CHROME_BIN=/usr/bin/chromium-browser \
     CHROME_PATH=/usr/lib/chromium/ \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
