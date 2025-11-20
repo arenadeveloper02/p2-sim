@@ -1,13 +1,13 @@
 import { ElevenLabsIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { ElevenLabsBlockResponse } from '@/tools/elevenlabs/types'
 
 export const ElevenLabsBlock: BlockConfig<ElevenLabsBlockResponse> = {
   type: 'elevenlabs',
   name: 'ElevenLabs',
   description: 'Convert TTS using ElevenLabs',
-  longDescription:
-    'Integrate ElevenLabs into the workflow. Can convert text to speech. Requires API key.',
+  authMode: AuthMode.ApiKey,
+  longDescription: 'Integrate ElevenLabs into the workflow. Can convert text to speech.',
   docsLink: 'https://docs.sim.ai/tools/elevenlabs',
   category: 'tools',
   bgColor: '#181C1E',
@@ -18,7 +18,6 @@ export const ElevenLabsBlock: BlockConfig<ElevenLabsBlockResponse> = {
       id: 'text',
       title: 'Text',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Enter the text to convert to speech',
       required: true,
     },
@@ -26,7 +25,6 @@ export const ElevenLabsBlock: BlockConfig<ElevenLabsBlockResponse> = {
       id: 'voiceId',
       title: 'Voice ID',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Enter the voice ID',
       required: true,
     },
@@ -34,7 +32,6 @@ export const ElevenLabsBlock: BlockConfig<ElevenLabsBlockResponse> = {
       id: 'modelId',
       title: 'Model ID',
       type: 'dropdown',
-      layout: 'half',
       options: [
         { label: 'eleven_monolingual_v1', id: 'eleven_monolingual_v1' },
         { label: 'eleven_multilingual_v2', id: 'eleven_multilingual_v2' },
@@ -47,7 +44,6 @@ export const ElevenLabsBlock: BlockConfig<ElevenLabsBlockResponse> = {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Enter your ElevenLabs API key',
       password: true,
       required: true,

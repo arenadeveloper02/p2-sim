@@ -61,16 +61,21 @@ describe('Workspace Invitation [invitationId] API Route', () => {
       hasWorkspaceAdminAccess: mockHasWorkspaceAdminAccess,
     }))
 
-    vi.doMock('@/lib/env', () => ({
-      env: {
+    vi.doMock('@/lib/env', () => {
+      const mockEnv = {
         NEXT_PUBLIC_APP_URL: 'https://test.sim.ai',
         BILLING_ENABLED: false,
-      },
-      isTruthy: (value: any) =>
-        typeof value === 'string'
-          ? value.toLowerCase() === 'true' || value === '1'
-          : Boolean(value),
-    }))
+      }
+      return {
+        env: mockEnv,
+        isTruthy: (value: string | boolean | number | undefined) =>
+          typeof value === 'string'
+            ? value.toLowerCase() === 'true' || value === '1'
+            : Boolean(value),
+        getEnv: (variable: string) =>
+          mockEnv[variable as keyof typeof mockEnv] ?? process.env[variable],
+      }
+    })
 
     mockTransaction = vi.fn()
     const mockDbChain = {
@@ -383,17 +388,22 @@ describe('Workspace Invitation [invitationId] API Route', () => {
       vi.doMock('@/lib/permissions/utils', () => ({
         hasWorkspaceAdminAccess: vi.fn(),
       }))
-      vi.doMock('@/lib/env', () => ({
-        env: {
+      vi.doMock('@/lib/env', () => {
+        const mockEnv = {
           NEXT_PUBLIC_APP_URL: 'https://test.sim.ai',
           BILLING_ENABLED: false,
-        },
-        isTruthy: (value: any) =>
-          typeof value === 'string'
-            ? value.toLowerCase() === 'true' || value === '1'
-            : Boolean(value),
-      }))
-      vi.doMock('@/db/schema', () => ({
+        }
+        return {
+          env: mockEnv,
+          isTruthy: (value: string | boolean | number | undefined) =>
+            typeof value === 'string'
+              ? value.toLowerCase() === 'true' || value === '1'
+              : Boolean(value),
+          getEnv: (variable: string) =>
+            mockEnv[variable as keyof typeof mockEnv] ?? process.env[variable],
+        }
+      })
+      vi.doMock('@sim/db/schema', () => ({
         workspaceInvitation: { id: 'id' },
       }))
       vi.doMock('drizzle-orm', () => ({

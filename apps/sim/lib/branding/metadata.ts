@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { getBrandConfig } from '@/lib/branding/branding'
-import { env } from '@/lib/env'
-import { getAssetUrl } from '@/lib/utils'
+import { getBaseUrl } from '@/lib/urls/utils'
 
 /**
  * Generate dynamic metadata based on brand configuration
@@ -40,9 +39,7 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
     referrer: 'origin-when-cross-origin',
     creator: brand.name,
     publisher: brand.name,
-    metadataBase: env.NEXT_PUBLIC_APP_URL
-      ? new URL(env.NEXT_PUBLIC_APP_URL)
-      : new URL('https://sim.ai'),
+    metadataBase: new URL(getBaseUrl()),
     alternates: {
       canonical: '/',
       languages: {
@@ -63,13 +60,13 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
     openGraph: {
       type: 'website',
       locale: 'en_US',
-      url: env.NEXT_PUBLIC_APP_URL || 'https://sim.ai',
+      url: getBaseUrl(),
       title: defaultTitle,
       description: defaultDescription,
       siteName: brand.name,
       images: [
         {
-          url: brand.logoUrl || getAssetUrl('social/facebook.png'),
+          url: brand.logoUrl || '/social/facebook.png',
           width: 1200,
           height: 630,
           alt: brand.name,
@@ -79,8 +76,8 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
     twitter: {
       card: 'summary_large_image',
       title: defaultTitle,
-      description: defaultDescription,
-      images: [brand.logoUrl || getAssetUrl('social/twitter.png')],
+      description: summaryFull,
+      images: [brand.logoUrl || '/social/twitter.png'],
       creator: '@simstudioai',
       site: '@simstudioai',
     },

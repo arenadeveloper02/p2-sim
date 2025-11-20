@@ -3,9 +3,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
 import { db } from '@/db'
-import { workflow, workflowBlocks, workspace } from '@/db/schema'
+import { workflow, workspace } from '@/db/schema'
 import { verifyWorkspaceMembership } from './utils'
 
 const logger = createLogger('WorkflowAPI')
@@ -94,132 +95,59 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { name, description, color, workspaceId, folderId } = CreateWorkflowSchema.parse(body)
 
+    if (workspaceId) {
+      const workspacePermission = await getUserEntityPermissions(
+        session.user.id,
+        'workspace',
+        workspaceId
+      )
+
+      if (!workspacePermission || workspacePermission === 'read') {
+        logger.warn(
+          `[${requestId}] User ${session.user.id} attempted to create workflow in workspace ${workspaceId} without write permissions`
+        )
+        return NextResponse.json(
+          { error: 'Write or Admin access required to create workflows in this workspace' },
+          { status: 403 }
+        )
+      }
+    }
+
     const workflowId = crypto.randomUUID()
-    const starterId = crypto.randomUUID()
     const now = new Date()
 
     logger.info(`[${requestId}] Creating workflow ${workflowId} for user ${session.user.id}`)
 
-    await db.transaction(async (tx) => {
-      await tx.insert(workflow).values({
-        id: workflowId,
-        userId: session.user.id,
-        workspaceId: workspaceId || null,
-        folderId: folderId || null,
-        name,
-        description,
-        color,
-        lastSynced: now,
-        createdAt: now,
-        updatedAt: now,
-        isDeployed: false,
-        collaborators: [],
-        runCount: 0,
-        variables: {},
-        isPublished: false,
-        marketplaceData: null,
+    import('@/lib/telemetry/tracer')
+      .then(({ trackPlatformEvent }) => {
+        trackPlatformEvent('platform.workflow.created', {
+          'workflow.id': workflowId,
+          'workflow.name': name,
+          'workflow.has_workspace': !!workspaceId,
+          'workflow.has_folder': !!folderId,
+        })
+      })
+      .catch(() => {
+        // Silently fail
       })
 
-      await tx.insert(workflowBlocks).values({
-        id: starterId,
-        workflowId: workflowId,
-        type: 'starter',
-        name: 'Start',
-        positionX: '100',
-        positionY: '100',
-        enabled: true,
-        horizontalHandles: true,
-        isWide: false,
-        advancedMode: false,
-        triggerMode: false,
-        height: '95',
-        subBlocks: {
-          startWorkflow: {
-            id: 'startWorkflow',
-            type: 'dropdown',
-            value: 'manual',
-          },
-          webhookPath: {
-            id: 'webhookPath',
-            type: 'short-input',
-            value: '',
-          },
-          webhookSecret: {
-            id: 'webhookSecret',
-            type: 'short-input',
-            value: '',
-          },
-          scheduleType: {
-            id: 'scheduleType',
-            type: 'dropdown',
-            value: 'daily',
-          },
-          minutesInterval: {
-            id: 'minutesInterval',
-            type: 'short-input',
-            value: '',
-          },
-          minutesStartingAt: {
-            id: 'minutesStartingAt',
-            type: 'short-input',
-            value: '',
-          },
-          hourlyMinute: {
-            id: 'hourlyMinute',
-            type: 'short-input',
-            value: '',
-          },
-          dailyTime: {
-            id: 'dailyTime',
-            type: 'short-input',
-            value: '',
-          },
-          weeklyDay: {
-            id: 'weeklyDay',
-            type: 'dropdown',
-            value: 'MON',
-          },
-          weeklyDayTime: {
-            id: 'weeklyDayTime',
-            type: 'short-input',
-            value: '',
-          },
-          monthlyDay: {
-            id: 'monthlyDay',
-            type: 'short-input',
-            value: '',
-          },
-          monthlyTime: {
-            id: 'monthlyTime',
-            type: 'short-input',
-            value: '',
-          },
-          cronExpression: {
-            id: 'cronExpression',
-            type: 'short-input',
-            value: '',
-          },
-          timezone: {
-            id: 'timezone',
-            type: 'dropdown',
-            value: 'UTC',
-          },
-        },
-        outputs: {
-          response: {
-            type: {
-              input: 'any',
-            },
-          },
-        },
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      logger.info(
-        `[${requestId}] Successfully created workflow ${workflowId} with start block in workflow_blocks table`
-      )
+    await db.insert(workflow).values({
+      id: workflowId,
+      userId: session.user.id,
+      workspaceId: workspaceId || null,
+      folderId: folderId || null,
+      name,
+      description,
+      color,
+      lastSynced: now,
+      createdAt: now,
+      updatedAt: now,
+      isDeployed: false,
+      runCount: 0,
+      variables: {},
     })
+
+    logger.info(`[${requestId}] Successfully created empty workflow ${workflowId}`)
 
     return NextResponse.json({
       id: workflowId,

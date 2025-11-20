@@ -7,34 +7,26 @@ import { ScrollArea } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { getEnv, isTruthy } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
-import { generateWorkspaceName } from '@/lib/naming'
+import { canUpgrade, getBillingStatus } from '@/lib/subscription/helpers'
+import { generateWorkspaceName } from '@/lib/workspaces/naming'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { SearchModal } from '@/app/workspace/[workspaceId]/w/components/search-modal/search-modal'
 import {
   CreateMenu,
   FloatingNavigation,
   FolderTree,
-  // HelpModal,
-  KeyboardShortcut,
   KnowledgeBaseTags,
   KnowledgeTags,
   LogsFilters,
   SettingsModal,
   SubscriptionModal,
-  Toolbar,
   UsageIndicator,
   WorkspaceHeader,
   WorkspaceSelector,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
-import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-selector/components/invite-modal/invite-modal'
-import { useAutoScroll } from '@/app/workspace/[workspaceId]/w/hooks/use-auto-scroll'
-import {
-  getKeyboardShortcutText,
-  useGlobalShortcuts,
-} from '@/app/workspace/[workspaceId]/w/hooks/use-keyboard-shortcuts'
-import { useWorkflowStore } from '@/stores'
-import { useSubscriptionStore } from '@/stores/subscription/store'
-import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
+import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components-new/workspace-header/components/invite-modal/invite-modal'
+import { useAutoScroll } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks/use-auto-scroll'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
+import { useKnowledgeBasesList } from '@/hooks/use-knowledge'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
@@ -102,15 +94,9 @@ function getRedirectUrl(hostname: string) {
 }
 
 export function Sidebar() {
-  useGlobalShortcuts()
+  // useGlobalShortcuts()
 
-  const {
-    workflows,
-    createWorkflow,
-    isLoading: workflowsLoading,
-    loadWorkflows,
-    switchToWorkspace,
-  } = useWorkflowRegistry()
+  const { workflows, isLoading: workflowsLoading, switchToWorkspace } = useWorkflowRegistry()
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const userPermissions = useUserPermissionsContext()
   const isLoading = workflowsLoading || sessionLoading
@@ -131,6 +117,12 @@ export function Sidebar() {
   // Template data for search modal
   const [templates, setTemplates] = useState<TemplateData[]>([])
   const [isTemplatesLoading, setIsTemplatesLoading] = useState(false)
+
+  // Knowledge bases for search modal
+  const { knowledgeBases } = useKnowledgeBasesList(workspaceId)
+
+  // Subscription data for usage indicator
+  const { data: subscriptionData } = useSubscriptionData()
 
   // Refs
   const workflowScrollAreaRef = useRef<HTMLDivElement | null>(null)
@@ -375,13 +367,22 @@ export function Sidebar() {
       try {
         // Switch workspace and update URL
         await switchToWorkspace(workspace.id)
-        routerRef.current?.push(`/workspace/${workspace.id}/w`)
+        const currentPath = pathname || ''
+        const templateDetailMatch = currentPath.match(/^\/workspace\/[^/]+\/templates\/([^/]+)$/)
+        if (templateDetailMatch) {
+          const templateId = templateDetailMatch[1]
+          routerRef.current?.push(`/workspace/${workspace.id}/templates/${templateId}`)
+        } else if (/^\/workspace\/[^/]+\/templates$/.test(currentPath)) {
+          routerRef.current?.push(`/workspace/${workspace.id}/templates`)
+        } else {
+          routerRef.current?.push(`/workspace/${workspace.id}/w`)
+        }
         logger.info(`Switched to workspace: ${workspace.name} (${workspace.id})`)
       } catch (error) {
         logger.error('Error switching workspace:', error)
       }
     },
-    [switchToWorkspace] // Removed activeWorkspace and router dependencies
+    [switchToWorkspace, pathname] // include pathname
   )
 
   /**
@@ -620,19 +621,20 @@ export function Sidebar() {
   }
 
   // Load workflows for the current workspace when workspaceId changes
-  useEffect(() => {
-    if (workspaceId) {
-      // Validate workspace exists before loading workflows
-      isWorkspaceValid(workspaceId).then((valid) => {
-        if (valid) {
-          loadWorkflows(workspaceId)
-        } else {
-          logger.warn(`Workspace ${workspaceId} no longer exists, triggering workspace refresh`)
-          fetchWorkspaces() // This will handle the redirect through the fallback logic
-        }
-      })
-    }
-  }, [workspaceId, loadWorkflows]) // Removed isWorkspaceValid and fetchWorkspaces dependencies
+  // NOTE: This useEffect is disabled - workflows now loaded via React Query in sidebar-new
+  // useEffect(() => {
+  //   if (workspaceId) {
+  //     // Validate workspace exists before loading workflows
+  //     isWorkspaceValid(workspaceId).then((valid) => {
+  //       if (valid) {
+  //         loadWorkflows(workspaceId)
+  //       } else {
+  //         logger.warn(`Workspace ${workspaceId} no longer exists, triggering workspace refresh`)
+  //         fetchWorkspaces() // This will handle the redirect through the fallback logic
+  //       }
+  //     })
+  //   }
+  // }, [workspaceId, loadWorkflows]) // Removed isWorkspaceValid and fetchWorkspaces dependencies
 
   // Initialize workspace data on mount (uses full validation with URL handling)
   useEffect(() => {
@@ -700,46 +702,34 @@ export function Sidebar() {
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
 
-  // Separate regular workflows from temporary marketplace workflows
-  const { regularWorkflows, tempWorkflows } = useMemo(() => {
+  // Get workflows for the current workspace
+  const regularWorkflows = useMemo(() => {
+    if (isLoading) return []
+
     const regular: WorkflowMetadata[] = []
-    const temp: WorkflowMetadata[] = []
-
-    if (!isLoading) {
-      Object.values(workflows).forEach((workflow) => {
-        if (workflow.workspaceId === workspaceId || !workflow.workspaceId) {
-          if (workflow.marketplaceData?.status === 'temp') {
-            temp.push(workflow)
-          } else {
-            regular.push(workflow)
-          }
-        }
-      })
-
-      // Sort by creation date (newest first) for stable ordering
-      const sortByCreatedAt = (a: WorkflowMetadata, b: WorkflowMetadata) => {
-        return b.createdAt.getTime() - a.createdAt.getTime()
+    Object.values(workflows).forEach((workflow) => {
+      if (workflow.workspaceId === workspaceId || !workflow.workspaceId) {
+        regular.push(workflow)
       }
+    })
 
-      regular.sort(sortByCreatedAt)
-      temp.sort(sortByCreatedAt)
-    }
+    // Sort by creation date (newest first) for stable ordering
+    regular.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
-    return { regularWorkflows: regular, tempWorkflows: temp }
+    return regular
   }, [workflows, isLoading, workspaceId])
 
   // Prepare workflows for search modal
   const searchWorkflows = useMemo(() => {
     if (isLoading) return []
 
-    const allWorkflows = [...regularWorkflows, ...tempWorkflows]
-    return allWorkflows.map((workflow) => ({
+    return regularWorkflows.map((workflow) => ({
       id: workflow.id,
       name: workflow.name,
       href: `/workspace/${workspaceId}/w/${workflow.id}`,
       isCurrent: workflow.id === workflowId,
     }))
-  }, [regularWorkflows, tempWorkflows, workspaceId, workflowId, isLoading])
+  }, [regularWorkflows, workspaceId, workflowId, isLoading])
 
   // Prepare workspaces for search modal (include all workspaces)
   const searchWorkspaces = useMemo(() => {
@@ -751,31 +741,45 @@ export function Sidebar() {
     }))
   }, [workspaces, workspaceId])
 
+  // Prepare knowledge bases for search modal
+  const searchKnowledgeBases = useMemo(() => {
+    return knowledgeBases.map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description,
+      href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
+      isCurrent: knowledgeBaseId === kb.id,
+    }))
+  }, [knowledgeBases, workspaceId, knowledgeBaseId])
+
   // Create workflow handler
+  // NOTE: This is disabled - workflow creation now handled via React Query in sidebar-new
   const handleCreateWorkflow = async (folderId?: string): Promise<string> => {
-    if (isCreatingWorkflow) {
-      logger.info('Workflow creation already in progress, ignoring request')
-      throw new Error('Workflow creation already in progress')
-    }
+    logger.warn('Old sidebar handleCreateWorkflow called - should use sidebar-new')
+    return ''
+    // if (isCreatingWorkflow) {
+    //   logger.info('Workflow creation already in progress, ignoring request')
+    //   throw new Error('Workflow creation already in progress')
+    // }
 
-    try {
-      setIsCreatingWorkflow(true)
+    // try {
+    //   setIsCreatingWorkflow(true)
 
-      // Clear workflow diff store when creating a new workflow
-      const { clearDiff } = useWorkflowDiffStore.getState()
-      clearDiff()
+    //   // Clear workflow diff store when creating a new workflow
+    //   const { clearDiff } = useWorkflowDiffStore.getState()
+    //   clearDiff()
 
-      const id = await createWorkflow({
-        workspaceId: workspaceId || undefined,
-        folderId: folderId || undefined,
-      })
-      return id
-    } catch (error) {
-      logger.error('Error creating workflow:', error)
-      throw error
-    } finally {
-      setIsCreatingWorkflow(false)
-    }
+    //   const id = await createWorkflow({
+    //     workspaceId: workspaceId || undefined,
+    //     folderId: folderId || undefined,
+    //   })
+    //   return id
+    // } catch (error) {
+    //   logger.error('Error creating workflow:', error)
+    //   throw error
+    // } finally {
+    //   setIsCreatingWorkflow(false)
+    // }
   }
 
   // Toggle workspace selector visibility
@@ -972,7 +976,7 @@ export function Sidebar() {
               <span className='flex h-8 flex-1 items-center px-0 text-muted-foreground text-sm leading-none'>
                 Search anything
               </span>
-              <KeyboardShortcut shortcut={getKeyboardShortcutText('K', true)} />
+              {/* <KeyboardShortcut shortcut={getKeyboardShortcutText('K', true)} /> */}
             </button>
           </div>
 
@@ -987,7 +991,6 @@ export function Sidebar() {
                 <div ref={workflowScrollAreaRef}>
                   <FolderTree
                     regularWorkflows={regularWorkflows}
-                    marketplaceWorkflows={tempWorkflows}
                     isLoading={isLoading}
                     onCreateWorkflow={handleCreateWorkflow}
                     activeWorkspace={activeWorkspace}
@@ -1016,12 +1019,7 @@ export function Sidebar() {
           top: `${toolbarTop}px`,
           bottom: `${navigationBottom + SIDEBAR_HEIGHTS.NAVIGATION + SIDEBAR_GAP + (isBillingEnabled ? SIDEBAR_HEIGHTS.USAGE_INDICATOR + SIDEBAR_GAP : 0)}px`, // Navigation height + gap + UsageIndicator height + gap (if billing enabled)
         }}
-      >
-        <Toolbar
-          userPermissions={userPermissions}
-          isWorkspaceSelectorVisible={isWorkspaceSelectorVisible}
-        />
-      </div>
+      />
 
       {/* Floating Logs Filters - Only on logs page */}
       <div
@@ -1060,11 +1058,10 @@ export function Sidebar() {
         >
           <UsageIndicator
             onClick={() => {
-              const subscriptionStore = useSubscriptionStore.getState()
-              const isBlocked = subscriptionStore.getBillingStatus() === 'blocked'
-              const canUpgrade = subscriptionStore.canUpgrade()
+              const isBlocked = getBillingStatus(subscriptionData?.data) === 'blocked'
+              const canUpg = canUpgrade(subscriptionData?.data)
 
-              if (isBlocked || !canUpgrade) {
+              if (isBlocked || !canUpg) {
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(
                     new CustomEvent('open-settings', { detail: { tab: 'subscription' } })
@@ -1092,16 +1089,6 @@ export function Sidebar() {
       {/* <HelpModal open={showHelp} onOpenChange={setShowHelp} /> */}
       <InviteModal open={showInviteMembers} onOpenChange={setShowInviteMembers} />
       <SubscriptionModal open={showSubscriptionModal} onOpenChange={setShowSubscriptionModal} />
-
-      <SearchModal
-        open={showSearchModal}
-        onOpenChange={setShowSearchModal}
-        templates={templates}
-        workflows={searchWorkflows}
-        workspaces={searchWorkspaces}
-        loading={isTemplatesLoading}
-        isOnWorkflowPage={isOnWorkflowPage}
-      />
     </>
   )
 }

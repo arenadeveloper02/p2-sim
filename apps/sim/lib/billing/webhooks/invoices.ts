@@ -1,14 +1,270 @@
-import { eq } from 'drizzle-orm'
+import { render } from '@react-email/components'
+import { db } from '@sim/db'
+import { member, subscription as subscriptionTable, user, userStats } from '@sim/db/schema'
+import { eq, inArray } from 'drizzle-orm'
 import type Stripe from 'stripe'
-import { getUserUsageData } from '@/lib/billing/core/usage'
+import PaymentFailedEmail from '@/components/emails/billing/payment-failed-email'
+import { calculateSubscriptionOverage } from '@/lib/billing/core/billing'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
+import { sendEmail } from '@/lib/email/mailer'
+import { quickValidateEmail } from '@/lib/email/validation'
 import { createLogger } from '@/lib/logs/console/logger'
-import { db } from '@/db'
-import { member, subscription as subscriptionTable, userStats } from '@/db/schema'
+import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('StripeInvoiceWebhooks')
 
-async function resetUsageForSubscription(sub: { plan: string | null; referenceId: string }) {
+const OVERAGE_INVOICE_TYPES = new Set<string>([
+  'overage_billing',
+  'overage_threshold_billing',
+  'overage_threshold_billing_org',
+])
+
+function parseDecimal(value: string | number | null | undefined): number {
+  if (value === null || value === undefined) return 0
+  return Number.parseFloat(value.toString())
+}
+
+/**
+ * Create a billing portal URL for a Stripe customer
+ */
+async function createBillingPortalUrl(stripeCustomerId: string): Promise<string> {
+  try {
+    const stripe = requireStripeClient()
+    const baseUrl = getBaseUrl()
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      return_url: `${baseUrl}/workspace?billing=updated`,
+    })
+    return portal.url
+  } catch (error) {
+    logger.error('Failed to create billing portal URL', { error, stripeCustomerId })
+    // Fallback to generic billing page
+    return `${getBaseUrl()}/workspace?tab=subscription`
+  }
+}
+
+/**
+ * Get payment method details from Stripe invoice
+ */
+async function getPaymentMethodDetails(
+  invoice: Stripe.Invoice
+): Promise<{ lastFourDigits?: string; failureReason?: string }> {
+  let lastFourDigits: string | undefined
+  let failureReason: string | undefined
+
+  // Try to get last 4 digits from payment method
+  try {
+    const stripe = requireStripeClient()
+
+    // Try to get from default payment method
+    if (invoice.default_payment_method && typeof invoice.default_payment_method === 'string') {
+      const paymentMethod = await stripe.paymentMethods.retrieve(invoice.default_payment_method)
+      if (paymentMethod.card?.last4) {
+        lastFourDigits = paymentMethod.card.last4
+      }
+    }
+
+    // If no default payment method, try getting from customer's default
+    if (!lastFourDigits && invoice.customer && typeof invoice.customer === 'string') {
+      const customer = await stripe.customers.retrieve(invoice.customer)
+      if (customer && !('deleted' in customer)) {
+        const defaultPm = customer.invoice_settings?.default_payment_method
+        if (defaultPm && typeof defaultPm === 'string') {
+          const paymentMethod = await stripe.paymentMethods.retrieve(defaultPm)
+          if (paymentMethod.card?.last4) {
+            lastFourDigits = paymentMethod.card.last4
+          }
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to retrieve payment method details', { error, invoiceId: invoice.id })
+  }
+
+  // Get failure message - check multiple sources
+  if (invoice.last_finalization_error?.message) {
+    failureReason = invoice.last_finalization_error.message
+  }
+
+  // If not found, check the payments array (requires expand: ['payments'])
+  if (!failureReason && invoice.payments?.data) {
+    const defaultPayment = invoice.payments.data.find((p) => p.is_default)
+    const payment = defaultPayment || invoice.payments.data[0]
+
+    if (payment?.payment) {
+      try {
+        const stripe = requireStripeClient()
+
+        if (payment.payment.type === 'payment_intent' && payment.payment.payment_intent) {
+          const piId =
+            typeof payment.payment.payment_intent === 'string'
+              ? payment.payment.payment_intent
+              : payment.payment.payment_intent.id
+
+          const paymentIntent = await stripe.paymentIntents.retrieve(piId)
+          if (paymentIntent.last_payment_error?.message) {
+            failureReason = paymentIntent.last_payment_error.message
+          }
+        } else if (payment.payment.type === 'charge' && payment.payment.charge) {
+          const chargeId =
+            typeof payment.payment.charge === 'string'
+              ? payment.payment.charge
+              : payment.payment.charge.id
+
+          const charge = await stripe.charges.retrieve(chargeId)
+          if (charge.failure_message) {
+            failureReason = charge.failure_message
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to retrieve payment details for failure reason', {
+          error,
+          invoiceId: invoice.id,
+        })
+      }
+    }
+  }
+
+  return { lastFourDigits, failureReason }
+}
+
+/**
+ * Send payment failure notification emails to affected users
+ */
+async function sendPaymentFailureEmails(
+  sub: { plan: string | null; referenceId: string },
+  invoice: Stripe.Invoice,
+  stripeCustomerId: string
+): Promise<void> {
+  try {
+    const billingPortalUrl = await createBillingPortalUrl(stripeCustomerId)
+    const amountDue = invoice.amount_due / 100 // Convert cents to dollars
+    const { lastFourDigits, failureReason } = await getPaymentMethodDetails(invoice)
+
+    // Get users to notify
+    let usersToNotify: Array<{ email: string; name: string | null }> = []
+
+    if (sub.plan === 'team' || sub.plan === 'enterprise') {
+      // For team/enterprise, notify all owners and admins
+      const members = await db
+        .select({
+          userId: member.userId,
+          role: member.role,
+        })
+        .from(member)
+        .where(eq(member.organizationId, sub.referenceId))
+
+      // Get owner/admin user details
+      const ownerAdminIds = members
+        .filter((m) => m.role === 'owner' || m.role === 'admin')
+        .map((m) => m.userId)
+
+      if (ownerAdminIds.length > 0) {
+        const users = await db
+          .select({ email: user.email, name: user.name })
+          .from(user)
+          .where(inArray(user.id, ownerAdminIds))
+
+        usersToNotify = users.filter((u) => u.email && quickValidateEmail(u.email).isValid)
+      }
+    } else {
+      // For individual plans, notify the user
+      const users = await db
+        .select({ email: user.email, name: user.name })
+        .from(user)
+        .where(eq(user.id, sub.referenceId))
+        .limit(1)
+
+      if (users.length > 0) {
+        usersToNotify = users.filter((u) => u.email && quickValidateEmail(u.email).isValid)
+      }
+    }
+
+    // Send emails to all affected users
+    for (const userToNotify of usersToNotify) {
+      try {
+        const emailHtml = await render(
+          PaymentFailedEmail({
+            userName: userToNotify.name || undefined,
+            amountDue,
+            lastFourDigits,
+            billingPortalUrl,
+            failureReason,
+            sentDate: new Date(),
+          })
+        )
+
+        await sendEmail({
+          to: userToNotify.email,
+          subject: 'Payment Failed - Action Required',
+          html: emailHtml,
+          emailType: 'transactional',
+        })
+
+        logger.info('Payment failure email sent', {
+          email: userToNotify.email,
+          invoiceId: invoice.id,
+        })
+      } catch (emailError) {
+        logger.error('Failed to send payment failure email', {
+          error: emailError,
+          email: userToNotify.email,
+        })
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to send payment failure emails', { error })
+  }
+}
+
+/**
+ * Get total billed overage for a subscription, handling team vs individual plans
+ * For team plans: sums billedOverageThisPeriod across all members
+ * For other plans: gets billedOverageThisPeriod for the user
+ */
+export async function getBilledOverageForSubscription(sub: {
+  plan: string | null
+  referenceId: string
+}): Promise<number> {
+  let billedOverage = 0
+
+  if (sub.plan === 'team') {
+    const members = await db
+      .select({ userId: member.userId })
+      .from(member)
+      .where(eq(member.organizationId, sub.referenceId))
+
+    const memberIds = members.map((m) => m.userId)
+
+    if (memberIds.length > 0) {
+      const memberStatsRows = await db
+        .select({
+          userId: userStats.userId,
+          billedOverageThisPeriod: userStats.billedOverageThisPeriod,
+        })
+        .from(userStats)
+        .where(inArray(userStats.userId, memberIds))
+
+      for (const stats of memberStatsRows) {
+        billedOverage += parseDecimal(stats.billedOverageThisPeriod)
+      }
+    }
+  } else {
+    const userStatsRecords = await db
+      .select({ billedOverageThisPeriod: userStats.billedOverageThisPeriod })
+      .from(userStats)
+      .where(eq(userStats.userId, sub.referenceId))
+      .limit(1)
+
+    if (userStatsRecords.length > 0) {
+      billedOverage = parseDecimal(userStatsRecords[0].billedOverageThisPeriod)
+    }
+  }
+
+  return billedOverage
+}
+
+export async function resetUsageForSubscription(sub: { plan: string | null; referenceId: string }) {
   if (sub.plan === 'team' || sub.plan === 'enterprise') {
     const membersRows = await db
       .select({ userId: member.userId })
@@ -17,29 +273,55 @@ async function resetUsageForSubscription(sub: { plan: string | null; referenceId
 
     for (const m of membersRows) {
       const currentStats = await db
-        .select({ current: userStats.currentPeriodCost })
+        .select({
+          current: userStats.currentPeriodCost,
+          currentCopilot: userStats.currentPeriodCopilotCost,
+        })
         .from(userStats)
         .where(eq(userStats.userId, m.userId))
         .limit(1)
       if (currentStats.length > 0) {
         const current = currentStats[0].current || '0'
+        const currentCopilot = currentStats[0].currentCopilot || '0'
         await db
           .update(userStats)
-          .set({ lastPeriodCost: current, currentPeriodCost: '0' })
+          .set({
+            lastPeriodCost: current,
+            lastPeriodCopilotCost: currentCopilot,
+            currentPeriodCost: '0',
+            currentPeriodCopilotCost: '0',
+            billedOverageThisPeriod: '0',
+          })
           .where(eq(userStats.userId, m.userId))
       }
     }
   } else {
     const currentStats = await db
-      .select({ current: userStats.currentPeriodCost })
+      .select({
+        current: userStats.currentPeriodCost,
+        snapshot: userStats.proPeriodCostSnapshot,
+        currentCopilot: userStats.currentPeriodCopilotCost,
+      })
       .from(userStats)
       .where(eq(userStats.userId, sub.referenceId))
       .limit(1)
     if (currentStats.length > 0) {
-      const current = currentStats[0].current || '0'
+      // For Pro plans, combine current + snapshot for lastPeriodCost, then clear both
+      const current = Number.parseFloat(currentStats[0].current?.toString() || '0')
+      const snapshot = Number.parseFloat(currentStats[0].snapshot?.toString() || '0')
+      const totalLastPeriod = (current + snapshot).toString()
+      const currentCopilot = currentStats[0].currentCopilot || '0'
+
       await db
         .update(userStats)
-        .set({ lastPeriodCost: current, currentPeriodCost: '0' })
+        .set({
+          lastPeriodCost: totalLastPeriod,
+          lastPeriodCopilotCost: currentCopilot,
+          currentPeriodCost: '0',
+          currentPeriodCopilotCost: '0',
+          proPeriodCostSnapshot: '0', // Clear snapshot at period end
+          billedOverageThisPeriod: '0', // Clear threshold billing tracker at period end
+        })
         .where(eq(userStats.userId, sub.referenceId))
     }
   }
@@ -77,16 +359,14 @@ export async function handleInvoicePaymentSucceeded(event: Stripe.Event) {
         .select({ userId: member.userId })
         .from(member)
         .where(eq(member.organizationId, sub.referenceId))
-      for (const m of membersRows) {
-        const row = await db
+      const memberIds = membersRows.map((m) => m.userId)
+      if (memberIds.length > 0) {
+        const blockedRows = await db
           .select({ blocked: userStats.billingBlocked })
           .from(userStats)
-          .where(eq(userStats.userId, m.userId))
-          .limit(1)
-        if (row.length > 0 && row[0].blocked) {
-          wasBlocked = true
-          break
-        }
+          .where(inArray(userStats.userId, memberIds))
+
+        wasBlocked = blockedRows.some((row) => !!row.blocked)
       }
     } else {
       const row = await db
@@ -102,11 +382,13 @@ export async function handleInvoicePaymentSucceeded(event: Stripe.Event) {
         .select({ userId: member.userId })
         .from(member)
         .where(eq(member.organizationId, sub.referenceId))
-      for (const m of members) {
+      const memberIds = members.map((m) => m.userId)
+
+      if (memberIds.length > 0) {
         await db
           .update(userStats)
           .set({ billingBlocked: false })
-          .where(eq(userStats.userId, m.userId))
+          .where(inArray(userStats.userId, memberIds))
       }
     } else {
       await db
@@ -126,24 +408,48 @@ export async function handleInvoicePaymentSucceeded(event: Stripe.Event) {
 
 /**
  * Handle invoice payment failed webhook
- * This is triggered when a user's payment fails for a usage billing invoice
+ * This is triggered when a user's payment fails for any invoice (subscription or overage)
  */
 export async function handleInvoicePaymentFailed(event: Stripe.Event) {
   try {
     const invoice = event.data.object as Stripe.Invoice
 
-    // Check if this is an overage billing invoice
-    if (invoice.metadata?.type !== 'overage_billing') {
-      logger.info('Ignoring non-overage billing invoice payment failure', { invoiceId: invoice.id })
+    const invoiceType = invoice.metadata?.type
+    const isOverageInvoice = !!(invoiceType && OVERAGE_INVOICE_TYPES.has(invoiceType))
+    let stripeSubscriptionId: string | undefined
+
+    if (isOverageInvoice) {
+      // Overage invoices store subscription ID in metadata
+      stripeSubscriptionId = invoice.metadata?.subscriptionId as string | undefined
+    } else {
+      // Regular subscription invoices have it in parent.subscription_details
+      const subscription = invoice.parent?.subscription_details?.subscription
+      stripeSubscriptionId = typeof subscription === 'string' ? subscription : subscription?.id
+    }
+
+    if (!stripeSubscriptionId) {
+      logger.info('No subscription found on invoice; skipping payment failed handler', {
+        invoiceId: invoice.id,
+        isOverageInvoice,
+      })
       return
     }
 
-    const customerId = invoice.customer as string
+    // Extract and validate customer ID
+    const customerId = invoice.customer
+    if (!customerId || typeof customerId !== 'string') {
+      logger.error('Invalid customer ID on invoice', {
+        invoiceId: invoice.id,
+        customer: invoice.customer,
+      })
+      return
+    }
+
     const failedAmount = invoice.amount_due / 100 // Convert from cents to dollars
     const billingPeriod = invoice.metadata?.billingPeriod || 'unknown'
-    const attemptCount = invoice.attempt_count || 1
+    const attemptCount = invoice.attempt_count ?? 1
 
-    logger.warn('Overage billing invoice payment failed', {
+    logger.warn('Invoice payment failed', {
       invoiceId: invoice.id,
       customerId,
       failedAmount,
@@ -151,47 +457,78 @@ export async function handleInvoicePaymentFailed(event: Stripe.Event) {
       attemptCount,
       customerEmail: invoice.customer_email,
       hostedInvoiceUrl: invoice.hosted_invoice_url,
+      isOverageInvoice,
+      invoiceType: isOverageInvoice ? 'overage' : 'subscription',
     })
 
-    // Implement dunning management logic here
-    // For example: suspend service after multiple failures, notify admins, etc.
+    // Block users after first payment failure
     if (attemptCount >= 1) {
-      logger.error('Multiple payment failures for overage billing', {
+      logger.error('Payment failure - blocking users', {
         invoiceId: invoice.id,
         customerId,
         attemptCount,
+        isOverageInvoice,
+        stripeSubscriptionId,
       })
-      // Block all users under this customer (org members or individual)
-      // Overage invoices are manual invoices without parent.subscription_details
-      // We store the subscription ID in metadata when creating them
-      const stripeSubscriptionId = invoice.metadata?.subscriptionId as string | undefined
-      if (stripeSubscriptionId) {
-        const records = await db
-          .select()
-          .from(subscriptionTable)
-          .where(eq(subscriptionTable.stripeSubscriptionId, stripeSubscriptionId))
-          .limit(1)
 
-        if (records.length > 0) {
-          const sub = records[0]
-          if (sub.plan === 'team' || sub.plan === 'enterprise') {
-            const members = await db
-              .select({ userId: member.userId })
-              .from(member)
-              .where(eq(member.organizationId, sub.referenceId))
-            for (const m of members) {
-              await db
-                .update(userStats)
-                .set({ billingBlocked: true })
-                .where(eq(userStats.userId, m.userId))
-            }
-          } else {
+      const records = await db
+        .select()
+        .from(subscriptionTable)
+        .where(eq(subscriptionTable.stripeSubscriptionId, stripeSubscriptionId))
+        .limit(1)
+
+      if (records.length > 0) {
+        const sub = records[0]
+        if (sub.plan === 'team' || sub.plan === 'enterprise') {
+          const members = await db
+            .select({ userId: member.userId })
+            .from(member)
+            .where(eq(member.organizationId, sub.referenceId))
+          const memberIds = members.map((m) => m.userId)
+
+          if (memberIds.length > 0) {
             await db
               .update(userStats)
               .set({ billingBlocked: true })
-              .where(eq(userStats.userId, sub.referenceId))
+              .where(inArray(userStats.userId, memberIds))
           }
+          logger.info('Blocked team/enterprise members due to payment failure', {
+            organizationId: sub.referenceId,
+            memberCount: members.length,
+            isOverageInvoice,
+          })
+        } else {
+          await db
+            .update(userStats)
+            .set({ billingBlocked: true })
+            .where(eq(userStats.userId, sub.referenceId))
+          logger.info('Blocked user due to payment failure', {
+            userId: sub.referenceId,
+            isOverageInvoice,
+          })
         }
+
+        // Send payment failure notification emails
+        // Only send on FIRST failure (attempt_count === 1), not on Stripe's automatic retries
+        // This prevents spamming users with duplicate emails every 3-5-7 days
+        if (attemptCount === 1) {
+          await sendPaymentFailureEmails(sub, invoice, customerId)
+          logger.info('Payment failure email sent on first attempt', {
+            invoiceId: invoice.id,
+            customerId,
+          })
+        } else {
+          logger.info('Skipping payment failure email on retry attempt', {
+            invoiceId: invoice.id,
+            attemptCount,
+            customerId,
+          })
+        }
+      } else {
+        logger.warn('Subscription not found in database for failed payment', {
+          stripeSubscriptionId,
+          invoiceId: invoice.id,
+        })
       }
     }
   } catch (error) {
@@ -242,33 +579,25 @@ export async function handleInvoiceFinalized(event: Stripe.Event) {
     const billingPeriod = new Date(periodEnd * 1000).toISOString().slice(0, 7)
 
     // Compute overage (only for team and pro plans), before resetting usage
-    let totalOverage = 0
-    if (sub.plan === 'team') {
-      const members = await db
-        .select({ userId: member.userId })
-        .from(member)
-        .where(eq(member.organizationId, sub.referenceId))
+    const totalOverage = await calculateSubscriptionOverage(sub)
 
-      let totalTeamUsage = 0
-      for (const m of members) {
-        const usage = await getUserUsageData(m.userId)
-        totalTeamUsage += usage.currentUsage
-      }
+    // Get already-billed overage from threshold billing
+    const billedOverage = await getBilledOverageForSubscription(sub)
 
-      const { getPlanPricing } = await import('@/lib/billing/core/billing')
-      const { basePrice } = getPlanPricing(sub.plan)
-      const baseSubscriptionAmount = (sub.seats || 1) * basePrice
-      totalOverage = Math.max(0, totalTeamUsage - baseSubscriptionAmount)
-    } else {
-      const usage = await getUserUsageData(sub.referenceId)
-      const { getPlanPricing } = await import('@/lib/billing/core/billing')
-      const { basePrice } = getPlanPricing(sub.plan)
-      totalOverage = Math.max(0, usage.currentUsage - basePrice)
-    }
+    // Only bill the remaining unbilled overage
+    const remainingOverage = Math.max(0, totalOverage - billedOverage)
 
-    if (totalOverage > 0) {
+    logger.info('Invoice finalized overage calculation', {
+      subscriptionId: sub.id,
+      totalOverage,
+      billedOverage,
+      remainingOverage,
+      billingPeriod,
+    })
+
+    if (remainingOverage > 0) {
       const customerId = String(invoice.customer)
-      const cents = Math.round(totalOverage * 100)
+      const cents = Math.round(remainingOverage * 100)
       const itemIdemKey = `overage-item:${customerId}:${stripeSubscriptionId}:${billingPeriod}`
       const invoiceIdemKey = `overage-invoice:${customerId}:${stripeSubscriptionId}:${billingPeriod}`
 

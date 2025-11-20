@@ -6,11 +6,7 @@ import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env, isTruthy } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
-import {
-  handleSlackChallenge,
-  handleWhatsAppVerification,
-  validateMicrosoftTeamsSignature,
-} from '@/lib/webhooks/utils'
+import { handleSlackChallenge, validateMicrosoftTeamsSignature } from '@/lib/webhooks/utils'
 import { executeWebhookJob } from '@/background/webhook-execution'
 import { db } from '@/db'
 import { webhook, workflow } from '@/db/schema'
@@ -19,67 +15,34 @@ import { RateLimiter } from '@/services/queue'
 const logger = createLogger('WebhookTriggerAPI')
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
-/**
- * Webhook Verification Handler (GET)
- *
- * Handles verification requests from webhook providers and confirms endpoint exists.
- */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string }> }) {
   const requestId = generateRequestId()
+  const { path } = await params
 
-  try {
-    const path = (await params).path
-    const url = new URL(request.url)
+  // Handle Microsoft Graph subscription validation
+  const url = new URL(request.url)
+  const validationToken = url.searchParams.get('validationToken')
 
-    // Handle WhatsApp specific verification challenge
-    const mode = url.searchParams.get('hub.mode')
-    const token = url.searchParams.get('hub.verify_token')
-    const challenge = url.searchParams.get('hub.challenge')
-
-    const whatsAppResponse = await handleWhatsAppVerification(
-      requestId,
-      path,
-      mode,
-      token,
-      challenge
-    )
-    if (whatsAppResponse) {
-      return whatsAppResponse
-    }
-
-    // Verify webhook exists in database
-    const webhooks = await db
-      .select({
-        webhook: webhook,
-      })
-      .from(webhook)
-      .where(and(eq(webhook.path, path), eq(webhook.isActive, true)))
-      .limit(1)
-
-    if (webhooks.length === 0) {
-      logger.warn(`[${requestId}] No active webhook found for path: ${path}`)
-      return new NextResponse('Webhook not found', { status: 404 })
-    }
-
-    logger.info(`[${requestId}] Webhook verification successful for path: ${path}`)
-    return new NextResponse('OK', { status: 200 })
-  } catch (error: any) {
-    logger.error(`[${requestId}] Error processing webhook verification`, error)
-    return new NextResponse(`Internal Server Error: ${error.message}`, {
-      status: 500,
+  if (validationToken) {
+    logger.info(`[${requestId}] Microsoft Graph subscription validation for path: ${path}`)
+    return new NextResponse(validationToken, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
     })
   }
+
+  // Handle other GET-based verifications if needed
+  const challengeResponse = await handleProviderChallenges({}, request, requestId, path)
+  if (challengeResponse) {
+    return challengeResponse
+  }
+
+  return new NextResponse('Method not allowed', { status: 405 })
 }
 
-/**
- * Webhook Payload Handler (POST)
- *
- * Processes incoming webhook payloads from all supported providers.
- * Fast acknowledgment with async processing for most providers except Airtable.
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ path: string }> }
@@ -181,9 +144,10 @@ export async function POST(
     .where(and(eq(webhook.path, path), eq(webhook.isActive, true)))
     .limit(1)
 
-  if (webhooks.length === 0) {
-    logger.warn(`[${requestId}] No active webhook found for path: ${path}`)
-    return new NextResponse('Webhook not found', { status: 404 })
+  if (!findResult) {
+    logger.warn(`[${requestId}] Webhook or workflow not found for path: ${path}`)
+
+    return new NextResponse('Not Found', { status: 404 })
   }
 
   foundWebhook = webhooks[0].webhook

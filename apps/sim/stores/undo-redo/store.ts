@@ -2,7 +2,6 @@ import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
-import { createSafeStorage } from '@/lib/storage/safe-storage'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 import type {
   MoveBlockOperation,
@@ -348,7 +347,6 @@ export const useUndoRedoStore = create<UndoRedoState>()(
     }),
     {
       name: 'workflow-undo-redo',
-      storage: createSafeStorage(),
       partialize: (state) => ({
         stacks: state.stacks,
         capacity: state.capacity,

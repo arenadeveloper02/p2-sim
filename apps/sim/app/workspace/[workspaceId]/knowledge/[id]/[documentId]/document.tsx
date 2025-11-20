@@ -1,16 +1,11 @@
 'use client'
 
 import { Suspense, startTransition, useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Circle, CircleOff, FileText, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Circle, CircleOff, FileText, Plus } from 'lucide-react'
 import { useParams, useSearchParams } from 'next/navigation'
-import {
-  Button,
-  Checkbox,
-  SearchHighlight,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui'
+import { Tooltip } from '@/components/emcn'
+import { Trash } from '@/components/emcn/icons/trash'
+import { Button, Checkbox, SearchHighlight } from '@/components/ui'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
   CreateChunkModal,
@@ -340,8 +335,8 @@ export function Document({
         </td>
         <td className='px-4 py-3'>
           <div className='flex items-center gap-1'>
-            <Tooltip>
-              <TooltipTrigger asChild>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
                 <Button
                   variant='ghost'
                   size='sm'
@@ -358,13 +353,13 @@ export function Document({
                     <CircleOff className='h-4 w-4' />
                   )}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side='top'>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>
                 {chunk.enabled ? 'Disable Chunk' : 'Enable Chunk'}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
+              </Tooltip.Content>
+            </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
                 <Button
                   variant='ghost'
                   size='sm'
@@ -375,11 +370,11 @@ export function Document({
                   disabled={!userPermissions.canEdit}
                   className='h-8 w-8 p-0 text-gray-500 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50'
                 >
-                  <Trash2 className='h-4 w-4' />
+                  <Trash className='h-4 w-4' />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side='top'>Delete Chunk</TooltipContent>
-            </Tooltip>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>Delete Chunk</Tooltip.Content>
+            </Tooltip.Root>
           </div>
         </td>
       </tr>

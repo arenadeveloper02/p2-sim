@@ -18,7 +18,6 @@ export const getContentTool: ToolConfig<GoogleDriveToolParams, GoogleDriveGetCon
   oauth: {
     required: true,
     provider: 'google-drive',
-    additionalScopes: ['https://www.googleapis.com/auth/drive'],
   },
 
   params: {

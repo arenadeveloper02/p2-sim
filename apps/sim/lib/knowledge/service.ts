@@ -225,6 +225,7 @@ export async function updateKnowledgeBase(
   updates: {
     name?: string
     description?: string
+    workspaceId?: string | null
     chunkingConfig?: {
       maxSize: number
       minSize: number
@@ -238,6 +239,7 @@ export async function updateKnowledgeBase(
     updatedAt: Date
     name?: string
     description?: string | null
+    workspaceId?: string | null
     chunkingConfig?: {
       maxSize: number
       minSize: number
@@ -251,6 +253,7 @@ export async function updateKnowledgeBase(
 
   if (updates.name !== undefined) updateData.name = updates.name
   if (updates.description !== undefined) updateData.description = updates.description
+  if (updates.workspaceId !== undefined) updateData.workspaceId = updates.workspaceId
   if (updates.chunkingConfig !== undefined) {
     updateData.chunkingConfig = updates.chunkingConfig
     updateData.embeddingModel = 'text-embedding-3-small'

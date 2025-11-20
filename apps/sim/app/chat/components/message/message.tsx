@@ -22,6 +22,14 @@ import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/markdown-renderer'
 import MarkdownRenderer from './components/markdown-renderer'
 
+export interface ChatAttachment {
+  id: string
+  name: string
+  type: string
+  dataUrl: string
+  size?: number
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -34,11 +42,7 @@ export interface ChatMessage {
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {
-  return (
-    <TooltipProvider>
-      <MarkdownRenderer content={content} />
-    </TooltipProvider>
-  )
+  return <MarkdownRenderer content={content} />
 }
 
 export const ClientChatMessage = memo(

@@ -1,7 +1,7 @@
 # ========================================
 # Base Stage: Alpine Linux with Bun
 # ========================================
-FROM oven/bun:1.2.19-alpine AS base
+FROM oven/bun:1.2.22-alpine AS base
 
 # ========================================
 # Dependencies Stage: Install Dependencies
@@ -13,9 +13,10 @@ WORKDIR /app
 # Install turbo globally
 RUN bun install -g turbo
 
-COPY package.json bun.lock ./
-RUN mkdir -p apps
+COPY package.json bun.lock turbo.json ./
+RUN mkdir -p apps packages/db
 COPY apps/sim/package.json ./apps/sim/package.json
+COPY packages/db/package.json ./packages/db/package.json
 
 RUN bun install --omit dev --ignore-scripts
 
@@ -36,10 +37,18 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy the entire sim app since socket-server has dependencies on other modules
-COPY --from=builder /app/apps/sim ./apps/sim
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+# Create non-root user and group
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# Copy the sim app and the shared db package needed by socket-server
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim ./apps/sim
+COPY --from=builder --chown=nextjs:nodejs /app/packages/db ./packages/db
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+# Switch to non-root user
+USER nextjs
 
 # Expose socket server port (default 3002, but configurable via PORT env var)
 EXPOSE 3002

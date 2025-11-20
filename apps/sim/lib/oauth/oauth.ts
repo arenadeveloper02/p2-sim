@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   AirtableIcon,
+  AsanaIcon,
   ConfluenceIcon,
   DiscordIcon,
   GithubIcon,
@@ -10,6 +11,7 @@ import {
   GoogleDriveIcon,
   GoogleIcon,
   GoogleSheetsIcon,
+  HubspotIcon,
   JiraIcon,
   LinearIcon,
   MicrosoftExcelIcon,
@@ -20,10 +22,14 @@ import {
   MicrosoftTeamsIcon,
   NotionIcon,
   OutlookIcon,
+  PipedriveIcon,
   RedditIcon,
+  SalesforceIcon,
   SlackIcon,
   SupabaseIcon,
+  TrelloIcon,
   WealthboxIcon,
+  WebflowIcon,
   xIcon,
 } from '@/components/icons'
 import { env } from '@/lib/env'
@@ -45,7 +51,13 @@ export type OAuthProvider =
   | 'linear'
   | 'slack'
   | 'reddit'
+  | 'trello'
   | 'wealthbox'
+  | 'webflow'
+  | 'asana'
+  | 'pipedrive'
+  | 'hubspot'
+  | 'salesforce'
   | string
 
 export type OAuthService =
@@ -55,6 +67,8 @@ export type OAuthService =
   | 'google-docs'
   | 'google-sheets'
   | 'google-calendar'
+  | 'google-vault'
+  | 'google-forms'
   | 'github'
   | 'x'
   | 'supabase'
@@ -73,6 +87,12 @@ export type OAuthService =
   | 'reddit'
   | 'wealthbox'
   | 'onedrive'
+  | 'webflow'
+  | 'trello'
+  | 'asana'
+  | 'pipedrive'
+  | 'hubspot'
+  | 'salesforce'
 export interface OAuthProviderConfig {
   id: OAuthProvider
   name: string
@@ -89,6 +109,7 @@ export interface OAuthServiceConfig {
   icon: (props: { className?: string }) => ReactNode
   baseProviderIcon: (props: { className?: string }) => ReactNode
   scopes: string[]
+  scopeHints?: string[]
 }
 
 export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
@@ -107,9 +128,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         scopes: [
           'https://www.googleapis.com/auth/gmail.send',
           'https://www.googleapis.com/auth/gmail.modify',
-          // 'https://www.googleapis.com/auth/gmail.readonly',
           'https://www.googleapis.com/auth/gmail.labels',
         ],
+        scopeHints: ['gmail', 'mail'],
       },
       'google-drive': {
         id: 'google-drive',
@@ -118,7 +139,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'google-drive',
         icon: (props) => GoogleDriveIcon(props),
         baseProviderIcon: (props) => GoogleIcon(props),
-        scopes: ['https://www.googleapis.com/auth/drive'],
+        scopes: [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file',
+        ],
+        scopeHints: ['drive'],
       },
       'google-docs': {
         id: 'google-docs',
@@ -127,7 +152,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'google-docs',
         icon: (props) => GoogleDocsIcon(props),
         baseProviderIcon: (props) => GoogleIcon(props),
-        scopes: ['https://www.googleapis.com/auth/drive'],
+        scopes: [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file',
+        ],
+        scopeHints: ['docs'],
       },
       'google-sheets': {
         id: 'google-sheets',
@@ -136,7 +165,25 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'google-sheets',
         icon: (props) => GoogleSheetsIcon(props),
         baseProviderIcon: (props) => GoogleIcon(props),
-        scopes: ['https://www.googleapis.com/auth/drive'],
+        scopes: [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file',
+        ],
+        scopeHints: ['sheets'],
+      },
+      'google-forms': {
+        id: 'google-forms',
+        name: 'Google Forms',
+        description: 'Retrieve Google Form responses.',
+        providerId: 'google-forms',
+        icon: (props) => GoogleFormsIcon(props),
+        baseProviderIcon: (props) => GoogleIcon(props),
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/forms.responses.readonly',
+        ],
+        scopeHints: ['forms'],
       },
       'google-calendar': {
         id: 'google-calendar',
@@ -146,6 +193,20 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: (props) => GoogleCalendarIcon(props),
         baseProviderIcon: (props) => GoogleIcon(props),
         scopes: ['https://www.googleapis.com/auth/calendar'],
+        scopeHints: ['calendar'],
+      },
+      'google-vault': {
+        id: 'google-vault',
+        name: 'Google Vault',
+        description: 'Search, export, and manage matters/holds via Google Vault.',
+        providerId: 'google-vault',
+        icon: (props) => GoogleIcon(props),
+        baseProviderIcon: (props) => GoogleIcon(props),
+        scopes: [
+          'https://www.googleapis.com/auth/ediscovery',
+          'https://www.googleapis.com/auth/devstorage.read_only',
+        ],
+        scopeHints: ['ediscovery', 'devstorage'],
       },
     },
     defaultService: 'gmail',
@@ -196,13 +257,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'Chat.Read',
           'Chat.ReadWrite',
           'Chat.ReadBasic',
+          'ChatMessage.Send',
           'Channel.ReadBasic.All',
           'ChannelMessage.Send',
           'ChannelMessage.Read.All',
+          'ChannelMessage.ReadWrite',
+          'ChannelMember.Read.All',
           'Group.Read.All',
           'Group.ReadWrite.All',
           'Team.ReadBasic.All',
+          'TeamMember.Read.All',
           'offline_access',
+          'Files.Read',
+          'Sites.Read.All',
         ],
       },
       outlook: {
@@ -314,7 +381,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'confluence',
         icon: (props) => ConfluenceIcon(props),
         baseProviderIcon: (props) => ConfluenceIcon(props),
-        scopes: ['read:page:confluence', 'write:page:confluence', 'read:me', 'offline_access'],
+        scopes: [
+          'read:confluence-content.all',
+          'read:confluence-space.summary',
+          'read:space:confluence',
+          'read:space-details:confluence',
+          'write:confluence-content',
+          'write:confluence-space',
+          'write:confluence-file',
+          'read:page:confluence',
+          'write:page:confluence',
+          'read:comment:confluence',
+          'write:comment:confluence',
+          'delete:comment:confluence',
+          'delete:attachment:confluence',
+          'read:content:confluence',
+          'delete:page:confluence',
+          'read:label:confluence',
+          'write:label:confluence',
+          'read:attachment:confluence',
+          'write:attachment:confluence',
+          'search:confluence',
+          'read:me',
+          'offline_access',
+        ],
       },
     },
     defaultService: 'confluence',
@@ -335,10 +425,41 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'read:jira-user',
           'read:jira-work',
           'write:jira-work',
+          'write:issue:jira',
           'read:project:jira',
           'read:issue-type:jira',
           'read:me',
           'offline_access',
+          'read:issue-meta:jira',
+          'read:issue-security-level:jira',
+          'read:issue.vote:jira',
+          'read:issue.changelog:jira',
+          'read:avatar:jira',
+          'read:issue:jira',
+          'read:status:jira',
+          'read:user:jira',
+          'read:field-configuration:jira',
+          'read:issue-details:jira',
+          'read:issue-event:jira',
+          'delete:issue:jira',
+          'write:comment:jira',
+          'read:comment:jira',
+          'delete:comment:jira',
+          'read:attachment:jira',
+          'delete:attachment:jira',
+          'write:issue-worklog:jira',
+          'read:issue-worklog:jira',
+          'delete:issue-worklog:jira',
+          'write:issue-link:jira',
+          'delete:issue-link:jira',
+          'manage:jira-webhook',
+          'read:webhook:jira',
+          'write:webhook:jira',
+          'delete:webhook:jira',
+          'read:issue.property:jira',
+          'read:comment.property:jira',
+          'read:jql:jira',
+          'read:field:jira',
         ],
       },
     },
@@ -356,7 +477,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'airtable',
         icon: (props) => AirtableIcon(props),
         baseProviderIcon: (props) => AirtableIcon(props),
-        scopes: ['data.records:read', 'data.records:write'],
+        scopes: ['data.records:read', 'data.records:write', 'user.email:read', 'webhook:manage'],
       },
     },
     defaultService: 'airtable',
@@ -426,12 +547,16 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         baseProviderIcon: (props) => SlackIcon(props),
         scopes: [
           'channels:read',
+          'channels:history',
+          'groups:read',
+          'groups:history',
           'chat:write',
           'chat:write.public',
           'users:read',
+          'files:write',
           'files:read',
-          'links:read',
-          'links:write',
+          'canvases:write',
+          'reactions:write',
         ],
       },
     },
@@ -449,7 +574,24 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'reddit',
         icon: (props) => RedditIcon(props),
         baseProviderIcon: (props) => RedditIcon(props),
-        scopes: ['identity', 'read'],
+        scopes: [
+          'identity',
+          'read',
+          'submit',
+          'vote',
+          'save',
+          'edit',
+          'subscribe',
+          'history',
+          'privatemessages',
+          'account',
+          'mysubreddits',
+          'flair',
+          'report',
+          'modposts',
+          'modflair',
+          'modmail',
+        ],
       },
     },
     defaultService: 'reddit',
@@ -471,9 +613,142 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'wealthbox',
   },
+  webflow: {
+    id: 'webflow',
+    name: 'Webflow',
+    icon: (props) => WebflowIcon(props),
+    services: {
+      webflow: {
+        id: 'webflow',
+        name: 'Webflow',
+        description: 'Manage Webflow CMS collections, sites, and content.',
+        providerId: 'webflow',
+        icon: (props) => WebflowIcon(props),
+        baseProviderIcon: (props) => WebflowIcon(props),
+        scopes: ['cms:read', 'cms:write', 'sites:read', 'sites:write'],
+      },
+    },
+    defaultService: 'webflow',
+  },
+  trello: {
+    id: 'trello',
+    name: 'Trello',
+    icon: (props) => TrelloIcon(props),
+    services: {
+      trello: {
+        id: 'trello',
+        name: 'Trello',
+        description: 'Manage Trello boards, cards, and workflows.',
+        providerId: 'trello',
+        icon: (props) => TrelloIcon(props),
+        baseProviderIcon: (props) => TrelloIcon(props),
+        scopes: ['read', 'write'],
+      },
+    },
+    defaultService: 'trello',
+  },
+  asana: {
+    id: 'asana',
+    name: 'Asana',
+    icon: (props) => AsanaIcon(props),
+    services: {
+      asana: {
+        id: 'asana',
+        name: 'Asana',
+        description: 'Manage Asana projects, tasks, and workflows.',
+        providerId: 'asana',
+        icon: (props) => AsanaIcon(props),
+        baseProviderIcon: (props) => AsanaIcon(props),
+        scopes: ['default'],
+      },
+    },
+    defaultService: 'asana',
+  },
+  pipedrive: {
+    id: 'pipedrive',
+    name: 'Pipedrive',
+    icon: (props) => PipedriveIcon(props),
+    services: {
+      pipedrive: {
+        id: 'pipedrive',
+        name: 'Pipedrive',
+        description: 'Manage deals, contacts, and sales pipeline in Pipedrive CRM.',
+        providerId: 'pipedrive',
+        icon: (props) => PipedriveIcon(props),
+        baseProviderIcon: (props) => PipedriveIcon(props),
+        scopes: [
+          'base',
+          'deals:full',
+          'contacts:full',
+          'leads:full',
+          'activities:full',
+          'mail:full',
+          'projects:full',
+        ],
+      },
+    },
+    defaultService: 'pipedrive',
+  },
+  hubspot: {
+    id: 'hubspot',
+    name: 'HubSpot',
+    icon: (props) => HubspotIcon(props),
+    services: {
+      hubspot: {
+        id: 'hubspot',
+        name: 'HubSpot',
+        description: 'Access and manage your HubSpot CRM data.',
+        providerId: 'hubspot',
+        icon: (props) => HubspotIcon(props),
+        baseProviderIcon: (props) => HubspotIcon(props),
+        scopes: [
+          'crm.objects.contacts.read',
+          'crm.objects.contacts.write',
+          'crm.objects.companies.read',
+          'crm.objects.companies.write',
+          'crm.objects.deals.read',
+          'crm.objects.deals.write',
+          'crm.objects.owners.read',
+          'crm.objects.users.read',
+          'crm.objects.users.write',
+          'crm.objects.marketing_events.read',
+          'crm.objects.marketing_events.write',
+          'crm.objects.line_items.read',
+          'crm.objects.line_items.write',
+          'crm.objects.quotes.read',
+          'crm.objects.quotes.write',
+          'crm.objects.appointments.read',
+          'crm.objects.appointments.write',
+          'crm.objects.carts.read',
+          'crm.objects.carts.write',
+          'crm.import',
+          'crm.lists.read',
+          'crm.lists.write',
+          'tickets',
+        ],
+      },
+    },
+    defaultService: 'hubspot',
+  },
+  salesforce: {
+    id: 'salesforce',
+    name: 'Salesforce',
+    icon: (props) => SalesforceIcon(props),
+    services: {
+      salesforce: {
+        id: 'salesforce',
+        name: 'Salesforce',
+        description: 'Access and manage your Salesforce CRM data.',
+        providerId: 'salesforce',
+        icon: (props) => SalesforceIcon(props),
+        baseProviderIcon: (props) => SalesforceIcon(props),
+        scopes: ['api', 'refresh_token', 'openid'],
+      },
+    },
+    defaultService: 'salesforce',
+  },
 }
 
-// Helper function to get a service by provider and service ID
 export function getServiceByProviderAndId(
   provider: OAuthProvider,
   serviceId?: string
@@ -492,69 +767,29 @@ export function getServiceByProviderAndId(
   )
 }
 
-// Helper function to determine service ID from scopes
 export function getServiceIdFromScopes(provider: OAuthProvider, scopes: string[]): string {
-  const providerConfig = OAUTH_PROVIDERS[provider]
+  const { baseProvider, featureType } = parseProvider(provider)
+  const providerConfig = OAUTH_PROVIDERS[baseProvider] || OAUTH_PROVIDERS[provider]
   if (!providerConfig) {
     return provider
   }
 
-  if (provider === 'google') {
-    if (scopes.some((scope) => scope.includes('gmail') || scope.includes('mail'))) {
-      return 'gmail'
+  if (featureType !== 'default' && providerConfig.services[featureType]) {
+    return featureType
+  }
+
+  const normalizedScopes = (scopes || []).map((s) => s.toLowerCase())
+  for (const service of Object.values(providerConfig.services)) {
+    const hints = (service.scopeHints || []).map((h) => h.toLowerCase())
+    if (hints.length === 0) continue
+    if (normalizedScopes.some((scope) => hints.some((hint) => scope.includes(hint)))) {
+      return service.id
     }
-    if (scopes.some((scope) => scope.includes('drive'))) {
-      return 'google-drive'
-    }
-    if (scopes.some((scope) => scope.includes('docs'))) {
-      return 'google-docs'
-    }
-    if (scopes.some((scope) => scope.includes('sheets'))) {
-      return 'google-sheets'
-    }
-    if (scopes.some((scope) => scope.includes('calendar'))) {
-      return 'google-calendar'
-    }
-  } else if (provider === 'microsoft-teams') {
-    return 'microsoft-teams'
-  } else if (provider === 'outlook') {
-    return 'outlook'
-  } else if (provider === 'sharepoint') {
-    return 'sharepoint'
-  } else if (provider === 'microsoft-planner') {
-    return 'microsoft-planner'
-  } else if (provider === 'onedrive') {
-    return 'onedrive'
-  } else if (provider === 'github') {
-    return 'github'
-  } else if (provider === 'supabase') {
-    return 'supabase'
-  } else if (provider === 'x') {
-    return 'x'
-  } else if (provider === 'confluence') {
-    return 'confluence'
-  } else if (provider === 'jira') {
-    return 'jira'
-  } else if (provider === 'airtable') {
-    return 'airtable'
-  } else if (provider === 'notion') {
-    return 'notion'
-  } else if (provider === 'discord') {
-    return 'discord'
-  } else if (provider === 'linear') {
-    return 'linear'
-  } else if (provider === 'slack') {
-    return 'slack'
-  } else if (provider === 'reddit') {
-    return 'reddit'
-  } else if (provider === 'wealthbox') {
-    return 'wealthbox'
   }
 
   return providerConfig.defaultService
 }
 
-// Helper function to get provider ID from service ID
 export function getProviderIdFromServiceId(serviceId: string): string {
   for (const provider of Object.values(OAUTH_PROVIDERS)) {
     for (const [id, service] of Object.entries(provider.services)) {
@@ -568,7 +803,64 @@ export function getProviderIdFromServiceId(serviceId: string): string {
   return serviceId
 }
 
-// Interface for credential objects
+export function getServiceConfigByProviderId(providerId: string): OAuthServiceConfig | null {
+  for (const provider of Object.values(OAUTH_PROVIDERS)) {
+    for (const service of Object.values(provider.services)) {
+      if (service.providerId === providerId || service.id === providerId) {
+        return service
+      }
+    }
+  }
+
+  return null
+}
+
+export function getCanonicalScopesForProvider(providerId: string): string[] {
+  const service = getServiceConfigByProviderId(providerId)
+  return service?.scopes ? [...service.scopes] : []
+}
+
+export function normalizeScopes(scopes: string[]): string[] {
+  const seen = new Set<string>()
+  for (const scope of scopes) {
+    const trimmed = scope.trim()
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed)
+    }
+  }
+  return Array.from(seen)
+}
+
+export interface ScopeEvaluation {
+  canonicalScopes: string[]
+  grantedScopes: string[]
+  missingScopes: string[]
+  extraScopes: string[]
+  requiresReauthorization: boolean
+}
+
+export function evaluateScopeCoverage(
+  providerId: string,
+  grantedScopes: string[]
+): ScopeEvaluation {
+  const canonicalScopes = getCanonicalScopesForProvider(providerId)
+  const normalizedGranted = normalizeScopes(grantedScopes)
+
+  const canonicalSet = new Set(canonicalScopes)
+  const grantedSet = new Set(normalizedGranted)
+
+  const missingScopes = canonicalScopes.filter((scope) => !grantedSet.has(scope))
+  const extraScopes = normalizedGranted.filter((scope) => !canonicalSet.has(scope))
+
+  return {
+    canonicalScopes,
+    grantedScopes: normalizedGranted,
+    missingScopes,
+    extraScopes,
+    requiresReauthorization: missingScopes.length > 0,
+  }
+}
+
 export interface Credential {
   id: string
   name: string
@@ -576,9 +868,13 @@ export interface Credential {
   serviceId?: string
   lastUsed?: string
   isDefault?: boolean
+  scopes?: string[]
+  canonicalScopes?: string[]
+  missingScopes?: string[]
+  extraScopes?: string[]
+  requiresReauthorization?: boolean
 }
 
-// Interface for provider configuration
 export interface ProviderConfig {
   baseProvider: string
   featureType: string
@@ -823,6 +1119,7 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'reddit': {
@@ -848,6 +1145,71 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         clientSecret,
         useBasicAuth: false,
         supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'webflow': {
+      const { clientId, clientSecret } = getCredentials(
+        env.WEBFLOW_CLIENT_ID,
+        env.WEBFLOW_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://api.webflow.com/oauth/access_token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
+    case 'asana': {
+      const { clientId, clientSecret } = getCredentials(
+        env.ASANA_CLIENT_ID,
+        env.ASANA_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://app.asana.com/-/oauth_token',
+        clientId,
+        clientSecret,
+        useBasicAuth: true,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'pipedrive': {
+      const { clientId, clientSecret } = getCredentials(
+        env.PIPEDRIVE_CLIENT_ID,
+        env.PIPEDRIVE_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://oauth.pipedrive.com/oauth/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'hubspot': {
+      const { clientId, clientSecret } = getCredentials(
+        env.HUBSPOT_CLIENT_ID,
+        env.HUBSPOT_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://api.hubapi.com/oauth/v1/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'salesforce': {
+      const { clientId, clientSecret } = getCredentials(
+        env.SALESFORCE_CLIENT_ID,
+        env.SALESFORCE_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://login.salesforce.com/services/oauth2/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
       }
     }
     default:
@@ -928,7 +1290,6 @@ export async function refreshOAuthToken(
         status: response.status,
         error: errorText,
         parsedError: errorData,
-        provider,
         providerId,
       })
       throw new Error(`Failed to refresh token: ${response.status} ${errorText}`)

@@ -1,4 +1,4 @@
-import * as crypto from 'crypto'
+import { randomUUID } from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getRedisClient } from '@/lib/redis'
@@ -331,64 +331,28 @@ export class IdempotencyService {
   }
 
   /**
-   * Create an idempotency key from a webhook payload
+   * Create an idempotency key from a webhook payload following RFC best practices
+   * Standard webhook headers (webhook-id, x-webhook-id, etc.)
    */
-  static createWebhookIdempotencyKey(
-    webhookId: string,
-    payload: any,
-    headers?: Record<string, string>
-  ): string {
+  static createWebhookIdempotencyKey(webhookId: string, headers?: Record<string, string>): string {
+    const normalizedHeaders = headers
+      ? Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
+      : undefined
+
     const webhookIdHeader =
-      headers?.['x-webhook-id'] ||
-      headers?.['x-shopify-webhook-id'] ||
-      headers?.['x-github-delivery'] ||
-      headers?.['stripe-signature']?.split(',')[0]
+      normalizedHeaders?.['webhook-id'] ||
+      normalizedHeaders?.['x-webhook-id'] ||
+      normalizedHeaders?.['x-shopify-webhook-id'] ||
+      normalizedHeaders?.['x-github-delivery'] ||
+      normalizedHeaders?.['x-event-id'] ||
+      normalizedHeaders?.['x-teams-notification-id']
 
     if (webhookIdHeader) {
       return `${webhookId}:${webhookIdHeader}`
     }
 
-    const payloadId = payload?.id || payload?.event_id || payload?.message?.id || payload?.data?.id
-
-    if (payloadId) {
-      return `${webhookId}:${payloadId}`
-    }
-
-    // For generic webhooks without specific IDs, include timestamp to allow multiple executions
-    const timestamp = Date.now()
-    const payloadHash = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(payload))
-      .digest('hex')
-      .substring(0, 16)
-
-    return `${webhookId}:${payloadHash}:${timestamp}`
-  }
-
-  /**
-   * Create an idempotency key for Gmail polling
-   */
-  static createGmailIdempotencyKey(webhookId: string, emailId: string): string {
-    return `${webhookId}:${emailId}`
-  }
-
-  /**
-   * Create an idempotency key for generic triggers
-   */
-  static createTriggerIdempotencyKey(
-    triggerId: string,
-    eventId: string,
-    additionalContext?: Record<string, string>
-  ): string {
-    const base = `${triggerId}:${eventId}`
-    if (additionalContext && Object.keys(additionalContext).length > 0) {
-      const contextStr = Object.keys(additionalContext)
-        .sort()
-        .map((key) => `${key}=${additionalContext[key]}`)
-        .join('&')
-      return `${base}:${contextStr}`
-    }
-    return base
+    const uniqueId = randomUUID()
+    return `${webhookId}:${uniqueId}`
   }
 }
 
@@ -400,9 +364,4 @@ export const webhookIdempotency = new IdempotencyService({
 export const pollingIdempotency = new IdempotencyService({
   namespace: 'polling',
   ttlSeconds: 60 * 60 * 24 * 3, // 3 days
-})
-
-export const triggerIdempotency = new IdempotencyService({
-  namespace: 'trigger',
-  ttlSeconds: 60 * 60 * 24 * 1, // 1 day
 })

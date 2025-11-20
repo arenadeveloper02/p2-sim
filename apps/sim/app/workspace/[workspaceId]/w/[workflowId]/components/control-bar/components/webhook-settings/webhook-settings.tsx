@@ -14,6 +14,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
+import { Tooltip } from '@/components/emcn'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,9 +33,6 @@ import {
   Label,
   Skeleton,
   Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
 } from '@/components/ui'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn, generatePassword } from '@/lib/utils'
@@ -506,6 +504,31 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
   return (
     <Dialog open={open} onOpenChange={handleCloseModal}>
       <DialogContent className='flex h-[70vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[800px]'>
+        {/* Hidden dummy inputs to prevent browser password manager autofill */}
+        <input
+          type='text'
+          name='fakeusernameremembered'
+          autoComplete='username'
+          style={{ position: 'absolute', left: '-9999px', opacity: 0, pointerEvents: 'none' }}
+          tabIndex={-1}
+          readOnly
+        />
+        <input
+          type='password'
+          name='fakepasswordremembered'
+          autoComplete='current-password'
+          style={{ position: 'absolute', left: '-9999px', opacity: 0, pointerEvents: 'none' }}
+          tabIndex={-1}
+          readOnly
+        />
+        <input
+          type='email'
+          name='fakeemailremembered'
+          autoComplete='email'
+          style={{ position: 'absolute', left: '-9999px', opacity: 0, pointerEvents: 'none' }}
+          tabIndex={-1}
+          readOnly
+        />
         <DialogHeader className='flex-shrink-0 border-b px-6 py-4'>
           <DialogTitle className='font-medium text-lg'>Webhook Notifications</DialogTitle>
         </DialogHeader>
@@ -527,7 +550,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
           )}
 
           {/* Scrollable Content */}
-          <div className='scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent min-h-0 flex-1 overflow-y-auto px-6'>
+          <div className='min-h-0 flex-1 overflow-y-auto px-6'>
             <div className='h-full py-2'>
               {!showForm ? (
                 <div className='space-y-2'>
@@ -588,8 +611,8 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                     {webhook.url}
                                   </code>
                                 </div>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
                                     <Button
                                       variant='ghost'
                                       size='icon'
@@ -609,11 +632,11 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                       )}
                                       <span className='sr-only'>Copy webhook URL</span>
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side='top' align='center'>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='top' align='center'>
                                     Copy webhook URL
-                                  </TooltipContent>
-                                </Tooltip>
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
 
                                 {/* Test Status inline for this specific webhook */}
                                 {testStatus &&
@@ -627,8 +650,8 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                               </div>
 
                               <div className='flex items-center gap-2'>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
                                     <Button
                                       variant='ghost'
                                       size='icon'
@@ -646,13 +669,13 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                       <Play className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Test webhook</span>
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side='top' align='center'>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='top' align='center'>
                                     Test webhook
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
                                     <Button
                                       variant='ghost'
                                       size='icon'
@@ -668,13 +691,13 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                       <Pencil className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Edit webhook</span>
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side='top' align='center'>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='top' align='center'>
                                     Edit webhook
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
                                     <Button
                                       variant='ghost'
                                       size='icon'
@@ -690,11 +713,11 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                       <Trash2 className='h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110' />
                                       <span className='sr-only'>Delete webhook</span>
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side='bottom' align='end'>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content side='bottom' align='end'>
                                     Delete webhook
-                                  </TooltipContent>
-                                </Tooltip>
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
                               </div>
                             </div>
 
@@ -817,7 +840,7 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                       <div className='relative'>
                         <Input
                           id='secret'
-                          type={showSecret ? 'text' : 'password'}
+                          type='text'
                           placeholder='Webhook secret for signature verification'
                           value={newWebhook.secret}
                           onChange={(e) => {
@@ -825,15 +848,20 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                             setFieldErrors({ ...fieldErrors, general: undefined })
                           }}
                           className='h-9 rounded-[8px] pr-32'
-                          autoComplete='new-password'
+                          autoComplete='off'
                           autoCorrect='off'
                           autoCapitalize='off'
                           spellCheck='false'
                           data-form-type='other'
+                          style={
+                            !showSecret
+                              ? ({ WebkitTextSecurity: 'disc' } as React.CSSProperties)
+                              : undefined
+                          }
                         />
                         <div className='absolute top-0.5 right-0.5 flex h-8 items-center gap-1 pr-1'>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
                               <Button
                                 type='button'
                                 variant='ghost'
@@ -858,13 +886,13 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                 />
                                 <span className='sr-only'>Generate password</span>
                               </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side='top' align='center'>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content side='top' align='center'>
                               Generate secure secret
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
                               <Button
                                 type='button'
                                 variant='ghost'
@@ -887,13 +915,13 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                 )}
                                 <span className='sr-only'>Copy secret</span>
                               </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side='top' align='center'>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content side='top' align='center'>
                               Copy secret
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
+                            </Tooltip.Content>
+                          </Tooltip.Root>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
                               <Button
                                 type='button'
                                 variant='ghost'
@@ -916,11 +944,11 @@ export function WebhookSettings({ workflowId, open, onOpenChange }: WebhookSetti
                                   {showSecret ? 'Hide secret' : 'Show secret'}
                                 </span>
                               </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side='top' align='center'>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content side='top' align='center'>
                               {showSecret ? 'Hide secret' : 'Show secret'}
-                            </TooltipContent>
-                          </Tooltip>
+                            </Tooltip.Content>
+                          </Tooltip.Root>
                         </div>
                       </div>
                       <p className='text-muted-foreground text-xs'>

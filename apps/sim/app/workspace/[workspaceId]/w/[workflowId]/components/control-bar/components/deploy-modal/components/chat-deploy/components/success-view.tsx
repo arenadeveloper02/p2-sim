@@ -3,7 +3,7 @@ import { getBaseDomain, getEmailDomain } from '@/lib/urls/utils'
 
 interface ExistingChat {
   id: string
-  subdomain: string
+  identifier: string
   title: string
   description: string
   authType: 'public' | 'password' | 'email'
@@ -37,20 +37,19 @@ export function SuccessView({
   const isDevelopmentUrl = hostname.includes('localhost')
   const chatUrl = `/chat/${workflowId}?workspaceId=${workspaceId}`
 
-  let domainSuffix
+  // Extract identifier from path-based URL format (e.g., sim.ai/chat/identifier)
+  const pathParts = url.pathname.split('/')
+  const identifierPart = pathParts[2] || '' // /chat/identifier
+
+  let domainPrefix
   if (isDevelopmentUrl) {
     const baseDomain = getBaseDomain()
     const baseHost = baseDomain.split(':')[0]
     const port = url.port || (baseDomain.includes(':') ? baseDomain.split(':')[1] : '3000')
-    domainSuffix = `${baseHost}:${port}`
+    domainPrefix = `${baseHost}:${port}/chat/`
   } else {
-    domainSuffix = `${getEmailDomain()}`
+    domainPrefix = `${getEmailDomain()}/chat/`
   }
-
-  const baseDomainForSplit = getEmailDomain()
-  const subdomainPart = isDevelopmentUrl
-    ? hostname.split('.')[0]
-    : hostname.split(`.${baseDomainForSplit}`)[0]
 
   return (
     <div className='space-y-4'>
@@ -59,17 +58,17 @@ export function SuccessView({
           Chat {existingChat ? 'Update' : 'Deployment'} Successful
         </Label>
         <div className='relative flex items-center rounded-md ring-offset-background'>
-          <div className='flex h-10 items-center whitespace-nowrap rounded-r-md border border-l-0 bg-muted px-3 font-medium text-muted-foreground text-sm'>
-            {domainSuffix}
+          <div className='flex h-10 items-center whitespace-nowrap rounded-l-md border border-r-0 bg-muted px-3 font-medium text-muted-foreground text-sm'>
+            {domainPrefix}
           </div>
           <a
             // href={deployedUrl}
             href={chatUrl}
             target='_blank'
             rel='noopener noreferrer'
-            className='flex h-10 flex-1 items-center break-all rounded-l-md border border-r-0 p-2 font-medium text-foreground text-sm'
+            className='flex h-10 flex-1 items-center break-all rounded-r-md border border-l-0 p-2 font-medium text-foreground text-sm'
           >
-            {subdomainPart}
+            {identifierPart}
           </a>
         </div>
         <p className='text-muted-foreground text-xs'>

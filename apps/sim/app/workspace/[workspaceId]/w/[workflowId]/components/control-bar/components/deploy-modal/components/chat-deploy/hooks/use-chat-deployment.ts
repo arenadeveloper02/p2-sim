@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ChatFormData } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
-import type { OutputConfig } from '@/stores/panel/chat/types'
+import type { OutputConfig } from '@/stores/chat/store'
 
 const logger = createLogger('ChatDeployment')
 
@@ -14,10 +14,10 @@ export interface ChatDeploymentState {
 
 const chatSchema = z.object({
   workflowId: z.string().min(1, 'Workflow ID is required'),
-  subdomain: z
+  identifier: z
     .string()
-    .min(1, 'Subdomain is required')
-    .regex(/^[a-z0-9-]+$/, 'Subdomain can only contain lowercase letters, numbers, and hyphens'),
+    .min(1, 'Identifier is required')
+    .regex(/^[a-z0-9-]+$/, 'Identifier can only contain lowercase letters, numbers, and hyphens'),
   title: z.string().min(1, 'Title is required'),
   description: z.string().optional(),
   customizations: z.object({
@@ -79,10 +79,9 @@ export function useChatDeployment() {
           })
           .filter(Boolean) as OutputConfig[]
 
-        // Create request payload
         const payload = {
           workflowId,
-          subdomain: formData.subdomain.trim(),
+          identifier: formData.identifier.trim(),
           title: formData.title.trim(),
           description: formData.description.trim(),
           customizations: {
@@ -92,19 +91,17 @@ export function useChatDeployment() {
           },
           authType: formData.authType,
           password: formData.authType === 'password' ? formData.password : undefined,
-          allowedEmails: formData.authType === 'email' ? formData.emails : [],
+          allowedEmails:
+            formData.authType === 'email' || formData.authType === 'sso' ? formData.emails : [],
           outputConfigs,
           apiKey: deploymentInfo?.apiKey,
-          // CRITICAL: Deploy API for new chats OR when workflow has changes
-          // This ensures workflow changes are reflected in existing chat deployments
-          deployApiEnabled: !existingChatId || needsRedeployment,
+          deployApiEnabled: !existingChatId,
         }
 
-        // Validate with Zod
         chatSchema.parse(payload)
 
         // Determine endpoint and method
-        const endpoint = existingChatId ? `/api/chat/edit/${existingChatId}` : '/api/chat'
+        const endpoint = existingChatId ? `/api/chat/manage/${existingChatId}` : '/api/chat'
         const method = existingChatId ? 'PATCH' : 'POST'
 
         const response = await fetch(endpoint, {
@@ -116,9 +113,9 @@ export function useChatDeployment() {
         const result = await response.json()
 
         if (!response.ok) {
-          // Handle subdomain conflict specifically
-          if (result.error === 'Subdomain already in use') {
-            throw new Error('This subdomain is already in use')
+          // Handle identifier conflict specifically
+          if (result.error === 'Identifier already in use') {
+            throw new Error('This identifier is already in use')
           }
           throw new Error(result.error || `Failed to ${existingChatId ? 'update' : 'deploy'} chat`)
         }

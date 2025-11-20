@@ -2,8 +2,16 @@ import { env, getEnv } from '../env'
 
 /**
  * Content Security Policy (CSP) configuration builder
- * This creates a more maintainable and readable CSP configuration
  */
+
+function getHostnameFromUrl(url: string | undefined): string[] {
+  if (!url) return []
+  try {
+    return [`https://${new URL(url).hostname}`]
+  } catch {
+    return []
+  }
+}
 
 export interface CSPDirectives {
   'default-src'?: string[]
@@ -30,20 +38,12 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     "'unsafe-eval'",
     'https://*.google.com',
     'https://apis.google.com',
-    'https://*.vercel-scripts.com',
-    'https://*.vercel-insights.com',
-    'https://vercel.live',
-    'https://*.vercel.live',
-    'https://vercel.com',
-    'https://*.vercel.app',
-    'https://vitals.vercel-insights.com',
-    'https://b2bjsstore.s3.us-west-2.amazonaws.com',
+    'https://assets.onedollarstats.com',
   ],
 
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
 
   'img-src': [
-    'https://agentics.epiqglobal.com',
     "'self'",
     'data:',
     'blob:',
@@ -52,9 +52,9 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.atlassian.com',
     'https://cdn.discordapp.com',
     'https://*.githubusercontent.com',
-    'https://*.public.blob.vercel-storage.com',
     'https://*.s3.amazonaws.com',
     'https://s3.amazonaws.com',
+    'https://github.com/*',
     ...(env.S3_BUCKET_NAME && env.AWS_REGION
       ? [`https://${env.S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
       : []),
@@ -66,6 +66,9 @@ export const buildTimeCSPDirectives: CSPDirectives = {
       : []),
     'https://*.amazonaws.com',
     'https://*.blob.core.windows.net',
+    'https://github.com/*',
+    ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
+    ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_FAVICON_URL),
   ],
 
   'media-src': ["'self'", 'blob:'],
@@ -79,8 +82,6 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3002',
     env.NEXT_PUBLIC_SOCKET_URL?.replace('http://', 'ws://').replace('https://', 'wss://') ||
       'ws://localhost:3002',
-    'https://*.up.railway.app',
-    'wss://*.up.railway.app',
     'https://api.browser-use.com',
     'https://api.exa.ai',
     'https://api.firecrawl.dev',
@@ -88,24 +89,17 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.amazonaws.com',
     'https://*.s3.amazonaws.com',
     'https://*.blob.core.windows.net',
-    'https://*.vercel-insights.com',
-    'https://vitals.vercel-insights.com',
     'https://*.atlassian.com',
     'https://*.supabase.co',
-    'https://vercel.live',
-    'https://*.vercel.live',
-    'https://vercel.com',
-    'https://*.vercel.app',
-    'wss://*.vercel.app',
-    'https://pro.ip-api.com',
+    'https://api.github.com',
+    'https://github.com/*',
+    'https://collector.onedollarstats.com',
+    ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
+    ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
+    ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
   ],
 
-  // Google Picker and Drive integration
-  'frame-src': [
-    'https://drive.google.com',
-    'https://docs.google.com', // Required for Google Picker
-    'https://*.google.com',
-  ],
+  'frame-src': ['https://drive.google.com', 'https://docs.google.com', 'https://*.google.com'],
 
   'frame-ancestors': ["'self'"],
   'form-action': ["'self'"],
@@ -120,7 +114,6 @@ export function buildCSPString(directives: CSPDirectives): string {
   return Object.entries(directives)
     .map(([directive, sources]) => {
       if (!sources || sources.length === 0) return ''
-      // Filter out empty strings
       const validSources = sources.filter((source: string) => source && source.trim() !== '')
       if (validSources.length === 0) return ''
       return `${directive} ${validSources.join(' ')}`
@@ -140,14 +133,30 @@ export function generateRuntimeCSP(): string {
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL') || ''
   const ollamaUrl = getEnv('OLLAMA_URL') || 'http://localhost:11434'
 
+  const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
+  const brandFaviconDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL'))
+  const privacyDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_PRIVACY_URL'))
+  const termsDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_TERMS_URL'))
+
+  const allDynamicDomains = [
+    ...brandLogoDomains,
+    ...brandFaviconDomains,
+    ...privacyDomains,
+    ...termsDomains,
+  ]
+  const uniqueDynamicDomains = Array.from(new Set(allDynamicDomains))
+  const dynamicDomainsStr = uniqueDynamicDomains.join(' ')
+  const brandLogoDomain = brandLogoDomains[0] || ''
+  const brandFaviconDomain = brandFaviconDomains[0] || ''
+
   return `
     default-src 'self';
-    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://*.vercel-scripts.com https://*.vercel-insights.com https://vercel.live https://*.vercel.live https://vercel.com https://*.vercel.app https://vitals.vercel-insights.com https://b2bjsstore.s3.us-west-2.amazonaws.com;
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com;
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-    img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com https://*.public.blob.vercel-storage.com;
+    img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com ${brandLogoDomain} ${brandFaviconDomain};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} https://*.up.railway.app wss://*.up.railway.app https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://*.vercel-insights.com https://vitals.vercel-insights.com https://*.atlassian.com https://*.supabase.co https://vercel.live https://*.vercel.live https://vercel.com https://*.vercel.app wss://*.vercel.app https://pro.ip-api.com;
+    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com ${dynamicDomainsStr};
     frame-src https://drive.google.com https://docs.google.com https://*.google.com;
     frame-ancestors 'self';
     form-action 'self';

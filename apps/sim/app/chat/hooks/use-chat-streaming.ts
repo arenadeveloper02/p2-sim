@@ -3,8 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ChatMessage } from '@/app/chat/components/message/message'
-// No longer need complex output extraction - backend handles this
-import type { ExecutionResult } from '@/executor/types'
+import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 
 const logger = createLogger('UseChatStreaming')
 
@@ -22,6 +21,7 @@ export interface StreamingOptions {
   onAudioStart?: () => void
   onAudioEnd?: () => void
   audioStreamHandler?: (text: string) => Promise<void>
+  outputConfigs?: Array<{ blockId: string; path?: string }>
 }
 
 export function useChatStreaming() {
@@ -77,6 +77,7 @@ export function useChatStreaming() {
     userHasScrolled?: boolean,
     streamingOptions?: StreamingOptions
   ) => {
+    logger.info('[useChatStreaming] handleStreamedResponse called')
     // Set streaming state
     setIsStreamingResponse(true)
     abortControllerRef.current = new AbortController()
@@ -159,88 +160,175 @@ export function useChatStreaming() {
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
+              const data = line.substring(6)
+
+              if (data === '[DONE]') {
+                continue
+              }
+
               try {
-                const jsonString = line.substring(6)
-                const json = JSON.parse(jsonString)
+                const json = JSON.parse(data)
                 const { blockId, chunk: contentChunk, event: eventType } = json
 
-                if (eventType === 'final' && json.data) {
-                  // Final event received - check if we need to add additional content
-                  const result = json.data as ExecutionResult
-
-                  logger.info('Final event received:', {
-                    hasDirectOutput: !!result.output?.content,
-                    hasLogs: !!result.logs,
-                    outputType: typeof result.output?.content,
-                    outputLength: result.output?.content?.length || 0,
-                    accumulatedTextLength: accumulatedText.length,
-                  })
-
-                  // Check if there's additional content that wasn't streamed
-                  let additionalContent = ''
-
-                  // For base64 images or other direct output content that wasn't streamed
-                  if (result.output?.content && typeof result.output.content === 'string') {
-                    // Only use direct output if it's different from accumulated text (e.g., base64 images)
-                    if (result.output.content !== accumulatedText.trim()) {
-                      additionalContent = result.output.content
-                      logger.info(
-                        'Found additional direct output content, length:',
-                        additionalContent.length
-                      )
-                    }
-                  }
-
-                  // Check for additional content in logs that wasn't streamed
-                  if (!additionalContent && result.logs) {
-                    const contentParts: string[] = []
-
-                    result.logs.forEach((log) => {
-                      if (log.output?.content && typeof log.output.content === 'string') {
-                        // Only add if it's different from what was already streamed
-                        if (log.output.content !== accumulatedText.trim()) {
-                          contentParts.push(log.output.content)
-                        }
-                      }
-                    })
-
-                    if (contentParts.length > 0) {
-                      additionalContent = contentParts.join('')
-                    }
-                  }
-
-                  // Determine final content
-                  let finalContent = accumulatedText
-                  if (additionalContent) {
-                    // Only append additional content if it's truly different
-                    finalContent = `${accumulatedText}\n\n${additionalContent}`
-                  }
-
-                  // Update the streaming message to final state
+                if (eventType === 'error' || json.event === 'error') {
+                  const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
                   setMessages((prev) =>
                     prev.map((msg) =>
                       msg.id === messageId
                         ? {
                             ...msg,
-                            content: finalContent,
+                            content: errorMessage,
                             isStreaming: false,
-                            executionId: result?.executionId || msg?.executionId,
-                            liked: null,
+                            type: 'assistant' as const,
+                          }
+                        : msg
+                    )
+                  )
+                  setIsLoading(false)
+                  return
+                }
+
+                if (eventType === 'final' && json.data) {
+                  const finalData = json.data as {
+                    success: boolean
+                    error?: string | { message?: string }
+                    output?: Record<string, Record<string, any>>
+                  }
+
+                  const outputConfigs = streamingOptions?.outputConfigs
+                  const formattedOutputs: string[] = []
+
+                  const formatValue = (value: any): string | null => {
+                    if (value === null || value === undefined) {
+                      return null
+                    }
+
+                    if (typeof value === 'string') {
+                      return value
+                    }
+
+                    if (typeof value === 'object') {
+                      try {
+                        return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+                      } catch {
+                        return String(value)
+                      }
+                    }
+
+                    return String(value)
+                  }
+
+                  const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                    if (!path || path === 'content') {
+                      if (blockOutputs.content !== undefined) return blockOutputs.content
+                      if (blockOutputs.result !== undefined) return blockOutputs.result
+                      return blockOutputs
+                    }
+
+                    if (blockOutputs[path] !== undefined) {
+                      return blockOutputs[path]
+                    }
+
+                    if (path.includes('.')) {
+                      return path.split('.').reduce<any>((current, segment) => {
+                        if (current && typeof current === 'object' && segment in current) {
+                          return current[segment]
+                        }
+                        return undefined
+                      }, blockOutputs)
+                    }
+
+                    return undefined
+                  }
+
+                  if (outputConfigs?.length && finalData.output) {
+                    for (const config of outputConfigs) {
+                      const blockOutputs = finalData.output[config.blockId]
+                      if (!blockOutputs) continue
+
+                      const value = getOutputValue(blockOutputs, config.path)
+                      const formatted = formatValue(value)
+                      if (formatted) {
+                        formattedOutputs.push(formatted)
+                      }
+                    }
+                  }
+
+                  let finalContent = accumulatedText
+
+                  if (formattedOutputs.length > 0) {
+                    const trimmedStreamingContent = accumulatedText.trim()
+
+                    const uniqueOutputs = formattedOutputs.filter((output) => {
+                      const trimmedOutput = output.trim()
+                      if (!trimmedOutput) return false
+
+                      // Skip outputs that exactly match the streamed content to avoid duplication
+                      if (trimmedStreamingContent && trimmedOutput === trimmedStreamingContent) {
+                        return false
+                      }
+
+                      return true
+                    })
+
+                    if (uniqueOutputs.length > 0) {
+                      const combinedOutputs = uniqueOutputs.join('\n\n')
+                      finalContent = finalContent
+                        ? `${finalContent.trim()}\n\n${combinedOutputs}`
+                        : combinedOutputs
+                    }
+                  }
+
+                  if (!finalContent) {
+                    if (finalData.error) {
+                      if (typeof finalData.error === 'string') {
+                        finalContent = finalData.error
+                      } else if (typeof finalData.error?.message === 'string') {
+                        finalContent = finalData.error.message
+                      }
+                    } else if (finalData.success && finalData.output) {
+                      const fallbackOutput = Object.values(finalData.output)
+                        .map((block) => formatValue(block)?.trim())
+                        .filter(Boolean)[0]
+                      if (fallbackOutput) {
+                        finalContent = fallbackOutput
+                      }
+                    }
+                  }
+
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId
+                        ? {
+                            ...msg,
+                            isStreaming: false,
+                            content: finalContent ?? msg.content,
                           }
                         : msg
                     )
                   )
 
+                  accumulatedTextRef.current = ''
+                  lastStreamedPositionRef.current = 0
+                  lastDisplayedPositionRef.current = 0
+                  audioStreamingActiveRef.current = false
+
                   return
                 }
 
                 if (blockId && contentChunk) {
-                  // Track that this block has streamed content (like chat panel)
                   if (!messageIdMap.has(blockId)) {
                     messageIdMap.set(blockId, messageId)
                   }
 
                   accumulatedText += contentChunk
+                  logger.debug('[useChatStreaming] Received chunk', {
+                    blockId,
+                    chunkLength: contentChunk.length,
+                    totalLength: accumulatedText.length,
+                    messageId,
+                    chunk: contentChunk.substring(0, 20),
+                  })
                   setMessages((prev) =>
                     prev.map((msg) =>
                       msg.id === messageId ? { ...msg, content: accumulatedText } : msg

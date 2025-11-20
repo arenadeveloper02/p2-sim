@@ -3,6 +3,7 @@ import { Server } from 'socket.io'
 import { env } from '@/lib/env'
 import { isProd } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('SocketIOConfig')
 
@@ -11,8 +12,7 @@ const logger = createLogger('SocketIOConfig')
  */
 function getAllowedOrigins(): string[] {
   const allowedOrigins = [
-    env.NEXT_PUBLIC_APP_URL,
-    env.NEXT_PUBLIC_VERCEL_URL,
+    getBaseUrl(),
     'http://localhost:3000',
     'http://localhost:3001',
     ...(env.ALLOWED_ORIGINS?.split(',') || []),

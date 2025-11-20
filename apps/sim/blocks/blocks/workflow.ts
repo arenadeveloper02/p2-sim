@@ -2,18 +2,8 @@ import { WorkflowIcon } from '@/components/icons'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockConfig } from '@/blocks/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('WorkflowBlock')
-
-interface WorkflowResponse extends ToolResponse {
-  output: {
-    success: boolean
-    childWorkflowName: string
-    result: any
-    error?: string
-  }
-}
 
 // Helper function to get available workflows for the dropdown
 const getAvailableWorkflows = (): Array<{ label: string; id: string }> => {
@@ -48,13 +38,14 @@ export const WorkflowBlock: BlockConfig = {
     {
       id: 'workflowId',
       title: 'Select Workflow',
-      type: 'dropdown',
+      type: 'combobox',
       options: getAvailableWorkflows,
+      placeholder: 'Search workflows...',
       required: true,
     },
     {
       id: 'input',
-      title: 'Input Variable (Optional)',
+      title: 'Input Variable',
       type: 'short-input',
       placeholder: 'Select a variable to pass to the child workflow',
       description: 'This variable will be available as start.input in the child workflow',
@@ -80,4 +71,5 @@ export const WorkflowBlock: BlockConfig = {
     result: { type: 'json', description: 'Workflow execution result' },
     error: { type: 'string', description: 'Error message' },
   },
+  hideFromToolbar: true,
 }

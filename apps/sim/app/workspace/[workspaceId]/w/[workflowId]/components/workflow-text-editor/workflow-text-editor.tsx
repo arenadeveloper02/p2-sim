@@ -1,19 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { dump as yamlDump, load as yamlLoad } from 'js-yaml'
 import { AlertCircle, Check, FileCode, Save } from 'lucide-react'
+import { Tooltip } from '@/components/emcn'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
-import { CodeEditor } from '../workflow-block/components/sub-block/components/tool-input/components/code-editor/code-editor'
+import { CodeEditor } from '../panel-new/components/editor/components/sub-block/components/tool-input/components/code-editor/code-editor'
 
 const logger = createLogger('WorkflowTextEditor')
 
-export type EditorFormat = 'yaml' | 'json'
+export type EditorFormat = 'json'
 
 interface ValidationError {
   line?: number
@@ -23,26 +21,18 @@ interface ValidationError {
 
 interface WorkflowTextEditorProps {
   initialValue: string
-  format: EditorFormat
-  onSave: (
-    content: string,
-    format: EditorFormat
-  ) => Promise<{ success: boolean; errors?: string[]; warnings?: string[] }>
-  onFormatChange?: (format: EditorFormat) => void
+  onSave: (content: string) => Promise<{ success: boolean; errors?: string[]; warnings?: string[] }>
   className?: string
   disabled?: boolean
 }
 
 export function WorkflowTextEditor({
   initialValue,
-  format,
   onSave,
-  onFormatChange,
   className,
   disabled = false,
 }: WorkflowTextEditorProps) {
   const [content, setContent] = useState(initialValue)
-  const [currentFormat, setCurrentFormat] = useState<EditorFormat>(format)
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
   const [isSaving, setIsSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{
@@ -52,25 +42,19 @@ export function WorkflowTextEditor({
   } | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
-  // Validate content based on format
-  const validateSyntax = useCallback((text: string, fmt: EditorFormat): ValidationError[] => {
+  // Validate JSON syntax
+  const validateSyntax = useCallback((text: string): ValidationError[] => {
     const errors: ValidationError[] = []
 
     if (!text.trim()) {
-      return errors // Empty content is valid
+      return errors
     }
 
     try {
-      if (fmt === 'yaml') {
-        // Basic YAML syntax validation using js-yaml
-        yamlLoad(text)
-      } else if (fmt === 'json') {
-        JSON.parse(text)
-      }
+      JSON.parse(text)
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : 'Parse error'
 
-      // Extract line/column info if available
       const lineMatch = errorMessage.match(/line (\d+)/i)
       const columnMatch = errorMessage.match(/column (\d+)/i)
 
@@ -84,39 +68,6 @@ export function WorkflowTextEditor({
     return errors
   }, [])
 
-  // Convert between formats
-  const convertFormat = useCallback(
-    (text: string, fromFormat: EditorFormat, toFormat: EditorFormat): string => {
-      if (fromFormat === toFormat || !text.trim()) {
-        return text
-      }
-
-      try {
-        let parsed: any
-
-        if (fromFormat === 'yaml') {
-          // Use basic YAML parsing for synchronous conversion
-          parsed = yamlLoad(text)
-        } else {
-          parsed = JSON.parse(text)
-        }
-
-        if (toFormat === 'yaml') {
-          return yamlDump(parsed, {
-            indent: 2,
-            lineWidth: -1,
-            noRefs: true,
-          })
-        }
-        return JSON.stringify(parsed, null, 2)
-      } catch (error) {
-        logger.warn(`Failed to convert from ${fromFormat} to ${toFormat}:`, error)
-        return text // Return original if conversion fails
-      }
-    },
-    []
-  )
-
   // Handle content changes
   const handleContentChange = useCallback(
     (newContent: string) => {
@@ -124,34 +75,13 @@ export function WorkflowTextEditor({
       setHasUnsavedChanges(newContent !== initialValue)
 
       // Validate on change
-      const errors = validateSyntax(newContent, currentFormat)
+      const errors = validateSyntax(newContent)
       setValidationErrors(errors)
 
       // Clear save result when editing
       setSaveResult(null)
     },
-    [initialValue, currentFormat, validateSyntax]
-  )
-
-  // Handle format changes
-  const handleFormatChange = useCallback(
-    (newFormat: EditorFormat) => {
-      if (newFormat === currentFormat) return
-
-      // Convert content to new format
-      const convertedContent = convertFormat(content, currentFormat, newFormat)
-
-      setCurrentFormat(newFormat)
-      setContent(convertedContent)
-
-      // Validate converted content
-      const errors = validateSyntax(convertedContent, newFormat)
-      setValidationErrors(errors)
-
-      // Notify parent
-      onFormatChange?.(newFormat)
-    },
-    [content, currentFormat, convertFormat, validateSyntax, onFormatChange]
+    [initialValue, validateSyntax]
   )
 
   // Handle save
@@ -165,7 +95,7 @@ export function WorkflowTextEditor({
     setSaveResult(null)
 
     try {
-      const result = await onSave(content, currentFormat)
+      const result = await onSave(content)
       setSaveResult(result)
 
       if (result.success) {
@@ -183,7 +113,7 @@ export function WorkflowTextEditor({
     } finally {
       setIsSaving(false)
     }
-  }, [content, currentFormat, validationErrors, onSave])
+  }, [content, validationErrors, onSave])
 
   // Update content when initialValue changes
   useEffect(() => {
@@ -196,9 +126,6 @@ export function WorkflowTextEditor({
   const isValid = validationErrors.length === 0
   const canSave = isValid && hasUnsavedChanges && !disabled
 
-  // Get editor language for syntax highlighting
-  const editorLanguage = currentFormat === 'yaml' ? 'javascript' : 'json' // yaml highlighting not available, use js
-
   return (
     <div className={cn('flex h-full flex-col bg-background', className)}>
       {/* Header with controls */}
@@ -206,24 +133,11 @@ export function WorkflowTextEditor({
         <div className='mb-3 flex items-center justify-between'>
           <div className='flex items-center gap-2'>
             <FileCode className='h-5 w-5' />
-            <span className='font-semibold'>Workflow Text Editor</span>
+            <span className='font-semibold'>Workflow JSON Editor</span>
           </div>
           <div className='flex items-center gap-2'>
-            <Tabs
-              value={currentFormat}
-              onValueChange={(value) => handleFormatChange(value as EditorFormat)}
-            >
-              <TabsList className='grid w-fit grid-cols-2'>
-                <TabsTrigger value='yaml' disabled={disabled}>
-                  YAML
-                </TabsTrigger>
-                <TabsTrigger value='json' disabled={disabled}>
-                  JSON
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Tooltip>
-              <TooltipTrigger asChild>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
                 <Button
                   onClick={handleSave}
                   disabled={!canSave || isSaving}
@@ -233,8 +147,8 @@ export function WorkflowTextEditor({
                   <Save className='h-4 w-4' />
                   {isSaving ? 'Saving...' : 'Save'}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
+              </Tooltip.Trigger>
+              <Tooltip.Content>
                 {!isValid
                   ? 'Fix validation errors to save'
                   : !hasUnsavedChanges
@@ -242,8 +156,8 @@ export function WorkflowTextEditor({
                     : disabled
                       ? 'Editor is disabled'
                       : 'Save changes to workflow'}
-              </TooltipContent>
-            </Tooltip>
+              </Tooltip.Content>
+            </Tooltip.Root>
           </div>
         </div>
 
@@ -252,7 +166,7 @@ export function WorkflowTextEditor({
           {isValid ? (
             <div className='flex items-center gap-1 text-green-600'>
               <Check className='h-4 w-4' />
-              Valid {currentFormat.toUpperCase()}
+              Valid JSON
             </div>
           ) : (
             <div className='flex items-center gap-1 text-red-600'>
@@ -267,7 +181,7 @@ export function WorkflowTextEditor({
 
       {/* Alerts section - fixed height, scrollable if needed */}
       {(validationErrors.length > 0 || saveResult) && (
-        <div className='scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent max-h-32 flex-shrink-0 overflow-y-auto border-b bg-muted/20'>
+        <div className='max-h-32 flex-shrink-0 overflow-y-auto border-b bg-muted/20'>
           <div className='space-y-2 p-4'>
             {/* Validation errors */}
             {validationErrors.length > 0 && (
@@ -333,8 +247,8 @@ export function WorkflowTextEditor({
           <CodeEditor
             value={content}
             onChange={handleContentChange}
-            language={editorLanguage}
-            placeholder={`Enter ${currentFormat.toUpperCase()} workflow definition...`}
+            language='json'
+            placeholder='Enter JSON workflow definition...'
             className={cn(
               'h-full w-full overflow-auto rounded-md border',
               !isValid && 'border-red-500',

@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 import {
   Building2,
   Check,
   Clock,
   Database,
   DollarSign,
+  HardDrive,
   HeadphonesIcon,
   Infinity as InfinityIcon,
   MessageSquare,
@@ -24,10 +25,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getSubscriptionStatus } from '@/lib/subscription/helpers'
 import { useSubscriptionUpgrade } from '@/lib/subscription/upgrade'
 import { cn } from '@/lib/utils'
-import { useOrganizationStore } from '@/stores/organization'
-import { useSubscriptionStore } from '@/stores/subscription/store'
+import { useOrganizations } from '@/hooks/queries/organization'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const logger = createLogger('SubscriptionModal')
 
@@ -45,17 +47,10 @@ interface PlanFeature {
 export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps) {
   const { data: session } = useSession()
   const { handleUpgrade } = useSubscriptionUpgrade()
-  const { activeOrganization } = useOrganizationStore()
-  const { loadData, getSubscriptionStatus, isLoading } = useSubscriptionStore()
-
-  // Load subscription data when modal opens
-  useEffect(() => {
-    if (open) {
-      loadData()
-    }
-  }, [open, loadData])
-
-  const subscription = getSubscriptionStatus()
+  const { data: orgsData } = useOrganizations()
+  const { data: subscriptionData, isLoading } = useSubscriptionData()
+  const activeOrganization = orgsData?.activeOrganization
+  const subscription = getSubscriptionStatus(subscriptionData?.data)
 
   const handleUpgradeWithErrorHandling = useCallback(
     async (targetPlan: 'pro' | 'team') => {
@@ -82,6 +77,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
         { text: '$10 free inference credit', included: true, icon: DollarSign },
         { text: '10 runs per minute (sync)', included: true, icon: Zap },
         { text: '50 runs per minute (async)', included: true, icon: Clock },
+        { text: '5GB file storage', included: true, icon: HardDrive },
         { text: '7-day log retention', included: true, icon: Database },
       ],
       isActive: subscription.isFree,
@@ -94,6 +90,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
       features: [
         { text: '25 runs per minute (sync)', included: true, icon: Zap },
         { text: '200 runs per minute (async)', included: true, icon: Clock },
+        { text: '50GB file storage', included: true, icon: HardDrive },
         { text: 'Unlimited workspaces', included: true, icon: Building2 },
         { text: 'Unlimited workflows', included: true, icon: Workflow },
         { text: 'Unlimited invites', included: true, icon: Users },
@@ -109,6 +106,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
       features: [
         { text: '75 runs per minute (sync)', included: true, icon: Zap },
         { text: '500 runs per minute (async)', included: true, icon: Clock },
+        { text: '500GB file storage (pooled)', included: true, icon: HardDrive },
         { text: 'Everything in Pro', included: true, icon: InfinityIcon },
         { text: 'Dedicated Slack channel', included: true, icon: MessageSquare },
       ],
@@ -121,6 +119,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
       description: '',
       features: [
         { text: 'Custom rate limits', included: true, icon: Zap },
+        { text: 'Custom file storage', included: true, icon: HardDrive },
         { text: 'Enterprise hosting license', included: true, icon: Server },
         { text: 'Custom enterprise support', included: true, icon: HeadphonesIcon },
       ],

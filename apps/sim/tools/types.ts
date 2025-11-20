@@ -34,7 +34,6 @@ export interface ToolResponse {
 export interface OAuthConfig {
   required: boolean // Whether this tool requires OAuth authentication
   provider: OAuthService // The service that needs to be authorized
-  additionalScopes?: string[] // Additional scopes required for the tool
 }
 
 export interface ToolConfig<P = any, R = any> {
@@ -77,6 +76,11 @@ export interface ToolConfig<P = any, R = any> {
 
   // OAuth configuration for this tool (if it requires authentication)
   oauth?: OAuthConfig
+
+  // Error extractor to use for this tool's error responses
+  // If specified, only this extractor will be used (deterministic)
+  // If not specified, will try all extractors in order (fallback)
+  errorExtractor?: string
 
   // Request configuration
   request: {

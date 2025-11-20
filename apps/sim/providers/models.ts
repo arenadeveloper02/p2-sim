@@ -82,7 +82,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     name: 'OpenAI',
     description: "OpenAI's models",
     defaultModel: 'gpt-4o',
-    modelPatterns: [/^gpt/, /^o1/],
+    modelPatterns: [/^gpt/, /^o1/, /^text-embedding/],
     icon: OpenAIIcon,
     capabilities: {
       toolUsageControl: true,
@@ -98,6 +98,74 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+        },
+      },
+      {
+        id: 'gpt-5.1',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-11-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+        },
+      },
+      {
+        id: 'gpt-5.1-mini',
+        pricing: {
+          input: 0.25,
+          cachedInput: 0.025,
+          output: 2.0,
+          updatedAt: '2025-11-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+        },
+      },
+      {
+        id: 'gpt-5.1-nano',
+        pricing: {
+          input: 0.05,
+          cachedInput: 0.005,
+          output: 0.4,
+          updatedAt: '2025-11-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+        },
+      },
+      {
+        id: 'gpt-5.1-codex',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-11-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
         },
       },
       {
@@ -371,7 +439,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'anthropic',
     name: 'Anthropic',
     description: "Anthropic's Claude models",
-    defaultModel: 'claude-sonnet-4-0',
+    defaultModel: 'claude-sonnet-4-5',
     modelPatterns: [/^claude/],
     icon: AnthropicIcon,
     capabilities: {
@@ -379,12 +447,48 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'claude-haiku-4-5',
+        pricing: {
+          input: 1.0,
+          cachedInput: 0.5,
+          output: 5.0,
+          updatedAt: '2025-10-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'claude-sonnet-4-5',
+        pricing: {
+          input: 3.0,
+          cachedInput: 1.5,
+          output: 15.0,
+          updatedAt: '2025-10-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
         id: 'claude-sonnet-4-0',
         pricing: {
           input: 3.0,
           cachedInput: 1.5,
           output: 15.0,
           updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'claude-opus-4-1',
+        pricing: {
+          input: 15.0,
+          cachedInput: 7.5,
+          output: 75.0,
+          updatedAt: '2025-10-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -574,10 +678,46 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'grok-4-latest',
         pricing: {
-          input: 5.0,
-          cachedInput: 2.5,
-          output: 25.0,
-          updatedAt: '2025-07-10',
+          input: 3.0,
+          cachedInput: 1.5,
+          output: 15.0,
+          updatedAt: '2025-10-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'grok-4-fast-reasoning',
+        pricing: {
+          input: 0.2,
+          cachedInput: 0.25,
+          output: 0.5,
+          updatedAt: '2025-10-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'grok-4-fast-non-reasoning',
+        pricing: {
+          input: 0.2,
+          cachedInput: 0.25,
+          output: 0.5,
+          updatedAt: '2025-10-11',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+        },
+      },
+      {
+        id: 'grok-code-fast-1',
+        pricing: {
+          input: 0.2,
+          cachedInput: 0.25,
+          output: 1.5,
+          updatedAt: '2025-10-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -617,7 +757,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     modelPatterns: [/^cerebras/],
     icon: CerebrasIcon,
     capabilities: {
-      toolUsageControl: false,
+      toolUsageControl: true,
     },
     models: [
       // {
@@ -636,11 +776,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'groq',
     name: 'Groq',
     description: "Groq's LLM models with high-performance inference",
-    defaultModel: 'groq/openai/gpt-oss-120b',
+    defaultModel: 'groq/llama-3.3-70b-versatile',
     modelPatterns: [/^groq/],
     icon: GroqIcon,
     capabilities: {
-      toolUsageControl: false,
+      toolUsageControl: true,
     },
     models: [
       // {
@@ -732,6 +872,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     defaultModel: '',
     modelPatterns: [],
     icon: OllamaIcon,
+    capabilities: {
+      toolUsageControl: false, // Ollama does not support tool_choice parameter
+    },
     models: [], // Populated dynamically
   },
   sambanova: {

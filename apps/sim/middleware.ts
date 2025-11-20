@@ -1,9 +1,8 @@
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
-import { isDev, isHosted } from './lib/environment'
+import { isHosted } from './lib/environment'
 import { createLogger } from './lib/logs/console/logger'
 import { generateRuntimeCSP } from './lib/security/csp'
-import { getBaseDomain } from './lib/urls/utils'
 
 const logger = createLogger('Middleware')
 
@@ -185,25 +184,35 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Allow access to workspace invitation API endpoint
-  if (request.nextUrl.pathname.startsWith('/api/workspaces/invitations')) {
-    if (request.nextUrl.pathname.includes('/accept') && !hasActiveSession) {
-      const token = request.nextUrl.searchParams.get('token')
-      if (token) {
-        return NextResponse.redirect(new URL(`/invite/${token}?token=${token}`, request.url))
-      }
-    }
-    return NextResponse.next()
+/**
+ * Handles workspace invitation API endpoint access
+ */
+function handleWorkspaceInvitationAPI(
+  request: NextRequest,
+  hasActiveSession: boolean
+): NextResponse | null {
+  if (!request.nextUrl.pathname.startsWith('/api/workspaces/invitations')) {
+    return null
   }
 
+  if (request.nextUrl.pathname.includes('/accept') && !hasActiveSession) {
+    const token = request.nextUrl.searchParams.get('token')
+    if (token) {
+      return NextResponse.redirect(new URL(`/invite/${token}?token=${token}`, request.url))
+    }
+  }
+  return NextResponse.next()
+}
+
+/**
+ * Handles security filtering for suspicious user agents
+ */
+function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   const userAgent = request.headers.get('user-agent') || ''
-
-  // Check if this is a webhook endpoint that should be exempt from User-Agent validation
-  const isWebhookEndpoint = url.pathname.startsWith('/api/webhooks/trigger/')
-
+  const isWebhookEndpoint = request.nextUrl.pathname.startsWith('/api/webhooks/trigger/')
   const isSuspicious = SUSPICIOUS_UA_PATTERNS.some((pattern) => pattern.test(userAgent))
 
-  // Block suspicious requests, but exempt webhook endpoints from User-Agent validation only
+  // Block suspicious requests, but exempt webhook endpoints from User-Agent validation
   if (isSuspicious && !isWebhookEndpoint) {
     logger.warn('Blocked suspicious request', {
       userAgent,
@@ -212,6 +221,7 @@ export async function middleware(request: NextRequest) {
       method: request.method,
       pattern: SUSPICIOUS_UA_PATTERNS.find((pattern) => pattern.test(userAgent))?.toString(),
     })
+
     return new NextResponse(null, {
       status: 403,
       statusText: 'Forbidden',
@@ -227,10 +237,58 @@ export async function middleware(request: NextRequest) {
     })
   }
 
+  return null
+}
+
+export async function middleware(request: NextRequest) {
+  const url = request.nextUrl
+
+  const sessionCookie = getSessionCookie(request)
+  const hasActiveSession = !!sessionCookie
+
+  const redirect = handleRootPathRedirects(request, hasActiveSession)
+  if (redirect) return redirect
+
+  if (url.pathname === '/login' || url.pathname === '/signup') {
+    if (hasActiveSession) {
+      return NextResponse.redirect(new URL('/workspace', request.url))
+    }
+    return NextResponse.next()
+  }
+
+  if (url.pathname.startsWith('/chat/')) {
+    return NextResponse.next()
+  }
+
+  // Allow public access to template pages for SEO
+  if (url.pathname.startsWith('/templates')) {
+    return NextResponse.next()
+  }
+
+  if (url.pathname.startsWith('/workspace')) {
+    // Allow public access to workspace template pages - they handle their own redirects
+    if (url.pathname.match(/^\/workspace\/[^/]+\/templates/)) {
+      return NextResponse.next()
+    }
+
+    if (!hasActiveSession) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+    return NextResponse.next()
+  }
+
+  const invitationRedirect = handleInvitationRedirects(request, hasActiveSession)
+  if (invitationRedirect) return invitationRedirect
+
+  const workspaceInvitationRedirect = handleWorkspaceInvitationAPI(request, hasActiveSession)
+  if (workspaceInvitationRedirect) return workspaceInvitationRedirect
+
+  const securityBlock = handleSecurityFiltering(request)
+  if (securityBlock) return securityBlock
+
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
 
-  // Generate runtime CSP for main application routes that need dynamic environment variables
   if (
     url.pathname.startsWith('/workspace') ||
     url.pathname.startsWith('/chat') ||
@@ -242,7 +300,6 @@ export async function middleware(request: NextRequest) {
   return response
 }
 
-// Update matcher to include invitation routes and root path
 export const config = {
   matcher: [
     '/', // Root path for self-hosted redirect logic

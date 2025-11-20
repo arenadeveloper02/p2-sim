@@ -6,16 +6,11 @@ import { WorkspaceInvitationEmail } from '@/components/emails/workspace-invitati
 import { getSession } from '@/lib/auth'
 import { sendEmail } from '@/lib/email/mailer'
 import { getFromEmailAddress } from '@/lib/email/utils'
-import { env } from '@/lib/env'
+import { createLogger } from '@/lib/logs/console/logger'
 import { hasWorkspaceAdminAccess } from '@/lib/permissions/utils'
-import { db } from '@/db'
-import {
-  permissions,
-  user,
-  type WorkspaceInvitationStatus,
-  workspace,
-  workspaceInvitation,
-} from '@/db/schema'
+import { getBaseUrl } from '@/lib/urls/utils'
+
+const logger = createLogger('WorkspaceInvitationAPI')
 
 // GET /api/workspaces/invitations/[invitationId] - Get invitation details OR accept via token
 export async function GET(
@@ -30,12 +25,7 @@ export async function GET(
   if (!session?.user?.id) {
     // For token-based acceptance flows, redirect to login
     if (isAcceptFlow) {
-      return NextResponse.redirect(
-        new URL(
-          `/invite/${invitationId}?token=${token}`,
-          env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-        )
-      )
+      return NextResponse.redirect(new URL(`/invite/${invitationId}?token=${token}`, getBaseUrl()))
     }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -54,10 +44,7 @@ export async function GET(
     if (!invitation) {
       if (isAcceptFlow) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitationId}?error=invalid-token`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitationId}?error=invalid-token`, getBaseUrl())
         )
       }
       return NextResponse.json({ error: 'Invitation not found or has expired' }, { status: 404 })
@@ -66,10 +53,7 @@ export async function GET(
     if (new Date() > new Date(invitation.expiresAt)) {
       if (isAcceptFlow) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitation.id}?error=expired`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitation.id}?error=expired`, getBaseUrl())
         )
       }
       return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 })
@@ -84,10 +68,7 @@ export async function GET(
     if (!workspaceDetails) {
       if (isAcceptFlow) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitation.id}?error=workspace-not-found`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitation.id}?error=workspace-not-found`, getBaseUrl())
         )
       }
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
@@ -96,10 +77,7 @@ export async function GET(
     if (isAcceptFlow) {
       if (invitation.status !== ('pending' as WorkspaceInvitationStatus)) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitation.id}?error=already-processed`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitation.id}?error=already-processed`, getBaseUrl())
         )
       }
 
@@ -114,10 +92,7 @@ export async function GET(
 
       if (!userData) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitation.id}?error=user-not-found`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitation.id}?error=user-not-found`, getBaseUrl())
         )
       }
 
@@ -125,10 +100,7 @@ export async function GET(
 
       if (!isValidMatch) {
         return NextResponse.redirect(
-          new URL(
-            `/invite/${invitation.id}?error=email-mismatch`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/invite/${invitation.id}?error=email-mismatch`, getBaseUrl())
         )
       }
 
@@ -154,10 +126,7 @@ export async function GET(
           .where(eq(workspaceInvitation.id, invitation.id))
 
         return NextResponse.redirect(
-          new URL(
-            `/workspace/${invitation.workspaceId}/w`,
-            env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-          )
+          new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl())
         )
       }
 
@@ -181,12 +150,7 @@ export async function GET(
           .where(eq(workspaceInvitation.id, invitation.id))
       })
 
-      return NextResponse.redirect(
-        new URL(
-          `/workspace/${invitation.workspaceId}/w`,
-          env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-        )
-      )
+      return NextResponse.redirect(new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl()))
     }
 
     return NextResponse.json({
@@ -194,7 +158,7 @@ export async function GET(
       workspaceName: workspaceDetails.name,
     })
   } catch (error) {
-    console.error('Error fetching workspace invitation:', error)
+    logger.error('Error fetching workspace invitation:', error)
     return NextResponse.json({ error: 'Failed to fetch invitation details' }, { status: 500 })
   }
 }
@@ -242,7 +206,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting workspace invitation:', error)
+    logger.error('Error deleting workspace invitation:', error)
     return NextResponse.json({ error: 'Failed to delete invitation' }, { status: 500 })
   }
 }
@@ -298,7 +262,7 @@ export async function POST(
       .set({ token: newToken, expiresAt: newExpiresAt, updatedAt: new Date() })
       .where(eq(workspaceInvitation.id, invitationId))
 
-    const baseUrl = env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
+    const baseUrl = getBaseUrl()
     const invitationLink = `${baseUrl}/invite/${invitationId}?token=${newToken}`
 
     const emailHtml = await render(
@@ -326,7 +290,7 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error resending workspace invitation:', error)
+    logger.error('Error resending workspace invitation:', error)
     return NextResponse.json({ error: 'Failed to resend invitation' }, { status: 500 })
   }
 }

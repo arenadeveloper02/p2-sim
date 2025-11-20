@@ -42,20 +42,42 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
     },
   },
   request: {
-    url: 'https://api.firecrawl.dev/v1/crawl',
+    url: 'https://api.firecrawl.dev/v2/crawl',
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
       Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY : params.apiKey}`,
     }),
-    body: (params) => ({
-      url: params.url,
-      limit: Number(params.limit) || 100,
-      scrapeOptions: {
-        formats: ['markdown'],
-        onlyMainContent: params.onlyMainContent || false,
-      },
-    }),
+    body: (params) => {
+      const body: Record<string, any> = {
+        url: params.url,
+        limit: Number(params.limit) || 100,
+        scrapeOptions: params.scrapeOptions || {
+          formats: ['markdown'],
+          onlyMainContent: params.onlyMainContent || false,
+        },
+      }
+
+      // Add all optional crawl-specific parameters if provided
+      if (params.prompt !== undefined) body.prompt = params.prompt
+      if (params.maxDiscoveryDepth !== undefined)
+        body.maxDiscoveryDepth = Number(params.maxDiscoveryDepth)
+      if (params.sitemap !== undefined) body.sitemap = params.sitemap
+      if (params.crawlEntireDomain !== undefined) body.crawlEntireDomain = params.crawlEntireDomain
+      if (params.allowExternalLinks !== undefined)
+        body.allowExternalLinks = params.allowExternalLinks
+      if (params.allowSubdomains !== undefined) body.allowSubdomains = params.allowSubdomains
+      if (params.ignoreQueryParameters !== undefined)
+        body.ignoreQueryParameters = params.ignoreQueryParameters
+      if (params.delay !== undefined) body.delay = Number(params.delay)
+      if (params.maxConcurrency !== undefined) body.maxConcurrency = Number(params.maxConcurrency)
+      if (params.excludePaths !== undefined) body.excludePaths = params.excludePaths
+      if (params.includePaths !== undefined) body.includePaths = params.includePaths
+      if (params.webhook !== undefined) body.webhook = params.webhook
+      if (params.zeroDataRetention !== undefined) body.zeroDataRetention = params.zeroDataRetention
+
+      return body
+    },
   },
   transformResponse: async (response: Response) => {
     const data = await response.json()

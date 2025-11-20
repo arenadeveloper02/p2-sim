@@ -11,13 +11,6 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
   oauth: {
     required: true,
     provider: 'slack',
-    additionalScopes: [
-      'channels:read',
-      'groups:read',
-      'chat:write',
-      'chat:write.public',
-      'users:read',
-    ],
   },
 
   params: {
@@ -69,14 +62,25 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'User IDs to mention in the message',
     },
+    thread_ts: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Thread timestamp to reply to (creates thread reply)',
+    },
+    files: {
+      type: 'file[]',
+      required: false,
+      visibility: 'user-only',
+      description: 'Files to attach to the message',
+    },
   },
 
   request: {
-    url: 'https://slack.com/api/chat.postMessage',
+    url: '/api/tools/slack/send-message',
     method: 'POST',
-    headers: (params: SlackMessageParams) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.accessToken || params.botToken}`,
     }),
     body: (params: SlackMessageParams) => {
       let messageText = params.text
@@ -105,38 +109,36 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
         messageText = allMessages.join('\n\n')
       }
 
-      const body: any = {
+      return {
+        accessToken: params.accessToken || params.botToken,
         channel: params.channel,
-        text: messageText,
-        // Enable link parsing for proper mention handling
-        link_names: true,
-        // Enable unfurling of links
-        unfurl_links: true,
-        unfurl_media: true,
+        markdown_text: params.text,
       }
-
-      // Add thread timestamp if provided
-      if (params.thread_ts) {
-        body.thread_ts = params.thread_ts
-      }
-
-      return body
     },
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to send Slack message')
+    }
     return {
       success: true,
-      output: {
-        ts: data.ts,
-        channel: data.channel,
-      },
+      output: data.output,
     }
   },
 
   outputs: {
+    message: {
+      type: 'object',
+      description: 'Complete message object with all properties returned by Slack',
+    },
+    // Legacy properties for backward compatibility
     ts: { type: 'string', description: 'Message timestamp' },
     channel: { type: 'string', description: 'Channel ID where message was sent' },
+    fileCount: {
+      type: 'number',
+      description: 'Number of files uploaded (when files are attached)',
+    },
   },
 }

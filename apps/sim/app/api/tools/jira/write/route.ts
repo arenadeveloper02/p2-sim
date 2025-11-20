@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
+import { validateAlphanumericId, validateJiraCloudId } from '@/lib/security/input-validation'
 import { getJiraCloudId } from '@/tools/jira/utils'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +22,6 @@ export async function POST(request: Request) {
       parent,
     } = await request.json()
 
-    // Validate required parameters
     if (!domain) {
       logger.error('Missing domain in request')
       return NextResponse.json({ error: 'Domain is required' }, { status: 400 })
@@ -44,16 +44,23 @@ export async function POST(request: Request) {
 
     const normalizedIssueType = issueType || 'Task'
 
-    // Use provided cloudId or fetch it if not provided
     const cloudId = providedCloudId || (await getJiraCloudId(domain, accessToken))
     logger.info('Using cloud ID:', cloudId)
 
-    // Build the URL using cloudId for Jira API
+    const cloudIdValidation = validateJiraCloudId(cloudId, 'cloudId')
+    if (!cloudIdValidation.isValid) {
+      return NextResponse.json({ error: cloudIdValidation.error }, { status: 400 })
+    }
+
+    const projectIdValidation = validateAlphanumericId(projectId, 'projectId', 100)
+    if (!projectIdValidation.isValid) {
+      return NextResponse.json({ error: projectIdValidation.error }, { status: 400 })
+    }
+
     const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue`
 
     logger.info('Creating Jira issue at:', url)
 
-    // Construct fields object with only the necessary fields
     const fields: Record<string, any> = {
       project: {
         id: projectId,
@@ -64,8 +71,7 @@ export async function POST(request: Request) {
       summary: summary,
     }
 
-    // Only add description if it exists
-    if (description) {
+    if (description !== undefined && description !== null && description !== '') {
       fields.description = {
         type: 'doc',
         version: 1,
@@ -83,20 +89,17 @@ export async function POST(request: Request) {
       }
     }
 
-    // Only add parent if it exists
-    if (parent) {
+    if (parent !== undefined && parent !== null && parent !== '') {
       fields.parent = parent
     }
 
-    // Only add priority if it exists
-    if (priority) {
+    if (priority !== undefined && priority !== null && priority !== '') {
       fields.priority = {
         name: priority,
       }
     }
 
-    // Only add assignee if it exists
-    if (assignee) {
+    if (assignee !== undefined && assignee !== null && assignee !== '') {
       fields.assignee = {
         id: assignee,
       }
@@ -104,7 +107,6 @@ export async function POST(request: Request) {
 
     const body = { fields }
 
-    // Make the request to Jira API
     const response = await fetch(url, {
       method: 'POST',
       headers: {

@@ -72,7 +72,7 @@ export const imageTool: ToolConfig = {
         model: params.model,
         prompt: params.prompt,
         size: params.size || '1024x1024',
-        n: params.n || 1,
+        n: params.n ? Number(params.n) : 1,
       }
 
       // Add model-specific parameters
@@ -125,10 +125,23 @@ export const imageTool: ToolConfig = {
           const proxyUrl = new URL('/api/proxy/image', baseUrl)
           proxyUrl.searchParams.append('url', imageUrl)
 
+          const headers: Record<string, string> = {
+            Accept: 'image/*, */*',
+          }
+
+          if (typeof window === 'undefined') {
+            const { generateInternalToken } = await import('@/lib/auth/internal')
+            try {
+              const token = await generateInternalToken()
+              headers.Authorization = `Bearer ${token}`
+              logger.info('Added internal auth token for image proxy request')
+            } catch (error) {
+              logger.error('Failed to generate internal token for image proxy:', error)
+            }
+          }
+
           const imageResponse = await fetch(proxyUrl.toString(), {
-            headers: {
-              Accept: 'image/*, */*',
-            },
+            headers,
             cache: 'no-store',
           })
 

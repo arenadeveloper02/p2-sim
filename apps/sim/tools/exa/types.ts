@@ -13,6 +13,26 @@ export interface ExaSearchParams extends ExaBaseParams {
   dateFilter?: string
   useAutoprompt?: boolean
   type?: 'auto' | 'neural' | 'keyword' | 'fast'
+  // Domain filtering
+  includeDomains?: string
+  excludeDomains?: string
+  // Category filtering
+  category?:
+    | 'company'
+    | 'research_paper'
+    | 'news_article'
+    | 'pdf'
+    | 'github'
+    | 'tweet'
+    | 'movie'
+    | 'song'
+    | 'personal_site'
+  // Content options
+  text?: boolean | { maxCharacters?: number }
+  highlights?: boolean | { query?: string; numSentences?: number; highlightsPerUrl?: number }
+  summary?: boolean | { query?: string }
+  // Live crawl mode
+  livecrawl?: 'always' | 'fallback' | 'never'
 }
 
 export interface ExaSearchResult {
@@ -23,7 +43,8 @@ export interface ExaSearchResult {
   summary?: string
   favicon?: string
   image?: string
-  text: string
+  text?: string
+  highlights?: string[]
   score: number
 }
 
@@ -36,15 +57,23 @@ export interface ExaSearchResponse extends ToolResponse {
 // Get Contents tool types
 export interface ExaGetContentsParams extends ExaBaseParams {
   urls: string
-  text?: boolean
+  text?: boolean | { maxCharacters?: number }
   summaryQuery?: string
+  // Subpages crawling
+  subpages?: number
+  subpageTarget?: string
+  // Content options
+  highlights?: boolean | { query?: string; numSentences?: number; highlightsPerUrl?: number }
+  // Live crawl mode
+  livecrawl?: 'always' | 'fallback' | 'never'
 }
 
 export interface ExaGetContentsResult {
   url: string
   title: string
-  text: string
+  text?: string
   summary?: string
+  highlights?: string[]
 }
 
 export interface ExaGetContentsResponse extends ToolResponse {
@@ -57,13 +86,35 @@ export interface ExaGetContentsResponse extends ToolResponse {
 export interface ExaFindSimilarLinksParams extends ExaBaseParams {
   url: string
   numResults?: number
-  text?: boolean
+  text?: boolean | { maxCharacters?: number }
+  // Domain filtering
+  includeDomains?: string
+  excludeDomains?: string
+  excludeSourceDomain?: boolean
+  // Category filtering
+  category?:
+    | 'company'
+    | 'research_paper'
+    | 'news_article'
+    | 'pdf'
+    | 'github'
+    | 'tweet'
+    | 'movie'
+    | 'song'
+    | 'personal_site'
+  // Content options
+  highlights?: boolean | { query?: string; numSentences?: number; highlightsPerUrl?: number }
+  summary?: boolean | { query?: string }
+  // Live crawl mode
+  livecrawl?: 'always' | 'fallback' | 'never'
 }
 
 export interface ExaSimilarLink {
   title: string
   url: string
-  text: string
+  text?: string
+  summary?: string
+  highlights?: string[]
   score: number
 }
 
@@ -93,7 +144,7 @@ export interface ExaAnswerResponse extends ToolResponse {
 // Research tool types
 export interface ExaResearchParams extends ExaBaseParams {
   query: string
-  includeText?: boolean
+  model?: 'exa-research-fast' | 'exa-research' | 'exa-research-pro'
 }
 
 export interface ExaResearchResponse extends ToolResponse {

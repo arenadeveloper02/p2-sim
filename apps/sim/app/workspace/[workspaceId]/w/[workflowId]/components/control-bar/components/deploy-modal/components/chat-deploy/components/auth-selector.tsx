@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, Input, Label } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
+import { getEnv, isTruthy } from '@/lib/env'
 import { cn, generatePassword } from '@/lib/utils'
 import type { AuthType } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
 
@@ -112,6 +113,11 @@ export function AuthSelector({
     onEmailsChange(emails.filter((e) => e !== email))
   }
 
+  const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
+  const authOptions = ssoEnabled
+    ? (['public', 'password', 'email', 'sso'] as const)
+    : (['public', 'password', 'email'] as const)
+
   return (
     <div className='space-y-2'>
       <Label className='font-medium text-sm'>Access Control</Label>
@@ -141,11 +147,13 @@ export function AuthSelector({
                   {type === 'public' && 'Public Access'}
                   {type === 'password' && 'Password Protected'}
                   {type === 'email' && 'Email Access'}
+                  {type === 'sso' && 'SSO Access'}
                 </h3>
                 <p className='text-muted-foreground text-xs'>
                   {type === 'public' && 'Anyone can access your chat'}
                   {type === 'password' && 'Secure with a single password'}
                   {type === 'email' && 'Restrict to specific emails'}
+                  {type === 'sso' && 'Authenticate via SSO provider'}
                 </p>
               </div>
             </CardContent>
@@ -259,7 +267,7 @@ export function AuthSelector({
         </Card>
       )}
 
-      {authType === 'email' && (
+      {(authType === 'email' || authType === 'sso') && (
         <Card className='rounded-[8px] shadow-none'>
           <CardContent className='p-4'>
             <h3 className='mb-2 font-medium text-sm'>Email Access Settings</h3>
@@ -330,7 +338,9 @@ export function AuthSelector({
             )}
 
             <p className='mt-2 text-muted-foreground text-xs'>
-              Add specific emails or entire domains (@example.com)
+              {authType === 'email'
+                ? 'Add specific emails or entire domains (@example.com)'
+                : 'Add specific emails or entire domains (@example.com) that can access via SSO'}
             </p>
           </CardContent>
         </Card>

@@ -1,10 +1,9 @@
 import { ConnectIcon } from '@/components/icons'
 import { isHosted } from '@/lib/environment'
-import type { BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { ProviderId } from '@/providers/types'
 import {
   getAllModelProviders,
-  getBaseModelProviders,
   getHostedModels,
   getProviderIcon,
   providers,
@@ -108,8 +107,13 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
   type: 'router',
   name: 'Router',
   description: 'Route workflow',
+  authMode: AuthMode.ApiKey,
   longDescription:
     'This is a core workflow block. Intelligently direct workflow execution to different paths based on input analysis. Use natural language to instruct the router to route to certain blocks based on the input.',
+  bestPractices: `
+  - For the prompt, make it almost programmatic. Use the system prompt to define the routing criteria. Should be very specific with no ambiguity.
+  - Use the target block *names* to define the routing criteria.
+  `,
   category: 'blocks',
   bgColor: '#28C43F',
   icon: ConnectIcon,
@@ -118,7 +122,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Route to the correct block based on the input...',
       required: true,
     },
@@ -126,15 +129,14 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'model',
       title: 'Model',
       type: 'combobox',
-      layout: 'half',
       placeholder: 'Type or select a model...',
       required: true,
       options: () => {
         const providersState = useProvidersStore.getState()
+        const baseModels = providersState.providers.base.models
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
-        const baseModels = Object.keys(getBaseModelProviders())
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)
@@ -146,7 +148,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Enter your API key',
       password: true,
       connectionDroppable: false,
@@ -168,7 +169,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'azureEndpoint',
       title: 'Azure OpenAI Endpoint',
       type: 'short-input',
-      layout: 'full',
       password: true,
       placeholder: 'https://your-resource.openai.azure.com',
       connectionDroppable: false,
@@ -181,7 +181,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'azureApiVersion',
       title: 'Azure API Version',
       type: 'short-input',
-      layout: 'full',
       placeholder: '2024-07-01-preview',
       connectionDroppable: false,
       condition: {
@@ -193,7 +192,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
-      layout: 'half',
       hidden: true,
       min: 0,
       max: 2,
@@ -202,7 +200,6 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       id: 'systemPrompt',
       title: 'System Prompt',
       type: 'code',
-      layout: 'full',
       hidden: true,
       value: (params: Record<string, any>) => {
         return generateRouterPrompt(params.prompt || '')

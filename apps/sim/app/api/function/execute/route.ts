@@ -4,11 +4,12 @@ import { env, isTruthy } from '@/lib/env'
 import { executeInE2B } from '@/lib/execution/e2b'
 import { CodeLanguage, DEFAULT_CODE_LANGUAGE, isValidCodeLanguage } from '@/lib/execution/languages'
 import { createLogger } from '@/lib/logs/console/logger'
-import { validateProxyUrl } from '@/lib/security/url-validation'
+import { validateProxyUrl } from '@/lib/security/input-validation'
 import { generateRequestId } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 60
+
+export const MAX_DURATION = 210
 
 const logger = createLogger('FunctionExecuteAPI')
 
@@ -38,6 +39,89 @@ function createSecureFetch(requestId: string) {
 // Constants for E2B code wrapping line counts
 const E2B_JS_WRAPPER_LINES = 3 // Lines before user code: ';(async () => {', '  try {', '    const __sim_result = await (async () => {'
 const E2B_PYTHON_WRAPPER_LINES = 1 // Lines before user code: 'def __sim_main__():'
+
+type TypeScriptModule = typeof import('typescript')
+
+let typescriptModulePromise: Promise<TypeScriptModule> | null = null
+
+async function loadTypeScriptModule(): Promise<TypeScriptModule> {
+  if (!typescriptModulePromise) {
+    typescriptModulePromise = import('typescript').then((mod) => {
+      const tsModule = (mod?.default ?? mod) as TypeScriptModule
+      return tsModule
+    })
+  }
+
+  return typescriptModulePromise
+}
+
+async function extractJavaScriptImports(
+  code: string
+): Promise<{ imports: string; remainingCode: string; importLineCount: number }> {
+  try {
+    const tsModule = await loadTypeScriptModule()
+
+    const sourceFile = tsModule.createSourceFile(
+      'user-code.js',
+      code,
+      tsModule.ScriptTarget.Latest,
+      true,
+      tsModule.ScriptKind.JS
+    )
+
+    const importSegments: Array<{ text: string; start: number; end: number }> = []
+
+    sourceFile.statements.forEach((statement) => {
+      if (
+        tsModule.isImportDeclaration(statement) ||
+        tsModule.isImportEqualsDeclaration(statement)
+      ) {
+        importSegments.push({
+          text: statement.getFullText(sourceFile).trim(),
+          start: statement.getFullStart(),
+          end: statement.getEnd(),
+        })
+      }
+    })
+
+    if (importSegments.length === 0) {
+      return { imports: '', remainingCode: code, importLineCount: 0 }
+    }
+
+    importSegments.sort((a, b) => a.start - b.start)
+
+    const imports = importSegments.map((segment) => segment.text).join('\n')
+
+    let cursor = 0
+    const parts: string[] = []
+    let importLineCount = 0
+
+    for (const segment of importSegments) {
+      if (segment.start > cursor) {
+        parts.push(code.slice(cursor, segment.start))
+      }
+
+      const removedSegment = code.slice(segment.start, segment.end)
+      importLineCount += removedSegment.split('\n').length - 1
+
+      const newlinePlaceholder = removedSegment.replace(/[^\n]/g, '')
+      parts.push(newlinePlaceholder)
+
+      cursor = segment.end
+    }
+
+    if (cursor < code.length) {
+      parts.push(code.slice(cursor))
+    }
+
+    const remainingCode = parts.join('')
+
+    return { imports, remainingCode, importLineCount: Math.max(importLineCount, 0) }
+  } catch (error) {
+    logger.error('Failed to extract JavaScript imports', { error })
+    return { imports: '', remainingCode: code, importLineCount: 0 }
+  }
+}
 
 /**
  * Enhanced error information interface
@@ -556,6 +640,18 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * Remove one trailing newline from stdout
+ * This handles the common case where print() or console.log() adds a trailing \n
+ * that users don't expect to see in the output
+ */
+function cleanStdout(stdout: string): string {
+  if (stdout.endsWith('\n')) {
+    return stdout.slice(0, -1)
+  }
+  return stdout
+}
+
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
   const startTime = Date.now()
@@ -566,12 +662,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
+    const { DEFAULT_EXECUTION_TIMEOUT_MS } = await import('@/lib/execution/constants')
+
     const {
       code,
       params = {},
-      timeout = 5000,
+      timeout = DEFAULT_EXECUTION_TIMEOUT_MS,
       language = DEFAULT_CODE_LANGUAGE,
-      useLocalVM = false,
       envVars = {},
       blockData = {},
       blockNameMapping = {},
@@ -606,11 +703,46 @@ export async function POST(req: NextRequest) {
 
     const e2bEnabled = isTruthy(env.E2B_ENABLED)
     const lang = isValidCodeLanguage(language) ? language : DEFAULT_CODE_LANGUAGE
+
+    // Extract imports once for JavaScript code (reuse later to avoid double extraction)
+    let jsImports = ''
+    let jsRemainingCode = resolvedCode
+    let hasImports = false
+
+    if (lang === CodeLanguage.JavaScript) {
+      const extractionResult = await extractJavaScriptImports(resolvedCode)
+      jsImports = extractionResult.imports
+      jsRemainingCode = extractionResult.remainingCode
+
+      // Check for ES6 imports or CommonJS require statements
+      // ES6 imports are extracted by the TypeScript parser
+      // Also check for require() calls which indicate external dependencies
+      const hasRequireStatements = /require\s*\(\s*['"`]/.test(resolvedCode)
+      hasImports = jsImports.trim().length > 0 || hasRequireStatements
+    }
+
+    // Python always requires E2B
+    if (lang === CodeLanguage.Python && !e2bEnabled) {
+      throw new Error(
+        'Python execution requires E2B to be enabled. Please contact your administrator to enable E2B, or use JavaScript instead.'
+      )
+    }
+
+    // JavaScript with imports requires E2B
+    if (lang === CodeLanguage.JavaScript && hasImports && !e2bEnabled) {
+      throw new Error(
+        'JavaScript code with import statements requires E2B to be enabled. Please remove the import statements, or contact your administrator to enable E2B.'
+      )
+    }
+
+    // Use E2B if:
+    // - E2B is enabled AND
+    // - Not a custom tool AND
+    // - (Python OR JavaScript with imports)
     const useE2B =
       e2bEnabled &&
-      !useLocalVM &&
       !isCustomTool &&
-      (lang === CodeLanguage.JavaScript || lang === CodeLanguage.Python)
+      (lang === CodeLanguage.Python || (lang === CodeLanguage.JavaScript && hasImports))
 
     if (useE2B) {
       logger.info(`[${requestId}] E2B status`, {
@@ -624,6 +756,17 @@ export async function POST(req: NextRequest) {
       if (lang === CodeLanguage.JavaScript) {
         // Track prologue lines for error adjustment
         let prologueLineCount = 0
+
+        // Reuse the imports we already extracted earlier
+        const imports = jsImports
+        const remainingCode = jsRemainingCode
+
+        const importSection: string = imports ? `${imports}\n` : ''
+        const importLineCount = imports ? imports.split('\n').length : 0
+
+        const codeBody = remainingCode
+        resolvedCode = importSection ? `${imports}\n\n${codeBody}` : codeBody
+
         prologue += `const params = JSON.parse(${JSON.stringify(JSON.stringify(executionParams))});\n`
         prologueLineCount++
         prologue += `const environmentVariables = JSON.parse(${JSON.stringify(JSON.stringify(envVars))});\n`
@@ -632,11 +775,12 @@ export async function POST(req: NextRequest) {
           prologue += `const ${k} = JSON.parse(${JSON.stringify(JSON.stringify(v))});\n`
           prologueLineCount++
         }
+
         const wrapped = [
           ';(async () => {',
           '  try {',
           '    const __sim_result = await (async () => {',
-          `      ${resolvedCode.split('\n').join('\n      ')}`,
+          `      ${codeBody.split('\n').join('\n      ')}`,
           '    })();',
           "    console.log('__SIM_RESULT__=' + JSON.stringify(__sim_result));",
           '  } catch (error) {',
@@ -645,7 +789,7 @@ export async function POST(req: NextRequest) {
           '  }',
           '})();',
         ].join('\n')
-        const codeForE2B = prologue + wrapped + epilogue
+        const codeForE2B = importSection + prologue + wrapped + epilogue
 
         const execStart = Date.now()
         const {
@@ -674,7 +818,7 @@ export async function POST(req: NextRequest) {
             e2bStdout,
             lang,
             resolvedCode,
-            prologueLineCount
+            prologueLineCount + importLineCount
           )
           return NextResponse.json(
             {
@@ -688,7 +832,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           success: true,
-          output: { result: e2bResult ?? null, stdout, executionTime },
+          output: { result: e2bResult ?? null, stdout: cleanStdout(stdout), executionTime },
         })
       }
       // Track prologue lines for error adjustment
@@ -752,7 +896,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        output: { result: e2bResult ?? null, stdout, executionTime },
+        output: { result: e2bResult ?? null, stdout: cleanStdout(stdout), executionTime },
       })
     }
 
@@ -816,7 +960,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      output: { result, stdout, executionTime },
+      output: { result, stdout: cleanStdout(stdout), executionTime },
     })
   } catch (error: any) {
     const executionTime = Date.now() - startTime
@@ -849,7 +993,7 @@ export async function POST(req: NextRequest) {
       error: userFriendlyErrorMessage,
       output: {
         result: null,
-        stdout,
+        stdout: cleanStdout(stdout),
         executionTime,
       },
       // Include debug information in development or for debugging

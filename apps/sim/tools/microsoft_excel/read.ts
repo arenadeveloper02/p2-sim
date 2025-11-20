@@ -3,7 +3,10 @@ import type {
   MicrosoftExcelReadResponse,
   MicrosoftExcelToolParams,
 } from '@/tools/microsoft_excel/types'
-import { trimTrailingEmptyRowsAndColumns } from '@/tools/microsoft_excel/utils'
+import {
+  getSpreadsheetWebUrl,
+  trimTrailingEmptyRowsAndColumns,
+} from '@/tools/microsoft_excel/utils'
 import type { ToolConfig } from '@/tools/types'
 
 export const readTool: ToolConfig<MicrosoftExcelToolParams, MicrosoftExcelReadResponse> = {
@@ -15,7 +18,6 @@ export const readTool: ToolConfig<MicrosoftExcelToolParams, MicrosoftExcelReadRe
   oauth: {
     required: true,
     provider: 'microsoft-excel',
-    additionalScopes: [],
   },
 
   params: {
@@ -126,10 +128,13 @@ export const readTool: ToolConfig<MicrosoftExcelToolParams, MicrosoftExcelReadRe
 
       const values = trimTrailingEmptyRowsAndColumns(rawValues)
 
+      // Fetch the browser-accessible web URL
+      const webUrl = await getSpreadsheetWebUrl(spreadsheetIdFromUrl, accessToken)
+
       const metadata = {
         spreadsheetId: spreadsheetIdFromUrl,
         properties: {},
-        spreadsheetUrl: `https://graph.microsoft.com/v1.0/me/drive/items/${spreadsheetIdFromUrl}`,
+        spreadsheetUrl: webUrl,
       }
 
       const result: MicrosoftExcelReadResponse = {
@@ -155,10 +160,17 @@ export const readTool: ToolConfig<MicrosoftExcelToolParams, MicrosoftExcelReadRe
     const urlParts = response.url.split('/drive/items/')
     const spreadsheetId = urlParts[1]?.split('/')[0] || ''
 
+    // Fetch the browser-accessible web URL
+    const accessToken = params?.accessToken
+    if (!accessToken) {
+      throw new Error('Access token is required')
+    }
+    const webUrl = await getSpreadsheetWebUrl(spreadsheetId, accessToken)
+
     const metadata = {
       spreadsheetId,
       properties: {},
-      spreadsheetUrl: `https://graph.microsoft.com/v1.0/me/drive/items/${spreadsheetId}`,
+      spreadsheetUrl: webUrl,
     }
 
     const address: string = data.address || data.addressLocal || data.range || ''

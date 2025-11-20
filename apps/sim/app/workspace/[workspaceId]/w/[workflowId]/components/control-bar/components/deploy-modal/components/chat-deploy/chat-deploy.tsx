@@ -25,10 +25,10 @@ import {
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
+import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/components/auth-selector'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/control-bar/components/deploy-modal/components/chat-deploy/hooks/use-chat-form'
-import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/chat/components/output-select/output-select'
 
 const logger = createLogger('ChatDeploy')
 
@@ -60,7 +60,7 @@ interface ChatDeployProps {
 
 interface ExistingChat {
   id: string
-  subdomain: string
+  identifier: string
   title: string
   description: string
   authType: 'public' | 'password' | 'email'
@@ -184,7 +184,7 @@ export function ChatDeploy({
   // Use changes from approved template
   const hasWorkflowChanges = hasChangesFromApproved
   const isFormValid =
-    isSubdomainValid &&
+    isIdentifierValid &&
     Boolean(formData.title.trim()) &&
     formData.selectedOutputBlocks.length > 0 &&
     (formData.authType !== 'password' ||
@@ -252,14 +252,14 @@ export function ChatDeploy({
         const data = await response.json()
 
         if (data.isDeployed && data.deployment) {
-          const detailResponse = await fetch(`/api/chat/edit/${data.deployment.id}`)
+          const detailResponse = await fetch(`/api/chat/manage/${data.deployment.id}`)
 
           if (detailResponse.ok) {
             const chatDetail = await detailResponse.json()
             setExistingChat(chatDetail)
 
             setFormData({
-              subdomain: chatDetail.subdomain || '',
+              identifier: chatDetail.identifier || '',
               title: chatDetail.title || '',
               description: chatDetail.description || '',
               authType: chatDetail.authType || 'email',
@@ -275,7 +275,6 @@ export function ChatDeploy({
                 : [],
             })
 
-            // Set image URL if it exists
             if (chatDetail.customizations?.imageUrl) {
               setImageUrl(chatDetail.customizations.imageUrl)
             }
@@ -358,12 +357,10 @@ export function ChatDeploy({
         onRedeploymentComplete?.()
       }
 
-      // Fetch the updated chat data immediately after deployment
-      // This ensures existingChat is available when switching back to edit mode
       await fetchExistingChat()
     } catch (error: any) {
-      if (error.message?.includes('subdomain')) {
-        setError('subdomain', error.message)
+      if (error.message?.includes('identifier')) {
+        setError('identifier', error.message)
       } else {
         setError('general', error.message)
       }
@@ -381,7 +378,7 @@ export function ChatDeploy({
     try {
       setIsDeleting(true)
 
-      const response = await fetch(`/api/chat/edit/${existingChat.id}`, {
+      const response = await fetch(`/api/chat/manage/${existingChat.id}`, {
         method: 'DELETE',
       })
 
@@ -390,13 +387,15 @@ export function ChatDeploy({
         throw new Error(error.error || 'Failed to delete chat')
       }
 
-      // Update state
+      if (onUndeploy) {
+        await onUndeploy()
+      }
+
       setExistingChat(null)
       setImageUrl(null)
       setImageUploadError(null)
       onChatExistsChange?.(false)
 
-      // Notify parent of successful deletion
       onDeploymentComplete?.()
     } catch (error: any) {
       logger.error('Failed to delete chat:', error)
@@ -512,7 +511,7 @@ export function ChatDeploy({
             onChange={(value) => updateField('subdomain', value)}
             originalSubdomain={existingChat?.subdomain || undefined}
             disabled={chatSubmitting}
-            onValidationChange={setIsSubdomainValid}
+            onValidationChange={setIsIdentifierValid}
             isEditingExisting={!!existingChat}
           /> */}
           <div className='space-y-2'>
@@ -622,7 +621,6 @@ export function ChatDeploy({
             </div>
           )}
 
-          {/* Hidden delete trigger button for modal footer */}
           <button
             type='button'
             data-delete-trigger
@@ -632,7 +630,6 @@ export function ChatDeploy({
         </div>
       </form>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -640,9 +637,9 @@ export function ChatDeploy({
             <AlertDialogDescription>
               This will permanently delete your chat deployment at{' '}
               <span className='font-mono text-destructive'>
-                {existingChat?.subdomain}.{getEmailDomain()}
-              </span>
-              .
+                {getEmailDomain()}/chat/{existingChat?.identifier}
+              </span>{' '}
+              and undeploy the workflow.
               <span className='mt-2 block'>
                 All users will lose access immediately, and this action cannot be undone.
               </span>

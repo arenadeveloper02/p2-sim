@@ -1,7 +1,8 @@
 import { useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { client, useSession, useSubscription } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
-import { useOrganizationStore } from '@/stores/organization'
+import { organizationKeys } from '@/hooks/queries/organization'
 
 const logger = createLogger('SubscriptionUpgrade')
 
@@ -17,7 +18,7 @@ const CONSTANTS = {
 export function useSubscriptionUpgrade() {
   const { data: session } = useSession()
   const betterAuthSubscription = useSubscription()
-  const { loadData: loadOrganizationData } = useOrganizationStore()
+  const queryClient = useQueryClient()
 
   const handleUpgrade = useCallback(
     async (targetPlan: TargetPlan) => {
@@ -75,7 +76,7 @@ export function useSubscriptionUpgrade() {
           try {
             await client.organization.setActive({ organizationId: result.organizationId })
 
-            logger.info('Set organization as active and updated referenceId', {
+            logger.info('Set organization as active', {
               organizationId: result.organizationId,
               oldReferenceId: userId,
               newReferenceId: referenceId,
@@ -89,6 +90,11 @@ export function useSubscriptionUpgrade() {
           }
 
           if (currentSubscriptionId) {
+            logger.info('Transferring personal subscription to organization', {
+              subscriptionId: currentSubscriptionId,
+              organizationId: referenceId,
+            })
+
             const transferResponse = await fetch(
               `/api/users/me/subscription/${currentSubscriptionId}/transfer`,
               {
@@ -100,8 +106,18 @@ export function useSubscriptionUpgrade() {
 
             if (!transferResponse.ok) {
               const text = await transferResponse.text()
+              logger.error('Failed to transfer subscription to organization', {
+                subscriptionId: currentSubscriptionId,
+                organizationId: referenceId,
+                error: text,
+              })
               throw new Error(text || 'Failed to transfer subscription to organization')
             }
+
+            logger.info('Successfully transferred subscription to organization', {
+              subscriptionId: currentSubscriptionId,
+              organizationId: referenceId,
+            })
           }
         } catch (error) {
           logger.error('Failed to create organization for team plan', error)
@@ -139,7 +155,7 @@ export function useSubscriptionUpgrade() {
         // For team plans, refresh organization data to ensure UI updates
         if (targetPlan === 'team') {
           try {
-            await loadOrganizationData()
+            await queryClient.invalidateQueries({ queryKey: organizationKeys.lists() })
             logger.info('Refreshed organization data after team upgrade')
           } catch (error) {
             logger.warn('Failed to refresh organization data after upgrade', error)
@@ -167,7 +183,7 @@ export function useSubscriptionUpgrade() {
         )
       }
     },
-    [session?.user?.id, betterAuthSubscription, loadOrganizationData]
+    [session?.user?.id, betterAuthSubscription, queryClient]
   )
 
   return { handleUpgrade }

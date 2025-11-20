@@ -7,14 +7,13 @@ import { createLogger } from '@/lib/logs/console/logger'
 import * as schema from '@/db/schema'
 import { workflowBlocks, workflowEdges } from '@/db/schema'
 
-// Create dedicated database connection for room manager
-const connectionString = env.POSTGRES_URL ?? env.DATABASE_URL
+const connectionString = env.DATABASE_URL
 const db = drizzle(
   postgres(connectionString, {
     prepare: false,
     idle_timeout: 15,
     connect_timeout: 20,
-    max: 5,
+    max: 3,
     onnotice: () => {},
   }),
   { schema }
@@ -29,8 +28,10 @@ export interface UserPresence {
   socketId: string
   joinedAt: number
   lastActivity: number
+  role: string
   cursor?: { x: number; y: number }
   selection?: { type: 'block' | 'edge' | 'none'; id?: string }
+  avatarUrl?: string | null
 }
 
 export interface WorkflowRoom {
@@ -43,7 +44,10 @@ export interface WorkflowRoom {
 export class RoomManager {
   private workflowRooms = new Map<string, WorkflowRoom>()
   private socketToWorkflow = new Map<string, string>()
-  private userSessions = new Map<string, { userId: string; userName: string }>()
+  private userSessions = new Map<
+    string,
+    { userId: string; userName: string; avatarUrl?: string | null }
+  >()
   private io: Server
 
   constructor(io: Server) {
@@ -237,11 +241,16 @@ export class RoomManager {
     this.socketToWorkflow.set(socketId, workflowId)
   }
 
-  getUserSession(socketId: string): { userId: string; userName: string } | undefined {
+  getUserSession(
+    socketId: string
+  ): { userId: string; userName: string; avatarUrl?: string | null } | undefined {
     return this.userSessions.get(socketId)
   }
 
-  setUserSession(socketId: string, session: { userId: string; userName: string }): void {
+  setUserSession(
+    socketId: string,
+    session: { userId: string; userName: string; avatarUrl?: string | null }
+  ): void {
     this.userSessions.set(socketId, session)
   }
 

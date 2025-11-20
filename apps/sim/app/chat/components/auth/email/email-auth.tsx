@@ -8,14 +8,14 @@ import { Input } from '@/components/ui/input'
 import { OTPInputForm } from '@/components/ui/input-otp-form'
 
 interface EmailAuthProps {
-  subdomain: string
+  identifier: string
   onAuthSuccess: () => void
   title?: string
   primaryColor?: string
 }
 
 export default function EmailAuth({
-  subdomain,
+  identifier,
   onAuthSuccess,
   title = 'chat',
   primaryColor = 'var(--brand-primary-hover-hex)',

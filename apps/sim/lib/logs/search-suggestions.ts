@@ -1,7 +1,4 @@
-import type {
-  Suggestion,
-  SuggestionGroup,
-} from '@/app/workspace/[workspaceId]/logs/hooks/use-autocomplete'
+import type { Suggestion, SuggestionGroup } from '@/app/workspace/[workspaceId]/logs/types/search'
 
 export interface FilterDefinition {
   key: string
@@ -12,6 +9,17 @@ export interface FilterDefinition {
     label: string
     description?: string
   }>
+}
+
+export interface WorkflowData {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface FolderData {
+  id: string
+  name: string
 }
 
 export const FILTER_DEFINITIONS: FilterDefinition[] = [
@@ -78,343 +86,348 @@ export const FILTER_DEFINITIONS: FilterDefinition[] = [
   },
 ]
 
-interface QueryContext {
-  type: 'initial' | 'filter-key-partial' | 'filter-value-context' | 'text-search'
-  filterKey?: string
-  partialInput?: string
-  startPosition?: number
-  endPosition?: number
-}
-
 export class SearchSuggestions {
-  private availableWorkflows: string[]
-  private availableFolders: string[]
+  private workflowsData: WorkflowData[]
+  private foldersData: FolderData[]
 
-  constructor(availableWorkflows: string[] = [], availableFolders: string[] = []) {
-    this.availableWorkflows = availableWorkflows
-    this.availableFolders = availableFolders
+  constructor(workflowsData: WorkflowData[] = [], foldersData: FolderData[] = []) {
+    this.workflowsData = workflowsData
+    this.foldersData = foldersData
   }
 
-  updateAvailableData(workflows: string[] = [], folders: string[] = []) {
-    this.availableWorkflows = workflows
-    this.availableFolders = folders
-  }
-
-  /**
-   * Check if a filter value is complete (matches a valid option)
-   */
-  private isCompleteFilterValue(filterKey: string, value: string): boolean {
-    const filterDef = FILTER_DEFINITIONS.find((f) => f.key === filterKey)
-    if (filterDef) {
-      return filterDef.options.some((option) => option.value === value)
-    }
-
-    // For workflow and folder filters, any quoted value is considered complete
-    if (filterKey === 'workflow' || filterKey === 'folder') {
-      return value.startsWith('"') && value.endsWith('"') && value.length > 2
-    }
-
-    return false
+  updateData(workflowsData: WorkflowData[] = [], foldersData: FolderData[] = []) {
+    this.workflowsData = workflowsData
+    this.foldersData = foldersData
   }
 
   /**
-   * Analyze the current input context to determine what suggestions to show.
+   * Get suggestions based ONLY on current input (no cursor position!)
    */
-  private analyzeContext(input: string, cursorPosition: number): QueryContext {
-    const textBeforeCursor = input.slice(0, cursorPosition)
+  getSuggestions(input: string): SuggestionGroup | null {
+    const trimmed = input.trim()
 
-    if (textBeforeCursor === '' || textBeforeCursor.endsWith(' ')) {
-      return { type: 'initial' }
+    // Empty input → show all filter keys
+    if (!trimmed) {
+      return this.getFilterKeysList()
     }
 
-    // Check for filter value context (must be after a space or at start, and not empty value)
-    const filterValueMatch = textBeforeCursor.match(/(?:^|\s)(\w+):([\w"<>=!]*)$/)
-    if (filterValueMatch && filterValueMatch[2].length > 0 && !filterValueMatch[2].includes(' ')) {
-      const filterKey = filterValueMatch[1]
-      const filterValue = filterValueMatch[2]
-
-      // If the filter value is complete, treat as ready for next filter
-      if (this.isCompleteFilterValue(filterKey, filterValue)) {
-        return { type: 'initial' }
-      }
-
-      // Otherwise, treat as partial value needing completion
-      return {
-        type: 'filter-value-context',
-        filterKey,
-        partialInput: filterValue,
-        startPosition:
-          filterValueMatch.index! +
-          (filterValueMatch[0].startsWith(' ') ? 1 : 0) +
-          filterKey.length +
-          1,
-        endPosition: cursorPosition,
-      }
+    // Input ends with ':' → show values for that key
+    if (trimmed.endsWith(':')) {
+      const key = trimmed.slice(0, -1)
+      return this.getFilterValues(key)
     }
 
-    // Check for empty filter key (just "key:" with no value)
-    const emptyFilterMatch = textBeforeCursor.match(/(?:^|\s)(\w+):$/)
-    if (emptyFilterMatch) {
-      return { type: 'initial' } // Treat as initial to show filter value suggestions
+    // Input contains ':' → filter value context
+    if (trimmed.includes(':')) {
+      const [key, partial] = trimmed.split(':')
+      return this.getFilterValues(key, partial)
     }
 
-    const filterKeyMatch = textBeforeCursor.match(/(?:^|\s)(\w+):?$/)
-    if (filterKeyMatch && !filterKeyMatch[0].includes(':')) {
-      return {
-        type: 'filter-key-partial',
-        partialInput: filterKeyMatch[1],
-        startPosition: filterKeyMatch.index! + (filterKeyMatch[0].startsWith(' ') ? 1 : 0),
-        endPosition: cursorPosition,
-      }
-    }
-
-    return { type: 'text-search' }
+    // Plain text → multi-section results
+    return this.getMultiSectionResults(trimmed)
   }
 
   /**
-   * Get filter key suggestions
+   * Get filter keys list (empty input state)
    */
-  private getFilterKeySuggestions(partialInput?: string): Suggestion[] {
+  private getFilterKeysList(): SuggestionGroup {
     const suggestions: Suggestion[] = []
 
+    // Add all filter keys
     for (const filter of FILTER_DEFINITIONS) {
-      const matchesPartial =
-        !partialInput ||
-        filter.key.toLowerCase().startsWith(partialInput.toLowerCase()) ||
-        filter.label.toLowerCase().startsWith(partialInput.toLowerCase())
-
-      if (matchesPartial) {
-        suggestions.push({
-          id: `filter-key-${filter.key}`,
-          value: `${filter.key}:`,
-          label: filter.label,
-          description: filter.description,
-          category: 'filters',
-        })
-      }
+      suggestions.push({
+        id: `filter-key-${filter.key}`,
+        value: `${filter.key}:`,
+        label: filter.label,
+        description: filter.description,
+        category: 'filters',
+      })
     }
 
-    if (this.availableWorkflows.length > 0) {
-      const matchesWorkflow =
-        !partialInput ||
-        'workflow'.startsWith(partialInput.toLowerCase()) ||
-        'workflows'.startsWith(partialInput.toLowerCase())
-
-      if (matchesWorkflow) {
-        suggestions.push({
-          id: 'filter-key-workflow',
-          value: 'workflow:',
-          label: 'Workflow',
-          description: 'Filter by workflow name',
-          category: 'filters',
-        })
-      }
+    // Add workflow and folder keys
+    if (this.workflowsData.length > 0) {
+      suggestions.push({
+        id: 'filter-key-workflow',
+        value: 'workflow:',
+        label: 'Workflow',
+        description: 'Filter by workflow name',
+        category: 'filters',
+      })
     }
 
-    if (this.availableFolders.length > 0) {
-      const matchesFolder =
-        !partialInput ||
-        'folder'.startsWith(partialInput.toLowerCase()) ||
-        'folders'.startsWith(partialInput.toLowerCase())
-
-      if (matchesFolder) {
-        suggestions.push({
-          id: 'filter-key-folder',
-          value: 'folder:',
-          label: 'Folder',
-          description: 'Filter by folder name',
-          category: 'filters',
-        })
-      }
+    if (this.foldersData.length > 0) {
+      suggestions.push({
+        id: 'filter-key-folder',
+        value: 'folder:',
+        label: 'Folder',
+        description: 'Filter by folder name',
+        category: 'filters',
+      })
     }
 
-    return suggestions
+    suggestions.push({
+      id: 'filter-key-workflowId',
+      value: 'workflowId:',
+      label: 'Workflow ID',
+      description: 'Filter by workflow ID',
+      category: 'filters',
+    })
+
+    suggestions.push({
+      id: 'filter-key-executionId',
+      value: 'executionId:',
+      label: 'Execution ID',
+      description: 'Filter by execution ID',
+      category: 'filters',
+    })
+
+    return {
+      type: 'filter-keys',
+      suggestions,
+    }
   }
 
   /**
-   * Get filter value suggestions for a specific filter key
+   * Get filter values for a specific key
    */
-  private getFilterValueSuggestions(filterKey: string, partialInput = ''): Suggestion[] {
-    const suggestions: Suggestion[] = []
+  private getFilterValues(key: string, partial = ''): SuggestionGroup | null {
+    const filterDef = FILTER_DEFINITIONS.find((f) => f.key === key)
 
-    const filterDef = FILTER_DEFINITIONS.find((f) => f.key === filterKey)
     if (filterDef) {
-      for (const option of filterDef.options) {
-        const matchesPartial =
-          !partialInput ||
-          option.value.toLowerCase().includes(partialInput.toLowerCase()) ||
-          option.label.toLowerCase().includes(partialInput.toLowerCase())
+      const suggestions = filterDef.options
+        .filter(
+          (opt) =>
+            !partial ||
+            opt.value.toLowerCase().includes(partial.toLowerCase()) ||
+            opt.label.toLowerCase().includes(partial.toLowerCase())
+        )
+        .map((opt) => ({
+          id: `filter-value-${key}-${opt.value}`,
+          value: `${key}:${opt.value}`,
+          label: opt.label,
+          description: opt.description,
+          category: key as any,
+        }))
 
-        if (matchesPartial) {
-          suggestions.push({
-            id: `filter-value-${filterKey}-${option.value}`,
-            value: option.value,
-            label: option.label,
-            description: option.description,
-            category: filterKey,
-          })
-        }
-      }
-      return suggestions
-    }
-
-    if (filterKey === 'workflow') {
-      for (const workflow of this.availableWorkflows) {
-        const matchesPartial =
-          !partialInput || workflow.toLowerCase().includes(partialInput.toLowerCase())
-
-        if (matchesPartial) {
-          suggestions.push({
-            id: `filter-value-workflow-${workflow}`,
-            value: `"${workflow}"`,
-            label: workflow,
-            description: 'Workflow name',
-            category: 'workflow',
-          })
-        }
-      }
-      return suggestions.slice(0, 8)
-    }
-
-    if (filterKey === 'folder') {
-      for (const folder of this.availableFolders) {
-        const matchesPartial =
-          !partialInput || folder.toLowerCase().includes(partialInput.toLowerCase())
-
-        if (matchesPartial) {
-          suggestions.push({
-            id: `filter-value-folder-${folder}`,
-            value: `"${folder}"`,
-            label: folder,
-            description: 'Folder name',
-            category: 'folder',
-          })
-        }
-      }
-      return suggestions.slice(0, 8)
-    }
-
-    return suggestions
-  }
-
-  /**
-   * Get suggestions based on current input and cursor position
-   */
-  getSuggestions(input: string, cursorPosition: number): SuggestionGroup | null {
-    const context = this.analyzeContext(input, cursorPosition)
-
-    // Special case: check if we're at "key:" position for filter values
-    const textBeforeCursor = input.slice(0, cursorPosition)
-    const emptyFilterMatch = textBeforeCursor.match(/(?:^|\s)(\w+):$/)
-    if (emptyFilterMatch) {
-      const filterKey = emptyFilterMatch[1]
-      const filterValueSuggestions = this.getFilterValueSuggestions(filterKey, '')
-      return filterValueSuggestions.length > 0
+      return suggestions.length > 0
         ? {
             type: 'filter-values',
-            filterKey,
-            suggestions: filterValueSuggestions,
+            filterKey: key,
+            suggestions,
           }
         : null
     }
 
-    switch (context.type) {
-      case 'initial':
-      case 'filter-key-partial': {
-        const filterKeySuggestions = this.getFilterKeySuggestions(context.partialInput)
-        return filterKeySuggestions.length > 0
-          ? {
-              type: 'filter-keys',
-              suggestions: filterKeySuggestions,
-            }
-          : null
-      }
+    // Workflow filter values
+    if (key === 'workflow') {
+      const suggestions = this.workflowsData
+        .filter((w) => !partial || w.name.toLowerCase().includes(partial.toLowerCase()))
+        .slice(0, 8)
+        .map((w) => ({
+          id: `filter-value-workflow-${w.id}`,
+          value: `workflow:"${w.name}"`,
+          label: w.name,
+          description: w.description,
+          category: 'workflow' as const,
+        }))
 
-      case 'filter-value-context': {
-        if (!context.filterKey) return null
-        const filterValueSuggestions = this.getFilterValueSuggestions(
-          context.filterKey,
-          context.partialInput
-        )
-        return filterValueSuggestions.length > 0
-          ? {
-              type: 'filter-values',
-              filterKey: context.filterKey,
-              suggestions: filterValueSuggestions,
-            }
-          : null
-      }
-      default:
-        return null
+      return suggestions.length > 0
+        ? {
+            type: 'filter-values',
+            filterKey: 'workflow',
+            suggestions,
+          }
+        : null
     }
+
+    // Folder filter values
+    if (key === 'folder') {
+      const suggestions = this.foldersData
+        .filter((f) => !partial || f.name.toLowerCase().includes(partial.toLowerCase()))
+        .slice(0, 8)
+        .map((f) => ({
+          id: `filter-value-folder-${f.id}`,
+          value: `folder:"${f.name}"`,
+          label: f.name,
+          category: 'folder' as const,
+        }))
+
+      return suggestions.length > 0
+        ? {
+            type: 'filter-values',
+            filterKey: 'folder',
+            suggestions,
+          }
+        : null
+    }
+
+    return null
   }
 
   /**
-   * Generate preview text for a suggestion - SIMPLE APPROACH
-   * Show suggestion at the end of input, with proper spacing logic
+   * Get multi-section results for plain text
    */
-  generatePreview(suggestion: Suggestion, currentValue: string, cursorPosition: number): string {
-    // If input is empty, just show the suggestion
-    if (!currentValue.trim()) {
-      return suggestion.value
+  private getMultiSectionResults(query: string): SuggestionGroup | null {
+    const sections: Array<{ title: string; suggestions: Suggestion[] }> = []
+    const allSuggestions: Suggestion[] = []
+
+    // Show all results option
+    const showAllSuggestion: Suggestion = {
+      id: 'show-all',
+      value: query,
+      label: `Show all results for "${query}"`,
+      category: 'show-all',
+    }
+    allSuggestions.push(showAllSuggestion)
+
+    // Match filter values (e.g., "info" → "Status: Info")
+    const matchingFilterValues = this.getMatchingFilterValues(query)
+    if (matchingFilterValues.length > 0) {
+      sections.push({
+        title: 'SUGGESTED FILTERS',
+        suggestions: matchingFilterValues,
+      })
+      allSuggestions.push(...matchingFilterValues)
     }
 
-    // Check if we're doing a partial replacement (like "lev" -> "level:")
-    const context = this.analyzeContext(currentValue, cursorPosition)
+    // Match workflows
+    const matchingWorkflows = this.getMatchingWorkflows(query)
+    if (matchingWorkflows.length > 0) {
+      sections.push({
+        title: 'WORKFLOWS',
+        suggestions: matchingWorkflows,
+      })
+      allSuggestions.push(...matchingWorkflows)
+    }
 
+    // Match folders
+    const matchingFolders = this.getMatchingFolders(query)
+    if (matchingFolders.length > 0) {
+      sections.push({
+        title: 'FOLDERS',
+        suggestions: matchingFolders,
+      })
+      allSuggestions.push(...matchingFolders)
+    }
+
+    // Add filter keys if no specific matches
     if (
-      context.type === 'filter-key-partial' &&
-      context.startPosition !== undefined &&
-      context.endPosition !== undefined
+      matchingFilterValues.length === 0 &&
+      matchingWorkflows.length === 0 &&
+      matchingFolders.length === 0
     ) {
-      // Replace partial text: "lev" -> "level:"
-      const before = currentValue.slice(0, context.startPosition)
-      const after = currentValue.slice(context.endPosition)
-      return `${before}${suggestion.value}${after}`
+      const filterKeys = this.getFilterKeysList()
+      if (filterKeys.suggestions.length > 0) {
+        sections.push({
+          title: 'SUGGESTED FILTERS',
+          suggestions: filterKeys.suggestions.slice(0, 5),
+        })
+        allSuggestions.push(...filterKeys.suggestions.slice(0, 5))
+      }
     }
 
-    if (
-      context.type === 'filter-value-context' &&
-      context.startPosition !== undefined &&
-      context.endPosition !== undefined
-    ) {
-      // Replace partial filter value: "level:err" -> "level:error"
-      const before = currentValue.slice(0, context.startPosition)
-      const after = currentValue.slice(context.endPosition)
-      return `${before}${suggestion.value}${after}`
-    }
-
-    // For all other cases, append at the end with smart spacing:
-    let result = currentValue
-
-    if (currentValue.endsWith(':')) {
-      // Direct append for filter values: "level:" + "error" = "level:error"
-      result += suggestion.value
-    } else if (currentValue.endsWith(' ')) {
-      // Already has space, direct append: "level:error " + "trigger:" = "level:error trigger:"
-      result += suggestion.value
-    } else {
-      // Need space: "level:error" + " " + "trigger:" = "level:error trigger:"
-      result += ` ${suggestion.value}`
-    }
-
-    return result
+    return allSuggestions.length > 0
+      ? {
+          type: 'multi-section',
+          suggestions: allSuggestions,
+          sections,
+        }
+      : null
   }
 
   /**
-   * Validate if a query is complete and should trigger backend calls
+   * Match filter values across all definitions
    */
-  validateQuery(query: string): boolean {
-    const incompleteFilterMatch = query.match(/(\w+):$/)
-    if (incompleteFilterMatch) {
-      return false
+  private getMatchingFilterValues(query: string): Suggestion[] {
+    if (!query.trim()) return []
+
+    const matches: Suggestion[] = []
+    const lowerQuery = query.toLowerCase()
+
+    for (const filterDef of FILTER_DEFINITIONS) {
+      for (const option of filterDef.options) {
+        if (
+          option.value.toLowerCase().includes(lowerQuery) ||
+          option.label.toLowerCase().includes(lowerQuery)
+        ) {
+          matches.push({
+            id: `filter-match-${filterDef.key}-${option.value}`,
+            value: `${filterDef.key}:${option.value}`,
+            label: `${filterDef.label}: ${option.label}`,
+            description: option.description,
+            category: filterDef.key as any,
+          })
+        }
+      }
     }
 
-    const openQuotes = (query.match(/"/g) || []).length
-    if (openQuotes % 2 !== 0) {
-      return false
-    }
+    return matches.slice(0, 5)
+  }
 
-    return true
+  /**
+   * Match workflows by name/description
+   */
+  private getMatchingWorkflows(query: string): Suggestion[] {
+    if (!query.trim() || this.workflowsData.length === 0) return []
+
+    const lowerQuery = query.toLowerCase()
+
+    const matches = this.workflowsData
+      .filter(
+        (workflow) =>
+          workflow.name.toLowerCase().includes(lowerQuery) ||
+          workflow.description?.toLowerCase().includes(lowerQuery)
+      )
+      .sort((a, b) => {
+        const aName = a.name.toLowerCase()
+        const bName = b.name.toLowerCase()
+
+        if (aName === lowerQuery) return -1
+        if (bName === lowerQuery) return 1
+        if (aName.startsWith(lowerQuery) && !bName.startsWith(lowerQuery)) return -1
+        if (bName.startsWith(lowerQuery) && !aName.startsWith(lowerQuery)) return 1
+        return aName.localeCompare(bName)
+      })
+      .slice(0, 8)
+      .map((workflow) => ({
+        id: `workflow-match-${workflow.id}`,
+        value: `workflow:"${workflow.name}"`,
+        label: workflow.name,
+        description: workflow.description,
+        category: 'workflow' as const,
+      }))
+
+    return matches
+  }
+
+  /**
+   * Match folders by name
+   */
+  private getMatchingFolders(query: string): Suggestion[] {
+    if (!query.trim() || this.foldersData.length === 0) return []
+
+    const lowerQuery = query.toLowerCase()
+
+    const matches = this.foldersData
+      .filter((folder) => folder.name.toLowerCase().includes(lowerQuery))
+      .sort((a, b) => {
+        const aName = a.name.toLowerCase()
+        const bName = b.name.toLowerCase()
+
+        if (aName === lowerQuery) return -1
+        if (bName === lowerQuery) return 1
+        if (aName.startsWith(lowerQuery) && !bName.startsWith(lowerQuery)) return -1
+        if (bName.startsWith(lowerQuery) && !aName.startsWith(lowerQuery)) return 1
+        return aName.localeCompare(bName)
+      })
+      .slice(0, 8)
+      .map((folder) => ({
+        id: `folder-match-${folder.id}`,
+        value: `folder:"${folder.name}"`,
+        label: folder.name,
+        category: 'folder' as const,
+      }))
+
+    return matches
   }
 }

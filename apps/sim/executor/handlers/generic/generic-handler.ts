@@ -7,24 +7,16 @@ import { getTool } from '@/tools/utils'
 
 const logger = createLogger('GenericBlockHandler')
 
-/**
- * Generic handler for any block types not covered by specialized handlers.
- * Acts as a fallback for custom or future block types.
- */
 export class GenericBlockHandler implements BlockHandler {
   canHandle(block: SerializedBlock): boolean {
-    // This handler can handle any block type
-    // It should be the last handler checked.
     return true
   }
 
   async execute(
+    ctx: ExecutionContext,
     block: SerializedBlock,
-    inputs: Record<string, any>,
-    context: ExecutionContext
+    inputs: Record<string, any>
   ): Promise<any> {
-    logger.info(`Executing block: ${block.id} (Type: ${block.metadata?.id})`)
-
     const isMcpTool = block.config.tool?.startsWith('mcp-')
     let tool = null
 
@@ -44,10 +36,6 @@ export class GenericBlockHandler implements BlockHandler {
         try {
           const transformedParams = blockConfig.tools.config.params(inputs)
           finalInputs = { ...inputs, ...transformedParams }
-          logger.info(`Applied parameter transformation for block type: ${blockType}`, {
-            original: inputs,
-            transformed: transformedParams,
-          })
         } catch (error) {
           logger.warn(`Failed to apply parameter transformation for block type ${blockType}:`, {
             error: error instanceof Error ? error.message : String(error),
@@ -62,13 +50,14 @@ export class GenericBlockHandler implements BlockHandler {
         {
           ...finalInputs,
           _context: {
-            workflowId: context.workflowId,
-            workspaceId: context.workspaceId,
+            workflowId: ctx.workflowId,
+            workspaceId: ctx.workspaceId,
+            executionId: ctx.executionId,
           },
         },
-        false, // skipProxy
-        false, // skipPostProcess
-        context // execution context for file processing
+        false,
+        false,
+        ctx
       )
 
       if (!result.success) {

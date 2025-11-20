@@ -2,9 +2,9 @@ import { AgentIcon } from '@/components/icons'
 import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import {
   getAllModelProviders,
-  getBaseModelProviders,
   getHostedModels,
   getMaxTemperature,
   getProviderIcon,
@@ -61,8 +61,14 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   type: 'agent',
   name: 'Agent',
   description: 'Build an agent',
+  authMode: AuthMode.ApiKey,
   longDescription:
     'The Agent block is a core workflow block that is a wrapper around an LLM. It takes in system/user prompts and calls an LLM provider. It can also make tool calls by directly containing tools inside of its tool input. It can additionally return structured output.',
+  bestPractices: `
+  - Cannot use core blocks like API, Webhook, Function, Workflow, Memory as tools. Only integrations or custom tools. 
+  - Check custom tools examples for YAML syntax. Only construct these if there isn't an existing integration for that purpose.
+  - Response Format should be a valid JSON Schema. This determines the output of the agent only if present. Fields can be accessed at root level by the following blocks: e.g. <agent1.field>. If response format is not present, the agent will return the standard outputs: content, model, tokens, toolCalls.
+  `,
   docsLink: 'https://docs.sim.ai/blocks/agent',
   category: 'blocks',
   bgColor: '#F3F8FE',
@@ -72,7 +78,6 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       id: 'systemPrompt',
       title: 'System Prompt',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Enter system prompt...',
       rows: 5,
       wandConfig: {
@@ -136,15 +141,13 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'userPrompt',
       title: 'User Prompt',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Enter context or user message...',
-      rows: 3,
+      rows: 5,
     },
     {
       id: 'memories',
       title: 'Memories',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Connect memory block output...',
       mode: 'advanced',
     },
@@ -152,14 +155,13 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'model',
       title: 'Model',
       type: 'combobox',
-      layout: 'half',
       placeholder: 'Type or select a model...',
       required: true,
       options: () => {
         const providersState = useProvidersStore.getState()
+        const baseModels = providersState.providers.base.models
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
-        const baseModels = Object.keys(getBaseModelProviders())
         const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
 
         return allModels.map((model) => {
@@ -172,7 +174,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
-      layout: 'half',
       min: 0,
       max: 1,
       defaultValue: 0.5,
@@ -190,7 +191,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
-      layout: 'half',
       min: 0,
       max: 2,
       defaultValue: 1,
@@ -208,9 +208,9 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'reasoningEffort',
       title: 'Reasoning Effort',
       type: 'dropdown',
-      layout: 'half',
       placeholder: 'Select reasoning effort...',
       options: [
+        { label: 'none', id: 'none' },
         { label: 'minimal', id: 'minimal' },
         { label: 'low', id: 'low' },
         { label: 'medium', id: 'medium' },
@@ -226,7 +226,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'verbosity',
       title: 'Verbosity',
       type: 'dropdown',
-      layout: 'half',
       placeholder: 'Select verbosity...',
       options: [
         { label: 'low', id: 'low' },
@@ -243,7 +242,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Enter your API key',
       password: true,
       connectionDroppable: false,
@@ -265,7 +263,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'azureEndpoint',
       title: 'Azure OpenAI Endpoint',
       type: 'short-input',
-      layout: 'full',
       password: true,
       placeholder: 'https://your-resource.openai.azure.com',
       connectionDroppable: false,
@@ -278,7 +275,6 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'azureApiVersion',
       title: 'Azure API Version',
       type: 'short-input',
-      layout: 'full',
       placeholder: '2024-07-01-preview',
       connectionDroppable: false,
       condition: {
@@ -290,14 +286,12 @@ Create a system prompt appropriately detailed for the request, using clear langu
       id: 'tools',
       title: 'Tools',
       type: 'tool-input',
-      layout: 'full',
       defaultValue: [],
     },
     {
       id: 'responseFormat',
       title: 'Response Format',
       type: 'code',
-      layout: 'full',
       placeholder: 'Enter JSON schema...',
       language: 'json',
       wandConfig: {

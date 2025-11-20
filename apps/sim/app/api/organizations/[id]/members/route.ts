@@ -7,8 +7,8 @@ import { getUserUsageData } from '@/lib/billing/core/usage'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import { sendEmail } from '@/lib/email/mailer'
 import { quickValidateEmail } from '@/lib/email/validation'
-import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { db } from '@/db'
 import { invitation, member, organization, user, userStats } from '@/db/schema'
 
@@ -260,7 +260,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const emailHtml = await renderInvitationEmail(
       inviter[0]?.name || 'Someone',
       organizationEntry[0]?.name || 'organization',
-      `${env.NEXT_PUBLIC_APP_URL}/invite/organization?id=${invitationId}`,
+      `${getBaseUrl()}/invite/organization?id=${invitationId}`,
       normalizedEmail
     )
 

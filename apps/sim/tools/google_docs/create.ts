@@ -13,7 +13,6 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
   oauth: {
     required: true,
     provider: 'google-docs',
-    additionalScopes: ['https://www.googleapis.com/auth/drive'],
   },
 
   params: {

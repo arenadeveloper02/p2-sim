@@ -1,6 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import type { GmailSendParams, GmailToolResponse } from '@/tools/gmail/types'
-import { GMAIL_API_BASE } from '@/tools/gmail/utils'
 import type { ToolConfig } from '@/tools/types'
 import { extractContentFromAgentResponse, renderAgentResponseToString } from './markUpRenderUtil'
 
@@ -15,7 +14,6 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   oauth: {
     required: true,
     provider: 'google-email',
-    additionalScopes: ['https://www.googleapis.com/auth/gmail.send'],
   },
 
   params: {
@@ -33,7 +31,7 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
     },
     subject: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'Email subject',
     },
@@ -61,13 +59,18 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
       visibility: 'user-or-llm',
       description: 'BCC recipients (comma-separated)',
     },
+    attachments: {
+      type: 'file[]',
+      required: false,
+      visibility: 'user-only',
+      description: 'Files to attach to the email',
+    },
   },
 
   request: {
-    url: () => `${GMAIL_API_BASE}/messages/send`,
+    url: '/api/tools/gmail/send',
     method: 'POST',
-    headers: (params: GmailSendParams) => ({
-      Authorization: `Bearer ${params.accessToken}`,
+    headers: () => ({
       'Content-Type': 'application/json',
     }),
     body: (params: GmailSendParams): Record<string, any> => {
@@ -141,15 +144,22 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   transformResponse: async (response) => {
     const data = await response.json()
 
+    if (!data.success) {
+      return {
+        success: false,
+        output: {
+          content: data.error || 'Failed to send email',
+          metadata: {},
+        },
+        error: data.error,
+      }
+    }
+
     return {
       success: true,
       output: {
-        content: 'Email sent successfully',
-        metadata: {
-          id: data.id,
-          threadId: data.threadId,
-          labelIds: data.labelIds,
-        },
+        content: data.output.content,
+        metadata: data.output.metadata,
       },
     }
   },

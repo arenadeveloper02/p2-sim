@@ -1,11 +1,9 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { createLogger } from '@/lib/logs/console/logger'
 import { decryptSecret, encryptSecret } from '@/lib/utils'
-import { getUserId } from '@/app/api/auth/oauth/utils'
-import { db } from '@/db'
-import { environment } from '@/db/schema'
 
 interface SetEnvironmentVariablesParams {
   variables: Record<string, any> | Array<{ name: string; value: string }>
@@ -28,7 +26,6 @@ function normalizeVariables(
       {} as Record<string, string>
     )
   }
-  // Ensure all values are strings
   return Object.fromEntries(
     Object.entries(input || {}).map(([k, v]) => [k, String(v ?? '')])
   ) as Record<string, string>
@@ -37,19 +34,40 @@ function normalizeVariables(
 export const setEnvironmentVariablesServerTool: BaseServerTool<SetEnvironmentVariablesParams, any> =
   {
     name: 'set_environment_variables',
-    async execute(params: SetEnvironmentVariablesParams): Promise<any> {
+    async execute(
+      params: SetEnvironmentVariablesParams,
+      context?: { userId: string }
+    ): Promise<any> {
       const logger = createLogger('SetEnvironmentVariablesServerTool')
+
+      if (!context?.userId) {
+        logger.error(
+          'Unauthorized attempt to set environment variables - no authenticated user context'
+        )
+        throw new Error('Authentication required')
+      }
+
+      const authenticatedUserId = context.userId
       const { variables, workflowId } = params || ({} as SetEnvironmentVariablesParams)
+
+      if (workflowId) {
+        const { hasAccess } = await verifyWorkflowAccess(authenticatedUserId, workflowId)
+
+        if (!hasAccess) {
+          const errorMessage = createPermissionError('modify environment variables in')
+          logger.error('Unauthorized attempt to set environment variables', {
+            workflowId,
+            authenticatedUserId,
+          })
+          throw new Error(errorMessage)
+        }
+      }
+
+      const userId = authenticatedUserId
 
       const normalized = normalizeVariables(variables || {})
       const { variables: validatedVariables } = EnvVarSchema.parse({ variables: normalized })
-      const userId = await getUserId('copilot-set-env-vars', workflowId)
-      if (!userId) {
-        logger.warn('Unauthorized set env vars attempt')
-        throw new Error('Unauthorized')
-      }
 
-      // Fetch existing
       const existingData = await db
         .select()
         .from(environment)
@@ -57,7 +75,6 @@ export const setEnvironmentVariablesServerTool: BaseServerTool<SetEnvironmentVar
         .limit(1)
       const existingEncrypted = (existingData[0]?.variables as Record<string, string>) || {}
 
-      // Diff and (re)encrypt
       const toEncrypt: Record<string, string> = {}
       const added: string[] = []
       const updated: string[] = []

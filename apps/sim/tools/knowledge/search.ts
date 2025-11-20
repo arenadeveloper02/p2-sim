@@ -24,7 +24,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
       description: 'Number of most similar results to return (1-100)',
     },
     tagFilters: {
-      type: 'any',
+      type: 'array',
       required: false,
       description: 'Array of tag filters with tagName and tagValue properties',
     },
@@ -78,9 +78,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
       const requestBody = {
         knowledgeBaseIds,
         query: params.query,
-        topK: params.topK
-          ? Math.max(1, Math.min(100, Number.parseInt(params.topK.toString()) || 10))
-          : 10,
+        topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
         ...(Object.keys(filters).length > 0 && { filters }),
         ...(workflowId && { workflowId }),
       }

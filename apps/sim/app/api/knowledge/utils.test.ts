@@ -17,6 +17,7 @@ vi.mock('drizzle-orm', () => ({
 
 vi.mock('@/lib/env', () => ({
   env: { OPENAI_API_KEY: 'test-key' },
+  getEnv: (key: string) => process.env[key],
   isTruthy: (value: string | boolean | number | undefined) =>
     typeof value === 'string' ? value === 'true' || value === '1' : Boolean(value),
 }))
@@ -116,9 +117,23 @@ vi.mock('@/db', () => {
   return {
     db: {
       select: vi.fn(() => selectBuilder),
-      update: () => ({
-        set: () => ({
-          where: () => Promise.resolve(),
+      update: (table: any) => ({
+        set: (payload: any) => ({
+          where: () => {
+            const tableSymbols = Object.getOwnPropertySymbols(table || {})
+            const baseNameSymbol = tableSymbols.find((s) => s.toString().includes('BaseName'))
+            const tableName = baseNameSymbol ? table[baseNameSymbol] : ''
+            if (tableName === 'knowledge_base') {
+              dbOps.order.push('updateKb')
+              dbOps.updatePayloads.push(payload)
+            } else if (tableName === 'document') {
+              if (payload.processingStatus !== 'processing') {
+                dbOps.order.push('updateDoc')
+                dbOps.updatePayloads.push(payload)
+              }
+            }
+            return Promise.resolve()
+          },
         }),
       }),
       transaction: vi.fn(async (fn: any) => {
@@ -130,11 +145,11 @@ vi.mock('@/db', () => {
               return Promise.resolve()
             },
           }),
-          update: () => ({
+          update: (table: any) => ({
             set: (payload: any) => ({
               where: () => {
                 dbOps.updatePayloads.push(payload)
-                const label = dbOps.updatePayloads.length === 1 ? 'updateDoc' : 'updateKb'
+                const label = payload.processingStatus !== undefined ? 'updateDoc' : 'updateKb'
                 dbOps.order.push(label)
                 return Promise.resolve()
               },
@@ -168,6 +183,9 @@ describe('Knowledge Utils', () => {
 
   describe('processDocumentAsync', () => {
     it.concurrent('should insert embeddings before updating document counters', async () => {
+      kbRows.push({ id: 'kb1', userId: 'user1', workspaceId: null })
+      docRows.push({ id: 'doc1', knowledgeBaseId: 'kb1' })
+
       await processDocumentAsync(
         'kb1',
         'doc1',

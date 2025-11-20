@@ -26,6 +26,9 @@ const SettingsSchema = z.object({
     })
     .optional(),
   billingUsageNotificationsEnabled: z.boolean().optional(),
+  showFloatingControls: z.boolean().optional(),
+  showTrainingControls: z.boolean().optional(),
+  superUserModeEnabled: z.boolean().optional(),
 })
 
 // Default settings values
@@ -38,6 +41,9 @@ const defaultSettings = {
   telemetryEnabled: true,
   emailPreferences: {},
   billingUsageNotificationsEnabled: true,
+  showFloatingControls: true,
+  showTrainingControls: false,
+  superUserModeEnabled: false,
 }
 
 export async function GET() {
@@ -73,6 +79,9 @@ export async function GET() {
           telemetryEnabled: userSettings.telemetryEnabled,
           emailPreferences: userSettings.emailPreferences ?? {},
           billingUsageNotificationsEnabled: userSettings.billingUsageNotificationsEnabled ?? true,
+          showFloatingControls: userSettings.showFloatingControls ?? true,
+          showTrainingControls: userSettings.showTrainingControls ?? false,
+          superUserModeEnabled: userSettings.superUserModeEnabled ?? true,
         },
       },
       { status: 200 }

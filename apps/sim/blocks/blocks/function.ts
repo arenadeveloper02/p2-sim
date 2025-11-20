@@ -8,43 +8,38 @@ export const FunctionBlock: BlockConfig<CodeExecutionOutput> = {
   name: 'Function',
   description: 'Run custom logic',
   longDescription:
-    'This is a core workflow block. Execute custom JavaScript or Python code within your workflow. Use E2B for remote execution with imports or enable Fast Mode (bolt) to run JavaScript locally for lowest latency.',
+    'This is a core workflow block. Execute custom JavaScript or Python code within your workflow. JavaScript without imports runs locally for fast execution, while code with imports or Python uses E2B sandbox.',
+  bestPractices: `
+  - JavaScript code without external imports runs in a local VM for fastest execution.
+  - JavaScript code with import/require statements requires E2B and runs in a secure sandbox.
+  - Python code always requires E2B and runs in a secure sandbox.
+  - Can reference workflow variables using <blockName.output> syntax as usual within code. Avoid XML/HTML tags.
+  `,
   docsLink: 'https://docs.sim.ai/blocks/function',
   category: 'blocks',
   bgColor: '#FF402F',
   icon: CodeIcon,
   subBlocks: [
     {
-      id: 'remoteExecution',
-      type: 'switch',
-      layout: 'full',
-      title: 'Remote Code Execution',
-      description: 'Python/Javascript code run in a sandbox environment. Slower execution times.',
-    },
-    {
       id: 'language',
       type: 'dropdown',
-      layout: 'full',
       options: [
         { label: getLanguageDisplayName(CodeLanguage.JavaScript), id: CodeLanguage.JavaScript },
         { label: getLanguageDisplayName(CodeLanguage.Python), id: CodeLanguage.Python },
       ],
       placeholder: 'Select language',
       value: () => CodeLanguage.JavaScript,
-      condition: {
-        field: 'remoteExecution',
-        value: true,
-      },
+      requiresFeature: 'NEXT_PUBLIC_E2B_ENABLED',
     },
     {
       id: 'code',
+      title: 'Code',
       type: 'code',
-      layout: 'full',
       wandConfig: {
         enabled: true,
         maintainHistory: true,
         prompt: `You are an expert JavaScript programmer.
-Generate ONLY the raw body of a JavaScript function based on the user's request.
+Generate ONLY the raw body of a JavaScript function based on the user's request. Never wrap in markdown formatting.
 The code should be executable within an 'async function(params, environmentVariables) {...}' context.
 - 'params' (object): Contains input parameters derived from the JSON schema. Access these directly using the parameter name wrapped in angle brackets, e.g., '<paramName>'. Do NOT use 'params.paramName'.
 - 'environmentVariables' (object): Contains environment variables. Reference these using the double curly brace syntax: '{{ENV_VAR_NAME}}'. Do NOT use 'environmentVariables.VAR_NAME' or env.
@@ -100,7 +95,6 @@ try {
   },
   inputs: {
     code: { type: 'string', description: 'JavaScript or Python code to execute' },
-    remoteExecution: { type: 'boolean', description: 'Use E2B remote execution' },
     language: { type: 'string', description: 'Language (javascript or python)' },
     timeout: { type: 'number', description: 'Execution timeout' },
   },

@@ -26,7 +26,8 @@ interface PresenceUser {
   socketId: string
   userId: string
   userName: string
-  cursor?: { x: number; y: number }
+  avatarUrl?: string | null
+  cursor?: { x: number; y: number } | null
   selection?: { type: 'block' | 'edge' | 'none'; id?: string }
 }
 
@@ -52,7 +53,7 @@ interface SocketContextType {
   ) => void
   emitVariableUpdate: (variableId: string, field: string, value: any, operationId?: string) => void
 
-  emitCursorUpdate: (cursor: { x: number; y: number }) => void
+  emitCursorUpdate: (cursor: { x: number; y: number } | null) => void
   emitSelectionUpdate: (selection: { type: 'block' | 'edge' | 'none'; id?: string }) => void
   // Event handlers for receiving real-time updates
   onWorkflowOperation: (handler: (data: any) => void) => void
@@ -382,7 +383,6 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
             isDeployed: workflowState.isDeployed ?? false,
             deployedAt: workflowState.deployedAt,
             deploymentStatuses: workflowState.deploymentStatuses || {},
-            hasActiveWebhook: workflowState.hasActiveWebhook ?? false,
           })
 
           // Replace subblock store values for this workflow
@@ -601,22 +601,37 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
       // Apply light throttling only to position updates for smooth collaborative experience
       const isPositionUpdate = operation === 'update-position' && target === 'block'
+      const { commit = true } = payload || {}
 
       if (isPositionUpdate && payload.id) {
         const blockId = payload.id
 
-        // Store the latest position update
+        if (commit) {
+          socket.emit('workflow-operation', {
+            operation,
+            target,
+            payload,
+            timestamp: Date.now(),
+            operationId,
+          })
+          pendingPositionUpdates.current.delete(blockId)
+          const timeoutId = positionUpdateTimeouts.current.get(blockId)
+          if (timeoutId) {
+            clearTimeout(timeoutId)
+            positionUpdateTimeouts.current.delete(blockId)
+          }
+          return
+        }
+
         pendingPositionUpdates.current.set(blockId, {
           operation,
           target,
           payload,
           timestamp: Date.now(),
-          operationId, // Include operation ID for queue tracking
+          operationId,
         })
 
-        // Check if we already have a pending timeout for this block
         if (!positionUpdateTimeouts.current.has(blockId)) {
-          // Schedule emission with optimized throttling (30fps = ~33ms) to reduce DB load
           const timeoutId = window.setTimeout(() => {
             const latestUpdate = pendingPositionUpdates.current.get(blockId)
             if (latestUpdate) {
@@ -624,7 +639,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
               pendingPositionUpdates.current.delete(blockId)
             }
             positionUpdateTimeouts.current.delete(blockId)
-          }, 33) // 30fps - good balance between smoothness and DB performance
+          }, 33)
 
           positionUpdateTimeouts.current.set(blockId, timeoutId)
         }
@@ -693,14 +708,23 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   // Cursor throttling optimized for database connection health
   const lastCursorEmit = useRef(0)
   const emitCursorUpdate = useCallback(
-    (cursor: { x: number; y: number }) => {
-      if (socket && currentWorkflowId) {
-        const now = performance.now()
-        // Reduced to 30fps (33ms) to reduce database load while maintaining smooth UX
-        if (now - lastCursorEmit.current >= 33) {
-          socket.emit('cursor-update', { cursor })
-          lastCursorEmit.current = now
-        }
+    (cursor: { x: number; y: number } | null) => {
+      if (!socket || !currentWorkflowId) {
+        return
+      }
+
+      const now = performance.now()
+
+      if (cursor === null) {
+        socket.emit('cursor-update', { cursor: null })
+        lastCursorEmit.current = now
+        return
+      }
+
+      // Reduced to 30fps (33ms) to reduce database load while maintaining smooth UX
+      if (now - lastCursorEmit.current >= 33) {
+        socket.emit('cursor-update', { cursor })
+        lastCursorEmit.current = now
       }
     },
     [socket, currentWorkflowId]

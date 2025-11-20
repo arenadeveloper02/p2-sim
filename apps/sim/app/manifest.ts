@@ -24,6 +24,23 @@ export default function manifest(): MetadataRoute.Manifest {
         sizes: '512x512',
         type: 'image/png',
       },
+      {
+        src: '/favicon/apple-touch-icon.png',
+        sizes: '180x180',
+        type: 'image/png',
+      },
     ],
+    categories: ['productivity', 'developer', 'business'],
+    shortcuts: [
+      {
+        name: 'Create Workflow',
+        short_name: 'New',
+        description: 'Create a new AI workflow',
+        url: '/workspace',
+        icons: [{ src: '/icons/new-workflow.png', sizes: '192x192' }],
+      },
+    ],
+    lang: 'en-US',
+    dir: 'ltr',
   }
 }

@@ -1,13 +1,15 @@
 import { MicrosoftExcelIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { MicrosoftExcelResponse } from '@/tools/microsoft_excel/types'
 
 export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
   type: 'microsoft_excel',
   name: 'Microsoft Excel',
   description: 'Read, write, and update data',
+  authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Microsoft Excel into the workflow. Can read, write, update, and add to table. Requires OAuth.',
+    'Integrate Microsoft Excel into the workflow. Can read, write, update, and add to table.',
   docsLink: 'https://docs.sim.ai/tools/microsoft_excel',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -17,7 +19,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'operation',
       title: 'Operation',
       type: 'dropdown',
-      layout: 'full',
       options: [
         { label: 'Read Data', id: 'read' },
         { label: 'Write/Update Data', id: 'write' },
@@ -29,10 +30,16 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'credential',
       title: 'Microsoft Account',
       type: 'oauth-input',
-      layout: 'full',
       provider: 'microsoft-excel',
       serviceId: 'microsoft-excel',
-      requiredScopes: [],
+      requiredScopes: [
+        'openid',
+        'profile',
+        'email',
+        'Files.Read',
+        'Files.ReadWrite',
+        'offline_access',
+      ],
       placeholder: 'Select Microsoft account',
       required: true,
     },
@@ -40,7 +47,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'spreadsheetId',
       title: 'Select Sheet',
       type: 'file-selector',
-      layout: 'full',
       canonicalParamId: 'spreadsheetId',
       provider: 'microsoft-excel',
       serviceId: 'microsoft-excel',
@@ -54,7 +60,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'manualSpreadsheetId',
       title: 'Spreadsheet ID',
       type: 'short-input',
-      layout: 'full',
       canonicalParamId: 'spreadsheetId',
       placeholder: 'Enter spreadsheet ID',
       dependsOn: ['credential'],
@@ -64,7 +69,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'range',
       title: 'Range',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Sheet name and cell range (e.g., Sheet1!A1:D10)',
       condition: { field: 'operation', value: ['read', 'write', 'update'] },
     },
@@ -72,7 +76,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'tableName',
       title: 'Table Name',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Name of the Excel table',
       condition: { field: 'operation', value: ['table_add'] },
       required: true,
@@ -81,7 +84,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'values',
       title: 'Values',
       type: 'long-input',
-      layout: 'full',
       placeholder:
         'Enter values as JSON array of arrays (e.g., [["A1", "B1"], ["A2", "B2"]]) or an array of objects (e.g., [{"name":"John", "age":30}, {"name":"Jane", "age":25}])',
       condition: { field: 'operation', value: 'write' },
@@ -91,7 +93,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'valueInputOption',
       title: 'Value Input Option',
       type: 'dropdown',
-      layout: 'full',
       options: [
         { label: 'User Entered (Parse formulas)', id: 'USER_ENTERED' },
         { label: "Raw (Don't parse formulas)", id: 'RAW' },
@@ -102,7 +103,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'values',
       title: 'Values',
       type: 'long-input',
-      layout: 'full',
       placeholder:
         'Enter values as JSON array of arrays (e.g., [["A1", "B1"], ["A2", "B2"]]) or an array of objects (e.g., [{"name":"John", "age":30}, {"name":"Jane", "age":25}])',
       condition: { field: 'operation', value: 'update' },
@@ -112,7 +112,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'valueInputOption',
       title: 'Value Input Option',
       type: 'dropdown',
-      layout: 'full',
       options: [
         { label: 'User Entered (Parse formulas)', id: 'USER_ENTERED' },
         { label: "Raw (Don't parse formulas)", id: 'RAW' },
@@ -123,7 +122,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
       id: 'values',
       title: 'Values',
       type: 'long-input',
-      layout: 'full',
       placeholder:
         'Enter values as JSON array of arrays (e.g., [["A1", "B1"], ["A2", "B2"]]) or an array of objects (e.g., [{"name":"John", "age":30}, {"name":"Jane", "age":25}])',
       condition: { field: 'operation', value: 'table_add' },
@@ -149,10 +147,8 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
         const { credential, values, spreadsheetId, manualSpreadsheetId, tableName, ...rest } =
           params
 
-        // Handle both selector and manual input
         const effectiveSpreadsheetId = (spreadsheetId || manualSpreadsheetId || '').trim()
 
-        // Parse values from JSON string to array if it exists
         let parsedValues
         try {
           parsedValues = values ? JSON.parse(values as string) : undefined
@@ -164,7 +160,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
           throw new Error('Spreadsheet ID is required.')
         }
 
-        // For table operations, ensure tableName is provided
         if (params.operation === 'table_add' && !tableName) {
           throw new Error('Table name is required for table operations.')
         }
@@ -176,7 +171,6 @@ export const MicrosoftExcelBlock: BlockConfig<MicrosoftExcelResponse> = {
           credential,
         }
 
-        // Add table-specific parameters
         if (params.operation === 'table_add') {
           return {
             ...baseParams,

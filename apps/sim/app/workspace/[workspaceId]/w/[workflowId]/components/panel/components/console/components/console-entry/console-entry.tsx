@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import {
   AlertCircle,
+  AlertTriangle,
   Check,
   ChevronDown,
   ChevronUp,
@@ -369,8 +370,10 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
     }
   }, [showCopySuccess])
 
-  const BlockIcon = blockConfig?.icon
-  const blockColor = blockConfig?.bgColor || '#6B7280'
+  // Special handling for serialization errors
+  const BlockIcon = entry.blockType === 'serializer' ? AlertTriangle : blockConfig?.icon
+  const blockColor =
+    entry.blockType === 'serializer' ? '#EF4444' : blockConfig?.bgColor || '#6B7280'
 
   // Handle image load error callback
   const handleImageLoadError = (hasError: boolean) => {
@@ -420,10 +423,12 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
           </span>
         </div>
         {/* Iteration tag - only show if iteration context exists */}
-        {entry.iterationCurrent !== undefined && entry.iterationTotal !== undefined && (
+        {entry.iterationCurrent !== undefined && (
           <div className='flex h-5 items-center rounded-lg bg-secondary px-2'>
             <span className='font-normal text-muted-foreground text-xs leading-normal'>
-              {entry.iterationCurrent}/{entry.iterationTotal}
+              {entry.iterationTotal !== undefined
+                ? `${entry.iterationCurrent + 1}/${entry.iterationTotal}`
+                : `${entry.iterationCurrent + 1}`}
             </span>
           </div>
         )}
@@ -434,7 +439,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
               onClick={() => setShowInput(false)}
               className={`flex h-5 items-center rounded-lg px-2 transition-colors ${
                 !showInput
-                  ? 'border-[#e5e5e5] bg-[#f5f5f5] text-[#1a1a1a] dark:border-[#424242] dark:bg-[#1f1f1f] dark:text-[#ffffff]'
+                  ? 'border-[#e5e5e5] bg-[#f5f5f5] text-[#1a1a1a] dark:border-[var(--border-muted)] dark:bg-[#1f1f1f] dark:text-[var(--white)]'
                   : 'bg-secondary text-muted-foreground hover:bg-secondary hover:text-card-foreground'
               }`}
             >
@@ -444,7 +449,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
               onClick={() => setShowInput(true)}
               className={`flex h-5 items-center rounded-lg px-2 transition-colors ${
                 showInput
-                  ? 'border-[#e5e5e5] bg-[#f5f5f5] text-[#1a1a1a] dark:border-[#424242] dark:bg-[#1f1f1f] dark:text-[#ffffff]'
+                  ? 'border-[#e5e5e5] bg-[#f5f5f5] text-[#1a1a1a] dark:border-[var(--border-muted)] dark:bg-[#1f1f1f] dark:text-[var(--white)]'
                   : 'bg-secondary text-muted-foreground hover:bg-secondary hover:text-card-foreground'
               }`}
             >
@@ -475,7 +480,7 @@ export function ConsoleEntry({ entry, consoleWidth }: ConsoleEntryProps) {
         {entry.error && !showInput && (
           <div className='rounded-lg bg-[#F6D2D2] p-3 dark:bg-[#442929]'>
             <div className='overflow-hidden whitespace-pre-wrap break-all font-normal text-[#DC2626] text-sm leading-normal dark:text-[#F87171]'>
-              {entry.error}
+              {entry.error instanceof Error ? entry.error.message : entry.error}
             </div>
           </div>
         )}

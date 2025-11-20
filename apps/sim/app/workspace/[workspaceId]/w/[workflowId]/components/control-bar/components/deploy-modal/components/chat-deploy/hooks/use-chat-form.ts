@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react'
 
-export type AuthType = 'public' | 'password' | 'email'
+export type AuthType = 'public' | 'password' | 'email' | 'sso'
 
 export interface ChatFormData {
-  subdomain: string
+  identifier: string
   title: string
   description: string
   authType: AuthType
@@ -14,7 +14,7 @@ export interface ChatFormData {
 }
 
 export interface ChatFormErrors {
-  subdomain?: string
+  identifier?: string
   title?: string
   password?: string
   emails?: string
@@ -23,7 +23,7 @@ export interface ChatFormErrors {
 }
 
 const initialFormData: ChatFormData = {
-  subdomain: '',
+  identifier: '',
   title: '',
   description: '',
   authType: 'email',
@@ -67,10 +67,10 @@ export function useChatForm(initialData?: Partial<ChatFormData>) {
   const validateForm = useCallback((): boolean => {
     const newErrors: ChatFormErrors = {}
 
-    if (!formData.subdomain.trim()) {
-      newErrors.subdomain = 'Subdomain is required'
-    } else if (!/^[a-z0-9-]+$/.test(formData.subdomain)) {
-      newErrors.subdomain = 'Subdomain can only contain lowercase letters, numbers, and hyphens'
+    if (!formData.identifier.trim()) {
+      newErrors.identifier = 'Identifier is required'
+    } else if (!/^[a-z0-9-]+$/.test(formData.identifier)) {
+      newErrors.identifier = 'Identifier can only contain lowercase letters, numbers, and hyphens'
     }
 
     if (!formData.title.trim()) {
@@ -83,6 +83,10 @@ export function useChatForm(initialData?: Partial<ChatFormData>) {
 
     if (formData.authType === 'email' && formData.emails.length === 0) {
       newErrors.emails = 'At least one email or domain is required when using email access control'
+    }
+
+    if (formData.authType === 'sso' && formData.emails.length === 0) {
+      newErrors.emails = 'At least one email or domain is required when using SSO access control'
     }
 
     if (formData.selectedOutputBlocks.length === 0) {

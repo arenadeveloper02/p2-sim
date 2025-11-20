@@ -37,6 +37,7 @@ export const user = pgTable('user', {
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
   stripeCustomerId: text('stripe_customer_id'),
+  isSuperUser: boolean('is_super_user').notNull().default(false),
 })
 
 export const session = pgTable(
@@ -182,15 +183,10 @@ export const workflow = pgTable(
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
     isDeployed: boolean('is_deployed').notNull().default(false),
-    deployedState: json('deployed_state'),
     deployedAt: timestamp('deployed_at'),
-    pinnedApiKeyId: text('pinned_api_key_id').references(() => apiKey.id, { onDelete: 'set null' }),
-    collaborators: json('collaborators').notNull().default('[]'),
     runCount: integer('run_count').notNull().default(0),
     lastRunAt: timestamp('last_run_at'),
     variables: json('variables').default('{}'),
-    isPublished: boolean('is_published').notNull().default(false),
-    marketplaceData: json('marketplace_data'),
   },
   (table) => ({
     userIdIdx: index('workflow_user_id_idx').on(table.userId),
@@ -224,19 +220,11 @@ export const workflowBlocks = pgTable(
     outputs: jsonb('outputs').notNull().default('{}'),
     data: jsonb('data').default('{}'),
 
-    parentId: text('parent_id'),
-    extent: text('extent'), // 'parent' or null or 'subflow'
-
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
     workflowIdIdx: index('workflow_blocks_workflow_id_idx').on(table.workflowId),
-    parentIdIdx: index('workflow_blocks_parent_id_idx').on(table.parentId),
-    workflowParentIdx: index('workflow_blocks_workflow_parent_idx').on(
-      table.workflowId,
-      table.parentId
-    ),
     workflowTypeIdx: index('workflow_blocks_workflow_type_idx').on(table.workflowId, table.type),
   })
 )
@@ -262,8 +250,6 @@ export const workflowEdges = pgTable(
   },
   (table) => ({
     workflowIdIdx: index('workflow_edges_workflow_id_idx').on(table.workflowId),
-    sourceBlockIdx: index('workflow_edges_source_block_idx').on(table.sourceBlockId),
-    targetBlockIdx: index('workflow_edges_target_block_idx').on(table.targetBlockId),
     workflowSourceIdx: index('workflow_edges_workflow_source_idx').on(
       table.workflowId,
       table.sourceBlockId
@@ -356,6 +342,9 @@ export const workflowExecutionLogs = pgTable(
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
     executionIdIdx: index('workflow_execution_logs_execution_id_idx').on(table.executionId),
+    stateSnapshotIdIdx: index('workflow_execution_logs_state_snapshot_id_idx').on(
+      table.stateSnapshotId
+    ),
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
@@ -368,6 +357,58 @@ export const workflowExecutionLogs = pgTable(
       table.workflowId,
       table.startedAt
     ),
+  })
+)
+
+export const pausedExecutions = pgTable(
+  'paused_executions',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    executionId: text('execution_id').notNull(),
+    executionSnapshot: jsonb('execution_snapshot').notNull(),
+    pausePoints: jsonb('pause_points').notNull(),
+    totalPauseCount: integer('total_pause_count').notNull(),
+    resumedCount: integer('resumed_count').notNull().default(0),
+    status: text('status').notNull().default('paused'),
+    metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    pausedAt: timestamp('paused_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at'),
+  },
+  (table) => ({
+    workflowIdx: index('paused_executions_workflow_id_idx').on(table.workflowId),
+    statusIdx: index('paused_executions_status_idx').on(table.status),
+    executionUnique: uniqueIndex('paused_executions_execution_id_unique').on(table.executionId),
+  })
+)
+
+export const resumeQueue = pgTable(
+  'resume_queue',
+  {
+    id: text('id').primaryKey(),
+    pausedExecutionId: text('paused_execution_id')
+      .notNull()
+      .references(() => pausedExecutions.id, { onDelete: 'cascade' }),
+    parentExecutionId: text('parent_execution_id').notNull(),
+    newExecutionId: text('new_execution_id').notNull(),
+    contextId: text('context_id').notNull(),
+    resumeInput: jsonb('resume_input'),
+    status: text('status').notNull().default('pending'),
+    queuedAt: timestamp('queued_at').notNull().defaultNow(),
+    claimedAt: timestamp('claimed_at'),
+    completedAt: timestamp('completed_at'),
+    failureReason: text('failure_reason'),
+  },
+  (table) => ({
+    parentStatusIdx: index('resume_queue_parent_status_idx').on(
+      table.parentExecutionId,
+      table.status,
+      table.queuedAt
+    ),
+    newExecutionIdx: index('resume_queue_new_execution_idx').on(table.newExecutionId),
   })
 )
 
@@ -422,6 +463,14 @@ export const settings = pgTable('settings', {
     .notNull()
     .default(true),
 
+  // UI preferences
+  showFloatingControls: boolean('show_floating_controls').notNull().default(true),
+  showTrainingControls: boolean('show_training_controls').notNull().default(false),
+  superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
+
+  // Copilot preferences - maps model_id to enabled/disabled boolean
+  copilotEnabledModels: jsonb('copilot_enabled_models').notNull().default('{}'),
+
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
@@ -436,6 +485,7 @@ export const workflowSchedule = pgTable(
     cronExpression: text('cron_expression'),
     nextRunAt: timestamp('next_run_at'),
     lastRanAt: timestamp('last_ran_at'),
+    lastQueuedAt: timestamp('last_queued_at'),
     triggerType: text('trigger_type').notNull(), // "manual", "webhook", "schedule"
     timezone: text('timezone').notNull().default('UTC'),
     failedCount: integer('failed_count').notNull().default(0), // Track consecutive failures
@@ -608,25 +658,37 @@ export const userStats = pgTable('user_stats', {
   // Billing period tracking
   currentPeriodCost: decimal('current_period_cost').notNull().default('0'), // Usage in current billing period
   lastPeriodCost: decimal('last_period_cost').default('0'), // Usage from previous billing period
+  billedOverageThisPeriod: decimal('billed_overage_this_period').notNull().default('0'), // Amount of overage already billed via threshold billing
+  // Pro usage snapshot when joining a team (to prevent double-billing)
+  proPeriodCostSnapshot: decimal('pro_period_cost_snapshot').default('0'), // Snapshot of Pro usage when joining team
   // Copilot usage tracking
   totalCopilotCost: decimal('total_copilot_cost').notNull().default('0'),
+  currentPeriodCopilotCost: decimal('current_period_copilot_cost').notNull().default('0'),
+  lastPeriodCopilotCost: decimal('last_period_copilot_cost').default('0'),
   totalCopilotTokens: integer('total_copilot_tokens').notNull().default(0),
   totalCopilotCalls: integer('total_copilot_calls').notNull().default(0),
+  // Storage tracking (for free/pro users)
+  storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
   lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
 })
 
-export const customTools = pgTable('custom_tools', {
-  id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
-  schema: json('schema').notNull(),
-  code: text('code').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
+export const customTools = pgTable(
+  'custom_tools',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    schema: json('schema').notNull(),
+    code: text('code').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdIdx: index('custom_tools_workspace_id_idx').on(table.workspaceId),
+  })
+)
 
 export const subscription = pgTable(
   'subscription',
@@ -678,16 +740,16 @@ export const chat = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    subdomain: text('subdomain').notNull(),
+    identifier: text('identifier').notNull(),
     title: text('title').notNull(),
     description: text('description'),
     isActive: boolean('is_active').notNull().default(true),
     customizations: json('customizations').default('{}'), // For UI customization options
 
     // Authentication options
-    authType: text('auth_type').notNull().default('public'), // 'public', 'password', 'email'
+    authType: text('auth_type').notNull().default('public'), // 'public', 'password', 'email', 'sso'
     password: text('password'), // Stored hashed, populated when authType is 'password'
-    allowedEmails: json('allowed_emails').default('[]'), // Array of allowed emails or domains when authType is 'email'
+    allowedEmails: json('allowed_emails').default('[]'), // Array of allowed emails or domains when authType is 'email' or 'sso'
 
     // Output configuration
     outputConfigs: json('output_configs').default('[]'), // Array of {blockId, path} objects
@@ -697,8 +759,8 @@ export const chat = pgTable(
   },
   (table) => {
     return {
-      // Ensure subdomains are unique
-      subdomainIdx: uniqueIndex('subdomain_idx').on(table.subdomain),
+      // Ensure identifiers are unique
+      identifierIdx: uniqueIndex('identifier_idx').on(table.identifier),
     }
   }
 )
@@ -710,6 +772,7 @@ export const organization = pgTable('organization', {
   logo: text('logo'),
   metadata: json('metadata'),
   orgUsageLimit: decimal('org_usage_limit'),
+  storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0), // Storage tracking for team/enterprise
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
@@ -761,9 +824,58 @@ export const workspace = pgTable('workspace', {
   ownerId: text('owner_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  billedAccountUserId: text('billed_account_user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'no action' }),
+  allowPersonalApiKeys: boolean('allow_personal_api_keys').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
+
+export const workspaceFile = pgTable(
+  'workspace_file',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    key: text('key').notNull().unique(),
+    size: integer('size').notNull(),
+    type: text('type').notNull(),
+    uploadedBy: text('uploaded_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdIdx: index('workspace_file_workspace_id_idx').on(table.workspaceId),
+    keyIdx: index('workspace_file_key_idx').on(table.key),
+  })
+)
+
+export const workspaceFiles = pgTable(
+  'workspace_files',
+  {
+    id: text('id').primaryKey(),
+    key: text('key').notNull().unique(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    context: text('context').notNull(), // 'workspace', 'copilot', 'chat', 'knowledge-base', 'profile-pictures', 'general', 'execution'
+    originalName: text('original_name').notNull(),
+    contentType: text('content_type').notNull(),
+    size: integer('size').notNull(),
+    uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    keyIdx: index('workspace_files_key_idx').on(table.key),
+    userIdIdx: index('workspace_files_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('workspace_files_workspace_id_idx').on(table.workspaceId),
+    contextIdx: index('workspace_files_context_idx').on(table.context),
+  })
+)
 
 export const permissionTypeEnum = pgEnum('permission_type', ['admin', 'write', 'read'])
 
@@ -1280,40 +1392,61 @@ export const workflowCheckpoints = pgTable(
   })
 )
 
+export const templateStatusEnum = pgEnum('template_status', ['pending', 'approved', 'rejected'])
+export const templateCreatorTypeEnum = pgEnum('template_creator_type', ['user', 'organization'])
+
+export const templateCreators = pgTable(
+  'template_creators',
+  {
+    id: text('id').primaryKey(),
+    referenceType: templateCreatorTypeEnum('reference_type').notNull(),
+    referenceId: text('reference_id').notNull(),
+    name: text('name').notNull(),
+    profileImageUrl: text('profile_image_url'),
+    details: jsonb('details'),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    referenceUniqueIdx: uniqueIndex('template_creators_reference_idx').on(
+      table.referenceType,
+      table.referenceId
+    ),
+    referenceIdIdx: index('template_creators_reference_id_idx').on(table.referenceId),
+    createdByIdx: index('template_creators_created_by_idx').on(table.createdBy),
+  })
+)
+
 export const templates = pgTable(
   'templates',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id').references(() => workflow.id),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
-    description: text('description'),
-    author: text('author').notNull(),
+    details: jsonb('details'),
+    creatorId: text('creator_id').references(() => templateCreators.id, { onDelete: 'set null' }),
     views: integer('views').notNull().default(0),
     stars: integer('stars').notNull().default(0),
-    color: text('color').notNull().default('#3972F6'),
-    icon: text('icon').notNull().default('FileText'), // Lucide icon name as string
-    category: text('category').notNull(),
-    state: jsonb('state').notNull(), // Using jsonb for better performance
+    status: templateStatusEnum('status').notNull().default('pending'),
+    tags: text('tags').array().notNull().default(sql`'{}'::text[]`), // Array of tags
+    requiredCredentials: jsonb('required_credentials').notNull().default('[]'), // Array of credential requirements
+    state: jsonb('state').notNull(), // Store the workflow state directly
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
     // Primary access patterns
-    workflowIdIdx: index('templates_workflow_id_idx').on(table.workflowId),
-    userIdIdx: index('templates_user_id_idx').on(table.userId),
-    categoryIdx: index('templates_category_idx').on(table.category),
+    statusIdx: index('templates_status_idx').on(table.status),
+    creatorIdIdx: index('templates_creator_id_idx').on(table.creatorId),
 
     // Sorting indexes for popular/trending templates
     viewsIdx: index('templates_views_idx').on(table.views),
     starsIdx: index('templates_stars_idx').on(table.stars),
 
     // Composite indexes for common queries
-    categoryViewsIdx: index('templates_category_views_idx').on(table.category, table.views),
-    categoryStarsIdx: index('templates_category_stars_idx').on(table.category, table.stars),
-    userCategoryIdx: index('templates_user_category_idx').on(table.userId, table.category),
+    statusViewsIdx: index('templates_status_views_idx').on(table.status, table.views),
+    statusStarsIdx: index('templates_status_stars_idx').on(table.status, table.stars),
 
     // Temporal indexes
     createdAtIdx: index('templates_created_at_idx').on(table.createdAt),
@@ -1399,6 +1532,7 @@ export const workflowDeploymentVersion = pgTable(
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
+    name: text('name'),
     state: json('state').notNull(),
     isActive: boolean('is_active').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -1490,81 +1624,27 @@ export const mcpServers = pgTable(
   })
 )
 
-export const copilotApiKeys = pgTable(
-  'copilot_api_keys',
+// SSO Provider table
+export const ssoProvider = pgTable(
+  'sso_provider',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: text('id').primaryKey(),
+    issuer: text('issuer').notNull(),
+    domain: text('domain').notNull(),
+    oidcConfig: text('oidc_config'),
+    samlConfig: text('saml_config'),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    apiKeyEncrypted: text('api_key_encrypted').notNull(),
-    apiKeyLookup: text('api_key_lookup').notNull(),
+    providerId: text('provider_id').notNull(),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'cascade',
+    }),
   },
   (table) => ({
-    apiKeyEncryptedHashIdx: index('copilot_api_keys_api_key_encrypted_hash_idx').using(
-      'hash',
-      table.apiKeyEncrypted
-    ),
-    apiKeyLookupHashIdx: index('copilot_api_keys_lookup_hash_idx').using(
-      'hash',
-      table.apiKeyLookup
-    ),
-  })
-)
-
-export const workflowStatus = pgTable('workflow_status', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  workflowId: text('workflow_id').notNull(),
-  mappedWorkflowId: text('mapped_workflow_id').notNull(),
-  status: text('status').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  ownerId: text('owner_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  comments: text('comments'),
-  description: text('description'),
-  category: text('category').default('creative'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
-export const userArenaDetails = pgTable(
-  'user_arena_details',
-  {
-    id: text('id'), // nullable
-    userType: text('user_type'), // nullable
-    createdAt: timestamp('created_at', { withTimezone: false }), // nullable
-    department: text('department'), // nullable
-    updatedAt: timestamp('updated_at', { withTimezone: false }), // nullable
-    userIdRef: text('user_id_ref'), // nullable
-    arenaUserIdRef: text('arena_user_id_ref'), // nullable
-    airbyteRawId: text('_airbyte_raw_id').$type<string>(), // varchar(36) in SQL, mapped to text
-    airbyteExtractedAt: timestamp('_airbyte_extracted_at', { withTimezone: true }), // timestamptz
-    airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
-    airbyteMeta: jsonb('_airbyte_meta'), // jsonb
-    arenaToken: text('arena_token'), // text
-  },
-  (table) => ({
-    airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
-  })
-)
-
-export const deployedChat = pgTable(
-  'deployed_chat',
-  {
-    id: text('id').primaryKey(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    chatId: text('chat_id'),
-    title: text('title'),
-    workflowId: text('workflow_id'),
-    executingUserId: text('executing_user_id'),
-  },
-  (table) => ({
-    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
-    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
+    providerIdIdx: index('sso_provider_provider_id_idx').on(table.providerId),
+    domainIdx: index('sso_provider_domain_idx').on(table.domain),
+    userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
+    organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
   })
 )

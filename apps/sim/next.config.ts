@@ -1,7 +1,6 @@
-import { withSentryConfig } from '@sentry/nextjs'
 import type { NextConfig } from 'next'
-import { env, isTruthy } from './lib/env'
-import { isDev, isHosted, isProd } from './lib/environment'
+import { env, getEnv, isTruthy } from './lib/env'
+import { isDev, isHosted } from './lib/environment'
 import { getMainCSPPolicy, getWorkflowExecutionCSPPolicy } from './lib/security/csp'
 
 const nextConfig: NextConfig = {
@@ -26,7 +25,7 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: '*.blob.core.windows.net',
       },
-      // AWS S3 - various regions and bucket configurations
+      // AWS S3
       {
         protocol: 'https',
         hostname: '*.s3.amazonaws.com',
@@ -48,14 +47,35 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'sambanova.ai',
       },
-      // Custom domain for file storage if configured
-      ...(env.NEXT_PUBLIC_BLOB_BASE_URL
-        ? [
-            {
-              protocol: 'https' as const,
-              hostname: new URL(env.NEXT_PUBLIC_BLOB_BASE_URL).hostname,
-            },
-          ]
+      // Brand logo domain if configured
+      ...(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL')
+        ? (() => {
+            try {
+              return [
+                {
+                  protocol: 'https' as const,
+                  hostname: new URL(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL')!).hostname,
+                },
+              ]
+            } catch {
+              return []
+            }
+          })()
+        : []),
+      // Brand favicon domain if configured
+      ...(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL')
+        ? (() => {
+            try {
+              return [
+                {
+                  protocol: 'https' as const,
+                  hostname: new URL(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL')!).hostname,
+                },
+              ]
+            } catch {
+              return []
+            }
+          })()
         : []),
     ],
   },
@@ -69,7 +89,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
-  serverExternalPackages: ['pdf-parse'],
+  serverExternalPackages: ['unpdf'],
   experimental: {
     optimizeCss: true,
     turbopackSourceMaps: false,
@@ -202,17 +222,45 @@ const nextConfig: NextConfig = {
   async redirects() {
     const redirects = []
 
+    // Redirect /building and /blog to /studio (legacy URL support)
+    redirects.push(
+      {
+        source: '/building/:path*',
+        destination: 'https://sim.ai/studio/:path*',
+        permanent: true,
+      },
+      {
+        source: '/blog/:path*',
+        destination: 'https://sim.ai/studio/:path*',
+        permanent: true,
+      }
+    )
+
+    // Move root feeds to studio namespace
+    redirects.push(
+      {
+        source: '/rss.xml',
+        destination: '/studio/rss.xml',
+        permanent: true,
+      },
+      {
+        source: '/sitemap-images.xml',
+        destination: '/studio/sitemap-images.xml',
+        permanent: true,
+      }
+    )
+
     // Only enable domain redirects for the hosted version
     if (isHosted) {
       redirects.push(
         {
-          source: '/((?!api|_next|_vercel|favicon|static|.*\\..*).*)',
+          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
           destination: 'https://www.sim.ai/$1',
           permanent: true,
           has: [{ type: 'host' as const, value: 'simstudio.ai' }],
         },
         {
-          source: '/((?!api|_next|_vercel|favicon|static|.*\\..*).*)',
+          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
           destination: 'https://www.sim.ai/$1',
           permanent: true,
           has: [{ type: 'host' as const, value: 'www.simstudio.ai' }],
@@ -222,22 +270,18 @@ const nextConfig: NextConfig = {
 
     return redirects
   },
-}
-
-const sentryConfig = {
-  silent: true,
-  org: env.SENTRY_ORG || '',
-  project: env.SENTRY_PROJECT || '',
-  authToken: env.SENTRY_AUTH_TOKEN || undefined,
-  disableSourceMapUpload: !isProd,
-  autoInstrumentServerFunctions: isProd,
-  bundleSizeOptimizations: {
-    excludeDebugStatements: true,
-    excludePerformanceMonitoring: true,
-    excludeReplayIframe: true,
-    excludeReplayShadowDom: true,
-    excludeReplayWorker: true,
+  async rewrites() {
+    return [
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+    ]
   },
 }
 
-export default isDev ? nextConfig : withSentryConfig(nextConfig, sentryConfig)
+export default nextConfig

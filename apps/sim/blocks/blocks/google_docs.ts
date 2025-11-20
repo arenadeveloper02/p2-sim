@@ -1,13 +1,15 @@
 import { GoogleDocsIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { GoogleDocsResponse } from '@/tools/google_docs/types'
 
 export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   type: 'google_docs',
   name: 'Google Docs',
   description: 'Read, write, and create documents',
+  authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Docs into the workflow. Can read, write, and create documents. Automatically handles both native Google Docs and other document formats (like .docx files). Requires OAuth.',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents.',
   docsLink: 'https://docs.sim.ai/tools/google_docs',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -18,7 +20,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'operation',
       title: 'Operation',
       type: 'dropdown',
-      layout: 'full',
       options: [
         { label: 'Read Document', id: 'read' },
         { label: 'Write to Document', id: 'write' },
@@ -31,11 +32,13 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
-      layout: 'full',
       required: true,
       provider: 'google-docs',
       serviceId: 'google-docs',
-      requiredScopes: ['https://www.googleapis.com/auth/drive'],
+      requiredScopes: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
       placeholder: 'Select Google account',
     },
     // Document selector (basic mode)
@@ -43,10 +46,9 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'documentId',
       title: 'Select Document',
       type: 'file-selector',
-      layout: 'full',
       canonicalParamId: 'documentId',
-      provider: 'google-drive',
-      serviceId: 'google-drive',
+      provider: 'google-docs',
+      serviceId: 'google-docs',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.document',
       placeholder: 'Select a document',
@@ -59,7 +61,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'manualDocumentId',
       title: 'Document ID',
       type: 'short-input',
-      layout: 'full',
       canonicalParamId: 'documentId',
       placeholder: 'Enter document ID',
       dependsOn: ['credential'],
@@ -71,7 +72,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'title',
       title: 'Document Title',
       type: 'short-input',
-      layout: 'full',
       placeholder: 'Enter title for the new document',
       condition: { field: 'operation', value: 'create' },
       required: true,
@@ -81,10 +81,9 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'folderSelector',
       title: 'Select Parent Folder',
       type: 'file-selector',
-      layout: 'full',
       canonicalParamId: 'folderId',
-      provider: 'google-drive',
-      serviceId: 'google-drive',
+      provider: 'google-docs',
+      serviceId: 'google-docs',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.folder',
       placeholder: 'Select a parent folder',
@@ -97,7 +96,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'folderId',
       title: 'Parent Folder ID',
       type: 'short-input',
-      layout: 'full',
       canonicalParamId: 'folderId',
       placeholder: 'Enter parent folder ID (leave empty for root folder)',
       dependsOn: ['credential'],
@@ -109,7 +107,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'content',
       title: 'Content',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Enter document content',
       condition: { field: 'operation', value: 'write' },
       required: true,
@@ -119,7 +116,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'content',
       title: 'Content',
       type: 'long-input',
-      layout: 'full',
       placeholder: 'Enter document content',
       condition: { field: 'operation', value: 'create' },
     },
@@ -143,7 +139,6 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
         const { credential, documentId, manualDocumentId, folderSelector, folderId, ...rest } =
           params
 
-        // Handle both selector and manual inputs
         const effectiveDocumentId = (documentId || manualDocumentId || '').trim()
         const effectiveFolderId = (folderSelector || folderId || '').trim()
 

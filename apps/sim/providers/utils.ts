@@ -1,3 +1,4 @@
+import { getEnv, isTruthy } from '@/lib/env'
 import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import { anthropicProvider } from '@/providers/anthropic'
@@ -6,6 +7,7 @@ import { cerebrasProvider } from '@/providers/cerebras'
 import { deepseekProvider } from '@/providers/deepseek'
 import { googleProvider } from '@/providers/google'
 import { groqProvider } from '@/providers/groq'
+import { mistralProvider } from '@/providers/mistral'
 import {
   getComputerUseModels,
   getEmbeddingModelPricing,
@@ -84,6 +86,11 @@ export const providers: Record<
     models: getProviderModelsFromDefinitions('groq'),
     modelPatterns: PROVIDER_DEFINITIONS.groq.modelPatterns,
   },
+  mistral: {
+    ...mistralProvider,
+    models: getProviderModelsFromDefinitions('mistral'),
+    modelPatterns: PROVIDER_DEFINITIONS.mistral.modelPatterns,
+  },
   'azure-openai': {
     ...azureOpenAIProvider,
     models: getProviderModelsFromDefinitions('azure-openai'),
@@ -128,8 +135,8 @@ export async function updateOpenRouterProviderModels(models: string[]): Promise<
 }
 
 export function getBaseModelProviders(): Record<string, ProviderId> {
-  return Object.entries(providers)
-    .filter(([providerId]) => providerId !== 'ollama')
+  const allProviders = Object.entries(providers)
+    .filter(([providerId]) => providerId !== 'ollama' && providerId !== 'openrouter')
     .reduce(
       (map, [providerId, config]) => {
         config.models.forEach((model) => {
@@ -139,6 +146,20 @@ export function getBaseModelProviders(): Record<string, ProviderId> {
       },
       {} as Record<string, ProviderId>
     )
+
+  return filterBlacklistedModelsFromProviderMap(allProviders)
+}
+
+function filterBlacklistedModelsFromProviderMap(
+  providerMap: Record<string, ProviderId>
+): Record<string, ProviderId> {
+  const filtered: Record<string, ProviderId> = {}
+  for (const [model, providerId] of Object.entries(providerMap)) {
+    if (!isModelBlacklisted(model)) {
+      filtered[model] = providerId
+    }
+  }
+  return filtered
 }
 
 export function getAllModelProviders(): Record<string, ProviderId> {
@@ -194,6 +215,44 @@ export function getAllProviderIds(): ProviderId[] {
 
 export function getProviderModels(providerId: ProviderId): string[] {
   return getProviderModelsFromDefinitions(providerId)
+}
+
+interface ModelBlacklist {
+  models: string[]
+  prefixes: string[]
+  envOverride?: string
+}
+
+const MODEL_BLACKLISTS: ModelBlacklist[] = [
+  {
+    models: ['deepseek-chat', 'deepseek-v3', 'deepseek-r1'],
+    prefixes: ['openrouter/deepseek', 'openrouter/tngtech'],
+    envOverride: 'DEEPSEEK_MODELS_ENABLED',
+  },
+]
+
+function isModelBlacklisted(model: string): boolean {
+  const lowerModel = model.toLowerCase()
+
+  for (const blacklist of MODEL_BLACKLISTS) {
+    if (blacklist.envOverride && isTruthy(getEnv(blacklist.envOverride))) {
+      continue
+    }
+
+    if (blacklist.models.includes(lowerModel)) {
+      return true
+    }
+
+    if (blacklist.prefixes.some((prefix) => lowerModel.startsWith(prefix))) {
+      return true
+    }
+  }
+
+  return false
+}
+
+export function filterBlacklistedModels(models: string[]): string[] {
+  return models.filter((model) => !isModelBlacklisted(model))
 }
 
 /**
@@ -501,13 +560,11 @@ export function calculateCost(
  * Get pricing information for a specific model (including embedding models)
  */
 export function getModelPricing(modelId: string): any {
-  // First check if it's an embedding model
   const embeddingPricing = getEmbeddingModelPricing(modelId)
   if (embeddingPricing) {
     return embeddingPricing
   }
 
-  // Then check chat models
   return getModelPricingFromDefinitions(modelId)
 }
 
@@ -521,20 +578,15 @@ export function formatCost(cost: number): string {
   if (cost === undefined || cost === null) return '—'
 
   if (cost >= 1) {
-    // For costs >= $1, show two decimal places
     return `$${cost.toFixed(2)}`
   }
   if (cost >= 0.01) {
-    // For costs between 1¢ and $1, show three decimal places
     return `$${cost.toFixed(3)}`
   }
   if (cost >= 0.001) {
-    // For costs between 0.1¢ and 1¢, show four decimal places
     return `$${cost.toFixed(4)}`
   }
   if (cost > 0) {
-    // For very small costs, still show as fixed decimal instead of scientific notation
-    // Find the first non-zero digit and show a few more places
     const places = Math.max(4, Math.abs(Math.floor(Math.log10(cost))) + 3)
     return `$${cost.toFixed(places)}`
   }
@@ -879,7 +931,8 @@ export function trackForcedToolUsage(
       } else {
         // All forced tools have been used, switch to auto mode
         if (provider === 'anthropic') {
-          nextToolChoice = null // Anthropic requires null to remove the parameter
+          // Anthropic: return null to signal the parameter should be deleted/omitted
+          nextToolChoice = null
         } else if (provider === 'google') {
           nextToolConfig = { functionCallingConfig: { mode: 'AUTO' } }
         } else {
@@ -952,10 +1005,10 @@ export function prepareToolExecution(
   toolParams: Record<string, any>
   executionParams: Record<string, any>
 } {
-  // Only merge actual tool parameters for logging
+  // User-provided params take precedence over LLM-generated params
   const toolParams = {
-    ...tool.params,
     ...llmArgs,
+    ...tool.params,
   }
 
   // Add system parameters for execution

@@ -13,8 +13,8 @@ import {
 } from '@react-email/components'
 import { format } from 'date-fns'
 import { getBrandConfig } from '@/lib/branding/branding'
-import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { baseStyles } from './base-styles'
 import EmailFooter from './footer'
 
@@ -26,8 +26,6 @@ interface InvitationEmailProps {
   updatedDate?: Date
 }
 
-const baseUrl = env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
-
 const logger = createLogger('InvitationEmail')
 
 export const InvitationEmail = ({
@@ -38,6 +36,7 @@ export const InvitationEmail = ({
   updatedDate = new Date(),
 }: InvitationEmailProps) => {
   const brand = getBrandConfig()
+  const baseUrl = getBaseUrl()
 
   // Extract invitation ID or token from inviteLink if present
   let enhancedLink = inviteLink
@@ -65,7 +64,7 @@ export const InvitationEmail = ({
             <Row>
               <Column style={{ textAlign: 'center' }}>
                 <Img
-                  src={brand.logoUrl || '/logo/reverse/text/medium.png'}
+                  src={brand.logoUrl || `${baseUrl}/logo/reverse/text/medium.png`}
                   width='114'
                   alt={brand.name}
                   style={{

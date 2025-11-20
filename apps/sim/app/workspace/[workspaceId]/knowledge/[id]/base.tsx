@@ -14,9 +14,10 @@ import {
   Loader2,
   Plus,
   RotateCcw,
-  Trash2,
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import { Button, Tooltip } from '@/components/emcn'
+import { Trash } from '@/components/emcn/icons/trash'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,10 +28,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchHighlight } from '@/components/ui/search-highlight'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
@@ -45,8 +44,12 @@ import {
   SearchInput,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { useKnowledgeBase, useKnowledgeBaseDocuments } from '@/hooks/use-knowledge'
-import { type DocumentData, useKnowledgeStore } from '@/stores/knowledge/store'
+import {
+  useKnowledgeBase,
+  useKnowledgeBaseDocuments,
+  useKnowledgeBasesList,
+} from '@/hooks/use-knowledge'
+import type { DocumentData } from '@/stores/knowledge/store'
 
 const logger = createLogger('KnowledgeBase')
 
@@ -126,10 +129,10 @@ export function KnowledgeBase({
   id,
   knowledgeBaseName: passedKnowledgeBaseName,
 }: KnowledgeBaseProps) {
-  const { removeKnowledgeBase } = useKnowledgeStore()
-  const userPermissions = useUserPermissionsContext()
   const params = useParams()
   const workspaceId = params.workspaceId as string
+  const { removeKnowledgeBase } = useKnowledgeBasesList(workspaceId, { enabled: false })
+  const userPermissions = useUserPermissionsContext()
 
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -698,10 +701,6 @@ export function KnowledgeBase({
         options={{
           knowledgeBaseId: id,
           currentWorkspaceId: knowledgeBase?.workspaceId || null,
-          onWorkspaceChange: () => {
-            // Refresh the page to reflect the workspace change
-            window.location.reload()
-          },
           onDeleteKnowledgeBase: () => setShowDeleteDialog(true),
         }}
       />
@@ -712,32 +711,30 @@ export function KnowledgeBase({
           <div className='flex-1 overflow-auto'>
             <div className='px-6 pb-6'>
               {/* Search and Filters Section */}
-              <div className='mb-4 space-y-3 pt-1'>
-                <div className='flex items-center justify-between'>
-                  <SearchInput
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    placeholder='Search documents...'
-                    isLoading={isLoadingDocuments}
-                  />
+              <div className='mb-4 flex items-center justify-between pt-1'>
+                <SearchInput
+                  value={searchQuery}
+                  onChange={handleSearchChange}
+                  placeholder='Search documents...'
+                  isLoading={isLoadingDocuments}
+                />
 
-                  <div className='flex items-center gap-3'>
-                    {/* Add Documents Button */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <PrimaryButton
-                          onClick={handleAddDocuments}
-                          disabled={userPermissions.canEdit !== true}
-                        >
-                          <Plus className='h-3.5 w-3.5' />
-                          Add Documents
-                        </PrimaryButton>
-                      </TooltipTrigger>
-                      {userPermissions.canEdit !== true && (
-                        <TooltipContent>Write permission required to add documents</TooltipContent>
-                      )}
-                    </Tooltip>
-                  </div>
+                <div className='flex items-center gap-2'>
+                  {/* Add Documents Button */}
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <PrimaryButton
+                        onClick={handleAddDocuments}
+                        disabled={userPermissions.canEdit !== true}
+                      >
+                        <Plus className='h-3.5 w-3.5' />
+                        Add Documents
+                      </PrimaryButton>
+                    </Tooltip.Trigger>
+                    {userPermissions.canEdit !== true && (
+                      <Tooltip.Content>Write permission required to add documents</Tooltip.Content>
+                    )}
+                  </Tooltip.Root>
                 </div>
               </div>
 
@@ -918,17 +915,17 @@ export function KnowledgeBase({
                               <td className='px-4 py-3'>
                                 <div className='flex items-center gap-2'>
                                   {getFileIcon(doc.mimeType, doc.filename)}
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
                                       <span className='block truncate text-sm' title={doc.filename}>
                                         <SearchHighlight
                                           text={doc.filename}
                                           searchQuery={searchQuery}
                                         />
                                       </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side='top'>{doc.filename}</TooltipContent>
-                                  </Tooltip>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content side='top'>{doc.filename}</Tooltip.Content>
+                                  </Tooltip.Root>
                                 </div>
                               </td>
 
@@ -984,19 +981,19 @@ export function KnowledgeBase({
                               {/* Status column */}
                               <td className='px-4 py-3'>
                                 {doc.processingStatus === 'failed' && doc.processingError ? (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
                                       <div
                                         className={statusDisplay.className}
                                         style={{ cursor: 'help' }}
                                       >
                                         {statusDisplay.text}
                                       </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side='top' className='max-w-xs'>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content side='top' className='max-w-xs'>
                                       {doc.processingError}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                    </Tooltip.Content>
+                                  </Tooltip.Root>
                                 ) : (
                                   <div className={statusDisplay.className}>
                                     {statusDisplay.text}
@@ -1008,11 +1005,10 @@ export function KnowledgeBase({
                               <td className='px-4 py-3'>
                                 <div className='flex items-center gap-1'>
                                   {doc.processingStatus === 'failed' && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
+                                    <Tooltip.Root>
+                                      <Tooltip.Trigger asChild>
                                         <Button
                                           variant='ghost'
-                                          size='sm'
                                           onClick={(e) => {
                                             e.stopPropagation()
                                             handleRetryDocument(doc.id)
@@ -1021,16 +1017,15 @@ export function KnowledgeBase({
                                         >
                                           <RotateCcw className='h-4 w-4' />
                                         </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent side='top'>Retry processing</TooltipContent>
-                                    </Tooltip>
+                                      </Tooltip.Trigger>
+                                      <Tooltip.Content side='top'>Retry processing</Tooltip.Content>
+                                    </Tooltip.Root>
                                   )}
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
                                       <Button
                                         variant='ghost'
-                                        size='sm'
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           handleToggleEnabled(doc.id)
@@ -1048,8 +1043,8 @@ export function KnowledgeBase({
                                           <CircleOff className='h-4 w-4' />
                                         )}
                                       </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent side='top'>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content side='top'>
                                       {doc.processingStatus === 'processing' ||
                                       doc.processingStatus === 'pending'
                                         ? 'Cannot modify while processing'
@@ -1058,14 +1053,13 @@ export function KnowledgeBase({
                                           : doc.enabled
                                             ? 'Disable Document'
                                             : 'Enable Document'}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                    </Tooltip.Content>
+                                  </Tooltip.Root>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
                                       <Button
                                         variant='ghost'
-                                        size='sm'
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           handleDeleteDocument(doc.id)
@@ -1076,17 +1070,17 @@ export function KnowledgeBase({
                                         }
                                         className='h-8 w-8 p-0 text-gray-500 hover:text-red-600 disabled:opacity-50'
                                       >
-                                        <Trash2 className='h-4 w-4' />
+                                        <Trash className='h-[14px] w-[14px]' />
                                       </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent side='top'>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content side='top'>
                                       {doc.processingStatus === 'processing'
                                         ? 'Cannot delete while processing'
                                         : !userPermissions.canEdit
                                           ? 'Write permission required to delete documents'
                                           : 'Delete Document'}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                    </Tooltip.Content>
+                                  </Tooltip.Root>
                                 </div>
                               </td>
                             </tr>
@@ -1103,7 +1097,6 @@ export function KnowledgeBase({
                     <div className='flex items-center gap-1'>
                       <Button
                         variant='ghost'
-                        size='sm'
                         onClick={prevPage}
                         disabled={!hasPrevPage || isLoadingDocuments}
                         className='h-8 w-8 p-0'
@@ -1144,7 +1137,6 @@ export function KnowledgeBase({
 
                       <Button
                         variant='ghost'
-                        size='sm'
                         onClick={nextPage}
                         disabled={!hasNextPage || isLoadingDocuments}
                         className='h-8 w-8 p-0'

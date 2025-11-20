@@ -1,3 +1,4 @@
+import { webhook } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -6,9 +7,9 @@ import { getSession } from '@/lib/auth'
 import { verifyInternalToken } from '@/lib/auth/internal'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getUserEntityPermissions, hasAdminPermission } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import { getWorkflowAccessContext, getWorkflowById } from '@/lib/workflows/utils'
 import { db } from '@/db'
 import { templates, workflow } from '@/db/schema'
 
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1]
-      isInternalCall = await verifyInternalToken(token)
+      const verification = await verifyInternalToken(token)
+      isInternalCall = verification.valid
     }
 
     let userId: string | null = null
@@ -74,12 +76,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       userId = authenticatedUserId
     }
 
-    // Fetch the workflow
-    const workflowData = await db
-      .select()
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .then((rows) => rows[0])
+    let accessContext = null
+    let workflowData = await getWorkflowById(workflowId)
 
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
@@ -94,18 +92,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       hasAccess = true
     } else {
       // Case 1: User owns the workflow
-      if (workflowData.userId === userId) {
-        hasAccess = true
-      }
+      if (workflowData) {
+        accessContext = await getWorkflowAccessContext(workflowId, userId ?? undefined)
 
-      // Case 2: Workflow belongs to a workspace the user has permissions for
-      if (!hasAccess && workflowData.workspaceId && userId) {
-        const userPermission = await getUserEntityPermissions(
-          userId,
-          'workspace',
-          workflowData.workspaceId
-        )
-        if (userPermission !== null) {
+        if (!accessContext) {
+          logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
+          return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+        }
+
+        workflowData = accessContext.workflow
+
+        if (accessContext.isOwner) {
+          hasAccess = true
+        }
+
+        if (!hasAccess && workflowData.workspaceId && accessContext.workspacePermission) {
           hasAccess = true
         }
       }
@@ -133,7 +134,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         state: {
           // Default values for expected properties
           deploymentStatuses: {},
-          hasActiveWebhook: false,
           // Data from normalized tables
           blocks: normalizedData.blocks,
           edges: normalizedData.edges,
@@ -143,6 +143,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           isDeployed: workflowData.isDeployed || false,
           deployedAt: workflowData.deployedAt,
         },
+        // Include workflow variables
+        variables: workflowData.variables || {},
       }
 
       logger.info(`[${requestId}] Loaded workflow ${workflowId} from normalized tables`)
@@ -180,11 +182,8 @@ export async function DELETE(
 
     const userId = session.user.id
 
-    const workflowData = await db
-      .select()
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .then((rows) => rows[0])
+    const accessContext = await getWorkflowAccessContext(workflowId, userId)
+    const workflowData = accessContext?.workflow || (await getWorkflowById(workflowId))
 
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow ${workflowId} not found for deletion`)
@@ -201,8 +200,8 @@ export async function DELETE(
 
     // Case 2: Workflow belongs to a workspace and user has admin permission
     if (!canDelete && workflowData.workspaceId) {
-      const hasAdmin = await hasAdminPermission(userId, workflowData.workspaceId)
-      if (hasAdmin) {
+      const context = accessContext || (await getWorkflowAccessContext(workflowId, userId))
+      if (context?.workspacePermission === 'admin') {
         canDelete = true
       }
     }
@@ -222,7 +221,13 @@ export async function DELETE(
     if (checkTemplates) {
       // Return template information for frontend to handle
       const publishedTemplates = await db
-        .select()
+        .select({
+          id: templates.id,
+          name: templates.name,
+          views: templates.views,
+          stars: templates.stars,
+          status: templates.status,
+        })
         .from(templates)
         .where(eq(templates.workflowId, workflowId))
 
@@ -254,6 +259,48 @@ export async function DELETE(
           .where(eq(templates.workflowId, workflowId))
         logger.info(`[${requestId}] Orphaned templates for workflow ${workflowId}`)
       }
+    }
+
+    // Clean up external webhooks before deleting workflow
+    try {
+      const { cleanupExternalWebhook } = await import('@/lib/webhooks/webhook-helpers')
+      const webhooksToCleanup = await db
+        .select({
+          webhook: webhook,
+          workflow: {
+            id: workflow.id,
+            userId: workflow.userId,
+            workspaceId: workflow.workspaceId,
+          },
+        })
+        .from(webhook)
+        .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
+        .where(eq(webhook.workflowId, workflowId))
+
+      if (webhooksToCleanup.length > 0) {
+        logger.info(
+          `[${requestId}] Found ${webhooksToCleanup.length} webhook(s) to cleanup for workflow ${workflowId}`
+        )
+
+        // Clean up each webhook (don't fail if cleanup fails)
+        for (const webhookData of webhooksToCleanup) {
+          try {
+            await cleanupExternalWebhook(webhookData.webhook, webhookData.workflow, requestId)
+          } catch (cleanupError) {
+            logger.warn(
+              `[${requestId}] Failed to cleanup external webhook ${webhookData.webhook.id} during workflow deletion`,
+              cleanupError
+            )
+            // Continue with deletion even if cleanup fails
+          }
+        }
+      }
+    } catch (webhookCleanupError) {
+      logger.warn(
+        `[${requestId}] Error during webhook cleanup for workflow deletion (continuing with deletion)`,
+        webhookCleanupError
+      )
+      // Continue with workflow deletion even if webhook cleanup fails
     }
 
     await db.delete(workflow).where(eq(workflow.id, workflowId))
@@ -316,16 +363,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const userId = session.user.id
 
-    // Parse and validate request body
     const body = await request.json()
     const updates = UpdateWorkflowSchema.parse(body)
 
     // Fetch the workflow to check ownership/access
-    const workflowData = await db
-      .select()
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .then((rows) => rows[0])
+    const accessContext = await getWorkflowAccessContext(workflowId, userId)
+    const workflowData = accessContext?.workflow || (await getWorkflowById(workflowId))
 
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow ${workflowId} not found for update`)
@@ -342,12 +385,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // Case 2: Workflow belongs to a workspace and user has write or admin permission
     if (!canUpdate && workflowData.workspaceId) {
-      const userPermission = await getUserEntityPermissions(
-        userId,
-        'workspace',
-        workflowData.workspaceId
-      )
-      if (userPermission === 'write' || userPermission === 'admin') {
+      const context = accessContext || (await getWorkflowAccessContext(workflowId, userId))
+      if (context?.workspacePermission === 'write' || context?.workspacePermission === 'admin') {
         canUpdate = true
       }
     }

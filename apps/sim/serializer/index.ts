@@ -1,9 +1,11 @@
 import type { Edge } from 'reactflow'
+import { BlockPathCalculator } from '@/lib/block-path-calculator'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getBlock } from '@/blocks'
 import type { SubBlockConfig } from '@/blocks/types'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
+import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { getTool } from '@/tools/utils'
 
 const logger = createLogger('Serializer')
@@ -40,26 +42,43 @@ export class Serializer {
   serializeWorkflow(
     blocks: Record<string, BlockState>,
     edges: Edge[],
-    loops: Record<string, Loop>,
+    loops?: Record<string, Loop>,
     parallels?: Record<string, Parallel>,
     validateRequired = false
   ): SerializedWorkflow {
-    // Validate subflow requirements (loops/parallels) before serialization if requested
+    const canonicalLoops = generateLoopBlocks(blocks)
+    const canonicalParallels = generateParallelBlocks(blocks)
+    const safeLoops = Object.keys(canonicalLoops).length > 0 ? canonicalLoops : loops || {}
+    const safeParallels =
+      Object.keys(canonicalParallels).length > 0 ? canonicalParallels : parallels || {}
+    const accessibleBlocksMap = this.computeAccessibleBlockIds(
+      blocks,
+      edges,
+      safeLoops,
+      safeParallels
+    )
+
     if (validateRequired) {
-      this.validateSubflowsBeforeExecution(blocks, loops || {}, parallels || {})
+      this.validateSubflowsBeforeExecution(blocks, safeLoops, safeParallels)
     }
 
     return {
       version: '1.0',
-      blocks: Object.values(blocks).map((block) => this.serializeBlock(block, validateRequired)),
+      blocks: Object.values(blocks).map((block) =>
+        this.serializeBlock(block, {
+          validateRequired,
+          allBlocks: blocks,
+          accessibleBlocksMap,
+        })
+      ),
       connections: edges.map((edge) => ({
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle || undefined,
         targetHandle: edge.targetHandle || undefined,
       })),
-      loops,
-      parallels,
+      loops: safeLoops,
+      parallels: safeParallels,
     }
   }
 
@@ -156,7 +175,14 @@ export class Serializer {
     })
   }
 
-  private serializeBlock(block: BlockState, validateRequired = false): SerializedBlock {
+  private serializeBlock(
+    block: BlockState,
+    options: {
+      validateRequired: boolean
+      allBlocks: Record<string, BlockState>
+      accessibleBlocksMap: Map<string, Set<string>>
+    }
+  ): SerializedBlock {
     // Special handling for subflow blocks (loops, parallels, etc.)
     if (block.type === 'loop' || block.type === 'parallel') {
       return {
@@ -192,12 +218,15 @@ export class Serializer {
       if (block.triggerMode === true || isTriggerCategory) {
         params.triggerMode = true
       }
+      if (block.advancedMode === true) {
+        params.advancedMode = true
+      }
     } catch (_) {
       // no-op: conservative, avoid blocking serialization if blockConfig is unexpected
     }
 
     // Validate required fields that only users can provide (before execution starts)
-    if (validateRequired) {
+    if (options.validateRequired) {
       this.validateRequiredFieldsBeforeExecution(block, blockConfig, params)
     }
 
@@ -417,8 +446,12 @@ export class Serializer {
     blockConfig: any,
     params: Record<string, any>
   ) {
-    // Skip validation if the block is in trigger mode
-    if (block.triggerMode || blockConfig.category === 'triggers') {
+    // Skip validation if the block is used as a trigger
+    if (
+      block.triggerMode === true ||
+      blockConfig.category === 'triggers' ||
+      params.triggerMode === true
+    ) {
       logger.info('Skipping validation for block in trigger mode', {
         blockId: block.id,
         blockType: block.type,
@@ -454,6 +487,52 @@ export class Serializer {
     // Check required user-only parameters for the current tool
     const missingFields: string[] = []
 
+    // Helper function to evaluate conditions
+    const evalCond = (
+      condition:
+        | {
+            field: string
+            value: any
+            not?: boolean
+            and?: { field: string; value: any; not?: boolean }
+          }
+        | (() => {
+            field: string
+            value: any
+            not?: boolean
+            and?: { field: string; value: any; not?: boolean }
+          })
+        | undefined,
+      values: Record<string, any>
+    ): boolean => {
+      if (!condition) return true
+      const actual = typeof condition === 'function' ? condition() : condition
+      const fieldValue = values[actual.field]
+
+      const valueMatch = Array.isArray(actual.value)
+        ? fieldValue != null &&
+          (actual.not ? !actual.value.includes(fieldValue) : actual.value.includes(fieldValue))
+        : actual.not
+          ? fieldValue !== actual.value
+          : fieldValue === actual.value
+
+      const andMatch = !actual.and
+        ? true
+        : (() => {
+            const andFieldValue = values[actual.and!.field]
+            return Array.isArray(actual.and!.value)
+              ? andFieldValue != null &&
+                  (actual.and!.not
+                    ? !actual.and!.value.includes(andFieldValue)
+                    : actual.and!.value.includes(andFieldValue))
+              : actual.and!.not
+                ? andFieldValue !== actual.and!.value
+                : andFieldValue === actual.and!.value
+          })()
+
+      return valueMatch && andMatch
+    }
+
     // Iterate through the tool's parameters, not the block's subBlocks
     Object.entries(currentTool.params || {}).forEach(([paramId, paramConfig]) => {
       if (paramConfig.required && paramConfig.visibility === 'user-only') {
@@ -465,58 +544,18 @@ export class Serializer {
           const isAdvancedMode = block.advancedMode ?? false
           const includedByMode = shouldIncludeField(subBlockConfig, isAdvancedMode)
 
-          const includedByCondition = (() => {
-            const evalCond = (
-              condition:
-                | {
-                    field: string
-                    value: any
-                    not?: boolean
-                    and?: { field: string; value: any; not?: boolean }
-                  }
-                | (() => {
-                    field: string
-                    value: any
-                    not?: boolean
-                    and?: { field: string; value: any; not?: boolean }
-                  })
-                | undefined,
-              values: Record<string, any>
-            ): boolean => {
-              if (!condition) return true
-              const actual = typeof condition === 'function' ? condition() : condition
-              const fieldValue = values[actual.field]
+          // Check visibility condition
+          const includedByCondition = evalCond(subBlockConfig.condition, params)
 
-              const valueMatch = Array.isArray(actual.value)
-                ? fieldValue != null &&
-                  (actual.not
-                    ? !actual.value.includes(fieldValue)
-                    : actual.value.includes(fieldValue))
-                : actual.not
-                  ? fieldValue !== actual.value
-                  : fieldValue === actual.value
-
-              const andMatch = !actual.and
-                ? true
-                : (() => {
-                    const andFieldValue = values[actual.and!.field]
-                    return Array.isArray(actual.and!.value)
-                      ? andFieldValue != null &&
-                          (actual.and!.not
-                            ? !actual.and!.value.includes(andFieldValue)
-                            : actual.and!.value.includes(andFieldValue))
-                      : actual.and!.not
-                        ? andFieldValue !== actual.and!.value
-                        : andFieldValue === actual.and!.value
-                  })()
-
-              return valueMatch && andMatch
-            }
-
-            return evalCond(subBlockConfig.condition, params)
+          // Check if field is required based on its required condition (if it's a condition object)
+          const isRequired = (() => {
+            if (!subBlockConfig.required) return false
+            if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
+            // If required is a condition object, evaluate it
+            return evalCond(subBlockConfig.required, params)
           })()
 
-          shouldValidateParam = includedByMode && includedByCondition
+          shouldValidateParam = includedByMode && includedByCondition && isRequired
         }
 
         if (!shouldValidateParam) {
@@ -535,6 +574,48 @@ export class Serializer {
       const blockName = block.name || blockConfig.name || 'Block'
       throw new Error(`${blockName} is missing required fields: ${missingFields.join(', ')}`)
     }
+  }
+
+  private computeAccessibleBlockIds(
+    blocks: Record<string, BlockState>,
+    edges: Edge[],
+    loops: Record<string, Loop>,
+    parallels: Record<string, Parallel>
+  ): Map<string, Set<string>> {
+    const accessibleMap = new Map<string, Set<string>>()
+    const simplifiedEdges = edges.map((edge) => ({ source: edge.source, target: edge.target }))
+
+    const starterBlock = Object.values(blocks).find((block) => block.type === 'starter')
+
+    Object.keys(blocks).forEach((blockId) => {
+      const ancestorIds = BlockPathCalculator.findAllPathNodes(simplifiedEdges, blockId)
+      const accessibleIds = new Set<string>(ancestorIds)
+      accessibleIds.add(blockId)
+
+      // Only add starter block if it's actually upstream (already in ancestorIds)
+      // Don't add it just because it exists on the canvas
+      if (starterBlock && ancestorIds.includes(starterBlock.id)) {
+        accessibleIds.add(starterBlock.id)
+      }
+
+      Object.values(loops).forEach((loop) => {
+        if (!loop?.nodes) return
+        if (loop.nodes.includes(blockId)) {
+          loop.nodes.forEach((nodeId) => accessibleIds.add(nodeId))
+        }
+      })
+
+      Object.values(parallels).forEach((parallel) => {
+        if (!parallel?.nodes) return
+        if (parallel.nodes.includes(blockId)) {
+          parallel.nodes.forEach((nodeId) => accessibleIds.add(nodeId))
+        }
+      })
+
+      accessibleMap.set(blockId, accessibleIds)
+    })
+
+    return accessibleMap
   }
 
   deserializeWorkflow(workflow: SerializedWorkflow): {
@@ -606,10 +687,10 @@ export class Serializer {
       subBlocks,
       outputs: serializedBlock.outputs,
       enabled: true,
-      // Restore trigger mode from serialized params; treat trigger category as triggers as well
       triggerMode:
         serializedBlock.config?.params?.triggerMode === true ||
         serializedBlock.metadata?.category === 'triggers',
+      advancedMode: serializedBlock.config?.params?.advancedMode === true,
     }
   }
 }

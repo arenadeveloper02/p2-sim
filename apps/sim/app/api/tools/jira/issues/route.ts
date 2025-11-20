@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
+import { validateAlphanumericId, validateJiraCloudId } from '@/lib/security/input-validation'
 import { getJiraCloudId } from '@/tools/jira/utils'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('JiraIssuesAPI')
 
-// Helper functions
 const createErrorResponse = async (response: Response, defaultMessage: string) => {
   try {
     const errorData = await response.json()
@@ -38,33 +38,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ issues: [] })
     }
 
-    // Use provided cloudId or fetch it if not provided
     const cloudId = providedCloudId || (await getJiraCloudId(domain!, accessToken!))
 
-    // Build the URL using cloudId for Jira API
-    const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue/bulkfetch`
-
-    // Prepare the request body for bulk fetch
-    const requestBody = {
-      expand: ['names'],
-      fields: ['summary', 'status', 'assignee', 'updated', 'project'],
-      fieldsByKeys: false,
-      issueIdsOrKeys: issueKeys,
-      properties: [],
+    const cloudIdValidation = validateJiraCloudId(cloudId, 'cloudId')
+    if (!cloudIdValidation.isValid) {
+      return NextResponse.json({ error: cloudIdValidation.error }, { status: 400 })
     }
 
-    // Make the request to Jira API with OAuth Bearer token
-    const requestConfig = {
-      method: 'POST',
+    // Use search/jql endpoint (GET) with URL parameters
+    const jql = `issueKey in (${issueKeys.map((k: string) => k.trim()).join(',')})`
+    const params = new URLSearchParams({
+      jql,
+      fields: 'summary,status,assignee,updated,project',
+      maxResults: String(Math.min(issueKeys.length, 100)),
+    })
+    const searchUrl = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql?${params.toString()}`
+
+    const response = await fetch(searchUrl, {
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/json',
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody),
-    }
-
-    const response = await fetch(url, requestConfig)
+    })
 
     if (!response.ok) {
       logger.error(`Jira API error: ${response.status} ${response.statusText}`)
@@ -72,17 +68,27 @@ export async function POST(request: Request) {
         response,
         `Failed to fetch Jira issues (${response.status})`
       )
+      if (response.status === 401 || response.status === 403) {
+        return NextResponse.json(
+          {
+            error: errorMessage,
+            authRequired: true,
+            requiredScopes: ['read:jira-work', 'read:project:jira'],
+          },
+          { status: response.status }
+        )
+      }
       return NextResponse.json({ error: errorMessage }, { status: response.status })
     }
 
     const data = await response.json()
-    const issues = (data.issues || []).map((issue: any) => ({
-      id: issue.key,
-      name: issue.fields.summary,
+    const issues = (data.issues || []).map((it: any) => ({
+      id: it.key,
+      name: it.fields?.summary || it.key,
       mimeType: 'jira/issue',
-      url: `https://${domain}/browse/${issue.key}`,
-      modifiedTime: issue.fields.updated,
-      webViewLink: `https://${domain}/browse/${issue.key}`,
+      url: `https://${domain}/browse/${it.key}`,
+      modifiedTime: it.fields?.updated,
+      webViewLink: `https://${domain}/browse/${it.key}`,
     }))
 
     return NextResponse.json({ issues, cloudId })
@@ -112,40 +118,59 @@ export async function GET(request: Request) {
     if (validationError) return validationError
 
     const cloudId = providedCloudId || (await getJiraCloudId(domain!, accessToken!))
+
+    const cloudIdValidation = validateJiraCloudId(cloudId, 'cloudId')
+    if (!cloudIdValidation.isValid) {
+      return NextResponse.json({ error: cloudIdValidation.error }, { status: 400 })
+    }
+
+    if (projectId) {
+      const projectIdValidation = validateAlphanumericId(projectId, 'projectId', 100)
+      if (!projectIdValidation.isValid) {
+        return NextResponse.json({ error: projectIdValidation.error }, { status: 400 })
+      }
+    }
+    if (manualProjectId) {
+      const manualProjectIdValidation = validateAlphanumericId(
+        manualProjectId,
+        'manualProjectId',
+        100
+      )
+      if (!manualProjectIdValidation.isValid) {
+        return NextResponse.json({ error: manualProjectIdValidation.error }, { status: 400 })
+      }
+    }
+
     let data: any
 
-    if (query) {
-      const params = new URLSearchParams({ query })
-      const apiUrl = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue/picker?${params}`
-      const response = await fetch(apiUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        const errorMessage = await createErrorResponse(
-          response,
-          `Failed to fetch issue suggestions (${response.status})`
-        )
-        return NextResponse.json({ error: errorMessage }, { status: response.status })
-      }
-      data = await response.json()
-    } else if (projectId || manualProjectId) {
+    if (query || projectId || manualProjectId) {
       const SAFETY_CAP = 1000
       const PAGE_SIZE = 100
       const target = Math.min(all ? limit || SAFETY_CAP : 25, SAFETY_CAP)
-      const projectKey = (projectId || manualProjectId).trim()
+      const projectKey = (projectId || manualProjectId || '').trim()
 
-      const buildSearchUrl = (startAt: number) => {
+      const escapeJql = (s: string) => s.replace(/"/g, '\\"')
+
+      const buildJql = (startAt: number) => {
+        const jqlParts: string[] = []
+        if (projectKey) jqlParts.push(`project = ${projectKey}`)
+        if (query) {
+          const q = escapeJql(query)
+          // Match by key prefix or summary text
+          jqlParts.push(`(key ~ "${q}" OR summary ~ "${q}")`)
+        }
+        const jql = `${jqlParts.length ? `${jqlParts.join(' AND ')} ` : ''}ORDER BY updated DESC`
         const params = new URLSearchParams({
-          jql: `project=${projectKey} ORDER BY updated DESC`,
-          maxResults: String(Math.min(PAGE_SIZE, target)),
-          startAt: String(startAt),
+          jql,
           fields: 'summary,key,updated',
+          maxResults: String(Math.min(PAGE_SIZE, target)),
         })
-        return `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search?${params}`
+        if (startAt > 0) {
+          params.set('startAt', String(startAt))
+        }
+        return {
+          url: `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql?${params.toString()}`,
+        }
       }
 
       let startAt = 0
@@ -153,7 +178,9 @@ export async function GET(request: Request) {
       let total = 0
 
       do {
-        const response = await fetch(buildSearchUrl(startAt), {
+        const { url: apiUrl } = buildJql(startAt)
+        const response = await fetch(apiUrl, {
+          method: 'GET',
           headers: {
             Authorization: `Bearer ${accessToken}`,
             Accept: 'application/json',
@@ -165,6 +192,16 @@ export async function GET(request: Request) {
             response,
             `Failed to fetch issues (${response.status})`
           )
+          if (response.status === 401 || response.status === 403) {
+            return NextResponse.json(
+              {
+                error: errorMessage,
+                authRequired: true,
+                requiredScopes: ['read:jira-work', 'read:project:jira'],
+              },
+              { status: response.status }
+            )
+          }
           return NextResponse.json({ error: errorMessage }, { status: response.status })
         }
 

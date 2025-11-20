@@ -1,3 +1,4 @@
+import { sso } from '@better-auth/sso'
 import { stripe } from '@better-auth/stripe'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
@@ -19,7 +20,7 @@ import {
   renderOTPEmail,
   renderPasswordResetEmail,
 } from '@/components/emails/render-email'
-import { getBaseURL } from '@/lib/auth-client'
+import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import { handleNewUser } from '@/lib/billing/core/usage'
 import { syncSubscriptionUsageLimits } from '@/lib/billing/organization'
@@ -30,14 +31,20 @@ import {
   handleInvoicePaymentFailed,
   handleInvoicePaymentSucceeded,
 } from '@/lib/billing/webhooks/invoices'
+import {
+  handleSubscriptionCreated,
+  handleSubscriptionDeleted,
+} from '@/lib/billing/webhooks/subscription'
 import { sendEmail } from '@/lib/email/mailer'
 import { getFromEmailAddress } from '@/lib/email/utils'
 import { quickValidateEmail } from '@/lib/email/validation'
 import { env, isTruthy } from '@/lib/env'
-import { isBillingEnabled, isProd } from '@/lib/environment'
+import { isBillingEnabled, isEmailVerificationEnabled } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { db } from '@/db'
 import * as schema from '@/db/schema'
+import { SSO_TRUSTED_PROVIDERS } from './sso/consts'
 
 const logger = createLogger('Auth')
 
@@ -53,10 +60,9 @@ if (validStripeKey) {
 }
 
 export const auth = betterAuth({
-  baseURL: getBaseURL(),
+  baseURL: getBaseUrl(),
   trustedOrigins: [
-    env.NEXT_PUBLIC_APP_URL,
-    ...(env.NEXT_PUBLIC_VERCEL_URL ? [`https://${env.NEXT_PUBLIC_VERCEL_URL}`] : []),
+    getBaseUrl(),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
   ].filter(Boolean),
   database: drizzleAdapter(db, {
@@ -73,6 +79,24 @@ export const auth = betterAuth({
     freshAge: 60 * 60, // 1 hour (or set to 0 to disable completely)
   },
   databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          logger.info('[databaseHooks.user.create.after] User created, initializing stats', {
+            userId: user.id,
+          })
+
+          try {
+            await handleNewUser(user.id)
+          } catch (error) {
+            logger.error('[databaseHooks.user.create.after] Failed to initialize user stats', {
+              userId: user.id,
+              error,
+            })
+          }
+        },
+      },
+    },
     session: {
       create: {
         before: async (session) => {
@@ -117,6 +141,7 @@ export const auth = betterAuth({
       enabled: true,
       allowDifferentEmails: true,
       trustedProviders: [
+        // Standard OAuth providers
         'google',
         'github',
         'email-password',
@@ -127,6 +152,13 @@ export const auth = betterAuth({
         'microsoft',
         'slack',
         'reddit',
+        'webflow',
+        'asana',
+        'pipedrive',
+        'hubspot',
+
+        // Common SSO provider patterns
+        ...SSO_TRUSTED_PROVIDERS,
       ],
     },
   },
@@ -147,7 +179,7 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false,
+    requireEmailVerification: isEmailVerificationEnabled,
     sendVerificationOnSignUp: false,
     throwOnMissingCredentials: true,
     throwOnInvalidCredentials: true,
@@ -225,8 +257,8 @@ export const auth = betterAuth({
         otp: string
         type: 'sign-in' | 'email-verification' | 'forget-password'
       }) => {
-        if (!isProd) {
-          logger.info('Skipping email verification in dev/docker')
+        if (!isEmailVerificationEnabled) {
+          logger.info('Skipping email verification')
           return
         }
         try {
@@ -297,7 +329,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://github.com/login/oauth/access_token',
           userInfoUrl: 'https://api.github.com/user',
           scopes: ['user:email', 'repo', 'read:user', 'workflow'],
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/github-repo`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/github-repo`,
           getUserInfo: async (tokens) => {
             try {
               // Fetch user profile
@@ -382,7 +414,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/gmail.labels',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-email`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-email`,
         },
         {
           providerId: 'google-calendar',
@@ -396,7 +428,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/calendar',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-calendar`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-calendar`,
         },
         {
           providerId: 'google-drive',
@@ -407,10 +439,11 @@ export const auth = betterAuth({
           scopes: [
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-drive`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-drive`,
         },
         {
           providerId: 'google-docs',
@@ -421,12 +454,11 @@ export const auth = betterAuth({
           scopes: [
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/documents',
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/documents',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-docs`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-docs`,
         },
         {
           providerId: 'google-sheets',
@@ -437,12 +469,42 @@ export const auth = betterAuth({
           scopes: [
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-sheets`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-sheets`,
+        },
+
+        {
+          providerId: 'google-forms',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: [
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/forms.responses.readonly',
+          ],
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-forms`,
+        },
+
+        {
+          providerId: 'google-vault',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: [
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/ediscovery',
+            'https://www.googleapis.com/auth/devstorage.read_only',
+          ],
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-vault`,
         },
 
         {
@@ -460,19 +522,25 @@ export const auth = betterAuth({
             'Chat.Read',
             'Chat.ReadWrite',
             'Chat.ReadBasic',
+            'ChatMessage.Send',
             'Channel.ReadBasic.All',
             'ChannelMessage.Send',
             'ChannelMessage.Read.All',
+            'ChannelMessage.ReadWrite',
+            'ChannelMember.Read.All',
             'Group.Read.All',
             'Group.ReadWrite.All',
             'Team.ReadBasic.All',
+            'TeamMember.Read.All',
             'offline_access',
+            'Files.Read',
+            'Sites.Read.All',
           ],
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-teams`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-teams`,
         },
 
         {
@@ -487,7 +555,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-excel`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-excel`,
         },
         {
           providerId: 'microsoft-planner',
@@ -509,7 +577,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-planner`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-planner`,
         },
 
         {
@@ -533,7 +601,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/outlook`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/outlook`,
         },
 
         {
@@ -548,7 +616,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/onedrive`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/onedrive`,
         },
 
         {
@@ -570,7 +638,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/sharepoint`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/sharepoint`,
         },
 
         {
@@ -582,7 +650,7 @@ export const auth = betterAuth({
           userInfoUrl: 'https://dummy-not-used.wealthbox.com', // Dummy URL since no user info endpoint exists
           scopes: ['login', 'data'],
           responseType: 'code',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/wealthbox`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wealthbox`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Wealthbox user profile from token data')
@@ -607,6 +675,208 @@ export const auth = betterAuth({
           },
         },
 
+        {
+          providerId: 'pipedrive',
+          clientId: env.PIPEDRIVE_CLIENT_ID as string,
+          clientSecret: env.PIPEDRIVE_CLIENT_SECRET as string,
+          authorizationUrl: 'https://oauth.pipedrive.com/oauth/authorize',
+          tokenUrl: 'https://oauth.pipedrive.com/oauth/token',
+          userInfoUrl: 'https://api.pipedrive.com/v1/users/me',
+          prompt: 'consent',
+          scopes: [
+            'base',
+            'deals:full',
+            'contacts:full',
+            'leads:full',
+            'activities:full',
+            'mail:full',
+            'projects:full',
+          ],
+          responseType: 'code',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/pipedrive`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Pipedrive user profile')
+
+              const response = await fetch('https://api.pipedrive.com/v1/users/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Failed to fetch Pipedrive user info', {
+                  status: response.status,
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const data = await response.json()
+              const user = data.data
+
+              return {
+                id: user.id.toString(),
+                name: user.name,
+                email: user.email,
+                emailVerified: user.activated,
+                image: user.icon_url,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            } catch (error) {
+              logger.error('Error creating Pipedrive user profile:', { error })
+              return null
+            }
+          },
+        },
+
+        // HubSpot provider
+        {
+          providerId: 'hubspot',
+          clientId: env.HUBSPOT_CLIENT_ID as string,
+          clientSecret: env.HUBSPOT_CLIENT_SECRET as string,
+          authorizationUrl: 'https://app.hubspot.com/oauth/authorize',
+          tokenUrl: 'https://api.hubapi.com/oauth/v1/token',
+          userInfoUrl: 'https://api.hubapi.com/oauth/v1/access-tokens',
+          prompt: 'consent',
+          scopes: [
+            'crm.objects.contacts.read',
+            'crm.objects.contacts.write',
+            'crm.objects.companies.read',
+            'crm.objects.companies.write',
+            'crm.objects.deals.read',
+            'crm.objects.deals.write',
+            'crm.objects.owners.read',
+            'crm.objects.users.read',
+            'crm.objects.users.write',
+            'crm.objects.marketing_events.read',
+            'crm.objects.marketing_events.write',
+            'crm.objects.line_items.read',
+            'crm.objects.line_items.write',
+            'crm.objects.quotes.read',
+            'crm.objects.quotes.write',
+            'crm.objects.appointments.read',
+            'crm.objects.appointments.write',
+            'crm.objects.carts.read',
+            'crm.objects.carts.write',
+            'crm.import',
+            'crm.lists.read',
+            'crm.lists.write',
+            'tickets',
+          ],
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/hubspot`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching HubSpot user profile')
+
+              const response = await fetch(
+                `https://api.hubapi.com/oauth/v1/access-tokens/${tokens.accessToken}`
+              )
+
+              if (!response.ok) {
+                let errorBody: string | undefined
+                try {
+                  errorBody = await response.text()
+                } catch {
+                  // ignore
+                }
+                logger.error('Failed to fetch HubSpot user info', {
+                  status: response.status,
+                  statusText: response.statusText,
+                  body: errorBody?.slice(0, 500),
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const rawText = await response.text()
+              const data = JSON.parse(rawText)
+
+              const scopesArray = Array.isArray((data as any)?.scopes) ? (data as any).scopes : []
+              if (Array.isArray(scopesArray) && scopesArray.length > 0) {
+                tokens.scopes = scopesArray
+              } else if (typeof (data as any)?.scope === 'string') {
+                tokens.scopes = (data as any).scope.split(/\s+/).filter(Boolean)
+              }
+
+              logger.info('HubSpot token metadata response:', {
+                hasScopes: !!data.scopes,
+                scopesType: typeof data.scopes,
+                scopesIsArray: Array.isArray(data.scopes),
+                scopesValue: data.scopes,
+                fullResponse: data,
+              })
+
+              return {
+                id: data.user_id || data.hub_id.toString(),
+                name: data.user || 'HubSpot User',
+                email: data.user || `hubspot-${data.hub_id}@hubspot.com`,
+                emailVerified: true,
+                image: undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                // Extract scopes from HubSpot's response and convert array to space-delimited string
+                // Use 'scope' (singular) as that's what better-auth expects for the account table
+                ...(data.scopes && Array.isArray(data.scopes)
+                  ? { scope: data.scopes.join(' ') }
+                  : {}),
+              }
+            } catch (error) {
+              logger.error('Error creating HubSpot user profile:', { error })
+              return null
+            }
+          },
+        },
+
+        // Salesforce provider
+        {
+          providerId: 'salesforce',
+          clientId: env.SALESFORCE_CLIENT_ID as string,
+          clientSecret: env.SALESFORCE_CLIENT_SECRET as string,
+          authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
+          tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
+          userInfoUrl: 'https://login.salesforce.com/services/oauth2/userinfo',
+          scopes: ['api', 'refresh_token', 'openid'],
+          pkce: true,
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/salesforce`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Salesforce user profile')
+
+              const response = await fetch(
+                'https://login.salesforce.com/services/oauth2/userinfo',
+                {
+                  headers: {
+                    Authorization: `Bearer ${tokens.accessToken}`,
+                  },
+                }
+              )
+
+              if (!response.ok) {
+                logger.error('Failed to fetch Salesforce user info', {
+                  status: response.status,
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const data = await response.json()
+
+              return {
+                id: data.user_id || data.sub,
+                name: data.name || 'Salesforce User',
+                email: data.email || `salesforce-${data.user_id}@salesforce.com`,
+                emailVerified: data.email_verified || true,
+                image: data.picture || undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            } catch (error) {
+              logger.error('Error creating Salesforce user profile:', { error })
+              return null
+            }
+          },
+        },
+
         // Supabase provider
         {
           providerId: 'supabase',
@@ -620,7 +890,7 @@ export const auth = betterAuth({
           scopes: ['database.read', 'database.write', 'projects.read'],
           responseType: 'code',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/supabase`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/supabase`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Supabase user profile from token data')
@@ -678,7 +948,7 @@ export const auth = betterAuth({
           responseType: 'code',
           prompt: 'consent',
           authentication: 'basic',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/x`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/x`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch(
@@ -731,13 +1001,36 @@ export const auth = betterAuth({
           authorizationUrl: 'https://auth.atlassian.com/authorize',
           tokenUrl: 'https://auth.atlassian.com/oauth/token',
           userInfoUrl: 'https://api.atlassian.com/me',
-          scopes: ['read:page:confluence', 'write:page:confluence', 'read:me', 'offline_access'],
+          scopes: [
+            'read:confluence-content.all',
+            'read:confluence-space.summary',
+            'read:space:confluence',
+            'read:space-details:confluence',
+            'write:confluence-content',
+            'write:confluence-space',
+            'write:confluence-file',
+            'read:page:confluence',
+            'write:page:confluence',
+            'read:comment:confluence',
+            'read:content:confluence',
+            'write:comment:confluence',
+            'delete:comment:confluence',
+            'read:attachment:confluence',
+            'write:attachment:confluence',
+            'delete:attachment:confluence',
+            'delete:page:confluence',
+            'read:label:confluence',
+            'write:label:confluence',
+            'search:confluence',
+            'read:me',
+            'offline_access',
+          ],
           responseType: 'code',
           pkce: true,
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/confluence`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/confluence`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.atlassian.com/me', {
@@ -787,7 +1080,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/discord`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/discord`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://discord.com/api/users/@me', {
@@ -852,13 +1145,25 @@ export const auth = betterAuth({
             'read:user:jira',
             'read:field-configuration:jira',
             'read:issue-details:jira',
+            'read:issue-event:jira',
+            'delete:issue:jira',
+            'write:comment:jira',
+            'read:comment:jira',
+            'delete:comment:jira',
+            'read:attachment:jira',
+            'delete:attachment:jira',
+            'write:issue-worklog:jira',
+            'read:issue-worklog:jira',
+            'delete:issue-worklog:jira',
+            'write:issue-link:jira',
+            'delete:issue-link:jira',
           ],
           responseType: 'code',
           pkce: true,
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/jira`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/jira`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.atlassian.com/me', {
@@ -909,7 +1214,39 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/airtable`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/airtable`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.airtable.com/v0/meta/whoami', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Error fetching Airtable user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const now = new Date()
+
+              return {
+                id: data.id,
+                name: data.email ? data.email.split('@')[0] : 'Airtable User',
+                email: data.email || `${data.id}@airtable.user`,
+                emailVerified: !!data.email,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Airtable getUserInfo:', { error })
+              return null
+            }
+          },
         },
 
         // Notion provider
@@ -926,7 +1263,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/notion`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/notion`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.notion.com/v1/users/me', {
@@ -970,13 +1307,30 @@ export const auth = betterAuth({
           authorizationUrl: 'https://www.reddit.com/api/v1/authorize?duration=permanent',
           tokenUrl: 'https://www.reddit.com/api/v1/access_token',
           userInfoUrl: 'https://oauth.reddit.com/api/v1/me',
-          scopes: ['identity', 'read'],
+          scopes: [
+            'identity',
+            'read',
+            'submit',
+            'vote',
+            'save',
+            'edit',
+            'subscribe',
+            'history',
+            'privatemessages',
+            'account',
+            'mysubreddits',
+            'flair',
+            'report',
+            'modposts',
+            'modflair',
+            'modmail',
+          ],
           responseType: 'code',
           pkce: false,
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/reddit`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/reddit`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://oauth.reddit.com/api/v1/me', {
@@ -1021,7 +1375,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://api.linear.app/oauth/token',
           scopes: ['read', 'write'],
           responseType: 'code',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/linear`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/linear`,
           pkce: true,
           prompt: 'consent',
           accessType: 'offline',
@@ -1085,6 +1439,57 @@ export const auth = betterAuth({
           },
         },
 
+        {
+          providerId: 'asana',
+          clientId: env.ASANA_CLIENT_ID as string,
+          clientSecret: env.ASANA_CLIENT_SECRET as string,
+          authorizationUrl: 'https://app.asana.com/-/oauth_authorize',
+          tokenUrl: 'https://app.asana.com/-/oauth_token',
+          userInfoUrl: 'https://app.asana.com/api/1.0/users/me',
+          scopes: ['default'],
+          responseType: 'code',
+          pkce: false,
+          accessType: 'offline',
+          authentication: 'basic',
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/asana`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://app.asana.com/api/1.0/users/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Error fetching Asana user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const result = await response.json()
+              const profile = result.data
+
+              const now = new Date()
+
+              return {
+                id: profile.gid,
+                name: profile.name || 'Asana User',
+                email: profile.email || `${profile.gid}@asana.user`,
+                image: profile.photo?.image_128x128 || undefined,
+                emailVerified: !!profile.email,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Asana getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
         // Slack provider
         {
           providerId: 'slack',
@@ -1103,12 +1508,14 @@ export const auth = betterAuth({
             'chat:write.public',
             'users:read',
             'files:write',
+            'files:read',
             'canvases:write',
+            'reactions:write',
           ],
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/slack`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Slack bot profile from token data')
@@ -1149,8 +1556,60 @@ export const auth = betterAuth({
             }
           },
         },
+
+        // Webflow provider
+        {
+          providerId: 'webflow',
+          clientId: env.WEBFLOW_CLIENT_ID as string,
+          clientSecret: env.WEBFLOW_CLIENT_SECRET as string,
+          authorizationUrl: 'https://webflow.com/oauth/authorize',
+          tokenUrl: 'https://api.webflow.com/oauth/access_token',
+          userInfoUrl: 'https://api.webflow.com/v2/token/introspect',
+          scopes: ['sites:read', 'sites:write', 'cms:read', 'cms:write'],
+          responseType: 'code',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/webflow`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Webflow user info')
+
+              const response = await fetch('https://api.webflow.com/v2/token/introspect', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Error fetching Webflow user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const now = new Date()
+
+              const userId = data.user_id || `webflow-${Date.now()}`
+              const uniqueId = `webflow-${userId}`
+
+              return {
+                id: uniqueId,
+                name: data.user_name || 'Webflow User',
+                email: `${uniqueId.replace(/[^a-zA-Z0-9]/g, '')}@webflow.user`,
+                emailVerified: false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Webflow getUserInfo:', { error })
+              return null
+            }
+          },
+        },
       ],
     }),
+    // Include SSO plugin when enabled
+    ...(env.SSO_ENABLED ? [sso()] : []),
     // Only include the Stripe plugin when billing is enabled
     ...(isBillingEnabled && stripeClient
       ? [
@@ -1163,15 +1622,6 @@ export const auth = betterAuth({
                 stripeCustomerId: stripeCustomer.id,
                 userId: user.id,
               })
-
-              try {
-                await handleNewUser(user.id)
-              } catch (error) {
-                logger.error('[onCustomerCreate] Failed to handle new user setup', {
-                  userId: user.id,
-                  error,
-                })
-              }
             },
             subscription: {
               enabled: true,
@@ -1219,27 +1669,11 @@ export const auth = betterAuth({
                   status: subscription.status,
                 })
 
-                // Sync usage limits for the new subscription
-                try {
-                  await syncSubscriptionUsageLimits(subscription)
-                } catch (error) {
-                  logger.error('[onSubscriptionComplete] Failed to sync usage limits', {
-                    subscriptionId: subscription.id,
-                    referenceId: subscription.referenceId,
-                    error,
-                  })
-                }
+                await handleSubscriptionCreated(subscription)
 
-                // Send welcome email for Pro and Team plans
-                try {
-                  const { sendPlanWelcomeEmail } = await import('@/lib/billing')
-                  await sendPlanWelcomeEmail(subscription)
-                } catch (error) {
-                  logger.error('[onSubscriptionComplete] Failed to send plan welcome email', {
-                    error,
-                    subscriptionId: subscription.id,
-                  })
-                }
+                await syncSubscriptionUsageLimits(subscription)
+
+                await sendPlanWelcomeEmail(subscription)
               },
               onSubscriptionUpdate: async ({
                 subscription,
@@ -1277,7 +1711,9 @@ export const auth = betterAuth({
 
                 // Reset usage limits back to free tier defaults
                 try {
-                  // This will sync limits based on the now-inactive subscription (defaulting to free tier)
+                  await handleSubscriptionDeleted(subscription)
+
+                  // Reset usage limits to free tier
                   await syncSubscriptionUsageLimits(subscription)
 
                   logger.info('[onSubscriptionDeleted] Reset usage limits to free tier', {
@@ -1285,7 +1721,7 @@ export const auth = betterAuth({
                     referenceId: subscription.referenceId,
                   })
                 } catch (error) {
-                  logger.error('[onSubscriptionDeleted] Failed to reset usage limits', {
+                  logger.error('[onSubscriptionDeleted] Failed to handle subscription deletion', {
                     subscriptionId: subscription.id,
                     referenceId: subscription.referenceId,
                     error,
@@ -1318,6 +1754,7 @@ export const auth = betterAuth({
                     await handleManualEnterpriseSubscription(event)
                     break
                   }
+                  // Note: customer.subscription.deleted is handled by better-auth's onSubscriptionDeleted callback above
                   default:
                     logger.info('[onEvent] Ignoring unsupported webhook event', {
                       eventId: event.id,
@@ -1404,7 +1841,7 @@ export const auth = betterAuth({
               try {
                 const { invitation, organization, inviter } = data
 
-                const inviteUrl = `${env.NEXT_PUBLIC_APP_URL}/invite/${invitation.id}`
+                const inviteUrl = `${getBaseUrl()}/invite/${invitation.id}`
                 const inviterName = inviter.user?.name || 'A team member'
 
                 const html = await renderInvitationEmail(
