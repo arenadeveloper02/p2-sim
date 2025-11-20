@@ -23,7 +23,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
-// import { facebookAdsQueryTool } from '@/tools/facebook_ads' // TODO: Enable after testing
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import {
   figmaConvertTool,
   figmaCreateStylesVariablesTool,
@@ -308,7 +308,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
-  // facebook_ads_query: facebookAdsQueryTool, // TODO: Enable after testing
+  facebook_ads_query: facebookAdsQueryTool,
   google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
