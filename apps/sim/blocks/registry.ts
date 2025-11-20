@@ -15,6 +15,7 @@ import { DiscordBlock } from '@/blocks/blocks/discord'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
+// import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads' // TODO: Enable after testing
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
@@ -99,6 +100,7 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
+  // facebook_ads: FacebookAdsBlock, // TODO: Enable after testing
   figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
   file: FileBlock,

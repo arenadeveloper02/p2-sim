@@ -6,6 +6,16 @@ import { chat, templates, user, workflow } from '@/db/schema'
 
 const logger = createLogger('ChatAgentsAPI')
 
+export const categories = [
+  { value: 'creative', label: 'Creative' },
+  { value: 'ma', label: 'MA' },
+  { value: 'ppc', label: 'PPC' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'waas', label: 'WAAS' },
+] as const
+
 /**
  * GET /api/chat/agents
  * Fetch all chats accessible by a user based on their email
@@ -139,7 +149,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: chatRecord.department,
+      department: categories.find((category) => category.value === chatRecord.department)?.label,
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
