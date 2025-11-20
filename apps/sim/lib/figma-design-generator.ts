@@ -420,12 +420,46 @@ async function switchToMainContent(driver: WebDriver): Promise<void> {
 }
 
 /**
+ * Helper function to check if running in headless mode
+ */
+async function isHeadlessMode(driver: WebDriver): Promise<boolean> {
+  return true
+}
+
+/**
+ * Helper function to wait for iframe content to load (longer waits for headless)
+ */
+async function waitForIframeContent(driver: WebDriver, baseWaitTime = 2000): Promise<void> {
+  const isHeadless = await isHeadlessMode(driver)
+  const actualWaitTime = isHeadless ? baseWaitTime * 5 : baseWaitTime // 5x longer in headless
+  await driver.sleep(actualWaitTime)
+
+  // Also wait for document ready state (longer timeout in headless)
+  try {
+    await driver.wait(
+      async () => {
+        const readyState = await driver.executeScript('return document.readyState')
+        return readyState === 'complete'
+      },
+      isHeadless ? 30000 : 10000
+    )
+  } catch (e) {
+    // Ignore ready state errors, continue anyway
+  }
+}
+
+/**
  * Helper function to switch to the innermost plugin iframe and return whether switch was successful
  * Handles nested iframe structure: plugin-iframe-in-modal -> Network Plugin Iframe -> Inner Plugin Iframe
  */
 async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
   try {
-    console.log('Looking for nested plugin iframes...')
+    const isHeadless = await isHeadlessMode(driver)
+    console.log(`Looking for nested plugin iframes... (headless: ${isHeadless})`)
+
+    // Always reset to main document context before searching
+    await driver.switchTo().defaultContent()
+    await driver.sleep(isHeadless ? 3000 : 1000)
 
     // Step 1: Find the main plugin iframe with multiple possible selectors
     let mainIframe = null
@@ -434,14 +468,19 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
       By.name('Shim Plugin Iframe'),
       By.css("iframe[id*='plugin-iframe']"),
       By.css("iframe[name*='Plugin']"),
+      By.xpath("//*[@id='plugin-iframe-in-modal']"),
+      By.xpath('/html/body/div[2]/div/div/div/div[8]/div/div/div[1]/div/div[2]/div[1]/div/iframe'),
     ]
 
+    const mainIframeTimeout = isHeadless ? 30000 : 10000
     for (const selector of mainIframeSelectors) {
       try {
-        mainIframe = await driver.findElement(selector)
+        mainIframe = await driver.wait(until.elementLocated(selector), mainIframeTimeout)
+        await driver.wait(until.elementIsVisible(mainIframe), isHeadless ? 15000 : 5000)
         console.log(`✓ Found main plugin iframe using selector: ${selector.toString()}`)
         break
       } catch (e) {
+        console.log(`Could not find main plugin iframe using selector: ${selector.toString()}`)
         // Continue to next selector
       }
     }
@@ -449,37 +488,90 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
     if (!mainIframe) {
       throw new Error('Could not find main plugin iframe')
     }
-    await driver.sleep(2000)
+
+    await waitForIframeContent(driver, 2000)
     await driver.switchTo().frame(mainIframe)
     console.log('✓ Switched to main plugin iframe')
-    await driver.sleep(2000)
+    await waitForIframeContent(driver, 2000)
     // Step 2: Find the Network Plugin Iframe with multiple possible selectors
     let networkIframe = null
     const networkIframeSelectors = [
       By.name('Network Plugin Iframe'),
+      By.css("iframe[name='Network Plugin Iframe']"),
       By.css("iframe[name*='Network']"),
       By.css("iframe[name*='Plugin']"),
-      By.tagName('iframe'),
+      By.css("iframe[name='page-iframe']"),
+      By.css("iframe[name*='page']"),
+      By.css("iframe[id*='page']"),
+      By.css("iframe[class*='page']"),
+      By.css('iframe'),
+      By.xpath('/html/body/iframe'),
     ]
 
+    const networkIframeTimeout = isHeadless ? 30000 : 10000
     for (const selector of networkIframeSelectors) {
       try {
-        networkIframe = await driver.findElement(selector)
+        networkIframe = await driver.wait(until.elementLocated(selector), networkIframeTimeout)
+        await driver.wait(until.elementIsVisible(networkIframe), isHeadless ? 15000 : 5000)
         console.log(`✓ Found Network Plugin Iframe using selector: ${selector.toString()}`)
         break
       } catch (e) {
+        networkIframe = null
         // Continue to next selector
         console.log(`Could not find Network Plugin Iframe using selector: ${selector.toString()}`)
       }
     }
 
     if (!networkIframe) {
-      console.log('Could not find Network Plugin Iframe')
+      // Fallback: inspect iframe attributes to pick the best candidate
+      // Wait longer in headless mode for iframes to appear
+      await driver.sleep(isHeadless ? 5000 : 2000)
+      const iframeCandidates = await driver.findElements(By.css('iframe'))
+      console.log(`Found ${iframeCandidates.length} iframe candidate(s) for Network Plugin Iframe`)
+
+      for (const iframe of iframeCandidates) {
+        try {
+          const id = (await iframe.getAttribute('id'))?.toLowerCase() || ''
+          const name = (await iframe.getAttribute('name'))?.toLowerCase() || ''
+          const src = (await iframe.getAttribute('src'))?.toLowerCase() || ''
+          if (
+            id.includes('network') ||
+            name.includes('network') ||
+            id.includes('plugin') ||
+            name.includes('plugin') ||
+            name.includes('page-iframe') ||
+            name.includes('page') ||
+            src.includes('plugin') ||
+            src.includes('network')
+          ) {
+            networkIframe = iframe
+            console.log(
+              `✓ Selected iframe by attributes for Network Plugin (id: ${id || 'n/a'}, name: ${name || 'n/a'})`
+            )
+            break
+          }
+        } catch (e) {
+          // Continue to next iframe
+        }
+      }
+
+      if (!networkIframe && iframeCandidates.length > 0) {
+        networkIframe = iframeCandidates[0]
+        console.log(
+          `✓ Defaulted to first iframe inside plugin-iframe-in-modal (total iframes: ${iframeCandidates.length})`
+        )
+      }
+
+      if (!networkIframe) {
+        throw new Error('Could not find Network Plugin Iframe')
+      }
+      console.log('✓ Selected fallback Network Plugin Iframe successfully')
     }
 
+    await waitForIframeContent(driver, 2000)
     await driver.switchTo().frame(networkIframe)
     console.log('✓ Switched to Network Plugin Iframe')
-    await driver.sleep(2000)
+    await waitForIframeContent(driver, 2000)
     // Step 3: Find the Inner Plugin Iframe with multiple possible selectors
     let innerIframe = null
     const innerIframeSelectors = [
@@ -487,37 +579,78 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
       By.name('Inner Plugin Iframe'),
       By.css("iframe[id*='plugin-iframe']"),
       By.css("iframe[name*='Inner']"),
-      By.tagName('iframe'),
+      By.xpath("//*[@id='plugin-iframe']"),
+      By.xpath('/html/body/iframe'),
     ]
 
+    const innerIframeTimeout = isHeadless ? 30000 : 10000
     for (const selector of innerIframeSelectors) {
       try {
-        innerIframe = await driver.findElement(selector)
+        innerIframe = await driver.wait(until.elementLocated(selector), innerIframeTimeout)
+        await driver.wait(until.elementIsVisible(innerIframe), isHeadless ? 15000 : 5000)
         console.log(`✓ Found Inner Plugin Iframe using selector: ${selector.toString()}`)
         break
       } catch (e) {
         // Continue to next selector
+        innerIframe = null
       }
     }
 
     if (!innerIframe) {
-      throw new Error('Could not find Inner Plugin Iframe')
+      // Fallback: inspect iframe attributes to pick the best candidate
+      // Wait longer in headless mode for iframes to appear
+      await driver.sleep(isHeadless ? 5000 : 2000)
+      const iframeCandidates = await driver.findElements(By.css('iframe'))
+      console.log(`Found ${iframeCandidates.length} iframe candidate(s) for Inner Plugin Iframe`)
+
+      for (const iframe of iframeCandidates) {
+        try {
+          const id = (await iframe.getAttribute('id'))?.toLowerCase() || ''
+          const name = (await iframe.getAttribute('name'))?.toLowerCase() || ''
+          const src = (await iframe.getAttribute('src'))?.toLowerCase() || ''
+          if (
+            id.includes('plugin-iframe') ||
+            name.includes('inner') ||
+            name.includes('plugin') ||
+            src.includes('plugin')
+          ) {
+            innerIframe = iframe
+            console.log(
+              `✓ Selected iframe by attributes for Inner Plugin (id: ${id || 'n/a'}, name: ${name || 'n/a'})`
+            )
+            break
+          }
+        } catch (e) {
+          // Continue to next iframe
+        }
+      }
+
+      if (!innerIframe && iframeCandidates.length > 0) {
+        innerIframe = iframeCandidates[0]
+        console.log(
+          `✓ Defaulted to first iframe inside Inner (total iframes: ${iframeCandidates.length})`
+        )
+      } else if (!innerIframe) {
+        throw new Error('Could not find Inner Plugin Iframe')
+      }
     }
 
+    await waitForIframeContent(driver, 2000)
     await driver.switchTo().frame(innerIframe)
     console.log('✓ Switched to Inner Plugin Iframe')
-    await driver.sleep(2000)
+    await waitForIframeContent(driver, 2000)
+    return true
     // Verify we're in the correct iframe by checking for Editor tab
-    try {
-      const editorTab = await driver.findElement(
-        By.xpath("//*[@id='container-tabs']/div/div[1]/label[4]")
-      )
-      console.log('✓ Confirmed Editor tab found in innermost iframe')
-      return true
-    } catch (e) {
-      console.log('⚠️ Editor tab not found in innermost iframe, but iframe structure is correct')
-      return true // Still return true as we're in the right iframe structure
-    }
+    // try {
+    //   const editorTab = await driver.findElement(
+    //     By.xpath("//*[@id='container-tabs']/div/div[1]/label[4]")
+    //   )
+    //   console.log('✓ Confirmed Editor tab found in innermost iframe')
+    //   return true
+    // } catch (e) {
+    //   console.log('⚠️ Editor tab not found in innermost iframe, but iframe structure is correct')
+    //   return true // Still return true as we're in the right iframe structure
+    // }
   } catch (error) {
     console.log('Error switching to nested plugin iframes:', error)
 
@@ -527,7 +660,7 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
       await driver.switchTo().defaultContent()
       console.log('Falling back to generic iframe detection...')
 
-      const iframes = await driver.findElements(By.tagName('iframe'))
+      const iframes = await driver.findElements(By.css('iframe'))
       console.log(`Found ${iframes.length} iframe(s) for fallback`)
 
       for (let i = 0; i < iframes.length; i++) {
@@ -636,10 +769,11 @@ async function automateDesignCreation(
   // options.addArguments('--no-sandbox')
   // options.addArguments('--disable-dev-shm-usage')
 
+  // Base configuration
   options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--start-maximized')
 
-  options.addArguments('--headless=new')
+  // options.addArguments('--headless=new')
   options.addArguments('--use-angle=metal')
   options.addArguments('--use-gl=angle')
   options.addArguments('--enable-webgl')
@@ -886,7 +1020,8 @@ async function automateDesignCreation(
       try {
         // Try to find and click the Editor tab using the specific XPath for nested iframe
         const editorTabSelectors = [
-          "//*[@id='container-tabs']/div/div[1]/label[4]", // Specific XPath for Editor tab in nested iframe
+          "//*[@id='container-tabs']/div/div[1]/label[4]",
+          "//*[@id='container-tabs']/div/div[1]/label[4]/div", // Specific XPath for Editor tab in nested iframe
           "//span[contains(text(), 'Editor')]",
           "//button[contains(text(), 'Editor')]",
           "//a[contains(text(), 'Editor')]",

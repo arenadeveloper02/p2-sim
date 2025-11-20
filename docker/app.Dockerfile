@@ -65,6 +65,7 @@ RUN apk add --no-cache \
       harfbuzz \
       ca-certificates \
       ttf-freefont \
+      xvfb \
     && ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
 
 # (Optional, if any code reads these env vars)
@@ -79,5 +80,9 @@ COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
 EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
+
+    # 🔹 Add entrypoint that starts Xvfb and then the app
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 CMD ["bun", "apps/sim/server.js"]
