@@ -575,7 +575,7 @@ export function WorkspaceSelector({
           {/* Bottom Actions */}
           <div className='mt-2 flex items-center gap-2 border-t pt-2'>
             {/* Send Invite - Hide in development and AGENTS APPROVAL */}
-            {!isDev && !isApproverListWorkspace(activeWorkspace!) && (
+            {!isApproverListWorkspace(activeWorkspace!) && (
               <Button
                 variant='secondary'
                 onClick={userPermissions.canAdmin ? () => setShowInviteMembers(true) : undefined}
