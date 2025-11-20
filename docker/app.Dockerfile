@@ -82,7 +82,7 @@ ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
 
     # 🔹 Add entrypoint that starts Xvfb and then the app
-COPY docker-entrypoint.sh /entrypoint.sh
+COPY ./docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 CMD ["bun", "apps/sim/server.js"]
