@@ -590,7 +590,7 @@ export function WorkspaceSelector({
             )}
 
             {/* Create Workspace */}
-            <Button
+            {/* <Button
               variant='secondary'
               onClick={onCreateWorkspace}
               disabled={isCreating}
@@ -601,7 +601,7 @@ export function WorkspaceSelector({
             >
               <Plus className='h-3 w-3' />
               <span>Create</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>
