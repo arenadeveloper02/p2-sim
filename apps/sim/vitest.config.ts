@@ -1,6 +1,7 @@
 import path, { resolve } from 'path'
 /// <reference types="vitest" />
 import react from '@vitejs/plugin-react'
+import type { PluginOption } from 'vite'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 const nextEnv = require('@next/env')
@@ -9,8 +10,10 @@ const { loadEnvConfig } = nextEnv.default || nextEnv
 const projectDir = process.cwd()
 loadEnvConfig(projectDir)
 
+const reactPlugin = react as unknown as PluginOption
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [reactPlugin],
   test: {
     globals: true,
     environment: 'node',

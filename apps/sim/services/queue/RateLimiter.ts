@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { userRateLimits } from '@/db/schema'
@@ -91,6 +92,8 @@ export class RateLimiter {
   /**
    * Check if user can execute a workflow with organization-aware rate limiting
    * Manual executions bypass rate limiting entirely
+   * Rate limiting is disabled by default (DISABLE_RATE_LIMITING defaults to true)
+   * Set DISABLE_RATE_LIMITING=false to enable rate limiting
    */
   async checkRateLimitWithSubscription(
     userId: string,
@@ -99,6 +102,20 @@ export class RateLimiter {
     isAsync = false
   ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
     try {
+      // Global bypass: If rate limiting is disabled, allow all requests
+      if (env.DISABLE_RATE_LIMITING === true) {
+        logger.debug('Rate limiting disabled globally - allowing request', {
+          userId,
+          triggerType,
+          isAsync,
+        })
+        return {
+          allowed: true,
+          remaining: MANUAL_EXECUTION_LIMIT,
+          resetAt: new Date(Date.now() + RATE_LIMIT_WINDOW_MS),
+        }
+      }
+
       if (triggerType === 'manual') {
         return {
           allowed: true,
@@ -291,6 +308,8 @@ export class RateLimiter {
   /**
    * Get current rate limit status with organization awareness
    * Only applies to API executions
+   * Rate limiting is disabled by default (DISABLE_RATE_LIMITING defaults to true)
+   * Set DISABLE_RATE_LIMITING=false to enable rate limiting
    */
   async getRateLimitStatusWithSubscription(
     userId: string,
@@ -299,6 +318,21 @@ export class RateLimiter {
     isAsync = false
   ): Promise<{ used: number; limit: number; remaining: number; resetAt: Date }> {
     try {
+      // Global bypass: If rate limiting is disabled, return unlimited status
+      if (env.DISABLE_RATE_LIMITING === true) {
+        logger.debug('Rate limiting disabled globally - returning unlimited status', {
+          userId,
+          triggerType,
+          isAsync,
+        })
+        return {
+          used: 0,
+          limit: MANUAL_EXECUTION_LIMIT,
+          remaining: MANUAL_EXECUTION_LIMIT,
+          resetAt: new Date(Date.now() + RATE_LIMIT_WINDOW_MS),
+        }
+      }
+
       if (triggerType === 'manual') {
         return {
           used: 0,

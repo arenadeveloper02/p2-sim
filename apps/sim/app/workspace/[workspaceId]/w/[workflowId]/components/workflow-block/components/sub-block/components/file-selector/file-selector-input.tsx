@@ -63,6 +63,7 @@ export function FileSelectorInput({
 
   // Use the proper hook to get the current value and setter
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlock.id)
+  console.log('storeValue: ', storeValue)
   const [connectedCredential] = useSubBlockValue(blockId, 'credential')
   const [domainValue] = useSubBlockValue(blockId, 'domain')
   const [projectIdValue] = useSubBlockValue(blockId, 'projectId')

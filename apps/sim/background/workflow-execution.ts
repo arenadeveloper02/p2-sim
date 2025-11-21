@@ -100,6 +100,12 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
     const decryptedPairs = await Promise.all(decryptionPromises)
     const decryptedEnvVars: Record<string, string> = Object.fromEntries(decryptedPairs)
 
+    // Merge system-level environment variables as fallback
+    // This ensures system-level API keys (like OPENAI_API_KEY) are available
+    // when user hasn't set them in their personal/workspace env vars
+    const { mergeSystemEnvironmentVariables } = await import('@/lib/environment/utils')
+    const finalEnvVars = mergeSystemEnvironmentVariables(decryptedEnvVars)
+
     // Start logging session
     await loggingSession.safeStart({
       userId: payload.userId,
@@ -121,7 +127,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
     const executor = new Executor({
       workflow: serializedWorkflow,
       currentBlockStates: processedBlockStates,
-      envVarValues: decryptedEnvVars,
+      envVarValues: finalEnvVars,
       workflowInput: payload.input || {},
       workflowVariables: {},
       contextExtensions: {

@@ -25,7 +25,10 @@ export class TriggerBlockHandler implements BlockHandler {
     inputs: Record<string, any>,
     context: ExecutionContext
   ): Promise<any> {
-    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`)
+    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`, {
+      blockCategory: block.metadata?.category,
+      hasTriggerMode: block.config?.params?.triggerMode,
+    })
 
     // If this trigger block was initialized with a precomputed output in the execution context
     // (e.g., webhook payload injected at init), return it as-is to preserve the raw shape.
@@ -52,6 +55,8 @@ export class TriggerBlockHandler implements BlockHandler {
           logger.debug(`Processing webhook trigger for block ${block.id}`, {
             provider,
             blockType: block.metadata?.id,
+            starterOutputKeys: Object.keys(starterOutput),
+            webhookDataKeys: Object.keys(webhookData),
           })
 
           // Provider-specific early return for GitHub: expose raw payload at root
@@ -158,6 +163,11 @@ export class TriggerBlockHandler implements BlockHandler {
 
           // Always keep webhook metadata
           if (starterOutput.webhook) result.webhook = starterOutput.webhook
+
+          // For generic webhooks, expose the URL field at root level
+          if (provider === 'generic' && webhookData.url) {
+            result.url = webhookData.url
+          }
 
           return result
         }

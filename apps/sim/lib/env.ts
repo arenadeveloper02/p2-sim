@@ -79,6 +79,7 @@ export const env = createEnv({
     OLLAMA_URL:                            z.string().url().optional(),            // Ollama local LLM server URL
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
+    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
     SAMBANOVA_API_KEY_1:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
     SAMBANOVA_API_KEY_2:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
@@ -151,6 +152,7 @@ export const env = createEnv({
     FREE_PLAN_LOG_RETENTION_DAYS:          z.string().optional(),                  // Log retention days for free plan users
 
     // Rate Limiting Configuration
+    DISABLE_RATE_LIMITING:                 z.boolean().optional().default(true),  // Flag to disable rate limiting (bypasses all rate limit checks, defaults to true)
     RATE_LIMIT_WINDOW_MS:                  z.string().optional().default('60000'), // Rate limit window duration in milliseconds (default: 1 minute)
     MANUAL_EXECUTION_LIMIT:                z.string().optional().default('999999'),// Manual execution bypass value (effectively unlimited)
     RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('10'),    // Free tier sync API executions per minute

@@ -6,7 +6,10 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
-import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
+import {
+  getPersonalAndWorkspaceEnv,
+  mergeSystemEnvironmentVariables,
+} from '@/lib/environment/utils'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -142,7 +145,24 @@ async function executeWorkflow(
       variables,
     })
 
-    // Replace environment variables in the block states
+    // Decrypt user/workspace environment variables first
+    const decryptedEnvVars: Record<string, string> = {}
+    for (const [key, encryptedValue] of Object.entries(variables)) {
+      try {
+        const { decrypted } = await decryptSecret(encryptedValue)
+        decryptedEnvVars[key] = decrypted
+      } catch (error: any) {
+        logger.error(`[${requestId}] Failed to decrypt environment variable "${key}"`, error)
+        throw new Error(`Failed to decrypt environment variable "${key}": ${error.message}`)
+      }
+    }
+
+    // Merge system-level environment variables as fallback BEFORE processing block states
+    // This ensures system-level API keys (like OPENAI_API_KEY) are available
+    // when user hasn't set them in their personal/workspace env vars
+    const finalEnvVars = mergeSystemEnvironmentVariables(decryptedEnvVars)
+
+    // Now replace environment variables in the block states using the merged env vars
     const currentBlockStates = await Object.entries(mergedStates).reduce(
       async (accPromise, [id, block]) => {
         const acc = await accPromise
@@ -158,23 +178,13 @@ async function executeWorkflow(
                 // Process all matches sequentially
                 for (const match of matches) {
                   const varName = match.slice(2, -2) // Remove {{ and }}
-                  const encryptedValue = variables[varName]
-                  if (!encryptedValue) {
+                  // Use finalEnvVars which includes system-level fallbacks
+                  const envValue = finalEnvVars[varName]
+                  if (!envValue) {
                     throw new Error(`Environment variable "${varName}" was not found`)
                   }
 
-                  try {
-                    const { decrypted } = await decryptSecret(encryptedValue)
-                    value = (value as string).replace(match, decrypted)
-                  } catch (error: any) {
-                    logger.error(
-                      `[${requestId}] Error decrypting environment variable "${varName}"`,
-                      error
-                    )
-                    throw new Error(
-                      `Failed to decrypt environment variable "${varName}": ${error.message}`
-                    )
-                  }
+                  value = (value as string).replace(match, envValue)
                 }
               }
             }
@@ -188,18 +198,6 @@ async function executeWorkflow(
       },
       Promise.resolve({} as Record<string, Record<string, any>>)
     )
-
-    // Create a map of decrypted environment variables
-    const decryptedEnvVars: Record<string, string> = {}
-    for (const [key, encryptedValue] of Object.entries(variables)) {
-      try {
-        const { decrypted } = await decryptSecret(encryptedValue)
-        decryptedEnvVars[key] = decrypted
-      } catch (error: any) {
-        logger.error(`[${requestId}] Failed to decrypt environment variable "${key}"`, error)
-        throw new Error(`Failed to decrypt environment variable "${key}": ${error.message}`)
-      }
-    }
 
     // Process the block states to ensure response formats are properly parsed
     const processedBlockStates = Object.entries(currentBlockStates).reduce(
@@ -275,7 +273,7 @@ async function executeWorkflow(
     const executor = new Executor({
       workflow: serializedWorkflow,
       currentBlockStates: processedBlockStates,
-      envVarValues: decryptedEnvVars,
+      envVarValues: finalEnvVars,
       workflowInput: processedInput,
       workflowVariables,
       contextExtensions: {
