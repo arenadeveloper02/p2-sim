@@ -1,4 +1,3 @@
-import { db, workflowSchedule } from '@sim/db'
 import { tasks } from '@trigger.dev/sdk'
 import { and, eq, isNull, lt, lte, not, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -7,6 +6,7 @@ import { env, isTruthy } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { executeScheduleJob } from '@/background/schedule-execution'
+import { db, workflowSchedule } from '@/db'
 
 export const dynamic = 'force-dynamic'
 

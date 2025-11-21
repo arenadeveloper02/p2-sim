@@ -1,21 +1,23 @@
 import { MicrosoftSharepointIcon } from '@/components/icons'
+import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { SharepointResponse } from '@/tools/sharepoint/types'
 
+const logger = createLogger('SharepointBlock')
+
 export const SharepointBlock: BlockConfig<SharepointResponse> = {
   type: 'sharepoint',
   name: 'Sharepoint',
-  description: 'Read and create pages',
+  description: 'Work with pages and lists',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Sharepoint into the workflow. Can read and create pages, and list sites. Requires OAuth.',
+    'Integrate SharePoint into the workflow. Read/create pages, list sites, and work with lists (read, create, update items). Requires OAuth.',
   docsLink: 'https://docs.sim.ai/tools/sharepoint',
   category: 'tools',
   bgColor: '#E0E0E0',
   icon: MicrosoftSharepointIcon,
   subBlocks: [
-    // Operation selector
     {
       id: 'operation',
       title: 'Operation',
@@ -31,7 +33,6 @@ export const SharepointBlock: BlockConfig<SharepointResponse> = {
         { label: 'Upload File', id: 'upload_file' },
       ],
     },
-    // Sharepoint Credentials
     {
       id: 'credential',
       title: 'Microsoft Account',
@@ -258,7 +259,6 @@ export const SharepointBlock: BlockConfig<SharepointResponse> = {
       params: (params) => {
         const { credential, siteSelector, manualSiteId, mimeType, ...rest } = params
 
-        // Use siteSelector if provided, otherwise use manualSiteId
         const effectiveSiteId = (siteSelector || manualSiteId || '').trim()
 
         const {
@@ -319,7 +319,7 @@ export const SharepointBlock: BlockConfig<SharepointResponse> = {
         const baseParams = {
           credential,
           siteId: effectiveSiteId || undefined,
-          pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
+          pageSize: others.pageSize ? Number.parseInt(others.pageSize as string, 10) : undefined,
           mimeType: mimeType,
           ...others,
           itemId: sanitizedItemId,
@@ -340,13 +340,10 @@ export const SharepointBlock: BlockConfig<SharepointResponse> = {
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
     credential: { type: 'string', description: 'Microsoft account credential' },
-    // Create Page operation inputs
     pageName: { type: 'string', description: 'Page name' },
     pageContent: { type: 'string', description: 'Page content' },
     pageTitle: { type: 'string', description: 'Page title' },
-    // Read Page operation inputs
     pageId: { type: 'string', description: 'Page ID' },
-    // List operation inputs
     siteSelector: { type: 'string', description: 'Site selector' },
     manualSiteId: { type: 'string', description: 'Manual site ID' },
     pageSize: { type: 'number', description: 'Results per page' },

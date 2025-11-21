@@ -1,4 +1,3 @@
-import { userStats } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { getUserUsageData } from '@/lib/billing/core/usage'
@@ -9,7 +8,7 @@ import {
 } from '@/lib/billing/subscriptions/utils'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
-import { member, subscription, user } from '@/db/schema'
+import { member, subscription, user, userStats } from '@/db/schema'
 
 const logger = createLogger('Billing')
 

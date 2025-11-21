@@ -1,4 +1,3 @@
-import { member, templateCreators } from '@sim/db/schema'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -10,7 +9,7 @@ import {
   sanitizeCredentials,
 } from '@/lib/workflows/credential-extractor'
 import { db } from '@/db'
-import { templates, workflow } from '@/db/schema'
+import { member, templateCreators, templates, workflow } from '@/db/schema'
 
 const logger = createLogger('TemplateByIdAPI')
 
@@ -56,7 +55,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Check if user has starred (only if authenticated)
     let isStarred = false
     if (session?.user?.id) {
-      const { templateStars } = await import('@sim/db/schema')
+      const { templateStars } = await import('@/db/schema')
       const starResult = await db
         .select()
         .from(templateStars)

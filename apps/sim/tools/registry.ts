@@ -103,23 +103,6 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
-// import { facebookAdsQueryTool } from '@/tools/facebook_ads' // TODO: Enable after testing
-import {
-  figmaConvertTool,
-  figmaCreateStylesVariablesTool,
-  figmaCreateTool,
-  figmaDeleteCommentTool,
-  figmaGetCommentsTool,
-  figmaGetFileImagesTool,
-  figmaGetFileNodesTool,
-  figmaGetFileTool,
-  figmaGetProjectFilesTool,
-  figmaGetTeamProjectsTool,
-  figmaMakeIntegrationTool,
-  figmaPostCommentTool,
-  figmaToHTMLAITool,
-  figmaWireframeToUITool,
-} from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import { crawlTool, extractTool, mapTool, scrapeTool, searchTool } from '@/tools/firecrawl'
 import { functionExecuteTool } from '@/tools/function'
@@ -191,7 +174,7 @@ import {
   gmailSendTool,
   gmailUnarchiveTool,
 } from '@/tools/gmail'
-import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
+import { searchTool as googleSearchTool } from '@/tools/google'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -205,9 +188,9 @@ import {
   googleDriveDownloadTool,
   googleDriveGetContentTool,
   googleDriveListTool,
-  googleDriveUploadFileTool,
   googleDriveUploadTool,
 } from '@/tools/google_drive'
+import { googleFormsGetResponsesTool } from '@/tools/google_form'
 import {
   googleSheetsAppendTool,
   googleSheetsReadTool,
@@ -477,7 +460,6 @@ import {
   queryTool as postgresQueryTool,
   updateTool as postgresUpdateTool,
 } from '@/tools/postgresql'
-import { createTool as presentationCreateTool } from '@/tools/presentation'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import {
   redditDeleteTool,
@@ -528,12 +510,16 @@ import {
   salesforceUpdateOpportunityTool,
   salesforceUpdateTaskTool,
 } from '@/tools/salesforce'
-import { semrushQueryTool } from '@/tools/semrush'
 import { searchTool as serperSearch } from '@/tools/serper'
 import {
+  sharepointAddListItemTool,
+  sharepointCreateListTool,
   sharepointCreatePageTool,
+  sharepointGetListTool,
   sharepointListSitesTool,
   sharepointReadPageTool,
+  sharepointUpdateListItemTool,
+  sharepointUploadFileTool,
 } from '@/tools/sharepoint'
 import {
   slackAddReactionTool,
@@ -702,8 +688,6 @@ import {
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
-  arena_create_task: arenaCreateTask,
-  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -726,8 +710,6 @@ export const tools: Record<string, ToolConfig> = {
   firecrawl_map: mapTool,
   firecrawl_extract: extractTool,
   google_search: googleSearchTool,
-  google_imagen: imagenTool,
-  google_nano_banana: nanoBananaTool,
   guardrails_validate: guardrailsValidateTool,
   jina_read_url: readUrlTool,
   jina_search: jinaSearchTool,
@@ -765,7 +747,6 @@ export const tools: Record<string, ToolConfig> = {
   slack_add_reaction: slackAddReactionTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
-  semrush_query: semrushQueryTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
@@ -860,7 +841,6 @@ export const tools: Record<string, ToolConfig> = {
   postgresql_update: postgresUpdateTool,
   postgresql_delete: postgresDeleteTool,
   postgresql_execute: postgresExecuteTool,
-  presentation_create: presentationCreateTool,
   mongodb_query: mongodbQueryTool,
   mongodb_insert: mongodbInsertTool,
   mongodb_update: mongodbUpdateTool,
@@ -945,7 +925,6 @@ export const tools: Record<string, ToolConfig> = {
   google_drive_get_content: googleDriveGetContentTool,
   google_drive_list: googleDriveListTool,
   google_drive_upload: googleDriveUploadTool,
-  google_drive_upload_file: googleDriveUploadFileTool,
   google_drive_download: googleDriveDownloadTool,
   google_drive_create_folder: googleDriveCreateFolderTool,
   google_docs_read: googleDocsReadTool,
@@ -955,8 +934,6 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
-  // facebook_ads_query: facebookAdsQueryTool, // TODO: Enable after testing
-  google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   confluence_retrieve: confluenceRetrieveTool,
@@ -1213,6 +1190,7 @@ export const tools: Record<string, ToolConfig> = {
   google_calendar_list: googleCalendarListTool,
   google_calendar_quick_add: googleCalendarQuickAddTool,
   google_calendar_invite: googleCalendarInviteTool,
+  google_forms_get_responses: googleFormsGetResponsesTool,
   workflow_executor: workflowExecutorTool,
   wealthbox_read_contact: wealthboxReadContactTool,
   wealthbox_write_contact: wealthboxWriteContactTool,
@@ -1260,23 +1238,6 @@ export const tools: Record<string, ToolConfig> = {
   sharepoint_create_page: sharepointCreatePageTool,
   sharepoint_read_page: sharepointReadPageTool,
   sharepoint_list_sites: sharepointListSitesTool,
-  // Figma tools
-  figma_create: figmaCreateTool,
-  figma_convert: figmaConvertTool,
-  figma_create_styles_variables: figmaCreateStylesVariablesTool,
-  figma_make_integration: figmaMakeIntegrationTool,
-  figma_to_html_ai: figmaToHTMLAITool,
-  figma_wireframe_to_ui: figmaWireframeToUITool,
-  figma_get_comments: figmaGetCommentsTool,
-  figma_post_comment: figmaPostCommentTool,
-  figma_delete_comment: figmaDeleteCommentTool,
-  figma_get_team_projects: figmaGetTeamProjectsTool,
-  figma_get_file: figmaGetFileTool,
-  figma_get_file_nodes: figmaGetFileNodesTool,
-  figma_get_file_images: figmaGetFileImagesTool,
-  figma_get_project_files: figmaGetProjectFilesTool,
-  // Provider chat tools
-  // Provider chat tools - handled separately in agent blocks
   sharepoint_get_list: sharepointGetListTool,
   sharepoint_create_list: sharepointCreateListTool,
   sharepoint_update_list: sharepointUpdateListItemTool,

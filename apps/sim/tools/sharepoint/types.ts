@@ -58,6 +58,39 @@ export interface SharepointPageContent {
   } | null
 }
 
+export interface SharepointColumn {
+  id?: string
+  name?: string
+  displayName?: string
+  description?: string
+  indexed?: boolean
+  enforcedUniqueValues?: boolean
+  hidden?: boolean
+  readOnly?: boolean
+  required?: boolean
+  columnGroup?: string
+  [key: string]: unknown
+}
+
+export interface SharepointListItem {
+  id: string
+  fields?: Record<string, unknown>
+}
+
+export interface SharepointList {
+  id: string
+  displayName?: string
+  name?: string
+  webUrl?: string
+  createdDateTime?: string
+  lastModifiedDateTime?: string
+  list?: {
+    template?: string
+  }
+  columns?: SharepointColumn[]
+  items?: SharepointListItem[]
+}
+
 export interface SharepointListSitesResponse extends ToolResponse {
   output: {
     sites: SharepointSite[]

@@ -79,15 +79,6 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       required: true,
     },
     {
-      id: 'isHtml',
-      title: 'Is HTML',
-      type: 'switch',
-      layout: 'full',
-      placeholder: 'Email HTML content',
-      condition: { field: 'operation', value: ['send_gmail', 'draft_gmail'] },
-      required: false,
-    },
-    {
       id: 'contentType',
       title: 'Content Type',
       type: 'dropdown',
@@ -201,8 +192,14 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       title: 'Message ID',
       type: 'short-input',
       placeholder: 'Enter message ID to read (optional)',
-      mode: 'advanced',
-      condition: { field: 'operation', value: 'read_gmail' },
+      condition: {
+        field: 'operation',
+        value: 'read_gmail',
+        and: {
+          field: 'folder',
+          value: '',
+        },
+      },
     },
     // Search Fields
     {
@@ -387,7 +384,6 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
           credential,
           folder,
           manualFolder,
-          messageId,
           destinationLabel,
           manualDestinationLabel,
           sourceLabel,
@@ -402,7 +398,6 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
 
         // Handle both selector and manual folder input
         const effectiveFolder = (folder || manualFolder || '').trim()
-        const effectiveMessageId = (messageId || '').trim()
 
         if (rest.operation === 'read_gmail') {
           rest.folder = effectiveFolder || 'INBOX'

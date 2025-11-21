@@ -1,4 +1,3 @@
-import { member, templateCreators, user, workflowDeploymentVersion } from '@sim/db/schema'
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
@@ -11,7 +10,15 @@ import {
   sanitizeCredentials,
 } from '@/lib/workflows/credential-extractor'
 import { db } from '@/db'
-import { templateStars, templates, workflow } from '@/db/schema'
+import {
+  member,
+  templateCreators,
+  templateStars,
+  templates,
+  user,
+  workflow,
+  workflowDeploymentVersion,
+} from '@/db/schema'
 
 const logger = createLogger('TemplatesAPI')
 

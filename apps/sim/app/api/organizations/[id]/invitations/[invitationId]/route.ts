@@ -1,4 +1,11 @@
 import { randomUUID } from 'crypto'
+import { and, eq } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { getSession } from '@/lib/auth'
+import { requireStripeClient } from '@/lib/billing/stripe-client'
+import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
 import {
   invitation,
   member,
@@ -9,14 +16,7 @@ import {
   userStats,
   type WorkspaceInvitationStatus,
   workspaceInvitation,
-} from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { getSession } from '@/lib/auth'
-import { requireStripeClient } from '@/lib/billing/stripe-client'
-import { createLogger } from '@/lib/logs/console/logger'
-import { db } from '@/db'
+} from '@/db/schema'
 
 const logger = createLogger('OrganizationInvitation')
 

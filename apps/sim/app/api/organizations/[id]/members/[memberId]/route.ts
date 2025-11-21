@@ -1,4 +1,3 @@
-import { subscription as subscriptionTable } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -7,7 +6,7 @@ import { getUserUsageData } from '@/lib/billing/core/usage'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
-import { member, user, userStats } from '@/db/schema'
+import { member, subscription as subscriptionTable, user, userStats } from '@/db/schema'
 
 const logger = createLogger('OrganizationMemberAPI')
 

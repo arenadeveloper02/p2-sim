@@ -1,5 +1,3 @@
-import { env } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import type { ExaFindSimilarLinksParams, ExaFindSimilarLinksResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -77,7 +75,7 @@ export const findSimilarLinksTool: ToolConfig<
     },
     apiKey: {
       type: 'string',
-      required: !isHosted,
+      required: true,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -88,7 +86,7 @@ export const findSimilarLinksTool: ToolConfig<
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {

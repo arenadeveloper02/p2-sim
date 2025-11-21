@@ -499,8 +499,6 @@ async function handleInternalRequest(
 
     const response = await fetch(fullUrl, requestOptions)
 
-    const responseContentType = response.headers.get('content-type') || ''
-
     // For non-OK responses, attempt JSON first; if parsing fails, preserve legacy error expected by tests
     if (!response.ok) {
       let errorData: any

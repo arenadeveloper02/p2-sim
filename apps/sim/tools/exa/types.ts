@@ -10,7 +10,6 @@ export interface ExaBaseParams {
 export interface ExaSearchParams extends ExaBaseParams {
   query: string
   numResults?: number
-  dateFilter?: string
   useAutoprompt?: boolean
   type?: 'auto' | 'neural' | 'keyword' | 'fast'
   // Domain filtering

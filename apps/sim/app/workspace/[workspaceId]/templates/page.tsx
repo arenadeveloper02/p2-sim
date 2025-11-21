@@ -1,11 +1,11 @@
-import { db } from '@sim/db'
-import { settings, templateCreators, templateStars, templates, user } from '@sim/db/schema'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 import type { Template as WorkspaceTemplate } from '@/app/workspace/[workspaceId]/templates/templates'
 import Templates from '@/app/workspace/[workspaceId]/templates/templates'
+import { db } from '@/db'
+import { settings, templateCreators, templateStars, templates, user } from '@/db/schema'
 
 interface TemplatesPageProps {
   params: Promise<{

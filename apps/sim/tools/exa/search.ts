@@ -1,5 +1,3 @@
-import { env } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import type { ExaSearchParams, ExaSearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -17,19 +15,12 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
       visibility: 'user-or-llm',
       description: 'The search query to execute',
     },
-    dateFilter: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Date filter: last_24_hours, last_7_days, last_30_days',
-    },
     numResults: {
       type: 'number',
       required: false,
       visibility: 'user-only',
       description: 'Number of results to return (default: 10, max: 25)',
     },
-
     useAutoprompt: {
       type: 'boolean',
       required: false,
@@ -87,7 +78,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: !isHosted,
+      required: true,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -98,7 +89,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -106,26 +97,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
       }
 
       // Add optional parameters if provided
-      if (params.numResults) body.numResults = params.numResults
-      if (params.dateFilter && params.dateFilter !== 'auto') {
-        const now = new Date()
-        const startDate = new Date()
-
-        switch (params.dateFilter) {
-          case 'last_24_hours':
-            startDate.setHours(now.getHours() - 24)
-            break
-          case 'last_7_days':
-            startDate.setDate(now.getDate() - 7)
-            break
-          case 'last_30_days':
-            startDate.setDate(now.getDate() - 30)
-            break
-        }
-
-        body.startPublishedDate = startDate.toISOString()
-        body.endPublishedDate = now.toISOString()
-      }
+      if (params.numResults) body.numResults = Number(params.numResults)
       if (params.useAutoprompt !== undefined) body.useAutoprompt = params.useAutoprompt
       if (params.type) body.type = params.type
 

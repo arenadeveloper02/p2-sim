@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { workflow as workflowTable } from '@sim/db/schema'
 import { task } from '@trigger.dev/sdk'
 import { eq } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
@@ -9,6 +7,8 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { getWorkflowById } from '@/lib/workflows/utils'
+import { db } from '@/db'
+import { workflow as workflowTable } from '@/db/schema'
 import { type ExecutionMetadata, ExecutionSnapshot } from '@/executor/execution/snapshot'
 
 const logger = createLogger('TriggerWorkflowExecution')

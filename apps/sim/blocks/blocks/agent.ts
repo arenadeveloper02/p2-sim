@@ -71,7 +71,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   `,
   docsLink: 'https://docs.sim.ai/blocks/agent',
   category: 'blocks',
-  bgColor: '#F3F8FE',
+  bgColor: 'var(--brand-primary-hex)',
   icon: AgentIcon,
   subBlocks: [
     {
@@ -162,7 +162,7 @@ Create a system prompt appropriately detailed for the request, using clear langu
         const baseModels = providersState.providers.base.models
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)

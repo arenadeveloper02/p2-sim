@@ -1,4 +1,3 @@
-import { webhook } from '@sim/db'
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
@@ -6,6 +5,7 @@ import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cleanupExternalWebhook } from '@/lib/webhooks/webhook-helpers'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import { webhook } from '@/db'
 import * as schema from '@/db/schema'
 import { workflow, workflowBlocks, workflowEdges, workflowSubflows } from '@/db/schema'
 

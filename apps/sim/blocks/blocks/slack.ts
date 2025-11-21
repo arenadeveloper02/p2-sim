@@ -99,33 +99,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
       mode: 'advanced',
     },
-    // {
-    //   id: 'text',
-    //   title: 'Message',
-    //   type: 'long-input',
-    //   layout: 'full',
-    //   placeholder: 'Enter your message (supports Slack mrkdwn)',
-    //   condition: {
-    //     field: 'operation',
-    //     value: 'send',
-    //   },
-    //   dependsOn: ['credential', 'authMethod'],
-    //   required: true,
-    // },
-    // {
-    //   id: 'mentionUser',
-    //   title: 'Mention Users',
-    //   type: 'user-selector',
-    //   layout: 'full',
-    //   provider: 'slack',
-    //   multiple: true,
-    //   condition: {
-    //     field: 'operation',
-    //     value: 'send',
-    //   },
-    //   dependsOn: ['credential', 'authMethod'],
-    //   required: false,
-    // },
     {
       id: 'text',
       title: 'Message',
@@ -135,7 +108,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         field: 'operation',
         value: 'send',
       },
-      dependsOn: ['credential', 'authMethod'],
       required: true,
     },
     {

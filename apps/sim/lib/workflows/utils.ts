@@ -1,4 +1,3 @@
-import { permissions, workspace } from '@sim/db/schema'
 import type { InferSelectModel } from 'drizzle-orm'
 import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
@@ -7,7 +6,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import type { PermissionType } from '@/lib/permissions/utils'
 import { getBaseUrl } from '@/lib/urls/utils'
 import { db } from '@/db'
-import { workflow as workflowTable } from '@/db/schema'
+import { permissions, workflow as workflowTable, workspace } from '@/db/schema'
 import type { ExecutionResult } from '@/executor/types'
 
 // Re-export hasWorkflowChanged from comparison.ts for backwards compatibility

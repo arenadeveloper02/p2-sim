@@ -1,10 +1,10 @@
-import { db } from '@sim/db'
-import { apiKey as apiKeyTable } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { authenticateApiKey } from '@/lib/api-key/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { getWorkspaceBillingSettings } from '@/lib/workspaces/utils'
+import { db } from '@/db'
+import { apiKey as apiKeyTable } from '@/db/schema'
 
 const logger = createLogger('ApiKeyService')
 

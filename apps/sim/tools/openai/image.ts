@@ -1,6 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import { getBaseUrl } from '@/lib/urls/utils'
-import { getRotatingApiKey } from '@/lib/utils'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -55,18 +54,21 @@ export const imageTool: ToolConfig = {
       visibility: 'hidden',
       description: 'The number of images to generate (1-10)',
     },
+    apiKey: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'Your OpenAI API key',
+    },
   },
 
   request: {
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
-    headers: () => {
-      const apiKey = getRotatingApiKey('openai')
-      return {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      }
-    },
+    headers: (params) => ({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    }),
     body: (params) => {
       const body: BaseImageRequestBody = {
         model: params.model,

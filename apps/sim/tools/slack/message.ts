@@ -44,24 +44,6 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'Message text to send (supports Slack mrkdwn formatting)',
     },
-    mergeMessages: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Whether to merge multiple messages into a single block',
-    },
-    additionalMessages: {
-      type: 'array',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Additional messages to merge with the main message',
-    },
-    mentionUsers: {
-      type: 'array',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'User IDs to mention in the message',
-    },
     thread_ts: {
       type: 'string',
       required: false,
@@ -83,36 +65,12 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       'Content-Type': 'application/json',
     }),
     body: (params: SlackMessageParams) => {
-      let messageText = params.text
-
-      // Handle user mentions
-      if (params.mentionUsers && params.mentionUsers.length > 0) {
-        const mentions = params.mentionUsers.map((userId) => `<@${userId}>`).join(' ')
-        messageText = `${mentions} ${messageText}`
-      }
-
-      // Handle message merging
-      if (
-        params.mergeMessages &&
-        params.additionalMessages &&
-        params.additionalMessages.length > 0
-      ) {
-        // Process @ mentions in additional messages
-        const processedAdditionalMessages = params.additionalMessages.map((msg) => {
-          // Convert @username mentions to <@userId> format
-          // Note: In a real implementation, you'd want to resolve usernames to user IDs
-          // For now, we'll keep the @username format as Slack will handle the resolution
-          return msg
-        })
-
-        const allMessages = [messageText, ...processedAdditionalMessages]
-        messageText = allMessages.join('\n\n')
-      }
-
       return {
         accessToken: params.accessToken || params.botToken,
         channel: params.channel,
-        markdown_text: params.text,
+        text: params.text,
+        thread_ts: params.thread_ts || undefined,
+        files: params.files || null,
       }
     },
   },

@@ -38,8 +38,7 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
       type: 'array',
       required: true,
       visibility: 'user-or-llm',
-      description:
-        'The data to append to the spreadsheet. Can be a 2D array, array of objects, or JSON string.',
+      description: 'The data to append to the spreadsheet',
     },
     valueInputOption: {
       type: 'string',
@@ -151,8 +150,8 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
           })
         })
 
-        // For append operations, only add data rows (no headers)
-        processedValues = rows
+        // Add headers as the first row, then add data rows
+        processedValues = [headers, ...rows]
       }
       // Continue with existing logic for other array types
       else if (!Array.isArray(processedValues)) {

@@ -60,7 +60,7 @@ export const TranslateBlock: BlockConfig = {
         const baseModels = providersState.providers.base.models
         const ollamaModels = providersState.providers.ollama.models
         const openrouterModels = providersState.providers.openrouter.models
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels]))
+        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
 
         return allModels.map((model) => {
           const icon = getProviderIcon(model)

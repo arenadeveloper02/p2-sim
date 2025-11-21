@@ -1,6 +1,4 @@
 import { render } from '@react-email/components'
-import { db } from '@sim/db'
-import { member, subscription as subscriptionTable, user, userStats } from '@sim/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import type Stripe from 'stripe'
 import PaymentFailedEmail from '@/components/emails/billing/payment-failed-email'
@@ -10,6 +8,8 @@ import { sendEmail } from '@/lib/email/mailer'
 import { quickValidateEmail } from '@/lib/email/validation'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getBaseUrl } from '@/lib/urls/utils'
+import { db } from '@/db'
+import { member, subscription as subscriptionTable, user, userStats } from '@/db/schema'
 
 const logger = createLogger('StripeInvoiceWebhooks')
 

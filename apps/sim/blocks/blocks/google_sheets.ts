@@ -172,15 +172,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       params: (params) => {
         const { credential, values, spreadsheetId, manualSpreadsheetId, ...rest } = params
 
-        let parsedValues = values
-        if (values && typeof values === 'string') {
-          try {
-            parsedValues = JSON.parse(values)
-          } catch (error) {
-            // If JSON parsing fails, keep the original string value
-            parsedValues = values
-          }
-        }
+        const parsedValues = values ? JSON.parse(values as string) : undefined
 
         const effectiveSpreadsheetId = (spreadsheetId || manualSpreadsheetId || '').trim()
 

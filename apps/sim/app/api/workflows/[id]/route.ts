@@ -1,4 +1,3 @@
-import { webhook } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -11,7 +10,7 @@ import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { getWorkflowAccessContext, getWorkflowById } from '@/lib/workflows/utils'
 import { db } from '@/db'
-import { templates, workflow } from '@/db/schema'
+import { templates, webhook, workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowByIdAPI')
 

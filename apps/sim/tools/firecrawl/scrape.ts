@@ -1,4 +1,3 @@
-import { isHosted } from '@/lib/environment'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -24,7 +23,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -35,7 +34,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     url: 'https://api.firecrawl.dev/v2/scrape',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? process.env.FIRECRAWL_API_KEY : params.apiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {

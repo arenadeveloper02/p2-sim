@@ -1,25 +1,14 @@
 import { ImageIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
-import type { ToolResponse } from '@/tools/types'
+import { AuthMode, type BlockConfig } from '@/blocks/types'
+import type { DalleResponse } from '@/tools/openai/types'
 
-interface ImageGeneratorResponse extends ToolResponse {
-  output: {
-    content: string
-    image: string
-    metadata: {
-      model: string
-      numberOfImages?: number
-    }
-  }
-}
-
-export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
+export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
   type: 'image_generator',
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana.',
+    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3 or GPT Image.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   bgColor: '#4D5FFF',
@@ -31,9 +20,7 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       type: 'dropdown',
       options: [
         { label: 'DALL-E 3', id: 'dall-e-3' },
-        // { label: 'GPT Image', id: 'gpt-image-1' },
-        { label: 'Imagen 4.0', id: 'imagen-4.0-generate-001' },
-        { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
+        { label: 'GPT Image', id: 'gpt-image-1' },
       ],
       value: () => 'dall-e-3',
     },
@@ -104,119 +91,33 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
       condition: { field: 'model', value: 'gpt-image-1' },
     },
     {
-      id: 'imageSize',
-      title: 'Size',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: '1K', id: '1K' },
-        { label: '2K', id: '2K' },
-      ],
-      value: () => '1K',
-      condition: { field: 'model', value: 'imagen-4.0-generate-001' },
-    },
-    {
-      id: 'aspectRatio',
-      title: 'Aspect Ratio',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: '1:1', id: '1:1' },
-        { label: '3:4', id: '3:4' },
-        { label: '4:3', id: '4:3' },
-        { label: '9:16', id: '9:16' },
-        { label: '16:9', id: '16:9' },
-      ],
-      value: () => '1:1',
-      condition: { field: 'model', value: 'imagen-4.0-generate-001' },
-    },
-    {
-      id: 'personGeneration',
-      title: 'Person Generation',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: "Don't Allow", id: 'dont_allow' },
-        { label: 'Allow Adult', id: 'allow_adult' },
-        { label: 'Allow All', id: 'allow_all' },
-      ],
-      value: () => 'allow_adult',
-      condition: { field: 'model', value: 'imagen-4.0-generate-001' },
-    },
-    {
-      id: 'aspectRatio',
-      title: 'Aspect Ratio',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: '1:1', id: '1:1' },
-        { label: '2:3', id: '2:3' },
-        { label: '3:2', id: '3:2' },
-        { label: '3:4', id: '3:4' },
-        { label: '4:3', id: '4:3' },
-        { label: '4:5', id: '4:5' },
-        { label: '5:4', id: '5:4' },
-        { label: '9:16', id: '9:16' },
-        { label: '16:9', id: '16:9' },
-        { label: '21:9', id: '21:9' },
-      ],
-      value: () => '1:1',
-      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
-    },
-    {
-      id: 'inputImage',
-      title: 'Input Image to Edit',
-      type: 'file-upload',
-      layout: 'full',
-      acceptedTypes: 'image/*',
-      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter your OpenAI API key',
+      password: true,
+      connectionDroppable: false,
     },
   ],
   tools: {
-    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
+    access: ['openai_image'],
     config: {
-      tool: (params) => {
-        // Select tool based on model
-        if (params.model?.startsWith('imagen-')) {
-          return 'google_imagen'
-        }
-        if (params.model?.startsWith('gemini-')) {
-          return 'google_nano_banana'
-        }
-        return 'openai_image'
-      },
+      tool: () => 'openai_image',
       params: (params) => {
+        if (!params.apiKey) {
+          throw new Error('API key is required')
+        }
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
 
-        // Handle Google Imagen models
-        if (params.model?.startsWith('imagen-')) {
-          return {
-            model: params.model,
-            prompt: params.prompt,
-            imageSize: params.imageSize || '1K',
-            aspectRatio: params.aspectRatio || '1:1',
-            personGeneration: params.personGeneration || 'allow_adult',
-          }
-        }
-
-        // Handle Google Nano Banana models
-        if (params.model?.startsWith('gemini-')) {
-          return {
-            model: params.model,
-            prompt: params.prompt,
-            aspectRatio: params.aspectRatio || '1:1',
-            inputImage: params.inputImage,
-            inputImageMimeType: params.inputImageMimeType,
-          }
-        }
-
-        // Handle OpenAI models
+        // Base parameters for all models
         const baseParams = {
           prompt: params.prompt,
           model: params.model || 'dall-e-3',
           size: params.size || '1024x1024',
+          apiKey: params.apiKey,
         }
 
         if (params.model === 'dall-e-3') {
@@ -238,20 +139,13 @@ export const ImageGeneratorBlock: BlockConfig<ImageGeneratorResponse> = {
     },
   },
   inputs: {
-    prompt: { type: 'string', description: 'Image description prompt or editing instruction' },
+    prompt: { type: 'string', description: 'Image description prompt' },
     model: { type: 'string', description: 'Image generation model' },
-    size: { type: 'string', description: 'Image dimensions (OpenAI models)' },
-    imageSize: { type: 'string', description: 'Image size (Google Imagen models)' },
+    size: { type: 'string', description: 'Image dimensions' },
     quality: { type: 'string', description: 'Image quality level' },
     style: { type: 'string', description: 'Image style' },
     background: { type: 'string', description: 'Background type' },
-    aspectRatio: { type: 'string', description: 'Image aspect ratio' },
-    personGeneration: { type: 'string', description: 'Person generation setting' },
-    inputImage: {
-      type: 'string',
-      description: 'Base64 encoded input image for editing (Google Nano Banana)',
-    },
-    inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
+    apiKey: { type: 'string', description: 'OpenAI API key' },
   },
   outputs: {
     content: { type: 'string', description: 'Generation response' },

@@ -63,41 +63,28 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
   request: {
     url: (params) => {
       // If a specific message ID is provided, fetch that message directly with full format
-      const trimmedMessageId = (params.messageId || '').trim()
-      if (trimmedMessageId) {
-        return `${GMAIL_API_BASE}/messages/${trimmedMessageId}?format=full`
+      if (params.messageId) {
+        return `${GMAIL_API_BASE}/messages/${params.messageId}?format=full`
       }
 
       // Otherwise, list messages from the specified folder or INBOX by default
       const url = new URL(`${GMAIL_API_BASE}/messages`)
 
       // Build query parameters for the folder/label
-      const queryParams: string[] = []
+      const queryParams = []
 
       // Add unread filter if specified
       if (params.unreadOnly) {
         queryParams.push('is:unread')
       }
 
-      const trimmedFolder = (params.folder || '').trim()
-      if (trimmedFolder) {
-        const isLabelId = /^Label_/i.test(trimmedFolder)
-        if (isLabelId) {
-          // Use Gmail API labelIds parameter when a label ID is provided (e.g., Label_12345)
-          url.searchParams.append('labelIds', trimmedFolder)
+      if (params.folder) {
+        // If it's a system label like INBOX, SENT, etc., use it directly
+        if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM'].includes(params.folder)) {
+          queryParams.push(`in:${params.folder.toLowerCase()}`)
         } else {
-          // Handle system labels via query
-          if (['INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM', 'STARRED'].includes(trimmedFolder)) {
-            // INBOX/SENT/DRAFT/TRASH/SPAM: use in: operator; STARRED prefers is:starred
-            if (trimmedFolder === 'STARRED') {
-              queryParams.push('is:starred')
-            } else {
-              queryParams.push(`in:${trimmedFolder.toLowerCase()}`)
-            }
-          } else {
-            // Otherwise, it's a user-defined label name
-            queryParams.push(`label:${trimmedFolder}`)
-          }
+          // Otherwise, it's a user-defined label
+          queryParams.push(`label:${params.folder}`)
         }
       } else {
         // Default to INBOX if no folder is specified
@@ -110,11 +97,7 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
       }
 
       // Set max results (default to 1 for simplicity, max 10)
-      const maxResultsValue = params.maxResults as unknown as number
-      const parsedMax = Number.isFinite(maxResultsValue as number)
-        ? Number(maxResultsValue)
-        : Number(params.maxResults)
-      const maxResults = parsedMax ? Math.min(parsedMax, 10) : 1
+      const maxResults = params.maxResults ? Math.min(Number(params.maxResults), 10) : 1
       url.searchParams.append('maxResults', maxResults.toString())
 
       return url.toString()
@@ -266,11 +249,11 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
       }
     }
 
-    // Treat missing messages as zero results (e.g., when no emails match the filters)
+    // Fallback for unexpected response format
     return {
       success: true,
       output: {
-        content: 'No messages found in the selected folder.',
+        content: 'Unexpected response format from Gmail API',
         metadata: {
           results: [],
         },

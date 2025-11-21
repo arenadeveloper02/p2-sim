@@ -1,4 +1,3 @@
-import { workflow } from '@sim/db/schema'
 import { and, desc, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -8,7 +7,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { generateRequestId } from '@/lib/utils'
 import { db } from '@/db'
-import { customTools } from '@/db/schema'
+import { customTools, workflow } from '@/db/schema'
 
 const logger = createLogger('CustomToolsAPI')
 

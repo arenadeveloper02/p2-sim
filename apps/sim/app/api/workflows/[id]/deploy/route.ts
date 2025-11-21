@@ -1,4 +1,3 @@
-import { workflowDeploymentVersion } from '@sim/db'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -6,7 +5,7 @@ import { generateRequestId } from '@/lib/utils'
 import { deployWorkflow } from '@/lib/workflows/db-helpers'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
-import { db } from '@/db'
+import { db, workflowDeploymentVersion } from '@/db'
 import { workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowDeployAPI')
@@ -82,8 +81,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           parallels: normalizedData.parallels || {},
         }
 
-        // Normalize deployed state to match current state structure
-        const deployedState = workflowData.deployedState as any
+        // Normalize deployed state (active deployment version) to match current state structure
+        const deployedState = active.state as any
 
         // Normalize edges to match current state structure (remove type and data fields)
         const normalizedDeployedEdges = (deployedState.edges || []).map((edge: any) => ({

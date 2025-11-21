@@ -1,4 +1,3 @@
-import { workflowDeploymentVersion } from '@sim/db'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
 import { verifyInternalToken } from '@/lib/auth/internal'
@@ -6,7 +5,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
-import { db } from '@/db'
+import { db, workflowDeploymentVersion } from '@/db'
 
 const logger = createLogger('WorkflowDeployedStateAPI')
 

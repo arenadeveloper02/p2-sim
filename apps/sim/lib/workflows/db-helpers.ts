@@ -1,4 +1,10 @@
 import crypto from 'crypto'
+import type { InferSelectModel } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
+import type { Edge } from 'reactflow'
+import { v4 as uuidv4 } from 'uuid'
+import { createLogger } from '@/lib/logs/console/logger'
+import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/validation'
 import {
   db,
   webhook,
@@ -7,13 +13,7 @@ import {
   workflowDeploymentVersion,
   workflowEdges,
   workflowSubflows,
-} from '@sim/db'
-import type { InferSelectModel } from 'drizzle-orm'
-import { and, desc, eq, sql } from 'drizzle-orm'
-import type { Edge } from 'reactflow'
-import { v4 as uuidv4 } from 'uuid'
-import { createLogger } from '@/lib/logs/console/logger'
-import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/validation'
+} from '@/db'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'

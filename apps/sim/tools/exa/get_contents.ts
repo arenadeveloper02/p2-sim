@@ -1,5 +1,3 @@
-import { env } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
 import type { ExaGetContentsParams, ExaGetContentsResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -57,7 +55,7 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
     },
     apiKey: {
       type: 'string',
-      required: !isHosted,
+      required: true,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -68,7 +66,7 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       // Parse the comma-separated URLs into an array
