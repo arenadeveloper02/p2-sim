@@ -9,11 +9,10 @@ import { cn } from '@/lib/utils'
 import Controls from '@/app/workspace/[workspaceId]/logs/components/dashboard/controls'
 import { AutocompleteSearch } from '@/app/workspace/[workspaceId]/logs/components/search/search'
 import { Sidebar } from '@/app/workspace/[workspaceId]/logs/components/sidebar/sidebar'
-import Dashboard from '@/app/workspace/[workspaceId]/logs/dashboard'
-import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
-import { useFolders } from '@/hooks/queries/folders'
+import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils/format-date'
 import { useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useFolderStore } from '@/stores/folders/store'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 
@@ -119,14 +118,13 @@ export default function Logs() {
 
   const logs = useMemo(() => {
     if (!logsQuery.data?.pages) return []
-    return logsQuery.data.pages.flatMap((page) => page.logs)
+    return logsQuery.data.pages.flatMap((page: any) => page.logs || [])
   }, [logsQuery.data?.pages])
 
   useEffect(() => {
     setSearchQuery(storeSearchQuery)
   }, [storeSearchQuery])
 
-  const foldersQuery = useFolders(workspaceId)
   const { getFolderTree } = useFolderStore()
 
   useEffect(() => {
@@ -174,7 +172,7 @@ export default function Logs() {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, getFolderTree, foldersQuery.data])
+  }, [workspaceId, getFolderTree])
 
   useEffect(() => {
     if (isInitialized.current && debouncedSearchQuery !== storeSearchQuery) {
@@ -184,7 +182,7 @@ export default function Logs() {
 
   const handleLogClick = (log: WorkflowLog) => {
     setSelectedLog(log)
-    const index = logs.findIndex((l) => l.id === log.id)
+    const index = logs.findIndex((l: WorkflowLog) => l.id === log.id)
     setSelectedLogIndex(index)
     setIsSidebarOpen(true)
   }
@@ -361,7 +359,7 @@ export default function Logs() {
   }, [logs, selectedLogIndex, isSidebarOpen, selectedLog, handleNavigateNext, handleNavigatePrev])
 
   if (viewMode === 'dashboard') {
-    return <Dashboard />
+    return <div>Dashboard view coming soon</div>
   }
 
   return (
@@ -377,7 +375,7 @@ export default function Logs() {
             isRefetching={logsQuery.isFetching}
             resetToNow={handleRefresh}
             live={isLive}
-            setLive={(fn) => setIsLive(fn)}
+            setLive={setIsLive}
             viewMode={viewMode as string}
             setViewMode={setViewMode as (mode: 'logs' | 'dashboard') => void}
             searchComponent={
@@ -385,9 +383,6 @@ export default function Logs() {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder='Search logs...'
-                onOpenChange={(open: boolean) => {
-                  isSearchOpenRef.current = open
-                }}
               />
             }
             showExport={true}
@@ -448,7 +443,7 @@ export default function Logs() {
                 </div>
               ) : (
                 <div className='pb-[16px]'>
-                  {logs.map((log) => {
+                  {logs.map((log: WorkflowLog) => {
                     const formattedDate = formatDate(log.createdAt)
                     const isSelected = selectedLog?.id === log.id
                     const baseLevel = (log.level || 'info').toLowerCase()
@@ -533,7 +528,7 @@ export default function Logs() {
                                 ? `$${((log as any).cost.total as number).toFixed(4)}`
                                 : '—'}
                             </div>
-                          </div> */}
+                          </div>
 
                           {/* Trigger */}
                           <div className='hidden xl:block'>

@@ -3,30 +3,17 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { AlertCircle, Send, Square, } from 'lucide-react'
+import { Send, Square } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
-
-const logger = createLogger('ChatInput')
-
-import { createLogger } from '@/lib/logs/console/logger'
 
 const PLACEHOLDER_MOBILE = 'Enter a message'
 const PLACEHOLDER_DESKTOP = 'Enter a message or click the mic to speak'
 const MAX_TEXTAREA_HEIGHT = 120 // Max height in pixels (e.g., for about 3-4 lines)
-const MAX_TEXTAREA_HEIGHT_MOBILE = 100 // Smallser for mobile
-
-interface AttachedFile {
-  id: string
-  name: string
-  size: number
-  type: string
-  file: File
-  dataUrl?: string
-}
+const MAX_TEXTAREA_HEIGHT_MOBILE = 100 // Smaller for mobile
 
 export const ChatInput: React.FC<{
-  onSubmit?: (value: string, isVoiceInput?: boolean, files?: AttachedFile[]) => void
+  onSubmit?: (value: string, isVoiceInput?: boolean) => void
   isStreaming?: boolean
   onStopStreaming?: () => void
   onVoiceStart?: () => void
@@ -42,13 +29,8 @@ export const ChatInput: React.FC<{
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null) // Ref for the textarea
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isActive, setIsActive] = useState(false)
   const [inputValue, setInputValue] = useState('')
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
-  const [uploadErrors, setUploadErrors] = useState<string[]>([])
-  const [dragCounter, setDragCounter] = useState(0)
-  const isDragOver = dragCounter > 0
 
   // Check if speech-to-text is available in the browser
   const isSttAvailable =
@@ -118,76 +100,10 @@ export const ChatInput: React.FC<{
     // Focus is now handled by the useEffect above
   }
 
-  // Handle file selection
-  const handleFileSelect = async (selectedFiles: FileList | null) => {
-    if (!selectedFiles) return
-
-    const newFiles: AttachedFile[] = []
-    const maxSize = 10 * 1024 * 1024 // 10MB limit
-    const maxFiles = 15
-
-    for (let i = 0; i < selectedFiles.length; i++) {
-      if (attachedFiles.length + newFiles.length >= maxFiles) break
-
-      const file = selectedFiles[i]
-
-      // Check file size
-      if (file.size > maxSize) {
-        setUploadErrors((prev) => [...prev, `${file.name} is too large (max 10MB)`])
-        continue
-      }
-
-      // Check for duplicates
-      const isDuplicate = attachedFiles.some(
-        (existingFile) => existingFile.name === file.name && existingFile.size === file.size
-      )
-      if (isDuplicate) {
-        setUploadErrors((prev) => [...prev, `${file.name} already added`])
-        continue
-      }
-
-      // Read file as data URL if it's an image
-      let dataUrl: string | undefined
-      if (file.type.startsWith('image/')) {
-        try {
-          dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(file)
-          })
-        } catch (error) {
-          logger.error('Error reading file:', error)
-        }
-      }
-
-      newFiles.push({
-        id: crypto.randomUUID(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        file,
-        dataUrl,
-      })
-    }
-
-    if (newFiles.length > 0) {
-      setAttachedFiles([...attachedFiles, ...newFiles])
-      setUploadErrors([]) // Clear errors when files are successfully added
-    }
-  }
-
-  const handleRemoveFile = (fileId: string) => {
-    setAttachedFiles(attachedFiles.filter((f) => f.id !== fileId))
-  }
-
   const handleSubmit = () => {
-    if (isStreaming) return
-    if (!inputValue.trim() && attachedFiles.length === 0) return
-    onSubmit?.(inputValue.trim(), false, attachedFiles) // false = not voice input
+    if (!inputValue.trim()) return
+    onSubmit?.(inputValue.trim(), false) // false = not voice input
     setInputValue('')
-    setAttachedFiles([])
-    setUploadErrors([]) // Clear errors when sending message
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto' // Reset height after submit
       textareaRef.current.style.overflowY = 'hidden' // Ensure overflow is hidden
@@ -229,67 +145,13 @@ export const ChatInput: React.FC<{
     <>
       <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
-          {/* Error Messages */}
-          {uploadErrors.length > 0 && (
-            <div className='mb-3'>
-              <div className='rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-950/20'>
-                <div className='flex items-start gap-2'>
-                  <AlertCircle className='mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400' />
-                  <div className='flex-1'>
-                    <div className='mb-1 font-medium text-red-800 text-sm dark:text-red-300'>
-                      File upload error
-                    </div>
-                    <div className='space-y-1'>
-                      {uploadErrors.map((error, idx) => (
-                        <div key={idx} className='text-red-700 text-sm dark:text-red-400'>
-                          {error}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Text Input Area with Controls */}
           <motion.div
-            className={`rounded-2xl border shadow-sm transition-all duration-200 md:rounded-3xl ${
-              isDragOver
-                ? 'border-purple-500 bg-purple-50/50 dark:border-purple-500 dark:bg-purple-950/20'
-                : 'border-gray-200 bg-white'
-            }`}
+            className='rounded-2xl border border-gray-200 bg-white shadow-sm md:rounded-3xl'
             onClick={handleActivate}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            onDragEnter={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (!isStreaming) {
-                setDragCounter((prev) => prev + 1)
-              }
-            }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (!isStreaming) {
-                e.dataTransfer.dropEffect = 'copy'
-              }
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setDragCounter((prev) => Math.max(0, prev - 1))
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setDragCounter(0)
-              if (!isStreaming) {
-                handleFileSelect(e.dataTransfer.files)
-              }
-            }}
           >
             <div className='flex items-center gap-2 p-3 md:p-4'>
               {/* Voice Input */}
@@ -314,7 +176,7 @@ export const ChatInput: React.FC<{
                   value={inputValue}
                   onChange={handleInputChange}
                   className='flex w-full resize-none items-center overflow-hidden bg-transparent text-base outline-none placeholder:text-gray-400 md:font-[330]'
-                  placeholder={isDragOver ? 'Drop files here...' : isActive ? '' : ''}
+                  placeholder={isActive ? '' : ''}
                   rows={1}
                   style={{
                     minHeight: window.innerWidth >= 768 ? '24px' : '28px',
@@ -341,38 +203,24 @@ export const ChatInput: React.FC<{
                         className='-translate-y-1/2 absolute top-1/2 left-0 transform select-none text-base text-gray-400 md:hidden'
                         style={{ paddingTop: '3px', paddingBottom: '3px' }}
                       >
-                        {isDragOver ? 'Drop files here...' : PLACEHOLDER_MOBILE}
+                        {PLACEHOLDER_MOBILE}
                       </div>
                       {/* Desktop placeholder */}
                       <div
                         className='-translate-y-1/2 absolute top-1/2 left-0 hidden transform select-none font-[330] text-base text-gray-400 md:block'
                         style={{ paddingTop: '4px', paddingBottom: '4px' }}
                       >
-                        {isDragOver ? 'Drop files here...' : PLACEHOLDER_DESKTOP}
+                        {PLACEHOLDER_DESKTOP}
                       </div>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Voice Input */}
-              {isSttAvailable && (
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <div>
-                      <VoiceInput onVoiceStart={handleVoiceStart} disabled={isStreaming} minimal />
-                    </div>
-                  </Tooltip.Trigger>
-                  <Tooltip.Content side='top'>
-                    <p>Start voice conversation</p>
-                  </Tooltip.Content>
-                </Tooltip.Root>
-              )}
-
               {/* Send Button */}
               <button
                 className={`flex items-center justify-center rounded-full p-1.5 text-white transition-colors md:p-2 ${
-                  inputValue.trim() || attachedFiles.length > 0
+                  inputValue.trim()
                     ? 'bg-black hover:bg-zinc-700'
                     : 'cursor-default bg-gray-300 hover:bg-gray-400'
                 }`}
@@ -403,6 +251,6 @@ export const ChatInput: React.FC<{
           </motion.div>
         </div>
       </div>
-    </Tooltip.Provider>
+    </>
   )
 }

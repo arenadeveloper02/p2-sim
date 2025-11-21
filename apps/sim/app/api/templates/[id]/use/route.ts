@@ -1,5 +1,3 @@
-
-import { workflowDeploymentVersion } from '@sim/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
@@ -9,12 +7,7 @@ import { getBaseUrl } from '@/lib/urls/utils'
 import { generateRequestId } from '@/lib/utils'
 import { regenerateWorkflowStateIds } from '@/lib/workflows/db-helpers'
 import { db } from '@/db'
-import {
-  templates,
-  workflow,
-  workflowBlocks,
-  workflowEdges,
-} from '@/db/schema'
+import { templates, workflow, workflowDeploymentVersion } from '@/db/schema'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -74,7 +67,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Create a new workflow ID
     const newWorkflowId = uuidv4()
-    const templateMapperId = uuidv4()
     const now = new Date()
 
     // Extract variables from the template state and remap to the new workflow
@@ -140,7 +132,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Use a transaction for template updates and deployment version
-    const result = await db.transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       // Prepare template update data
       const updateData: any = {
         views: sql`${templates.views} + 1`,
@@ -156,50 +148,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (templateData.state) {
           const newDeploymentVersionId = uuidv4()
           await tx.insert(workflowDeploymentVersion).values({
-      // Create a new workflow from the template
-      const newWorkflow = await tx
-        .insert(workflow)
-        .values({
-          id: newWorkflowId,
-          workspaceId: workspaceId,
-          name: `${templateData.name} (copy)`,
-          description: templateData.description,
-          color: templateData.color,
-          userId: session.user.id,
-          createdAt: now,
-          updatedAt: now,
-          lastSynced: now,
-        })
-        .returning({ id: workflow.id })
-
-      await tx.insert(workflowTemplateMapper).values({
-        id: templateMapperId,
-        createdAt: now,
-        updatedAt: now,
-        templateId: id,
-        workflowId: newWorkflowId,
-        workspaceId: workspaceId,
-        name: `${templateData.name} (copy)`,
-      })
-
-      // Create workflow_blocks entries from the template state
-      const templateState = templateData.state as any
-      if (templateState?.blocks) {
-        // Create a mapping from old block IDs to new block IDs for reference updates
-        const blockIdMap = new Map<string, string>()
-
-        Object.values(templateState.blocks).forEach((block: any) => {
-          blockIdMap.set(block.id, uuidv4())
-        })
-
-        const blockEntries = Object.values(templateState.blocks).map((block: any) => {
-          const newBlockId = blockIdMap.get(block.id)
-
-          return {
-            id: newBlockId,
+            id: newDeploymentVersionId,
             workflowId: newWorkflowId,
             version: 1,
-            state: templateData.state,
+            state: workflowStateWithVariables,
             isActive: true,
             createdAt: now,
             createdBy: session.user.id,
@@ -209,71 +161,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Update template with view count and potentially new workflow connection
       await tx.update(templates).set(updateData).where(eq(templates.id, id))
-
-      return { id: newWorkflowId }
-            updatedAt: now,
-          }
-        })
-
-        // Create edge entries with new IDs
-        const edgeEntries = (templateState.edges || []).map((edge: any) => ({
-          id: uuidv4(),
-          workflowId: newWorkflowId,
-          sourceBlockId: blockIdMap.get(edge.source) || edge.source,
-          targetBlockId: blockIdMap.get(edge.target) || edge.target,
-          sourceHandle: edge.sourceHandle || null,
-          targetHandle: edge.targetHandle || null,
-          createdAt: now,
-        }))
-
-        // Update the workflow state with new block IDs
-        const updatedState = { ...templateState }
-        if (updatedState.blocks) {
-          const newBlocks: any = {}
-          Object.entries(updatedState.blocks).forEach(([oldId, blockData]: [string, any]) => {
-            const newId = blockIdMap.get(oldId)
-            if (newId) {
-              newBlocks[newId] = {
-                ...blockData,
-                id: newId,
-              }
-            }
-          })
-          updatedState.blocks = newBlocks
-        }
-
-        // Update edges to use new block IDs
-        if (updatedState.edges) {
-          updatedState.edges = updatedState.edges.map((edge: any) => ({
-            ...edge,
-            id: uuidv4(),
-            source: blockIdMap.get(edge.source) || edge.source,
-            target: blockIdMap.get(edge.target) || edge.target,
-          }))
-        }
-
-        // Insert blocks and edges
-        if (blockEntries.length > 0) {
-          // Filter out any entries where id is undefined before inserting
-          const validBlockEntries = blockEntries.filter((entry) => entry.id !== undefined)
-          if (validBlockEntries.length > 0) {
-            await tx.insert(workflowBlocks).values(validBlockEntries as any)
-          }
-        }
-        if (edgeEntries.length > 0) {
-          await tx.insert(workflowEdges).values(edgeEntries)
-        }
-      }
-
-      return newWorkflow[0]
     })
 
     logger.info(
-      `[$requestId] Successfully used template: $id, created workflow: $newWorkflowId`
+      `[${requestId}] Successfully used template: ${id}, created workflow: ${newWorkflowId}`
     )
 
     // Track template usage
     try {
+      // @ts-expect-error - Telemetry module may not exist in all environments
       const { trackPlatformEvent } = await import('@/lib/telemetry/tracer')
       const templateState = templateData.state as any
       trackPlatformEvent('platform.template.used', {
@@ -298,7 +194,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { status: 201 }
     )
   } catch (error: any) {
-    logger.error(`[$requestId] Error using template: $id`, error)
+    logger.error(`[${requestId}] Error using template: ${id}`, error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

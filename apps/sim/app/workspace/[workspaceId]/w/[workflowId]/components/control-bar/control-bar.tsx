@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   ChevronLeft,
@@ -16,7 +16,6 @@ import {
   X,
 } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { Tooltip } from '@/components/emcn'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -28,6 +27,7 @@ import {
   AlertDialogTrigger,
   Button,
 } from '@/components/ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSession } from '@/lib/auth-client'
 import { getEnv, isTruthy } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -122,6 +122,13 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
   // Change detection state
   const [changeDetected, setChangeDetected] = useState(false)
+
+  // Deployment modal state
+  const [initialTab, setInitialTab] = useState<'api' | 'chat'>('api')
+  const refreshChatDeployment = useCallback(() => {
+    // Refresh chat deployment data if needed
+    fetchDeployedState()
+  }, [])
 
   const isFullScreenExpanded = isFullScreen && isOpen
   // Usage limit state
@@ -320,9 +327,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
         logger.error('Error fetching workflow status:', error)
         setChangeDetected(false)
       }
-    }
-
-    checkForChanges()
+    }, 500)
   }, [activeWorkflowId, deployedState, debouncedStatusCheckTrigger, isLoadingDeployedState])
 
   useEffect(() => {
@@ -603,14 +608,14 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
     if (isDisabled) {
       return (
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
               <Trash2 className='h-4 w-4' />
             </div>
-          </Tooltip.Trigger>
-          <Tooltip.Content>{getTooltipText()}</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>{getTooltipText()}</TooltipContent>
+        </Tooltip>
       )
     }
 
@@ -632,8 +637,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           }
         }}
       >
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <AlertDialogTrigger asChild>
               <Button
                 variant='outline'
@@ -647,9 +652,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
                 <span className='sr-only'>Delete Workflow</span>
               </Button>
             </AlertDialogTrigger>
-          </Tooltip.Trigger>
-          <Tooltip.Content>{getTooltipText()}</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>{getTooltipText()}</TooltipContent>
+        </Tooltip>
 
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -763,8 +768,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     }
 
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           <Button
             variant='outline'
             size='icon'
@@ -775,9 +780,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
             <Webhook className='h-5 w-5' />
             <span className='sr-only'>Webhook Settings</span>
           </Button>
-        </Tooltip.Trigger>
-        <Tooltip.Content>{getTooltipText()}</Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipTrigger>
+        <TooltipContent>{getTooltipText()}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -795,8 +800,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     }
 
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           {isDisabled ? (
             <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
               <Copy className='h-4 w-4' />
@@ -811,9 +816,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <span className='sr-only'>Duplicate Workflow</span>
             </Button>
           )}
-        </Tooltip.Trigger>
-        <Tooltip.Content>{getTooltipText()}</Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipTrigger>
+        <TooltipContent>{getTooltipText()}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -828,16 +833,38 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
       setIsAutoLayouting(true)
       try {
-        // Use the standalone auto layout utility for immediate frontend updates
-        const { applyAutoLayoutAndUpdateStore } = await import('../../utils')
+        // Call the autolayout API endpoint
+        const response = await fetch(`/api/workflows/${activeWorkflowId}/autolayout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            strategy: 'smart',
+            alignment: 'center',
+            spacing: {
+              horizontal: 550,
+              vertical: 200,
+            },
+            padding: {
+              x: 150,
+              y: 150,
+            },
+          }),
+        })
 
-        const result = await applyAutoLayoutAndUpdateStore(activeWorkflowId!)
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          throw new Error(errorData.error || 'Auto layout failed')
+        }
 
+        const result = await response.json()
         if (result.success) {
           logger.info('Auto layout completed successfully')
+          // Refresh the workflow to show the new layout
+          router.refresh()
         } else {
           logger.error('Auto layout failed:', result.error)
-          // You could add a toast notification here if available
         }
       } catch (error) {
         logger.error('Auto layout error:', error)
@@ -859,8 +886,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     }
 
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           {isDisabled ? (
             <div className='inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-[11px] border bg-card text-card-foreground opacity-50 shadow-xs transition-colors'>
               {isAutoLayouting ? (
@@ -884,12 +911,12 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <span className='sr-only'>Auto Layout</span>
             </Button>
           )}
-        </Tooltip.Trigger>
-        <Tooltip.Content>
+        </TooltipTrigger>
+        <TooltipContent>
           {getTooltipText()}
           {!isDebugging && <span className='ml-1 text-xs opacity-75'>(Shift+L)</span>}
-        </Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -947,8 +974,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
     return (
       <div className='flex items-center gap-1'>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               onClick={() => {
                 openConsolePanel()
@@ -960,12 +987,12 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <StepForward className='h-5 w-5' />
               <span className='sr-only'>Step Forward</span>
             </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content>Step Forward</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>Step Forward</TooltipContent>
+        </Tooltip>
 
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               onClick={() => {
                 openConsolePanel()
@@ -977,12 +1004,12 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <SkipForward className='h-5 w-5' />
               <span className='sr-only'>Resume Until End</span>
             </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content>Resume Until End</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>Resume Until End</TooltipContent>
+        </Tooltip>
 
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               onClick={() => {
                 handleCancelDebug()
@@ -992,9 +1019,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <X className='h-5 w-5' />
               <span className='sr-only'>Cancel Debugging</span>
             </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content>Cancel Debugging</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>Cancel Debugging</TooltipContent>
+        </Tooltip>
       </div>
     )
   }
@@ -1024,8 +1051,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     )
 
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           {isDisabled ? (
             <div
               className={cn(
@@ -1043,9 +1070,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
               <span className='sr-only'>{getTooltipText()}</span>
             </Button>
           )}
-        </Tooltip.Trigger>
-        <Tooltip.Content>{getTooltipText()}</Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipTrigger>
+        <TooltipContent>{getTooltipText()}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -1061,8 +1088,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     // If currently executing, show cancel button
     if (isExecuting) {
       return (
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               className={cn(
                 'gap-2 font-medium',
@@ -1075,9 +1102,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
             >
               <X className={cn('h-3.5 w-3.5')} />
             </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content>Cancel execution</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent>Cancel execution</TooltipContent>
+        </Tooltip>
       )
     }
 
@@ -1124,8 +1151,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
     }
 
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           <Button
             // className={cn(
             //   'gap-2 font-medium',
@@ -1144,9 +1171,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
           >
             <Play className={cn('h-3.5 w-3.5')} />
           </Button>
-        </Tooltip.Trigger>
-        <Tooltip.Content>{getTooltipContent()}</Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipTrigger>
+        <TooltipContent>{getTooltipContent()}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -1203,12 +1230,12 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
 
     return (
       <div className='flex h-12 items-center gap-2 rounded-[11px] border border-red-500 bg-red-500 px-3 text-white shadow-xs'>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <WifiOff className='h-[18px] w-[18px] cursor-help' />
-          </Tooltip.Trigger>
-          <Tooltip.Content className='mt-3'>Connection lost - refresh</Tooltip.Content>
-        </Tooltip.Root>
+          </TooltipTrigger>
+          <TooltipContent className='mt-3'>Connection lost - refresh</TooltipContent>
+        </Tooltip>
         <Button
           variant='ghost'
           size='sm'
@@ -1226,8 +1253,8 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
    */
   const renderToggleButton = () => {
     return (
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
           <Button
             variant='outline'
             onClick={() => setIsExpanded(!isExpanded)}
@@ -1241,9 +1268,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
             />
             <span className='sr-only'>{isExpanded ? 'Collapse' : 'Expand'} Control Bar</span>
           </Button>
-        </Tooltip.Trigger>
-        <Tooltip.Content>{isExpanded ? 'Collapse' : 'Expand'} Control Bar</Tooltip.Content>
-      </Tooltip.Root>
+        </TooltipTrigger>
+        <TooltipContent>{isExpanded ? 'Collapse' : 'Expand'} Control Bar</TooltipContent>
+      </Tooltip>
     )
   }
 

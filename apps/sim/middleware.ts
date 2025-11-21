@@ -12,177 +12,68 @@ const SUSPICIOUS_UA_PATTERNS = [
   /<\s*script/i, // Potential XSS payloads
   /^\(\)\s*{/, // Command execution attempt
   /\b(sqlmap|nikto|gobuster|dirb|nmap)\b/i, // Known scanning tools
-]
+] as const
 
-const BASE_DOMAIN = getBaseDomain()
-
-export async function middleware(request: NextRequest) {
-  const email = request.cookies.get('email')?.value
-  console.log(request.cookies)
-  // Check for active session
-  const sessionCookie = getSessionCookie(request)
-  const hasActiveSession = !!sessionCookie
-
+/**
+ * Handles authentication-based redirects for root paths
+ */
+function handleRootPathRedirects(
+  request: NextRequest,
+  hasActiveSession: boolean
+): NextResponse | null {
   const url = request.nextUrl
-  const hostname = request.headers.get('host') || ''
-  const isLocal = hostname === 'localhost:3000'
-  logger.info(`hostname: ${hostname}, isLocal: ${isLocal}`)
-  logger.info(`email: ${email}, hasActiveSession: ${hasActiveSession}`)
-  logger.info(`url: ${url}`)
 
-  if (url.pathname.startsWith('/api/')) {
-    return NextResponse.next()
-  }
-  if (url.pathname === '/login' && email) {
-    return NextResponse.redirect(new URL('/', request.url))
+  if (url.pathname !== '/') {
+    return null
   }
 
-  function getLoginRedirectUrl() {
-    let redirectUrl = ''
-    if (hostname === 'dev-agent.thearena.ai') {
-      redirectUrl = 'https://dev.thearena.ai/'
-    } else if (hostname === 'test-agent.thearena.ai') {
-      redirectUrl = 'https://test.thearena.ai/'
-    } else if (hostname === 'sandbox-agent.thearena.ai') {
-      redirectUrl = 'https://sandbox.thearena.ai/'
-    } else if (hostname === 'agent.thearena.ai') {
-      redirectUrl = 'https://app.thearena.ai/'
-    } else {
-      redirectUrl = 'https://dev.thearena.ai/'
-    }
-    return redirectUrl
-  }
-  if (!email && !isLocal) {
-    const redirectUrl = getLoginRedirectUrl()
-    return NextResponse.redirect(redirectUrl)
-  }
-  if (email) {
-    return NextResponse.next()
-  }
-
-  // Extract subdomain - handle nested subdomains for any domain
-  const isCustomDomain = (() => {
-    // Standard check for non-base domains
-    if (hostname === BASE_DOMAIN || hostname.startsWith('www.')) {
-      return false
-    }
-
-    // Extract root domain from BASE_DOMAIN (e.g., "sim.ai" from "staging.sim.ai")
-    const baseParts = BASE_DOMAIN.split('.')
-    const rootDomain = isDev
-      ? 'localhost'
-      : baseParts.length >= 2
-        ? baseParts
-            .slice(-2)
-            .join('.') // Last 2 parts: ["simstudio", "ai"] -> "sim.ai"
-        : BASE_DOMAIN
-
-    // Check if hostname is under the same root domain
-    if (!hostname.includes(rootDomain)) {
-      return false
-    }
-
-    // For nested subdomain environments: handle cases like myapp.staging.example.com
-    const hostParts = hostname.split('.')
-    const basePartCount = BASE_DOMAIN.split('.').length
-
-    // If hostname has more parts than base domain, it's a nested subdomain
-    if (hostParts.length > basePartCount) {
-      return true
-    }
-
-    // For single-level subdomains: regular subdomain logic
-    return hostname !== BASE_DOMAIN
-  })()
-
-  const subdomain = isCustomDomain ? hostname.split('.')[0] : null
-
-  // Handle chat subdomains
-  if (subdomain && isCustomDomain) {
-    if (url.pathname.startsWith('/api/chat/') || url.pathname.startsWith('/api/proxy/')) {
-      return NextResponse.next()
-    }
-
-    // Rewrite to the chat page but preserve the URL in browser
-    return NextResponse.rewrite(new URL(`/chat/${subdomain}${url.pathname}`, request.url))
-  }
-
-  // For self-hosted deployments, redirect root path based on session status
-  // Only apply redirects to the main domain, not subdomains
-  if (!isHosted && !isCustomDomain && url.pathname === '/') {
+  if (!isHosted) {
+    // Self-hosted: Always redirect based on session
     if (hasActiveSession) {
-      // User has active session, redirect to workspace
       return NextResponse.redirect(new URL('/workspace', request.url))
     }
-    // User doesn't have active session, redirect to login
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Handle whitelabel redirects for terms and privacy pages
-  if (url.pathname === '/terms') {
-    const termsUrl = process.env.NEXT_PUBLIC_TERMS_URL
-    if (termsUrl?.startsWith('http')) {
-      return NextResponse.redirect(termsUrl)
+  // For root path, redirect authenticated users to workspace
+  // Unless they have a 'from' query parameter (e.g., ?from=nav, ?from=settings)
+  // This allows intentional navigation to the homepage from anywhere in the app
+  if (hasActiveSession) {
+    const from = url.searchParams.get('from')
+    if (!from) {
+      return NextResponse.redirect(new URL('/workspace', request.url))
     }
   }
 
-  if (url.pathname === '/privacy') {
-    const privacyUrl = process.env.NEXT_PUBLIC_PRIVACY_URL
-    if (privacyUrl?.startsWith('http')) {
-      return NextResponse.redirect(privacyUrl)
-    }
+  return null
+}
+
+/**
+ * Handles invitation link redirects for unauthenticated users
+ */
+function handleInvitationRedirects(
+  request: NextRequest,
+  hasActiveSession: boolean
+): NextResponse | null {
+  if (!request.nextUrl.pathname.startsWith('/invite/')) {
+    return null
   }
 
-  // Legacy redirect: /w -> /workspace (will be handled by workspace layout)
-  if (url.pathname === '/w' || url.pathname.startsWith('/w/')) {
-    // Extract workflow ID if present
-    const pathParts = url.pathname.split('/')
-    if (pathParts.length >= 3 && pathParts[1] === 'w') {
-      const workflowId = pathParts[2]
-      // Redirect old workflow URLs to new format
-      // We'll need to resolve the workspace ID for this workflow
-      return NextResponse.redirect(
-        new URL(`/workspace?redirect_workflow=${workflowId}`, request.url)
-      )
-    }
-    // Simple /w redirect to workspace root
-    return NextResponse.redirect(new URL('/workspace', request.url))
+  if (
+    !hasActiveSession &&
+    !request.nextUrl.pathname.endsWith('/login') &&
+    !request.nextUrl.pathname.endsWith('/signup') &&
+    !request.nextUrl.search.includes('callbackUrl')
+  ) {
+    const token = request.nextUrl.searchParams.get('token')
+    const inviteId = request.nextUrl.pathname.split('/').pop()
+    const callbackParam = encodeURIComponent(`/invite/${inviteId}${token ? `?token=${token}` : ''}`)
+    return NextResponse.redirect(
+      new URL(`/login?callbackUrl=${callbackParam}&invite_flow=true`, request.url)
+    )
   }
-
-  // Handle protected routes that require authentication
-  if (url.pathname.startsWith('/workspace')) {
-    if (!hasActiveSession) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-
-    // Check if user needs email verification
-    const requiresVerification = request.cookies.get('requiresEmailVerification')
-    if (requiresVerification?.value === 'true') {
-      return NextResponse.redirect(new URL('/verify', request.url))
-    }
-
-    return NextResponse.next()
-  }
-
-  // Allow access to invitation links
-  if (request.nextUrl.pathname.startsWith('/invite/')) {
-    if (
-      !hasActiveSession &&
-      !request.nextUrl.pathname.endsWith('/login') &&
-      !request.nextUrl.pathname.endsWith('/signup') &&
-      !request.nextUrl.search.includes('callbackUrl')
-    ) {
-      const token = request.nextUrl.searchParams.get('token')
-      const inviteId = request.nextUrl.pathname.split('/').pop()
-      const callbackParam = encodeURIComponent(
-        `/invite/${inviteId}${token ? `?token=${token}` : ''}`
-      )
-      return NextResponse.redirect(
-        new URL(`/login?callbackUrl=${callbackParam}&invite_flow=true`, request.url)
-      )
-    }
-    return NextResponse.next()
-  }
+  return NextResponse.next()
+}
 
 /**
  * Handles workspace invitation API endpoint access
@@ -311,6 +202,7 @@ export const config = {
     '/login',
     '/signup',
     '/invite/:path*', // Match invitation routes
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    // Catch-all for other pages, excluding static assets and public directories
+    '/((?!_next/static|_next/image|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
   ],
 }

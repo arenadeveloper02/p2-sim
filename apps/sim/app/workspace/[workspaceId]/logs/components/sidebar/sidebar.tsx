@@ -6,10 +6,10 @@ import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-json'
-import { Button } from '@/components/emcn'
+import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { FrozenCanvasModal } from '@/app/workspace/[workspaceId]/logs/components/frozen-canvas/frozen-canvas-modal'
 import { FileDownload } from '@/app/workspace/[workspaceId]/logs/components/sidebar/components/file-download'
 import LogMarkdownRenderer from '@/app/workspace/[workspaceId]/logs/components/sidebar/components/markdown-renderer'
@@ -18,7 +18,6 @@ import { TraceSpansDisplay } from '@/app/workspace/[workspaceId]/logs/components
 import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils/format-date'
 // import { formatCost } from '@/providers/utils'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
-import '@/components/emcn/components/code/code.css'
 
 interface LogSidebarProps {
   log: WorkflowLog | null
@@ -193,7 +192,7 @@ const BlockContentDisplay = ({
 export function Sidebar({
   log,
   isOpen,
-  isLoadingDetails = false,
+  isLoadingDetails: isLoadingDetailsProp = false,
   onClose,
   onNavigateNext,
   onNavigatePrev,
@@ -237,13 +236,14 @@ export function Sidebar({
   }, [log?.executionData?.traceSpans])
 
   const isLoadingDetails = useMemo(() => {
+    if (isLoadingDetailsProp) return true
     if (!log) return false
     // Only show while we expect details to arrive (has executionId)
     if (!log.executionId) return false
     const hasEnhanced = !!log.executionData?.enhanced
     const hasAnyDetails = hasEnhanced || !!log.cost || !!getTraceSpansArray
     return !hasAnyDetails
-  }, [log, getTraceSpansArray])
+  }, [isLoadingDetailsProp, log, getTraceSpansArray])
 
   const formattedContent = useMemo(() => {
     if (!log) return null
@@ -381,8 +381,8 @@ export function Sidebar({
               Log Details
             </h2>
             <div className='flex items-center gap-[4px]'>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
                     variant='ghost'
                     className='h-[32px] w-[32px] p-0'
@@ -392,11 +392,11 @@ export function Sidebar({
                   >
                     <ChevronUp className='h-[14px] w-[14px]' />
                   </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content side='bottom'>Previous log</Tooltip.Content>
-              </Tooltip.Root>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
+                </TooltipTrigger>
+                <TooltipContent side='bottom'>Previous log</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
                     variant='ghost'
                     className='h-[32px] w-[32px] p-0'
@@ -406,9 +406,9 @@ export function Sidebar({
                   >
                     <ChevronDown className='h-[14px] w-[14px]' />
                   </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content side='bottom'>Next log</Tooltip.Content>
-              </Tooltip.Root>
+                </TooltipTrigger>
+                <TooltipContent side='bottom'>Next log</TooltipContent>
+              </Tooltip>
 
               <Button
                 variant='ghost'
