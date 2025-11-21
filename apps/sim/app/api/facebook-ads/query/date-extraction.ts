@@ -58,7 +58,7 @@ export function extractFacebookDateSelection(input: string): FacebookDateSelecti
   // "last N days" patterns
   const lastNDaysMatch = lower.match(/last\s+(\d+)\s+days?/)
   if (lastNDaysMatch) {
-    const days = parseInt(lastNDaysMatch[1], 10)
+    const days = Number.parseInt(lastNDaysMatch[1], 10)
     if (Number.isFinite(days) && days > 0 && days <= 365) {
       // Map to Facebook presets when possible
       const presetMap: Record<number, string> = {

@@ -239,9 +239,7 @@ Always return valid JSON. Never refuse to generate a response.`
 
     // Merge AI date selection with our deterministic extractor
     let datePreset = parsedResponse.date_preset as string | undefined
-    let timeRange = parsedResponse.time_range as
-      | { since: string; until: string }
-      | undefined
+    let timeRange = parsedResponse.time_range as { since: string; until: string } | undefined
 
     // If the model did not specify any date, fall back to detected natural language ranges
     if (!datePreset && !timeRange && detectedDateSelection) {
