@@ -79,9 +79,7 @@ export function KnowledgeBaseSelector({
     setError(null)
 
     try {
-      const url = workspaceId
-        ? `/api/knowledge/user-access?workspaceId=${workspaceId}`
-        : '/api/knowledge/user-access'
+      const url = '/api/knowledge/user-access'
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
