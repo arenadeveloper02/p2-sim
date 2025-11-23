@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
+import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
@@ -246,41 +247,149 @@ export async function POST(
         }
       }
 
-      // If workflow has already been executed, return a simple response
+      // If workflow has already been executed, call OpenAI API
       if (hasExistingExecution) {
         logger.info(
-          `[${requestId}] Workflow already executed for chatId ${chatId}, returning placeholder response`
+          `[${requestId}] Workflow already executed for chatId ${chatId}, calling OpenAI API`
         )
 
-        // Create a simple streaming response with the placeholder message
-        const stream = new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder()
-            const message = "It's a new chat"
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ blockId: 'placeholder', chunk: message })}\n\n`
-              )
-            )
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ blockId: 'placeholder', event: 'end' })}\n\n`
-              )
-            )
-            controller.close()
-          },
+        // Get OpenAI API key
+        const openaiApiKey = env.OPENAI_API_KEY
+        if (!openaiApiKey) {
+          logger.error(`[${requestId}] OpenAI API key not found`)
+          return addCorsHeaders(createErrorResponse('OpenAI API key not configured', 503), request)
+        }
+
+        // Configure system prompt and temperature (will be configurable later)
+        const systemPrompt = 'You are a helpful AI assistant.'
+        const temperature = 0.7
+
+        // Prepare messages for OpenAI
+        const messages = [
+          { role: 'system' as const, content: systemPrompt },
+          { role: 'user' as const, content: input },
+        ]
+
+        logger.debug(`[${requestId}] Calling OpenAI API with model gpt-4o`, {
+          hasInput: !!input,
+          systemPrompt,
+          temperature,
         })
 
-        const streamResponse = new NextResponse(stream, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-            'X-Accel-Buffering': 'no',
-          },
-        })
-        return addCorsHeaders(streamResponse, request)
+        try {
+          // Call OpenAI API with streaming
+          const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${openaiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o',
+              messages: messages,
+              temperature: temperature,
+              stream: true,
+              stream_options: { include_usage: true },
+            }),
+          })
+
+          if (!openaiResponse.ok) {
+            const errorText = await openaiResponse.text()
+            logger.error(`[${requestId}] OpenAI API request failed`, {
+              status: openaiResponse.status,
+              statusText: openaiResponse.statusText,
+              error: errorText,
+            })
+            throw new Error(`OpenAI API request failed: ${openaiResponse.status}`)
+          }
+
+          // Create a streaming response that processes OpenAI stream
+          const stream = new ReadableStream({
+            async start(controller) {
+              const encoder = new TextEncoder()
+              const decoder = new TextDecoder()
+
+              try {
+                if (!openaiResponse.body) {
+                  throw new Error('OpenAI response body is missing')
+                }
+
+                const reader = openaiResponse.body.getReader()
+
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) {
+                    // Send end event
+                    controller.enqueue(
+                      encoder.encode(
+                        `data: ${JSON.stringify({ blockId: 'openai', event: 'end' })}\n\n`
+                      )
+                    )
+                    controller.close()
+                    break
+                  }
+
+                  // Decode the chunk
+                  const chunk = decoder.decode(value, { stream: true })
+                  const lines = chunk.split('\n')
+
+                  for (const line of lines) {
+                    if (line.trim() === '' || line.startsWith(':')) continue
+
+                    if (line.startsWith('data: ')) {
+                      const data = line.slice(6)
+                      if (data === '[DONE]') {
+                        controller.enqueue(
+                          encoder.encode(
+                            `data: ${JSON.stringify({ blockId: 'openai', event: 'end' })}\n\n`
+                          )
+                        )
+                        controller.close()
+                        return
+                      }
+
+                      try {
+                        const parsed = JSON.parse(data)
+                        const content = parsed.choices?.[0]?.delta?.content
+                        if (content) {
+                          // Forward the content chunk in the same format as workflow execution
+                          controller.enqueue(
+                            encoder.encode(
+                              `data: ${JSON.stringify({ blockId: 'openai', chunk: content })}\n\n`
+                            )
+                          )
+                        }
+                      } catch (parseError) {
+                        // Skip invalid JSON lines
+                        logger.debug(`[${requestId}] Skipping invalid JSON line:`, line)
+                      }
+                    }
+                  }
+                }
+              } catch (error: any) {
+                logger.error(`[${requestId}] Error processing OpenAI stream:`, error)
+                controller.error(error)
+              }
+            },
+          })
+
+          const streamResponse = new NextResponse(stream, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+              'X-Accel-Buffering': 'no',
+            },
+          })
+          return addCorsHeaders(streamResponse, request)
+        } catch (error: any) {
+          logger.error(`[${requestId}] Error calling OpenAI API:`, error)
+          return addCorsHeaders(
+            createErrorResponse(error.message || 'Failed to call OpenAI API', 500),
+            request
+          )
+        }
       }
 
       // Execute workflow with structured input (input + conversationId for context)
