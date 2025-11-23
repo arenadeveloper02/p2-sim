@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
@@ -14,7 +14,7 @@ import {
 } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, deployedChat, workflow } from '@/db/schema'
+import { chat, deployedChat, workflow, workflowExecutionLogs } from '@/db/schema'
 
 const logger = createLogger('ChatSubdomainAPI')
 
@@ -219,6 +219,70 @@ export async function POST(
     }
 
     try {
+      // Check if workflow has already been executed for this chatId
+      let hasExistingExecution = false
+      if (chatId) {
+        try {
+          const existingExecution = await db
+            .select({ executionId: workflowExecutionLogs.executionId })
+            .from(workflowExecutionLogs)
+            .where(
+              and(
+                eq(workflowExecutionLogs.workflowId, deployment.workflowId),
+                eq(workflowExecutionLogs.chatId, chatId),
+                eq(workflowExecutionLogs.trigger, 'chat')
+              )
+            )
+            .limit(1)
+
+          hasExistingExecution = existingExecution.length > 0
+          logger.debug(`[${requestId}] Execution check for chatId ${chatId}:`, {
+            hasExistingExecution,
+            workflowId: deployment.workflowId,
+          })
+        } catch (error) {
+          logger.warn(`[${requestId}] Error checking for existing execution:`, error)
+          // Continue with normal execution if check fails
+        }
+      }
+
+      // If workflow has already been executed, return a simple response
+      if (hasExistingExecution) {
+        logger.info(
+          `[${requestId}] Workflow already executed for chatId ${chatId}, returning placeholder response`
+        )
+
+        // Create a simple streaming response with the placeholder message
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder()
+            const message = "It's a new chat"
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ blockId: 'placeholder', chunk: message })}\n\n`
+              )
+            )
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ blockId: 'placeholder', event: 'end' })}\n\n`
+              )
+            )
+            controller.close()
+          },
+        })
+
+        const streamResponse = new NextResponse(stream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          },
+        })
+        return addCorsHeaders(streamResponse, request)
+      }
+
       // Execute workflow with structured input (input + conversationId for context)
       logger.debug(`[${requestId}] Executing workflow for chat:`, {
         deploymentId: deployment.id,
