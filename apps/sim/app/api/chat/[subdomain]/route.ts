@@ -6,6 +6,7 @@ import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
+import { callMemoryAPI, searchMemoryAPI } from '@/app/api/chat/memory-api'
 import {
   addCorsHeaders,
   executeWorkflowForChat,
@@ -260,20 +261,90 @@ export async function POST(
           return addCorsHeaders(createErrorResponse('OpenAI API key not configured', 503), request)
         }
 
+        // Use executingUserId from session (the user who is running the chat)
+        // executingUserId is already fetched earlier in the function
+        const sessionUserId = executingUserId
+
+        // Search memories before calling OpenAI - call twice with different filters
+        let factResults: any = null
+        let conversationResults: any = null
+
+        if (chatId && sessionUserId) {
+          // Search for facts
+          const factFilters: Record<string, any> = {
+            conversation_id: chatId,
+            memory_type: 'fact',
+          }
+
+          // Search for conversation history
+          const conversationFilters: Record<string, any> = {
+            conversation_id: chatId,
+            memory_type: 'conversation',
+          }
+
+          // Call both searches in parallel using session user ID
+          const [factSearchResult, conversationSearchResult] = await Promise.all([
+            searchMemoryAPI(requestId, input, sessionUserId, factFilters),
+            searchMemoryAPI(requestId, input, sessionUserId, conversationFilters),
+          ])
+
+          factResults = factSearchResult
+          conversationResults = conversationSearchResult
+
+          logger.debug(`[${requestId}] Fact search results:`, factResults)
+          logger.debug(`[${requestId}] Conversation search results:`, conversationResults)
+
+          logger.debug(`[${requestId}] Memory search results received`, {
+            hasFactResults: !!factResults,
+            hasConversationResults: !!conversationResults,
+          })
+        }
+
         // Configure system prompt and temperature (will be configurable later)
-        const systemPrompt = 'You are a helpful AI assistant.'
+        let systemPrompt = 'You are a helpful AI assistant.'
+
+        // Enhance system prompt with fact results if available
+        // Check if results exist and are not empty (handle both array and object responses)
+        const hasFactResults =
+          factResults &&
+          ((Array.isArray(factResults) && factResults.length > 0) ||
+            (typeof factResults === 'object' && Object.keys(factResults).length > 0))
+
+        if (hasFactResults) {
+          const factContext = JSON.stringify(factResults, null, 2)
+          systemPrompt = `${systemPrompt}\n\nConsider this user persona:\n${factContext}`
+          logger.debug(`[${requestId}] Enhanced system prompt with fact results`)
+        }
+
         const temperature = 0.7
+
+        // Prepare user message - enhance with conversation context if available
+        // Check if results exist and are not empty (handle both array and object responses)
+        const hasConversationResults =
+          conversationResults &&
+          ((Array.isArray(conversationResults) && conversationResults.length > 0) ||
+            (typeof conversationResults === 'object' &&
+              Object.keys(conversationResults).length > 0))
+
+        let userMessage = input
+        if (hasConversationResults) {
+          const conversationContext = JSON.stringify(conversationResults, null, 2)
+          userMessage = `This is the context which you can use to answer the below question:\n${conversationContext}\n\nQuestion: ${input}`
+          logger.debug(`[${requestId}] Enhanced user message with conversation results`)
+        }
 
         // Prepare messages for OpenAI
         const messages = [
           { role: 'system' as const, content: systemPrompt },
-          { role: 'user' as const, content: input },
+          { role: 'user' as const, content: userMessage },
         ]
 
         logger.debug(`[${requestId}] Calling OpenAI API with model gpt-4o`, {
           hasInput: !!input,
           systemPrompt,
           temperature,
+          hasFactResults: !!factResults,
+          hasConversationResults: !!conversationResults,
         })
 
         try {
@@ -304,6 +375,46 @@ export async function POST(
           }
 
           // Create a streaming response that processes OpenAI stream
+          // Collect full response for memory API calls
+          let fullOpenAIResponse = ''
+
+          // Helper function to call memory APIs after streaming completes
+          const callMemoryAPIs = () => {
+            // Use session user ID if available, otherwise fall back to deployment.userId
+            const userIdForMemory = sessionUserId || deployment.userId
+
+            if (fullOpenAIResponse && chatId && userIdForMemory) {
+              const memoryMessages = [
+                { role: 'user', content: input },
+                { role: 'assistant', content: fullOpenAIResponse },
+              ]
+
+              // Call both memory APIs in parallel (don't await to avoid blocking)
+              Promise.all([
+                callMemoryAPI(
+                  requestId,
+                  memoryMessages,
+                  userIdForMemory,
+                  chatId,
+                  conversationId,
+                  true, // infer: true
+                  'fact' // memory_type: fact
+                ),
+                callMemoryAPI(
+                  requestId,
+                  memoryMessages,
+                  userIdForMemory,
+                  chatId,
+                  conversationId,
+                  false, // infer: false
+                  'conversation' // memory_type: conversation
+                ),
+              ]).catch((error) => {
+                logger.error(`[${requestId}] Error in memory API calls:`, error)
+              })
+            }
+          }
+
           const stream = new ReadableStream({
             async start(controller) {
               const encoder = new TextEncoder()
@@ -326,6 +437,10 @@ export async function POST(
                       )
                     )
                     controller.close()
+
+                    // After streaming is complete, call memory APIs
+                    callMemoryAPIs()
+
                     break
                   }
 
@@ -345,6 +460,10 @@ export async function POST(
                           )
                         )
                         controller.close()
+
+                        // After streaming is complete, call memory APIs
+                        callMemoryAPIs()
+
                         return
                       }
 
@@ -352,6 +471,9 @@ export async function POST(
                         const parsed = JSON.parse(data)
                         const content = parsed.choices?.[0]?.delta?.content
                         if (content) {
+                          // Accumulate full response
+                          fullOpenAIResponse += content
+
                           // Forward the content chunk in the same format as workflow execution
                           controller.enqueue(
                             encoder.encode(
