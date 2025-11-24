@@ -8,20 +8,9 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { FolderItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/folder-tree/components/folder-item'
 import { WorkflowItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/folder-tree/components/workflow-item'
 import { useFolders, useUpdateFolder } from '@/hooks/queries/folders'
-import { useWorkflowStore } from '@/stores'
 import { type FolderTreeNode, useFolderStore, type WorkflowFolder } from '@/stores/folders/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-
-// Workspace entity interface
-interface Workspace {
-  id: string
-  name: string
-  ownerId: string
-  role?: string
-  membershipId?: string
-  permissions?: 'admin' | 'write' | 'read' | null
-}
 
 const logger = createLogger('FolderTree')
 
@@ -41,7 +30,6 @@ interface FolderSectionProps {
   ) => React.ReactNode[]
   parentDragOver?: boolean
   isFirstItem?: boolean
-  activeWorkspace?: Workspace | null
 }
 
 // Helper function to count visible items, excluding content of the last expanded folder
@@ -92,7 +80,6 @@ function FolderSection({
   renderFolderTree,
   parentDragOver = false,
   isFirstItem = false,
-  activeWorkspace,
 }: FolderSectionProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -193,7 +180,6 @@ function FolderSection({
                       active={pathname === `/workspace/${workspaceId}/w/${workflow.id}`}
                       level={level}
                       isDragOver={isAnyDragOver}
-                      activeWorkspace={activeWorkspace}
                     />
                   </div>
                 </div>
@@ -246,7 +232,6 @@ function FolderSection({
                       renderFolderTree={renderFolderTree}
                       parentDragOver={isAnyDragOver}
                       isFirstItem={false}
-                      activeWorkspace={activeWorkspace}
                     />
                   </div>
                 </div>
@@ -395,14 +380,12 @@ interface FolderTreeProps {
   regularWorkflows: WorkflowMetadata[]
   isLoading?: boolean
   onCreateWorkflow: (folderId?: string) => void
-  activeWorkspace?: Workspace | null
 }
 
 export function FolderTree({
   regularWorkflows,
   isLoading = false,
   onCreateWorkflow,
-  activeWorkspace,
 }: FolderTreeProps) {
   const pathname = usePathname()
   const params = useParams()
@@ -413,7 +396,6 @@ export function FolderTree({
   const { getFolderTree, expandedFolders, clearSelection, getFolderPath, setExpanded } =
     useFolderStore()
   const { updateWorkflow } = useWorkflowRegistry()
-  const usedTemplatesList = useWorkflowStore((state) => state.usedTemplatesList)
 
   // Memoize the active workflow's folder ID to avoid unnecessary re-runs
   const activeWorkflowFolderId = useMemo(() => {
@@ -534,7 +516,6 @@ export function FolderTree({
         renderFolderTree={renderFolderTree}
         parentDragOver={parentDragOver}
         isFirstItem={level === 0 && index === 0}
-        activeWorkspace={activeWorkspace}
       />
     ))
   }
@@ -589,10 +570,6 @@ export function FolderTree({
               level={-1}
               isDragOver={rootDragOver}
               isFirstItem={folderTree.length === 0 && index === 0}
-              isUsedTemplateObj={usedTemplatesList?.filter(
-                (templateItem: any) => templateItem?.workflowId === workflow?.id
-              )}
-              activeWorkspace={activeWorkspace}
             />
           ))}
 

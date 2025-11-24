@@ -324,8 +324,6 @@ export function useWorkflowExecution() {
 
       // For chat executions, we'll use a streaming approach
       if (isChatExecution) {
-        const executionId = uuidv4()
-        console.log('Generated executionId for streaming:', executionId)
         const stream = new ReadableStream({
           async start(controller) {
             const { encodeSSE } = await import('@/lib/utils')
@@ -610,7 +608,7 @@ export function useWorkflowExecution() {
             }
           },
         })
-        return { success: true, stream, executionId }
+        return { success: true, stream }
       }
 
       // For manual (non-chat) execution
@@ -642,8 +640,7 @@ export function useWorkflowExecution() {
             ;(result.metadata as any).source = 'chat'
           }
         }
-        console.log('Returning non-streaming result with executionId:', executionId)
-        return { ...result, executionId }
+        return result
       } catch (error: any) {
         const errorResult = handleExecutionError(error, { executionId: manualExecutionId })
         // Note: Error logs are already persisted server-side via execution-core.ts

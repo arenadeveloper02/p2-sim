@@ -4,7 +4,7 @@ import React from 'react'
 import { Tooltip } from '@/components/emcn'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { WorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { ProviderModelsLoader } from './provider-models-loader'
+import { ProviderModelsLoader } from './provider-models-loader.tsx'
 import { SettingsLoader } from './settings-loader'
 
 interface ProvidersProps {

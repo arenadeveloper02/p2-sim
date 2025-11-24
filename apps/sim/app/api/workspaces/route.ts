@@ -22,40 +22,58 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get all workspaces where the user has permissions
-  const userWorkspaces = await db
-    .select({
-      workspace: workspace,
-      permissionType: permissions.permissionType,
-    })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
-    .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-    .orderBy(desc(workspace.createdAt))
+  try {
+    logger.debug(`[Workspaces][GET] Fetching workspaces for user ${session.user.id}`)
 
-  if (userWorkspaces.length === 0) {
-    // Create a default workspace for the user
-    const defaultWorkspace = await createDefaultWorkspace(session.user.id, session.user.name)
+    // Get all workspaces where the user has permissions
+    const userWorkspaces = await db
+      .select({
+        workspace: workspace,
+        permissionType: permissions.permissionType,
+      })
+      .from(permissions)
+      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+      .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
+      .orderBy(desc(workspace.createdAt))
 
-    // Migrate existing workflows to the default workspace
-    await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
+    logger.debug(
+      `[Workspaces][GET] User ${session.user.id} has ${userWorkspaces.length} workspace memberships`
+    )
 
-    return NextResponse.json({ workspaces: [defaultWorkspace] })
+    if (userWorkspaces.length === 0) {
+      logger.info(
+        `[Workspaces][GET] No workspaces found for user ${session.user.id}, creating default workspace`
+      )
+      // Create a default workspace for the user
+      const defaultWorkspace = await createDefaultWorkspace(session.user.id, session.user.name)
+
+      // Migrate existing workflows to the default workspace
+      await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
+
+      return NextResponse.json({ workspaces: [defaultWorkspace] })
+    }
+
+    // If user has workspaces but might have orphaned workflows, migrate them
+    await ensureWorkflowsHaveWorkspace(session.user.id, userWorkspaces[0].workspace.id)
+
+    // Format the response with permission information
+    const workspacesWithPermissions = userWorkspaces.map(
+      ({ workspace: workspaceDetails, permissionType }) => ({
+        ...workspaceDetails,
+        role: permissionType === 'admin' ? 'owner' : 'member', // Map admin to owner for compatibility
+        permissions: permissionType,
+      })
+    )
+
+    logger.debug(
+      `[Workspaces][GET] Returning ${workspacesWithPermissions.length} workspaces for user ${session.user.id}`
+    )
+
+    return NextResponse.json({ workspaces: workspacesWithPermissions })
+  } catch (error) {
+    logger.error(`[Workspaces][GET] Failed to load workspaces for user ${session.user.id}`, error)
+    return NextResponse.json({ error: 'Failed to fetch workspaces' }, { status: 500 })
   }
-
-  // If user has workspaces but might have orphaned workflows, migrate them
-  await ensureWorkflowsHaveWorkspace(session.user.id, userWorkspaces[0].workspace.id)
-
-  // Format the response with permission information
-  const workspacesWithPermissions = userWorkspaces.map(
-    ({ workspace: workspaceDetails, permissionType }) => ({
-      ...workspaceDetails,
-      role: permissionType === 'admin' ? 'owner' : 'member', // Map admin to owner for compatibility
-      permissions: permissionType,
-    })
-  )
-
-  return NextResponse.json({ workspaces: workspacesWithPermissions })
 }
 
 // POST /api/workspaces - Create a new workspace

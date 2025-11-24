@@ -8,9 +8,7 @@ import { getBaseUrl } from '@/lib/urls/utils'
 import { db } from '@/db'
 import { permissions, workflow as workflowTable, workspace } from '@/db/schema'
 import type { ExecutionResult } from '@/executor/types'
-
-// Re-export hasWorkflowChanged from comparison.ts for backwards compatibility
-export { hasWorkflowChanged } from './comparison'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowUtils')
 

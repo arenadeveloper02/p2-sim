@@ -81,8 +81,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           parallels: normalizedData.parallels || {},
         }
 
-        // Normalize deployed state (active deployment version) to match current state structure
-        const deployedState = active.state as any
+        // Normalize deployed state (active deployment version) to match current state structure.
+        // Older rows used to store the JSON on the workflow itself (deployedState), so fall back to that
+        // while keeping the type checker satisfied.
+        const deployedState = (active.state ??
+          (workflowData as Record<string, any>)?.deployedState) as any
 
         // Normalize edges to match current state structure (remove type and data fields)
         const normalizedDeployedEdges = (deployedState.edges || []).map((edge: any) => ({

@@ -8,32 +8,12 @@ import { useParams } from 'next/navigation'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { createLogger } from '@/lib/logs/console/logger'
-import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useFolderStore, useIsWorkflowSelected } from '@/stores/folders/store'
-import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-import { useWorkflowChatDeployment } from './hooks/use-workflow-chat-deployment'
-
-// Workspace entity interface
-interface Workspace {
-  id: string
-  name: string
-  ownerId: string
-  role?: string
-  membershipId?: string
-  permissions?: 'admin' | 'write' | 'read' | null
-}
-
-import { extractInputFields } from '@/app/workspace/[workspaceId]/w/[workflowId]/lib/workflow-execution-utils'
 
 const logger = createLogger('WorkflowItem')
-
-// Helper function to check if workspace is AGENTS APPROVAL
-const isApproverListWorkspace = (workspace: Workspace | null | undefined): boolean => {
-  return workspace?.name === 'AGENTS APPROVAL'
-}
 
 // Helper function to lighten a hex color
 function lightenColor(hex: string, percent = 30): string {
@@ -59,8 +39,6 @@ interface WorkflowItemProps {
   level: number
   isDragOver?: boolean
   isFirstItem?: boolean
-  isUsedTemplateObj?: any
-  activeWorkspace?: Workspace | null
 }
 
 export function WorkflowItem({
@@ -70,43 +48,20 @@ export function WorkflowItem({
   level,
   isDragOver = false,
   isFirstItem = false,
-  isUsedTemplateObj,
-  activeWorkspace,
 }: WorkflowItemProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(workflow.name)
   const [isRenaming, setIsRenaming] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  // State for controlling the deploy modal visibility
-  const [showDeployModal, setShowDeployModal] = useState(false)
-  // State to track if the workflow has changes that require redeployment
-  const [workflowHasChanges, setWorkflowHasChanges] = useState(false)
   const dragStartedRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const { selectedWorkflows, selectOnly, toggleWorkflowSelection } = useFolderStore()
   const isSelected = useIsWorkflowSelected(workflow.id)
-  const { updateWorkflow, getWorkflowDeploymentStatus } = useWorkflowRegistry()
+  const { updateWorkflow } = useWorkflowRegistry()
   const userPermissions = useUserPermissionsContext()
-  const { setParentTemplateId, togglePanel, isOpen, setActiveTab, setFullScreen } = usePanelStore()
-  const {
-    isLoading: isChatDeploying,
-    handleChatDeployment,
-    error: chatDeployError,
-    checkChatStatus,
-  } = useWorkflowChatDeployment()
-  const isTemplateId = isUsedTemplateObj?.[0]?.templateId
-  const workflowId = workflow.id
-
-  // Get deployment status for the modal
-  const deploymentStatus = getWorkflowDeploymentStatus(workflowId)
-
-  // Get active workflow ID to check if this workflow is currently active
-  const { activeWorkflowId } = useWorkflowRegistry()
-  const route = useRouter()
-  const [isLoadingChatDeploy, setIsLoadingChatDeploy] = useState<boolean>(false)
 
   // Update editValue when workflow name changes
   useEffect(() => {
@@ -212,70 +167,6 @@ export function WorkflowItem({
     })
   }
 
-  const handleClickWorkflowName = () => {
-    console.log('the input fields are', extractInputFields())
-
-    if (isOpen) {
-      togglePanel()
-    }
-    setFullScreen(false)
-    setParentTemplateId('')
-  }
-
-  const handleClickByChat = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    // Prevent multiple concurrent deployments
-    if (isChatDeploying || isLoadingChatDeploy) return
-
-    setIsLoadingChatDeploy(true)
-
-    // OPTIMIZATION: If this is not the active workflow, skip change detection and redirect directly to chat.
-    if (activeWorkflowId !== workflowId) {
-      logger.info('Opening chat for non-active workflow, redirecting directly')
-      route.push(`/chat/${workflowId}`)
-      return
-    }
-
-    try {
-      // STEP 1: Check if chat interface already exists for this workflow
-      const chatStatus = await checkChatStatus(workflowId)
-
-      if (chatStatus.isDeployed) {
-        // STEP 2: Chat exists - check if workflow needs redeployment. This compares current workflow state with the deployed state in the database
-        const statusResponse = await fetch(`/api/workflows/${workflowId}/status`)
-        let hasChanges = false
-
-        if (statusResponse.ok) {
-          const statusData = await statusResponse.json()
-          hasChanges = statusData.needsRedeployment || false
-        }
-
-        if (hasChanges) {
-          // This will trigger the existing redeploy functionality when user clicks "Update"
-          logger.info('Chat exists but workflow has changes, showing deploy modal for redeployment')
-          setWorkflowHasChanges(true) // Update local state for UI feedback
-          setShowDeployModal(true) // Open modal with chat tab active
-        } else {
-          // STEP 3B: No changes - redirect directly to existing chat
-          logger.info('Chat already deployed with no changes, opening existing chat')
-          setWorkflowHasChanges(false) // Update local state
-          route.push(`/chat/${workflowId}`)
-        }
-      } else {
-        // STEP 2: Chat doesn't exist - show deploy modal for initial deployment
-        setShowDeployModal(true)
-      }
-    } catch (error) {
-      logger.error('Failed to check chat status:', error)
-      // FALLBACK: Show deploy modal on any error to ensure user can still deploy
-      setShowDeployModal(true)
-    } finally {
-      setIsLoadingChatDeploy(false)
-    }
-  }
-
   return (
     <div className='mb-1'>
       <div
@@ -284,8 +175,7 @@ export function WorkflowItem({
           active && !isDragOver ? 'bg-muted' : 'hover:bg-muted',
           isSelected && selectedWorkflows.size > 1 && !active && !isDragOver ? 'bg-muted' : '',
           isDragging ? 'opacity-50' : '',
-          isFirstItem ? 'mr-[36px]' : '',
-          isTemplateId && '!pl-1'
+          isFirstItem ? 'mr-[36px]' : ''
         )}
         style={{
           maxWidth: isFirstItem
@@ -306,26 +196,19 @@ export function WorkflowItem({
           draggable={false}
         >
           <div
-            className={cn(
-              'mr-2 flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden',
-              isTemplateId && '!h-[20px] !w-[20px]'
-            )}
+            className='mr-2 flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden'
             style={{
-              backgroundColor: isTemplateId ? 'transparent' : lightenColor(workflow.color, 60),
+              backgroundColor: lightenColor(workflow.color, 60),
               borderRadius: '4px',
             }}
           >
-            {isTemplateId ? (
-              <ArenaIcon className='h-5 w-5 text-[#F3F8FE]' />
-            ) : (
-              <div
-                className='h-[9px] w-[9px]'
-                style={{
-                  backgroundColor: workflow.color,
-                  borderRadius: '2.571px', // Maintains same ratio as outer div (4/14 = 2.571/9)
-                }}
-              />
-            )}
+            <div
+              className='h-[9px] w-[9px]'
+              style={{
+                backgroundColor: workflow.color,
+                borderRadius: '2.571px', // Maintains same ratio as outer div (4/14 = 2.571/9)
+              }}
+            />
           </div>
           {isEditing ? (
             <input
@@ -385,70 +268,23 @@ export function WorkflowItem({
           )}
         </Link>
 
-        {!isMarketplace &&
-          !isEditing &&
-          isHovered &&
-          userPermissions.canEdit &&
-          !isApproverListWorkspace(activeWorkspace) && (
-            <div className='flex items-center justify-center' onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant='ghost'
-                size='icon'
-                className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleStartEdit()
-                }}
-              >
-                <Pencil className='!h-3.5 !w-3.5' />
-                <span className='sr-only'>Rename workflow</span>
-              </Button>
-            </div>
-          )}
-        {/* {isHovered && (
-          <Tooltip delayDuration={500}>
-            <TooltipTrigger asChild>
-              <Button
-                type='button'
-                variant='ghost'
-                onClick={handleClickByChat}
-                disabled={isChatDeploying || isLoadingChatDeploy}
-                className={cn(
-                  'ml-1 flex h-4 w-4 items-center justify-center rounded p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                  isChatDeploying || (isLoadingChatDeploy && 'cursor-not-allowed opacity-50')
-                )}
-              >
-                {isChatDeploying || isLoadingChatDeploy ? (
-                  <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                ) : (
-                  <MessageCircleMore className='h-3.5 w-3.5' />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side='top' align='center' sideOffset={10}>
-              <p>
-                {isChatDeploying ? 'Deploying chat...' : 'Open chat interface'}
-                {chatDeployError && (
-                  <span className='mt-1 block text-red-400 text-xs'>{chatDeployError}</span>
-                )}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        )} */}
+        {!isMarketplace && !isEditing && isHovered && userPermissions.canEdit && (
+          <div className='flex items-center justify-center' onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground'
+              onClick={(e) => {
+                e.stopPropagation()
+                handleStartEdit()
+              }}
+            >
+              <Pencil className='!h-3.5 !w-3.5' />
+              <span className='sr-only'>Rename workflow</span>
+            </Button>
+          </div>
+        )}
       </div>
-
-      {/* <DeployModal
-        open={showDeployModal}
-        onOpenChange={setShowDeployModal}
-        workflowId={workflowId}
-        needsRedeployment={workflowHasChanges} // Pass change detection state
-        setNeedsRedeployment={setWorkflowHasChanges} // Allow modal to clear flag
-        deployedState={{} as any} // Not needed for chat-only deployment from sidebar
-        isLoadingDeployedState={false}
-        refetchDeployedState={async () => {}} // Not needed for this use case
-        initialTab='chat'
-        isSidebar={true}
-      /> */}
     </div>
   )
 }

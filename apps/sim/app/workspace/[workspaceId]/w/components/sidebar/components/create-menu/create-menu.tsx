@@ -36,8 +36,6 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const [isCreating, setIsCreating] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
-  const [disableCreate, setDisableCreate] = useState(false)
-
   const [pressTimer, setPressTimer] = useState<NodeJS.Timeout | null>(null)
   const [closeTimer, setCloseTimer] = useState<NodeJS.Timeout | null>(null)
 
@@ -49,8 +47,6 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
   const createWorkflowMutation = useCreateWorkflow()
   const userPermissions = useUserPermissionsContext()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const isOpenPanel = usePanelStore((state) => state.isOpen)
-  const { setFullScreen, togglePanel, setParentTemplateId } = usePanelStore()
 
   // Timer management utilities
   const clearAllTimers = useCallback(() => {
@@ -92,6 +88,7 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     }
 
     setIsOpen(false)
+
     try {
       const workflowId = await onCreateWorkflow()
       if (workflowId) {
@@ -373,35 +370,10 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
     startCloseTimer()
   }, [startCloseTimer])
 
-  const fetchWorkspaces = useCallback(async () => {
-    const response = await fetch('/api/workspaces')
-    if (!response.ok) {
-      throw new Error('Failed to fetch workspaces')
-    }
-    const data = await response.json()
-    data?.workspaces.forEach((work: any) => {
-      if (work?.id === workspaceId && work?.name === 'AGENTS APPROVAL') {
-        setDisableCreate(true)
-      }
-    })
-  }, [])
-
-  useEffect(() => {
-    fetchWorkspaces()
-  }, [fetchWorkspaces])
-
   // Cleanup effect
   useEffect(() => {
     return () => clearAllTimers()
   }, [clearAllTimers])
-
-  const handleClosePanel = () => {
-    if (isOpenPanel) {
-      togglePanel()
-      setFullScreen(false)
-      setParentTemplateId('')
-    }
-  }
 
   // Styles
   const menuItemClassName =
@@ -426,16 +398,9 @@ export function CreateMenu({ onCreateWorkflow, isCreatingWorkflow = false }: Cre
             variant='ghost'
             size='icon'
             className='h-8 w-8 shrink-0 rounded-[8px] border bg-background shadow-xs hover:bg-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
-            title={
-              disableCreate
-                ? 'Create functionality is disabled in AGENTS APPROVAL workspace'
-                : 'Create Workflow (Hover, right-click, or long press for more options)'
-            }
-            disabled={isCreatingWorkflow || disableCreate}
-            onClick={(e) => {
-              handleClosePanel()
-              handleButtonClick(e)
-            }}
+            title='Create Workflow (Hover, right-click, or long press for more options)'
+            disabled={isCreatingWorkflow}
+            onClick={handleButtonClick}
             onContextMenu={handleContextMenu}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}

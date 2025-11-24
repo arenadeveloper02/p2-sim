@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { ScrollArea } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
@@ -14,6 +14,7 @@ import {
   CreateMenu,
   FloatingNavigation,
   FolderTree,
+  HelpModal,
   KnowledgeBaseTags,
   KnowledgeTags,
   LogsFilters,
@@ -77,22 +78,6 @@ interface TemplateData {
   isStarred?: boolean
 }
 
-function getRedirectUrl(hostname: string) {
-  let redirectUrl = ''
-  if (hostname === 'dev-agent.thearena.ai') {
-    redirectUrl = 'https://dev.thearena.ai/hub/agents'
-  } else if (hostname === 'test-agent.thearena.ai') {
-    redirectUrl = 'https://test.thearena.ai/hub/agents'
-  } else if (hostname === 'sandbox-agent.thearena.ai') {
-    redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
-  } else if (hostname === 'agent.thearena.ai') {
-    redirectUrl = 'https://app.thearena.ai/hub/agents'
-  } else {
-    redirectUrl = 'https://app.thearena.ai/hub/agents'
-  }
-  return redirectUrl
-}
-
 export function Sidebar() {
   // useGlobalShortcuts()
 
@@ -130,7 +115,6 @@ export function Sidebar() {
   const routerRef = useRef<ReturnType<typeof useRouter>>(router)
   const isInitializedRef = useRef<boolean>(false)
   const activeWorkspaceRef = useRef<Workspace | null>(null)
-  const setUsedTemplatesList = useWorkflowStore((state) => state.setUsedTemplatesList)
 
   // Update refs when values change
   workspaceIdRef.current = workspaceId
@@ -171,13 +155,6 @@ export function Sidebar() {
     // Pattern: /workspace/[workspaceId]/knowledge/[id] or /workspace/[workspaceId]/knowledge/[id]/[documentId]
     const knowledgePageRegex = /^\/workspace\/[^/]+\/knowledge\/[^/]+/
     return knowledgePageRegex.test(pathname)
-  }, [pathname])
-
-  // Check if we're on the approvals page
-  const isOnApprovalsPage = useMemo(() => {
-    // Pattern: /workspace/[workspaceId]/approvals
-    const approvalsPageRegex = /^\/workspace\/[^/]+\/approvals$/
-    return approvalsPageRegex.test(pathname)
   }, [pathname])
 
   // Extract knowledge base ID and document ID from the pathname
@@ -889,25 +866,6 @@ export function Sidebar() {
     }
   }, [stopScroll])
 
-  //sai
-  useEffect(() => {
-    if (workspaceId) {
-      const fetchAllTemplatesUsed = async () => {
-        try {
-          const response = await fetch(`/api/workflows/template-mapper?workspaceId=${workspaceId}`)
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
-          }
-          const data = await response.json()
-          setUsedTemplatesList(data)
-        } catch (error) {
-          console.error('Error fetching templates:', error)
-        }
-      }
-      fetchAllTemplatesUsed()
-    }
-  }, [workspaceId])
-
   return (
     <>
       {/* Main Sidebar - Overlay */}
@@ -917,22 +875,6 @@ export function Sidebar() {
           style={{ gap: `${SIDEBAR_GAP}px` }}
         >
           {/* 1. Workspace Header */}
-          <div>
-            <p className='pointer-events-auto w-full text-center text-gray-500 text-sm hover:cursor-pointer'>
-              <span
-                onClick={() => {
-                  const hostname = window.location.hostname
-                  const redirectUrl = getRedirectUrl(hostname)
-
-                  window.location.href = redirectUrl
-                }}
-                className='flex items-center justify-start gap-2 text-primary'
-              >
-                <ArrowLeft className='h-5 w-5' />
-                <span> Back </span>
-              </span>
-            </p>
-          </div>
           <div className='pointer-events-auto flex-shrink-0'>
             <WorkspaceHeader
               onCreateWorkflow={handleCreateWorkflow}
@@ -966,7 +908,7 @@ export function Sidebar() {
 
           {/* 3. Search */}
           <div
-            className={`pointer-events-auto flex-shrink-0 ${isSidebarCollapsed || isOnApprovalsPage ? 'hidden' : ''}`}
+            className={`pointer-events-auto flex-shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`}
           >
             <button
               onClick={() => setShowSearchModal(true)}
@@ -982,18 +924,17 @@ export function Sidebar() {
 
           {/* 4. Workflow Selector */}
           <div
-            className={`pointer-events-auto relative h-[180px] flex-shrink-0 rounded-[10px] border bg-background shadow-xs ${
-              isSidebarCollapsed || isOnApprovalsPage ? 'hidden' : ''
+            className={`pointer-events-auto relative h-[212px] flex-shrink-0 rounded-[10px] border bg-background shadow-xs ${
+              isSidebarCollapsed ? 'hidden' : ''
             }`}
           >
             <div className='px-2'>
-              <ScrollArea className='h-[175px]' hideScrollbar={true}>
+              <ScrollArea className='h-[210px]' hideScrollbar={true}>
                 <div ref={workflowScrollAreaRef}>
                   <FolderTree
                     regularWorkflows={regularWorkflows}
                     isLoading={isLoading}
                     onCreateWorkflow={handleCreateWorkflow}
-                    activeWorkspace={activeWorkspace}
                   />
                 </div>
               </ScrollArea>
@@ -1086,7 +1027,7 @@ export function Sidebar() {
 
       {/* Modals */}
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
-      {/* <HelpModal open={showHelp} onOpenChange={setShowHelp} /> */}
+      <HelpModal open={showHelp} onOpenChange={setShowHelp} />
       <InviteModal open={showInviteMembers} onOpenChange={setShowInviteMembers} />
       <SubscriptionModal open={showSubscriptionModal} onOpenChange={setShowSubscriptionModal} />
     </>

@@ -664,6 +664,29 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       // },
     ],
   },
+  mistral: {
+    id: 'mistral',
+    name: 'Mistral',
+    description: "Mistral's models",
+    defaultModel: 'mistral-small',
+    modelPatterns: [/^mistral/],
+    capabilities: {
+      toolUsageControl: true,
+    },
+    models: [
+      // {
+      //   id: 'mistral-small',
+      //   pricing: {
+      //     input: 0.2,
+      //     output: 0.2,
+      //     updatedAt: '2025-01-15',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      // },
+    ],
+  },
   xai: {
     id: 'xai',
     name: 'xAI',
