@@ -777,9 +777,16 @@ async function automateDesignCreation(
   options.addArguments('--start-maximized')
 
   if (isLinux) {
+    // Docker/container configuration: Use software rendering for WebGL
     options.addArguments('--disable-gpu')
-    options.addArguments('--disable-software-rasterizer')
     options.addArguments('--use-gl=swiftshader')
+    options.addArguments('--enable-webgl')
+    options.addArguments('--enable-webgl2')
+    options.addArguments('--use-angle=swiftshader')
+    options.addArguments('--enable-software-rasterizer')
+    options.addArguments('--ignore-gpu-blacklist')
+    options.addArguments('--enable-accelerated-2d-canvas')
+    options.addArguments('--disable-web-security') // May help with WebGL initialization
   } else {
     options.addArguments('--use-angle=metal')
     options.addArguments('--use-gl=angle')
