@@ -2,7 +2,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('MemoryAPI')
 
-const MEMORY_API_BASE_URL = 'http://100.20.15.243:8000'
+const MEMORY_API_BASE_URL = 'https://dev-agent.thearena.ai/mem'
 
 /**
  * Helper function to call the memory API to store memories
@@ -31,13 +31,7 @@ export async function callMemoryAPI(
       },
     }
 
-    logger.debug(`[${requestId}] Calling memory API`, {
-      infer,
-      memoryType,
-      conversationId: memoryConversationId,
-      userId,
-      chatId,
-    })
+    logger.info(`[${requestId}] Calling memory API`, { payload })
 
     const response = await fetch(`${MEMORY_API_BASE_URL}/memories`, {
       method: 'POST',
