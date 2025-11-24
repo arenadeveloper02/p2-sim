@@ -850,7 +850,7 @@ async function automateDesignCreation(
   options.addArguments('--use-angle=gl')
   options.addArguments('--enable-zero-copy')
   options.addArguments('--ignore-gpu-blacklist')
-  options.excludeSwitches('enable-automation');
+  options.excludeSwitches('enable-automation')
   // Set preferences to automatically handle alerts (dismiss WebGL error dialogs)
   options.setUserPreferences({
     'profile.default_content_setting_values.notifications': 2, // Block notifications
