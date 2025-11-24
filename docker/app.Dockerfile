@@ -51,7 +51,7 @@ RUN bun run build
 # ========================================
 # Runner Stage: Run the actual app
 # ========================================
-FROM base AS runner
+FROM oven/bun:1.2.19 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
