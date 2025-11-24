@@ -12,7 +12,7 @@ export default function InviteLayout({ children }: InviteLayoutProps) {
   const brandConfig = useBrandConfig()
 
   return (
-    <main className='dark relative flex min-h-screen flex-col bg-[var(--brand-background-hex)] font-geist-sans text-white'>
+    <main className=' relative flex min-h-screen flex-col font-geist-sans text-white'>
       {/* Background pattern */}
       <GridPattern
         x={-5}
@@ -28,7 +28,7 @@ export default function InviteLayout({ children }: InviteLayoutProps) {
         <div className='w-full max-w-md'>
           <div className='mb-8 text-center'>
             <Image
-              src={brandConfig.logoUrl || '/logo/primary/text/medium.png'}
+              src={brandConfig?.logoUrlBlacktext || '/logo/primary/text/medium.png'}
               alt='Sim Logo'
               width={140}
               height={42}
@@ -36,11 +36,9 @@ export default function InviteLayout({ children }: InviteLayoutProps) {
               className='mx-auto'
             />
           </div>
-          <div className='rounded-xl border border-neutral-700/40 bg-neutral-800/50 p-6 backdrop-blur-sm'>
-            {children}
-          </div>
+          <div className='rounded-xl border p-6 shadow-lg backdrop-blur-sm'>{children}</div>
 
-          <div className='mt-6 text-center text-neutral-500/80 text-xs leading-relaxed'>
+          {/* <div className='mt-6 text-center text-neutral-500/80 text-xs leading-relaxed'>
             Need help?{' '}
             <a
               href={`mailto:${brandConfig.supportEmail}`}
@@ -48,7 +46,7 @@ export default function InviteLayout({ children }: InviteLayoutProps) {
             >
               Contact support
             </a>
-          </div>
+          </div> */}
         </div>
       </div>
     </main>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { LogOut, Pencil, Plus, Send, Trash2 } from 'lucide-react'
+import { LogOut, Pencil, /*Plus,*/ Send, Trash2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +17,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import { isDev } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -575,7 +574,7 @@ export function WorkspaceSelector({
           {/* Bottom Actions */}
           <div className='mt-2 flex items-center gap-2 border-t pt-2'>
             {/* Send Invite - Hide in development and AGENTS APPROVAL */}
-            {!isDev && !isApproverListWorkspace(activeWorkspace!) && (
+            {!isApproverListWorkspace(activeWorkspace!) && (
               <Button
                 variant='secondary'
                 onClick={userPermissions.canAdmin ? () => setShowInviteMembers(true) : undefined}
@@ -591,7 +590,7 @@ export function WorkspaceSelector({
             )}
 
             {/* Create Workspace */}
-            <Button
+            {/* <Button
               variant='secondary'
               onClick={onCreateWorkspace}
               disabled={isCreating}
@@ -602,7 +601,7 @@ export function WorkspaceSelector({
             >
               <Plus className='h-3 w-3' />
               <span>Create</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>

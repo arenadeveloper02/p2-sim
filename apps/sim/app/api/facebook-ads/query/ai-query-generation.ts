@@ -2,6 +2,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
 import { DEFAULT_DATE_PRESET, DEFAULT_FIELDS } from './constants'
+import { extractFacebookDateSelection } from './date-extraction'
 import { detectIntents } from './intent-detector'
 import { buildSystemPrompt } from './prompt-fragments'
 import type { ParsedFacebookQuery } from './types'
@@ -17,9 +18,13 @@ export async function parseQueryWithAI(
   // Step 1: Detect query intents
   const { intents, promptContext } = detectIntents(userQuery)
 
+  // Step 1b: Detect any explicit date range or preset mentioned by the user
+  const detectedDateSelection = extractFacebookDateSelection(userQuery)
+
   logger.info('Detected query intents', {
     intents,
     userQuery,
+    detectedDateSelection,
   })
 
   // Step 2: Build dynamic system prompt based on intents
@@ -232,11 +237,21 @@ Always return valid JSON. Never refuse to generate a response.`
       level,
     })
 
+    // Merge AI date selection with our deterministic extractor
+    let datePreset = parsedResponse.date_preset as string | undefined
+    let timeRange = parsedResponse.time_range as { since: string; until: string } | undefined
+
+    // If the model did not specify any date, fall back to detected natural language ranges
+    if (!datePreset && !timeRange && detectedDateSelection) {
+      datePreset = detectedDateSelection.date_preset
+      timeRange = detectedDateSelection.time_range
+    }
+
     return {
       endpoint,
       fields,
-      date_preset: parsedResponse.date_preset || DEFAULT_DATE_PRESET,
-      time_range: parsedResponse.time_range,
+      date_preset: datePreset || DEFAULT_DATE_PRESET,
+      time_range: timeRange,
       level,
       filters: parsedResponse.filters,
       breakdowns: parsedResponse.breakdowns,
