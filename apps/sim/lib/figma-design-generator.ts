@@ -763,15 +763,19 @@ async function handleAlerts(driver: WebDriver, maxAttempts = 3): Promise<void> {
     try {
       // Wait a bit for alert to appear (longer wait on first attempt)
       await driver.sleep(attempt === 1 ? 2000 : 500)
-      
+
       // Try to handle alert if present
       try {
         const alert = await driver.switchTo().alert()
         const alertText = await alert.getText()
         console.log(`Alert detected (attempt ${attempt}): ${alertText}`)
-        
+
         // Dismiss WebGL error alerts or any other alerts
-        if (alertText.includes('WebGL') || alertText.includes('Could not initialize') || alertText.includes('Back to Files')) {
+        if (
+          alertText.includes('WebGL') ||
+          alertText.includes('Could not initialize') ||
+          alertText.includes('Back to Files')
+        ) {
           console.log('Dismissing WebGL error alert...')
           await alert.accept()
           console.log('✓ WebGL error alert dismissed')
@@ -780,14 +784,9 @@ async function handleAlerts(driver: WebDriver, maxAttempts = 3): Promise<void> {
           await alert.accept()
           console.log('✓ Alert dismissed')
         }
-        
+
         // Switch back to default content
         await driver.switchTo().defaultContent()
-        
-        // If we successfully handled an alert, check once more in case another appears
-        if (attempt < maxAttempts) {
-          continue
-        }
       } catch (alertError) {
         // No alert present, which is fine
         // This is expected most of the time
@@ -828,7 +827,7 @@ async function automateDesignCreation(
   options.addArguments('--window-size=1920,1080')
   options.addArguments('--no-sandbox')
   options.addArguments('--disable-dev-shm-usage')
-  
+
   // WebGL configuration: Use software rendering (SwiftShader) for Docker/headless environments
   // This avoids GPU requirements and WebGL initialization errors
   if (isLinux) {
@@ -844,12 +843,12 @@ async function automateDesignCreation(
     options.addArguments('--ignore-gpu-blacklist')
     options.addArguments('--enable-accelerated-2d-canvas')
   }
-  
+
   // Additional WebGL support
   options.addArguments('--enable-webgl')
   options.addArguments('--enable-webgl2')
   options.addArguments('--ignore-gpu-blacklist')
-  
+
   // Set preferences to automatically handle alerts (dismiss WebGL error dialogs)
   options.setUserPreferences({
     'profile.default_content_setting_values.notifications': 2, // Block notifications
@@ -898,7 +897,7 @@ async function automateDesignCreation(
     }, 60000)
 
     console.log('Login successful!')
-    
+
     // Handle any alerts (like WebGL errors) after login
     await handleAlerts(driver)
 
@@ -909,7 +908,7 @@ async function automateDesignCreation(
 
     // Wait for the page to load
     await driver.sleep(3000)
-    
+
     // Handle any alerts (like WebGL errors) after navigation
     await handleAlerts(driver)
 
@@ -940,7 +939,7 @@ async function automateDesignCreation(
 
     // Wait for new file to be created
     await driver.sleep(2000)
-    
+
     // Handle any alerts (like WebGL errors) after creating new file
     await handleAlerts(driver)
 
