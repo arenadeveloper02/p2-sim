@@ -1,6 +1,4 @@
 import crypto from 'crypto'
-import { db } from '@sim/db'
-import { workflow as workflowTable } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -9,6 +7,8 @@ import { extractAndPersistCustomTools } from '@/lib/workflows/custom-tools-persi
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { validateWorkflowState } from '@/lib/workflows/validation'
 import { getAllBlocks } from '@/blocks/registry'
+import { db } from '@/db'
+import { workflow as workflowTable } from '@/db/schema'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/consts'
 

@@ -1,5 +1,3 @@
-import { db } from '@sim/db'
-import { account, user } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { jwtDecode } from 'jwt-decode'
 import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
@@ -8,6 +6,8 @@ import { getEnvironmentVariableKeys } from '@/lib/environment/utils'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateRequestId } from '@/lib/utils'
 import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import { db } from '@/db'
+import { account, user } from '@/db/schema'
 
 interface GetCredentialsParams {
   userId?: string

@@ -1,6 +1,6 @@
-import { db } from '@sim/db'
-import { workspace as workspaceTable } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
+import { db } from '@/db'
+import { workspace as workspaceTable } from '@/db/schema'
 
 interface WorkspaceBillingSettings {
   billedAccountUserId: string | null

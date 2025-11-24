@@ -5,29 +5,19 @@ import { Layout, Search } from 'lucide-react'
 import { Button } from '@/components/emcn'
 import { Input } from '@/components/ui/input'
 import { createLogger } from '@/lib/logs/console/logger'
+import type { CreatorProfileDetails } from '@/app/_types/creator-profile'
 import {
   TemplateCard,
   TemplateCardSkeleton,
 } from '@/app/workspace/[workspaceId]/templates/components/template-card'
+import { useDebounce } from '@/hooks/use-debounce'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
-import type { CreatorProfileDetails } from '@/types/creator-profile'
 
 const logger = createLogger('TemplatesPage')
 
-// Shared categories definition
-export const categories = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-] as const
-
-export type CategoryValue = (typeof categories)[number]['value']
-
-// Template data structure
+/**
+ * Template data structure with support for both new and legacy fields
+ */
 export interface Template {
   id: string
   workflowId: string | null
@@ -71,15 +61,6 @@ interface TemplatesProps {
   isSuperUser: boolean
 }
 
-interface Workspace {
-  id: string
-  name: string
-  ownerId: string
-  role?: string
-  membershipId?: string
-  permissions?: 'admin' | 'write' | 'read' | null
-}
-
 /**
  * Templates list component displaying workflow templates
  * Supports filtering by tab (gallery/your/pending) and search
@@ -90,31 +71,19 @@ export default function Templates({
   isSuperUser,
 }: TemplatesProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [activeTab, setActiveTab] = useState('gallery')
   const [templates, setTemplates] = useState<Template[]>(initialTemplates)
   const [loading, setLoading] = useState(false)
-
-  /**
-   * Update star status for a template
-   */
-  const handleStarChange = (templateId: string, isStarred: boolean, newStarCount: number) => {
-    setTemplates((prevTemplates) =>
-      prevTemplates.map((template) =>
-        template.id === templateId ? { ...template, isStarred, stars: newStarCount } : template
-      )
-    )
-  }
 
   /**
    * Filter templates based on active tab and search query
    * Memoized to prevent unnecessary recalculations on render
    */
   const filteredTemplates = useMemo(() => {
-    const query = searchQuery.toLowerCase()
+    const query = debouncedSearchQuery.toLowerCase()
 
     return templates.filter((template) => {
-      // Filter by tab
       const tabMatch =
         activeTab === 'your'
           ? template.userId === currentUserId || template.isStarred
@@ -124,7 +93,6 @@ export default function Templates({
 
       if (!tabMatch) return false
 
-      // Filter by search query
       if (!query) return true
 
       const searchableText = [
@@ -140,14 +108,14 @@ export default function Templates({
 
       return searchableText.includes(query)
     })
-  }, [templates, activeTab, searchQuery, currentUserId])
+  }, [templates, activeTab, debouncedSearchQuery, currentUserId])
 
   /**
    * Get empty state message based on current filters
    * Memoized to prevent unnecessary recalculations on render
    */
   const emptyState = useMemo(() => {
-    if (searchQuery) {
+    if (debouncedSearchQuery) {
       return {
         title: 'No templates found',
         description: 'Try a different search term',
@@ -170,7 +138,7 @@ export default function Templates({
     }
 
     return messages[activeTab as keyof typeof messages] || messages.gallery
-  }, [searchQuery, activeTab])
+  }, [debouncedSearchQuery, activeTab])
 
   return (
     <div className='flex h-[100vh] flex-col pl-64'>
@@ -225,34 +193,6 @@ export default function Templates({
             </div>
           </div>
 
-          {/* MA Section */}
-          <div ref={sectionRefs.ma} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>MA</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
-
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('ma').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
-
-          {/* PPC Section */}
-          <div ref={sectionRefs.ppc} className='mb-8'>
-            <div className='mb-4 flex items-center gap-2'>
-              <h2 className='font-medium font-sans text-foreground text-lg'>PPC</h2>
-              <ChevronRight className='h-4 w-4 text-muted-foreground' />
-            </div>
-
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {loading
-                ? renderSkeletonCards()
-                : getTemplatesByCategory('ppc').map((template) => renderTemplateCard(template))}
-            </div>
-          </div>
-
           <div className='mt-[24px] h-[1px] w-full border-[var(--border)] border-t' />
 
           <div className='mt-[24px] grid grid-cols-1 gap-x-[20px] gap-y-[40px] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
@@ -277,17 +217,12 @@ export default function Templates({
                     key={template.id}
                     id={template.id}
                     title={template.name}
-                    description={template.description || template.details?.tagline || ''}
                     author={author}
                     authorImageUrl={authorImageUrl}
                     usageCount={template.views.toString()}
                     stars={template.stars}
-                    icon={template.icon}
-                    iconColor={template.color}
                     state={template.state}
                     isStarred={template.isStarred}
-                    onStarChange={handleStarChange}
-                    isAuthenticated={true}
                   />
                 )
               })

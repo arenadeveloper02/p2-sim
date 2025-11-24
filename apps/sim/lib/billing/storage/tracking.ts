@@ -4,11 +4,11 @@
  * Only tracks when billing is enabled
  */
 
-import { db } from '@sim/db'
-import { organization, userStats } from '@sim/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { isBillingEnabled } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { db } from '@/db'
+import { organization, userStats } from '@/db/schema'
 
 const logger = createLogger('StorageTracking')
 

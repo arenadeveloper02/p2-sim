@@ -8,10 +8,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DropdownMenuTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuTrigger,
 } from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'

@@ -1,16 +1,14 @@
-/**
- * Available panel tabs
- */
-export type PanelTab = 'copilot' | 'editor' | 'toolbar'
+export type PanelTab = 'console' | 'variables' | 'chat' | 'copilot'
 
-/**
- * Panel state interface
- */
-export interface PanelState {
-  panelWidth: number
-  setPanelWidth: (width: number) => void
+export interface PanelStore {
+  isOpen: boolean
   activeTab: PanelTab
+  panelWidth: number
+  togglePanel: () => void
   setActiveTab: (tab: PanelTab) => void
-  _hasHydrated: boolean
-  setHasHydrated: (hasHydrated: boolean) => void
+  setPanelWidth: (width: number) => void
+  setFullScreen: (fullScreen: boolean) => void
+  isFullScreen: boolean
+  parentTemplateId: string
+  setParentTemplateId: (parentTemplateId: string) => void
 }

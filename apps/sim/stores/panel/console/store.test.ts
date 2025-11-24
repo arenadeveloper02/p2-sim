@@ -21,11 +21,6 @@ describe('Console Store', () => {
       isOpen: false,
     })
     vi.clearAllMocks()
-    // Clear localStorage mock
-    if (global.localStorage) {
-      vi.mocked(global.localStorage.getItem).mockReturnValue(null)
-      vi.mocked(global.localStorage.setItem).mockClear()
-    }
   })
 
   describe('addConsole', () => {
