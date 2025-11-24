@@ -8,12 +8,12 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
     'Generate AI-powered Figma designs automatically using Claude AI and browser automation',
   version: '1.0.0',
   params: {
-    name: {
-      type: 'string',
-      description: 'Name of the Figma file to create',
-      required: true,
-      visibility: 'user-or-llm',
-    },
+    // name: {
+    //   type: 'string',
+    //   description: 'Name of the Figma file to create',
+    //   required: true,
+    //   visibility: 'user-or-llm',
+    // },
     description: {
       type: 'string',
       description: 'Optional description for the file',
@@ -64,7 +64,7 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       'Content-Type': 'application/json',
     }),
     body: (params: CreateFigmaParams) => {
-      if (!params?.designPrompt || !params?.projectId || !params?.name) {
+      if (!params?.designPrompt || !params?.projectId) {
         throw new Error(
           'Missing required parameters: designPrompt, projectId, and name are required'
         )
@@ -73,7 +73,7 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       // For internal API calls, send file paths/URLs as JSON, not FormData
       const body: Record<string, any> = {
         projectId: params.projectId,
-        fileName: params.name,
+        fileName: params.name || 'Generated Design',
         prompt: params.designPrompt,
       }
 
