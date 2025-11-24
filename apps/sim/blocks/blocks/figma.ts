@@ -36,15 +36,15 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       value: () => 'figma_get_comments',
     },
     // Create Figma File parameters
-    {
-      id: 'name',
-      title: 'File Name',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: 'e.g., My Design',
-      condition: { field: 'operation', value: 'figma_create' },
-      required: true,
-    },
+    // {
+    //   id: 'name',
+    //   title: 'File Name',
+    //   type: 'short-input',
+    //   layout: 'full',
+    //   placeholder: 'e.g., My Design',
+    //   condition: { field: 'operation', value: 'figma_create' },
+    //   required: true,
+    // },
     {
       id: 'description',
       title: 'Description',
