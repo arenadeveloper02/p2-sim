@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -8,7 +8,7 @@ const logger = createLogger('WorkspaceByIdAPI')
 
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { knowledgeBase, permissions, templates, workspace } from '@/db/schema'
+import { knowledgeBase, permissions, templates, userKnowledgeBase, workspace } from '@/db/schema'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -202,10 +202,27 @@ export async function DELETE(
         .set({ workspaceId: null, updatedAt: new Date() })
         .where(eq(knowledgeBase.workspaceId, workspaceId))
 
+      // Soft delete knowledge bases associated with this workspace
+      // await tx
+      //   .update(knowledgeBase)
+      //   .set({ deletedAt: new Date(), updatedAt: new Date() })
+      //   .where(eq(knowledgeBase.workspaceId, workspaceId))
+
       // Delete all permissions associated with this workspace
       await tx
         .delete(permissions)
         .where(and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId)))
+
+      // Soft delete related entries from user_knowledge_base table
+      await tx
+        .update(userKnowledgeBase)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(
+          or(
+            eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
+            eq(userKnowledgeBase.kbWorkspaceIdRef, workspaceId)
+          )
+        )
 
       // Delete the workspace itself
       await tx.delete(workspace).where(eq(workspace.id, workspaceId))
