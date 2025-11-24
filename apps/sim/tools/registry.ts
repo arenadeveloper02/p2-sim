@@ -169,6 +169,7 @@ import {
   sharepointReadPageTool,
 } from '@/tools/sharepoint'
 import { slackCanvasTool, slackMessageReaderTool, slackMessageTool } from '@/tools/slack'
+import { spyfuRequestTool } from '@/tools/spyfu'
 import { stagehandAgentTool, stagehandExtractTool } from '@/tools/stagehand'
 import {
   supabaseDeleteTool,
@@ -237,6 +238,7 @@ export const tools: Record<string, ToolConfig> = {
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
   semrush_query: semrushQueryTool,
+  spyfu_request: spyfuRequestTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
