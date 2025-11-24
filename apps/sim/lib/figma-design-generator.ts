@@ -815,11 +815,6 @@ async function automateDesignCreation(
 
   // Configure Chrome options
   const options = new chrome.Options()
-  // Uncomment the following line to run in headless mode
-  // options.addArguments('--headless');
-  // options.addArguments('--disable-blink-features=AutomationControlled')
-  // options.addArguments('--no-sandbox')
-  // options.addArguments('--disable-dev-shm-usage')
 
   // Base configuration
   options.addArguments('--disable-blink-features=AutomationControlled')
@@ -828,33 +823,31 @@ async function automateDesignCreation(
   options.addArguments('--no-sandbox')
   options.addArguments('--disable-dev-shm-usage')
 
-  // WebGL configuration: Use software rendering (SwiftShader) for Docker/headless environments
-  // This avoids GPU requirements and WebGL initialization errors
+  // Platform-specific WebGL / GPU config
   if (isLinux) {
-    // Linux/Docker: Use software rendering
-    options.addArguments('--disable-gpu')
-    options.addArguments('--use-gl=swiftshader')
-    options.addArguments('--use-angle=swiftshader')
-    options.addArguments('--enable-software-rasterizer')
+    // ✅ Linux / Docker: software GL via SwiftShader, but DO NOT disable GPU entirely
+    options.addArguments('--enable-webgl')
+    options.addArguments('--enable-webgl2')
+    options.addArguments('--ignore-gpu-blacklist')
+    options.addArguments('--use-gl=swiftshader') // software GL
+    options.addArguments('--use-angle=gl') // avoid Vulkan ANGLE backend
+    options.addArguments('--enable-zero-copy')
   } else {
-    // macOS/Windows: Try hardware acceleration first, fallback to software
+    // macOS / Windows: hardware accelerated
     options.addArguments('--enable-webgl')
     options.addArguments('--enable-webgl2')
     options.addArguments('--ignore-gpu-blacklist')
     options.addArguments('--enable-accelerated-2d-canvas')
   }
 
-  // Additional WebGL support
-  options.addArguments('--enable-webgl')
-  options.addArguments('--enable-webgl2')
-  options.addArguments('--use-angle=gl')
-  options.addArguments('--enable-zero-copy')
-  options.addArguments('--ignore-gpu-blacklist')
+  // Extra generic flags
   options.excludeSwitches('enable-automation')
-  // Set preferences to automatically handle alerts (dismiss WebGL error dialogs)
+  options.addArguments('--disable-blink-features=AutomationControlled')
+
+  // These prefs DO NOT actually block JS alerts like the WebGL popup,
+  // but keeping them is harmless.
   options.setUserPreferences({
-    'profile.default_content_setting_values.notifications': 2, // Block notifications
-    'profile.default_content_setting_values.alerts': 2, // Block alerts
+    'profile.default_content_setting_values.notifications': 2,
   })
 
   const chromeBinaryPath = resolveChromeBinaryPath()
