@@ -16,7 +16,13 @@ import {
 } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chat, deployedChat, workflow, workflowExecutionLogs } from '@/db/schema'
+import {
+  chat,
+  deployedChat,
+  deployedChatHistory,
+  workflow,
+  workflowExecutionLogs,
+} from '@/db/schema'
 
 const logger = createLogger('ChatSubdomainAPI')
 
@@ -378,12 +384,35 @@ export async function POST(
           // Collect full response for memory API calls
           let fullOpenAIResponse = ''
 
-          // Helper function to call memory APIs after streaming completes
-          const callMemoryAPIs = () => {
+          // Helper function to store chat history and call memory APIs after streaming completes
+          const storeChatHistoryAndCallMemoryAPIs = async () => {
             // Use session user ID if available, otherwise fall back to deployment.userId
             const userIdForMemory = sessionUserId || deployment.userId
 
             if (fullOpenAIResponse && chatId && userIdForMemory) {
+              // Store chat history in deployed_chat_history table
+              try {
+                const historyId = uuidv4()
+                await db.insert(deployedChatHistory).values({
+                  id: historyId,
+                  chatId: chatId,
+                  userId: userIdForMemory,
+                  workflowId: deployment.workflowId,
+                  input: input,
+                  output: fullOpenAIResponse,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                logger.debug(`[${requestId}] Stored chat history`, {
+                  historyId,
+                  chatId,
+                  workflowId: deployment.workflowId,
+                })
+              } catch (error: any) {
+                logger.error(`[${requestId}] Error storing chat history:`, error)
+                // Don't throw - continue with memory API calls even if history storage fails
+              }
+
               const memoryMessages = [
                 { role: 'user', content: input },
                 { role: 'assistant', content: fullOpenAIResponse },
@@ -438,8 +467,8 @@ export async function POST(
                     )
                     controller.close()
 
-                    // After streaming is complete, call memory APIs
-                    callMemoryAPIs()
+                    // After streaming is complete, store chat history and call memory APIs
+                    await storeChatHistoryAndCallMemoryAPIs()
 
                     break
                   }
@@ -461,8 +490,8 @@ export async function POST(
                         )
                         controller.close()
 
-                        // After streaming is complete, call memory APIs
-                        callMemoryAPIs()
+                        // After streaming is complete, store chat history and call memory APIs
+                        await storeChatHistoryAndCallMemoryAPIs()
 
                         return
                       }

@@ -1568,3 +1568,14 @@ export const deployedChat = pgTable(
     workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
   })
 )
+
+export const deployedChatHistory = pgTable('deployed_chat_history', {
+  id: text('id').primaryKey(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  chatId: text('chat_id'),
+  userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+  workflowId: text('workflow_id'),
+  input: text('input'),
+  output: text('output'),
+})

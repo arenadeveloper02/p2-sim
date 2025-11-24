@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -6,28 +6,22 @@ import { generateRequestId } from '@/lib/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
-import { chatPromptFeedback, workflowExecutionLogs } from '@/db/schema'
+import { deployedChatHistory } from '@/db/schema'
 
 const logger = createLogger('ChatHistoryAPI')
 
 /**
  * GET /api/chat/[subdomain]/history
  *
- * Retrieves the execution history for external chat interactions.
- * Only returns logs where is_external_chat = true in workflow_execution_logs table.
+ * Retrieves the chat history from deployed_chat_history table.
  *
  * Query Parameters:
  * - limit: Number of records to return (max 100, default 50)
  * - offset: Number of records to skip (default 0)
- * - startDate: ISO 8601 date string to filter from
- * - endDate: ISO 8601 date string to filter to
- * - conversationId: Filter by specific conversation ID
- * - chatId: Filter by specific chat ID (chat_id column in workflow_execution_logs)
- * - level: Filter by log level ('info' or 'error')
+ * - chatId: Filter by specific chat ID (required)
  *
  * Authentication:
- * - Public chats: No authentication required
- * - Password/Email chats: Requires valid authentication cookie or credentials
+ * - Requires authenticated user session
  */
 export async function GET(
   request: NextRequest,
@@ -43,243 +37,69 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const limit = Math.min(Number.parseInt(searchParams.get('limit') || '50'), 100) // Max 100 items
     const offset = Math.max(Number.parseInt(searchParams.get('offset') || '0'), 0) // Ensure non-negative
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
-    const conversationId = searchParams.get('conversationId') || subdomain
     const chatId = searchParams.get('chatId')
-    const level = searchParams.get('level') // 'info' or 'error'
 
-    logger.debug(
-      `[${requestId}] Start date: ${startDate}, End date: ${endDate}, Conversation ID: ${conversationId}, Chat ID: ${chatId}, Level: ${level}`
-    )
-
-    // Validate date parameters
-    if (startDate && Number.isNaN(Date.parse(startDate))) {
-      return addCorsHeaders(
-        createErrorResponse('Invalid startDate format. Use ISO 8601 format.', 400),
-        request
-      )
-    }
-    if (endDate && Number.isNaN(Date.parse(endDate))) {
-      return addCorsHeaders(
-        createErrorResponse('Invalid endDate format. Use ISO 8601 format.', 400),
-        request
-      )
-    }
-
-    // Validate level parameter
-    if (level && !['info', 'error'].includes(level)) {
-      return addCorsHeaders(
-        createErrorResponse('Invalid level parameter. Must be "info" or "error".', 400),
-        request
-      )
+    // Require chatId parameter
+    if (!chatId) {
+      return addCorsHeaders(createErrorResponse('chatId parameter is required', 400), request)
     }
 
     // Require authenticated user and use their id to filter records
     const session = await getSession()
-    const executingUserId = session?.user?.id
-    if (!executingUserId) {
+    const userId = session?.user?.id
+    if (!userId) {
       logger.info(`[${requestId}] Unauthorized request for history: missing session user`)
       return addCorsHeaders(createErrorResponse('Authentication required', 401), request)
     }
 
-    // Build query conditions for external chat logs
-    let conditions = and(
-      eq(workflowExecutionLogs.workflowId, subdomain),
-      eq(workflowExecutionLogs.isExternalChat, true), // Only external chat logs
-      eq(workflowExecutionLogs.userId, executingUserId) // Filter by executing user
+    logger.debug(`[${requestId}] Query parameters:`, {
+      chatId,
+      userId,
+      limit,
+      offset,
+    })
+
+    // Build query conditions for deployed_chat_history
+    const conditions = and(
+      eq(deployedChatHistory.chatId, chatId),
+      eq(deployedChatHistory.userId, userId)
     )
 
-    // Add date range filters if provided
-    if (startDate) {
-      conditions = and(conditions, gte(workflowExecutionLogs.startedAt, new Date(startDate)))
-    }
-    if (endDate) {
-      conditions = and(conditions, lte(workflowExecutionLogs.startedAt, new Date(endDate)))
-    }
-
-    // Add level filter if provided
-    if (level) {
-      conditions = and(conditions, eq(workflowExecutionLogs.level, level))
-    }
-
-    // Add chatId filter if provided
-    if (chatId) {
-      conditions = and(conditions, eq(workflowExecutionLogs.chatId, chatId))
-    }
-
-    // Add conversation ID filter if provided (search in executionData)
-    // if (conversationId) {
-    //   conditions = and(conditions, sql`${workflowExecutionLogs.executionData}->>'conversationId' = ${conversationId}`)
-    // }
-
-    // Log the conditions in a safe way (avoid circular references)
-    const conditionsInfo = {
-      workflowId: subdomain,
-      isExternalChat: true,
-      executingUserId,
-      startDate: startDate || null,
-      endDate: endDate || null,
-      level: level || null,
-      conversationId: conversationId || null,
-      chatId: chatId || null,
-    }
-    logger.debug(`[${requestId}] Query conditions:`, conditionsInfo)
-
-    // Query workflow execution logs for external chat
+    // Query deployed_chat_history table
     const logs = await db
       .select({
-        id: workflowExecutionLogs.id,
-        executionId: workflowExecutionLogs.executionId,
-        level: workflowExecutionLogs.level,
-        trigger: workflowExecutionLogs.trigger,
-        startedAt: workflowExecutionLogs.startedAt,
-        endedAt: workflowExecutionLogs.endedAt,
-        totalDurationMs: workflowExecutionLogs.totalDurationMs,
-        cost: workflowExecutionLogs.cost,
-        executionData: workflowExecutionLogs.executionData,
-        finalChatOutput: workflowExecutionLogs.finalChatOutput,
-        createdAt: workflowExecutionLogs.createdAt,
+        id: deployedChatHistory.id,
+        chatId: deployedChatHistory.chatId,
+        workflowId: deployedChatHistory.workflowId,
+        input: deployedChatHistory.input,
+        output: deployedChatHistory.output,
+        createdAt: deployedChatHistory.createdAt,
+        updatedAt: deployedChatHistory.updatedAt,
       })
-      .from(workflowExecutionLogs)
+      .from(deployedChatHistory)
       .where(conditions)
-      .orderBy(workflowExecutionLogs.startedAt)
+      .orderBy(deployedChatHistory.createdAt)
       .limit(limit)
       .offset(offset)
-
-    // Batch fetch feedback status (liked) for all executionIds in this page
-    const executionIds = logs.map((l) => l.executionId)
-    let likedByExecutionId = new Map<string, boolean>()
-    if (executionIds.length > 0) {
-      // Aggregate to a single boolean per executionId for efficiency
-      const feedbackRows = await db
-        .select({
-          executionId: chatPromptFeedback.executionId,
-          liked: sql<boolean>`bool_or(${chatPromptFeedback.liked})`,
-        })
-        .from(chatPromptFeedback)
-        .where(inArray(chatPromptFeedback.executionId, executionIds))
-        .groupBy(chatPromptFeedback.executionId)
-
-      likedByExecutionId = new Map(feedbackRows.map((r) => [r.executionId, !!r.liked]))
-    }
 
     // Get total count for pagination
     const totalCountResult = await db
       .select({ count: sql`count(*)` })
-      .from(workflowExecutionLogs)
+      .from(deployedChatHistory)
       .where(conditions)
 
     const totalCount = totalCountResult[0]?.count || 0
 
     // Format the response data
     const formattedLogs = logs.map((log) => {
-      const executionData = log.executionData as any
-
-      // Extract userInput:
-      // 1. First check traceSpans.initialInput
-      // 2. If null, check traceSpans.spans -> workflow -> children -> agent -> input.userPrompt
-      let userInput = null
-      let conversationId = null
-
-      if (executionData?.traceSpans) {
-        // Check for initialInput first
-        if (
-          executionData.traceSpans.initialInput &&
-          typeof executionData.traceSpans.initialInput === 'string'
-        ) {
-          userInput = executionData.traceSpans.initialInput
-        } else if (
-          executionData.traceSpans.spans &&
-          Array.isArray(executionData.traceSpans.spans)
-        ) {
-          // Look for workflow execution span in spans array
-          const workflowSpan = executionData.traceSpans.spans.find(
-            (span: any) => span.type === 'workflow'
-          )
-          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-            // Look for agent spans in children
-            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
-            if (agentSpans.length > 0) {
-              const agentSpan = agentSpans[0] // Get first agent span
-              userInput = agentSpan.input?.userPrompt || null
-              conversationId = agentSpan.input?.conversationId || null
-            }
-          }
-        } else if (Array.isArray(executionData.traceSpans)) {
-          // Fallback: if traceSpans is directly an array (old format)
-          const workflowSpan = executionData.traceSpans.find(
-            (span: any) => span.type === 'workflow'
-          )
-          if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-            const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
-            if (agentSpans.length > 0) {
-              const agentSpan = agentSpans[0]
-              userInput = agentSpan.input?.userPrompt || null
-              conversationId = agentSpan.input?.conversationId || null
-            }
-          }
-        }
-      }
-
-      // Extract modelOutput directly from final_chat_output column
-      // This is the output that was streamed/shown based on output_configs
-      let modelOutput = log.finalChatOutput || null
-
-      // Fallback: if final_chat_output is not available (for older records),
-      // fall back to the old extraction logic
-      if (!modelOutput) {
-        // Fallback logic for backward compatibility with older records
-        if (executionData?.finalOutput?.content) {
-          modelOutput = executionData.finalOutput.content
-        } else if (executionData?.output?.content) {
-          modelOutput = executionData.output.content
-        } else if (executionData?.traceSpans) {
-          // Try to get from traceSpans (backward compatibility)
-          if (executionData.traceSpans.spans && Array.isArray(executionData.traceSpans.spans)) {
-            const workflowSpan = executionData.traceSpans.spans.find(
-              (span: any) => span.type === 'workflow'
-            )
-            if (workflowSpan?.children) {
-              const agentSpans = workflowSpan.children.filter(
-                (child: any) => child.type === 'agent'
-              )
-              if (agentSpans.length > 0) {
-                modelOutput = agentSpans[0].output?.content || null
-              }
-            }
-          } else if (Array.isArray(executionData.traceSpans)) {
-            const workflowSpan = executionData.traceSpans.find(
-              (span: any) => span.type === 'workflow'
-            )
-            if (workflowSpan?.children) {
-              const agentSpans = workflowSpan.children.filter(
-                (child: any) => child.type === 'agent'
-              )
-              if (agentSpans.length > 0) {
-                modelOutput = agentSpans[0].output?.content || null
-              }
-            }
-          }
-        }
-      }
-
       return {
         id: log.id,
-        executionId: log.executionId,
-        level: log.level,
-        trigger: log.trigger,
-        startedAt: log.startedAt.toISOString(),
-        endedAt: log.endedAt?.toISOString() || null,
-        totalDurationMs: log.totalDurationMs,
-        // Extract relevant chat information from executionData
-        conversationId,
-        userInput,
-        modelOutput,
-        liked: likedByExecutionId.has(log.executionId)
-          ? likedByExecutionId.get(log.executionId)!
-          : null,
+        chatId: log.chatId,
+        workflowId: log.workflowId,
+        userInput: log.input,
+        modelOutput: log.output,
         createdAt: log.createdAt.toISOString(),
+        updatedAt: log.updatedAt.toISOString(),
       }
     })
 
@@ -291,22 +111,10 @@ export async function GET(
         total: totalCount,
         hasMore: offset + limit < Number(totalCount),
       },
-      //   filters: {
-      //     startDate: startDate || null,
-      //     endDate: endDate || null,
-      //     conversationId: conversationId || null,
-      //     level: level || null,
-      //   }
-      //   summary: {
-      //     totalExecutions: Number(totalCount),
-      //     successfulExecutions: formattedLogs.filter(log => log.level === 'info').length,
-      //     failedExecutions: formattedLogs.filter(log => log.level === 'error').length,
-      //     uniqueConversations: new Set(formattedLogs.map(log => log.conversationId).filter(Boolean)).size,
-      //   },
     }
 
     logger.info(
-      `[${requestId}] Successfully fetched ${formattedLogs.length} chat history entries for subdomain: ${subdomain}`
+      `[${requestId}] Successfully fetched ${formattedLogs.length} chat history entries for chatId: ${chatId}`
     )
 
     return addCorsHeaders(createSuccessResponse(response), request)
