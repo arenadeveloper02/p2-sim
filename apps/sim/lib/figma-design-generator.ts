@@ -755,6 +755,56 @@ async function switchToPluginIframe(driver: WebDriver): Promise<boolean> {
 }
 
 /**
+ * Helper function to handle and dismiss any alerts (like WebGL errors)
+ * This function will check for alerts multiple times to catch alerts that appear asynchronously
+ */
+async function handleAlerts(driver: WebDriver, maxAttempts = 3): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      // Wait a bit for alert to appear (longer wait on first attempt)
+      await driver.sleep(attempt === 1 ? 2000 : 500)
+      
+      // Try to handle alert if present
+      try {
+        const alert = await driver.switchTo().alert()
+        const alertText = await alert.getText()
+        console.log(`Alert detected (attempt ${attempt}): ${alertText}`)
+        
+        // Dismiss WebGL error alerts or any other alerts
+        if (alertText.includes('WebGL') || alertText.includes('Could not initialize') || alertText.includes('Back to Files')) {
+          console.log('Dismissing WebGL error alert...')
+          await alert.accept()
+          console.log('✓ WebGL error alert dismissed')
+        } else {
+          // Accept any other alerts
+          await alert.accept()
+          console.log('✓ Alert dismissed')
+        }
+        
+        // Switch back to default content
+        await driver.switchTo().defaultContent()
+        
+        // If we successfully handled an alert, check once more in case another appears
+        if (attempt < maxAttempts) {
+          continue
+        }
+      } catch (alertError) {
+        // No alert present, which is fine
+        // This is expected most of the time
+        if (attempt === 1) {
+          // Only log on first attempt to avoid spam
+        }
+      }
+    } catch (error) {
+      // Error accessing alert, likely no alert present
+      if (attempt === 1) {
+        // Only log on first attempt
+      }
+    }
+  }
+}
+
+/**
  * Automate Figma design creation using Selenium
  */
 async function automateDesignCreation(
@@ -775,25 +825,36 @@ async function automateDesignCreation(
   // Base configuration
   options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--start-maximized')
-  // Docker/container configuration: Use software rendering for WebGL
-  options.addArguments('--disable-gpu')
-  options.addArguments('--use-gl=swiftshader')
-  options.addArguments('--enable-webgl')
-  options.addArguments('--enable-webgl2')
-  options.addArguments('--use-angle=swiftshader')
-  options.addArguments('--enable-software-rasterizer')
-  options.addArguments('--ignore-gpu-blacklist')
-  options.addArguments('--enable-accelerated-2d-canvas')
-  options.addArguments('--disable-web-security') // May help with WebGL initialization
-  options.addArguments('--use-angle=metal')
-  options.addArguments('--use-gl=angle')
-  options.addArguments('--enable-webgl')
-  options.addArguments('--ignore-gpu-blacklist')
-  options.addArguments('--enable-accelerated-2d-canvas')
   options.addArguments('--window-size=1920,1080')
-  options.addArguments('--disable-blink-features=AutomationControlled')
   options.addArguments('--no-sandbox')
   options.addArguments('--disable-dev-shm-usage')
+  
+  // WebGL configuration: Use software rendering (SwiftShader) for Docker/headless environments
+  // This avoids GPU requirements and WebGL initialization errors
+  if (isLinux) {
+    // Linux/Docker: Use software rendering
+    options.addArguments('--disable-gpu')
+    options.addArguments('--use-gl=swiftshader')
+    options.addArguments('--use-angle=swiftshader')
+    options.addArguments('--enable-software-rasterizer')
+  } else {
+    // macOS/Windows: Try hardware acceleration first, fallback to software
+    options.addArguments('--enable-webgl')
+    options.addArguments('--enable-webgl2')
+    options.addArguments('--ignore-gpu-blacklist')
+    options.addArguments('--enable-accelerated-2d-canvas')
+  }
+  
+  // Additional WebGL support
+  options.addArguments('--enable-webgl')
+  options.addArguments('--enable-webgl2')
+  options.addArguments('--ignore-gpu-blacklist')
+  
+  // Set preferences to automatically handle alerts (dismiss WebGL error dialogs)
+  options.setUserPreferences({
+    'profile.default_content_setting_values.notifications': 2, // Block notifications
+    'profile.default_content_setting_values.alerts': 2, // Block alerts
+  })
 
   const chromeBinaryPath = resolveChromeBinaryPath()
   const chromedriverPath = resolveChromedriverPath()
@@ -837,6 +898,9 @@ async function automateDesignCreation(
     }, 60000)
 
     console.log('Login successful!')
+    
+    // Handle any alerts (like WebGL errors) after login
+    await handleAlerts(driver)
 
     // Step 2: Navigate to the project URL
     const projectUrl = `https://www.figma.com/files/team/1244904543242467158/project/${projectId}`
@@ -845,6 +909,9 @@ async function automateDesignCreation(
 
     // Wait for the page to load
     await driver.sleep(3000)
+    
+    // Handle any alerts (like WebGL errors) after navigation
+    await handleAlerts(driver)
 
     // Step 3: Click on "Create" option
     console.log('Clicking on Create option...')
@@ -873,6 +940,9 @@ async function automateDesignCreation(
 
     // Wait for new file to be created
     await driver.sleep(2000)
+    
+    // Handle any alerts (like WebGL errors) after creating new file
+    await handleAlerts(driver)
 
     // Step 5: Get the new file URL
     const currentUrl = await driver.getCurrentUrl()
