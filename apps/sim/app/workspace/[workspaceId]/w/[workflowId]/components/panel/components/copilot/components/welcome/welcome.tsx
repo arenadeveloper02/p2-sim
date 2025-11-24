@@ -1,99 +1,82 @@
 'use client'
 
-import { Blocks, Bot, LibraryBig, Workflow } from 'lucide-react'
+import { Button } from '@/components/emcn'
 
-interface CopilotWelcomeProps {
+/**
+ * Props for the CopilotWelcome component
+ */
+interface WelcomeProps {
+  /** Callback when a suggested question is clicked */
   onQuestionClick?: (question: string) => void
-  mode?: 'ask' | 'agent'
+  /** Current copilot mode ('ask' for Q&A, 'plan' for planning, 'build' for workflow building) */
+  mode?: 'ask' | 'build' | 'plan'
 }
 
-export function CopilotWelcome({ onQuestionClick, mode = 'ask' }: CopilotWelcomeProps) {
-  const handleQuestionClick = (question: string) => {
-    onQuestionClick?.(question)
-  }
-
-  const subtitle =
-    mode === 'ask'
-      ? 'Ask about workflows, tools, or how to get started'
-      : 'Build, edit, and optimize workflows'
-
+/**
+ * Welcome screen component for the copilot
+ * Displays suggested questions and capabilities based on current mode
+ *
+ * @param props - Component props
+ * @returns Welcome screen UI
+ */
+export function Welcome({ onQuestionClick, mode = 'ask' }: WelcomeProps) {
   const capabilities =
-    mode === 'agent'
+    mode === 'build'
       ? [
           {
-            title: 'Build & edit workflows',
+            title: 'Build',
             question: 'Help me build a workflow',
-            Icon: Workflow,
           },
           {
-            title: 'Optimize workflows',
-            question: 'Help me optimize my workflow',
-            Icon: Blocks,
+            title: 'Debug',
+            question: 'Help debug my workflow',
           },
           {
-            title: 'Debug workflows',
-            question: 'Help me debug my workflow',
-            Icon: LibraryBig,
+            title: 'Optimize',
+            question: 'Create a fast workflow',
           },
         ]
       : [
           {
-            title: 'Understand my workflow',
-            question: 'What does my workflow do?',
-            Icon: Workflow,
+            title: 'Get started',
+            question: 'Help me get started',
           },
           {
             title: 'Discover tools',
             question: 'What tools are available?',
-            Icon: Blocks,
           },
           {
-            title: 'Get started',
+            title: 'Create workflow',
             question: 'How do I create a workflow?',
-            Icon: LibraryBig,
           },
         ]
 
   return (
-    <div className='relative h-full w-full overflow-hidden px-4 pt-8 pb-6'>
-      <div className='relative mx-auto w-full max-w-xl'>
-        {/* Header */}
-        <div className='flex flex-col items-center text-center'>
-          <Bot className='h-12 w-12 text-[var(--brand-primary-hover-hex)]' strokeWidth={1.5} />
-          <h3 className='mt-2 font-medium text-foreground text-lg sm:text-xl'>{subtitle}</h3>
-        </div>
-
-        {/* Unified capability cards */}
-        <div className='mt-7 space-y-2.5'>
-          {capabilities.map(({ title, question, Icon }, idx) => (
-            <button
-              key={idx}
-              type='button'
-              onClick={() => handleQuestionClick(question)}
-              className='w-full rounded-[10px] border bg-background/60 p-3 text-left transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary-hover-hex)]/30'
-            >
-              <div className='flex items-start gap-2'>
-                <div className='mt-0.5 flex h-6 w-6 items-center justify-center rounded bg-[color-mix(in_srgb,var(--brand-primary-hover-hex)_16%,transparent)] text-[var(--brand-primary-hover-hex)]'>
-                  <Icon className='h-3.5 w-3.5' />
-                </div>
-                <div>
-                  <div className='font-medium text-xs'>{title}</div>
-                  <p className='mt-1 text-[11px] text-muted-foreground'>{question}</p>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Tips */}
-        <div className='mt-6 text-center text-[11px] text-muted-foreground'>
-          <p>
-            Tip: Use <span className='font-medium text-foreground'>@</span> to reference chats,
-            workflows, knowledge, blocks, or templates
-          </p>
-          <p className='mt-1.5'>Shift+Enter for newline</p>
-        </div>
+    <div className='flex w-full flex-col items-center'>
+      {/* Unified capability cards */}
+      <div className='flex w-full flex-col items-center gap-[8px]'>
+        {capabilities.map(({ title, question }, idx) => (
+          <Button
+            key={idx}
+            variant='active'
+            onClick={() => onQuestionClick?.(question)}
+            className='w-full justify-start'
+          >
+            <div className='flex flex-col items-start'>
+              <p className='font-medium'>{title}</p>
+              <p className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                {question}
+              </p>
+            </div>
+          </Button>
+        ))}
       </div>
+
+      {/* Tips */}
+      <p className='pt-[12px] text-center text-[13px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+        Tip: Use <span className='font-medium'>@</span> to reference chats, workflows, knowledge,
+        blocks, or templates
+      </p>
     </div>
   )
 }

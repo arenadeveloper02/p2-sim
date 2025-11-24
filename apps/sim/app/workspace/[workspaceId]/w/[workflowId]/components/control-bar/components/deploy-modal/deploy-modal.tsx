@@ -1,8 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
+import { Loader2, MoreVertical, X } from 'lucide-react'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth-client'
 import { getEnv } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'

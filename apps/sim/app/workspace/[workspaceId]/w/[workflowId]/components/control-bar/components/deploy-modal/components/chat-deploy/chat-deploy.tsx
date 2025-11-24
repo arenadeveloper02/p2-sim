@@ -56,11 +56,14 @@ interface ChatDeployProps {
   workspaceId?: string
   onOpenChange?: any
   approvalStatus?: any
+  onUndeploy?: () => Promise<void>
+  onDeployed?: () => void
+  onVersionActivated?: () => void
 }
 
 interface ExistingChat {
   id: string
-  identifier: string
+  subdomain: string
   title: string
   description: string
   authType: 'public' | 'password' | 'email'
@@ -184,7 +187,7 @@ export function ChatDeploy({
   // Use changes from approved template
   const hasWorkflowChanges = hasChangesFromApproved
   const isFormValid =
-    isIdentifierValid &&
+    isSubdomainValid &&
     Boolean(formData.title.trim()) &&
     formData.selectedOutputBlocks.length > 0 &&
     (formData.authType !== 'password' ||
@@ -259,7 +262,7 @@ export function ChatDeploy({
             setExistingChat(chatDetail)
 
             setFormData({
-              identifier: chatDetail.identifier || '',
+              subdomain: chatDetail.subdomain || '',
               title: chatDetail.title || '',
               description: chatDetail.description || '',
               authType: chatDetail.authType || 'email',
@@ -360,7 +363,7 @@ export function ChatDeploy({
       await fetchExistingChat()
     } catch (error: any) {
       if (error.message?.includes('identifier')) {
-        setError('identifier', error.message)
+        setError('subdomain', error.message)
       } else {
         setError('general', error.message)
       }
@@ -387,9 +390,9 @@ export function ChatDeploy({
         throw new Error(error.error || 'Failed to delete chat')
       }
 
-      if (onUndeploy) {
-        await onUndeploy()
-      }
+      // if (onUndeploy) {
+      //   await onUndeploy()
+      // }
 
       setExistingChat(null)
       setImageUrl(null)
@@ -637,7 +640,7 @@ export function ChatDeploy({
             <AlertDialogDescription>
               This will permanently delete your chat deployment at{' '}
               <span className='font-mono text-destructive'>
-                {getEmailDomain()}/chat/{existingChat?.identifier}
+                {getEmailDomain()}/chat/{existingChat?.subdomain}
               </span>{' '}
               and undeploy the workflow.
               <span className='mt-2 block'>

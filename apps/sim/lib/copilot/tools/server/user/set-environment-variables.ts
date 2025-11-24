@@ -1,3 +1,5 @@
+import { db } from '@sim/db'
+import { environment } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
