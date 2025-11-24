@@ -8,8 +8,7 @@ export interface General {
   theme: 'system' | 'light' | 'dark'
   telemetryEnabled: boolean
   isBillingUsageNotificationsEnabled: boolean
-  isFloatingControlsLoading: boolean
-  isTrainingControlsLoading: boolean
+  isErrorNotificationsEnabled: boolean
 }
 
 export interface GeneralStore extends General {
@@ -27,4 +26,5 @@ export type UserSettings = {
   superUserModeEnabled: boolean
   telemetryEnabled: boolean
   isBillingUsageNotificationsEnabled: boolean
+  errorNotificationsEnabled: boolean
 }

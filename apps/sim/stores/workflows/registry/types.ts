@@ -16,18 +16,36 @@ export interface WorkflowMetadata {
   folderId?: string | null
 }
 
+export type HydrationPhase =
+  | 'idle'
+  | 'metadata-loading'
+  | 'metadata-ready'
+  | 'state-loading'
+  | 'ready'
+  | 'error'
+
+export interface HydrationState {
+  phase: HydrationPhase
+  workspaceId: string | null
+  workflowId: string | null
+  requestId: string | null
+  error: string | null
+}
+
 export interface WorkflowRegistryState {
   workflows: Record<string, WorkflowMetadata>
   activeWorkflowId: string | null
-  isLoading: boolean
   error: string | null
   deploymentStatuses: Record<string, DeploymentStatus>
+  hydration: HydrationState
 }
 
 export interface WorkflowRegistryActions {
-  setLoading: (loading: boolean) => void
-  setWorkflows: (workflows: WorkflowMetadata[]) => void
+  beginMetadataLoad: (workspaceId: string) => void
+  completeMetadataLoad: (workspaceId: string, workflows: WorkflowMetadata[]) => void
+  failMetadataLoad: (workspaceId: string | null, error: string) => void
   setActiveWorkflow: (id: string) => Promise<void>
+  loadWorkflowState: (workflowId: string) => Promise<void>
   switchToWorkspace: (id: string) => Promise<void>
   removeWorkflow: (id: string) => Promise<void>
   updateWorkflow: (id: string, metadata: Partial<WorkflowMetadata>) => Promise<void>
@@ -40,19 +58,6 @@ export interface WorkflowRegistryActions {
     apiKey?: string
   ) => void
   setWorkflowNeedsRedeployment: (workflowId: string | null, needsRedeployment: boolean) => void
-  askApproveWorkflow: (
-    sourceId: string,
-    approvalUserId: string,
-    category?: string,
-    description?: string
-  ) => Promise<string | null>
-  getApprovalStatus: (workflowId: string | null) => Promise<string>
-  approveRejectWorkflow: (
-    workflowId: string | null,
-    action: 'APPROVED' | 'REJECTED' | 'PENDING_APPROVAL',
-    reason: string,
-    statusId: string
-  ) => Promise<string | null>
 }
 
 export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions

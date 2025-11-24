@@ -146,6 +146,7 @@ export function TriggerSave({
     )
   )
 
+  const aggregatedTriggerConfig = useTriggerConfigAggregation(blockId, effectiveTriggerId)
   const previousValuesRef = useRef<Record<string, any>>({})
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -169,13 +170,11 @@ export function TriggerSave({
     }
 
     validationTimeoutRef.current = setTimeout(() => {
-      const aggregatedConfig = useTriggerConfigAggregation(blockId, effectiveTriggerId)
-
-      if (aggregatedConfig) {
-        useSubBlockStore.getState().setValue(blockId, 'triggerConfig', aggregatedConfig)
+      if (aggregatedTriggerConfig) {
+        useSubBlockStore.getState().setValue(blockId, 'triggerConfig', aggregatedTriggerConfig)
       }
 
-      const validation = validateRequiredFields(aggregatedConfig)
+      const validation = validateRequiredFields(aggregatedTriggerConfig)
 
       if (validation.valid) {
         setErrorMessage(null)
@@ -206,6 +205,7 @@ export function TriggerSave({
     effectiveTriggerId,
     triggerDef,
     subscribedSubBlockValues,
+    aggregatedTriggerConfig,
     saveStatus,
     validateRequiredFields,
   ])
@@ -224,18 +224,16 @@ export function TriggerSave({
     setErrorMessage(null)
 
     try {
-      const aggregatedConfig = useTriggerConfigAggregation(blockId, effectiveTriggerId)
-
-      if (aggregatedConfig) {
-        useSubBlockStore.getState().setValue(blockId, 'triggerConfig', aggregatedConfig)
+      if (aggregatedTriggerConfig) {
+        useSubBlockStore.getState().setValue(blockId, 'triggerConfig', aggregatedTriggerConfig)
         logger.debug('Stored aggregated trigger config', {
           blockId,
           triggerId: effectiveTriggerId,
-          aggregatedConfig,
+          aggregatedConfig: aggregatedTriggerConfig,
         })
       }
 
-      const validation = validateRequiredFields(aggregatedConfig)
+      const validation = validateRequiredFields(aggregatedTriggerConfig)
       if (!validation.valid) {
         setErrorMessage(`Missing required fields: ${validation.missingFields.join(', ')}`)
         setSaveStatus('error')

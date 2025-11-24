@@ -167,8 +167,14 @@ export function Panel() {
    * Mark hydration as complete on mount
    * This allows React to take over visibility control from CSS
    */
+
+  /**
+   * Mark the panel store as hydrated once this component mounts so that
+   * React can take over visibility from the initial CSS-only state.
+   */
   useEffect(() => {
     setHasHydrated(true)
+    return () => setHasHydrated(false)
   }, [setHasHydrated])
 
   /**

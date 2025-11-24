@@ -1,11 +1,11 @@
-import { db } from '@sim/db'
-import { environment } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { createLogger } from '@/lib/logs/console/logger'
 import { decryptSecret, encryptSecret } from '@/lib/utils'
+import { db } from '@/db'
+import { environment } from '@/db/schema'
 
 interface SetEnvironmentVariablesParams {
   variables: Record<string, any> | Array<{ name: string; value: string }>

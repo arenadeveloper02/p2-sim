@@ -111,6 +111,9 @@ export function TeamMembers({
     })
   }
 
+  // Track which invitations are being cancelled for individual loading states
+  const [cancellingInvitations, setCancellingInvitations] = useState<Set<string>>(new Set())
+
   if (teamItems.length === 0) {
     return <div className='text-center text-muted-foreground text-sm'>No team members yet.</div>
   }
@@ -119,9 +122,6 @@ export function TeamMembers({
   const currentUserMember = organization.members?.find((m) => m.user?.email === currentUserEmail)
   const canLeaveOrganization =
     currentUserMember && currentUserMember.role !== 'owner' && currentUserMember.user?.id
-
-  // Track which invitations are being cancelled for individual loading states
-  const [cancellingInvitations, setCancellingInvitations] = useState<Set<string>>(new Set())
 
   const handleCancelInvitation = async (invitationId: string) => {
     if (!organization?.id) return

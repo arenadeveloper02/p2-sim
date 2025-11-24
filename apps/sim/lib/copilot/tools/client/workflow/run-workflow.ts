@@ -7,8 +7,6 @@ import {
 } from '@/lib/copilot/tools/client/base-tool'
 import { createLogger } from '@/lib/logs/console/logger'
 import { executeWorkflowWithFullLogging } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
-import { useExecutionStore } from '@/stores/execution/store'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 interface RunWorkflowArgs {
   workflowId?: string
@@ -39,9 +37,25 @@ export class RunWorkflowClientTool extends BaseClientTool {
       reject: { text: 'Skip', icon: MinusCircle },
     },
     getDynamicText: (params, state) => {
-      const workflowId = params?.workflowId || useWorkflowRegistry.getState().activeWorkflowId
+      let workflowId = params?.workflowId
+      if (!workflowId) {
+        try {
+          const { useWorkflowRegistry } = require('@/stores/workflows/registry/store')
+          workflowId = useWorkflowRegistry.getState().activeWorkflowId
+        } catch {
+          workflowId = undefined
+        }
+      }
+
       if (workflowId) {
-        const workflowName = useWorkflowRegistry.getState().workflows[workflowId]?.name
+        let workflowName: string | undefined
+        try {
+          const { useWorkflowRegistry } = require('@/stores/workflows/registry/store')
+          workflowName = useWorkflowRegistry.getState().workflows[workflowId]?.name
+        } catch {
+          workflowName = undefined
+        }
+
         if (workflowName) {
           switch (state) {
             case ClientToolCallState.success:
@@ -84,6 +98,7 @@ export class RunWorkflowClientTool extends BaseClientTool {
       })
 
       // prevent concurrent execution
+      const { useExecutionStore } = require('@/stores/execution/store')
       const { isExecuting, setIsExecuting } = useExecutionStore.getState()
       if (isExecuting) {
         logger.debug('Execution prevented: already executing')
@@ -95,6 +110,7 @@ export class RunWorkflowClientTool extends BaseClientTool {
         return
       }
 
+      const { useWorkflowRegistry } = require('@/stores/workflows/registry/store')
       const { activeWorkflowId } = useWorkflowRegistry.getState()
       if (!activeWorkflowId) {
         logger.debug('Execution prevented: no active workflow')
