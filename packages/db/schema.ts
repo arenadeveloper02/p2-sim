@@ -130,43 +130,6 @@ export const workflowFolder = pgTable(
   })
 )
 
-export const workflowTemplateMapper = pgTable('workflow_template_mapper', {
-  id: text('id').primaryKey(),
-  createdAt: timestamp('created_at'),
-  updatedAt: timestamp('updated_at'),
-  templateId: text('template_id'),
-  workflowId: text('workflow_id'),
-  workspaceId: text('workspace_id'),
-  name: text('name'),
-})
-
-export const chatPromptFeedback = pgTable(
-  'chat_prompt_feedback',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
-    comment: text('comment'),
-    createdAt: timestamp('created_at').notNull(),
-    updatedAt: timestamp('updated_at').notNull(),
-    inComplete: boolean('in_complete').default(false),
-    inAccurate: boolean('in_accurate').default(false),
-    outOfDate: boolean('out_of_date').default(false),
-    tooLong: boolean('too_long').default(false),
-    tooShort: boolean('too_short').default(false),
-    liked: boolean('liked').default(false),
-    executionId: text('execution_id').notNull(),
-    workflowId: text('workflow_id').notNull(),
-  },
-  (table) => ({
-    // Access patterns
-    // userIdIdx: index('chat_prompt_feedback_user_id_idx').on(table.userId),
-    // executionIdIdx: index('chat_prompt_feedback_execution_id_idx').on(table.executionId),
-    // workflowIdIdx: index('chat_prompt_feedback_workflow_id_idx').on(table.workflowId),
-    // Ordering indexes
-    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
-  })
-)
-
 export const workflow = pgTable(
   'workflow',
   {
@@ -325,9 +288,6 @@ export const workflowExecutionLogs = pgTable(
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
-    userId: text('user_id'),
-    isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
-    chatId: text('chat_id'), // chat_id for tracking conversation context
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
@@ -336,7 +296,6 @@ export const workflowExecutionLogs = pgTable(
     executionData: jsonb('execution_data').notNull().default('{}'),
     cost: jsonb('cost'),
     files: jsonb('files'), // File metadata for execution files
-    finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
@@ -348,7 +307,6 @@ export const workflowExecutionLogs = pgTable(
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
-    chatIdIdx: index('workflow_execution_logs_chat_id_idx').on(table.chatId),
     executionIdUnique: uniqueIndex('workflow_execution_logs_execution_id_unique').on(
       table.executionId
     ),
@@ -448,7 +406,6 @@ export const settings = pgTable('settings', {
   // General settings
   theme: text('theme').notNull().default('system'),
   autoConnect: boolean('auto_connect').notNull().default(true),
-  autoFillEnvVars: boolean('auto_fill_env_vars').notNull().default(true), // DEPRECATED: autofill feature removed
   autoPan: boolean('auto_pan').notNull().default(true),
   consoleExpandedByDefault: boolean('console_expanded_by_default').notNull().default(true),
 
@@ -467,6 +424,9 @@ export const settings = pgTable('settings', {
   showFloatingControls: boolean('show_floating_controls').notNull().default(true),
   showTrainingControls: boolean('show_training_controls').notNull().default(false),
   superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
+
+  // Notification preferences
+  errorNotificationsEnabled: boolean('error_notifications_enabled').notNull().default(true),
 
   // Copilot preferences - maps model_id to enabled/disabled boolean
   copilotEnabledModels: jsonb('copilot_enabled_models').notNull().default('{}'),
@@ -740,7 +700,7 @@ export const chat = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    subdomain: text('subdomain').notNull(),
+    identifier: text('identifier').notNull(),
     title: text('title').notNull(),
     description: text('description'),
     isActive: boolean('is_active').notNull().default(true),
@@ -759,8 +719,8 @@ export const chat = pgTable(
   },
   (table) => {
     return {
-      // Ensure subdomains are unique
-      subdomainIdx: uniqueIndex('subdomain_idx').on(table.subdomain),
+      // Ensure identifiers are unique
+      identifierIdx: uniqueIndex('identifier_idx').on(table.identifier),
     }
   }
 )
@@ -958,9 +918,8 @@ export const memory = pgTable(
   {
     id: text('id').primaryKey(),
     workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
-    key: text('key').notNull(), // Identifier for the memory within its context
-    type: text('type').notNull(), // 'agent' or 'raw'
-    data: json('data').notNull(), // Stores either agent message data or raw data
+    key: text('key').notNull(), // Conversation ID provided by user with format: conversationId:blockId
+    data: jsonb('data').notNull(), // Stores agent messages as array of {role, content} objects
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     deletedAt: timestamp('deleted_at'),
@@ -1020,48 +979,6 @@ export const knowledgeBase = pgTable(
     userWorkspaceIdx: index('kb_user_workspace_idx').on(table.userId, table.workspaceId),
     // Index for soft delete filtering
     deletedAtIdx: index('kb_deleted_at_idx').on(table.deletedAt),
-  })
-)
-
-export const userKnowledgeBase = pgTable(
-  'user_knowledge_base',
-  {
-    id: text('id').primaryKey(),
-    userIdRef: text('user_id_ref')
-      .notNull()
-      .default('')
-      .references(() => user.id, { onDelete: 'cascade' }),
-    userWorkspaceIdRef: text('user_workspace_id_ref')
-      .notNull()
-      .default('')
-      .references(() => workspace.id, { onDelete: 'cascade' }),
-    knowledgeBaseIdRef: text('knowledge_base_id_ref')
-      .notNull()
-      .default('')
-      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
-    kbWorkspaceIdRef: text('kb_workspace_id_ref')
-      .notNull()
-      .default('')
-      .references(() => workspace.id, { onDelete: 'cascade' }),
-    knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
-  },
-  (table) => ({
-    // Access patterns for finding knowledge bases by user or workspace
-    userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
-    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(table.userWorkspaceIdRef),
-    kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
-    kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
-    // Composite indexes for common queries
-    userKbIdx: index('user_kb_user_kb_idx').on(table.userIdRef, table.knowledgeBaseIdRef),
-    userWorkspaceKbIdx: index('user_kb_user_workspace_kb_idx').on(
-      table.userWorkspaceIdRef,
-      table.knowledgeBaseIdRef
-    ),
-    // Index for soft delete filtering
-    deletedAtIdx: index('user_kb_deleted_at_idx').on(table.deletedAt),
   })
 )
 
@@ -1333,6 +1250,8 @@ export const copilotChats = pgTable(
     model: text('model').notNull().default('claude-3-7-sonnet-latest'),
     conversationId: text('conversation_id'),
     previewYaml: text('preview_yaml'), // YAML content for pending workflow preview
+    planArtifact: text('plan_artifact'), // Plan/design document artifact for the chat
+    config: jsonb('config'), // JSON config storing model and mode settings { model, mode }
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -1646,62 +1565,5 @@ export const ssoProvider = pgTable(
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
-  })
-)
-
-export const workflowStatus = pgTable('workflow_status', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  workflowId: text('workflow_id').notNull(),
-  mappedWorkflowId: text('mapped_workflow_id').notNull(),
-  status: text('status').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  ownerId: text('owner_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  comments: text('comments'),
-  description: text('description'),
-  category: text('category').default('creative'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
-export const userArenaDetails = pgTable(
-  'user_arena_details',
-  {
-    id: text('id'), // nullable
-    userType: text('user_type'), // nullable
-    createdAt: timestamp('created_at', { withTimezone: false }), // nullable
-    department: text('department'), // nullable
-    updatedAt: timestamp('updated_at', { withTimezone: false }), // nullable
-    userIdRef: text('user_id_ref'), // nullable
-    arenaUserIdRef: text('arena_user_id_ref'), // nullable
-    airbyteRawId: text('_airbyte_raw_id').$type<string>(), // varchar(36) in SQL, mapped to text
-    airbyteExtractedAt: timestamp('_airbyte_extracted_at', { withTimezone: true }), // timestamptz
-    airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
-    airbyteMeta: jsonb('_airbyte_meta'), // jsonb
-    arenaToken: text('arena_token'), // text
-  },
-  (table) => ({
-    airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
-  })
-)
-
-export const deployedChat = pgTable(
-  'deployed_chat',
-  {
-    id: text('id').primaryKey(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    chatId: text('chat_id'),
-    title: text('title'),
-    workflowId: text('workflow_id'),
-    executingUserId: text('executing_user_id'),
-  },
-  (table) => ({
-    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
-    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
   })
 )
