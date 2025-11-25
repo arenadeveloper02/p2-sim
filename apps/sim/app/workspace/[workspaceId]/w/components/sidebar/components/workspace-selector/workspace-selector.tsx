@@ -71,7 +71,7 @@ export function WorkspaceSelector({
   const { data: session } = useSession()
 
   // Check if user is platform admin
-  const isPlatformAdmin = session?.user?.email === 'platform_admin@position2.com'
+  const isPlatformAdmin = session?.user?.email === 'akshay.v@position2.com'
 
   // State
   const [showInviteMembers, setShowInviteMembers] = useState(false)
