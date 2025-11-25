@@ -65,6 +65,7 @@ import { SemrushBlock } from '@/blocks/blocks/semrush'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { SlackBlock } from '@/blocks/blocks/slack'
+import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StarterBlock } from '@/blocks/blocks/starter'
@@ -149,6 +150,7 @@ export const registry: Record<string, BlockConfig> = {
   semrush: SemrushBlock,
   serper: SerperBlock,
   sharepoint: SharepointBlock,
+  spyfu: SpyfuBlock,
   stagehand: StagehandBlock,
   stagehand_agent: StagehandAgentBlock,
   slack: SlackBlock,
