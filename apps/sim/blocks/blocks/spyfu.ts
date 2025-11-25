@@ -3,12 +3,12 @@ import type { BlockConfig } from '@/blocks/types'
 import {
   spyfuDateOperationIds,
   spyfuDomainOperationIds,
-  spyfuKeywordOperationIds,
-  spyfuTermOperationIds,
-  spyfuOperationOptions,
-  spyfuQueryOperationIds,
   spyfuIncludeDomainsCsvOperationIds,
   spyfuIsIntersectionOperationIds,
+  spyfuKeywordOperationIds,
+  spyfuOperationOptions,
+  spyfuQueryOperationIds,
+  spyfuTermOperationIds,
 } from '@/tools/spyfu/operations'
 import type { SpyfuResponse } from '@/tools/spyfu/types'
 
@@ -66,7 +66,8 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       layout: 'full',
       required: true,
       placeholder: 'running',
-      description: 'Term parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      description:
+        'Term parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
       condition: {
         field: 'operationId',
         value: spyfuTermOperationIds,
@@ -79,7 +80,8 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       layout: 'full',
       required: true,
       placeholder: 'running',
-      description: 'Query parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      description:
+        'Query parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
       condition: {
         field: 'operationId',
         value: spyfuQueryOperationIds,
@@ -92,7 +94,8 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       layout: 'full',
       required: true,
       placeholder: 'example.com,example.org',
-      description: 'Include Domains CSV parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      description:
+        'Include Domains CSV parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
       condition: {
         field: 'operationId',
         value: spyfuIncludeDomainsCsvOperationIds,
@@ -104,7 +107,8 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       type: 'dropdown',
       layout: 'full',
       required: true,
-      description: 'Is Intersection parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      description:
+        'Is Intersection parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
       options: [
         { label: 'True', id: 'true' },
         { label: 'False', id: 'false' },
@@ -186,8 +190,14 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
     domain: { type: 'string', description: 'Domain parameter passed to domain-based endpoints.' },
     keyword: { type: 'string', description: 'Keyword parameter passed to keyword endpoints.' },
     term: { type: 'string', description: 'Keyword parameter passed to keyword endpoints.' },
-    date: { type: 'string', description: 'Date parameter (YYYY-MM-DD) for date-specific endpoints.' },
-    countryCode: { type: 'string', description: 'SpyFu country code appended to the query string.' },
+    date: {
+      type: 'string',
+      description: 'Date parameter (YYYY-MM-DD) for date-specific endpoints.',
+    },
+    countryCode: {
+      type: 'string',
+      description: 'SpyFu country code appended to the query string.',
+    },
   },
   outputs: {
     data: { type: 'json', description: 'Raw payload returned by SpyFu.' },
@@ -197,4 +207,3 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
     method: { type: 'string', description: 'HTTP method used in the request.' },
   },
 }
-
