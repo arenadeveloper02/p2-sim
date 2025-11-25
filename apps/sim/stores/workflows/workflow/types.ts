@@ -169,6 +169,11 @@ export interface WorkflowState {
   dragStartPosition?: DragStartPosition | null
 }
 
+export interface BlockRenameResult {
+  success: boolean
+  changedSubblocks: Array<{ blockId: string; subBlockId: string; newValue: any }>
+}
+
 export interface WorkflowActions {
   addBlock: (
     id: string,
@@ -197,13 +202,7 @@ export interface WorkflowActions {
   toggleBlockEnabled: (id: string) => void
   duplicateBlock: (id: string) => void
   toggleBlockHandles: (id: string) => void
-  updateBlockName: (
-    id: string,
-    name: string
-  ) => {
-    success: boolean
-    changedSubblocks: Array<{ blockId: string; subBlockId: string; newValue: any }>
-  }
+  updateBlockName: (id: string, name: string) => BlockRenameResult
   setBlockAdvancedMode: (id: string, advancedMode: boolean) => void
   setBlockTriggerMode: (id: string, triggerMode: boolean) => void
   updateBlockLayoutMetrics: (id: string, dimensions: { width: number; height: number }) => void

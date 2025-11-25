@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { createLogger } from '@/lib/logs/console/logger'
+import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const logger = createLogger('WorkflowsPage')
