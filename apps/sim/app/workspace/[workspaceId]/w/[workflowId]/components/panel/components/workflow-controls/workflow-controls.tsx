@@ -18,7 +18,9 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 export function WorkflowControls() {
   // Subscribe to React Flow store so zoom % live-updates while zooming
   const { setViewport } = useReactFlow()
-  const zoom = useStore((s: any) => (Array.isArray(s.transform) ? s.transform[2] : s.viewport?.zoom))
+  const zoom = useStore((s: any) =>
+    Array.isArray(s.transform) ? s.transform[2] : s.viewport?.zoom
+  )
 
   const { undo, redo } = useCollaborativeWorkflow()
   const { activeWorkflowId } = useWorkflowRegistry()
