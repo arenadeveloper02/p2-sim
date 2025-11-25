@@ -62,6 +62,7 @@ function normalizeQueryParams(params: SpyfuRequestParams): Record<string, string
   if (params.isIntersection) {
     normalized.isIntersection = params.isIntersection.toString()
   }
+  normalized.pageSize = '20'
 
   return normalized
 }
