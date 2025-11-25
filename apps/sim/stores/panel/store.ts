@@ -16,6 +16,10 @@ const DEFAULT_TAB: PanelTab = 'copilot'
 export const usePanelStore = create<PanelState>()(
   persist(
     (set) => ({
+      isFullScreen: false,
+      setFullScreen: (fullScreen: boolean) => {
+        set({ isFullScreen: fullScreen })
+      },
       panelWidth: MIN_PANEL_WIDTH,
       setPanelWidth: (width) => {
         // Only enforce minimum - maximum is enforced dynamically by the resize hook

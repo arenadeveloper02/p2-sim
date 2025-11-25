@@ -5,11 +5,6 @@ import { getMainCSPPolicy, getWorkflowExecutionCSPPolicy } from './lib/security/
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  // Configure asset prefix to use relative paths for static assets
-  assetPrefix: '',
-  // Use relative paths for static assets
-  trailingSlash: false,
-  basePath: '',
   images: {
     remotePatterns: [
       {
@@ -37,15 +32,6 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'lh3.googleusercontent.com',
-      },
-      // ✅ Added placeholder.com for Next.js <Image />
-      {
-        protocol: 'https',
-        hostname: 'via.placeholder.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'sambanova.ai',
       },
       // Brand logo domain if configured
       ...(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL')
@@ -89,7 +75,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
-  serverExternalPackages: ['unpdf'],
+  serverExternalPackages: ['unpdf', 'ffmpeg-static', 'fluent-ffmpeg'],
   experimental: {
     optimizeCss: true,
     turbopackSourceMaps: false,
@@ -115,6 +101,7 @@ const nextConfig: NextConfig = {
     '@react-email/render',
     '@t3-oss/env-nextjs',
     '@t3-oss/env-core',
+    '@sim/db',
   ],
   async headers() {
     return [

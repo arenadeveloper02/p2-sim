@@ -22,7 +22,7 @@ import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowI
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useChatStore } from '@/stores/panel/chat/store'
-import { useConsoleStore } from '@/stores/panel/console/store'
+import { useTerminalConsoleStore } from '@/stores/terminal/console/store'
 import { usePanelStore } from '@/stores/panel/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -58,7 +58,7 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     finalizeMessageStream,
     getConversationId,
   } = useChatStore()
-  const { entries } = useConsoleStore()
+  const { entries } = useTerminalConsoleStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)

@@ -7,6 +7,8 @@ export type PanelTab = 'copilot' | 'editor' | 'toolbar'
  * Panel state interface
  */
 export interface PanelState {
+  isFullScreen: boolean
+  setFullScreen: (fullScreen: boolean) => void
   panelWidth: number
   setPanelWidth: (width: number) => void
   activeTab: PanelTab
