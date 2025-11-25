@@ -1,8 +1,15 @@
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ToolConfig, HttpMethod } from '@/tools/types'
-import { transformTable } from '@/tools/utils'
-import { SPYFU_BASE_URL, getSpyfuOperationDefinition } from '@/tools/spyfu/operations'
+import {
+  SPYFU_BASE_URL,
+  getSpyfuOperationDefinition,
+  spyfuDateOperationIds,
+  spyfuDomainOperationIds,
+  spyfuKeywordOperationIds,
+  spyfuTermOperationIds,
+  spyfuQueryOperationIds,
+} from '@/tools/spyfu/operations'
 import type { SpyfuRequestParams, SpyfuResponse } from '@/tools/spyfu/types'
 
 const logger = createLogger('SpyfuTool')
@@ -16,19 +23,9 @@ interface PreparedSpyfuRequest {
   endpointPath: string
 }
 
-const SUPPORTED_MODES: Array<SpyfuRequestParams['mode']> = ['predefined', 'custom']
-
-function resolveMode(mode?: SpyfuRequestParams['mode']): SpyfuRequestParams['mode'] {
-  if (mode && SUPPORTED_MODES.includes(mode)) {
-    return mode
-  }
-  return 'predefined'
-}
-
 function resolveCredentials(params: SpyfuRequestParams): { username: string; password: string } {
-  const username = params.apiUsername || env.SPYFU_API_USERNAME
-  const password = params.apiPassword || env.SPYFU_API_PASSWORD
-
+  const username = env.SPYFU_API_USERNAME || 'cd1416d3-d722-4030-ae59-173f8a6e95e0'
+  const password =env.SPYFU_API_PASSWORD || 'CSUDXHCS'
   if (!username || !password) {
     throw new Error(
       'SpyFu API credentials are missing. Provide username/password in the block or set SPYFU_API_USERNAME and SPYFU_API_PASSWORD.'
@@ -38,97 +35,98 @@ function resolveCredentials(params: SpyfuRequestParams): { username: string; pas
   return { username, password }
 }
 
-function ensureCustomPath(path?: string): string {
-  if (!path || !path.trim()) {
-    throw new Error('Custom SpyFu requests require an endpoint path.')
-  }
-
-  const trimmed = path.trim()
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed
-  }
-  return `${SPYFU_BASE_URL}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`
-}
-
-function normalizeQueryParams(
-  params: SpyfuRequestParams,
-  mode: SpyfuRequestParams['mode']
-): Record<string, string> {
-  const table = Array.isArray(params.queryParamsTable)
-    ? transformTable(params.queryParamsTable)
-    : params.queryParamsTable && typeof params.queryParamsTable === 'object'
-      ? params.queryParamsTable
-      : {}
-
+function normalizeQueryParams(params: SpyfuRequestParams): Record<string, string> {
   const normalized: Record<string, string> = {}
 
-  Object.entries(table).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') {
-      return
-    }
-    normalized[key] = typeof value === 'string' ? value : JSON.stringify(value)
-  })
-
-  if (params.countryCode && params.countryCode.trim()) {
+  if (params.countryCode?.trim()) {
     normalized.countryCode = params.countryCode.trim()
+  }
+  if (params.domain?.trim()) {
+    normalized.domain = params.domain.trim()
+  }
+  if (params.keyword?.trim()) {
+    normalized.keyword = params.keyword.trim()
+  }
+  if (params.term?.trim()) {
+    normalized.term = params.term.trim()
+  }
+  if(params.query?.trim()) {
+    normalized.query = params.query.trim()
+  }
+  if (params.date?.trim()) {
+    normalized.date = params.date.trim()
+  }
+  if (params.includeDomainsCsv?.trim()) {
+    normalized.includeDomainsCsv = params.includeDomainsCsv.trim()
+  }
+  if (params.isIntersection) {
+    normalized.isIntersection = params.isIntersection.toString()
   }
 
   return normalized
 }
 
-function normalizeBody(body: SpyfuRequestParams['body']) {
-  if (!body) return undefined
-  if (typeof body === 'string') {
-    const trimmed = body.trim()
-    if (!trimmed) return undefined
-    try {
-      return JSON.parse(trimmed)
-    } catch {
-      return trimmed
-    }
+function validateRequiredParams(operationId: string, params: SpyfuRequestParams) {
+  if (spyfuDomainOperationIds.includes(operationId) && !params.domain?.trim()) {
+    throw new Error('Domain is required for the selected SpyFu endpoint.')
   }
-  return body
+  if (spyfuTermOperationIds.includes(operationId) && !params.term?.trim()) {
+    throw new Error('Term is required for the selected SpyFu endpoint.')
+  }
+  if (spyfuKeywordOperationIds.includes(operationId) && !params.keyword?.trim()) {
+    throw new Error('Keyword is required for the selected SpyFu endpoint.')
+  }
+  if (spyfuQueryOperationIds.includes(operationId) && !params.query?.trim()) {
+    throw new Error('Query is required for the selected SpyFu endpoint.')
+  }
+  if (spyfuDateOperationIds.includes(operationId) && !params.date?.trim()) {
+    throw new Error('Date is required for the selected SpyFu endpoint.')
+  }
 }
 
 function prepareRequest(params: SpyfuRequestParams): PreparedSpyfuRequest {
-  const mode = resolveMode(params.mode)
-  const credentials = resolveCredentials(params)
-
-  let method: HttpMethod
-  let endpointPath: string
-
-  if (mode === 'custom') {
-    method = (params.customMethod || 'GET').toUpperCase() as HttpMethod
-    endpointPath = ensureCustomPath(params.customPath)
-  } else {
-    if (!params.operationId) {
-      throw new Error('Select a SpyFu operation before running this block.')
-    }
-    const operation = getSpyfuOperationDefinition(params.operationId)
-    if (!operation) {
-      throw new Error(`Unknown SpyFu operation: ${params.operationId}`)
-    }
-    method = operation.method
-    endpointPath = `${SPYFU_BASE_URL}${operation.path}`
+  if (!params.operationId) {
+    throw new Error('Select a SpyFu operation before running this block.')
   }
 
-  const query = normalizeQueryParams(params, mode)
-  const url = new URL(endpointPath)
+  validateRequiredParams(params.operationId, params)
 
+  const credentials = resolveCredentials(params)
+
+  const operation = getSpyfuOperationDefinition(params.operationId)
+  if (!operation) {
+    throw new Error(`Unknown SpyFu operation: ${params.operationId}`)
+  }
+
+  const method = operation.method
+  const endpointPath = `${SPYFU_BASE_URL}${operation.path}`
+
+  const query = normalizeQueryParams(params)
+  const url = new URL(endpointPath)
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
       url.searchParams.append(key, String(value))
     }
   })
 
-  const body = normalizeBody(params.body)
+  logger.info('SpyFu request prepared', {
+    operationId: params.operationId,
+    endpoint: url.toString(),
+    method,
+    queryParams: query,
+    hasDomain: !!query.domain,
+    hasCountryCode: !!query.countryCode,
+    domain: query.domain,
+    countryCode: query.countryCode,
+    credentialsPresent: !!credentials.username && !!credentials.password,
+  })
 
   const headers: Record<string, string> = {
-    Accept: 'application/json, text/csv;q=0.9, */*;q=0.8',
-    Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`,
+    accept: 'application/json',
+    authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`,
   }
 
-  if (method !== 'GET' && method !== 'HEAD' && body !== undefined) {
+  if (method !== 'GET' && method !== 'HEAD') {
     headers['Content-Type'] = 'application/json'
   }
 
@@ -136,7 +134,6 @@ function prepareRequest(params: SpyfuRequestParams): PreparedSpyfuRequest {
     url: url.toString(),
     method,
     headers,
-    body,
     query,
     endpointPath,
   }
@@ -148,59 +145,41 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
   description: 'Call any SpyFu REST endpoint for domain, keyword, ranking, or account insights.',
   version: '1.0.0',
   params: {
-    mode: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Use a predefined SpyFu endpoint or specify a custom path.',
-    },
     operationId: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description: 'The predefined SpyFu operation to execute.',
     },
-    customPath: {
+    domain: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Custom SpyFu endpoint path or absolute URL (for advanced usage).',
+      visibility: 'user-or-llm',
+      description: 'Domain parameter for domain-based SpyFu endpoints.',
     },
-    customMethod: {
+    keyword: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'HTTP method for the custom endpoint.',
+      visibility: 'user-or-llm',
+      description: 'Keyword parameter for keyword-based SpyFu endpoints.',
+    },
+    term: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Keyword parameter for keyword-based SpyFu endpoints.',
+    },
+    date: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Date parameter (YYYY-MM-DD) for endpoints that require a specific date.',
     },
     countryCode: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description: 'SpyFu country code (US, UK, DE, etc.) appended as `countryCode` query parameter.',
-    },
-    queryParamsTable: {
-      type: 'json',
-      required: false,
-      visibility: 'user-only',
-      description: 'Key-value pairs converted into query parameters.',
-    },
-    body: {
-      type: 'json',
-      required: false,
-      visibility: 'user-only',
-      description: 'JSON body for POST endpoints such as bulk keyword lookups.',
-    },
-    apiUsername: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'SpyFu API username (overrides SPYFU_API_USERNAME).',
-    },
-    apiPassword: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'SpyFu API password (overrides SPYFU_API_PASSWORD).',
     },
   },
   outputs: {
@@ -232,40 +211,84 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
     body: (params) => {
       const prepared = prepareRequest(params)
       if (prepared.method === 'GET' || prepared.method === 'HEAD') {
-        return undefined
+        return undefined as any
       }
-      return prepared.body
+      const body = prepared.body
+      if (!body || typeof body === 'string') {
+        return undefined as any
+      }
+      return body as Record<string, any>
     },
   },
   transformResponse: async (response: Response, params?: SpyfuRequestParams) => {
+    console.log('transformResponse', response, params)
     const prepared = prepareRequest(params ?? {})
 
     const headers: Record<string, string> = {}
     response.headers.forEach((value, key) => {
       headers[key] = value
     })
-
+    // Always read as text first to handle both JSON and HTML responses
+    const responseText = await response.text()
     const contentType = response.headers.get('content-type') || ''
     const isJson = contentType.includes('json')
-    const payload = isJson ? await response.json() : await response.text()
+    logger.info('SpyFu response received', {
+      status: response.status,
+      statusText: response.statusText,
+      contentType,
+      isJson,
+      responseLength: responseText.length,
+      preview: responseText,
+    })
+    let payload: any
+    try {
+      // Try to parse as JSON if content-type suggests JSON or if it starts with { or [
+      if (isJson || (responseText.trim().startsWith('{') || responseText.trim().startsWith('['))) {
+        payload = JSON.parse(responseText)
+      } else {
+        payload = responseText
+      }
+    } catch (parseError) {
+      // If JSON parsing fails, use the raw text
+      payload = responseText
+      logger.warn('Failed to parse response as JSON, using raw text', {
+        contentType,
+        responseLength: responseText.length,
+        preview: responseText.substring(0, 200),
+      })
+    }
 
     if (!response.ok) {
       logger.error('SpyFu API request failed', {
         status: response.status,
+        statusText: response.statusText,
         endpoint: prepared.url,
-        body: payload,
+        contentType,
+        payloadPreview: typeof payload === 'string' ? payload.substring(0, 500) : payload,
       })
 
-      const message =
-        (isJson && (payload?.message || payload?.error)) ||
-        (typeof payload === 'string' && payload) ||
-        'SpyFu API request failed'
+      // Extract error message from various response formats
+      let errorMessage = 'SpyFu API request failed'
+      if (typeof payload === 'object' && payload !== null) {
+        errorMessage = payload.message || payload.error || payload.errorMessage || JSON.stringify(payload)
+      } else if (typeof payload === 'string') {
+        // Try to extract meaningful error from HTML if present
+        if (payload.includes('<!DOCTYPE') || payload.includes('<html')) {
+          // Extract title or first meaningful text from HTML
+          const titleMatch = payload.match(/<title[^>]*>([^<]+)<\/title>/i)
+          const h1Match = payload.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+          errorMessage = titleMatch?.[1] || h1Match?.[1] || `HTTP ${response.status}: ${response.statusText}`
+        } else {
+          errorMessage = payload.substring(0, 500)
+        }
+      }
 
       return {
         success: false,
-        error: message,
+        error: errorMessage,
         output: {
           status: response.status,
+          statusText: response.statusText,
           data: payload,
           headers,
           endpoint: prepared.url,

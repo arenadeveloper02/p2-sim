@@ -1,17 +1,15 @@
-import type { TableRow, ToolResponse } from '@/tools/types'
-
-export type SpyfuExecutionMode = 'predefined' | 'custom'
+import type { ToolResponse } from '@/tools/types'
 
 export interface SpyfuRequestParams {
-  mode?: SpyfuExecutionMode
   operationId?: string
-  customPath?: string
-  customMethod?: string
+  domain?: string
+  keyword?: string
+  date?: string
   countryCode?: string
-  queryParamsTable?: TableRow[] | Record<string, any> | null
-  body?: string | Record<string, any> | null
-  apiUsername?: string
-  apiPassword?: string
+  term?: string
+  query?: string
+  includeDomainsCsv?: string
+  isIntersection?: boolean
 }
 
 export interface SpyfuResponse extends ToolResponse {
