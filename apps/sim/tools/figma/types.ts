@@ -7,9 +7,12 @@ export type BaseFigmaParams = object
 export interface CreateFigmaParams extends BaseFigmaParams {
   name: string
   description?: string
-  designPrompt?: string
+  designPrompt: string
   projectId: string
   brandGuidelines?: File
+  wireframes?: File
+  additionalData?: File
+  additionalInfo?: string
 }
 
 // Convert Figma to HTML/React/Angular parameters
@@ -209,7 +212,12 @@ interface FigmaImageMetadata {
 export interface CreateFigmaResponse extends ToolResponse {
   output: {
     content: string
-    metadata: FigmaFileMetadata
+    metadata: FigmaFileMetadata & {
+      designPrompt: string
+      projectId: string
+      figmaFileUrl?: string
+      renderedData?: string
+    }
   }
 }
 
