@@ -1,6 +1,8 @@
 'use client'
 
-import Nav from '@/app/(landing)/components/nav/nav'
+import Image from 'next/image'
+import { getBrandConfig } from '@/lib/branding/branding'
+import { GridPattern } from '@/app/(landing)/components/grid-pattern'
 
 interface InviteLayoutProps {
   children: React.ReactNode
@@ -8,10 +10,42 @@ interface InviteLayoutProps {
 
 export default function InviteLayout({ children }: InviteLayoutProps) {
   return (
-    <div className='bg-white'>
-      <Nav variant='auth' />
-      <div className='flex min-h-[calc(100vh-120px)] items-center justify-center px-4'>
-        <div className='w-full max-w-[410px]'>{children}</div>
+    <div className=' relative flex min-h-screen flex-col font-geist-sans text-white'>
+      {/* Background pattern */}
+      <GridPattern
+        x={-5}
+        y={-5}
+        className='absolute inset-0 z-0 stroke-[#ababab]/5'
+        width={90}
+        height={90}
+        aria-hidden='true'
+      />
+
+      {/* Content */}
+      <div className='relative z-10 flex flex-1 items-center justify-center px-4 pb-6'>
+        <div className='w-full max-w-md'>
+          <div className='mb-8 text-center'>
+            <Image
+              src={getBrandConfig()?.logoUrlBlacktext || '/logo/primary/text/medium.png'}
+              alt='Sim Logo'
+              width={140}
+              height={42}
+              priority
+              className='mx-auto'
+            />
+          </div>
+          <div className='rounded-xl border p-6 shadow-lg backdrop-blur-sm'>{children}</div>
+
+          {/* <div className='mt-6 text-center text-neutral-500/80 text-xs leading-relaxed'>
+            Need help?{' '}
+            <a
+              href={`mailto:${brandConfig.supportEmail}`}
+              className='text-[var(--brand-accent-hex)] underline-offset-4 transition hover:text-[var(--brand-accent-hover-hex)] hover:underline'
+            >
+              Contact support
+            </a>
+          </div> */}
+        </div>
       </div>
     </div>
   )

@@ -42,22 +42,20 @@ import {
 } from '@/tools/asana'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
 import { clayPopulateTool } from '@/tools/clay'
-import {
-  confluenceCreateCommentTool,
-  confluenceCreatePageTool,
-  confluenceDeleteAttachmentTool,
-  confluenceDeleteCommentTool,
-  confluenceDeletePageTool,
-  confluenceGetSpaceTool,
-  confluenceListAttachmentsTool,
-  confluenceListCommentsTool,
-  confluenceListLabelsTool,
-  confluenceListSpacesTool,
-  confluenceRetrieveTool,
-  confluenceSearchTool,
-  confluenceUpdateCommentTool,
-  confluenceUpdateTool,
-} from '@/tools/confluence'
+import { confluenceCreateCommentTool } from '@/tools/confluence/create_comment'
+import { confluenceCreatePageTool } from '@/tools/confluence/create_page'
+import { confluenceDeleteAttachmentTool } from '@/tools/confluence/delete_attachment'
+import { confluenceDeleteCommentTool } from '@/tools/confluence/delete_comment'
+import { confluenceDeletePageTool } from '@/tools/confluence/delete_page'
+import { confluenceGetSpaceTool } from '@/tools/confluence/get_space'
+import { confluenceListAttachmentsTool } from '@/tools/confluence/list_attachments'
+import { confluenceListCommentsTool } from '@/tools/confluence/list_comments'
+import { confluenceListLabelsTool } from '@/tools/confluence/list_labels'
+import { confluenceListSpacesTool } from '@/tools/confluence/list_spaces'
+import { confluenceRetrieveTool } from '@/tools/confluence/retrieve'
+import { confluenceSearchTool } from '@/tools/confluence/search'
+import { confluenceUpdateTool } from '@/tools/confluence/update'
+import { confluenceUpdateCommentTool } from '@/tools/confluence/update_comment'
 import {
   discordAddReactionTool,
   discordArchiveThreadTool,
@@ -175,6 +173,7 @@ import {
   gmailUnarchiveTool,
 } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -413,19 +412,18 @@ import {
   onedriveUploadTool,
 } from '@/tools/onedrive'
 import { imageTool, embeddingsTool as openAIEmbeddings } from '@/tools/openai'
-import {
-  outlookCopyTool,
-  outlookDeleteTool,
-  outlookDraftTool,
-  outlookForwardTool,
-  outlookMarkReadTool,
-  outlookMarkUnreadTool,
-  outlookMoveTool,
-  outlookReadTool,
-  outlookSendTool,
-} from '@/tools/outlook'
+import { outlookCopyTool } from '@/tools/outlook/copy'
+import { outlookDeleteTool } from '@/tools/outlook/delete'
+import { outlookDraftTool } from '@/tools/outlook/draft'
+import { outlookForwardTool } from '@/tools/outlook/forward'
+import { outlookMarkReadTool } from '@/tools/outlook/mark_read'
+import { outlookMarkUnreadTool } from '@/tools/outlook/mark_unread'
+import { outlookMoveTool } from '@/tools/outlook/move'
+import { outlookReadTool } from '@/tools/outlook/read'
+import { outlookSendTool } from '@/tools/outlook/send'
 import { parallelDeepResearchTool, parallelExtractTool, parallelSearchTool } from '@/tools/parallel'
-import { perplexityChatTool, perplexitySearchTool } from '@/tools/perplexity'
+import { chatTool as perplexityChatTool } from '@/tools/perplexity/chat'
+import { searchTool as perplexitySearchTool } from '@/tools/perplexity/search'
 import {
   pineconeFetchTool,
   pineconeGenerateEmbeddingsTool,
@@ -685,6 +683,7 @@ import {
   zepGetUserThreadsTool,
   zepGetUserTool,
 } from '@/tools/zep'
+import { facebookAdsQueryTool } from './facebook_ads'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
@@ -934,6 +933,8 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  facebook_ads_query: facebookAdsQueryTool,
+  google_ads_query: googleAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   confluence_retrieve: confluenceRetrieveTool,

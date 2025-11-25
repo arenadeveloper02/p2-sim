@@ -3,12 +3,14 @@
 export const baseStyles = {
   fontFamily: 'HelveticaNeue, Helvetica, Arial, sans-serif',
   main: {
-    backgroundColor: '#f5f5f7',
+    backgroundColor: '#F3F8FE',
+    padding: '20px 0',
     fontFamily: 'HelveticaNeue, Helvetica, Arial, sans-serif',
   },
   container: {
     maxWidth: '580px',
     margin: '30px auto',
+    padding: ' 0 24px',
     backgroundColor: '#ffffff',
     borderRadius: '5px',
     overflow: 'hidden',
@@ -21,7 +23,7 @@ export const baseStyles = {
     backgroundColor: '#ffffff',
   },
   content: {
-    padding: '5px 30px 20px 30px',
+    padding: '5px 0 20px 0',
   },
   paragraph: {
     fontSize: '16px',
@@ -31,12 +33,22 @@ export const baseStyles = {
   },
   button: {
     display: 'inline-block',
-    backgroundColor: '#6F3DFA',
+    backgroundColor: '#1A73E8',
     color: '#ffffff',
-    fontWeight: 'bold',
+    fontWeight: 'semi-bold',
     fontSize: '16px',
-    padding: '12px 30px',
-    borderRadius: '5px',
+    width: '183px',
+    height: '40px',
+    lineHeight: '40px',
+    padding: '0 30px',
+    borderRadius: '20px',
+    // Visual elevation
+    boxShadow: '0px 2px 4px 0px #6D717F29',
+    // Hover/active variants (email clients may not support :hover; these values
+    // are provided so templates or client-side rendering can reference them)
+    backgroundColorHover: '#155cba',
+    boxShadowHover: '0px 4px 8px 0px #6D717F29',
+    transition: 'all 150ms ease',
     textDecoration: 'none',
     textAlign: 'center' as const,
     margin: '20px 0',
@@ -75,7 +87,7 @@ export const baseStyles = {
     display: 'flex',
   },
   sectionBorder: {
-    borderBottom: '1px solid #eeeeee',
+    borderBottom: '1px solid #E2E3E5',
     width: '249px',
   },
   sectionCenter: {

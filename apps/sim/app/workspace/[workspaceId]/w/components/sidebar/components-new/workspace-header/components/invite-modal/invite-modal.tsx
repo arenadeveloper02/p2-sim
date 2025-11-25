@@ -280,7 +280,7 @@ const PermissionsTable = ({
   const currentUserIsAdmin = userPerms.canAdmin
 
   return (
-    <div className='scrollbar-hide max-h-[300px] overflow-y-auto'>
+    <div className='scrollbar-hide max-h-[210px] overflow-y-auto'>
       {allUsers.length > 0 && (
         <div>
           {allUsers.map((user) => {
@@ -589,12 +589,16 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
       const emailToRemove = emails[index]
       setEmails((prev) => prev.filter((_, i) => i !== index))
       setUserPermissions((prev) => prev.filter((user) => user.email !== emailToRemove))
+      // Clear error message when removing email badge
+      setErrorMessage(null)
     },
     [emails]
   )
 
   const removeInvalidEmail = useCallback((index: number) => {
     setInvalidEmails((prev) => prev.filter((_, i) => i !== index))
+    // Clear error message when removing invalid email badge
+    setErrorMessage(null)
   }, [])
 
   const handlePermissionChange = useCallback(
@@ -756,6 +760,8 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
 
   const handleRemoveMemberCancel = useCallback(() => {
     setMemberToRemove(null)
+    // Clear error message when cancelling member removal
+    setErrorMessage(null)
   }, [])
 
   const handleRemoveInvitationClick = useCallback((invitationId: string, email: string) => {
@@ -805,6 +811,8 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
 
   const handleRemoveInvitationCancel = useCallback(() => {
     setInvitationToRemove(null)
+    // Clear error message when cancelling invitation removal
+    setErrorMessage(null)
   }, [])
 
   const handleResendInvitation = useCallback(
@@ -931,6 +939,8 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
 
       try {
         const failedInvites: string[] = []
+        const nonExistentEmails: string[] = []
+        const otherErrors: string[] = []
 
         const results = await Promise.all(
           emails.map(async (email) => {
@@ -959,21 +969,54 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                 }
 
                 if (data.error) {
-                  setErrorMessage(data.error)
+                  // Check if this is a "does not exist" error
+                  if (data.error.includes('does not exist')) {
+                    nonExistentEmails.push(email)
+                  } else {
+                    // Other errors
+                    otherErrors.push(`${email}: ${data.error}`)
+                  }
                 }
 
                 return false
               }
 
               return true
-            } catch {
+            } catch (error) {
               if (!invalidEmails.includes(email)) {
                 failedInvites.push(email)
               }
+              const errorMsg = error instanceof Error ? error.message : 'Failed to send invitation'
+              otherErrors.push(`${email}: ${errorMsg}`)
               return false
             }
           })
         )
+        // Combine error messages
+        const combinedErrors: string[] = []
+
+        // Combine non-existent emails into a single message
+        if (nonExistentEmails.length > 0) {
+          if (nonExistentEmails.length === 1) {
+            combinedErrors.push(
+              `User with email ${nonExistentEmails[0]} does not exist. Please ensure the user has an account before inviting them.`
+            )
+          } else {
+            combinedErrors.push(
+              `The following users do not exist: ${nonExistentEmails.join(', ')}. Please ensure they have accounts before inviting them.`
+            )
+          }
+        }
+
+        // Add other errors
+        if (otherErrors.length > 0) {
+          combinedErrors.push(...otherErrors)
+        }
+
+        // Display combined error messages
+        if (combinedErrors.length > 0) {
+          setErrorMessage(combinedErrors.join('; '))
+        }
 
         const successCount = results.filter(Boolean).length
 
@@ -999,6 +1042,10 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
           setTimeout(() => {
             setShowSent(false)
           }, 4000)
+        } else if (failedInvites.length > 0) {
+          // All invites failed - keep failed emails in the list so user can see them
+          setEmails(failedInvites)
+          setUserPermissions((prev) => prev.filter((user) => failedInvites.includes(user.email)))
         }
       } catch (err) {
         logger.error('Error inviting members:', err)

@@ -550,6 +550,12 @@ export async function executeWorkflowForChat(
     }
   }
 
+  // Merge system-level environment variables as fallback
+  // This ensures system-level API keys (like OPENAI_API_KEY) are available
+  // when user hasn't set them in their personal/workspace env vars
+  const { mergeSystemEnvironmentVariables } = await import('@/lib/environment/utils')
+  const finalEnvVars = mergeSystemEnvironmentVariables(decryptedEnvVars)
+
   // Process block states to ensure response formats are properly parsed
   const processedBlockStates = Object.entries(currentBlockStates).reduce(
     (acc, [blockId, blockState]) => {
@@ -677,7 +683,7 @@ export async function executeWorkflowForChat(
       const executor = new Executor({
         workflow: serializedWorkflow,
         currentBlockStates: processedBlockStates,
-        envVarValues: decryptedEnvVars,
+        envVarValues: finalEnvVars,
         workflowInput: mergedWorkflowInput,
         workflowVariables,
         contextExtensions: {

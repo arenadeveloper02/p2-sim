@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, LogOut, Pencil, Plus, Send, Trash2 } from 'lucide-react'
+import { Download, LogOut, Pencil, Send, Trash2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -653,7 +653,7 @@ export function WorkspaceSelector({
             )}
 
             {/* Create Workspace */}
-            <Button
+            {/* <Button
               variant='secondary'
               onClick={onCreateWorkspace}
               disabled={isCreating}
@@ -664,7 +664,7 @@ export function WorkspaceSelector({
             >
               <Plus className='h-3 w-3' />
               <span>Create</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>
