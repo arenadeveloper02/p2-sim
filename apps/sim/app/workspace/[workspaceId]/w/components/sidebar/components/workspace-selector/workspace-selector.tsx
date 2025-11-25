@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -460,19 +461,28 @@ export function WorkspaceSelector({
                 {/* Leave Workspace - for non-admin users */}
                 {workspace.permissions !== 'admin' && (
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        onClick={(e) => e.stopPropagation()}
-                        className={cn(
-                          'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                          !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
-                        )}
-                      >
-                        <LogOut className='!h-3.5 !w-3.5' />
-                      </Button>
-                    </AlertDialogTrigger>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            onClick={(e) => e.stopPropagation()}
+                            className={cn(
+                              'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
+                              !isEditing && isHovered
+                                ? 'opacity-100'
+                                : 'pointer-events-none opacity-0'
+                            )}
+                          >
+                            <LogOut className='!h-3.5 !w-3.5' />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side='top'>
+                        <p>Leave workspace</p>
+                      </TooltipContent>
+                    </Tooltip>
 
                     <AlertDialogContent>
                       <AlertDialogHeader>
