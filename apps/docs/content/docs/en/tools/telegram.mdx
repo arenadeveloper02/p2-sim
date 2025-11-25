@@ -1,6 +1,6 @@
 ---
 title: Telegram
-description: Send messages through Telegram or trigger workflows from Telegram events
+description: Interact with Telegram
 ---
 
 import { BlockInfoCard } from "@/components/ui/block-info-card"
@@ -8,21 +8,6 @@ import { BlockInfoCard } from "@/components/ui/block-info-card"
 <BlockInfoCard 
   type="telegram"
   color="#E0E0E0"
-  icon={true}
-  iconSvg={`<svg className="block-icon"
-      
-      xmlns='http://www.w3.org/2000/svg'
-      viewBox='0 0 24 24'
-      
-      
-      fill='none'
-    >
-      <circle cx='12' cy='12' r='10' fill='#0088CC' />
-      <path
-        d='M16.7 8.4c.1-.6-.4-1.1-1-.8l-9.8 4.3c-.4.2-.4.8.1.9l2.1.7c.4.1.8.1 1.1-.2l4.5-3.1c.1-.1.3.1.2.2l-3.2 3.5c-.3.3-.2.8.2 1l3.6 2.3c.4.2.9-.1 1-.5l1.2-7.8Z'
-        fill='white'
-      />
-    </svg>`}
 />
 
 {/* MANUAL-CONTENT-START:intro */}
@@ -67,7 +52,7 @@ In Sim, the Telegram integration enables your agents to leverage these powerful 
 
 ## Usage Instructions
 
-Send messages to any Telegram channel using your Bot API key or trigger workflows from Telegram bot messages. Integrate automated notifications and alerts into your workflow to keep your team informed.
+Integrate Telegram into the workflow. Can send and delete messages. Can be used in trigger mode to trigger a workflow when a message is sent to a chat.
 
 
 
@@ -89,12 +74,127 @@ Send messages to Telegram channels or users through the Telegram Bot API. Enable
 
 | Parameter | Type | Description |
 | --------- | ---- | ----------- |
-| `success` | boolean | Telegram message send success status |
-| `messageId` | number | Unique Telegram message identifier |
-| `chatId` | string | Target chat ID where message was sent |
-| `text` | string | Text content of the sent message |
-| `timestamp` | number | Unix timestamp when message was sent |
-| `from` | object | Information about the bot that sent the message |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data |
+
+### `telegram_delete_message`
+
+Delete messages in Telegram channels or chats through the Telegram Bot API. Requires the message ID of the message to delete.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `messageId` | string | Yes | Message ID to delete |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Delete operation result |
+
+### `telegram_send_photo`
+
+Send photos to Telegram channels or users through the Telegram Bot API.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `photo` | string | Yes | Photo to send. Pass a file_id or HTTP URL |
+| `caption` | string | No | Photo caption \(optional\) |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data including optional photo\(s\) |
+
+### `telegram_send_video`
+
+Send videos to Telegram channels or users through the Telegram Bot API.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `video` | string | Yes | Video to send. Pass a file_id or HTTP URL |
+| `caption` | string | No | Video caption \(optional\) |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data including optional media |
+
+### `telegram_send_audio`
+
+Send audio files to Telegram channels or users through the Telegram Bot API.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `audio` | string | Yes | Audio file to send. Pass a file_id or HTTP URL |
+| `caption` | string | No | Audio caption \(optional\) |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data including voice/audio information |
+
+### `telegram_send_animation`
+
+Send animations (GIFs) to Telegram channels or users through the Telegram Bot API.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `animation` | string | Yes | Animation to send. Pass a file_id or HTTP URL |
+| `caption` | string | No | Animation caption \(optional\) |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data including optional media |
+
+### `telegram_send_document`
+
+Send documents (PDF, ZIP, DOC, etc.) to Telegram channels or users through the Telegram Bot API.
+
+#### Input
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Yes | Your Telegram Bot API Token |
+| `chatId` | string | Yes | Target Telegram chat ID |
+| `files` | file[] | No | Document file to send \(PDF, ZIP, DOC, etc.\). Max size: 50MB |
+| `caption` | string | No | Document caption \(optional\) |
+
+#### Output
+
+| Parameter | Type | Description |
+| --------- | ---- | ----------- |
+| `message` | string | Success or error message |
+| `data` | object | Telegram message data including document |
 
 
 

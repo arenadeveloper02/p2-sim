@@ -52,7 +52,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
 import { PdfParser } from '@/lib/file-parsers/pdf-parser'
-import { downloadFile } from '@/lib/uploads/storage-client'
+import { downloadFromS3 } from './uploads/providers/s3'
 
 interface FigmaDesignInputs {
   projectId: string
@@ -154,7 +154,7 @@ async function readFileContent(filePath: string, fileType: string): Promise<stri
     console.log(`S3 key extracted for ${fileType}:`, s3Key)
 
     // Download file from S3
-    const fileBuffer = await downloadFile(s3Key)
+    const fileBuffer = await downloadFromS3(s3Key)
     console.log(`Downloaded ${fileType} from S3, size:`, fileBuffer.length)
 
     // Check if it's a PDF file

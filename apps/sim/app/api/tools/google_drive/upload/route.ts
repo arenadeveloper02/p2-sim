@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
-import { downloadExecutionFile } from '@/lib/workflows/execution-file-storage'
+import { downloadExecutionFile } from '@/lib/uploads/contexts/execution'
 import type { UserFile } from '@/executor/types'
 import { GOOGLE_WORKSPACE_MIME_TYPES, SOURCE_MIME_TYPES } from '@/tools/google_drive/utils'
 

@@ -6,18 +6,19 @@ import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-json'
-import { Button } from '@/components/ui/button'
+import { Button, Tooltip } from '@/components/emcn'
 import { CopyButton } from '@/components/ui/copy-button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { FrozenCanvasModal } from '@/app/workspace/[workspaceId]/logs/components/frozen-canvas/frozen-canvas-modal'
 import { FileDownload } from '@/app/workspace/[workspaceId]/logs/components/sidebar/components/file-download'
 import LogMarkdownRenderer from '@/app/workspace/[workspaceId]/logs/components/sidebar/components/markdown-renderer'
 import { ToolCallsDisplay } from '@/app/workspace/[workspaceId]/logs/components/tool-calls/tool-calls-display'
-import { TraceSpansDisplay } from '@/app/workspace/[workspaceId]/logs/components/trace-spans/trace-spans-display'
-import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils/format-date'
-// import { formatCost } from '@/providers/utils'
+import { TraceSpans } from '@/app/workspace/[workspaceId]/logs/components/trace-spans/trace-spans'
+import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
+import { formatCost } from '@/providers/utils'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
+import '@/components/emcn/components/code/code.css'
 
 interface LogSidebarProps {
   log: WorkflowLog | null
@@ -192,7 +193,7 @@ const BlockContentDisplay = ({
 export function Sidebar({
   log,
   isOpen,
-  isLoadingDetails: isLoadingDetailsProp = false,
+  isLoadingDetails = false,
   onClose,
   onNavigateNext,
   onNavigatePrev,
@@ -220,31 +221,6 @@ export function Sidebar({
     }
   }, [log?.id])
 
-  // Helper function to extract traceSpans array from either format
-  const getTraceSpansArray = useMemo(() => {
-    if (!log?.executionData?.traceSpans) return undefined
-    const traceSpans = log.executionData.traceSpans
-    // Handle both formats: { spans: [...] } or [...]
-    if (Array.isArray(traceSpans)) {
-      return traceSpans
-    }
-    if (traceSpans && typeof traceSpans === 'object' && 'spans' in traceSpans) {
-      const spans = (traceSpans as { spans?: unknown }).spans
-      return Array.isArray(spans) ? spans : undefined
-    }
-    return undefined
-  }, [log?.executionData?.traceSpans])
-
-  const isLoadingDetails = useMemo(() => {
-    if (isLoadingDetailsProp) return true
-    if (!log) return false
-    // Only show while we expect details to arrive (has executionId)
-    if (!log.executionId) return false
-    const hasEnhanced = !!log.executionData?.enhanced
-    const hasAnyDetails = hasEnhanced || !!log.cost || !!getTraceSpansArray
-    return !hasAnyDetails
-  }, [isLoadingDetailsProp, log, getTraceSpansArray])
-
   const formattedContent = useMemo(() => {
     if (!log) return null
 
@@ -252,15 +228,15 @@ export function Sidebar({
 
     if (log.executionData?.blockInput) {
       blockInput = log.executionData.blockInput
-    } else if (getTraceSpansArray) {
-      const firstSpanWithInput = getTraceSpansArray.find((s: any) => s.input)
+    } else if (log.executionData?.traceSpans) {
+      const firstSpanWithInput = log.executionData.traceSpans.find((s) => s.input)
       if (firstSpanWithInput?.input) {
         blockInput = firstSpanWithInput.input as any
       }
     }
 
     return null
-  }, [log, getTraceSpansArray])
+  }, [log])
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -272,9 +248,9 @@ export function Sidebar({
     if (!log) return false
     return (
       (log.trigger === 'manual' && !!log.duration) ||
-      (log.executionData?.enhanced && !!getTraceSpansArray)
+      (log.executionData?.enhanced && log.executionData?.traceSpans)
     )
-  }, [log, getTraceSpansArray])
+  }, [log])
 
   const hasCostInfo = useMemo(() => {
     return isWorkflowExecutionLog && log?.cost
@@ -381,8 +357,8 @@ export function Sidebar({
               Log Details
             </h2>
             <div className='flex items-center gap-[4px]'>
-              <Tooltip>
-                <TooltipTrigger asChild>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
                   <Button
                     variant='ghost'
                     className='h-[32px] w-[32px] p-0'
@@ -392,11 +368,11 @@ export function Sidebar({
                   >
                     <ChevronUp className='h-[14px] w-[14px]' />
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent side='bottom'>Previous log</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='bottom'>Previous log</Tooltip.Content>
+              </Tooltip.Root>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
                   <Button
                     variant='ghost'
                     className='h-[32px] w-[32px] p-0'
@@ -406,9 +382,9 @@ export function Sidebar({
                   >
                     <ChevronDown className='h-[14px] w-[14px]' />
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent side='bottom'>Next log</TooltipContent>
-              </Tooltip>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='bottom'>Next log</Tooltip.Content>
+              </Tooltip.Root>
 
               <Button
                 variant='ghost'
@@ -575,12 +551,12 @@ export function Sidebar({
                 {/* end suspense */}
 
                 {/* Trace Spans (if available and this is a workflow execution log) */}
-                {isWorkflowExecutionLog && getTraceSpansArray && (
+                {isWorkflowExecutionLog && log.executionData?.traceSpans && (
                   <div className='w-full'>
                     <div className='w-full overflow-x-hidden'>
-                      <TraceSpansDisplay
-                        traceSpans={getTraceSpansArray}
-                        totalDuration={log.executionData?.totalDuration ?? 0}
+                      <TraceSpans
+                        traceSpans={log.executionData.traceSpans}
+                        totalDuration={log.executionData.totalDuration}
                         onExpansionChange={handleTraceSpanToggle}
                       />
                     </div>
@@ -598,6 +574,125 @@ export function Sidebar({
                     </div>
                   </div>
                 )}
+
+                {/* Cost Information (moved to bottom) */}
+                {hasCostInfo && (
+                  <div>
+                    <h3 className='mb-[4px] font-medium text-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
+                      Cost Breakdown
+                    </h3>
+                    <div className='overflow-hidden border dark:border-[var(--border)]'>
+                      <div className='space-y-[8px] p-[12px]'>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-[13px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            Base Execution:
+                          </span>
+                          <span className='text-[13px]'>{formatCost(BASE_EXECUTION_CHARGE)}</span>
+                        </div>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-[13px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            Model Input:
+                          </span>
+                          <span className='text-[13px]'>{formatCost(log.cost?.input || 0)}</span>
+                        </div>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-[13px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            Model Output:
+                          </span>
+                          <span className='text-[13px]'>{formatCost(log.cost?.output || 0)}</span>
+                        </div>
+                        <div className='mt-[4px] flex items-center justify-between border-t pt-[8px] dark:border-[var(--border)]'>
+                          <span className='text-[13px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            Total:
+                          </span>
+                          <span className='text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'>
+                            {formatCost(log.cost?.total || 0)}
+                          </span>
+                        </div>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
+                            Tokens:
+                          </span>
+                          <span className='text-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
+                            {log.cost?.tokens?.prompt || 0} in / {log.cost?.tokens?.completion || 0}{' '}
+                            out
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Models Breakdown */}
+                      {log.cost?.models && Object.keys(log.cost?.models).length > 0 && (
+                        <div className='border-t dark:border-[var(--border)]'>
+                          <button
+                            onClick={() => setIsModelsExpanded(!isModelsExpanded)}
+                            className='flex w-full items-center justify-between p-[12px] text-left transition-colors hover:bg-muted/50'
+                          >
+                            <span className='font-medium text-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
+                              Model Breakdown ({Object.keys(log.cost?.models || {}).length})
+                            </span>
+                            {isModelsExpanded ? (
+                              <ChevronUp className='h-[12px] w-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]' />
+                            ) : (
+                              <ChevronDown className='h-[12px] w-[12px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]' />
+                            )}
+                          </button>
+
+                          {isModelsExpanded && (
+                            <div className='space-y-[12px] border-t bg-muted/30 p-[12px] dark:border-[var(--border)]'>
+                              {Object.entries(log.cost?.models || {}).map(
+                                ([model, cost]: [string, any]) => (
+                                  <div key={model} className='space-y-[4px]'>
+                                    <div className='font-medium font-mono text-[12px]'>{model}</div>
+                                    <div className='space-y-[4px] text-[12px]'>
+                                      <div className='flex justify-between'>
+                                        <span className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                                          Input:
+                                        </span>
+                                        <span>{formatCost(cost.input || 0)}</span>
+                                      </div>
+                                      <div className='flex justify-between'>
+                                        <span className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                                          Output:
+                                        </span>
+                                        <span>{formatCost(cost.output || 0)}</span>
+                                      </div>
+                                      <div className='flex justify-between border-t pt-[4px] dark:border-[var(--border)]'>
+                                        <span className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                                          Total:
+                                        </span>
+                                        <span className='font-medium'>
+                                          {formatCost(cost.total || 0)}
+                                        </span>
+                                      </div>
+                                      <div className='flex justify-between'>
+                                        <span className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                                          Tokens:
+                                        </span>
+                                        <span>
+                                          {cost.tokens?.prompt || 0} in /{' '}
+                                          {cost.tokens?.completion || 0} out
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {isWorkflowWithCost && (
+                        <div className='border-t bg-muted p-[12px] text-[12px] text-[var(--text-secondary)] dark:border-[var(--border)] dark:text-[var(--text-secondary)]'>
+                          <p>
+                            Total cost includes a base execution charge of{' '}
+                            {formatCost(BASE_EXECUTION_CHARGE)} plus any model usage costs.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </ScrollArea>
           </div>
@@ -610,7 +705,7 @@ export function Sidebar({
           executionId={log.executionId}
           workflowName={log.workflow?.name}
           trigger={log.trigger || undefined}
-          traceSpans={getTraceSpansArray}
+          traceSpans={log.executionData?.traceSpans}
           isOpen={isFrozenCanvasOpen}
           onClose={() => setIsFrozenCanvasOpen(false)}
         />

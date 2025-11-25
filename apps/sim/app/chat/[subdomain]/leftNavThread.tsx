@@ -1,8 +1,7 @@
 'use client'
 import { MessageSquare, Plus, RefreshCw } from 'lucide-react'
-import { Tooltip, TooltipTrigger } from '@/components/ui'
 import { Button } from '@/components/ui/button'
-import { TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface ThreadRecord {
   chatId: string

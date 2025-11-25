@@ -19,6 +19,7 @@ interface AutocompleteSearchProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  onOpenChange?: (open: boolean) => void
 }
 
 export function AutocompleteSearch({
@@ -26,6 +27,7 @@ export function AutocompleteSearch({
   onChange,
   placeholder = 'Search logs...',
   className,
+  onOpenChange,
 }: AutocompleteSearchProps) {
   const workflows = useWorkflowRegistry((state) => state.workflows)
   const folders = useFolderStore((state) => state.folders)

@@ -1,6 +1,6 @@
 ---
 title: YouTube
-description: Buscar videos en YouTube
+description: Interactúa con videos, canales y listas de reproducción de YouTube
 ---
 
 import { BlockInfoCard } from "@/components/ui/block-info-card"
@@ -8,20 +8,6 @@ import { BlockInfoCard } from "@/components/ui/block-info-card"
 <BlockInfoCard 
   type="youtube"
   color="#FF0000"
-  icon={true}
-  iconSvg={`<svg className="block-icon"
-      
-      
-      viewBox='0 0 28 20'
-      fill='currentColor'
-      xmlns='http://www.w3.org/2000/svg'
-      
-    >
-      <path
-        d='M11.2 14L18.466 9.8L11.2 5.6V14ZM27.384 3.038C27.566 3.696 27.692 4.578 27.776 5.698C27.874 6.818 27.916 7.784 27.916 8.624L28 9.8C28 12.866 27.776 15.12 27.384 16.562C27.034 17.822 26.222 18.634 24.962 18.984C24.304 19.166 23.1 19.292 21.252 19.376C19.432 19.474 17.766 19.516 16.226 19.516L14 19.6C8.134 19.6 4.48 19.376 3.038 18.984C1.778 18.634 0.966 17.822 0.616 16.562C0.434 15.904 0.308 15.022 0.224 13.902C0.126 12.782 0.0839999 11.816 0.0839999 10.976L0 9.8C0 6.734 0.224 4.48 0.616 3.038C0.966 1.778 1.778 0.966 3.038 0.616C3.696 0.434 4.9 0.308 6.748 0.224C8.568 0.126 10.234 0.0839999 11.774 0.0839999L14 0C19.866 0 23.52 0.224 24.962 0.616C26.222 0.966 27.034 1.778 27.384 3.038Z'
-        fill='currentColor'
-      />
-    </svg>`}
 />
 
 {/* MANUAL-CONTENT-START:intro */}
@@ -39,27 +25,189 @@ En Sim, la integración con YouTube permite a tus agentes buscar y analizar prog
 
 ## Instrucciones de uso
 
-Encuentra videos relevantes en YouTube utilizando la API de datos de YouTube. Busca contenido con límites de resultados personalizables y obtén metadatos estructurados de videos para integrarlos en tu flujo de trabajo.
+Integra YouTube en el flujo de trabajo. Puede buscar videos, obtener detalles de videos, obtener información del canal, obtener todos los videos de un canal, obtener listas de reproducción del canal, obtener elementos de listas de reproducción, encontrar videos relacionados y obtener comentarios de videos.
 
 ## Herramientas
 
 ### `youtube_search`
 
-Busca videos en YouTube utilizando la API de datos de YouTube.
+Busca videos en YouTube utilizando la API de datos de YouTube. Admite filtrado avanzado por canal, rango de fechas, duración, categoría, calidad, subtítulos y más.
 
 #### Entrada
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | ----------- | ----------- |
 | `query` | string | Sí | Consulta de búsqueda para videos de YouTube |
-| `maxResults` | number | No | Número máximo de videos a devolver |
+| `maxResults` | number | No | Número máximo de videos a devolver (1-50) |
 | `apiKey` | string | Sí | Clave API de YouTube |
+| `channelId` | string | No | Filtrar resultados a un ID de canal específico de YouTube |
+| `publishedAfter` | string | No | Solo devolver videos publicados después de esta fecha (formato RFC 3339: "2024-01-01T00:00:00Z") |
+| `publishedBefore` | string | No | Solo devolver videos publicados antes de esta fecha (formato RFC 3339: "2024-01-01T00:00:00Z") |
+| `videoDuration` | string | No | Filtrar por duración del video: "short" (menos de 4 minutos), "medium" (4-20 minutos), "long" (más de 20 minutos), "any" |
+| `order` | string | No | Ordenar resultados por: "date", "rating", "relevance" (predeterminado), "title", "videoCount", "viewCount" |
+| `videoCategoryId` | string | No | Filtrar por ID de categoría de YouTube (ej., "10" para Música, "20" para Juegos) |
+| `videoDefinition` | string | No | Filtrar por calidad de video: "high" (HD), "standard", "any" |
+| `videoCaption` | string | No | Filtrar por disponibilidad de subtítulos: "closedCaption" (tiene subtítulos), "none" (sin subtítulos), "any" |
+| `regionCode` | string | No | Devolver resultados relevantes para una región específica (código de país ISO 3166-1 alpha-2, ej., "US", "ES") |
+| `relevanceLanguage` | string | No | Devolver resultados más relevantes para un idioma (código ISO 639-1, ej., "en", "es") |
+| `safeSearch` | string | No | Nivel de filtrado de contenido: "moderate" (predeterminado), "none", "strict" |
 
 #### Salida
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
 | `items` | array | Array de videos de YouTube que coinciden con la consulta de búsqueda |
+
+### `youtube_video_details`
+
+Obtén información detallada sobre un video específico de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `videoId` | string | Sí | ID del video de YouTube |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `videoId` | string | ID del video de YouTube |
+| `title` | string | Título del video |
+| `description` | string | Descripción del video |
+| `channelId` | string | ID del canal |
+| `channelTitle` | string | Nombre del canal |
+| `publishedAt` | string | Fecha y hora de publicación |
+| `duration` | string | Duración del video en formato ISO 8601 |
+| `viewCount` | number | Número de visualizaciones |
+| `likeCount` | number | Número de me gusta |
+| `commentCount` | number | Número de comentarios |
+| `thumbnail` | string | URL de la miniatura del video |
+| `tags` | array | Etiquetas del video |
+
+### `youtube_channel_info`
+
+Obtén información detallada sobre un canal de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `channelId` | string | No | ID del canal de YouTube \(usa channelId o username\) |
+| `username` | string | No | Nombre de usuario del canal de YouTube \(usa channelId o username\) |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `channelId` | string | ID del canal de YouTube |
+| `title` | string | Nombre del canal |
+| `description` | string | Descripción del canal |
+| `subscriberCount` | number | Número de suscriptores |
+| `videoCount` | number | Número de videos |
+| `viewCount` | number | Vistas totales del canal |
+| `publishedAt` | string | Fecha de creación del canal |
+| `thumbnail` | string | URL de la miniatura del canal |
+| `customUrl` | string | URL personalizada del canal |
+
+### `youtube_channel_videos`
+
+Obtener todos los videos de un canal específico de YouTube, con opciones de ordenación.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `channelId` | string | Sí | ID del canal de YouTube del que obtener videos |
+| `maxResults` | number | No | Número máximo de videos a devolver \(1-50\) |
+| `order` | string | No | Orden de clasificación: "date" \(más recientes primero\), "rating", "relevance", "title", "viewCount" |
+| `pageToken` | string | No | Token de página para paginación |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `items` | array | Array de videos del canal |
+
+### `youtube_channel_playlists`
+
+Obtener todas las listas de reproducción de un canal específico de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `channelId` | string | Sí | ID del canal de YouTube del que obtener listas de reproducción |
+| `maxResults` | number | No | Número máximo de listas de reproducción a devolver \(1-50\) |
+| `pageToken` | string | No | Token de página para paginación |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `items` | array | Array de listas de reproducción del canal |
+
+### `youtube_playlist_items`
+
+Obtener videos de una lista de reproducción de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `playlistId` | string | Sí | ID de la lista de reproducción de YouTube |
+| `maxResults` | number | No | Número máximo de videos a devolver |
+| `pageToken` | string | No | Token de página para paginación |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `items` | array | Array de videos en la lista de reproducción |
+
+### `youtube_related_videos`
+
+Encuentra videos relacionados con un video específico de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `videoId` | string | Sí | ID del video de YouTube para encontrar videos relacionados |
+| `maxResults` | number | No | Número máximo de videos relacionados a devolver \(1-50\) |
+| `pageToken` | string | No | Token de página para paginación |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `items` | array | Array de videos relacionados |
+
+### `youtube_comments`
+
+Obtiene comentarios de un video de YouTube.
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | ----------- | ----------- |
+| `videoId` | string | Sí | ID del video de YouTube |
+| `maxResults` | number | No | Número máximo de comentarios a devolver |
+| `order` | string | No | Orden de los comentarios: time (tiempo) o relevance (relevancia) |
+| `pageToken` | string | No | Token de página para paginación |
+| `apiKey` | string | Sí | Clave API de YouTube |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `items` | array | Array de comentarios del video |
 
 ## Notas
 

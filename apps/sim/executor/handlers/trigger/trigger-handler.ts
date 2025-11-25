@@ -23,10 +23,7 @@ export class TriggerBlockHandler implements BlockHandler {
     block: SerializedBlock,
     inputs: Record<string, any>
   ): Promise<any> {
-    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`, {
-      blockCategory: block.metadata?.category,
-      hasTriggerMode: block.config?.params?.triggerMode,
-    })
+    logger.info(`Executing trigger block: ${block.id} (Type: ${block.metadata?.id})`)
 
     if (block.metadata?.id === BlockType.STARTER) {
       return this.executeStarterBlock(ctx, block, inputs)
@@ -58,7 +55,7 @@ export class TriggerBlockHandler implements BlockHandler {
             }
           }
 
-          if (provider === 'microsoftteams') {
+          if (provider === 'microsoft-teams') {
             const providerData = (starterOutput as any)[provider] || webhookData[provider] || {}
             const payloadSource = providerData?.message?.raw || webhookData.payload || {}
             return {
@@ -127,11 +124,6 @@ export class TriggerBlockHandler implements BlockHandler {
           }
 
           if (starterOutput.webhook) result.webhook = starterOutput.webhook
-
-          // For generic webhooks, expose the URL field at root level
-          if (provider === 'generic' && webhookData.url) {
-            result.url = webhookData.url
-          }
 
           return result
         }

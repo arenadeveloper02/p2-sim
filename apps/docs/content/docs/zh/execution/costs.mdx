@@ -2,7 +2,6 @@
 title: 成本计算
 ---
 
-import { Accordion, Accordions } from 'fumadocs-ui/components/accordion'
 import { Callout } from 'fumadocs-ui/components/callout'
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
 import { Image } from '@/components/ui/image'
@@ -86,27 +85,11 @@ totalCost = baseExecutionCharge + modelCost
 
 ## 成本优化策略
 
-<Accordions>
-  <Accordion title="模型选择">
-    根据任务复杂性选择模型。简单任务可以使用 GPT-4.1-nano（$0.10/$0.40），而复杂推理可能需要 o1 或 Claude Opus。
-  </Accordion>
-  
-  <Accordion title="提示工程">
-    结构良好、简洁的提示可以减少 token 使用量，同时不影响质量。
-  </Accordion>
-  
-  <Accordion title="本地模型">
-    对于非关键任务，使用 Ollama 可以完全消除 API 成本。
-  </Accordion>
-  
-  <Accordion title="缓存与重用">
-    将经常使用的结果存储在变量或文件中，以避免重复调用 AI 模型。
-  </Accordion>
-  
-  <Accordion title="批量处理">
-    在单次 AI 请求中处理多个项目，而不是逐一调用。
-  </Accordion>
-</Accordions>
+- **模型选择**：根据任务复杂性选择模型。简单任务可以使用 GPT-4.1-nano，而复杂推理可能需要 o1 或 Claude Opus。
+- **提示工程**：结构良好、简洁的提示可以在不牺牲质量的情况下减少 token 的使用。
+- **本地模型**：对于非关键任务，使用 Ollama 可以完全消除 API 成本。
+- **缓存和重用**：将经常使用的结果存储在变量或文件中，以避免重复调用 AI 模型。
+- **批量处理**：在单次 AI 请求中处理多个项目，而不是逐一调用。
 
 ## 使用监控
 
@@ -175,6 +158,41 @@ curl -X GET -H "X-API-Key: YOUR_API_KEY" -H "Content-Type: application/json" htt
 1. **定期监控**：经常检查您的使用仪表板，避免意外情况
 2. **设置预算**：使用计划限制作为支出控制的护栏
 3. **优化工作流程**：审查高成本的执行情况，优化提示或模型选择
+4. **使用合适的模型**：根据任务需求匹配模型复杂度
+5. **批量处理相似任务**：尽可能合并多个请求以减少开销
+
+## 下一步
+
+- 在 [设置 → 订阅](https://sim.ai/settings/subscription) 中查看您当前的使用情况
+- 了解 [日志记录](/execution/logging) 以跟踪执行详情
+- 探索 [外部 API](/execution/api) 以实现程序化成本监控
+- 查看 [工作流优化技术](/blocks) 以降低成本
+
+**团队计划（$40/每席位/月）：**
+- 团队成员共享使用量
+- 超额使用根据团队总使用量计算
+- 组织所有者收到一张账单
+
+**企业计划：**
+- 固定月费，无超额费用
+- 根据协议定制使用限制
+
+### 阈值计费
+
+当未结算的超额费用达到 $50 时，Sim 会自动结算全部未结算金额。
+
+**示例：**
+- 第 10 天：$70 超额 → 立即结算 $70
+- 第 15 天：额外使用 $35（总计 $105）→ 已结算，无需操作
+- 第 20 天：再使用 $50（总计 $155，未结算 $85）→ 立即结算 $85
+
+这将大额超额费用分散到整个月，而不是在周期结束时一次性结算。
+
+## 成本管理最佳实践
+
+1. **定期监控**：经常检查您的使用仪表板，避免意外
+2. **设定预算**：使用计划限制作为支出控制的参考
+3. **优化工作流程**：审查高成本执行，优化提示或模型选择
 4. **使用合适的模型**：根据任务需求匹配模型复杂度
 5. **批量处理相似任务**：尽可能合并多个请求以减少开销
 

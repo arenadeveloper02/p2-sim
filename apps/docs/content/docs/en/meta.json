@@ -1,9 +1,8 @@
 {
-  "title": "Agentic AI Documentation",
+  "title": "Sim Documentation",
   "pages": [
     "./introduction/index",
     "./getting-started/index",
-    "---Building Workflows---",
     "triggers",
     "blocks",
     "tools",
@@ -11,14 +10,9 @@
     "mcp",
     "copilot",
     "knowledgebase",
-    "---Configuration---",
     "variables",
-    "---Execution---",
     "execution",
-    "---Advanced---",
     "permissions",
-    "yaml",
-    "---SDKs---",
     "sdks"
   ],
   "defaultOpen": false

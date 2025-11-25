@@ -8,18 +8,6 @@ import { BlockInfoCard } from "@/components/ui/block-info-card"
 <BlockInfoCard 
   type="elevenlabs"
   color="#181C1E"
-  icon={true}
-  iconSvg={`<svg className="block-icon"
-      
-      xmlns='http://www.w3.org/2000/svg'
-      
-      
-      viewBox='0 0 876 876'
-      fill='none'
-    >
-      <path d='M498 138H618V738H498V138Z' fill='currentColor' />
-      <path d='M258 138H378V738H258V138Z' fill='currentColor' />
-    </svg>`}
 />
 
 {/* MANUAL-CONTENT-START:intro */}
@@ -38,7 +26,7 @@ En Sim, la integración de ElevenLabs permite a tus agentes convertir texto en v
 
 ## Instrucciones de uso
 
-Genera voz realista a partir de texto usando las voces de ElevenLabs.
+Integra ElevenLabs en el flujo de trabajo. Puede convertir texto a voz. Requiere clave API.
 
 ## Herramientas
 
@@ -60,6 +48,7 @@ Convertir TTS usando voces de ElevenLabs
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
 | `audioUrl` | string | La URL del audio generado |
+| `audioFile` | file | El archivo de audio generado |
 
 ## Notas
 

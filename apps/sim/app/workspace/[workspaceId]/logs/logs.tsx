@@ -9,7 +9,9 @@ import { cn } from '@/lib/utils'
 import Controls from '@/app/workspace/[workspaceId]/logs/components/dashboard/controls'
 import { AutocompleteSearch } from '@/app/workspace/[workspaceId]/logs/components/search/search'
 import { Sidebar } from '@/app/workspace/[workspaceId]/logs/components/sidebar/sidebar'
-import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils/format-date'
+import Dashboard from '@/app/workspace/[workspaceId]/logs/dashboard'
+import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
+import { useFolders } from '@/hooks/queries/folders'
 import { useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFolderStore } from '@/stores/folders/store'
@@ -73,7 +75,6 @@ export default function Logs() {
     setViewMode,
   } = useFilterStore()
 
-  // Set workspace ID in store when component mounts or workspaceId changes
   useEffect(() => {
     setWorkspaceId(workspaceId)
   }, [workspaceId])
@@ -86,7 +87,6 @@ export default function Logs() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isInitialized = useRef<boolean>(false)
 
-  // Local search state with debouncing for the header
   const [searchQuery, setSearchQuery] = useState(storeSearchQuery)
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
@@ -118,13 +118,14 @@ export default function Logs() {
 
   const logs = useMemo(() => {
     if (!logsQuery.data?.pages) return []
-    return logsQuery.data.pages.flatMap((page: any) => page.logs || [])
+    return logsQuery.data.pages.flatMap((page) => page.logs)
   }, [logsQuery.data?.pages])
 
   useEffect(() => {
     setSearchQuery(storeSearchQuery)
   }, [storeSearchQuery])
 
+  const foldersQuery = useFolders(workspaceId)
   const { getFolderTree } = useFolderStore()
 
   useEffect(() => {
@@ -172,7 +173,7 @@ export default function Logs() {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, getFolderTree])
+  }, [workspaceId, getFolderTree, foldersQuery.data])
 
   useEffect(() => {
     if (isInitialized.current && debouncedSearchQuery !== storeSearchQuery) {
@@ -182,7 +183,7 @@ export default function Logs() {
 
   const handleLogClick = (log: WorkflowLog) => {
     setSelectedLog(log)
-    const index = logs.findIndex((l: WorkflowLog) => l.id === log.id)
+    const index = logs.findIndex((l) => l.id === log.id)
     setSelectedLogIndex(index)
     setIsSidebarOpen(true)
   }
@@ -255,7 +256,6 @@ export default function Logs() {
     }
   }, [initializeFromURL])
 
-  // Handle browser navigation events (back/forward)
   useEffect(() => {
     const handlePopState = () => {
       initializeFromURL()
@@ -329,6 +329,7 @@ export default function Logs() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isSearchOpenRef.current) return
       if (logs.length === 0) return
 
       if (selectedLogIndex === -1 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -359,7 +360,7 @@ export default function Logs() {
   }, [logs, selectedLogIndex, isSidebarOpen, selectedLog, handleNavigateNext, handleNavigatePrev])
 
   if (viewMode === 'dashboard') {
-    return <div>Dashboard view coming soon</div>
+    return <Dashboard />
   }
 
   return (
@@ -375,7 +376,7 @@ export default function Logs() {
             isRefetching={logsQuery.isFetching}
             resetToNow={handleRefresh}
             live={isLive}
-            setLive={setIsLive}
+            setLive={(fn) => setIsLive(fn)}
             viewMode={viewMode as string}
             setViewMode={setViewMode as (mode: 'logs' | 'dashboard') => void}
             searchComponent={
@@ -383,6 +384,9 @@ export default function Logs() {
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder='Search logs...'
+                onOpenChange={(open: boolean) => {
+                  isSearchOpenRef.current = open
+                }}
               />
             }
             showExport={true}
@@ -443,7 +447,7 @@ export default function Logs() {
                 </div>
               ) : (
                 <div className='pb-[16px]'>
-                  {logs.map((log: WorkflowLog) => {
+                  {logs.map((log) => {
                     const formattedDate = formatDate(log.createdAt)
                     const isSelected = selectedLog?.id === log.id
                     const baseLevel = (log.level || 'info').toLowerCase()
