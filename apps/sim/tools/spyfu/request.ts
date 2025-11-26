@@ -1,16 +1,16 @@
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
-import type { ToolConfig, HttpMethod } from '@/tools/types'
 import {
-  SPYFU_BASE_URL,
   getSpyfuOperationDefinition,
+  SPYFU_BASE_URL,
   spyfuDateOperationIds,
   spyfuDomainOperationIds,
   spyfuKeywordOperationIds,
-  spyfuTermOperationIds,
   spyfuQueryOperationIds,
+  spyfuTermOperationIds,
 } from '@/tools/spyfu/operations'
 import type { SpyfuRequestParams, SpyfuResponse } from '@/tools/spyfu/types'
+import type { HttpMethod, ToolConfig } from '@/tools/types'
 
 const logger = createLogger('SpyfuTool')
 
@@ -25,7 +25,7 @@ interface PreparedSpyfuRequest {
 
 function resolveCredentials(params: SpyfuRequestParams): { username: string; password: string } {
   const username = env.SPYFU_API_USERNAME || 'cd1416d3-d722-4030-ae59-173f8a6e95e0'
-  const password =env.SPYFU_API_PASSWORD || 'CSUDXHCS'
+  const password = env.SPYFU_API_PASSWORD || 'CSUDXHCS'
   if (!username || !password) {
     throw new Error(
       'SpyFu API credentials are missing. Provide username/password in the block or set SPYFU_API_USERNAME and SPYFU_API_PASSWORD.'
@@ -50,7 +50,7 @@ function normalizeQueryParams(params: SpyfuRequestParams): Record<string, string
   if (params.term?.trim()) {
     normalized.term = params.term.trim()
   }
-  if(params.query?.trim()) {
+  if (params.query?.trim()) {
     normalized.query = params.query.trim()
   }
   if (params.date?.trim()) {
@@ -180,7 +180,8 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'SpyFu country code (US, UK, DE, etc.) appended as `countryCode` query parameter.',
+      description:
+        'SpyFu country code (US, UK, DE, etc.) appended as `countryCode` query parameter.',
     },
   },
   outputs: {
@@ -244,7 +245,7 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
     let payload: any
     try {
       // Try to parse as JSON if content-type suggests JSON or if it starts with { or [
-      if (isJson || (responseText.trim().startsWith('{') || responseText.trim().startsWith('['))) {
+      if (isJson || responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
         payload = JSON.parse(responseText)
       } else {
         payload = responseText
@@ -271,14 +272,16 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
       // Extract error message from various response formats
       let errorMessage = 'SpyFu API request failed'
       if (typeof payload === 'object' && payload !== null) {
-        errorMessage = payload.message || payload.error || payload.errorMessage || JSON.stringify(payload)
+        errorMessage =
+          payload.message || payload.error || payload.errorMessage || JSON.stringify(payload)
       } else if (typeof payload === 'string') {
         // Try to extract meaningful error from HTML if present
         if (payload.includes('<!DOCTYPE') || payload.includes('<html')) {
           // Extract title or first meaningful text from HTML
           const titleMatch = payload.match(/<title[^>]*>([^<]+)<\/title>/i)
           const h1Match = payload.match(/<h1[^>]*>([^<]+)<\/h1>/i)
-          errorMessage = titleMatch?.[1] || h1Match?.[1] || `HTTP ${response.status}: ${response.statusText}`
+          errorMessage =
+            titleMatch?.[1] || h1Match?.[1] || `HTTP ${response.status}: ${response.statusText}`
         } else {
           errorMessage = payload.substring(0, 500)
         }
@@ -312,4 +315,3 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
     }
   },
 }
-

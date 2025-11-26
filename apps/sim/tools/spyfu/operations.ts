@@ -1,6 +1,13 @@
 import type { HttpMethod } from '@/tools/types'
 
-export type SpyfuParamId = 'domain' | 'keyword' | 'date' | 'term' | 'query' | 'includeDomainsCsv' | 'isIntersection'
+export type SpyfuParamId =
+  | 'domain'
+  | 'keyword'
+  | 'date'
+  | 'term'
+  | 'query'
+  | 'includeDomainsCsv'
+  | 'isIntersection'
 
 export interface SpyfuOperationDefinition {
   id: string
@@ -253,7 +260,7 @@ export const spyfuOperations: SpyfuOperationDefinition[] = [
     description: 'Finds shared paid Competitors between competitor domains.',
     path: '/apis/keyword_api/v2/kombat/getCompetingPpcKeywords',
     method: 'GET',
-    requiredParams: ['includeDomainsCsv','isIntersection'],
+    requiredParams: ['includeDomainsCsv', 'isIntersection'],
   },
   {
     id: 'kombat.get_competing_seo_competitors',
@@ -262,7 +269,7 @@ export const spyfuOperations: SpyfuOperationDefinition[] = [
     description: 'Finds overlapping organic Competitors between competitor domains.',
     path: '/apis/keyword_api/v2/kombat/getCompetingSeoKeywords',
     method: 'GET',
-    requiredParams: ['includeDomainsCsv','isIntersection'],
+    requiredParams: ['includeDomainsCsv', 'isIntersection'],
   },
   // Keyword Research API
   {
@@ -363,5 +370,5 @@ export const postBodyOperationIds = spyfuOperations
 
 export const getSpyfuOperationDefinition = (
   operationId: string | undefined
-): SpyfuOperationDefinition | undefined => spyfuOperations.find((operation) => operation.id === operationId)
-
+): SpyfuOperationDefinition | undefined =>
+  spyfuOperations.find((operation) => operation.id === operationId)
