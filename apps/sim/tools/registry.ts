@@ -52,6 +52,7 @@ import {
 import { gmailDraftTool, gmailReadTool, gmailSearchTool, gmailSendTool } from '@/tools/gmail'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
+import { googleBusinessCreatePostTool } from '@/tools/google_business'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -310,6 +311,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_append: googleSheetsAppendTool,
   facebook_ads_query: facebookAdsQueryTool,
   google_ads_query: googleAdsQueryTool,
+  google_business_create_post: googleBusinessCreatePostTool,
   perplexity_chat: perplexityChatTool,
   confluence_retrieve: confluenceRetrieveTool,
   confluence_update: confluenceUpdateTool,

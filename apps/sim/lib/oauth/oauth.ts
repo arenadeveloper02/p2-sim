@@ -22,6 +22,7 @@ import {
   OutlookIcon,
   RedditIcon,
   SlackIcon,
+  StoreIcon,
   SupabaseIcon,
   WealthboxIcon,
   xIcon,
@@ -55,6 +56,7 @@ export type OAuthService =
   | 'google-docs'
   | 'google-sheets'
   | 'google-calendar'
+  | 'google-business'
   | 'github'
   | 'x'
   | 'supabase'
@@ -146,6 +148,15 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: (props) => GoogleCalendarIcon(props),
         baseProviderIcon: (props) => GoogleIcon(props),
         scopes: ['https://www.googleapis.com/auth/calendar'],
+      },
+      'google-business': {
+        id: 'google-business',
+        name: 'Google Business Profile',
+        description: 'Manage your Google Business Profile locations and posts.',
+        providerId: 'google-business',
+        icon: (props) => StoreIcon(props),
+        baseProviderIcon: (props) => GoogleIcon(props),
+        scopes: ['https://www.googleapis.com/auth/business.manage'],
       },
     },
     defaultService: 'gmail',
@@ -514,6 +525,9 @@ export function getServiceIdFromScopes(provider: OAuthProvider, scopes: string[]
     }
     if (scopes.some((scope) => scope.includes('calendar'))) {
       return 'google-calendar'
+    }
+    if (scopes.some((scope) => scope.includes('business.manage'))) {
+      return 'google-business'
     }
   } else if (provider === 'microsoft-teams') {
     return 'microsoft-teams'

@@ -446,6 +446,21 @@ export const auth = betterAuth({
         },
 
         {
+          providerId: 'google-business',
+          clientId: env.GOOGLE_BUSINESS_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_BUSINESS_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: [
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/business.manage',
+          ],
+          prompt: 'consent',
+          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-business`,
+        },
+
+        {
           providerId: 'microsoft-teams',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
