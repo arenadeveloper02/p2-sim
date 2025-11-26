@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -24,7 +24,7 @@ export async function GET() {
     .from(permissions)
     .innerJoin(workspace, eq(permissions.entityId, workspace.id))
     .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-    .orderBy(desc(workspace.createdAt))
+    .orderBy(asc(workspace.name))
 
   if (userWorkspaces.length === 0) {
     // Create a default workspace for the user
@@ -69,12 +69,17 @@ export async function GET() {
     isDefault: ws.id === defaultWorkspaceId,
   }))
 
+  // Sort workspaces alphabetically by name (case-insensitive)
+  const sortedWorkspaces = [...workspacesWithDefault].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  )
+
   // If user has workspaces but might have orphaned workflows, migrate them to default workspace
   if (defaultWorkspaceId) {
     await ensureWorkflowsHaveWorkspace(session.user.id, defaultWorkspaceId)
   }
 
-  return NextResponse.json({ workspaces: workspacesWithDefault })
+  return NextResponse.json({ workspaces: sortedWorkspaces })
 }
 
 // POST /api/workspaces - Create a new workspace
