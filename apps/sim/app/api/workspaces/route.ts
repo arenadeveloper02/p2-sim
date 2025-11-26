@@ -49,9 +49,7 @@ export async function GET() {
   )
 
   // Identify the default workspace: oldest owned workspace (where ownerId === userId)
-  const ownedWorkspaces = workspacesWithPermissions.filter(
-    (ws) => ws.ownerId === session.user.id
-  )
+  const ownedWorkspaces = workspacesWithPermissions.filter((ws) => ws.ownerId === session.user.id)
 
   let defaultWorkspaceId: string | null = null
   if (ownedWorkspaces.length > 0) {
