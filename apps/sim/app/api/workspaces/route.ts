@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -24,7 +24,7 @@ export async function GET() {
     .from(permissions)
     .innerJoin(workspace, eq(permissions.entityId, workspace.id))
     .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-    .orderBy(desc(workspace.createdAt))
+    .orderBy(asc(workspace.name))
 
   if (userWorkspaces.length === 0) {
     // Create a default workspace for the user
@@ -33,11 +33,11 @@ export async function GET() {
     // Migrate existing workflows to the default workspace
     await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
 
-    return NextResponse.json({ workspaces: [defaultWorkspace] })
+    // Mark the newly created workspace as default
+    return NextResponse.json({
+      workspaces: [{ ...defaultWorkspace, isDefault: true }],
+    })
   }
-
-  // If user has workspaces but might have orphaned workflows, migrate them
-  await ensureWorkflowsHaveWorkspace(session.user.id, userWorkspaces[0].workspace.id)
 
   // Format the response with permission information
   const workspacesWithPermissions = userWorkspaces.map(
@@ -48,7 +48,38 @@ export async function GET() {
     })
   )
 
-  return NextResponse.json({ workspaces: workspacesWithPermissions })
+  // Identify the default workspace: oldest owned workspace (where ownerId === userId)
+  const ownedWorkspaces = workspacesWithPermissions.filter((ws) => ws.ownerId === session.user.id)
+
+  let defaultWorkspaceId: string | null = null
+  if (ownedWorkspaces.length > 0) {
+    // Sort owned workspaces by createdAt (oldest first) and pick the first one
+    const sortedOwnedWorkspaces = [...ownedWorkspaces].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )
+    defaultWorkspaceId = sortedOwnedWorkspaces[0].id
+  } else if (workspacesWithPermissions.length > 0) {
+    // Fallback: if user has no owned workspaces, use the first workspace
+    defaultWorkspaceId = workspacesWithPermissions[0].id
+  }
+
+  // Mark the default workspace with isDefault flag
+  const workspacesWithDefault = workspacesWithPermissions.map((ws) => ({
+    ...ws,
+    isDefault: ws.id === defaultWorkspaceId,
+  }))
+
+  // Sort workspaces alphabetically by name (case-insensitive)
+  const sortedWorkspaces = [...workspacesWithDefault].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  )
+
+  // If user has workspaces but might have orphaned workflows, migrate them to default workspace
+  if (defaultWorkspaceId) {
+    await ensureWorkflowsHaveWorkspace(session.user.id, defaultWorkspaceId)
+  }
+
+  return NextResponse.json({ workspaces: sortedWorkspaces })
 }
 
 // POST /api/workspaces - Create a new workspace
@@ -206,6 +237,7 @@ async function createWorkspace(userId: string, name: string) {
     createdAt: now,
     updatedAt: now,
     role: 'owner',
+    isDefault: false, // Will be set by the GET endpoint logic
   }
 }
 
