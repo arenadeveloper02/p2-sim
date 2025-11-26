@@ -22,4 +22,3 @@ export interface SpyfuResponse extends ToolResponse {
     query: Record<string, string>
   }
 }
-
