@@ -147,6 +147,8 @@ export function mergeSystemEnvironmentVariables(
     'ELEVENLABS_API_KEY',
     'SERPER_API_KEY',
     'EXA_API_KEY',
+    'SPYFU_API_USERNAME',
+    'SPYFU_API_PASSWORD',
   ]
 
   // Add system-level env vars only if not already in user env vars

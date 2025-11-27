@@ -65,6 +65,7 @@ interface Workspace {
   role?: string
   membershipId?: string
   permissions?: 'admin' | 'write' | 'read' | null
+  isDefault?: boolean
 }
 
 /**
@@ -306,13 +307,16 @@ export function Sidebar() {
           } else {
             logger.warn(`Workspace ${currentWorkspaceId} not found in user's workspaces`)
 
-            // Fallback to first workspace if current not found - FIX: Update URL to match
+            // Fallback to default workspace if current not found, otherwise use first workspace
             if (fetchedWorkspaces.length > 0) {
-              const fallbackWorkspace = fetchedWorkspaces[0]
+              const fallbackWorkspace =
+                fetchedWorkspaces.find((ws) => ws.isDefault) || fetchedWorkspaces[0]
               setActiveWorkspace(fallbackWorkspace)
 
               // Update URL to match the fallback workspace
-              logger.info(`Redirecting to fallback workspace: ${fallbackWorkspace.id}`)
+              logger.info(
+                `Redirecting to ${fallbackWorkspace.isDefault ? 'default' : 'fallback'} workspace: ${fallbackWorkspace.id}`
+              )
               currentRouter?.push(`/workspace/${fallbackWorkspace.id}/w`)
             } else {
               logger.error('No workspaces available for user')
