@@ -51,7 +51,6 @@ import fs from 'fs/promises'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
-import { PdfParser } from '@/lib/file-parsers/pdf-parser'
 import { downloadFile } from '@/lib/uploads/storage-client'
 
 interface FigmaDesignInputs {
@@ -162,19 +161,69 @@ async function readFileContent(filePath: string, fileType: string): Promise<stri
     const isPdf = filename.toLowerCase().endsWith('.pdf')
 
     if (isPdf) {
-      console.log(`Parsing PDF ${fileType}...`)
-      const pdfParser = new PdfParser()
-      const pdfResult = await pdfParser.parseBuffer(fileBuffer)
-      console.log(
-        `PDF ${fileType} parsed successfully, extracted text length:`,
-        pdfResult.content.length
-      )
-      return pdfResult.content
+      console.log(`Parsing PDF ${fileType} with Claude Vision...`)
+      const text = await extractTextFromPdfWithClaudeVision(fileBuffer, fileType)
+      console.log(`PDF ${fileType} parsed via Claude, extracted text length:`, text.length)
+      return text
     }
     return fileBuffer.toString('utf-8')
   }
   // Local file path
-  return await fs.readFile(filePath, 'utf-8')
+  const localBuffer = await fs.readFile(filePath)
+  if (filePath.toLowerCase().endsWith('.pdf')) {
+    console.log(`Parsing local PDF ${fileType} with Claude Vision...`)
+    return extractTextFromPdfWithClaudeVision(localBuffer, fileType)
+  }
+  return localBuffer.toString('utf-8')
+}
+
+async function extractTextFromPdfWithClaudeVision(
+  fileBuffer: Buffer,
+  fileType: string
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error(
+      'ANTHROPIC_API_KEY environment variable is not set. Please set it to your Claude API key.'
+    )
+  }
+
+  const anthropic = new Anthropic({ apiKey })
+  const base64Data = fileBuffer.toString('base64')
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 16384,
+    temperature: 0,
+    system:
+      'You are a meticulous design analyst. Extract all textual content, layout instructions, and structural details from the provided PDF. Return clean, plain text that preserves hierarchy, sections, and component descriptions.',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `The attached ${fileType} may contain design wireframes or brand guidelines. Extract every piece of useful textual information, list key sections, and preserve ordering.`,
+          },
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: base64Data,
+            },
+          },
+        ],
+      },
+    ],
+  })
+
+  const textBlock = message.content.find((block) => block.type === 'text')
+  if (!textBlock || textBlock.type !== 'text' || !textBlock.text.trim()) {
+    throw new Error('Claude Vision did not return text for the PDF')
+  }
+
+  return textBlock.text
 }
 
 /**
