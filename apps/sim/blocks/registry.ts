@@ -103,6 +103,7 @@ import { XBlock } from '@/blocks/blocks/x'
 import { YouTubeBlock } from '@/blocks/blocks/youtube'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import type { BlockConfig } from '@/blocks/types'
+import { SemrushBlock } from './blocks/semrush'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -174,6 +175,7 @@ export const registry: Record<string, BlockConfig> = {
   schedule: ScheduleBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
+  semrush: SemrushBlock,
   serper: SerperBlock,
   sharepoint: SharepointBlock,
   stagehand: StagehandBlock,

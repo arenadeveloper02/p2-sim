@@ -84,6 +84,9 @@ export const env = createEnv({
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
 
+    //Tools API Keys
+    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
+    
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
     AZURE_OPENAI_API_VERSION:              z.string().optional(),                  // Shared Azure OpenAI API version

@@ -531,6 +531,7 @@ import {
   salesforceUpdateOpportunityTool,
   salesforceUpdateTaskTool,
 } from '@/tools/salesforce'
+import { semrushQueryTool } from '@/tools/semrush'
 import { searchTool as serperSearch } from '@/tools/serper'
 import {
   sharepointAddListItemTool,
@@ -1395,4 +1396,6 @@ export const tools: Record<string, ToolConfig> = {
   salesforce_create_task: salesforceCreateTaskTool,
   salesforce_update_task: salesforceUpdateTaskTool,
   salesforce_delete_task: salesforceDeleteTaskTool,
+  //semrush tool
+  semrush_query: semrushQueryTool,
 }
