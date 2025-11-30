@@ -14,21 +14,29 @@ export async function callMemoryAPI(
   chatId: string,
   conversationId: string | undefined,
   infer: boolean,
-  memoryType: 'fact' | 'conversation'
+  memoryType: 'fact' | 'conversation',
+  blockId?: string
 ): Promise<void> {
   try {
     const timestamp = new Date().toISOString()
     const memoryConversationId = infer ? conversationId || 'conv_123' : chatId
 
+    const metadata: Record<string, any> = {
+      memory_type: memoryType,
+      conversation_id: memoryConversationId,
+      timestamp: timestamp,
+    }
+
+    // Add blockId to metadata if provided
+    if (blockId) {
+      metadata.block_id = blockId
+    }
+
     const payload = {
       messages: messages,
       user_id: userId,
       infer: infer,
-      metadata: {
-        memory_type: memoryType,
-        conversation_id: memoryConversationId,
-        timestamp: timestamp,
-      },
+      metadata: metadata,
     }
 
     logger.info(`[${requestId}] Calling memory API`, { payload })
@@ -59,6 +67,7 @@ export async function callMemoryAPI(
       infer,
       memoryType,
       conversationId: memoryConversationId,
+      userId,
     })
   } catch (error: any) {
     logger.error(`[${requestId}] Error calling memory API:`, error)

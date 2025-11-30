@@ -171,6 +171,12 @@ export interface ExecutionContext {
 
   // New context extensions
   onStream?: (streamingExecution: StreamingExecution) => Promise<string>
+
+  // Chat-specific metadata for memory storage
+  chatId?: string // Chat deployment identifier
+  conversationId?: string // Conversation ID for maintaining chat context
+  userId?: string // User ID executing the chat
+  onBlockComplete?: (blockLog: BlockLog) => Promise<void> // Callback to store block data in memory
 }
 
 /**

@@ -99,6 +99,10 @@ export class Executor {
             executionId?: string
             workspaceId?: string
             isChildExecution?: boolean
+            chatId?: string
+            conversationId?: string
+            userId?: string
+            onBlockComplete?: (blockLog: BlockLog) => Promise<void>
           }
         },
     private initialBlockStates: Record<string, BlockOutput> = {},
@@ -741,6 +745,11 @@ export class Executor {
       selectedOutputIds: this.contextExtensions.selectedOutputIds || [],
       edges: this.contextExtensions.edges || [],
       onStream: this.contextExtensions.onStream,
+      // Add chat metadata for memory storage
+      chatId: this.contextExtensions.chatId,
+      conversationId: this.contextExtensions.conversationId,
+      userId: this.contextExtensions.userId,
+      onBlockComplete: this.contextExtensions.onBlockComplete,
     }
 
     Object.entries(this.initialBlockStates).forEach(([blockId, output]) => {
@@ -1551,6 +1560,39 @@ export class Executor {
 
         context.blockLogs.push(blockLog)
 
+        // Call memory API callback if provided (for deployed chat only)
+        const onBlockCompleteCallback = context.onBlockComplete
+        const hasCallback = !!onBlockCompleteCallback
+        const blockType = block.metadata?.id
+        const isInfrastructureBlock =
+          blockType === BlockType.STARTER ||
+          blockType === BlockType.LOOP ||
+          blockType === BlockType.PARALLEL
+
+        logger.debug(`[Block ${blockLog.blockId}] Memory callback check:`, {
+          hasCallback,
+          blockSuccess: blockLog.success,
+          blockType,
+          isInfrastructureBlock,
+          blockName: blockLog.blockName,
+        })
+
+        if (hasCallback && blockLog.success && !isInfrastructureBlock) {
+          // Call callback asynchronously to avoid blocking execution
+          logger.debug(`[Block ${blockLog.blockId}] Calling onBlockComplete callback`)
+          onBlockCompleteCallback(blockLog).catch((error) => {
+            logger.error(`Error in onBlockComplete callback for block ${blockLog.blockId}:`, error)
+          })
+        } else if (hasCallback) {
+          logger.debug(`[Block ${blockLog.blockId}] Skipping memory callback:`, {
+            reason: !blockLog.success
+              ? 'block failed'
+              : isInfrastructureBlock
+                ? 'infrastructure block'
+                : 'unknown',
+          })
+        }
+
         // Skip console logging for infrastructure blocks like loops and parallels
         // For streaming blocks, we'll add the console entry after stream processing
         if (block.metadata?.id !== BlockType.LOOP && block.metadata?.id !== BlockType.PARALLEL) {
@@ -1660,6 +1702,39 @@ export class Executor {
       this.integrateChildWorkflowLogs(block, output)
 
       context.blockLogs.push(blockLog)
+
+      // Call memory API callback if provided (for deployed chat only)
+      const onBlockCompleteCallback = context.onBlockComplete
+      const hasCallback = !!onBlockCompleteCallback
+      const blockType = block.metadata?.id
+      const isInfrastructureBlock =
+        blockType === BlockType.STARTER ||
+        blockType === BlockType.LOOP ||
+        blockType === BlockType.PARALLEL
+
+      logger.debug(`[Block ${blockLog.blockId}] Memory callback check:`, {
+        hasCallback,
+        blockSuccess: blockLog.success,
+        blockType,
+        isInfrastructureBlock,
+        blockName: blockLog.blockName,
+      })
+
+      if (hasCallback && blockLog.success && !isInfrastructureBlock) {
+        // Call callback asynchronously to avoid blocking execution
+        logger.debug(`[Block ${blockLog.blockId}] Calling onBlockComplete callback`)
+        onBlockCompleteCallback(blockLog).catch((error) => {
+          logger.error(`Error in onBlockComplete callback for block ${blockLog.blockId}:`, error)
+        })
+      } else if (hasCallback) {
+        logger.debug(`[Block ${blockLog.blockId}] Skipping memory callback:`, {
+          reason: !blockLog.success
+            ? 'block failed'
+            : isInfrastructureBlock
+              ? 'infrastructure block'
+              : 'unknown',
+        })
+      }
 
       // Skip console logging for infrastructure blocks like loops and parallels
       if (block.metadata?.id !== BlockType.LOOP && block.metadata?.id !== BlockType.PARALLEL) {

@@ -11,9 +11,10 @@ import { hasAdminPermission } from '@/lib/permissions/utils'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { decryptSecret, generateRequestId } from '@/lib/utils'
+import { callMemoryAPI } from '@/app/api/chat/memory-api'
 import { getBlock } from '@/blocks'
 import { db } from '@/db'
-import { chat, userStats, workflow } from '@/db/schema'
+import { chat, deployedChatHistory, userStats, workflow } from '@/db/schema'
 import { Executor } from '@/executor'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { Serializer } from '@/serializer'
@@ -680,6 +681,82 @@ export async function executeWorkflowForChat(
 
       logger.debug(`[${requestId}] Merged workflow input:`, mergedWorkflowInput)
 
+      // Create callback to store block input/output in Mem0
+      const onBlockComplete = async (blockLog: BlockLog) => {
+        logger.info(`[${requestId}] onBlockComplete called for block ${blockLog.blockId}`, {
+          blockName: blockLog.blockName,
+          blockType: blockLog.blockType,
+          hasInput: !!blockLog.input,
+          hasOutput: !!blockLog.output,
+          chatId,
+          executingUserId,
+        })
+
+        if (!chatId || !executingUserId) {
+          logger.debug(`[${requestId}] Skipping memory storage - missing chatId or userId`)
+          return
+        }
+
+        try {
+          // Format block input
+          let blockInput: string
+          if (typeof blockLog.input === 'string') {
+            blockInput = blockLog.input
+          } else if (blockLog.input) {
+            blockInput = JSON.stringify(blockLog.input, null, 2)
+          } else {
+            blockInput = 'No input provided'
+          }
+
+          // Format block output - extract content if available, otherwise stringify
+          let blockOutput: string
+          if (blockLog.output) {
+            if (typeof blockLog.output === 'string') {
+              blockOutput = blockLog.output
+            } else if (blockLog.output.content) {
+              blockOutput =
+                typeof blockLog.output.content === 'string'
+                  ? blockLog.output.content
+                  : JSON.stringify(blockLog.output.content, null, 2)
+            } else {
+              blockOutput = JSON.stringify(blockLog.output, null, 2)
+            }
+          } else {
+            blockOutput = 'No output generated'
+          }
+
+          // Create messages for memory API
+          const blockName = blockLog.blockName || blockLog.blockId
+          const messages = [
+            {
+              role: 'user',
+              content: `Block: ${blockName} (${blockLog.blockType || 'unknown'})\nInput: ${blockInput}`,
+            },
+            { role: 'assistant', content: blockOutput },
+          ]
+
+          // Call memory API to store block execution data
+          await callMemoryAPI(
+            requestId,
+            messages,
+            executingUserId,
+            chatId,
+            conversationId,
+            false, // infer: false
+            'conversation', // memory_type: conversation
+            blockLog.blockId // blockId for metadata
+          )
+
+          logger.debug(`[${requestId}] Stored block memory for ${blockLog.blockId}`, {
+            blockName,
+            blockType: blockLog.blockType,
+          })
+        } catch (error: any) {
+          logger.error(`[${requestId}] Error storing block memory for ${blockLog.blockId}:`, error)
+          // Don't throw - we don't want to fail workflow execution if memory storage fails
+        }
+      }
+
       const executor = new Executor({
         workflow: serializedWorkflow,
         currentBlockStates: processedBlockStates,
@@ -694,6 +771,11 @@ export async function executeWorkflowForChat(
             target: e.target,
           })),
           onStream,
+          // Add chat metadata for memory storage
+          chatId: chatId,
+          conversationId: conversationId,
+          userId: executingUserId,
+          onBlockComplete: onBlockComplete,
         },
       })
 
@@ -1232,6 +1314,41 @@ export async function executeWorkflowForChat(
           finalOutput: executionResult.output,
           traceSpans,
           finalChatOutput,
+        })
+      }
+
+      // Store chat history in deployed_chat_history table
+      // Use logChatId if provided (for chatId from route), otherwise use chatId parameter
+      const chatIdForHistory = logChatId || chatId
+      const userIdForHistory = executingUserId || deployment.userId
+
+      if (finalChatOutput && chatIdForHistory && userIdForHistory) {
+        try {
+          const historyId = uuidv4()
+          await db.insert(deployedChatHistory).values({
+            id: historyId,
+            chatId: chatIdForHistory,
+            userId: userIdForHistory,
+            workflowId: deployment.workflowId,
+            input: input,
+            output: finalChatOutput,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          logger.debug(`[${requestId}] Stored chat history in deployed_chat_history`, {
+            historyId,
+            chatId: chatIdForHistory,
+            workflowId: deployment.workflowId,
+          })
+        } catch (error: any) {
+          logger.error(`[${requestId}] Error storing chat history in deployed_chat_history:`, error)
+          // Don't throw - we don't want to fail the response if history storage fails
+        }
+      } else {
+        logger.debug(`[${requestId}] Skipping chat history storage`, {
+          hasOutput: !!finalChatOutput,
+          chatId: chatIdForHistory,
+          userId: userIdForHistory,
         })
       }
 
