@@ -1568,3 +1568,22 @@ export const deployedChat = pgTable(
     workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
   })
 )
+
+export const deployedChatHistory = pgTable(
+  'deployed_chat_history',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    chatId: text('chat_id'),
+    workflowId: text('workflow_id'),
+    input: text('input'),
+    output: text('output'),
+    userId: text('user_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_history_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_history_workflow_id_idx').on(table.workflowId),
+    userIdIdx: index('deployed_chat_history_user_id_idx').on(table.userId),
+  })
+)

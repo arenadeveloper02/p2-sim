@@ -13,7 +13,7 @@ import { getEmailDomain } from '@/lib/urls/utils'
 import { decryptSecret, generateRequestId } from '@/lib/utils'
 import { getBlock } from '@/blocks'
 import { db } from '@/db'
-import { chat, userStats, workflow } from '@/db/schema'
+import { chat, deployedChatHistory, userStats, workflow } from '@/db/schema'
 import { Executor } from '@/executor'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { Serializer } from '@/serializer'
@@ -319,7 +319,8 @@ export async function executeWorkflowForChat(
   conversationId?: string,
   workflowInputs?: Record<string, any>,
   logChatId?: string,
-  executingUserId?: string
+  executingUserId?: string,
+  workflowId?: string
 ): Promise<any> {
   const requestId = generateRequestId()
 
@@ -348,7 +349,8 @@ export async function executeWorkflowForChat(
   }
 
   const deployment = deploymentResult[0]
-  const workflowId = deployment.workflowId
+  // Use passed workflowId if provided, otherwise use deployment.workflowId
+  const finalWorkflowId = workflowId || deployment.workflowId
   const executionId = uuidv4()
 
   const usageCheck = await checkServerSideUsageLimits(deployment.userId)
@@ -369,7 +371,7 @@ export async function executeWorkflowForChat(
 
   // Set up logging for chat execution
   const loggingSession = new LoggingSession(
-    workflowId,
+    finalWorkflowId,
     executionId,
     'chat',
     requestId,
@@ -439,11 +441,11 @@ export async function executeWorkflowForChat(
       variables: workflow.variables,
     })
     .from(workflow)
-    .where(eq(workflow.id, workflowId))
+    .where(eq(workflow.id, finalWorkflowId))
     .limit(1)
 
   if (workflowResult.length === 0 || !workflowResult[0].isDeployed) {
-    logger.warn(`[${requestId}] Workflow not found or not deployed: ${workflowId}`)
+    logger.warn(`[${requestId}] Workflow not found or not deployed: ${finalWorkflowId}`)
     throw new Error('Workflow not available')
   }
 
@@ -494,7 +496,7 @@ export async function executeWorkflowForChat(
     const wfWorkspaceRow = await db
       .select({ workspaceId: workflow.workspaceId })
       .from(workflow)
-      .where(eq(workflow.id, workflowId))
+      .where(eq(workflow.id, finalWorkflowId))
       .limit(1)
 
     const workspaceId = wfWorkspaceRow[0]?.workspaceId || undefined
@@ -702,7 +704,7 @@ export async function executeWorkflowForChat(
 
       let result
       try {
-        result = await executor.execute(workflowId)
+        result = await executor.execute(finalWorkflowId)
       } catch (error: any) {
         logger.error(`[${requestId}] Chat workflow execution failed:`, error)
         await loggingSession.safeCompleteWithError({
@@ -1233,6 +1235,37 @@ export async function executeWorkflowForChat(
           traceSpans,
           finalChatOutput,
         })
+      }
+
+      // Store input and output in deployed_chat_history table
+      if (logChatId && finalWorkflowId) {
+        try {
+          const historyId = uuidv4()
+          const now = new Date()
+
+          await db.insert(deployedChatHistory).values({
+            id: historyId,
+            createdAt: now,
+            updatedAt: now,
+            chatId: logChatId,
+            workflowId: finalWorkflowId,
+            input: input,
+            output: finalChatOutput || null,
+            userId: executingUserId || null,
+          })
+
+          logger.debug(`[${requestId}] Stored chat history:`, {
+            id: historyId,
+            chatId: logChatId,
+            workflowId: finalWorkflowId,
+            userId: executingUserId,
+            hasInput: !!input,
+            hasOutput: !!finalChatOutput,
+          })
+        } catch (error: any) {
+          // Log error but don't fail the request
+          logger.error(`[${requestId}] Error storing chat history:`, error)
+        }
       }
 
       controller.close()
