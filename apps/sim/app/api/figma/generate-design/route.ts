@@ -74,6 +74,18 @@ export async function POST(request: NextRequest) {
     }
 
     const additionalInfo = formData.get('additionalInfo') as string | null
+    const designTargetsEntries = [
+      ...formData.getAll('designTargets'),
+      ...formData.getAll('designTargets[]'),
+    ]
+    const designTargets =
+      designTargetsEntries
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter((entry) => entry.length > 0).length > 0
+        ? designTargetsEntries
+            .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter((entry) => entry.length > 0)
+        : undefined
 
     // Generate the design
     const result = await generateFigmaDesign({
@@ -85,6 +97,7 @@ export async function POST(request: NextRequest) {
       additionalDataFile: additionalDataPath,
       additionalInfo: additionalInfo || undefined,
       description: description || undefined,
+      designTargets,
     })
 
     // Clean up temporary files (optional - you might want to keep them)
@@ -124,6 +137,8 @@ export async function GET() {
       wireframesFile: 'File - Wireframes document (txt, pdf, docx)',
       additionalDataFile: 'File - Additional data document (txt, pdf, docx)',
       additionalInfo: 'string - Additional information as text',
+      designTargets:
+        'array|string - Device or layout targets (desktop, mobile, tablet, etc.) to generate concurrently',
     },
     response: {
       success: 'boolean',

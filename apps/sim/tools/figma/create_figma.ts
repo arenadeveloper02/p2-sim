@@ -56,6 +56,12 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       required: false,
       visibility: 'user-or-llm',
     },
+    designTargets: {
+      type: 'array',
+      description: 'Device/layout experiences (desktop, mobile, etc.) to generate simultaneously',
+      required: false,
+      visibility: 'user-or-llm',
+    },
   },
   request: {
     url: '/api/figma/generate-design-json',
@@ -98,6 +104,22 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
 
       body.description = params.description
 
+      // Handle designTargets - convert from comma-separated string to array if needed
+      if (params.designTargets) {
+        if (typeof params.designTargets === 'string') {
+          // Parse comma-separated string
+          const targets = params.designTargets
+            .split(',')
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0)
+          if (targets.length > 0) {
+            body.designTargets = targets
+          }
+        } else if (Array.isArray(params.designTargets) && params.designTargets.length > 0) {
+          body.designTargets = params.designTargets
+        }
+      }
+
       return body
     },
   },
@@ -114,12 +136,38 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
       throw new Error(result.error || 'Failed to generate Figma design')
     }
 
+    // Handle multiple file URLs (multiple targets) or single file URL
+    const hasMultipleFiles = result.figmaFileUrls && Array.isArray(result.figmaFileUrls)
+    const primaryFileUrl =
+      result.figmaFileUrl || (hasMultipleFiles ? result.figmaFileUrls[0]?.url : '')
+    const designTargets = result.designTargets || []
+
+    let contentMessage = 'Successfully generated Figma design'
+    if (hasMultipleFiles && result.figmaFileUrls.length > 1) {
+      const fileList = result.figmaFileUrls
+        .map((file: { target: string; url: string }) => {
+          const targetLabel = file.target.charAt(0).toUpperCase() + file.target.slice(1)
+          return `${targetLabel}: ${file.url}`
+        })
+        .join('\n')
+      contentMessage = `Successfully generated ${result.figmaFileUrls.length} separate Figma designs:\n${fileList}`
+    } else if (primaryFileUrl) {
+      contentMessage += ` and created the file in Figma. View it at: ${primaryFileUrl}`
+    }
+
+    if (result.renderedTargets && result.renderedTargets.length > 1) {
+      const labels = result.renderedTargets
+        .map((target: { label: string }) => target.label)
+        .join(', ')
+      contentMessage += ` Included target experiences: ${labels}.`
+    }
+
     return {
       success: true,
       output: {
-        content: `Successfully generated Figma design and created the file in Figma. ${result.figmaFileUrl ? `View it at: ${result.figmaFileUrl}` : ''}`,
+        content: contentMessage,
         metadata: {
-          key: result.figmaFileUrl || '',
+          key: primaryFileUrl || '',
           name: result.fileName || 'Generated Design',
           lastModified: new Date().toISOString(),
           thumbnailUrl: '',
@@ -129,8 +177,11 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
           linkAccess: 'private',
           designPrompt: result.prompt || '',
           projectId: result.projectId || '',
-          figmaFileUrl: result.figmaFileUrl,
+          figmaFileUrl: primaryFileUrl,
+          figmaFileUrls: hasMultipleFiles ? result.figmaFileUrls : undefined,
           renderedData: result.renderedData,
+          designTargets: designTargets,
+          renderedTargets: result.renderedTargets,
         },
       },
     }

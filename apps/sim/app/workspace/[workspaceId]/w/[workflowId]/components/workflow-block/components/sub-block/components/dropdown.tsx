@@ -37,7 +37,9 @@ export function Dropdown({
   placeholder = 'Select an option...',
   config,
 }: DropdownProps) {
-  const [storeValue, setStoreValue] = useSubBlockValue<string>(blockId, subBlockId)
+  const isMultiSelect = config?.multiSelect === true
+
+  const [storeValue, setStoreValue] = useSubBlockValue<string | string[]>(blockId, subBlockId)
   const [storeInitialized, setStoreInitialized] = useState(false)
   const [open, setOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -75,6 +77,26 @@ export function Dropdown({
 
   // Get the default option value (first option or provided defaultValue)
   const defaultOptionValue = useMemo(() => {
+    // Check if config has a value function
+    const configValue = config?.value
+    const resolvedConfigValue = typeof configValue === 'function' ? configValue({}) : configValue
+
+    // For multi-select, use config value or defaultValue
+    if (isMultiSelect) {
+      if (resolvedConfigValue !== undefined) {
+        return resolvedConfigValue
+      }
+      if (defaultValue !== undefined) {
+        return defaultValue
+      }
+      return undefined
+    }
+
+    // For single-select, use config value, defaultValue, or first option
+    if (resolvedConfigValue !== undefined) {
+      return resolvedConfigValue
+    }
+
     if (defaultValue !== undefined) {
       return defaultValue
     }
@@ -84,7 +106,7 @@ export function Dropdown({
     }
 
     return undefined
-  }, [defaultValue, evaluatedOptions, getOptionValue])
+  }, [defaultValue, evaluatedOptions, getOptionValue, isMultiSelect, config])
 
   // Mark store as initialized on first render
   useEffect(() => {
@@ -96,15 +118,58 @@ export function Dropdown({
   useEffect(() => {
     if (
       storeInitialized &&
-      (value === null || value === undefined) &&
+      (value === null || value === undefined || value === '') &&
       defaultOptionValue !== undefined
     ) {
+      // For multi-select, defaultOptionValue should be a comma-separated string
+      // For single-select, it should be a single string
       setStoreValue(defaultOptionValue)
     }
-  }, [storeInitialized, value, defaultOptionValue, setStoreValue])
+  }, [storeInitialized, value, defaultOptionValue, setStoreValue, isMultiSelect])
 
   // Event handlers
+  const getSelectedValues = (): string[] => {
+    if (!isMultiSelect) {
+      return []
+    }
+    if (Array.isArray(value)) {
+      return value.filter((v) => v != null && v !== '')
+    }
+    if (typeof value === 'string') {
+      if (!value || value.trim().length === 0) {
+        return []
+      }
+      return value
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+    }
+    return []
+  }
+
+  const selectedValues = getSelectedValues()
+
+  const toggleMultiValue = (selectedValue: string) => {
+    if (isPreview || disabled) return
+
+    const alreadySelected = selectedValues.includes(selectedValue)
+    const updatedValues = alreadySelected
+      ? selectedValues.filter((val) => val !== selectedValue)
+      : [...selectedValues, selectedValue]
+
+    // Store as comma-separated string (like knowledge-base-selector does)
+    // This ensures compatibility with the store which expects string values
+    const valueToStore = updatedValues.length === 0 ? '' : updatedValues.join(',')
+    setStoreValue(valueToStore)
+  }
+
   const handleSelect = (selectedValue: string) => {
+    if (isMultiSelect) {
+      toggleMultiValue(selectedValue)
+      // Don't close dropdown in multi-select mode - allow multiple selections
+      return
+    }
+
     if (!isPreview && !disabled) {
       // Handle conversion when switching from Builder to Editor mode in response blocks
       if (
@@ -122,6 +187,7 @@ export function Dropdown({
 
       setStoreValue(selectedValue)
     }
+    // Close dropdown only for single-select mode
     setOpen(false)
     setHighlightedIndex(-1)
     inputRef.current?.blur()
@@ -238,9 +304,34 @@ export function Dropdown({
   const selectedOption = evaluatedOptions.find((opt) => getOptionValue(opt) === value)
   const selectedLabel = selectedOption ? getOptionLabel(selectedOption) : displayValue
   const SelectedIcon =
-    selectedOption && typeof selectedOption === 'object' && 'icon' in selectedOption
+    !isMultiSelect &&
+    selectedOption &&
+    typeof selectedOption === 'object' &&
+    'icon' in selectedOption
       ? (selectedOption.icon as React.ComponentType<{ className?: string }>)
       : null
+
+  const multiSelectedLabels = isMultiSelect
+    ? selectedValues
+        .map((selected) => {
+          const option = evaluatedOptions.find((opt) => getOptionValue(opt) === selected)
+          return option ? getOptionLabel(option) : selected
+        })
+        .filter(Boolean)
+    : []
+
+  let multiDisplayValue = ''
+  if (isMultiSelect && multiSelectedLabels.length > 0) {
+    if (multiSelectedLabels.length <= 2) {
+      multiDisplayValue = multiSelectedLabels.join(', ')
+    } else {
+      multiDisplayValue = `${multiSelectedLabels.slice(0, 2).join(', ')} + ${
+        multiSelectedLabels.length - 2
+      } more`
+    }
+  }
+
+  const inputDisplayValue = isMultiSelect ? multiDisplayValue : selectedLabel || displayValue
 
   // Render component
   return (
@@ -253,7 +344,7 @@ export function Dropdown({
             SelectedIcon ? 'pl-8' : ''
           )}
           placeholder={placeholder}
-          value={selectedLabel || ''}
+          value={inputDisplayValue || ''}
           readOnly
           onFocus={handleFocus}
           onBlur={handleBlur}
@@ -302,14 +393,15 @@ export function Dropdown({
                     typeof option === 'object' && 'icon' in option
                       ? (option.icon as React.ComponentType<{ className?: string }>)
                       : null
-                  const isSelected = value === optionValue
+                  const isSelected = isMultiSelect
+                    ? selectedValues.includes(optionValue)
+                    : value === optionValue
                   const isHighlighted = index === highlightedIndex
 
                   return (
                     <div
                       key={optionValue}
                       data-option-index={index}
-                      onClick={() => handleSelect(optionValue)}
                       onMouseDown={(e) => {
                         e.preventDefault()
                         handleSelect(optionValue)
