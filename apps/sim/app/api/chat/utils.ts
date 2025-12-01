@@ -11,6 +11,7 @@ import { hasAdminPermission } from '@/lib/permissions/utils'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { decryptSecret, generateRequestId } from '@/lib/utils'
+import { callMemoryAPI } from '@/app/api/chat/memory-api'
 import { getBlock } from '@/blocks'
 import { db } from '@/db'
 import { chat, deployedChatHistory, userStats, workflow } from '@/db/schema'
@@ -730,6 +731,91 @@ export async function executeWorkflowForChat(
 
       // Declare finalChatOutputs in outer scope so it's accessible later
       let finalChatOutputs: string[] = [] // For final_chat_output column (includes ALL selected outputs)
+
+      // Store Agent block memories in Memory API (post-processing)
+      if (executionResult?.logs && executingUserId && logChatId) {
+        // Process Agent blocks asynchronously (don't block the stream)
+        Promise.all(
+          executionResult.logs
+            .filter((log: BlockLog) => {
+              // Only process successful Agent blocks
+              return (
+                log.blockType === 'agent' &&
+                log.success &&
+                log.input &&
+                log.output &&
+                log.output.content
+              )
+            })
+            .map(async (log: BlockLog) => {
+              try {
+                // Extract input from log.input.userPrompt
+                let agentInput = ''
+                if (log.input?.userPrompt) {
+                  if (typeof log.input.userPrompt === 'string') {
+                    agentInput = log.input.userPrompt
+                  } else if (
+                    typeof log.input.userPrompt === 'object' &&
+                    log.input.userPrompt.input
+                  ) {
+                    agentInput = String(log.input.userPrompt.input)
+                  } else if (typeof log.input.userPrompt === 'object') {
+                    // Try to extract from messages array if available
+                    const messages = log.input.messages
+                    if (Array.isArray(messages)) {
+                      const lastUserMessage = messages
+                        .slice()
+                        .reverse()
+                        .find((msg: any) => msg.role === 'user')
+                      if (lastUserMessage?.content) {
+                        agentInput = String(lastUserMessage.content)
+                      }
+                    }
+                    // Fallback to stringify if no messages found
+                    if (!agentInput) {
+                      agentInput = JSON.stringify(log.input.userPrompt)
+                    }
+                  }
+                }
+
+                // Extract output from log.output.content
+                const agentOutput = log.output.content || ''
+
+                // Only call memory API if we have both input and output
+                if (agentInput && agentOutput) {
+                  await callMemoryAPI(
+                    requestId,
+                    [
+                      { role: 'user', content: agentInput },
+                      { role: 'assistant', content: agentOutput },
+                    ],
+                    executingUserId,
+                    logChatId,
+                    conversationId,
+                    false, // infer
+                    'conversation', // memory_type
+                    log.blockId // block_id
+                  )
+
+                  logger.debug(`[${requestId}] Stored Agent block memory:`, {
+                    blockId: log.blockId,
+                    chatId: logChatId,
+                    hasInput: !!agentInput,
+                    hasOutput: !!agentOutput,
+                  })
+                }
+              } catch (error: any) {
+                // Don't fail the request if memory API fails
+                logger.error(`[${requestId}] Error storing Agent block memory:`, {
+                  blockId: log.blockId,
+                  error: error.message,
+                })
+              }
+            })
+        ).catch((error) => {
+          logger.error(`[${requestId}] Error in Agent block memory processing:`, error)
+        })
+      }
 
       if (executionResult?.logs) {
         // Update streamed content and apply tokenization - process regardless of overall success
