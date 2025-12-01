@@ -1563,16 +1563,19 @@ export class Executor {
         // Call memory API callback if provided (for deployed chat only)
         const onBlockCompleteCallback = context.onBlockComplete
         const hasCallback = !!onBlockCompleteCallback
-        const blockType = block.metadata?.id
+        // Use blockLog.blockType which is set from block.metadata?.id in createBlockLog
+        const blockType = blockLog.blockType || block.metadata?.id || ''
         const isInfrastructureBlock =
           blockType === BlockType.STARTER ||
           blockType === BlockType.LOOP ||
           blockType === BlockType.PARALLEL
 
-        logger.debug(`[Block ${blockLog.blockId}] Memory callback check:`, {
+        logger.debug(`[Block ${blockLog.blockId}] Memory callback check (streaming):`, {
           hasCallback,
           blockSuccess: blockLog.success,
           blockType,
+          blockLogBlockType: blockLog.blockType,
+          blockMetadataId: block.metadata?.id,
           isInfrastructureBlock,
           blockName: blockLog.blockName,
         })
@@ -1706,16 +1709,19 @@ export class Executor {
       // Call memory API callback if provided (for deployed chat only)
       const onBlockCompleteCallback = context.onBlockComplete
       const hasCallback = !!onBlockCompleteCallback
-      const blockType = block.metadata?.id
+      // Use blockLog.blockType which is set from block.metadata?.id in createBlockLog
+      const blockType = blockLog.blockType || block.metadata?.id || ''
       const isInfrastructureBlock =
         blockType === BlockType.STARTER ||
         blockType === BlockType.LOOP ||
         blockType === BlockType.PARALLEL
 
-      logger.debug(`[Block ${blockLog.blockId}] Memory callback check:`, {
+      logger.debug(`[Block ${blockLog.blockId}] Memory callback check (non-streaming):`, {
         hasCallback,
         blockSuccess: blockLog.success,
         blockType,
+        blockLogBlockType: blockLog.blockType,
+        blockMetadataId: block.metadata?.id,
         isInfrastructureBlock,
         blockName: blockLog.blockName,
       })

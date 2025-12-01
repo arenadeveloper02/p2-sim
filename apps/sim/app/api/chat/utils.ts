@@ -690,10 +690,19 @@ export async function executeWorkflowForChat(
           hasOutput: !!blockLog.output,
           chatId,
           executingUserId,
+          blockSuccess: blockLog.success,
         })
 
         if (!chatId || !executingUserId) {
-          logger.debug(`[${requestId}] Skipping memory storage - missing chatId or userId`)
+          logger.warn(`[${requestId}] Skipping memory storage - missing chatId or userId`, {
+            chatId,
+            executingUserId,
+          })
+          return
+        }
+
+        if (!blockLog.success) {
+          logger.debug(`[${requestId}] Skipping memory storage - block execution failed`)
           return
         }
 
