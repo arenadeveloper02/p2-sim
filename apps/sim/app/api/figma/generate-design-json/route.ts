@@ -44,6 +44,15 @@ export async function POST(request: NextRequest) {
     const additionalDataFile = body.additionalDataFile as string | undefined
     const additionalInfo = body.additionalInfo as string | undefined
     const description = body.description as string | undefined
+    const designTargetsInput = body.designTargets
+    const designTargets = Array.isArray(designTargetsInput)
+      ? (designTargetsInput as string[])
+      : typeof designTargetsInput === 'string' && designTargetsInput.length > 0
+        ? designTargetsInput
+            .split(',')
+            .map((target) => target.trim())
+            .filter(Boolean)
+        : undefined
     // Generate the design
     const result = await generateFigmaDesign({
       projectId,
@@ -54,6 +63,7 @@ export async function POST(request: NextRequest) {
       additionalDataFile,
       additionalInfo,
       description,
+      designTargets,
     })
 
     return NextResponse.json(result)
@@ -90,6 +100,8 @@ export async function GET() {
       wireframesFile: 'string - Path to wireframes file',
       additionalDataFile: 'string - Path to additional data file',
       additionalInfo: 'string - Additional information as text',
+      designTargets:
+        'array|string - Device or layout targets (desktop, mobile, tablet, etc.) to generate simultaneously',
     },
     response: {
       success: 'boolean',
