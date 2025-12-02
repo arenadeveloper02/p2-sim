@@ -110,6 +110,8 @@ export function ChatDeploy({
   useEffect(() => {
     if (workflowId) {
       fetchExistingChat()
+      setIsIdentifierValid(true)
+      updateField('identifier', workflowId)
     }
   }, [workflowId])
 
@@ -307,14 +309,14 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-4'>
-          <IdentifierInput
+          {/* <IdentifierInput
             value={formData.identifier}
             onChange={(value) => updateField('identifier', value)}
             originalIdentifier={existingChat?.identifier || undefined}
             disabled={chatSubmitting}
             onValidationChange={setIsIdentifierValid}
             isEditingExisting={!!existingChat}
-          />
+          /> */}
 
           <div className='space-y-2'>
             <Label htmlFor='title' className='font-medium text-sm'>
