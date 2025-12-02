@@ -59,8 +59,25 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       type: 'long-input',
       layout: 'full',
       placeholder: 'Describe the design you want to create with AI...',
-      required: false,
+      required: true,
       description: 'AI prompt to generate design content',
+      condition: { field: 'operation', value: 'figma_create' },
+    },
+    {
+      id: 'designTargets',
+      title: 'Target Experiences',
+      type: 'dropdown',
+      layout: 'full',
+      placeholder: 'Select one or more layouts to generate',
+      description:
+        'Pick every device or surface that should receive its own HTML before importing into Figma',
+      options: [
+        { label: 'Desktop (1440px)', id: 'desktop' },
+        { label: 'Mobile (375px)', id: 'mobile' },
+        { label: 'Tablet (1280px)', id: 'tablet' },
+      ],
+      multiSelect: true,
+      value: () => 'desktop', // Default to Desktop
       condition: { field: 'operation', value: 'figma_create' },
     },
     {
@@ -501,6 +518,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
     wireframes: { type: 'json', description: 'Wireframes file' },
     additionalData: { type: 'json', description: 'Additional data file' },
     additionalInfo: { type: 'string', description: 'Additional information text' },
+    designTargets: { type: 'json', description: 'Selected device experiences to generate' },
     designSystemName: { type: 'string', description: 'Design system name' },
     includeColors: { type: 'boolean', description: 'Include color styles' },
     includeTypography: { type: 'boolean', description: 'Include typography styles' },

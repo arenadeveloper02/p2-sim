@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -214,13 +214,20 @@ export async function DELETE(
         .where(and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId)))
 
       // Soft delete related entries from user_knowledge_base table
+      // This includes entries where:
+      // 1. user_workspace_id_ref = workspaceId (user's workspace context)
+      // 2. kb_workspace_id_ref = workspaceId (KB belongs to this workspace)
+      const now = new Date()
       await tx
         .update(userKnowledgeBase)
-        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .set({ deletedAt: now, updatedAt: now })
         .where(
-          or(
-            eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
-            eq(userKnowledgeBase.kbWorkspaceIdRef, workspaceId)
+          and(
+            or(
+              eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
+              eq(userKnowledgeBase.kbWorkspaceIdRef, workspaceId)
+            ),
+            isNull(userKnowledgeBase.deletedAt)
           )
         )
 

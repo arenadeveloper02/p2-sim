@@ -13,6 +13,7 @@ export interface CreateFigmaParams extends BaseFigmaParams {
   wireframes?: File
   additionalData?: File
   additionalInfo?: string
+  designTargets?: string[]
 }
 
 // Convert Figma to HTML/React/Angular parameters
@@ -216,7 +217,17 @@ export interface CreateFigmaResponse extends ToolResponse {
       designPrompt: string
       projectId: string
       figmaFileUrl?: string
+      figmaFileUrls?: Array<{ target: string; url: string; renderedData: string }>
       renderedData?: string
+      designTargets?: string[]
+      renderedTargets?: Array<{
+        id: string
+        label: string
+        viewportWidth: number
+        description: string
+        html: string
+        iteration: number
+      }>
     }
   }
 }
