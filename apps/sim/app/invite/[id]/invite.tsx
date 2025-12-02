@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth-client'
+import { useBrandConfig } from '@/lib/branding/branding'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getErrorMessage } from '@/app/invite/[id]/utils'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
@@ -16,6 +17,7 @@ export default function Invite() {
   const inviteId = params.id as string
   const searchParams = useSearchParams()
   const { data: session, isPending } = useSession()
+  const brandConfig = useBrandConfig()
   const [invitationDetails, setInvitationDetails] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -357,7 +359,8 @@ export default function Invite() {
           invitationType === 'organization' ? 'Organization Invitation' : 'Workspace Invitation'
         }
         description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join.`}
-        icon={invitationType === 'organization' ? 'users' : 'mail'}
+        icon={invitationType === 'organization' ? 'users' : undefined}
+        logoUrl={invitationType === 'workspace' ? brandConfig.logoUrl : undefined}
         actions={[
           {
             label: 'Accept Invitation',
