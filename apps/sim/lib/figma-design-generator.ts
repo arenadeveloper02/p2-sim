@@ -469,7 +469,14 @@ EXAMPLE STRUCTURE:
 </body>
 </html>
 
-IMPORTANT: Your response should ONLY contain the HTML with embedded CSS in a <style> tag. Do not include any explanations or markdown code blocks. Start directly with <!DOCTYPE html>.`
+CRITICAL OUTPUT REQUIREMENTS:
+- Your response must ONLY contain HTML code
+- Start directly with <!DOCTYPE html> - no explanations, no markdown, no code blocks
+- Do NOT include any comments starting with #
+- Do NOT include any text before or after the HTML
+- Do NOT include any explanations, descriptions, or additional text
+- Output ONLY the raw HTML with embedded CSS in <style> tags
+- The output must be valid HTML that can be directly used without any modifications`
 
   return systemPrompt
 }
@@ -521,14 +528,17 @@ function buildTargetPrompt(
     return `${basePrompt}
 
 Create the ${target.label} experience optimized for ${target.viewportWidth}px. ${viewportInstruction}
-Emphasize ${target.description}, ensure clear hierarchy, and keep the code fully self-contained starting with <!DOCTYPE html>.`
+Emphasize ${target.description}, ensure clear hierarchy, and keep the code fully self-contained starting with <!DOCTYPE html>.
+
+OUTPUT ONLY HTML: No comments, no explanations, no markdown. Start directly with <!DOCTYPE html>.`
   }
 
   return `You already generated the ${previous.label} layout. Adapt it for the ${target.label} experience.
 
 ${viewportInstruction}
 Preserve the same content hierarchy, brand alignment, and structure, but adjust layout, stacking, spacing, and typography scales for ${target.label}.
-Do not wrap the response in markdown. Output must still begin with <!DOCTYPE html>.
+
+OUTPUT ONLY HTML: No comments, no explanations, no markdown. Output must begin with <!DOCTYPE html>.
 
 === PREVIOUS HTML (${previous.label}) ===
 ${previous.html}
