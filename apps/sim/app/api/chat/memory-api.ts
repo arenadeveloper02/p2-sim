@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('MemoryAPI')
@@ -30,6 +31,10 @@ export async function callMemoryAPI(
     // Add blockId to metadata if provided
     if (blockId) {
       metadata.block_id = blockId
+    }
+
+    if (infer === false) {
+      metadata.executionId = uuidv4()
     }
 
     const payload = {
