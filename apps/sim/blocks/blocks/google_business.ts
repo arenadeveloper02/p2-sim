@@ -117,25 +117,28 @@ Generate an engaging post based on the user's request.`,
     config: {
       tool: () => 'google_business_create_post',
       params: (params) => ({
-        accountId: params.accountId,
-        locationId: params.locationId,
+        // Location comes from the dropdown above with id format: accountKey_locationKey
+        // The tool will map this to accountId and locationId using GOOGLE_BUSINESS_ACCOUNTS
+        location: params.location,
         summary: params.summary,
         topicType: params.topicType,
+        // Default language for now; can be exposed in the UI later if needed
+        languageCode: 'en-US',
         callToActionType: params.callToActionType,
         callToActionUrl: params.callToActionUrl,
-        mediaUrls: params.mediaUrls ? params.mediaUrls.split(',').map((url: string) => url.trim()) : undefined,
         // Event and offer fields can be added later when we expand the UI
       }),
     },
   },
   inputs: {
-    accountId: { type: 'string', description: 'Google Business Profile account ID' },
-    locationId: { type: 'string', description: 'Location/store ID' },
+    location: {
+      type: 'string',
+      description: 'Selected business location (format: accountKey_locationKey, mapped to accountId/locationId in backend)',
+    },
     summary: { type: 'string', description: 'Post content' },
     topicType: { type: 'string', description: 'Post type (STANDARD, EVENT, or OFFER)' },
     callToActionType: { type: 'string', description: 'CTA button type' },
     callToActionUrl: { type: 'string', description: 'CTA landing page URL' },
-    mediaUrls: { type: 'string', description: 'Comma-separated image/video URLs' },
   },
   outputs: {
     postId: { type: 'string', description: 'ID of the created post' },
