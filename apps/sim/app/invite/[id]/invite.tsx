@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth-client'
 import { useBrandConfig } from '@/lib/branding/branding'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getLoginRedirectUrl } from '@/lib/urls/utils'
 import { getErrorMessage } from '@/app/invite/[id]/utils'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 
@@ -213,8 +214,19 @@ export default function Invite() {
     return `/invite/${inviteId}${token && token !== inviteId ? `?token=${token}` : ''}`
   }
 
+  const getExternalLoginUrl = (callbackUrl: string) => {
+    if (typeof window === 'undefined') return ''
+    const hostname = window.location.hostname
+    const externalLoginUrl = getLoginRedirectUrl(hostname)
+    const loginUrl = new URL(externalLoginUrl)
+    loginUrl.searchParams.set('callbackUrl', callbackUrl)
+    loginUrl.searchParams.set('invite_flow', 'true')
+    return loginUrl.toString()
+  }
+
   if (!session?.user && !isPending) {
     const callbackUrl = encodeURIComponent(getCallbackUrl())
+    const externalLoginUrl = getExternalLoginUrl(callbackUrl)
 
     return (
       <InviteLayout>
@@ -237,16 +249,14 @@ export default function Invite() {
                   },
                   {
                     label: 'I already have an account',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+                    onClick: () => (window.location.href = externalLoginUrl),
                     variant: 'outline' as const,
                   },
                 ]
               : [
                   {
                     label: 'Sign in',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+                    onClick: () => (window.location.href = externalLoginUrl),
                   },
                   {
                     label: 'Create an account',

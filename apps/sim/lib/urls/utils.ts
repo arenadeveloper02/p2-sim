@@ -54,3 +54,24 @@ export function getEmailDomain(): string {
     return isProd ? 'sim.ai' : 'localhost:3000'
   }
 }
+
+/**
+ * Returns the external login redirect URL based on the hostname
+ * @param hostname - The hostname from the request
+ * @returns The external login URL
+ */
+export function getLoginRedirectUrl(hostname: string): string {
+  if (hostname === 'dev-agent.thearena.ai') {
+    return 'https://dev.thearena.ai/'
+  }
+  if (hostname === 'test-agent.thearena.ai') {
+    return 'https://test.thearena.ai/'
+  }
+  if (hostname === 'sandbox-agent.thearena.ai') {
+    return 'https://sandbox.thearena.ai/'
+  }
+  if (hostname === 'agent.thearena.ai') {
+    return 'https://app.thearena.ai/'
+  }
+  return 'https://dev.thearena.ai/'
+}
