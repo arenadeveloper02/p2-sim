@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import {
   Button,
@@ -19,7 +20,6 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/auth-selector'
-import { IdentifierInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/identifier-input'
 import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-form'
@@ -89,7 +89,15 @@ export function ChatDeploy({
   const setShowDeleteConfirmation =
     externalSetShowDeleteConfirmation || setInternalShowDeleteConfirmation
 
-  const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
+  const {
+    formData,
+    errors,
+    updateField,
+    setError,
+    validateForm,
+    setFormData,
+    emailValidationErrors,
+  } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
@@ -145,6 +153,7 @@ export function ChatDeploy({
                       `${config.blockId}_${config.path}`
                   )
                 : [],
+              approvalStatus: formData.approvalStatus ?? true,
             })
 
             if (chatDetail.customizations?.imageUrl) {
@@ -176,7 +185,8 @@ export function ChatDeploy({
     setChatSubmitting(true)
 
     try {
-      if (!validateForm()) {
+      const isValid = await validateForm()
+      if (!isValid) {
         setChatSubmitting(false)
         return
       }
@@ -373,6 +383,16 @@ export function ChatDeploy({
             disabled={chatSubmitting}
             isExistingChat={!!existingChat}
             error={errors.password || errors.emails}
+            approvalStatus={formData.approvalStatus}
+            nonDeletableEmails={
+              formData.approvalStatus
+                ? ['@position2.com']
+                : formData.emails.filter((e) => {
+                    const sessionEmail = Cookies.get('email')
+                    return e === sessionEmail || e === '@position2.com'
+                  })
+            }
+            emailValidationErrors={emailValidationErrors}
           />
           <div className='space-y-2'>
             <Label htmlFor='welcomeMessage' className='font-medium text-sm'>

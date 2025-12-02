@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Braces, Square } from 'lucide-react'
+import { Braces, Square, Zap } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   BubbleChatPreview,
@@ -24,6 +24,7 @@ import {
 } from '@/components/emcn'
 import { VariableIcon } from '@/components/icons'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -50,6 +51,64 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Panel')
+
+/**
+ * Test Agent Button - Opens deployed chat in new tab
+ */
+function TestAgentButton({ workflowId }: { workflowId: string | null }) {
+  const [chatUrl, setChatUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!workflowId) {
+      setChatUrl(null)
+      return
+    }
+
+    const fetchChatUrl = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.isDeployed && data.deployment?.identifier) {
+            const baseUrl = getBaseUrl()
+            const url = `${baseUrl}/chat/${data.deployment.identifier}`
+            setChatUrl(url)
+          } else {
+            setChatUrl(null)
+          }
+        } else {
+          setChatUrl(null)
+        }
+      } catch (error) {
+        logger.error('Error fetching chat status:', error)
+        setChatUrl(null)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchChatUrl()
+  }, [workflowId])
+
+  if (!chatUrl) {
+    return null
+  }
+
+  return (
+    <Button
+      className='h-[32px] gap-[8px] px-[10px]'
+      variant='outline'
+      onClick={() => window.open(chatUrl, '_blank', 'noopener,noreferrer')}
+      title='Test deployed chat agent'
+    >
+      <Zap className='h-[11.5px] w-[11.5px]' />
+      Test Agent
+    </Button>
+  )
+}
+
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *
@@ -447,6 +506,7 @@ export function Panel() {
             {/* Deploy and Run */}
             <div className='flex gap-[4px]'>
               <Deploy activeWorkflowId={activeWorkflowId} userPermissions={userPermissions} />
+              <TestAgentButton workflowId={activeWorkflowId} />
               <Button
                 className='h-[32px] w-[61.5px] gap-[8px]'
                 variant={isExecuting ? 'active' : 'primary'}

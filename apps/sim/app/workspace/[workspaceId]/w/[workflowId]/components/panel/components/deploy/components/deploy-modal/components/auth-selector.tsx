@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Check, Copy, Eye, EyeOff, Plus, RefreshCw } from 'lucide-react'
+import Cookies from 'js-cookie'
+import { Check, Copy, Eye, EyeOff, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { Button, Input, Label } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
 import { Card, CardContent } from '@/components/ui'
@@ -17,6 +18,9 @@ interface AuthSelectorProps {
   disabled?: boolean
   isExistingChat?: boolean
   error?: string
+  approvalStatus?: boolean
+  nonDeletableEmails?: string[]
+  emailValidationErrors?: Set<string>
 }
 
 export function AuthSelector({
@@ -29,11 +33,15 @@ export function AuthSelector({
   disabled = false,
   isExistingChat = false,
   error,
+  approvalStatus = true,
+  nonDeletableEmails = [],
+  emailValidationErrors = new Set(),
 }: AuthSelectorProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
+  const [isValidatingEmail, setIsValidatingEmail] = useState(false)
 
   const handleGeneratePassword = () => {
     const password = generatePassword(24)
@@ -46,7 +54,7 @@ export function AuthSelector({
     setTimeout(() => setCopySuccess(false), 2000)
   }
 
-  const handleAddEmail = () => {
+  const handleAddEmail = async () => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) && !newEmail.startsWith('@')) {
       setEmailError('Please enter a valid email or domain (e.g., user@example.com or @example.com)')
       return
@@ -57,12 +65,63 @@ export function AuthSelector({
       return
     }
 
+    // Check email limit for non-approved status
+    if (!approvalStatus) {
+      const sessionEmail = Cookies.get('email')
+      const deletableEmails = emails.filter((e) => e !== sessionEmail && e !== '@position2.com')
+      if (deletableEmails.length >= 5) {
+        setEmailError('Maximum 5 additional emails allowed (excluding session email)')
+        return
+      }
+    }
+
+    // Validate email exists in user database (for non-domain emails)
+    if (!newEmail.startsWith('@')) {
+      setIsValidatingEmail(true)
+      setEmailError('')
+      try {
+        const response = await fetch('/api/users/validate-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails: [newEmail.toLowerCase()] }),
+        })
+
+        if (!response.ok) {
+          setEmailError('Failed to validate email. Please try again.')
+          setIsValidatingEmail(false)
+          return
+        }
+
+        const result = await response.json()
+
+        // Check if email is missing from the user database
+        if (!result.valid || (result.missingEmails && result.missingEmails.length > 0)) {
+          setEmailError(`${newEmail} does not have access to Agentic AI yet`)
+          setIsValidatingEmail(false)
+          return
+        }
+      } catch (error) {
+        // Block on validation error to prevent invalid emails
+        console.error('Error validating email:', error)
+        setEmailError('Failed to validate email. Please try again.')
+        setIsValidatingEmail(false)
+        return
+      } finally {
+        setIsValidatingEmail(false)
+      }
+    }
+
+    // Only add email if validation passed
     onEmailsChange([...emails, newEmail])
     setNewEmail('')
     setEmailError('')
   }
 
   const handleRemoveEmail = (email: string) => {
+    // Prevent deletion of non-deletable emails
+    if (nonDeletableEmails.includes(email)) {
+      return
+    }
     onEmailsChange(emails.filter((e) => e !== email))
   }
 
@@ -79,7 +138,7 @@ export function AuthSelector({
       <div
         className={cn('grid grid-cols-1 gap-3', ssoEnabled ? 'md:grid-cols-4' : 'md:grid-cols-3')}
       >
-        {authOptions.map((type) => (
+        {/* {authOptions.map((type) => (
           <Card
             key={type}
             className={cn(
@@ -118,7 +177,7 @@ export function AuthSelector({
               </div>
             </CardContent>
           </Card>
-        ))}
+        ))} */}
       </div>
 
       {/* Auth Settings */}
@@ -220,10 +279,10 @@ export function AuthSelector({
                 onChange={(e) => setNewEmail(e.target.value)}
                 disabled={disabled}
                 className='flex-1'
-                onKeyDown={(e) => {
+                onKeyDown={async (e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    handleAddEmail()
+                    await handleAddEmail()
                   }
                 }}
               />
@@ -231,10 +290,14 @@ export function AuthSelector({
                 type='button'
                 variant='default'
                 onClick={handleAddEmail}
-                disabled={!newEmail.trim() || disabled}
+                disabled={!newEmail.trim() || disabled || isValidatingEmail}
                 className='shrink-0 gap-[4px]'
               >
-                <Plus className='h-4 w-4' />
+                {isValidatingEmail ? (
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                ) : (
+                  <Plus className='h-4 w-4' />
+                )}
                 Add
               </Button>
             </div>
@@ -244,30 +307,55 @@ export function AuthSelector({
             {emails.length > 0 && (
               <div className='mt-3 max-h-[150px] overflow-y-auto rounded-md border bg-background px-2 py-0 shadow-none'>
                 <ul className='divide-y divide-border'>
-                  {emails.map((email) => (
-                    <li key={email} className='relative'>
-                      <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
-                        <span className='font-medium text-foreground'>{email}</span>
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          onClick={() => handleRemoveEmail(email)}
-                          disabled={disabled}
-                          className='h-7 w-7 p-0 opacity-70'
-                        >
-                          <Trash className='h-4 w-4' />
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                  {emails.map((email) => {
+                    const isNonDeletable = nonDeletableEmails.includes(email)
+                    const hasValidationError = emailValidationErrors.has(email)
+                    return (
+                      <li key={email} className='relative'>
+                        <div className='group my-1 flex items-center justify-between rounded-sm px-2 py-2 text-sm'>
+                          <div className='flex flex-1 flex-col'>
+                            <span
+                              className={cn(
+                                'font-medium',
+                                hasValidationError ? 'text-destructive' : 'text-foreground'
+                              )}
+                            >
+                              {email}
+                            </span>
+                            {hasValidationError && (
+                              <span className='text-destructive text-xs'>
+                                Does not have access to Agentic AI yet
+                              </span>
+                            )}
+                            {isNonDeletable && (
+                              <span className='text-muted-foreground text-xs'>Required</span>
+                            )}
+                          </div>
+                          {!isNonDeletable && (
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              onClick={() => handleRemoveEmail(email)}
+                              disabled={disabled}
+                              className='h-7 w-7 p-0 opacity-70'
+                            >
+                              <Trash className='h-4 w-4' />
+                            </Button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}
 
             <p className='mt-2 text-[11px] text-[var(--text-secondary)]'>
-              {authType === 'email'
-                ? 'Add specific emails or entire domains (@example.com)'
-                : 'Add specific emails or entire domains (@example.com) that can access via SSO'}
+              {!approvalStatus
+                ? `Add up to 5 additional emails (excluding session email). All emails must have access to Agentic AI.`
+                : authType === 'email'
+                  ? 'Add specific emails or entire domains (@example.com)'
+                  : 'Add specific emails or entire domains (@example.com) that can access via SSO'}
             </p>
           </CardContent>
         </Card>
