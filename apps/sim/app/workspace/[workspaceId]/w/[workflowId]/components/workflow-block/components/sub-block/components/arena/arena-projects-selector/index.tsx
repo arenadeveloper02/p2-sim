@@ -67,7 +67,7 @@ export function ArenaProjectSelector({
         const v2Token = await getArenaToken()
 
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
-        const url = `${arenaBackendBaseUrl}/sol/v1/projects?clientId=${clientId}&projectType=STATUS&name=${''}`
+        const url = `${arenaBackendBaseUrl}/sol/v1/projects?cid=${clientId}&projectType=STATUS&name=${''}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
