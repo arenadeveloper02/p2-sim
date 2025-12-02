@@ -2257,6 +2257,7 @@ async function runHtmlToDesignWorkflow(
         )
         await closeButton.click()
         console.log(`[${label}] ✓ Closed plugin window`)
+        await driver.sleep(1000) // Wait for modal to close
       } catch (e) {
         console.log(`[${label}] No close button found, continuing...`)
         try {
@@ -2282,6 +2283,155 @@ async function runHtmlToDesignWorkflow(
         } catch (e) {
           console.log(`[${label}] No close button found, continuing...`)
         }
+      }
+
+      // After closing plugin modal, click on Design tab and set X/Y axis values
+      try {
+        console.log(`[${label}] Clicking on Design tab...`)
+        await driver.sleep(2000) // Wait for UI to stabilize after modal close
+
+        // Click on Design tab using provided XPath
+        const designTabSelectors = [
+          "//*[@id='tab:r1rk:-0-trigger']",
+          '/html/body/div[2]/div/div/div/div[1]/div[1]/div/div[1]/div[12]/div/div/div/div/div[1]/div/div/div[2]/div[1]/div/button[1]',
+          "//button[contains(text(), 'Design')]",
+          "//div[contains(text(), 'Design')]",
+        ]
+
+        let designTabClicked = false
+        for (const selector of designTabSelectors) {
+          try {
+            const designTab = await driver.wait(until.elementLocated(By.xpath(selector)), 5000)
+            await designTab.click()
+            console.log(`[${label}] ✓ Clicked Design tab using selector: ${selector}`)
+            designTabClicked = true
+            await driver.sleep(2000) // Wait for Design tab to load
+            break
+          } catch (e) {
+            // Continue to next selector
+          }
+        }
+
+        if (designTabClicked) {
+          // Set X Axis value to index * 1000
+          console.log(`[${label}] Setting X Axis to ${index * 1000}...`)
+          const xAxisValue = (index * 1800).toString()
+          const xAxisSelectors = [
+            "//*[@id='properties-panel-scroll-container']/div/div/div/div[2]/div/div[3]/fieldset/div[1]/div/div/div/input",
+            '/html/body/div[2]/div/div/div/div[1]/div[1]/div/div[1]/div[12]/div/div/div/div/div[1]/div/div/div[3]/div/div[1]/div/div/div/div[2]/div/div[3]/fieldset/div[1]/div/div/div/input',
+            "//input[contains(@placeholder, 'X') or contains(@aria-label, 'X')]",
+          ]
+
+          let xAxisSet = false
+          for (const selector of xAxisSelectors) {
+            try {
+              const xAxisInput = await driver.wait(until.elementLocated(By.xpath(selector)), 5000)
+              await xAxisInput.click()
+              await driver.sleep(200) // Wait for focus
+
+              // Clear the input
+              try {
+                await driver
+                  .actions()
+                  .keyDown(Key.COMMAND)
+                  .sendKeys('a')
+                  .keyUp(Key.COMMAND)
+                  .perform()
+                await driver.sleep(100)
+                await driver.actions().sendKeys(Key.DELETE).perform()
+              } catch (e) {
+                try {
+                  await driver
+                    .actions()
+                    .keyDown(Key.CONTROL)
+                    .sendKeys('a')
+                    .keyUp(Key.CONTROL)
+                    .perform()
+                  await driver.sleep(100)
+                  await driver.actions().sendKeys(Key.DELETE).perform()
+                } catch (e2) {
+                  await xAxisInput.clear()
+                }
+              }
+
+              await driver.sleep(200)
+              await xAxisInput.sendKeys(xAxisValue)
+              console.log(`[${label}] ✓ Set X Axis to ${xAxisValue}`)
+              xAxisSet = true
+              await driver.sleep(500)
+              break
+            } catch (e) {
+              // Continue to next selector
+            }
+          }
+
+          if (!xAxisSet) {
+            console.log(`[${label}] ⚠️ Could not set X Axis value`)
+          }
+
+          // Set Y Axis value to index * 100
+          console.log(`[${label}] Setting Y Axis to ${index * 100}...`)
+          const yAxisValue = (100).toString()
+          const yAxisSelectors = [
+            "//*[@id='properties-panel-scroll-container']/div/div/div/div[2]/div/div[3]/fieldset/div[2]/div/div/div/input",
+            '/html/body/div[2]/div/div/div/div[1]/div[1]/div/div[1]/div[12]/div/div/div/div/div[1]/div/div/div[3]/div/div[1]/div/div/div/div[2]/div/div[3]/fieldset/div[2]/div/div/div/input',
+            "//input[contains(@placeholder, 'Y') or contains(@aria-label, 'Y')]",
+          ]
+
+          let yAxisSet = false
+          for (const selector of yAxisSelectors) {
+            try {
+              const yAxisInput = await driver.wait(until.elementLocated(By.xpath(selector)), 5000)
+              await yAxisInput.click()
+              await driver.sleep(200) // Wait for focus
+
+              // Clear the input
+              try {
+                await driver
+                  .actions()
+                  .keyDown(Key.COMMAND)
+                  .sendKeys('a')
+                  .keyUp(Key.COMMAND)
+                  .perform()
+                await driver.sleep(100)
+                await driver.actions().sendKeys(Key.DELETE).perform()
+              } catch (e) {
+                try {
+                  await driver
+                    .actions()
+                    .keyDown(Key.CONTROL)
+                    .sendKeys('a')
+                    .keyUp(Key.CONTROL)
+                    .perform()
+                  await driver.sleep(100)
+                  await driver.actions().sendKeys(Key.DELETE).perform()
+                } catch (e2) {
+                  await yAxisInput.clear()
+                }
+              }
+
+              await driver.sleep(200)
+              await yAxisInput.sendKeys(yAxisValue)
+              console.log(`[${label}] ✓ Set Y Axis to ${yAxisValue}`)
+              yAxisSet = true
+              await driver.sleep(500)
+              break
+            } catch (e) {
+              // Continue to next selector
+            }
+          }
+
+          if (!yAxisSet) {
+            console.log(`[${label}] ⚠️ Could not set Y Axis value`)
+          }
+        } else {
+          console.log(`[${label}] ⚠️ Could not click Design tab`)
+        }
+      } catch (error) {
+        console.log(
+          `[${label}] Error setting Design tab and axis values:`,
+          error instanceof Error ? error.message : String(error)
+        )
       }
 
       console.log(`[${label}] ✓ Plugin cleanup completed`)
