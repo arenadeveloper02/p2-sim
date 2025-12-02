@@ -1,9 +1,12 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { createLogger } from '@/lib/logs/console/logger'
 import { hasWorkspaceAdminAccess } from '@/lib/permissions/utils'
 import { db } from '@/db'
-import { permissions } from '@/db/schema'
+import { permissions, userKnowledgeBase } from '@/db/schema'
+
+const logger = createLogger('WorkspaceMembers')
 
 // DELETE /api/workspaces/members/[id] - Remove a member from a workspace
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -80,6 +83,27 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
           eq(permissions.entityId, workspaceId)
         )
       )
+
+    // Soft delete all user_knowledge_base entries for this user in this workspace
+    const now = new Date()
+    const deletedEntries = await db
+      .update(userKnowledgeBase)
+      .set({
+        deletedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(userKnowledgeBase.userIdRef, userId),
+          eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
+          isNull(userKnowledgeBase.deletedAt)
+        )
+      )
+      .returning({ id: userKnowledgeBase.id })
+
+    logger.info(
+      `Removed user ${userId} from workspace ${workspaceId} and soft deleted ${deletedEntries.length} user_knowledge_base entries`
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {
