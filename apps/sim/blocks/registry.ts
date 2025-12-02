@@ -85,6 +85,7 @@ import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { SlackBlock } from '@/blocks/blocks/slack'
+import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StartTriggerBlock } from '@/blocks/blocks/start_trigger'
@@ -206,6 +207,7 @@ export const registry: Record<string, BlockConfig> = {
   serper: SerperBlock,
   sharepoint: SharepointBlock,
   slack: SlackBlock,
+  spyfu: SpyfuBlock,
   stagehand: StagehandBlock,
   stagehand_agent: StagehandAgentBlock,
   starter: StarterBlock,

@@ -1050,6 +1050,8 @@ import {
   zepGetUserTool,
 } from '@/tools/zep'
 
+import { spyfuRequestTool } from '@/tools/spyfu'
+
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   arxiv_search: arxivSearchTool,
@@ -1138,6 +1140,7 @@ export const tools: Record<string, ToolConfig> = {
   slack_add_reaction: slackAddReactionTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
+  spyfu_request: spyfuRequestTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,

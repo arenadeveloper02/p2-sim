@@ -1,0 +1,200 @@
+import { SpyfuIcon } from '@/components/icons'
+import type { BlockConfig } from '@/blocks/types'
+import {
+  spyfuDateOperationIds,
+  spyfuDomainOperationIds,
+  spyfuIncludeDomainsCsvOperationIds,
+  spyfuIsIntersectionOperationIds,
+  spyfuKeywordOperationIds,
+  spyfuOperationOptions,
+  spyfuQueryOperationIds,
+  spyfuTermOperationIds,
+} from '@/tools/spyfu/operations'
+import type { SpyfuResponse } from '@/tools/spyfu/types'
+
+export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
+  type: 'spyfu',
+  name: 'SpyFu',
+  description: 'Query SpyFu for SEO, PPC, competitor, keyword, ranking, and usage data.',
+  longDescription:
+    'Connect directly to SpyFu’s Domain Stats, Ad History, PPC Research, SEO Research, Competitors, Kombat, Keyword, Ranking History, and Account APIs using their predefined endpoints. Select the endpoint you need, fill in its required parameters (domain, keyword, date), and optionally include request bodies for bulk keyword jobs.',
+  docsLink: 'https://developer.spyfu.com/reference',
+  category: 'tools',
+  bgColor: '#14213D',
+  icon: SpyfuIcon,
+  subBlocks: [
+    {
+      id: 'operationId',
+      title: 'SpyFu Endpoint',
+      type: 'dropdown',
+      required: true,
+      options: spyfuOperationOptions,
+      description:
+        'Pick any supported SpyFu endpoint. Required text inputs below (Domain, Keyword, Date) automatically appear when the selected endpoint needs them.',
+    },
+    {
+      id: 'domain',
+      title: 'Domain',
+      type: 'short-input',
+      required: true,
+      placeholder: 'example.com',
+      description: 'Domain parameter required by most SpyFu endpoints.',
+      condition: {
+        field: 'operationId',
+        value: spyfuDomainOperationIds,
+      },
+    },
+    {
+      id: 'keyword',
+      title: 'Keyword',
+      type: 'short-input',
+      required: true,
+      placeholder: 'best running shoes',
+      description: 'Keyword parameter required by keyword-centric endpoints.',
+      condition: {
+        field: 'operationId',
+        value: spyfuKeywordOperationIds,
+      },
+    },
+    {
+      id: 'term',
+      title: 'Term',
+      type: 'short-input',
+      required: true,
+      placeholder: 'running',
+      description:
+        'Term parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      condition: {
+        field: 'operationId',
+        value: spyfuTermOperationIds,
+      },
+    },
+    {
+      id: 'query',
+      title: 'Query',
+      type: 'short-input',
+      required: true,
+      placeholder: 'running',
+      description:
+        'Query parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      condition: {
+        field: 'operationId',
+        value: spyfuQueryOperationIds,
+      },
+    },
+    {
+      id: 'includeDomainsCsv',
+      title: 'Include Domains CSV',
+      type: 'short-input',
+      required: true,
+      placeholder: 'example.com,example.org',
+      description:
+        'Include Domains CSV parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      condition: {
+        field: 'operationId',
+        value: spyfuIncludeDomainsCsvOperationIds,
+      },
+    },
+    {
+      id: 'isIntersection',
+      title: 'Is Intersection',
+      type: 'dropdown',
+      required: true,
+      description:
+        'Is Intersection parameter required by term-based endpoints (e.g., Get Keyword Ad History).',
+      options: [
+        { label: 'True', id: 'true' },
+        { label: 'False', id: 'false' },
+      ],
+      condition: {
+        field: 'operationId',
+        value: spyfuIsIntersectionOperationIds,
+      },
+    },
+    {
+      id: 'date',
+      title: 'Date',
+      type: 'short-input',
+      required: true,
+      placeholder: '2024-01-15',
+      description: 'Date parameter (YYYY-MM-DD) required for historical snapshots.',
+      condition: {
+        field: 'operationId',
+        value: spyfuDateOperationIds,
+      },
+    },
+    {
+      id: 'countryCode',
+      title: 'Country Code',
+      type: 'dropdown',
+      required: true,
+      options: [
+        { label: 'Argentina (AR)', id: 'AR' },
+        { label: 'Austria (AT)', id: 'AT' },
+        { label: 'Australia (AU)', id: 'AU' },
+        { label: 'Belgium (BE)', id: 'BE' },
+        { label: 'Brazil (BR)', id: 'BR' },
+        { label: 'Canada (CA)', id: 'CA' },
+        { label: 'Switzerland (CH)', id: 'CH' },
+        { label: 'Germany (DE)', id: 'DE' },
+        { label: 'Denmark (DK)', id: 'DK' },
+        { label: 'Spain (ES)', id: 'ES' },
+        { label: 'France (FR)', id: 'FR' },
+        { label: 'Ireland (IE)', id: 'IE' },
+        { label: 'India (IN)', id: 'IN' },
+        { label: 'Italy (IT)', id: 'IT' },
+        { label: 'Japan (JP)', id: 'JP' },
+        { label: 'Mexico (MX)', id: 'MX' },
+        { label: 'Netherlands (NL)', id: 'NL' },
+        { label: 'Norway (NO)', id: 'NO' },
+        { label: 'New Zealand (NZ)', id: 'NZ' },
+        { label: 'Poland (PL)', id: 'PL' },
+        { label: 'Portugal (PT)', id: 'PT' },
+        { label: 'Sweden (SE)', id: 'SE' },
+        { label: 'Singapore (SG)', id: 'SG' },
+        { label: 'Turkey (TR)', id: 'TR' },
+        { label: 'Ukraine (UA)', id: 'UA' },
+        { label: 'United Kingdom (UK)', id: 'UK' },
+        { label: 'United States (US)', id: 'US' },
+        { label: 'South Africa (ZA)', id: 'ZA' },
+      ],
+      value: () => 'US',
+      description: 'Select the SpyFu country database.',
+    },
+  ],
+  tools: {
+    access: ['spyfu_request'],
+    config: {
+      tool: () => 'spyfu_request',
+      params: (params) => ({
+        operationId: params.operationId,
+        domain: params.domain,
+        keyword: params.keyword,
+        term: params.term,
+        date: params.date,
+        countryCode: params.countryCode,
+      }),
+    },
+  },
+  inputs: {
+    operationId: { type: 'string', description: 'The selected SpyFu endpoint identifier.' },
+    domain: { type: 'string', description: 'Domain parameter passed to domain-based endpoints.' },
+    keyword: { type: 'string', description: 'Keyword parameter passed to keyword endpoints.' },
+    term: { type: 'string', description: 'Keyword parameter passed to keyword endpoints.' },
+    date: {
+      type: 'string',
+      description: 'Date parameter (YYYY-MM-DD) for date-specific endpoints.',
+    },
+    countryCode: {
+      type: 'string',
+      description: 'SpyFu country code appended to the query string.',
+    },
+  },
+  outputs: {
+    data: { type: 'json', description: 'Raw payload returned by SpyFu.' },
+    status: { type: 'number', description: 'HTTP status code from SpyFu.' },
+    headers: { type: 'json', description: 'SpyFu response headers.' },
+    endpoint: { type: 'string', description: 'Endpoint URL that was executed.' },
+    method: { type: 'string', description: 'HTTP method used in the request.' },
+  },
+}
