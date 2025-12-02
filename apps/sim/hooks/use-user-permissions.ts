@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { PermissionType, WorkspacePermissions } from '@/hooks/use-workspace-permissions'
-import { useUiFlagsStore } from '@/stores/feature-flag/store'
 
 const logger = createLogger('useUserPermissions')
 
@@ -33,7 +32,6 @@ export function useUserPermissions(
   permissionsError: string | null = null
 ): WorkspaceUserPermissions {
   const { data: session } = useSession()
-  const { globalActionsDisabled } = useUiFlagsStore()
 
   const userPermissions = useMemo((): WorkspaceUserPermissions => {
     const sessionEmail = session?.user?.email
@@ -71,7 +69,7 @@ export function useUserPermissions(
       }
     }
 
-    const userPerms = globalActionsDisabled === true ? 'read' : currentUser.permissionType || 'read'
+    const userPerms = currentUser.permissionType || 'read'
 
     // Core permission checks
     const canAdmin = userPerms === 'admin'
