@@ -1569,7 +1569,7 @@ async function runHtmlToDesignWorkflow(
     try {
       const viewportInput = await driver.wait(
         until.elementLocated(
-          By.xpath('/html/body/div[4]/div[1]/div[1]/form/fieldset[1]/div/div[1]/div[2]/input')
+          By.xpath('/html/body/div[4]/div[1]/div[2]/form/fieldset[1]/div/div[1]/div[2]/input')
         ),
         5000
       )
@@ -1684,7 +1684,7 @@ async function runHtmlToDesignWorkflow(
     console.log('Clicking close button...')
     try {
       const closeButton = await driver.wait(
-        until.elementLocated(By.xpath('/html/body/div[4]/div[1]/div[1]/div[2]/div[2]/button')),
+        until.elementLocated(By.xpath('/html/body/div[4]/div[1]/div[2]/div[2]/div[2]/button')),
         3000
       )
       await closeButton.click()
@@ -2230,7 +2230,7 @@ async function runHtmlToDesignWorkflow(
         await driver.sleep(2000)
         console.log('[NextJS] Looking for Add to Canvas button...')
         const addToCanvasButton = await driver.findElement(
-          By.xpath('/html/body/div[6]/div[1]/div[3]/div[1]/div[2]/button')
+          By.xpath('/html/body/div[6]/div[1]/div[4]/div[1]/div[2]/button')
         )
         await addToCanvasButton.click()
         console.log('[NextJS] ✓ Clicked Add to Canvas button')
