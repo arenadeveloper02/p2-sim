@@ -3,14 +3,13 @@ import { Info } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-// COMMENTED OUT: Theme switching disabled - dark mode is forced for workspace
-// import {
-//   Select,
-//   SelectContent,
-//   SelectItem,
-//   SelectTrigger,
-//   SelectValue,
-// } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useSession } from '@/lib/auth-client'
 import { getEnv, isTruthy } from '@/lib/env'
@@ -69,15 +68,14 @@ export function General() {
     }
   }
 
-  // COMMENTED OUT: Theme switching disabled - dark mode is forced for workspace
-  // // Sync theme from store to next-themes when theme changes
+  // Sync theme from store to next-themes when theme changes
   // useEffect(() => {
-  //   if (!isLoading && theme) {
+  //   if (!isLoading && settings?.theme) {
   //     // Ensure next-themes is in sync with our store
   //     const { syncThemeToNextThemes } = require('@/lib/theme-sync')
-  //     syncThemeToNextThemes(theme)
+  //     syncThemeToNextThemes(settings.theme)
   //   }
-  // }, [theme, isLoading])
+  // }, [settings?.theme, isLoading])
 
   const handleThemeChange = async (value: 'system' | 'light' | 'dark') => {
     await updateSetting.mutateAsync({ key: 'theme', value })
@@ -122,8 +120,7 @@ export function General() {
   return (
     <div className='px-6 pt-4 pb-2'>
       <div className='flex flex-col gap-4'>
-        {/* COMMENTED OUT: Theme switching disabled - dark mode is forced for workspace */}
-        {/* <div className='flex items-center justify-between'>
+        <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>
             <Label htmlFor='theme-select' className='font-normal'>
               Theme
@@ -137,7 +134,7 @@ export function General() {
             <SelectTrigger id='theme-select' className='h-9 w-[180px]'>
               <SelectValue placeholder='Select theme' />
             </SelectTrigger>
-            <SelectContent className='min-w-32 rounded-[10px] border-[#E5E5E5] bg-[var(--white)] shadow-xs dark:border-[#414141] dark:bg-[var(--surface-elevated)]'>
+            <SelectContent className='z-[9999] min-w-32 rounded-[10px] border-[#E5E5E5] bg-[var(--white)] shadow-xs dark:border-[#414141] dark:bg-[var(--surface-elevated)]'>
               <SelectItem
                 value='system'
                 className='rounded-[8px] text-card-foreground text-sm hover:bg-muted focus:bg-muted'
@@ -158,7 +155,7 @@ export function General() {
               </SelectItem>
             </SelectContent>
           </Select>
-        </div> */}
+        </div>
 
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>

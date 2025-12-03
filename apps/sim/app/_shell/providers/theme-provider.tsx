@@ -7,31 +7,26 @@ import { ThemeProvider as NextThemesProvider } from 'next-themes'
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   const pathname = usePathname()
 
-  // Force light mode for workspace pages and templates
-  // Force light mode for certain public pages
+  // Force light mode only for public/marketing pages
   const forcedTheme =
-    pathname.startsWith('/workspace') || pathname.startsWith('/templates')
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/sso') ||
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
+    pathname.startsWith('/invite') ||
+    pathname.startsWith('/verify') ||
+    pathname.startsWith('/careers') ||
+    pathname.startsWith('/changelog')
       ? 'light'
-      : pathname === '/' ||
-          pathname.startsWith('/login') ||
-          pathname.startsWith('/signup') ||
-          pathname.startsWith('/sso') ||
-          pathname.startsWith('/terms') ||
-          pathname.startsWith('/privacy') ||
-          pathname.startsWith('/invite') ||
-          pathname.startsWith('/verify') ||
-          pathname.startsWith('/careers') ||
-          pathname.startsWith('/changelog') ||
-          pathname.startsWith('/chat') ||
-          pathname.startsWith('/studio')
-        ? 'light'
-        : undefined
+      : undefined
 
   return (
     <NextThemesProvider
       attribute='class'
-      defaultTheme='light'
-      enableSystem={false}
+      defaultTheme='system'
+      enableSystem={true}
       disableTransitionOnChange
       storageKey='sim-theme'
       forcedTheme={forcedTheme}

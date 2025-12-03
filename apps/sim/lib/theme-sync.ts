@@ -11,30 +11,29 @@
 export function syncThemeToNextThemes(theme: 'system' | 'light' | 'dark') {
   if (typeof window === 'undefined') return
 
-  // COMMENTED OUT: Light mode is forced for workspace pages
-  // // Update localStorage
-  // localStorage.setItem('sim-theme', theme)
+  // Update localStorage
+  localStorage.setItem('sim-theme', theme)
 
-  // // Dispatch storage event to notify next-themes
-  // window.dispatchEvent(
-  //   new StorageEvent('storage', {
-  //     key: 'sim-theme',
-  //     newValue: theme,
-  //     oldValue: localStorage.getItem('sim-theme'),
-  //     storageArea: localStorage,
-  //     url: window.location.href,
-  //   })
-  // )
+  // Dispatch storage event to notify next-themes
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: 'sim-theme',
+      newValue: theme,
+      oldValue: localStorage.getItem('sim-theme'),
+      storageArea: localStorage,
+      url: window.location.href,
+    })
+  )
 
-  // // Also update the HTML class immediately for instant feedback
-  // const root = document.documentElement
-  // const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  // const actualTheme = theme === 'system' ? systemTheme : theme
+  // Also update the HTML class immediately for instant feedback
+  const root = document.documentElement
+  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  const actualTheme = theme === 'system' ? systemTheme : theme
 
-  // // Remove existing theme classes
-  // root.classList.remove('light', 'dark')
-  // // Add new theme class
-  // root.classList.add(actualTheme)
+  // Remove existing theme classes
+  root.classList.remove('light', 'dark')
+  // Add new theme class
+  root.classList.add(actualTheme)
 }
 
 /**

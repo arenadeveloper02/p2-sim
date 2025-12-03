@@ -208,7 +208,7 @@ export default function MarkdownRenderer({
   const processedContent = content.trim()
 
   return (
-    <div className='space-y-4 break-words font-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100'>
+    <div className='space-y-4 break-words rounded-xl bg-[#0F172A] px-6 py-4 font-sans text-base text-white leading-relaxed dark:bg-[#0F172A]'>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={customComponents}>
         {processedContent}
       </ReactMarkdown>
