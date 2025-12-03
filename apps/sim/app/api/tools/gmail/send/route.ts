@@ -29,6 +29,7 @@ const GmailSendSchema = z.object({
   cc: z.string().optional().nullable(),
   bcc: z.string().optional().nullable(),
   attachments: z.array(z.any()).optional().nullable(),
+  isHtml: z.boolean().optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {

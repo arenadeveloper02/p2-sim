@@ -87,6 +87,7 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
       to: params.to,
       subject: params.subject,
       body: params.body,
+      isHtml: params.isHtml,
       contentType: params.contentType || 'text',
       threadId: params.threadId,
       replyToMessageId: params.replyToMessageId,
