@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { LogOut, Pencil, /*Plus,*/ Send, Trash2 } from 'lucide-react'
+import { LogOut, Pencil, Plus, Send, Trash2 } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -66,6 +68,10 @@ export function WorkspaceSelector({
   isCreating,
 }: WorkspaceSelectorProps) {
   const userPermissions = useUserPermissionsContext()
+  const { data: session } = useSession()
+
+  // Check if user is platform admin
+  const isPlatformAdmin = session?.user?.email === 'platform_admin@position2.com'
 
   // State
   const [showInviteMembers, setShowInviteMembers] = useState(false)
@@ -460,19 +466,28 @@ export function WorkspaceSelector({
                 {/* Leave Workspace - for non-admin users */}
                 {workspace.permissions !== 'admin' && (
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        onClick={(e) => e.stopPropagation()}
-                        className={cn(
-                          'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
-                          !isEditing && isHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
-                        )}
-                      >
-                        <LogOut className='!h-3.5 !w-3.5' />
-                      </Button>
-                    </AlertDialogTrigger>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            onClick={(e) => e.stopPropagation()}
+                            className={cn(
+                              'h-4 w-4 p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground',
+                              !isEditing && isHovered
+                                ? 'opacity-100'
+                                : 'pointer-events-none opacity-0'
+                            )}
+                          >
+                            <LogOut className='!h-3.5 !w-3.5' />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side='top'>
+                        <p>Leave workspace</p>
+                      </TooltipContent>
+                    </Tooltip>
 
                     <AlertDialogContent>
                       <AlertDialogHeader>
@@ -589,19 +604,21 @@ export function WorkspaceSelector({
               </Button>
             )}
 
-            {/* Create Workspace */}
-            {/* <Button
-              variant='secondary'
-              onClick={onCreateWorkspace}
-              disabled={isCreating}
-              className={cn(
-                'h-8 flex-1 justify-center gap-2 rounded-[8px] font-medium text-muted-foreground text-xs transition-colors hover:bg-accent hover:text-foreground',
-                isCreating && 'cursor-not-allowed'
-              )}
-            >
-              <Plus className='h-3 w-3' />
-              <span>Create</span>
-            </Button> */}
+            {/* Create Workspace - Only enabled for platform admin */}
+            {isPlatformAdmin && (
+              <Button
+                variant='secondary'
+                onClick={onCreateWorkspace}
+                disabled={isCreating}
+                className={cn(
+                  'h-8 flex-1 justify-center gap-2 rounded-[8px] font-medium text-muted-foreground text-xs transition-colors hover:bg-accent hover:text-foreground',
+                  isCreating && 'cursor-not-allowed'
+                )}
+              >
+                <Plus className='h-3 w-3' />
+                <span>Create</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>
