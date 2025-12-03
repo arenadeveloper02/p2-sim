@@ -5,13 +5,13 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { generateRequestId } from '@/lib/utils'
+import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 import {
   base64UrlEncode,
   buildMimeMessage,
   buildSimpleEmailMessage,
   fetchThreadingHeaders,
 } from '@/tools/gmail/utils'
-import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 
 export const dynamic = 'force-dynamic'
 

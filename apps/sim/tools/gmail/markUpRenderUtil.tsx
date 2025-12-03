@@ -1,14 +1,7 @@
+// @ts-expect-error - escape-html doesn't have TypeScript types
+import escapeHtml from 'escape-html'
 import { marked, type Token, type Tokens } from 'marked'
 import sanitizeHtml from 'sanitize-html'
-
-/**
- * Utility to escape HTML content
- * Only escapes characters that are dangerous in HTML text content: <, >, and &
- * Apostrophes and quotes don't need escaping in text content (only in attributes)
- */
-const escapeHtml = (text: string): string => {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
 
 // Utility to sanitize HTML content
 const sanitizeHtmlContent = (html: string): string =>
@@ -85,7 +78,8 @@ function processInlineTokens(tokens: Token[]): string {
         return `<a href="${linkToken.href || '#'}" style="color: #1a73e8; text-decoration: underline; word-break: break-all;" target="_blank" rel="noopener noreferrer">${processInlineTokens(linkToken.tokens)}</a>`
       }
       if (token.type === 'text') {
-        return escapeHtml((token as Tokens.Text).text)
+        // Use raw property to avoid double-escaping (marked already escapes text property)
+        return escapeHtml((token as Tokens.Text).raw)
       }
       if (token.type === 'br') {
         return '<br />'
@@ -127,7 +121,8 @@ function renderList(listToken: Tokens.List): string {
               if ('tokens' in textToken && Array.isArray(textToken.tokens)) {
                 return processInlineTokens(textToken.tokens)
               }
-              return escapeHtml(textToken.text)
+              // Use raw property to avoid double-escaping (marked already escapes text property)
+              return escapeHtml(textToken.raw)
             }
             // For nested lists, render them properly
             if (token.type === 'list') {
@@ -199,8 +194,9 @@ const processTokens = (tokens: Token[]): string => {
         const headerContent = table.header
           .map((cell) => {
             const text = cell.tokens ? processInlineTokens(cell.tokens) : ''
+            const align = (cell as Tokens.TableCell & { align?: string }).align
             const style = `border: 1px solid #e5e7eb; padding: 8px; color: #333333; font-weight: 500; ${
-              cell.align ? `text-align: ${cell.align};` : ''
+              align ? `text-align: ${align};` : ''
             }`
             return `<th style="${style}">${text}</th>`
           })
@@ -211,8 +207,9 @@ const processTokens = (tokens: Token[]): string => {
             const rowContent = row
               .map((cell) => {
                 const text = cell.tokens ? processInlineTokens(cell.tokens) : ''
+                const align = (cell as Tokens.TableCell & { align?: string }).align
                 const style = `border: 1px solid #e5e7eb; padding: 8px; color: #333333; word-break: break-word; ${
-                  cell.align ? `text-align: ${cell.align};` : ''
+                  align ? `text-align: ${align};` : ''
                 }`
                 return `<td style="${style}">${text}</td>`
               })
