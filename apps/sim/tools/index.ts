@@ -528,17 +528,20 @@ async function handleInternalRequest(
         }
       }
 
-      const { isError, errorInfo } = isErrorResponse(response, errorData)
-      if (isError) {
-        const errorToTransform = createTransformedErrorFromErrorInfo(errorInfo, tool.errorExtractor)
-
-        logger.error(`[${requestId}] Internal API error for ${toolId}:`, {
-          status: errorInfo?.status,
-          errorData: errorInfo?.data,
-        })
-
-        throw errorToTransform
+      const errorInfo: ErrorInfo = {
+        status: response.status,
+        statusText: response.statusText,
+        data: errorData,
       }
+
+      const errorToTransform = createTransformedErrorFromErrorInfo(errorInfo, tool.errorExtractor)
+
+      logger.error(`[${requestId}] Internal API error for ${toolId}:`, {
+        status: errorInfo.status,
+        errorData: errorInfo.data,
+      })
+
+      throw errorToTransform
     }
 
     // Parse response data once with guard for empty 202 bodies
