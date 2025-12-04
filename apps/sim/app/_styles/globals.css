@@ -81,7 +81,7 @@
   :root,
   .light {
     /* Neutrals (surfaces) */
-    --bg: #ffffff;
+    --bg: #f3f8fe;
     --surface-1: #ffffff;
     --surface-2: #fafafa;
     --surface-3: #f8f8f8;
@@ -114,10 +114,10 @@
     --border-success: #d5d5d5;
 
     /* Brand & state */
-    --brand-400: #8e4cfb;
-    --brand-500: #6f3dfa;
-    --brand-secondary: #33b4ff;
-    --brand-tertiary: #22c55e;
+    --brand-400: var(--brand-primary-hex, #1a73e8);
+    --brand-500: var(--brand-primary-hex, #1a73e8);
+    --brand-secondary: var(--brand-secondary-hex, #488fed);
+    --brand-tertiary: var(--brand-accent-hex, #76abf1);
     --warning: #ff6600;
 
     /* Utility */

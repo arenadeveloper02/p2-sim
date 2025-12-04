@@ -70,7 +70,7 @@ export function SliderInput({
         className='[&_[class*=SliderTrack]]:h-1 [&_[role=slider]]:h-4 [&_[role=slider]]:w-4 [&_[role=slider]]:cursor-pointer'
       />
       <div
-        className='absolute top-6 text-muted-foreground text-sm'
+        className='absolute top-6 font-medium text-[var(--text-primary)] text-sm'
         style={{
           left: `${percentage}%`,
           transform: `translateX(-${percentage}%)`,

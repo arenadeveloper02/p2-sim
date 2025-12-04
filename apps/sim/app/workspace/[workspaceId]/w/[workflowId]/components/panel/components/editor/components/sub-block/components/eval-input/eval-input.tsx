@@ -174,7 +174,7 @@ export function EvalInput({
         <div
           key={metric.id}
           data-metric-id={metric.id}
-          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'
+          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'
         >
           {renderMetricHeader(metric, index)}
 
