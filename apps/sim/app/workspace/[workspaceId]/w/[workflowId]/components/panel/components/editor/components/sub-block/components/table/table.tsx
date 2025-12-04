@@ -279,7 +279,7 @@ export function Table({
 
   return (
     <div className='relative'>
-      <div className='overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'>
+      <div className='overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'>
         <table className='w-full bg-transparent'>
           {renderHeader()}
           <tbody className='bg-transparent'>

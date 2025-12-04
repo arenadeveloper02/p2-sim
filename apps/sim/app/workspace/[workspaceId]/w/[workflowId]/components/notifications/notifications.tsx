@@ -105,13 +105,13 @@ export const Notifications = memo(function Notifications() {
           <div
             key={notification.id}
             style={{ transform: `translateX(${xOffset}px)` }}
-            className={`relative h-[78px] w-[240px] overflow-hidden rounded-[4px] border bg-[#232323] transition-transform duration-200 ${
+            className={`relative h-[78px] w-[240px] overflow-hidden rounded-[4px] border border-[var(--border)] bg-[var(--surface-2)] transition-transform duration-200 dark:bg-[#232323] ${
               index > 0 ? '-mt-[78px]' : ''
             }`}
           >
             <div className='flex h-full flex-col justify-between px-[8px] pt-[6px] pb-[8px]'>
               <div
-                className={`font-medium text-[12px] leading-[16px] ${
+                className={`font-medium text-[12px] text-[var(--text-primary)] leading-[16px] ${
                   hasAction ? 'line-clamp-2' : 'line-clamp-4'
                 }`}
               >

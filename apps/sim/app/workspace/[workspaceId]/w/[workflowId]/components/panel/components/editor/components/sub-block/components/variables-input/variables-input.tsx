@@ -294,7 +294,7 @@ export function VariablesInput({
                 key={assignment.id}
                 data-assignment-id={assignment.id}
                 className={cn(
-                  'rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]',
+                  'rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]',
                   collapsed ? 'overflow-hidden' : 'overflow-visible'
                 )}
               >

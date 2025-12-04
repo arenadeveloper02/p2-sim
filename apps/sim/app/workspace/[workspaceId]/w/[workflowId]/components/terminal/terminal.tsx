@@ -84,7 +84,7 @@ const RUN_ID_COLORS = [
  */
 const HEADER_TEXT_CLASS =
   'font-medium text-[var(--text-tertiary)] text-[12px] dark:text-[var(--text-tertiary)]'
-const ROW_TEXT_CLASS = 'font-medium text-[#D2D2D2] text-[12px] dark:text-[#D2D2D2]'
+const ROW_TEXT_CLASS = 'font-medium text-[var(--text-primary)] text-[12px]'
 const COLUMN_BASE_CLASS = 'flex-shrink-0'
 
 /**
@@ -721,13 +721,13 @@ export function Terminal() {
       <aside
         ref={terminalRef}
         className={clsx(
-          'terminal-container fixed right-[var(--panel-width)] bottom-0 left-[var(--sidebar-width)] z-10 overflow-hidden dark:bg-[var(--surface-1)]',
+          'terminal-container fixed right-[var(--panel-width)] bottom-0 left-[var(--sidebar-width)] z-10 overflow-hidden bg-[var(--surface-1)]',
           isToggling && 'transition-[height] duration-100 ease-out'
         )}
         onTransitionEnd={handleTransitionEnd}
         aria-label='Terminal'
       >
-        <div className='relative flex h-full border-t dark:border-[var(--border)]'>
+        <div className='relative flex h-full border-[var(--border)] border-t'>
           {/* Left Section - Logs Table */}
           <div
             className={clsx('flex flex-col', !selectedEntry && 'flex-1')}
@@ -735,7 +735,7 @@ export function Terminal() {
           >
             {/* Header */}
             <div
-              className='group flex h-[30px] flex-shrink-0 cursor-pointer items-center bg-[var(--surface-1)] pr-[16px] pl-[24px]'
+              className='group flex h-[30px] flex-shrink-0 cursor-pointer items-center border-[var(--border)] border-b bg-[var(--surface-2)] pr-[16px] pl-[24px]'
               onClick={handleHeaderClick}
             >
               {uniqueBlocks.length > 0 ? (
@@ -1039,7 +1039,7 @@ export function Terminal() {
             {/* Rows */}
             <div className='flex-1 overflow-y-auto overflow-x-hidden'>
               {filteredEntries.length === 0 ? (
-                <div className='flex h-full items-center justify-center text-[#8D8D8D] text-[13px]'>
+                <div className='flex h-full items-center justify-center text-[13px] text-[var(--text-muted)]'>
                   No logs yet
                 </div>
               ) : (
@@ -1053,8 +1053,8 @@ export function Terminal() {
                     <div
                       key={entry.id}
                       className={clsx(
-                        'flex h-[36px] cursor-pointer items-center px-[24px] hover:bg-[var(--border)]',
-                        isSelected && 'bg-[var(--border)]'
+                        'flex h-[36px] cursor-pointer items-center border-[var(--border)] border-b bg-[var(--surface-1)] px-[24px] hover:bg-[var(--surface-2)]',
+                        isSelected && 'bg-[var(--surface-2)]'
                       )}
                       onClick={() => handleRowClick(entry)}
                     >
@@ -1068,7 +1068,7 @@ export function Terminal() {
                       >
                         {BlockIcon && (
                           <div className='flex h-[13px] w-[13px] flex-shrink-0 items-center justify-center overflow-hidden'>
-                            <BlockIcon className='h-[13px] w-[13px] text-[#D2D2D2]' />
+                            <BlockIcon className='h-[13px] w-[13px] text-[var(--text-secondary)]' />
                           </div>
                         )}
                         <span className={clsx('truncate', ROW_TEXT_CLASS)}>{entry.blockName}</span>
@@ -1081,19 +1081,25 @@ export function Terminal() {
                             className={clsx(
                               'flex h-[24px] w-[56px] items-center justify-start rounded-[6px] border pl-[9px]',
                               statusInfo.isError
-                                ? 'gap-[5px] border-[#883827] bg-[#491515]'
-                                : 'gap-[8px] border-[#686868] bg-[#383838]'
+                                ? 'gap-[5px] border-[var(--text-error)]/20 bg-[var(--text-error)]/10'
+                                : 'gap-[8px] border-[var(--border)] bg-[var(--surface-2)]'
                             )}
                           >
                             <div
                               className='h-[6px] w-[6px] rounded-[2px]'
                               style={{
-                                backgroundColor: statusInfo.isError ? '#EF4444' : '#B7B7B7',
+                                backgroundColor: statusInfo.isError
+                                  ? 'var(--text-error)'
+                                  : 'var(--text-muted)',
                               }}
                             />
                             <span
                               className='font-medium text-[11.5px]'
-                              style={{ color: statusInfo.isError ? '#EF4444' : '#B7B7B7' }}
+                              style={{
+                                color: statusInfo.isError
+                                  ? 'var(--text-error)'
+                                  : 'var(--text-secondary)',
+                              }}
                             >
                               {statusInfo.label}
                             </span>
