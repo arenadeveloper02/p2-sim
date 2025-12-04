@@ -9,7 +9,7 @@ import { PackageSearchIcon } from '@/components/icons'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
 import { fetchKnowledgeBase, knowledgeKeys } from '@/hooks/queries/knowledge'
-import { useKnowledgeBasesList } from '@/hooks/use-knowledge'
+import { useUserAccessKnowledgeBases } from '@/hooks/use-knowledge'
 import type { KnowledgeBaseData } from '@/stores/knowledge/store'
 
 interface KnowledgeBaseSelectorProps {
@@ -36,7 +36,7 @@ export function KnowledgeBaseSelector({
     knowledgeBases,
     isLoading: isKnowledgeBasesLoading,
     error,
-  } = useKnowledgeBasesList(workspaceId)
+  } = useUserAccessKnowledgeBases() //need access to all kbs user has access to.
 
   // Use the proper hook to get the current value and setter - this prevents infinite loops
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlock.id)
