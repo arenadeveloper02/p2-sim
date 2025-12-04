@@ -22,6 +22,9 @@ export interface SessionStartParams {
   variables?: Record<string, string>
   triggerData?: Record<string, unknown>
   skipLogCreation?: boolean // For resume executions - reuse existing log entry
+  isExternalChat?: boolean
+  chatId?: string
+  initialInput?: string
 }
 
 export interface SessionCompleteParams {
@@ -30,6 +33,7 @@ export interface SessionCompleteParams {
   finalOutput?: any
   traceSpans?: any[]
   workflowInput?: any
+  finalChatOutput?: string
 }
 
 export interface SessionErrorCompleteParams {
@@ -51,6 +55,12 @@ export class LoggingSession {
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
   private isResume = false // Track if this is a resume execution
+  private chatMetadata?: {
+    userId?: string
+    isExternalChat?: boolean
+    chatId?: string
+    initialInput?: string
+  }
 
   constructor(
     workflowId: string,
@@ -65,7 +75,16 @@ export class LoggingSession {
   }
 
   async start(params: SessionStartParams = {}): Promise<void> {
-    const { userId, workspaceId, variables, triggerData, skipLogCreation } = params
+    const {
+      userId,
+      workspaceId,
+      variables,
+      triggerData,
+      skipLogCreation,
+      isExternalChat,
+      chatId,
+      initialInput,
+    } = params
 
     try {
       this.trigger = createTriggerObject(this.triggerType, triggerData)
@@ -78,6 +97,14 @@ export class LoggingSession {
       )
       this.workflowState = await loadWorkflowStateForExecution(this.workflowId)
 
+      // Store chat metadata for later use
+      this.chatMetadata = {
+        userId,
+        isExternalChat,
+        chatId,
+        initialInput,
+      }
+
       // Only create a new log entry if not resuming
       if (!skipLogCreation) {
         await executionLogger.startWorkflowExecution({
@@ -86,6 +113,10 @@ export class LoggingSession {
           trigger: this.trigger,
           environment: this.environment,
           workflowState: this.workflowState,
+          userId,
+          isExternalChat,
+          chatId,
+          initialInput,
         })
 
         if (this.requestId) {
@@ -119,7 +150,8 @@ export class LoggingSession {
   }
 
   async complete(params: SessionCompleteParams = {}): Promise<void> {
-    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput } = params
+    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } =
+      params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])
@@ -135,6 +167,7 @@ export class LoggingSession {
         traceSpans: traceSpans || [],
         workflowInput,
         isResume: this.isResume,
+        finalChatOutput,
       })
 
       // Track workflow execution outcome
@@ -290,6 +323,10 @@ export class LoggingSession {
           trigger: this.trigger,
           environment: this.environment,
           workflowState: this.workflowState,
+          userId,
+          isExternalChat,
+          chatId,
+          initialInput,
         })
 
         if (this.requestId) {
