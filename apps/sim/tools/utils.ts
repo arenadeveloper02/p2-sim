@@ -1,6 +1,6 @@
 import * as Papa from 'papaparse'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getBaseUrl } from '@/lib/urls/utils'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
 import { useEnvironmentStore } from '@/stores/settings/environment/store'
 import { tools } from '@/tools/registry'
