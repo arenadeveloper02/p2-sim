@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { client, useSession } from '@/lib/auth-client'
+import { client, useSession } from '@/lib/auth/auth-client'
 import { useBrandConfig } from '@/lib/branding/branding'
+import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getLoginRedirectUrl } from '@/lib/urls/utils'
 import { getErrorMessage } from '@/app/invite/[id]/utils'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 

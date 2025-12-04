@@ -1,6 +1,6 @@
 import { Section, Text } from '@react-email/components'
 import { getBrandConfig } from '@/lib/branding/branding'
-import { getBaseUrl } from '@/lib/urls/utils'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 
 interface UnsubscribeOptions {
   unsubscribeToken?: string
