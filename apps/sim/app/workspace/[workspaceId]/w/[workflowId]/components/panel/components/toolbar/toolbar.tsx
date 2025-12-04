@@ -488,10 +488,10 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
     >
       {/* Header */}
       <div
-        className='flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[4px] bg-[#2A2A2A] px-[12px] py-[8px] dark:bg-[#2A2A2A]'
+        className='flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[4px] bg-[var(--surface-2)] px-[12px] py-[8px] dark:bg-[#2A2A2A]'
         onClick={handleSearchClick}
       >
-        <h2 className='font-medium text-[14px] text-[var(--white)] dark:text-[var(--white)]'>
+        <h2 className='font-medium text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'>
           Toolbar
         </h2>
         <div className='flex shrink-0 items-center gap-[8px]'>
@@ -511,7 +511,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onBlur={handleSearchBlur}
-              className='w-full border-none bg-transparent pr-[2px] text-right font-medium text-[13px] text-[var(--text-primary)] placeholder:text-[#737373] focus:outline-none dark:text-[var(--text-primary)]'
+              className='w-full border-none bg-transparent pr-[2px] text-right font-medium text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none dark:text-[var(--text-primary)]'
             />
           )}
         </div>

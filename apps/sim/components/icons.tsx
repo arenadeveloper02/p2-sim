@@ -1,5 +1,5 @@
 import type { SVGProps } from 'react'
-import Image from 'next/image'
+import Image, { type ImageProps } from 'next/image'
 
 export function SearchIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -48,38 +48,18 @@ export function Spinner() {
   )
 }
 
-export function AgentIcon(props: SVGProps<SVGSVGElement>) {
+export function AgentIcon(props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
-    <svg
-      {...props}
-      width='21'
-      height='24'
-      viewBox='0 0 21 24'
-      fill='none'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path
-        d='M15.6667 9.25H4.66667C2.64162 9.25 1 10.8916 1 12.9167V18.4167C1 20.4417 2.64162 22.0833 4.66667 22.0833H15.6667C17.6917 22.0833 19.3333 20.4417 19.3333 18.4167V12.9167C19.3333 10.8916 17.6917 9.25 15.6667 9.25Z'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
+    <div className='relative flex h-full w-full items-center justify-center rounded-md bg-[linear-gradient(to_bottom,#8F50AC,#0086AB)]'>
+      <Image
+        src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
+        alt='vimi-sparkle'
+        width={23} // scale image relative to container
+        height={23}
+        className='object-contain'
+        {...props}
       />
-      <path
-        d='M10.1663 5.58464C11.1789 5.58464 11.9997 4.76382 11.9997 3.7513C11.9997 2.73878 11.1789 1.91797 10.1663 1.91797C9.15382 1.91797 8.33301 2.73878 8.33301 3.7513C8.33301 4.76382 9.15382 5.58464 10.1663 5.58464Z'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-      <path
-        d='M10.167 5.58594V9.2526M7.41699 16.5859V14.7526M12.917 14.7526V16.5859'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-    </svg>
+    </div>
   )
 }
 
@@ -1365,6 +1345,21 @@ export function DocumentIcon(props: SVGProps<SVGSVGElement>) {
         strokeWidth='2.25'
         strokeLinejoin='round'
       />
+    </svg>
+  )
+}
+
+export function MetaIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns='http://www.w3.org/2000/svg'
+      width='24'
+      height='24'
+      viewBox='0 0 24 24'
+      fill='currentColor'
+    >
+      <path d='M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z' />
     </svg>
   )
 }
