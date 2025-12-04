@@ -124,6 +124,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { fileParseTool } from '@/tools/file'
 import {
   crawlTool,
@@ -1370,6 +1371,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
+  facebook_ads_query: facebookAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   posthog_capture_event: posthogCaptureEventTool,

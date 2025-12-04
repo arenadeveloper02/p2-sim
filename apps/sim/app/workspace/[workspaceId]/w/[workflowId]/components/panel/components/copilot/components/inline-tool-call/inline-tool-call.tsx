@@ -525,7 +525,7 @@ export function InlineToolCall({
       const url = editedParams.url || ''
       const method = (editedParams.method || '').toUpperCase()
       return (
-        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'>
+        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'>
           <table className='w-full table-fixed bg-transparent'>
             <thead className='bg-transparent'>
               <tr className='border-[var(--border-strong)] border-b bg-transparent'>
@@ -587,7 +587,7 @@ export function InlineToolCall({
       })
 
       return (
-        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'>
+        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'>
           <table className='w-full table-fixed bg-transparent'>
             <thead className='bg-transparent'>
               <tr className='border-[var(--border-strong)] border-b bg-transparent'>
@@ -783,7 +783,7 @@ export function InlineToolCall({
       const inputEntries = Object.entries(safeInputs)
 
       return (
-        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'>
+        <div className='w-full overflow-hidden rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'>
           <table className='w-full table-fixed bg-transparent'>
             <thead className='bg-transparent'>
               <tr className='border-[var(--border-strong)] border-b bg-transparent'>

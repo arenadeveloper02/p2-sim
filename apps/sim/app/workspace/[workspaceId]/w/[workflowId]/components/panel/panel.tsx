@@ -431,10 +431,10 @@ export function Panel() {
     <>
       <aside
         ref={panelRef}
-        className='panel-container fixed inset-y-0 right-0 z-10 overflow-hidden dark:bg-[var(--surface-1)]'
+        className='panel-container fixed inset-y-0 right-0 z-10 overflow-hidden bg-[var(--surface-1)] dark:bg-[var(--surface-1)]'
         aria-label='Workflow panel'
       >
-        <div className='flex h-full flex-col border-l pt-[14px] dark:border-[var(--border)]'>
+        <div className='flex h-full flex-col border-[var(--border)] border-l pt-[14px] dark:border-[var(--border)]'>
           {/* Header */}
           <div className='flex flex-shrink-0 items-center justify-between px-[8px]'>
             {/* More and Chat */}
@@ -629,7 +629,7 @@ export function Panel() {
               Cancel
             </Button>
             <Button
-              className='h-[32px] bg-[var(--text-error)] px-[12px] text-[var(--white)] hover:bg-[var(--text-error)] hover:text-[var(--white)] dark:bg-[var(--text-error)] dark:text-[var(--white)] hover:dark:bg-[var(--text-error)] dark:hover:text-[var(--white)]'
+              className='h-[32px] bg-[var(--text-error)] px-[12px] text-[var(--white)] hover:bg-[var(--text-error)] hover:text-[var(--white)]'
               onClick={handleDeleteWorkflow}
               disabled={isDeleting}
             >
