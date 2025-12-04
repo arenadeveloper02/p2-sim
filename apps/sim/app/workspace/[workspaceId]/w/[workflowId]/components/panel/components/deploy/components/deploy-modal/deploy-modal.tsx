@@ -806,6 +806,7 @@ export function DeployModal({
 
                 {activeTab === 'chat' && (
                   <ChatDeploy
+                    workflowWorkspaceId={workflowWorkspaceId || ''}
                     workflowId={workflowId || ''}
                     deploymentInfo={deploymentInfo}
                     onChatExistsChange={setChatExists}

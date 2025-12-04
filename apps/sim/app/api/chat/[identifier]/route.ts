@@ -409,13 +409,13 @@ export async function POST(
 
               for (const line of lines) {
                 if (!line.trim() || !line.startsWith('data: ')) {
-                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  controller.enqueue(encoder.encode(`${line}\n\n`))
                   continue
                 }
 
                 const data = line.substring(6).trim()
                 if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  controller.enqueue(encoder.encode(`${line}\n\n`))
                   continue
                 }
 
@@ -539,10 +539,10 @@ export async function POST(
                   }
 
                   // Pass through the original data
-                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  controller.enqueue(encoder.encode(`${line}\n\n`))
                 } catch (parseError) {
                   // If parsing fails, just pass through the original line
-                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  controller.enqueue(encoder.encode(`${line}\n\n`))
                 }
               }
             }

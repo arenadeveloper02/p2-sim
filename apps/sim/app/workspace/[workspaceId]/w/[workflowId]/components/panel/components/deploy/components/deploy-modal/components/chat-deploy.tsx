@@ -19,7 +19,6 @@ import { getEmailDomain } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/auth-selector'
-import { IdentifierInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/identifier-input'
 import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-form'
@@ -41,6 +40,7 @@ interface ChatDeployProps {
   onDeployed?: () => void
   onUndeploy?: () => Promise<void>
   onVersionActivated?: () => void
+  workflowWorkspaceId?: string
 }
 
 interface ExistingChat {
@@ -70,6 +70,7 @@ export function ChatDeploy({
   onDeployed,
   onUndeploy,
   onVersionActivated,
+  workflowWorkspaceId,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -110,6 +111,8 @@ export function ChatDeploy({
   useEffect(() => {
     if (workflowId) {
       fetchExistingChat()
+      setIsIdentifierValid(true)
+      updateField('identifier', workflowId)
     }
   }, [workflowId])
 
@@ -243,7 +246,7 @@ export function ChatDeploy({
       <>
         <div id='chat-deploy-form'>
           <SuccessView
-            deployedUrl={deployedUrl}
+            deployedUrl={`${deployedUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`}
             existingChat={existingChat}
             onDelete={() => setShowDeleteConfirmation(true)}
             onUpdate={() => setShowSuccessView(false)}
@@ -307,14 +310,14 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-4'>
-          <IdentifierInput
+          {/* <IdentifierInput
             value={formData.identifier}
             onChange={(value) => updateField('identifier', value)}
             originalIdentifier={existingChat?.identifier || undefined}
             disabled={chatSubmitting}
             onValidationChange={setIsIdentifierValid}
             isEditingExisting={!!existingChat}
-          />
+          /> */}
 
           <div className='space-y-2'>
             <Label htmlFor='title' className='font-medium text-sm'>
