@@ -1,5 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { Check, Copy, Download } from 'lucide-react'
+import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
+import { downloadImage, isBase64 } from './constants'
 
 interface ChatAttachment {
   id: string
@@ -89,6 +93,77 @@ const WordWrap = ({ text }: { text: string }) => {
   )
 }
 
+const RenderButtons = ({
+  message,
+  formattedContent,
+}: {
+  message: ChatMessageProps['message']
+  formattedContent: string
+}) => {
+  const [isCopied, setIsCopied] = useState<boolean>(false)
+
+  const handleCopy = () => {
+    const contentToCopy =
+      typeof formattedContent === 'string'
+        ? formattedContent
+        : JSON.stringify(formattedContent, null, 2)
+    navigator.clipboard.writeText(contentToCopy)
+    setIsCopied(true)
+    setTimeout(() => setIsCopied(false), 2000)
+  }
+  return (
+    <>
+      {!message.isStreaming && (
+        <div className='mt-2 flex items-center gap-2'>
+          {!isBase64(message?.content) && (
+            <Tooltip.Provider>
+              <Tooltip.Root delayDuration={300}>
+                <Tooltip.Trigger asChild>
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      handleCopy()
+                    }}
+                  >
+                    {isCopied ? (
+                      <Check className='h-4 w-4' strokeWidth={2} />
+                    ) : (
+                      <Copy className='h-4 w-4' strokeWidth={2} />
+                    )}
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top' align='center' sideOffset={5}>
+                  {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </Tooltip.Provider>
+          )}
+
+          {isBase64(message?.content) && (
+            <Tooltip.Provider>
+              <Tooltip.Root delayDuration={300}>
+                <Tooltip.Trigger asChild>
+                  <button
+                    className='text-muted-foreground transition-colors hover:bg-muted'
+                    onClick={() => {
+                      downloadImage(isBase64(message?.content), message.content)
+                    }}
+                  >
+                    <Download className='h-4 w-4' strokeWidth={2} />
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top' align='center' sideOffset={5}>
+                  Download
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </Tooltip.Provider>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 /**
  * Renders a chat message with optional file attachments
  */
@@ -166,12 +241,26 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )
   }
 
+  const renderContent = (content: any) => {
+    if (!content) {
+      return null
+    }
+    // if (isBase64(content)) {
+    //   return renderBs64Img({ isBase64: true, imageData: message.content })
+    // }
+    if (formattedContent) {
+      return <ArenaCopilotMarkdownRenderer content={formattedContent} />
+    }
+  }
+
   return (
     <div className='w-full max-w-full overflow-hidden pl-[2px] opacity-100 transition-opacity duration-200'>
-      <div className='whitespace-pre-wrap break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
-        <WordWrap text={formattedContent} />
+      <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
+        {/* <WordWrap text={formattedContent} /> */}
+        {renderContent(message?.content)}
         {message.isStreaming && <StreamingIndicator />}
       </div>
+      <RenderButtons message={message} formattedContent={formattedContent} />
     </div>
   )
 }

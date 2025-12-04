@@ -21,6 +21,7 @@ export interface ChatMessage {
   isInitialMessage?: boolean
   isStreaming?: boolean
   attachments?: ChatAttachment[]
+  executionId?: string
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {

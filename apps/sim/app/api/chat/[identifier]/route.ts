@@ -1,14 +1,16 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat } from '@sim/db/schema'
+import { chat, deployedChat, workflowExecutionLogs } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
-import { ChatFiles } from '@/lib/uploads'
+import * as ChatFiles from '@/lib/uploads/contexts/chat'
 import {
   addCorsHeaders,
   setChatAuthCookie,
@@ -32,6 +34,7 @@ const chatPostBodySchema = z.object({
   password: z.string().optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
   conversationId: z.string().optional(),
+  chatId: z.string().optional(), // chatId for tracking conversation context
   files: z.array(chatFileSchema).optional().default([]),
 })
 
@@ -47,6 +50,7 @@ export async function POST(
 
   try {
     logger.debug(`[${requestId}] Processing chat request for identifier: ${identifier}`)
+    logger.debug(`[${requestId}] Request body:`, request.body)
 
     let parsedBody
     try {
@@ -127,7 +131,128 @@ export async function POST(
       )
     }
 
-    const { input, password, email, conversationId, files } = parsedBody
+    // Store chat details in deployed_chat table if chatId is provided
+    // Ensures each chatId is added only once, even with concurrent requests
+    if (parsedBody.chatId) {
+      try {
+        const chatId = parsedBody.chatId
+        logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
+
+        // Get the executing user ID from session
+        let executingUserId: string | undefined
+        try {
+          const session = await getSession()
+          executingUserId = session?.user?.id
+          logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
+        } catch (error) {
+          logger.debug(
+            `[${requestId}] Could not get session (user may not be authenticated):`,
+            error
+          )
+        }
+
+        // Check if chatId already exists in deployed_chat table
+        // Using both chatId and workflowId to ensure proper context
+        const existingChat = await db
+          .select({ id: deployedChat.id })
+          .from(deployedChat)
+          .where(eq(deployedChat.chatId, chatId))
+          .limit(1)
+
+        if (existingChat.length > 0) {
+          // ChatId already exists - just update the timestamp and user ID
+          const existingChatId = existingChat[0].id
+          logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
+
+          await db
+            .update(deployedChat)
+            .set({
+              updatedAt: new Date(),
+              executingUserId: executingUserId || null,
+            })
+            .where(eq(deployedChat.id, existingChatId))
+
+          logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
+        } else {
+          // ChatId doesn't exist - create a new record
+          // Generate title from first 5 words of input
+          const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
+          const title = words.slice(0, 5).join(' ') || 'New Chat'
+
+          const deployedChatId = uuidv4()
+          const now = new Date()
+
+          logger.debug(`[${requestId}] Creating new deployed_chat record:`, {
+            id: deployedChatId,
+            chatId,
+            title,
+            workflowId: identifier,
+            executingUserId,
+          })
+
+          try {
+            await db.insert(deployedChat).values({
+              id: deployedChatId,
+              chatId,
+              title,
+              workflowId: identifier,
+              executingUserId,
+              createdAt: now,
+              updatedAt: now,
+            })
+
+            logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
+          } catch (insertError: any) {
+            // Handle race condition: if another request created the record between our check and insert
+            if (
+              insertError?.code === '23505' || // PostgreSQL unique violation
+              (insertError instanceof Error && insertError.message.includes('unique'))
+            ) {
+              logger.debug(
+                `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
+              )
+
+              // Verify the record exists and update it
+              const raceConditionCheck = await db
+                .select({ id: deployedChat.id })
+                .from(deployedChat)
+                .where(eq(deployedChat.chatId, chatId))
+                .limit(1)
+
+              if (raceConditionCheck.length > 0) {
+                await db
+                  .update(deployedChat)
+                  .set({
+                    updatedAt: new Date(),
+                    executingUserId: executingUserId || null,
+                  })
+                  .where(eq(deployedChat.id, raceConditionCheck[0].id))
+
+                logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
+              }
+            } else {
+              // Re-throw if it's a different error
+              throw insertError
+            }
+          }
+        }
+      } catch (error: any) {
+        // Log error but don't fail the request - chat functionality should continue
+        logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
+          message: error.message,
+          code: error.code,
+          chatId: parsedBody.chatId,
+        })
+      }
+    } else {
+      logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
+    }
+
+    const { input, password, email, conversationId, chatId: payload, files } = parsedBody
+
+    // Get userId from session for external chat API requests
+    const session = await getSession()
+    const userId = session?.user?.id || null
 
     if ((password || email) && !input) {
       const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
@@ -171,6 +296,16 @@ export async function POST(
     const workspaceOwnerId = actorUserId!
     const workspaceId = workflowRecord?.workspaceId || ''
 
+    // Start logging session with chat metadata
+    await loggingSession.safeStart({
+      userId: userId || workspaceOwnerId,
+      workspaceId,
+      variables: {},
+      isExternalChat: true,
+      chatId: payload || conversationId || undefined,
+      initialInput: input || undefined,
+    })
+
     try {
       const selectedOutputs: string[] = []
       if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
@@ -184,7 +319,8 @@ export async function POST(
 
       const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
       const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
-      const { createFilteredResult } = await import('@/app/api/workflows/[id]/execute/route')
+      const executeRoute = await import('@/app/api/workflows/[id]/execute/route')
+      const createFilteredResult = (executeRoute as any).createFilteredResult
 
       const workflowInput: any = { input, conversationId }
       if (files && Array.isArray(files) && files.length > 0) {
@@ -235,7 +371,7 @@ export async function POST(
         variables: workflowRecord?.variables || {},
       }
 
-      const stream = await createStreamingResponse({
+      const originalStream = await createStreamingResponse({
         requestId,
         workflow: workflowForExecution,
         input: workflowInput,
@@ -249,7 +385,178 @@ export async function POST(
         executionId,
       })
 
-      const streamResponse = new NextResponse(stream, {
+      // Wrap the stream to capture final output and update workflowExecutionLogs
+      const wrappedStream = new ReadableStream({
+        async start(controller) {
+          const reader = originalStream.getReader()
+          const decoder = new TextDecoder()
+          const encoder = new TextEncoder()
+          let buffer = ''
+          let accumulatedContent = ''
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              // Decode and process the chunk
+              const chunk = decoder.decode(value, { stream: true })
+              buffer += chunk
+
+              // Process complete SSE messages
+              const lines = buffer.split('\n\n')
+              buffer = lines.pop() || ''
+
+              for (const line of lines) {
+                if (!line.trim() || !line.startsWith('data: ')) {
+                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  continue
+                }
+
+                const data = line.substring(6).trim()
+                if (data === '[DONE]') {
+                  controller.enqueue(encoder.encode(line + '\n\n'))
+                  continue
+                }
+
+                try {
+                  const json = JSON.parse(data)
+                  const { event, data: eventData, chunk: contentChunk } = json
+
+                  // Capture streaming content chunks
+                  if (contentChunk) {
+                    accumulatedContent += contentChunk
+                  }
+
+                  // Handle final event - format output and update log
+                  if (event === 'final' && eventData) {
+                    const finalData = eventData as {
+                      success: boolean
+                      error?: string | { message?: string }
+                      output?: Record<string, Record<string, any>>
+                    }
+
+                    // Format final output based on outputConfigs
+                    let finalChatOutput = accumulatedContent.trim()
+
+                    if (
+                      deployment.outputConfigs &&
+                      Array.isArray(deployment.outputConfigs) &&
+                      finalData.output
+                    ) {
+                      const formatValue = (value: any): string | null => {
+                        if (value === null || value === undefined) {
+                          return null
+                        }
+                        if (typeof value === 'string') {
+                          return value
+                        }
+                        if (typeof value === 'object') {
+                          try {
+                            return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+                          } catch {
+                            return String(value)
+                          }
+                        }
+                        return String(value)
+                      }
+
+                      const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                        if (!path || path === 'content') {
+                          if (blockOutputs.content !== undefined) return blockOutputs.content
+                          if (blockOutputs.result !== undefined) return blockOutputs.result
+                          return blockOutputs
+                        }
+                        if (blockOutputs[path] !== undefined) {
+                          return blockOutputs[path]
+                        }
+                        if (path.includes('.')) {
+                          return path.split('.').reduce<any>((current, segment) => {
+                            if (current && typeof current === 'object' && segment in current) {
+                              return current[segment]
+                            }
+                            return undefined
+                          }, blockOutputs)
+                        }
+                        return undefined
+                      }
+
+                      const formattedOutputs: string[] = []
+                      for (const config of deployment.outputConfigs) {
+                        const blockOutputs = finalData.output[config.blockId]
+                        if (!blockOutputs) continue
+
+                        const value = getOutputValue(blockOutputs, config.path)
+                        const formatted = formatValue(value)
+                        if (formatted) {
+                          formattedOutputs.push(formatted)
+                        }
+                      }
+
+                      if (formattedOutputs.length > 0) {
+                        const trimmedStreamingContent = accumulatedContent.trim()
+                        const uniqueOutputs = formattedOutputs.filter((output) => {
+                          const trimmedOutput = output.trim()
+                          if (!trimmedOutput) return false
+                          if (
+                            trimmedStreamingContent &&
+                            trimmedOutput === trimmedStreamingContent
+                          ) {
+                            return false
+                          }
+                          return true
+                        })
+
+                        if (uniqueOutputs.length > 0) {
+                          const combinedOutputs = uniqueOutputs.join('\n\n')
+                          finalChatOutput = finalChatOutput
+                            ? `${finalChatOutput}\n\n${combinedOutputs}`
+                            : combinedOutputs
+                        }
+                      }
+                    }
+
+                    // Update workflowExecutionLogs with final output directly in database
+                    // (logging session is already completed by streaming code)
+                    if (finalChatOutput) {
+                      try {
+                        await db
+                          .update(workflowExecutionLogs)
+                          .set({
+                            finalChatOutput,
+                          })
+                          .where(eq(workflowExecutionLogs.executionId, executionId))
+                        logger.debug(
+                          `[${requestId}] Updated finalChatOutput for execution ${executionId}`
+                        )
+                      } catch (updateError) {
+                        logger.error(
+                          `[${requestId}] Failed to update finalChatOutput:`,
+                          updateError
+                        )
+                      }
+                    }
+                  }
+
+                  // Pass through the original data
+                  controller.enqueue(encoder.encode(line + '\n\n'))
+                } catch (parseError) {
+                  // If parsing fails, just pass through the original line
+                  controller.enqueue(encoder.encode(line + '\n\n'))
+                }
+              }
+            }
+          } catch (error) {
+            logger.error(`[${requestId}] Error in stream wrapper:`, error)
+            controller.error(error)
+          } finally {
+            reader.releaseLock()
+            controller.close()
+          }
+        },
+      })
+
+      const streamResponse = new NextResponse(wrappedStream, {
         status: 200,
         headers: SSE_HEADERS,
       })
