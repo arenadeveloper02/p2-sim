@@ -81,6 +81,13 @@ const awsAccessKeyId = rawAwsAccessKeyId ? String(rawAwsAccessKeyId).trim() : un
 const awsSecretAccessKey = rawAwsSecretAccessKey ? String(rawAwsSecretAccessKey).trim() : undefined
 const awsCredsPresent = Boolean(awsRegion && awsAccessKeyId && awsSecretAccessKey)
 
+/**
+ * Check if any email service is configured and available
+ */
+export function hasEmailService(): boolean {
+  return !!(awsCredsPresent || resend || azureEmailClient)
+}
+
 export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
   try {
     // Check if user has unsubscribed (skip for critical transactional emails)
