@@ -1,16 +1,78 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { document, knowledgeBase, permissions } from '@sim/db/schema'
+import { document, knowledgeBase, permissions, userKnowledgeBase } from '@sim/db/schema'
 import { and, count, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import type {
   ChunkingConfig,
   CreateKnowledgeBaseData,
   KnowledgeBaseWithCounts,
+  UserKnowledgeBaseAccess,
 } from '@/lib/knowledge/types'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('KnowledgeBaseService')
+
+/**
+ * Get knowledge bases that user has direct access to via user_knowledge_base table only
+ * Filters by userId AND workspaceId (both must match)
+ * Returns minimal data with default values for missing fields
+ */
+export async function getUserKnowledgeBaseAccess(
+  userId: string,
+  workspaceId: string | null,
+  requestId: string
+): Promise<UserKnowledgeBaseAccess[]> {
+  const results = await db
+    .select({
+      id: userKnowledgeBase.knowledgeBaseIdRef,
+      name: userKnowledgeBase.knowledgeBaseNameRef,
+      userIdRef: userKnowledgeBase.userIdRef,
+      userWorkspaceIdRef: userKnowledgeBase.userWorkspaceIdRef,
+      kbWorkspaceIdRef: userKnowledgeBase.kbWorkspaceIdRef,
+      createdAt: userKnowledgeBase.createdAt,
+      updatedAt: userKnowledgeBase.updatedAt,
+      docCount: count(document.id),
+    })
+    .from(userKnowledgeBase)
+    .leftJoin(
+      document,
+      and(
+        eq(document.knowledgeBaseId, userKnowledgeBase.knowledgeBaseIdRef),
+        isNull(document.deletedAt)
+      )
+    )
+    .where(
+      and(
+        isNull(userKnowledgeBase.deletedAt),
+        eq(userKnowledgeBase.userIdRef, userId),
+        workspaceId ? eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId) : undefined
+      )
+    )
+    .groupBy(
+      userKnowledgeBase.id,
+      userKnowledgeBase.knowledgeBaseIdRef,
+      userKnowledgeBase.knowledgeBaseNameRef,
+      userKnowledgeBase.userIdRef,
+      userKnowledgeBase.userWorkspaceIdRef,
+      userKnowledgeBase.kbWorkspaceIdRef,
+      userKnowledgeBase.createdAt,
+      userKnowledgeBase.updatedAt
+    )
+    .orderBy(userKnowledgeBase.createdAt)
+
+  logger.info(
+    `[${requestId}] Retrieved ${results.length} knowledge base access entries for user ${userId}`
+  )
+
+  // Return simplified user knowledge base access data
+  return results.map((row) => ({
+    id: row.id,
+    name: row.name,
+    workspaceId: row.kbWorkspaceIdRef || null,
+    docCount: Number(row.docCount),
+  }))
+}
 
 /**
  * Get knowledge bases that a user can access
@@ -110,7 +172,25 @@ export async function createKnowledgeBase(
 
   await db.insert(knowledgeBase).values(newKnowledgeBase)
 
-  logger.info(`[${requestId}] Created knowledge base: ${data.name} (${kbId})`)
+  // Create corresponding entry in user_knowledge_base table
+  const userKbId = randomUUID()
+  const userKbEntry = {
+    id: userKbId,
+    userIdRef: data.userId,
+    userWorkspaceIdRef: data.workspaceId ?? '',
+    knowledgeBaseIdRef: kbId,
+    kbWorkspaceIdRef: data.workspaceId ?? '',
+    knowledgeBaseNameRef: data.name,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  }
+
+  await db.insert(userKnowledgeBase).values(userKbEntry)
+
+  logger.info(
+    `[${requestId}] Created knowledge base: ${data.name} (${kbId}) and user_knowledge_base entry (${userKbId})`
+  )
 
   return {
     id: kbId,
@@ -124,6 +204,134 @@ export async function createKnowledgeBase(
     updatedAt: now,
     workspaceId: data.workspaceId ?? null,
     docCount: 0,
+  }
+}
+
+/**
+ * Sync all knowledge bases from a workspace to user_knowledge_base for a specific user
+ * This is called when a user is added to a workspace (e.g., via invitation)
+ */
+export async function syncWorkspaceKnowledgeBasesForUser(
+  userId: string,
+  workspaceId: string,
+  requestId: string
+): Promise<void> {
+  const now = new Date()
+
+  // Get ALL knowledge bases in the workspace (including deleted ones)
+  const workspaceKBs = await db
+    .select({
+      id: knowledgeBase.id,
+      name: knowledgeBase.name,
+      workspaceId: knowledgeBase.workspaceId,
+      deletedAt: knowledgeBase.deletedAt,
+    })
+    .from(knowledgeBase)
+    .where(eq(knowledgeBase.workspaceId, workspaceId))
+
+  if (workspaceKBs.length === 0) {
+    logger.info(
+      `[${requestId}] No knowledge bases found in workspace ${workspaceId} for user ${userId}`
+    )
+    return
+  }
+
+  // Get existing entries (including deleted ones)
+  const existingEntries = await db
+    .select({
+      knowledgeBaseIdRef: userKnowledgeBase.knowledgeBaseIdRef,
+      deletedAt: userKnowledgeBase.deletedAt,
+    })
+    .from(userKnowledgeBase)
+    .where(
+      and(
+        eq(userKnowledgeBase.userIdRef, userId),
+        eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
+      )
+    )
+
+  const existingKbMap = new Map(existingEntries.map((e) => [e.knowledgeBaseIdRef, e.deletedAt]))
+
+  // Separate KBs into new entries and entries that need updating
+  const entriesToInsert: Array<{
+    id: string
+    userIdRef: string
+    userWorkspaceIdRef: string
+    knowledgeBaseIdRef: string
+    kbWorkspaceIdRef: string
+    knowledgeBaseNameRef: string
+    createdAt: Date
+    updatedAt: Date
+    deletedAt: Date | null
+  }> = []
+
+  const entriesToUpdate: Array<{
+    knowledgeBaseIdRef: string
+    deletedAt: Date | null
+    updatedAt: Date
+  }> = []
+
+  for (const kb of workspaceKBs) {
+    const existingDeletedAt = existingKbMap.get(kb.id)
+
+    if (existingDeletedAt === undefined) {
+      // New entry - create it with the same deletedAt status as the KB
+      entriesToInsert.push({
+        id: randomUUID(),
+        userIdRef: userId,
+        userWorkspaceIdRef: workspaceId,
+        knowledgeBaseIdRef: kb.id,
+        kbWorkspaceIdRef: workspaceId,
+        knowledgeBaseNameRef: kb.name,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: kb.deletedAt,
+      })
+    } else if (existingDeletedAt !== kb.deletedAt) {
+      // Entry exists but deletedAt status doesn't match - update it
+      entriesToUpdate.push({
+        knowledgeBaseIdRef: kb.id,
+        deletedAt: kb.deletedAt,
+        updatedAt: now,
+      })
+    }
+  }
+
+  // Insert new entries
+  if (entriesToInsert.length > 0) {
+    await db.insert(userKnowledgeBase).values(entriesToInsert)
+    logger.info(
+      `[${requestId}] Created ${entriesToInsert.length} user_knowledge_base entries for user ${userId} in workspace ${workspaceId}`
+    )
+  }
+
+  // Update existing entries that need their deletedAt status synced
+  for (const update of entriesToUpdate) {
+    await db
+      .update(userKnowledgeBase)
+      .set({
+        deletedAt: update.deletedAt,
+        updatedAt: update.updatedAt,
+      })
+      .where(
+        and(
+          eq(userKnowledgeBase.userIdRef, userId),
+          eq(userKnowledgeBase.knowledgeBaseIdRef, update.knowledgeBaseIdRef),
+          eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId)
+        )
+      )
+  }
+
+  if (entriesToUpdate.length > 0) {
+    logger.info(
+      `[${requestId}] Updated ${entriesToUpdate.length} user_knowledge_base entries for user ${userId} in workspace ${workspaceId} to sync deletedAt status`
+    )
+  }
+
+  if (entriesToInsert.length === 0 && entriesToUpdate.length === 0) {
+    logger.info(
+      `[${requestId}] All user_knowledge_base entries are already in sync for user ${userId} in workspace ${workspaceId}`
+    )
   }
 }
 
@@ -250,6 +458,7 @@ export async function getKnowledgeBaseById(
 
 /**
  * Delete a knowledge base (soft delete)
+ * Also soft deletes all corresponding entries in user_knowledge_base table
  */
 export async function deleteKnowledgeBase(
   knowledgeBaseId: string,
@@ -257,6 +466,7 @@ export async function deleteKnowledgeBase(
 ): Promise<void> {
   const now = new Date()
 
+  // Soft delete the knowledge base
   await db
     .update(knowledgeBase)
     .set({
@@ -265,5 +475,16 @@ export async function deleteKnowledgeBase(
     })
     .where(eq(knowledgeBase.id, knowledgeBaseId))
 
-  logger.info(`[${requestId}] Soft deleted knowledge base: ${knowledgeBaseId}`)
+  // Soft delete all corresponding user_knowledge_base entries
+  await db
+    .update(userKnowledgeBase)
+    .set({
+      deletedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId))
+
+  logger.info(
+    `[${requestId}] Soft deleted knowledge base and user_knowledge_base entries: ${knowledgeBaseId}`
+  )
 }
