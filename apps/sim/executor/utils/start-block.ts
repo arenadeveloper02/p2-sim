@@ -118,7 +118,7 @@ function readMetadataSubBlockValue(block: SerializedBlock, key: string): unknown
   return (raw as { value?: unknown }).value
 }
 
-function extractInputFormat(block: SerializedBlock): InputFormatField[] {
+export function extractInputFormat(block: SerializedBlock): InputFormatField[] {
   const fromMetadata = readMetadataSubBlockValue(block, 'inputFormat')
   const fromParams = block.config?.params?.inputFormat
   const source = fromMetadata ?? fromParams

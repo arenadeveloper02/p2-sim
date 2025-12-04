@@ -11,6 +11,8 @@ import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import * as ChatFiles from '@/lib/uploads/contexts/chat'
+import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
+import type { InputFormatField } from '@/lib/workflows/types'
 import {
   addCorsHeaders,
   setChatAuthCookie,
@@ -36,6 +38,8 @@ const chatPostBodySchema = z.object({
   conversationId: z.string().optional(),
   chatId: z.string().optional(), // chatId for tracking conversation context
   files: z.array(chatFileSchema).optional().default([]),
+  // Additional Start Block inputs (custom fields from inputFormat)
+  startBlockInputs: z.record(z.unknown()).optional(),
 })
 
 export const dynamic = 'force-dynamic'
@@ -248,7 +252,7 @@ export async function POST(
       logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
     }
 
-    const { input, password, email, conversationId, chatId: payload, files } = parsedBody
+    const { input, password, email, conversationId, chatId: payload, files, startBlockInputs } = parsedBody
 
     // Get userId from session for external chat API requests
     const session = await getSession()
@@ -323,6 +327,13 @@ export async function POST(
       const createFilteredResult = (executeRoute as any).createFilteredResult
 
       const workflowInput: any = { input, conversationId }
+      
+      // Merge additional Start Block inputs (custom fields from inputFormat)
+      if (startBlockInputs && typeof startBlockInputs === 'object') {
+        Object.assign(workflowInput, startBlockInputs)
+        logger.debug(`[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`)
+      }
+      
       if (files && Array.isArray(files) && files.length > 0) {
         const executionContext = {
           workspaceId,
@@ -648,6 +659,40 @@ export async function GET(
       )
     }
 
+    // Extract Start Block inputFormat for chat UI
+    let inputFormat: InputFormatField[] = []
+    try {
+      const deployedData = await loadDeployedWorkflowState(deployment.workflowId)
+      // Find Start Block manually from BlockState
+      const startBlock = Object.values(deployedData.blocks).find(
+        (block) => block.type === 'start_trigger' || block.type === 'starter'
+      )
+      if (startBlock?.subBlocks?.inputFormat?.value) {
+        const inputFormatValue = startBlock.subBlocks.inputFormat.value
+        if (Array.isArray(inputFormatValue)) {
+          inputFormat = inputFormatValue
+            .filter((field) => {
+              return (
+                field !== null &&
+                field !== undefined &&
+                typeof field === 'object' &&
+                !Array.isArray(field) &&
+                'name' in field &&
+                typeof (field as any).name === 'string'
+              )
+            })
+            .map((field: any) => ({
+              name: field.name,
+              type: field.type,
+              value: field.value,
+            }))
+        }
+      }
+    } catch (error) {
+      logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
+      // Continue without inputFormat - not critical for chat config
+    }
+
     return addCorsHeaders(
       createSuccessResponse({
         id: deployment.id,
@@ -656,6 +701,7 @@ export async function GET(
         customizations: deployment.customizations,
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
+        inputFormat,
       }),
       request
     )

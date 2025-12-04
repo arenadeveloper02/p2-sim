@@ -27,6 +27,7 @@ import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import {
   ChatMessage,
   OutputSelect,
+  StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import {
   useChatBoundarySync,
@@ -219,11 +220,15 @@ export function Chat() {
   const [chatMessage, setChatMessage] = useState('')
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
 
   // Refs
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const hasShownModalRef = useRef<boolean>(false)
+  const hasCheckedModalRef = useRef<boolean>(false)
 
   // File upload hook
   const {
@@ -362,6 +367,51 @@ export function Chat() {
     const lastMessage = workflowMessages[workflowMessages.length - 1]
     return Boolean(lastMessage?.isStreaming)
   }, [workflowMessages])
+
+  // Get custom fields (excluding reserved fields)
+  const customFields = useMemo(() => {
+    const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+    return normalizedFields.filter(
+      (field) => {
+        const fieldName = field.name?.trim().toLowerCase()
+        return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+      }
+    )
+  }, [startBlockInputFormat])
+
+  // Reset modal flags when workflow changes or messages are added
+  useEffect(() => {
+    if (workflowMessages.length > 0) {
+      hasShownModalRef.current = false
+      hasCheckedModalRef.current = false
+    }
+  }, [workflowMessages.length, activeWorkflowId])
+
+  // Reset check flag when chat closes
+  useEffect(() => {
+    if (!isChatOpen) {
+      hasCheckedModalRef.current = false
+    }
+  }, [isChatOpen])
+
+  // Show modal on load if no history and there are custom fields
+  // Only check once when chat opens to prevent infinite loops
+  useEffect(() => {
+    // Only check once per chat session when chat opens
+    if (
+      isChatOpen &&
+      !hasCheckedModalRef.current &&
+      workflowMessages.length === 0
+    ) {
+      hasCheckedModalRef.current = true
+      
+      // Check if we have custom fields (check once, don't depend on it)
+      if (customFields.length > 0 && !hasShownModalRef.current) {
+        hasShownModalRef.current = true
+        setIsInputModalOpen(true)
+      }
+    }
+  }, [isChatOpen, workflowMessages.length])
 
   // Map chat messages to copilot message format (type -> role) for scroll hook
   const messagesForScrollHook = useMemo(() => {
@@ -615,9 +665,12 @@ export function Chat() {
         conversationId: string
         files?: Array<{ name: string; size: number; type: string; file: File }>
         onUploadError?: (message: string) => void
+        [key: string]: unknown
       } = {
         input: sentMessage,
         conversationId,
+        // Merge Start Block inputs
+        ...startBlockInputs,
       }
 
       if (chatFiles.length > 0) {
@@ -659,7 +712,24 @@ export function Chat() {
     focusInput,
     clearFiles,
     clearErrors,
+    startBlockInputs,
   ])
+
+  /**
+   * Handles Start Block input modal submission
+   */
+  const handleStartBlockInputsSubmit = useCallback((values: Record<string, unknown>) => {
+    setStartBlockInputs(values)
+    setIsInputModalOpen(false)
+    focusInput(100)
+  }, [focusInput])
+
+  /**
+   * Handles Re-run button click - opens modal to collect new inputs
+   */
+  const handleRerun = useCallback(() => {
+    setIsInputModalOpen(true)
+  }, [])
 
   /**
    * Handles keyboard input for chat
@@ -821,6 +891,21 @@ export function Chat() {
             >
               <span className='whitespace-nowrap text-[12px]'>Add inputs</span>
             </Badge>
+          )}
+
+          {customFields.length > 0 && (
+            <Button
+              variant='ghost'
+              size='sm'
+              onClick={(e) => {
+                e.stopPropagation()
+                handleRerun()
+              }}
+              className='!p-1.5 -m-1.5 h-auto text-[12px]'
+              title='Re-run with new inputs'
+            >
+              Re-run
+            </Button>
           )}
 
           <OutputSelect
@@ -1053,6 +1138,17 @@ export function Chat() {
           </div>
         </div>
       </div>
+
+      {/* Start Block Input Modal */}
+      {customFields.length > 0 && (
+        <StartBlockInputModal
+          open={isInputModalOpen}
+          onOpenChange={setIsInputModalOpen}
+          inputFormat={startBlockInputFormat}
+          onSubmit={handleStartBlockInputsSubmit}
+          initialValues={startBlockInputs}
+        />
+      )}
     </div>
   )
 }

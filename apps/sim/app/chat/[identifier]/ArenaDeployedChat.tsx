@@ -22,6 +22,10 @@ import {
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
+import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import type { InputFormatField } from '@/lib/workflows/types'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import LeftNavThread from './leftNavThread'
 
@@ -40,6 +44,7 @@ interface ChatConfig {
   }
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
+  inputFormat?: InputFormatField[]
 }
 
 interface ThreadRecord {
@@ -144,6 +149,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
+
+  // Start Block input modal state
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
@@ -259,6 +269,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 return messages
               }),
             ])
+            // Reset modal ref when messages are loaded
+            hasShownModalRef.current = false
             setTimeout(() => {
               setTimeout(() => {
                 scrollToBottom()
@@ -402,6 +414,22 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           },
         ])
       }
+
+      // Check if we should show modal on load (no messages and has inputFormat)
+      if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
+        const normalizedFields = normalizeInputFormatValue(data.inputFormat)
+        const customFields = normalizedFields.filter(
+          (field) => {
+            const fieldName = field.name?.trim().toLowerCase()
+            return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+          }
+        )
+        
+        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
+          hasShownModalRef.current = true
+          setIsInputModalOpen(true)
+        }
+      }
     } catch (error) {
       logger.error('Error fetching chat config:', error)
       setError('This chat is currently unavailable. Please try again later.')
@@ -498,6 +526,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             : JSON.stringify(userMessage.content),
         conversationId,
         chatId: currentChatId,
+        // Include Start Block inputs
+        startBlockInputs: Object.keys(startBlockInputs).length > 0 ? startBlockInputs : undefined,
       }
 
       // Add files if present (convert to base64 for JSON transmission)
@@ -627,6 +657,34 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     },
     [handleSendMessage]
   )
+
+  // Get custom fields from inputFormat
+  const customFields = chatConfig?.inputFormat
+    ? normalizeInputFormatValue(chatConfig.inputFormat).filter(
+        (field) => {
+          const fieldName = field.name?.trim().toLowerCase()
+          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+        }
+      )
+    : []
+
+  // Handle Start Block input modal submission
+  const handleStartBlockInputsSubmit = useCallback((values: Record<string, unknown>) => {
+    setStartBlockInputs(values)
+    setIsInputModalOpen(false)
+  }, [])
+
+  // Handle Re-run button click
+  const handleRerun = useCallback(() => {
+    setIsInputModalOpen(true)
+  }, [])
+
+  // Reset modal ref when messages are added
+  useEffect(() => {
+    if (messages.length > 0) {
+      hasShownModalRef.current = false
+    }
+  }, [messages.length])
 
   // Get chatId from URL params
   useEffect(() => {
@@ -860,6 +918,18 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       {/* Input area (free-standing at the bottom) */}
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+          {/* Re-run button for Start Block inputs */}
+          {customFields.length > 0 && (
+            <div className='mb-2 flex justify-end'>
+              <button
+                onClick={handleRerun}
+                className='rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]'
+                title='Re-run with new inputs'
+              >
+                Re-run
+              </button>
+            </div>
+          )}
           <ChatInput
             onSubmit={(value, isVoiceInput, files) => {
               void handleSendMessage(value, isVoiceInput, files)
@@ -870,6 +940,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           />
         </div>
       </div>
+
+      {/* Start Block Input Modal */}
+      {customFields.length > 0 && (
+        <StartBlockInputModal
+          open={isInputModalOpen}
+          onOpenChange={setIsInputModalOpen}
+          inputFormat={chatConfig.inputFormat}
+          onSubmit={handleStartBlockInputsSubmit}
+          initialValues={startBlockInputs}
+        />
+      )}
     </div>
   )
 }
