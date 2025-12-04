@@ -3,24 +3,27 @@ import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
-import { processSingleFileToUserFile } from '@/lib/uploads/utils/file-utils'
-import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
-import {
-  GOOGLE_WORKSPACE_MIME_TYPES,
-  handleSheetsFormat,
-  SOURCE_MIME_TYPES,
-} from '@/tools/google_drive/utils'
+import { GOOGLE_WORKSPACE_MIME_TYPES, SOURCE_MIME_TYPES } from '@/tools/google_drive/utils'
 
 export const dynamic = 'force-dynamic'
 
-const logger = createLogger('GoogleDriveUploadAPI')
+const logger = createLogger('GoogleDriveUploadFileAPI')
 
 const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/upload/drive/v3/files'
+const PPTX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
-const GoogleDriveUploadSchema = z.object({
+const GoogleDriveUploadFileSchema = z.object({
   accessToken: z.string().min(1, 'Access token is required'),
   fileName: z.string().min(1, 'File name is required'),
-  file: z.any().optional().nullable(),
+  file: z
+    .object({
+      content: z.string().min(1, 'File content is required'),
+      name: z.string().optional(),
+      fileType: z.string().optional(),
+      mimetype: z.string().optional(),
+    })
+    .optional()
+    .nullable(),
   mimeType: z.string().optional().nullable(),
   folderId: z.string().optional().nullable(),
   folderSelector: z.string().optional().nullable(),
@@ -60,7 +63,9 @@ export async function POST(request: NextRequest) {
     const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
 
     if (!authResult.success) {
-      logger.warn(`[${requestId}] Unauthorized Google Drive upload attempt: ${authResult.error}`)
+      logger.warn(
+        `[${requestId}] Unauthorized Google Drive upload file attempt: ${authResult.error}`
+      )
       return NextResponse.json(
         {
           success: false,
@@ -71,152 +76,92 @@ export async function POST(request: NextRequest) {
     }
 
     logger.info(
-      `[${requestId}] Authenticated Google Drive upload request via ${authResult.authType}`,
+      `[${requestId}] Authenticated Google Drive upload file request via ${authResult.authType}`,
       {
         userId: authResult.userId,
       }
     )
 
     const body = await request.json()
-    const validatedData = GoogleDriveUploadSchema.parse(body)
+    const validatedData = GoogleDriveUploadFileSchema.parse(body)
 
     logger.info(`[${requestId}] Uploading file to Google Drive`, {
       fileName: validatedData.fileName,
       mimeType: validatedData.mimeType,
-      folderId: validatedData.folderId,
+      folderId: validatedData.folderId || validatedData.folderSelector,
       hasFile: !!validatedData.file,
     })
 
-    if (!validatedData.file) {
+    if (!validatedData.file || !validatedData.file.content) {
       return NextResponse.json(
         {
           success: false,
-          error: 'No file provided. Use the text content field for text-only uploads.',
+          error: 'No file content provided. File must have a content property with base64 data.',
         },
         { status: 400 }
       )
     }
 
-    // Process file - handle both UserFile (with key) and raw file data (with content)
-    const fileData = validatedData.file
+    // Process file content - handle base64/base64url format
     let fileBuffer: Buffer
-    let requestedMimeType: string
-    let finalFileName: string
+    const fileData = validatedData.file
 
-    // Check if file has base64 content (from presentation tool or similar)
-    if (fileData && typeof fileData === 'object' && 'content' in fileData && fileData.content) {
-      // Handle raw file data with base64 content
-      logger.info(`[${requestId}] Processing file with base64 content`, {
+    try {
+      let base64Data = fileData.content
+
+      // Convert base64url to base64 if needed (presentation tool may use base64url)
+      if (base64Data && (base64Data.includes('-') || base64Data.includes('_'))) {
+        base64Data = base64Data.replace(/-/g, '+').replace(/_/g, '/')
+        logger.info(`[${requestId}] Converted base64url to base64`)
+      }
+
+      fileBuffer = Buffer.from(base64Data, 'base64')
+
+      if (fileBuffer.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'File content is empty after decoding',
+          },
+          { status: 400 }
+        )
+      }
+
+      logger.info(`[${requestId}] Decoded file content`, {
+        size: fileBuffer.length,
         fileName: fileData.name || validatedData.fileName,
       })
-
-      try {
-        let base64Data = fileData.content
-
-        // Convert base64url to base64 if needed
-        if (base64Data && (base64Data.includes('-') || base64Data.includes('_'))) {
-          base64Data = base64Data.replace(/-/g, '+').replace(/_/g, '/')
-          logger.info(`[${requestId}] Converted base64url to base64`)
-        }
-
-        fileBuffer = Buffer.from(base64Data, 'base64')
-
-        if (fileBuffer.length === 0) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: 'File content is empty after decoding',
-            },
-            { status: 400 }
-          )
-        }
-
-        // Determine MIME type - prioritize provided mimeType, then file metadata
-        requestedMimeType =
-          validatedData.mimeType ||
-          fileData.fileType ||
-          fileData.mimetype ||
-          'application/octet-stream'
-
-        // Prefer user-entered fileName when provided; fall back to file's own name, then a default
-        finalFileName = validatedData.fileName || fileData.name || 'presentation.pptx'
-
-        logger.info(`[${requestId}] Decoded file content`, {
-          size: fileBuffer.length,
-          fileName: finalFileName,
-          mimeType: requestedMimeType,
-        })
-      } catch (error) {
-        logger.error(`[${requestId}] Failed to decode file content:`, error)
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to decode file content: ${error instanceof Error ? error.message : 'Invalid base64 data'}`,
-          },
-          { status: 400 }
-        )
-      }
-    } else {
-      // Handle UserFile format (with storage key)
-      let userFile
-      try {
-        userFile = processSingleFileToUserFile(fileData, requestId, logger)
-      } catch (error) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to process file',
-          },
-          { status: 400 }
-        )
-      }
-
-      logger.info(`[${requestId}] Downloading file from storage`, {
-        fileName: userFile.name,
-        key: userFile.key,
-        size: userFile.size,
-      })
-
-      try {
-        fileBuffer = await downloadFileFromStorage(userFile, requestId, logger)
-      } catch (error) {
-        logger.error(`[${requestId}] Failed to download file:`, error)
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          },
-          { status: 500 }
-        )
-      }
-
-      requestedMimeType = validatedData.mimeType || userFile.type || 'application/octet-stream'
-      finalFileName = validatedData.fileName
+    } catch (error) {
+      logger.error(`[${requestId}] Failed to decode file content:`, error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to decode file content: ${error instanceof Error ? error.message : 'Invalid base64 data'}`,
+        },
+        { status: 400 }
+      )
     }
 
-    let uploadMimeType = requestedMimeType
+    // Determine MIME type - prioritize provided mimeType, then file metadata, default to PPTX
+    const requestedMimeType =
+      validatedData.mimeType || fileData.fileType || fileData.mimetype || PPTX_MIME_TYPE
 
+    // For PPTX files, we don't need to convert MIME types (not a Google Workspace format)
+    // But we still check if it's a Google Workspace type for consistency
+    let uploadMimeType = requestedMimeType
     if (GOOGLE_WORKSPACE_MIME_TYPES.includes(requestedMimeType)) {
       uploadMimeType = SOURCE_MIME_TYPES[requestedMimeType] || 'text/plain'
-      logger.info(`[${requestId}] Converting to Google Workspace type`, {
+      logger.info(`[${requestId}] Converting to Google Workspace source type`, {
         requestedMimeType,
         uploadMimeType,
       })
     }
 
-    if (requestedMimeType === 'application/vnd.google-apps.spreadsheet') {
-      try {
-        const textContent = fileBuffer.toString('utf-8')
-        const { csv } = handleSheetsFormat(textContent)
-        if (csv !== undefined) {
-          fileBuffer = Buffer.from(csv, 'utf-8')
-          uploadMimeType = 'text/csv'
-          logger.info(`[${requestId}] Converted to CSV for Google Sheets upload`)
-        }
-      } catch (error) {
-        logger.warn(`[${requestId}] Could not convert to CSV, uploading as-is:`, error)
-      }
-    }
+    // Use file name from file object if available, otherwise use provided fileName
+    const finalFileName = fileData.name || validatedData.fileName
+
+    // Use folderSelector if provided, otherwise use folderId
+    const parentFolderId = (validatedData.folderSelector || validatedData.folderId || '').trim()
 
     const metadata: {
       name: string
@@ -224,20 +169,17 @@ export async function POST(request: NextRequest) {
       parents?: string[]
     } = {
       name: finalFileName,
-      mimeType: requestedMimeType,
+      mimeType: requestedMimeType, // Use requested MIME type for metadata (Google Drive will handle conversion)
     }
 
-    // Use folderSelector if provided, otherwise use folderId
-    const parentFolderId = (validatedData.folderSelector || validatedData.folderId || '').trim()
     if (parentFolderId) {
       metadata.parents = [parentFolderId]
     }
 
     const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substring(7)}`
-
     const multipartBody = buildMultipartBody(metadata, fileBuffer, uploadMimeType, boundary)
 
-    logger.info(`[${requestId}] Uploading to Google Drive via multipart upload`, {
+    logger.info(`[${requestId}] Uploading PPTX file to Google Drive via multipart upload`, {
       fileName: finalFileName,
       size: fileBuffer.length,
       uploadMimeType,
@@ -279,6 +221,7 @@ export async function POST(request: NextRequest) {
 
     logger.info(`[${requestId}] File uploaded successfully`, { fileId })
 
+    // For Google Workspace documents, update the name again to ensure it sticks after conversion
     if (GOOGLE_WORKSPACE_MIME_TYPES.includes(requestedMimeType)) {
       logger.info(`[${requestId}] Updating file name to ensure it persists after conversion`)
 
@@ -303,6 +246,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Get the final file data with all metadata
     const finalFileResponse = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name,mimeType,webViewLink,webContentLink,size,createdTime,modifiedTime,parents`,
       {
@@ -311,6 +255,15 @@ export async function POST(request: NextRequest) {
         },
       }
     )
+
+    if (!finalFileResponse.ok) {
+      const errorData = await finalFileResponse.json()
+      logger.error(`[${requestId}] Failed to get final file data`, {
+        status: finalFileResponse.status,
+        error: errorData,
+      })
+      return NextResponse.json(errorData, { status: finalFileResponse.status })
+    }
 
     const finalFile = await finalFileResponse.json()
 
