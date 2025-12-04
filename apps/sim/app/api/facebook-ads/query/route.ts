@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { getFacebookAccountId, getFacebookAccountName } from '@/lib/facebook-accounts'
 import { createLogger } from '@/lib/logs/console/logger'
-import { generateRequestId } from '@/lib/utils'
 import { parseQueryWithAI } from './ai-query-generation'
 import { makeFacebookAdsRequest } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
