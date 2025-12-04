@@ -256,7 +256,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
               : 'javascript'
 
         return (
-          <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[#1F1F1F] text-sm'>
+          <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm'>
             <div className='flex items-center justify-between border-[var(--border-strong)] border-b px-4 py-1.5'>
               <span className='font-season text-[#A3A3A3] text-xs'>
                 {language === 'code' ? viewerLanguage : language}
@@ -293,7 +293,7 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
         if (inline) {
           return (
             <code
-              className='whitespace-normal break-all rounded border border-[var(--border-strong)] bg-[#1F1F1F] px-1 py-0.5 font-mono text-[#eeeeee] text-[0.9em]'
+              className='whitespace-normal break-all rounded border border-[var(--border-strong)] bg-[var(--surface-2)] px-1 py-0.5 font-mono text-[0.9em] text-[var(--text-primary)]'
               {...props}
             >
               {children}
@@ -353,13 +353,13 @@ export default function CopilotMarkdownRenderer({ content }: CopilotMarkdownRend
         </div>
       ),
       thead: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-        <thead className='bg-gray-200 text-left dark:bg-[#2A2A2A]'>{children}</thead>
+        <thead className='bg-[var(--surface-3)] text-left'>{children}</thead>
       ),
       tbody: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-        <tbody className='divide-y divide-gray-300 dark:divide-gray-600'>{children}</tbody>
+        <tbody className='divide-y divide-[var(--border)]'>{children}</tbody>
       ),
       tr: ({ children }: React.HTMLAttributes<HTMLTableRowElement>) => (
-        <tr className='border-gray-300 border-b transition-colors hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-[#2A2A2A]/60'>
+        <tr className='border-[var(--border)] border-b transition-colors hover:bg-[var(--surface-4)]'>
           {children}
         </tr>
       ),

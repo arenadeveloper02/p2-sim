@@ -97,7 +97,7 @@ function ValueRow({ name, value, level, path, expandedPaths, onToggle, wrapText 
         {isExpandable ? (
           <ChevronRight
             className={clsx(
-              'h-3 w-3 flex-shrink-0 text-[#8D8D8D] transition-transform',
+              'h-3 w-3 flex-shrink-0 text-[var(--text-muted)] transition-transform',
               isExpanded && 'rotate-90'
             )}
           />
@@ -119,7 +119,7 @@ function ValueRow({ name, value, level, path, expandedPaths, onToggle, wrapText 
           </span>
         ) : (
           !isExpanded && (
-            <span className='text-[#8D8D8D] text-[12px] italic'>
+            <span className='text-[12px] text-[var(--text-muted)] italic'>
               {getCollapsedPreview(value, type)}
             </span>
           )
@@ -186,7 +186,7 @@ export function PrettierOutput({ output, wrapText }: PrettierOutputProps) {
 
   if (!output || (typeof output === 'object' && Object.keys(output).length === 0)) {
     return (
-      <div className='flex h-full items-center justify-center text-[#8D8D8D] text-[12px]'>
+      <div className='flex h-full items-center justify-center text-[12px] text-[var(--text-muted)]'>
         No output data
       </div>
     )
