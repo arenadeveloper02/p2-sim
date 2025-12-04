@@ -85,6 +85,8 @@ export const env = createEnv({
     GEMINI_API_KEY_2:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
     GEMINI_API_KEY_3:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
     OLLAMA_URL:                            z.string().url().optional(),            // Ollama local LLM server URL
+    VLLM_BASE_URL:                         z.string().url().optional(),            // vLLM self-hosted base URL (OpenAI-compatible)
+    VLLM_API_KEY:                          z.string().optional(),                  // Optional bearer token for vLLM
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
@@ -177,6 +179,9 @@ export const env = createEnv({
     KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(20),      // Processing batch size
     KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(100),     // Delay between batches in ms
     KB_CONFIG_DELAY_BETWEEN_DOCUMENTS:     z.number().optional().default(50),      // Delay between documents in ms
+
+    //Presentation API URL
+    PRESENTATION_API_BASE_URL:             z.string().url().optional(),            // Presentation API base URL
 
     // Real-time Communication
     SOCKET_SERVER_URL:                     z.string().url().optional(),            // WebSocket server URL for real-time features
@@ -271,6 +276,10 @@ export const env = createEnv({
     SSO_SAML_SIGNATURE_ALGORITHM:          z.string().optional(),                  // SAML signature algorithm (optional)
     SSO_SAML_DIGEST_ALGORITHM:             z.string().optional(),                  // SAML digest algorithm (optional)
     SSO_SAML_IDENTIFIER_FORMAT:            z.string().optional(),                  // SAML identifier format (optional)
+
+    // Arena
+    ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
   },
 
   client: {
@@ -316,6 +325,10 @@ export const env = createEnv({
     NEXT_PUBLIC_TRIGGER_DEV_ENABLED:       z.boolean().optional(),                 // Client-side gate for async executions UI
     NEXT_PUBLIC_SSO_ENABLED:               z.boolean().optional(),                 // Enable SSO login UI components
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: z.boolean().optional().default(true), // Control visibility of email/password login forms
+
+    // Arena
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
   },
 
   // Variables available on both server and client
@@ -325,6 +338,8 @@ export const env = createEnv({
   },
 
   experimental__runtimeEnv: {
+    NEXT_PUBLIC_ARENA_BACKEND_BASE_URL: process.env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL,
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL: process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_BILLING_ENABLED: process.env.NEXT_PUBLIC_BILLING_ENABLED,
     NEXT_PUBLIC_GOOGLE_CLIENT_ID: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,

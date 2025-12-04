@@ -694,6 +694,7 @@ import {
   posthogUpdatePropertyDefinitionTool,
   posthogUpdateSurveyTool,
 } from '@/tools/posthog'
+import { createTool as presentationCreateTool } from '@/tools/presentation'
 import {
   pylonBulkUpdateAccountsTool,
   pylonCreateAccountTool,
@@ -1050,9 +1051,12 @@ import {
   zepGetUserThreadsTool,
   zepGetUserTool,
 } from '@/tools/zep'
+import { arenaCreateTask, arenaSearchTask } from './arena'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
+  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -1875,6 +1879,7 @@ export const tools: Record<string, ToolConfig> = {
   pylon_update_user: pylonUpdateUserTool,
   pylon_search_users: pylonSearchUsersTool,
   pylon_list_teams: pylonListTeamsTool,
+  presentation_create: presentationCreateTool,
   pylon_get_team: pylonGetTeamTool,
   pylon_create_team: pylonCreateTeamTool,
   pylon_update_team: pylonUpdateTeamTool,
