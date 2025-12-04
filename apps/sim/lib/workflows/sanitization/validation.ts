@@ -152,18 +152,70 @@ export function validateWorkflowState(
         continue
       }
 
+      // Sanitize subBlocks: remove invalid entries (missing id or with "undefined" key)
+      let sanitizedBlock = { ...block }
+      if (block.subBlocks && typeof block.subBlocks === 'object') {
+        const sanitizedSubBlocks: Record<string, any> = {}
+        let subBlocksChanged = false
+
+        Object.entries(block.subBlocks).forEach(([subBlockKey, subBlock]: [string, any]) => {
+          // Skip subBlocks with "undefined" key
+          if (subBlockKey === 'undefined') {
+            warnings.push(
+              `Block ${block.name || blockId}: removing invalid subBlock with key "undefined"`
+            )
+            subBlocksChanged = true
+            return
+          }
+
+          // Skip subBlocks that are not objects
+          if (!subBlock || typeof subBlock !== 'object') {
+            warnings.push(
+              `Block ${block.name || blockId}: removing invalid subBlock "${subBlockKey}"`
+            )
+            subBlocksChanged = true
+            return
+          }
+
+          // If subBlock is missing id, use the key as id (for backward compatibility)
+          if (!subBlock.id) {
+            warnings.push(
+              `Block ${block.name || blockId}: subBlock "${subBlockKey}" missing id, using key as id`
+            )
+            sanitizedSubBlocks[subBlockKey] = {
+              ...subBlock,
+              id: subBlockKey,
+            }
+            subBlocksChanged = true
+          } else {
+            // Valid subBlock - keep it
+            sanitizedSubBlocks[subBlockKey] = subBlock
+          }
+        })
+
+        if (subBlocksChanged) {
+          sanitizedBlock = {
+            ...sanitizedBlock,
+            subBlocks: sanitizedSubBlocks,
+          }
+          hasChanges = true
+        }
+      }
+
       // Check if block type exists
-      const blockConfig = getBlock(block.type)
+      const blockConfig = getBlock(sanitizedBlock.type)
 
       // Special handling for container blocks (loop and parallel)
-      if (block.type === 'loop' || block.type === 'parallel') {
+      if (sanitizedBlock.type === 'loop' || sanitizedBlock.type === 'parallel') {
         // These are valid container types, they don't need block configs
-        sanitizedBlocks[blockId] = block
+        sanitizedBlocks[blockId] = sanitizedBlock
         continue
       }
 
       if (!blockConfig) {
-        errors.push(`Block ${block.name || blockId}: unknown block type '${block.type}'`)
+        errors.push(
+          `Block ${sanitizedBlock.name || blockId}: unknown block type '${sanitizedBlock.type}'`
+        )
         if (options.sanitize) {
           hasChanges = true
           continue // Skip this block in sanitized output
@@ -171,38 +223,46 @@ export function validateWorkflowState(
       }
 
       // Validate tool references in blocks that use tools
-      if (block.type === 'api' || block.type === 'generic') {
+      if (sanitizedBlock.type === 'api' || sanitizedBlock.type === 'generic') {
         // For API and generic blocks, the tool is determined by the block's tool configuration
         // In the workflow state, we need to check if the block type has valid tool access
-        const blockConfig = getBlock(block.type)
+        const blockConfig = getBlock(sanitizedBlock.type)
         if (blockConfig?.tools?.access) {
           // API block has static tool access
           const toolIds = blockConfig.tools.access
           for (const toolId of toolIds) {
-            const validationError = validateToolReference(toolId, block.type, block.name)
+            const validationError = validateToolReference(
+              toolId,
+              sanitizedBlock.type,
+              sanitizedBlock.name
+            )
             if (validationError) {
               errors.push(validationError)
             }
           }
         }
-      } else if (block.type === 'knowledge' || block.type === 'supabase' || block.type === 'mcp') {
+      } else if (
+        sanitizedBlock.type === 'knowledge' ||
+        sanitizedBlock.type === 'supabase' ||
+        sanitizedBlock.type === 'mcp'
+      ) {
         // These blocks have dynamic tool selection based on operation
         // The actual tool validation happens at runtime based on the operation value
         // For now, just ensure the block type is valid (already checked above)
       }
 
       // Special validation for agent blocks
-      if (block.type === 'agent' && block.subBlocks?.tools?.value) {
-        const toolsSanitization = sanitizeAgentToolsInBlocks({ [blockId]: block })
+      if (sanitizedBlock.type === 'agent' && sanitizedBlock.subBlocks?.tools?.value) {
+        const toolsSanitization = sanitizeAgentToolsInBlocks({ [blockId]: sanitizedBlock })
         warnings.push(...toolsSanitization.warnings)
         if (toolsSanitization.warnings.length > 0) {
           sanitizedBlocks[blockId] = toolsSanitization.blocks[blockId]
           hasChanges = true
         } else {
-          sanitizedBlocks[blockId] = block
+          sanitizedBlocks[blockId] = sanitizedBlock
         }
       } else {
-        sanitizedBlocks[blockId] = block
+        sanitizedBlocks[blockId] = sanitizedBlock
       }
     }
 

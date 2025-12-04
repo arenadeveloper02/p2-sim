@@ -213,6 +213,37 @@ export function parseWorkflowJson(
       variables: Array.isArray(workflowData.variables) ? workflowData.variables : undefined,
     }
 
+    // Sanitize subBlocks: remove invalid subBlocks (missing id or with "undefined" key)
+    // and ensure all valid subBlocks have required fields
+    Object.entries(workflowState.blocks).forEach(([blockId, block]) => {
+      if (block.subBlocks && typeof block.subBlocks === 'object') {
+        const sanitizedSubBlocks: Record<string, any> = {}
+
+        Object.entries(block.subBlocks).forEach(([subBlockKey, subBlock]: [string, any]) => {
+          // Skip subBlocks with "undefined" key or missing id
+          if (subBlockKey === 'undefined' || !subBlock || typeof subBlock !== 'object') {
+            logger.warn(`Removing invalid subBlock "${subBlockKey}" from block ${blockId}`)
+            return
+          }
+
+          // If subBlock is missing id, use the key as id (for backward compatibility)
+          if (!subBlock.id) {
+            logger.warn(`SubBlock "${subBlockKey}" in block ${blockId} missing id, using key as id`)
+            sanitizedSubBlocks[subBlockKey] = {
+              ...subBlock,
+              id: subBlockKey,
+            }
+          } else {
+            // Valid subBlock - keep it
+            sanitizedSubBlocks[subBlockKey] = subBlock
+          }
+        })
+
+        // Update block with sanitized subBlocks
+        block.subBlocks = sanitizedSubBlocks
+      }
+    })
+
     // Regenerate IDs if requested (default: true)
     if (regenerateIdsFlag) {
       const regeneratedState = regenerateIds(workflowState)
