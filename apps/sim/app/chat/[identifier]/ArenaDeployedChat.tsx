@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
-import { createLogger } from '@/lib/logs/console/logger'
 import { noop } from '@/lib/core/utils/request'
+import { createLogger } from '@/lib/logs/console/logger'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
@@ -628,14 +628,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [handleSendMessage]
   )
 
-    // Get chatId from URL params
-    useEffect(() => {
-      const params = new URLSearchParams(window.location.search)
-      const chatId = params.get('chatId')
-      setCurrentChatId(chatId)
-    }, [])
-
-  
+  // Get chatId from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId')
+    setCurrentChatId(chatId)
+  }, [])
 
   const fetchThreads = useCallback(
     async (workflowId: string, isInitialLoad = false) => {

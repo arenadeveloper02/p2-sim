@@ -78,9 +78,9 @@ export const ArenaClientChatMessage = memo(
       }
 
       try {
-        if (isBase64(content)) {
-          return renderBs64Img({ isBase64: true, imageData: content })
-        }
+        // if (isBase64(content)) {
+        //   return renderBs64Img({ isBase64: true, imageData: content })
+        // }
         if (content) {
           return <ArenaCopilotMarkdownRenderer content={content} />
         }
