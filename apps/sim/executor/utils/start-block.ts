@@ -255,7 +255,10 @@ function ensureString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function buildUnifiedStartOutput(workflowInput: unknown): NormalizedBlockOutput {
+function buildUnifiedStartOutput(
+  workflowInput: unknown,
+  inputFormat?: InputFormatField[]
+): NormalizedBlockOutput {
   const output: NormalizedBlockOutput = {}
 
   if (isPlainObject(workflowInput)) {
@@ -265,16 +268,40 @@ function buildUnifiedStartOutput(workflowInput: unknown): NormalizedBlockOutput 
     }
   }
 
+  // Ensure all fields from inputFormat are present in output, even if empty
+  // This ensures Start Block output matches inputFormat structure
+  if (inputFormat && inputFormat.length > 0) {
+    for (const field of inputFormat) {
+      const fieldName = field.name?.trim()
+      if (!fieldName) continue
+
+      // If field is not already in output, set it from workflowInput or empty string
+      if (!Object.hasOwn(output, fieldName)) {
+        const workflowRecord = isPlainObject(workflowInput) ? workflowInput : undefined
+        if (workflowRecord && Object.hasOwn(workflowRecord, fieldName)) {
+          output[fieldName] = workflowRecord[fieldName]
+        } else {
+          // Set to empty string to ensure field is present in output
+          output[fieldName] = ''
+        }
+      }
+    }
+  }
+
+  // Ensure input field is always present (even if empty string)
+  // Don't remove empty strings - they should be preserved in output
   if (!Object.hasOwn(output, 'input')) {
     const fallbackInput =
       isPlainObject(workflowInput) && typeof workflowInput.input !== 'undefined'
         ? ensureString(workflowInput.input)
         : ''
-    output.input = fallbackInput ? fallbackInput : undefined
-  } else if (typeof output.input === 'string' && output.input.length === 0) {
-    output.input = undefined
+    // Always include input field, even if empty string
+    output.input = fallbackInput
   }
+  // Keep empty string values - don't convert to undefined
+  // This ensures form-submitted empty values are preserved in output
 
+  // Ensure conversationId is present if it exists, but allow empty string
   if (!Object.hasOwn(output, 'conversationId')) {
     const conversationId =
       isPlainObject(workflowInput) && workflowInput.conversationId
@@ -283,9 +310,8 @@ function buildUnifiedStartOutput(workflowInput: unknown): NormalizedBlockOutput 
     if (conversationId) {
       output.conversationId = conversationId
     }
-  } else if (typeof output.conversationId === 'string' && output.conversationId.length === 0) {
-    output.conversationId = undefined
   }
+  // Keep empty string conversationId if present (don't convert to undefined)
 
   return mergeFilesIntoOutput(output, workflowInput)
 }
@@ -411,7 +437,7 @@ export function buildStartBlockOutput(options: StartBlockOutputOptions): Normali
 
   switch (resolution.path) {
     case StartBlockPath.UNIFIED:
-      return buildUnifiedStartOutput(workflowInput)
+      return buildUnifiedStartOutput(workflowInput, inputFormat)
 
     case StartBlockPath.SPLIT_API:
     case StartBlockPath.SPLIT_INPUT:

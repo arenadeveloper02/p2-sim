@@ -23,7 +23,7 @@ import {
 import { createLogger } from '@/lib/logs/console/logger'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
 import {
   ChatMessage,
   OutputSelect,
@@ -624,6 +624,58 @@ export function Chat() {
   )
 
   /**
+   * Builds complete workflow input with all Start Block fields (including reserved ones)
+   * Reads values from Start Block inputFormat field values naturally, ensuring all fields
+   * are present with empty values when not provided
+   * 
+   * @param userInput - The user's typed message (empty string when submitting form)
+   * @param conversationId - The conversation ID
+   * @param files - Optional array of uploaded files
+   * @param overrideValues - Optional values to override temporarily (e.g., from modal form submission before values are persisted)
+   */
+  const buildCompleteWorkflowInput = useCallback(
+    (
+      userInput: string,
+      conversationId: string,
+      files?: Array<{ name: string; size: number; type: string; file: File }>,
+      overrideValues?: Record<string, unknown>
+    ) => {
+      const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+      const completeInput: Record<string, unknown> = {}
+
+      // Read values from Start Block inputFormat field values (field.value)
+      // This ensures values persist and are used naturally in execution flow
+      for (const field of normalizedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
+          if (overrideValues && fieldName in overrideValues) {
+            completeInput[fieldName] = overrideValues[fieldName] ?? ''
+          } else if (field.value !== undefined && field.value !== null) {
+            // Use the value from Start Block inputFormat field (persisted value)
+            completeInput[fieldName] = field.value
+          } else {
+            // Fallback to state or empty string
+            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+          }
+        }
+      }
+
+      // Override with actual values for reserved fields
+      completeInput.input = userInput
+      completeInput.conversationId = conversationId
+      
+      // Handle files - only include if present, otherwise don't set it
+      if (files && files.length > 0) {
+        completeInput.files = files
+      }
+
+      return completeInput
+    },
+    [startBlockInputFormat, startBlockInputs]
+  )
+
+  /**
    * Sends a chat message and executes the workflow
    * Processes file attachments, adds the user message to the chat,
    * and triggers workflow execution with the message as input
@@ -659,27 +711,21 @@ export function Chat() {
         attachments: attachmentsWithData,
       })
 
-      // Prepare workflow input
-      const workflowInput: {
-        input: string
-        conversationId: string
-        files?: Array<{ name: string; size: number; type: string; file: File }>
-        onUploadError?: (message: string) => void
-        [key: string]: unknown
-      } = {
-        input: sentMessage,
-        conversationId,
-        // Merge Start Block inputs
-        ...startBlockInputs,
-      }
+      // Prepare file array if present
+      const fileArray = chatFiles.length > 0
+        ? chatFiles.map((chatFile) => ({
+            name: chatFile.name,
+            size: chatFile.size,
+            type: chatFile.type,
+            file: chatFile.file,
+          }))
+        : undefined
 
-      if (chatFiles.length > 0) {
-        workflowInput.files = chatFiles.map((chatFile) => ({
-          name: chatFile.name,
-          size: chatFile.size,
-          type: chatFile.type,
-          file: chatFile.file,
-        }))
+      // Build complete workflow input with all Start Block fields
+      const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
+
+      // Add upload error handler if files are present
+      if (fileArray && fileArray.length > 0) {
         workflowInput.onUploadError = (message: string) => {
           logger.error('File upload error:', message)
         }
@@ -712,17 +758,112 @@ export function Chat() {
     focusInput,
     clearFiles,
     clearErrors,
-    startBlockInputs,
+    buildCompleteWorkflowInput,
   ])
 
   /**
    * Handles Start Block input modal submission
+   * Copies form values to Start Block inputFormat field values,
+   * stores them in state, and triggers workflow execution
    */
-  const handleStartBlockInputsSubmit = useCallback((values: Record<string, unknown>) => {
-    setStartBlockInputs(values)
-    setIsInputModalOpen(false)
-    focusInput(100)
-  }, [focusInput])
+  const handleStartBlockInputsSubmit = useCallback(
+    async (values: Record<string, unknown>) => {
+      if (!activeWorkflowId || isExecuting || !startBlockId) return
+
+      // Store the form values in local state
+      setStartBlockInputs(values)
+      setIsInputModalOpen(false)
+
+      // Update Start Block inputFormat field values with form values
+      // This ensures values persist and are used naturally in execution flow
+      let updatedFields: InputFormatField[] = []
+      try {
+        const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+        updatedFields = normalizedFields.map((field) => {
+          const fieldName = field.name?.trim()
+          if (fieldName && fieldName in values) {
+            // Update the field's value with the form value
+            return {
+              ...field,
+              value: values[fieldName] ?? '',
+            }
+          }
+          return field
+        })
+
+        // Update the Start Block's inputFormat with new values
+        setSubBlockValue(startBlockId, 'inputFormat', updatedFields)
+
+        // Persist to server via operation queue
+        const userId = session?.user?.id || 'unknown'
+        addToQueue({
+          id: crypto.randomUUID(),
+          operation: {
+            operation: 'subblock-update',
+            target: 'subblock',
+            payload: {
+              blockId: startBlockId,
+              subblockId: 'inputFormat',
+              value: updatedFields,
+            },
+          },
+          workflowId: activeWorkflowId,
+          userId,
+        })
+
+        triggerWorkflowUpdate()
+      } catch (error) {
+        logger.error('Error updating Start Block inputFormat values:', error)
+        // Fallback: use original format if update failed
+        updatedFields = normalizeInputFormatValue(startBlockInputFormat)
+      }
+
+      // Build complete workflow input using the updated Start Block inputFormat field values
+      // This ensures execution flow naturally uses the persisted values
+      const conversationId = getConversationId(activeWorkflowId)
+      
+      // Build input from updated fields (read from field.value)
+      const completeInput: Record<string, unknown> = {}
+      for (const field of updatedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          // Use the value from Start Block inputFormat field (persisted value)
+          completeInput[fieldName] = field.value !== undefined && field.value !== null ? field.value : ''
+        }
+      }
+      
+      // Override with actual values for reserved fields
+      completeInput.input = ''
+      completeInput.conversationId = conversationId
+      
+      const workflowInput = completeInput
+
+      try {
+        // Execute workflow immediately
+        const result = await handleRunWorkflow(workflowInput)
+        handleWorkflowResponse(result)
+      } catch (error) {
+        logger.error('Error executing workflow from modal submit:', error)
+      }
+
+      focusInput(100)
+    },
+    [
+      activeWorkflowId,
+      isExecuting,
+      startBlockId,
+      startBlockInputFormat,
+      setSubBlockValue,
+      session,
+      addToQueue,
+      triggerWorkflowUpdate,
+      getConversationId,
+      buildCompleteWorkflowInput,
+      handleRunWorkflow,
+      handleWorkflowResponse,
+      focusInput,
+    ]
+  )
 
   /**
    * Handles Re-run button click - opens modal to collect new inputs

@@ -329,9 +329,14 @@ export async function POST(
       const workflowInput: any = { input, conversationId }
       
       // Merge additional Start Block inputs (custom fields from inputFormat)
+      // Always merge to ensure all Start Block fields are included, even if empty
       if (startBlockInputs && typeof startBlockInputs === 'object') {
         Object.assign(workflowInput, startBlockInputs)
         logger.debug(`[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`)
+      } else {
+        // Even if startBlockInputs is not provided, ensure empty values for consistency
+        // The client should always send startBlockInputs, but this is a safety check
+        logger.debug(`[${requestId}] No Start Block inputs provided in request`)
       }
       
       if (files && Array.isArray(files) && files.length > 0) {

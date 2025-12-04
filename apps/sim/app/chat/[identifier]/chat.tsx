@@ -472,10 +472,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       type: string
       file: File
       dataUrl?: string
-    }>
+    }>,
+    forceExecution = false // Allow execution even with empty input (e.g., when form is submitted)
   ) => {
     const messageToSend = messageParam ?? inputValue
-    if ((!messageToSend.trim() && (!files || files.length === 0)) || isLoading) return
+    // Allow execution if forceExecution is true (form submission) or if there's input/files
+    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading) return
 
     logger.info('Sending message:', {
       messageToSend,
@@ -487,29 +489,37 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
-      type: 'user',
-      timestamp: new Date(),
-      attachments: files?.map((file) => ({
-        id: file.id,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: file.dataUrl || '',
-      })),
-    }
+    // Only add user message to chat if there's actual content or files
+    // When form is submitted with empty input, we don't add a user message
+    let userMessageId: string | null = null
+    if (messageToSend.trim() || (files && files.length > 0)) {
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
+        type: 'user',
+        timestamp: new Date(),
+        attachments: files?.map((file) => ({
+          id: file.id,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: file.dataUrl || '',
+        })),
+      }
+      userMessageId = userMessage.id
 
-    // Add the user's message to the chat
-    setMessages((prev) => [...prev, userMessage])
+      // Add the user's message to the chat
+      setMessages((prev) => [...prev, userMessage])
+    }
     setInputValue('')
     setIsLoading(true)
 
-    // Scroll to show only the user's message and loading indicator
-    setTimeout(() => {
-      scrollToMessage(userMessage.id, true)
-    }, 100)
+    // Scroll to show only the user's message and loading indicator (if message exists)
+    if (userMessageId) {
+      setTimeout(() => {
+        scrollToMessage(userMessageId!, true)
+      }, 100)
+    }
 
     // Create abort controller for request cancellation
     const abortController = new AbortController()
@@ -518,15 +528,26 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
+      // Build complete workflow input with all Start Block fields
+      // Use messageToSend directly (may be empty if form was submitted)
+      const completeInput = buildCompleteWorkflowInput(
+        messageToSend,
+        conversationId,
+        files
+      )
+
       // Send structured payload to maintain chat context
       const payload: any = {
-        input:
-          typeof userMessage.content === 'string'
-            ? userMessage.content
-            : JSON.stringify(userMessage.content),
-        conversationId,
-        // Include Start Block inputs
-        startBlockInputs: Object.keys(startBlockInputs).length > 0 ? startBlockInputs : undefined,
+        input: completeInput.input,
+        conversationId: completeInput.conversationId,
+        // Include all Start Block inputs (including custom fields)
+        startBlockInputs: Object.keys(completeInput).length > 2 // More than just input and conversationId
+          ? Object.fromEntries(
+              Object.entries(completeInput).filter(
+                ([key]) => key !== 'input' && key !== 'conversationId'
+              )
+            )
+          : undefined,
       }
 
       // Add files if present (convert to base64 for JSON transmission)
@@ -667,11 +688,85 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )
     : []
 
-  // Handle Start Block input modal submission
-  const handleStartBlockInputsSubmit = useCallback((values: Record<string, unknown>) => {
-    setStartBlockInputs(values)
-    setIsInputModalOpen(false)
-  }, [])
+  /**
+   * Builds complete workflow input with all Start Block fields (including reserved ones)
+   * Ensures all fields from inputFormat are present, with empty values when not provided
+   */
+  const buildCompleteWorkflowInput = useCallback(
+    (
+      userInput: string,
+      conversationId: string,
+      files?: Array<{
+        id: string
+        name: string
+        size: number
+        type: string
+        file: File
+        dataUrl?: string
+      }>,
+      overrideValues?: Record<string, unknown>
+    ): Record<string, unknown> => {
+      const normalizedFields = normalizeInputFormatValue(chatConfig?.inputFormat)
+      const completeInput: Record<string, unknown> = {}
+
+      // Read values from Start Block inputFormat field values (field.value)
+      // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
+      for (const field of normalizedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          if (overrideValues && fieldName in overrideValues) {
+            completeInput[fieldName] = overrideValues[fieldName] ?? ''
+          } else if (field.value !== undefined && field.value !== null) {
+            // Use the value from Start Block inputFormat field (persisted value)
+            completeInput[fieldName] = field.value
+          } else {
+            // Fallback to state or empty string
+            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+          }
+        }
+      }
+
+      // Override with actual values for reserved fields
+      completeInput.input = userInput
+      completeInput.conversationId = conversationId
+
+      // Handle files - only include if present
+      if (files && files.length > 0) {
+        // Files will be added separately in the payload
+      }
+
+      return completeInput
+    },
+    [chatConfig?.inputFormat, startBlockInputs]
+  )
+
+  /**
+   * Handles Start Block input modal submission
+   * Stores the values and immediately triggers workflow execution
+   */
+  const handleStartBlockInputsSubmit = useCallback(
+    async (values: Record<string, unknown>) => {
+      // Store the form values in local state
+      setStartBlockInputs(values)
+      setIsInputModalOpen(false)
+
+      // Build complete workflow input with all Start Block fields
+      // Pass empty string for input (user submitted form, not typed message)
+      const completeInput = buildCompleteWorkflowInput('', conversationId, undefined, values)
+
+      // Ensure input is explicitly empty string when submitting form
+      completeInput.input = ''
+
+      // Trigger workflow execution by sending a message with empty input
+      // but with all Start Block inputs included
+      try {
+        await handleSendMessage('', false, undefined, true) // forceExecution = true
+      } catch (error) {
+        logger.error('Error executing workflow from modal submit:', error)
+      }
+    },
+    [buildCompleteWorkflowInput, conversationId, handleSendMessage]
+  )
 
   // Handle Re-run button click
   const handleRerun = useCallback(() => {
