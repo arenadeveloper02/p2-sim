@@ -94,7 +94,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
                 checked={feedback.tooLong}
                 onCheckedChange={(checked) => handleCheckboxChange('tooLong', checked as boolean)}
               />
-              <label htmlFor='tooLong' className='font-medium text-sm'>
+              <label htmlFor='tooLong' className='font-normal text-sm'>
                 Too Long
               </label>
             </div>
@@ -104,7 +104,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
                 checked={feedback.outOfDate}
                 onCheckedChange={(checked) => handleCheckboxChange('outOfDate', checked as boolean)}
               />
-              <label htmlFor='outOfDate' className='font-medium text-sm'>
+              <label htmlFor='outOfDate' className='font-normal text-sm'>
                 Out of Date
               </label>
             </div>
@@ -116,7 +116,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
                   handleCheckboxChange('incomplete', checked as boolean)
                 }
               />
-              <label htmlFor='incomplete' className='font-medium text-sm'>
+              <label htmlFor='incomplete' className='font-normal text-sm'>
                 Incomplete
               </label>
             </div>
@@ -129,7 +129,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
                 checked={feedback.tooShort}
                 onCheckedChange={(checked) => handleCheckboxChange('tooShort', checked as boolean)}
               />
-              <label htmlFor='tooShort' className='font-medium text-sm'>
+              <label htmlFor='tooShort' className='font-normal text-sm'>
                 Too Short
               </label>
             </div>
@@ -141,7 +141,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
                   handleCheckboxChange('inaccurate', checked as boolean)
                 }
               />
-              <label htmlFor='inaccurate' className='font-medium text-sm'>
+              <label htmlFor='inaccurate' className='font-normal text-sm'>
                 Inaccurate
               </label>
             </div>
@@ -150,7 +150,7 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
 
         {/* Other feedback textarea */}
         <div className='space-y-2'>
-          <div className='font-medium text-gray-700 text-sm dark:text-gray-300'>Other feedback</div>
+          <div className='font-normal text-gray-700 text-sm dark:text-gray-300'>Other feedback</div>
           <Textarea
             id='comment'
             placeholder='Other feedback'
