@@ -96,11 +96,11 @@ export async function GET(request: NextRequest) {
         authorEmail: user.email,
         allowedEmails: chat.allowedEmails,
         name: templates.name,
-        author: templates.author,
+        author: templates.creatorId,
         workflowName: workflow.name,
         workflowDescription: workflow.description,
-        templateDescription: templates.description,
-        department: templates.category,
+        templateDescription: templates.details,
+        department: templates.tags,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: categories.find((category) => category.value === chatRecord.department)?.label,
+      department: 'department',
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
