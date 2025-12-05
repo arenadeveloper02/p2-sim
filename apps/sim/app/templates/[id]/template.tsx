@@ -550,7 +550,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
             {/* Back button */}
             <button
               onClick={handleBack}
-              className='flex items-center gap-[6px] font-medium text-[#ADADAD] text-[14px] transition-colors hover:text-white'
+              className='flex items-center gap-[6px] font-medium text-[#ADADAD] text-[14px] transition-colors '
             >
               <ArrowLeft className='h-[14px] w-[14px]' />
               <span>More Templates</span>

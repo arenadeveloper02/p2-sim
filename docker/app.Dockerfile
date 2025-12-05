@@ -74,7 +74,7 @@ RUN bun run build
 # Runner Stage: Run the actual app
 # ========================================
 
-FROM base AS runner
+FROM oven/bun:1.3.3-alpine AS runner
 WORKDIR /app
 
 # Install Python and dependencies for guardrails PII detection (cached separately)
@@ -84,41 +84,25 @@ RUN apk add --no-cache python3 py3-pip bash ffmpeg
 ENV NODE_ENV=production
 
 # 🟢 Install Chromium + ChromeDriver inside the container
-# Install Xvfb + Chrome dependencies + Chromium + ChromeDriver
+# Install Xvfb + Chromium and dependencies (Alpine uses apk, not apt-get)
 RUN apk add --no-cache \
       chromium \
+      chromium-chromedriver \
       xvfb \
-      ttf-freefont \
-      ttf-liberation \
       nss \
       freetype \
+      freetype-dev \
       harfbuzz \
       ca-certificates \
-      ttf-dejavu \
-      gcompat \
-      wget \
-      unzip \
-    && CHROMIUM_VERSION=$(chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) \
-    && CHROMEDRIVER_MAJOR=$(echo $CHROMIUM_VERSION | cut -d. -f1) \
-    && CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4) \
-    && if [ -z "$CHROMEDRIVER_VERSION" ]; then \
-         CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROMEDRIVER_MAJOR}" 2>/dev/null); \
-       fi \
-    && wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
-    && unzip -q /tmp/chromedriver.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
-    && chmod +x /usr/bin/chromedriver \
-    && rm -rf /tmp/chromedriver* /var/cache/apk/*
+      ttf-freefont \
+      ttf-liberation \
+      font-noto-emoji
 
 # (Optional, if any code reads these env vars)
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
-    CHROME_BIN=/usr/bin/chromium-browser \
-    CHROME_PATH=/usr/lib/chromium/ \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-COPY --from=builder /app/apps/sim/public ./apps/sim/public
-COPY --from=builder /app/apps/sim/.next/standalone ./
-COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
+    CHROME_BIN=/usr/bin/chromium \
+    CHROME_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Create non-root user and group (cached separately)
 RUN addgroup -g 1001 -S nodejs && \
@@ -147,6 +131,7 @@ RUN mkdir -p apps/sim/.next/cache && \
 # 🔹 Add entrypoint that starts Xvfb and then the app
 # Copy and set permissions before switching to non-root user
 COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Switch to non-root user
 USER nextjs
@@ -155,5 +140,4 @@ EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
 
-ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "apps/sim/server.js"]
