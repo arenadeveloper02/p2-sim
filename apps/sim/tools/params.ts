@@ -396,18 +396,16 @@ export async function createLLMToolSchema(
   // Only include parameters that the LLM should/can provide
   for (const [paramId, param] of Object.entries(toolConfig.params)) {
     const paramValue = userProvidedParams[paramId]
-    
+
     // Check if the value is a variable reference (e.g., <start.input>, <block.output>)
     // These should NOT be considered as "user provided" because they're resolved at runtime
-    const isVarRef = typeof paramValue === 'string' && 
-      paramValue.trim().startsWith('<') && 
+    const isVarRef =
+      typeof paramValue === 'string' &&
+      paramValue.trim().startsWith('<') &&
       paramValue.trim().endsWith('>')
-    
+
     const isUserProvided =
-      paramValue !== undefined &&
-      paramValue !== null &&
-      paramValue !== '' &&
-      !isVarRef  // Variable references are NOT user-provided values
+      paramValue !== undefined && paramValue !== null && paramValue !== '' && !isVarRef // Variable references are NOT user-provided values
 
     // Skip parameters that user has already provided (with actual values, not variable references)
     if (isUserProvided) {
@@ -598,9 +596,7 @@ export function mergeToolParameters(
  * Checks if a value is a variable reference (e.g., <start.input>, <block.output>)
  */
 function isVariableReference(value: unknown): boolean {
-  return typeof value === 'string' && 
-    value.trim().startsWith('<') && 
-    value.trim().endsWith('>')
+  return typeof value === 'string' && value.trim().startsWith('<') && value.trim().endsWith('>')
 }
 
 /**
@@ -621,17 +617,13 @@ export function filterSchemaForLLM(
   // But keep parameters that use variable references (they're resolved at runtime)
   Object.keys(userProvidedParams).forEach((paramKey) => {
     const paramValue = userProvidedParams[paramKey]
-    
+
     // Skip variable references - these should remain visible to LLM
     if (isVariableReference(paramValue)) {
       return
     }
-    
-    if (
-      paramValue !== undefined &&
-      paramValue !== null &&
-      paramValue !== ''
-    ) {
+
+    if (paramValue !== undefined && paramValue !== null && paramValue !== '') {
       delete filteredProperties[paramKey]
       const reqIndex = filteredRequired.indexOf(paramKey)
       if (reqIndex > -1) {
