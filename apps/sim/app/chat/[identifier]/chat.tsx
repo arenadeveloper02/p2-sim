@@ -537,17 +537,27 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )
 
       // Send structured payload to maintain chat context
+      // Always include all Start Block inputs (even if empty) to ensure all fields are passed
+      const startBlockInputsPayload: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(completeInput)) {
+        if (key !== 'input' && key !== 'conversationId' && key !== 'files') {
+          // Always include field, even if empty string - ensures all inputFormat fields are passed
+          startBlockInputsPayload[key] = value
+        }
+      }
+
+      logger.debug('Building payload with Start Block inputs:', {
+        hasCustomFields: customFields.length > 0,
+        startBlockInputsKeys: Object.keys(startBlockInputsPayload),
+        completeInputKeys: Object.keys(completeInput),
+      })
+
       const payload: any = {
         input: completeInput.input,
         conversationId: completeInput.conversationId,
-        // Include all Start Block inputs (including custom fields)
-        startBlockInputs: Object.keys(completeInput).length > 2 // More than just input and conversationId
-          ? Object.fromEntries(
-              Object.entries(completeInput).filter(
-                ([key]) => key !== 'input' && key !== 'conversationId'
-              )
-            )
-          : undefined,
+        // Always include startBlockInputs if there are any custom fields in inputFormat
+        // This ensures all Start Block fields are passed to execution, even if empty
+        startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,
       }
 
       // Add files if present (convert to base64 for JSON transmission)
@@ -979,6 +989,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         onSelectThread={handleSelectThread}
         onNewChat={handleNewChat}
         isStreaming={isStreamingResponse || isLoading}
+        showReRun={customFields.length > 0}
+        onReRun={handleRerun}
       />
 
       {/* Message Container component */}
@@ -996,18 +1008,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       {/* Input area (free-standing at the bottom) */}
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          {/* Re-run button for Start Block inputs */}
-          {customFields.length > 0 && (
-            <div className='mb-2 flex justify-end'>
-              <button
-                onClick={handleRerun}
-                className='rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]'
-                title='Re-run with new inputs'
-              >
-                Re-run
-              </button>
-            </div>
-          )}
           <ChatInput
             onSubmit={(value, isVoiceInput, files) => {
               void handleSendMessage(value, isVoiceInput, files)

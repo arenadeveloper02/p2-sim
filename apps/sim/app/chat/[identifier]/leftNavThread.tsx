@@ -1,5 +1,5 @@
 'use client'
-import { ArrowLeft, CirclePlus, MessageSquareText } from 'lucide-react'
+import { ArrowLeft, CirclePlus, MessageSquareText, RefreshCw } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 
@@ -20,6 +20,8 @@ interface LeftNavThreadProps {
   onNewChat?: () => void
   isStreaming: boolean
   workflowId?: string
+  showReRun?: boolean
+  onReRun?: () => void
 }
 
 const LeftNavThread = ({
@@ -31,6 +33,8 @@ const LeftNavThread = ({
   onNewChat,
   isStreaming,
   workflowId,
+  showReRun = false,
+  onReRun,
 }: LeftNavThreadProps) => {
   const params = new URLSearchParams(window.location.search)
   const workspaceId = params.get('workspaceId')
@@ -64,6 +68,19 @@ const LeftNavThread = ({
   return (
     <div className='absolute top-[86px] left-8 z-50 flex h-[calc(100%-95px)] w-[280px] flex-col rounded-[8px] bg-[#F3F8FE] px-2 py-4'>
       <div className='flex flex-col gap-2 '>
+        {/* Re-Run CTA - shown above New Chat when custom fields exist */}
+        {showReRun && onReRun && (
+          <Button
+            className='group h-[32px] w-full justify-start gap-2 rounded border-none bg-white font-normal text-[#41444C] text-sm hover:bg-white hover:font-semibold hover:text-[#2A2A2A] hover:shadow-md'
+            variant='outline'
+            onClick={onReRun}
+            disabled={isLoading || isStreaming}
+            title='Re-run workflow with new input values'
+          >
+            <RefreshCw className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
+            Re-Run
+          </Button>
+        )}
         <Button
           className='group h-[32px] w-full justify-start gap-2 rounded border-none bg-white font-normal text-[#41444C] text-sm hover:bg-white hover:font-semibold hover:text-[#2A2A2A] hover:shadow-md'
           variant='outline'
