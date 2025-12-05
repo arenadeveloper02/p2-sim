@@ -124,6 +124,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { fileParseTool } from '@/tools/file'
 import {
   crawlTool,
@@ -202,6 +203,7 @@ import {
   gmailUnarchiveTool,
 } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -693,6 +695,7 @@ import {
   posthogUpdatePropertyDefinitionTool,
   posthogUpdateSurveyTool,
 } from '@/tools/posthog'
+import { createTool as presentationCreateTool } from '@/tools/presentation'
 import {
   pylonBulkUpdateAccountsTool,
   pylonCreateAccountTool,
@@ -844,6 +847,7 @@ import {
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
 import { smtpSendMailTool } from '@/tools/smtp'
+import { spyfuRequestTool } from '@/tools/spyfu'
 import { stagehandAgentTool, stagehandExtractTool } from '@/tools/stagehand'
 import {
   stripeCancelPaymentIntentTool,
@@ -1049,11 +1053,12 @@ import {
   zepGetUserThreadsTool,
   zepGetUserTool,
 } from '@/tools/zep'
-
-import { spyfuRequestTool } from '@/tools/spyfu'
+import { arenaCreateTask, arenaSearchTask } from './arena'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
+  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -1367,6 +1372,8 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_ads_query: googleAdsQueryTool,
+  facebook_ads_query: facebookAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   posthog_capture_event: posthogCaptureEventTool,
@@ -1876,6 +1883,7 @@ export const tools: Record<string, ToolConfig> = {
   pylon_update_user: pylonUpdateUserTool,
   pylon_search_users: pylonSearchUsersTool,
   pylon_list_teams: pylonListTeamsTool,
+  presentation_create: presentationCreateTool,
   pylon_get_team: pylonGetTeamTool,
   pylon_create_team: pylonCreateTeamTool,
   pylon_update_team: pylonUpdateTeamTool,

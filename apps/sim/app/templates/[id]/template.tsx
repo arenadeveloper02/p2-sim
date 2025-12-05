@@ -30,11 +30,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
-import { useSession } from '@/lib/auth-client'
+import { useSession } from '@/lib/auth/auth-client'
+import { cn } from '@/lib/core/utils/cn'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getBaseUrl } from '@/lib/urls/utils'
-import { cn } from '@/lib/utils'
-import type { CredentialRequirement } from '@/lib/workflows/credential-extractor'
+import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
 import { getBlock } from '@/blocks/registry'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
@@ -684,7 +684,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                     <Copy className='h-3 w-3' />
                     <span>Copy link</span>
                   </PopoverItem>
-                  <PopoverItem onClick={handleShareToTwitter}>
+                  {/* <PopoverItem onClick={handleShareToTwitter}>
                     <svg
                       className='h-3 w-3'
                       viewBox='0 0 24 24'
@@ -698,7 +698,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                   <PopoverItem onClick={handleShareToLinkedIn}>
                     <Linkedin className='h-3 w-3' />
                     <span>Share on LinkedIn</span>
-                  </PopoverItem>
+                  </PopoverItem> */}
                 </PopoverContent>
               </Popover>
             </div>

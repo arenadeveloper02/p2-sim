@@ -5,7 +5,7 @@ import { LibraryBig, MoreHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { Button, Popover, PopoverContent, PopoverItem, PopoverTrigger } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
-import { WorkspaceSelector } from '@/app/workspace/[workspaceId]/knowledge/components'
+/*import { WorkspaceSelector } from '@/app/workspace/[workspaceId]/knowledge/components'*/
 import { filterButtonClass } from '@/app/workspace/[workspaceId]/knowledge/components/shared'
 
 interface BreadcrumbItem {
@@ -68,13 +68,13 @@ export function KnowledgeHeader({ breadcrumbs, options }: KnowledgeHeaderProps) 
       {options && (
         <div className={HEADER_STYLES.actionsContainer}>
           {/* Workspace Selector */}
-          {options.knowledgeBaseId && (
+          {/* {options.knowledgeBaseId && (
             <WorkspaceSelector
               knowledgeBaseId={options.knowledgeBaseId}
               currentWorkspaceId={options.currentWorkspaceId || null}
               onWorkspaceChange={options.onWorkspaceChange}
             />
-          )}
+          )} */}
 
           {/* Actions Menu */}
           {options.onDeleteKnowledgeBase && (

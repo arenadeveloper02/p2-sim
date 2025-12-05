@@ -6,7 +6,7 @@ import { Input } from '@/components/emcn/components/input/input'
 import { Textarea } from '@/components/emcn/components/textarea/textarea'
 import { Trash } from '@/components/emcn/icons/trash'
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
@@ -174,7 +174,7 @@ export function EvalInput({
         <div
           key={metric.id}
           data-metric-id={metric.id}
-          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'
+          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'
         >
           {renderMetricHeader(metric, index)}
 

@@ -452,7 +452,7 @@ export default function Dashboard() {
   }, [live])
 
   return (
-    <div className={`flex h-full min-w-0 flex-col pl-64 ${soehne.className}`}>
+    <div className={`flex h-full min-w-0 flex-col bg-white pl-64 ${soehne.className}`}>
       <div className='flex min-w-0 flex-1 overflow-hidden'>
         <div
           className='flex flex-1 flex-col overflow-hidden p-6'

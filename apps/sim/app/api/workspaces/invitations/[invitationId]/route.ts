@@ -12,11 +12,12 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { WorkspaceInvitationEmail } from '@/components/emails/workspace-invitation'
 import { getSession } from '@/lib/auth'
-import { sendEmail } from '@/lib/email/mailer'
-import { getFromEmailAddress } from '@/lib/email/utils'
+import { getBaseUrl } from '@/lib/core/utils/urls'
+import { syncWorkspaceKnowledgeBasesForUser } from '@/lib/knowledge/service'
 import { createLogger } from '@/lib/logs/console/logger'
-import { hasWorkspaceAdminAccess } from '@/lib/permissions/utils'
-import { getBaseUrl } from '@/lib/urls/utils'
+import { sendEmail } from '@/lib/messaging/email/mailer'
+import { getFromEmailAddress } from '@/lib/messaging/email/utils'
+import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceInvitationAPI')
 
@@ -125,6 +126,8 @@ export async function GET(
         .then((rows) => rows[0])
 
       if (existingPermission) {
+        // User already has permission, just mark invitation as accepted
+        // But still sync knowledge bases in case they were added after user got permission
         await db
           .update(workspaceInvitation)
           .set({
@@ -132,6 +135,19 @@ export async function GET(
             updatedAt: new Date(),
           })
           .where(eq(workspaceInvitation.id, invitation.id))
+
+        // Sync knowledge bases for this user (in case new KBs were added)
+        try {
+          const requestId = randomUUID().slice(0, 8)
+          await syncWorkspaceKnowledgeBasesForUser(
+            session.user.id,
+            invitation.workspaceId,
+            requestId
+          )
+        } catch (error) {
+          logger.error('Error syncing knowledge bases for existing permission:', error)
+          // Don't fail the request if sync fails
+        }
 
         return NextResponse.redirect(
           new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl())
@@ -157,6 +173,15 @@ export async function GET(
           })
           .where(eq(workspaceInvitation.id, invitation.id))
       })
+
+      // Sync all knowledge bases from this workspace to user_knowledge_base
+      try {
+        const requestId = randomUUID().slice(0, 8)
+        await syncWorkspaceKnowledgeBasesForUser(session.user.id, invitation.workspaceId, requestId)
+      } catch (error) {
+        logger.error('Error syncing knowledge bases after invitation acceptance:', error)
+        // Don't fail the request if sync fails, but log it
+      }
 
       return NextResponse.redirect(new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl()))
     }

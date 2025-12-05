@@ -15,6 +15,7 @@ import {
 } from '@/components/emcn'
 import { Switch } from '@/components/ui/switch'
 import { Toggle } from '@/components/ui/toggle'
+import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import {
   getCanonicalScopesForProvider,
@@ -22,7 +23,6 @@ import {
   type OAuthProvider,
   type OAuthService,
 } from '@/lib/oauth/oauth'
-import { cn } from '@/lib/utils'
 import {
   ChannelSelectorInput,
   CheckboxList,
@@ -1601,7 +1601,7 @@ export function ToolInput({
       {selectedTools.length === 0 ? (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <div className='flex w-full cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F] px-[10px] py-[6px] font-medium text-sm transition-colors hover:bg-[var(--surface-4)]'>
+            <div className='flex w-full cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)] px-[10px] py-[6px] font-medium text-sm transition-colors hover:bg-[var(--surface-4)]'>
               <div className='flex items-center text-[13px] text-[var(--text-muted)]'>
                 <PlusIcon className='mr-2 h-4 w-4' />
                 Add Tool
@@ -1822,7 +1822,7 @@ export function ToolInput({
               <div
                 key={`${tool.toolId}-${toolIndex}`}
                 className={cn(
-                  'group relative flex flex-col overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F] transition-all duration-200 ease-in-out',
+                  'group relative flex flex-col overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)] transition-all duration-200 ease-in-out',
                   draggedIndex === toolIndex ? 'scale-95 opacity-40' : '',
                   dragOverIndex === toolIndex && draggedIndex !== toolIndex && draggedIndex !== null
                     ? 'translate-y-1 transform border-t-2 border-t-muted-foreground/40'
@@ -1998,7 +1998,11 @@ export function ToolInput({
                             value={tool.params.credential || ''}
                             onChange={(value) => handleParamChange(toolIndex, 'credential', value)}
                             provider={oauthConfig.provider as OAuthProvider}
-                            requiredScopes={getCanonicalScopesForProvider(oauthConfig.provider)}
+                            requiredScopes={
+                              toolBlock?.subBlocks?.find((sb) => sb.id === 'credential')
+                                ?.requiredScopes ||
+                              getCanonicalScopesForProvider(oauthConfig.provider)
+                            }
                             label={`Select ${oauthConfig.provider} account`}
                             serviceId={oauthConfig.provider}
                             disabled={disabled}
@@ -2107,7 +2111,10 @@ export function ToolInput({
                                 <ShortInput
                                   blockId={blockId}
                                   subBlockId={`${subBlockId}-tool-${toolIndex}-${param.id}`}
-                                  placeholder={param.description}
+                                  placeholder={
+                                    param.description ||
+                                    `Enter ${formatParameterLabel(param.id).toLowerCase()}`
+                                  }
                                   password={isPasswordParameter(param.id)}
                                   config={{
                                     id: `${subBlockId}-tool-${toolIndex}-${param.id}`,
@@ -2136,7 +2143,7 @@ export function ToolInput({
           {/* Add Tool Button */}
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-              <div className='flex w-full cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F] px-[10px] py-[6px] font-medium text-sm transition-colors hover:bg-[var(--surface-4)]'>
+              <div className='flex w-full cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)] px-[10px] py-[6px] font-medium text-sm transition-colors hover:bg-[var(--surface-4)]'>
                 <div className='flex items-center text-[13px] text-[var(--text-muted)]'>
                   <PlusIcon className='mr-2 h-4 w-4' />
                   Add Tool

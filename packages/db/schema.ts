@@ -996,6 +996,48 @@ export const knowledgeBase = pgTable(
   })
 )
 
+export const userKnowledgeBase = pgTable(
+  'user_knowledge_base',
+  {
+    id: text('id').primaryKey(),
+    userIdRef: text('user_id_ref')
+      .notNull()
+      .default('')
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userWorkspaceIdRef: text('user_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseIdRef: text('knowledge_base_id_ref')
+      .notNull()
+      .default('')
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    kbWorkspaceIdRef: text('kb_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    // Access patterns for finding knowledge bases by user or workspace
+    userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
+    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(table.userWorkspaceIdRef),
+    kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
+    kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
+    // Composite indexes for common queries
+    userKbIdx: index('user_kb_user_kb_idx').on(table.userIdRef, table.knowledgeBaseIdRef),
+    userWorkspaceKbIdx: index('user_kb_user_workspace_kb_idx').on(
+      table.userWorkspaceIdRef,
+      table.knowledgeBaseIdRef
+    ),
+    // Index for soft delete filtering
+    deletedAtIdx: index('user_kb_deleted_at_idx').on(table.deletedAt),
+  })
+)
+
 export const document = pgTable(
   'document',
   {
@@ -1577,5 +1619,26 @@ export const ssoProvider = pgTable(
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
+  })
+)
+
+export const userArenaDetails = pgTable(
+  'user_arena_details',
+  {
+    id: text('id'), // nullable
+    userType: text('user_type'), // nullable
+    createdAt: timestamp('created_at', { withTimezone: false }), // nullable
+    department: text('department'), // nullable
+    updatedAt: timestamp('updated_at', { withTimezone: false }), // nullable
+    userIdRef: text('user_id_ref'), // nullable
+    arenaUserIdRef: text('arena_user_id_ref'), // nullable
+    airbyteRawId: text('_airbyte_raw_id').$type<string>(), // varchar(36) in SQL, mapped to text
+    airbyteExtractedAt: timestamp('_airbyte_extracted_at', { withTimezone: true }), // timestamptz
+    airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
+    airbyteMeta: jsonb('_airbyte_meta'), // jsonb
+    arenaToken: text('arena_token'), // text
+  },
+  (table) => ({
+    airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
   })
 )

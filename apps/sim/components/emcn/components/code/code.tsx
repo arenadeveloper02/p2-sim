@@ -3,7 +3,7 @@ import { highlight, languages } from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-json'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 import './code.css'
 
 /**
@@ -78,8 +78,7 @@ function Container({
       className={cn(
         // Base container styling
         'group relative min-h-[100px] rounded-[4px] border border-[var(--border-strong)]',
-        'bg-[#1F1F1F] font-medium font-mono text-sm transition-colors',
-        'dark:border-[var(--border-strong)]',
+        'bg-[var(--surface-2)] font-medium font-mono text-sm transition-colors dark:border-[var(--border-strong)] dark:bg-[#1F1F1F]',
         // Overflow handling for long content
         'overflow-x-auto overflow-y-auto',
         // Streaming state
@@ -143,7 +142,7 @@ export function getCodeEditorProps(options?: {
     padding: 8,
     className: cn(
       // Base editor classes
-      'bg-transparent font-[inherit] text-[inherit] font-medium text-[#eeeeee]',
+      'bg-transparent font-[inherit] text-[inherit] font-medium text-[var(--text-primary)] dark:text-[#eeeeee]',
       'leading-[21px] outline-none focus:outline-none',
       'min-h-[106px]',
       // Streaming/disabled states
@@ -154,9 +153,9 @@ export function getCodeEditorProps(options?: {
       'border-none bg-transparent outline-none resize-none',
       'focus:outline-none focus:ring-0',
       // Selection styling
-      'selection:bg-[#264f78] selection:text-white',
+      'selection:bg-[var(--brand-primary-hex,var(--brand-400))] selection:text-[var(--white)] dark:selection:bg-[#264f78] dark:selection:text-white',
       // Caret color
-      'caret-white',
+      'caret-[var(--text-primary)] dark:caret-white',
       // Font smoothing
       '[-webkit-font-smoothing:antialiased] [-moz-osx-font-smoothing:grayscale]',
       // Disable interaction for streaming/preview
@@ -189,7 +188,7 @@ function Gutter({ children, width, className, style }: CodeGutterProps) {
       className={cn(
         'absolute top-0 bottom-0 left-0',
         'flex select-none flex-col items-end overflow-hidden',
-        'rounded-l-[4px] bg-[#1F1F1F]',
+        'rounded-l-[4px] bg-[var(--surface-3)] dark:bg-[#1F1F1F]',
         'pr-0.5',
         className
       )}
@@ -236,7 +235,7 @@ function Placeholder({ children, gutterWidth, show, className }: CodePlaceholder
     <pre
       className={cn(
         'pointer-events-none absolute select-none overflow-visible',
-        'whitespace-pre-wrap text-muted-foreground/50',
+        'whitespace-pre-wrap text-[var(--text-muted)]/50 dark:text-muted-foreground/50',
         className
       )}
       style={{
@@ -327,13 +326,13 @@ function Viewer({
               return (
                 <Fragment key={idx}>
                   <div
-                    className='select-none pr-0.5 text-right text-[#a8a8a8] text-xs tabular-nums leading-[21px]'
+                    className='select-none pr-0.5 text-right text-[#a8a8a8] text-xs tabular-nums leading-[21px] dark:text-[#a8a8a8]'
                     style={{ transform: 'translateY(0.25px)', ...gutterStyle }}
                   >
                     {idx + 1}
                   </div>
                   <pre
-                    className='m-0 min-w-0 whitespace-pre-wrap break-words pr-2 pl-2 font-mono text-[#eeeeee] text-[13px] leading-[21px]'
+                    className='m-0 min-w-0 whitespace-pre-wrap break-words pr-2 pl-2 font-mono text-[#eeeeee] text-[13px] leading-[21px] dark:text-[#eeeeee]'
                     // Using per-line highlighting keeps the gutter height in sync with wrapped content
                     dangerouslySetInnerHTML={{ __html: perLineHighlighted || '&nbsp;' }}
                   />
@@ -354,7 +353,7 @@ function Viewer({
           <pre
             className={cn(
               whitespaceClass,
-              'p-2 font-mono text-[#eeeeee] text-[13px] leading-[21px]'
+              'p-2 font-mono text-[#eeeeee] text-[13px] leading-[21px] dark:text-[#eeeeee]'
             )}
             dangerouslySetInnerHTML={{ __html: highlightedCode }}
           />
@@ -371,7 +370,10 @@ function Viewer({
   const lineNumbers = []
   for (let i = 1; i <= lineCount; i++) {
     lineNumbers.push(
-      <div key={i} className='text-right text-[#a8a8a8] text-xs tabular-nums leading-[21px]'>
+      <div
+        key={i}
+        className='text-right text-[#a8a8a8] text-xs tabular-nums leading-[21px] dark:text-[#a8a8a8]'
+      >
         {i}
       </div>
     )
@@ -384,7 +386,10 @@ function Viewer({
       </Gutter>
       <Content className='code-editor-theme' paddingLeft={`${gutterWidth + paddingLeft}px`}>
         <pre
-          className={cn(whitespaceClass, 'p-2 font-mono text-[#eeeeee] text-[13px] leading-[21px]')}
+          className={cn(
+            whitespaceClass,
+            'p-2 font-mono text-[#eeeeee] text-[13px] leading-[21px] dark:text-[#eeeeee]'
+          )}
           dangerouslySetInnerHTML={{ __html: highlightedCode }}
         />
       </Content>

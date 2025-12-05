@@ -4,6 +4,7 @@ import { ApiBlock } from '@/blocks/blocks/api'
 import { ApiTriggerBlock } from '@/blocks/blocks/api_trigger'
 import { ApifyBlock } from '@/blocks/blocks/apify'
 import { ApolloBlock } from '@/blocks/blocks/apollo'
+import { ArenaBlock } from '@/blocks/blocks/arena'
 import { ArxivBlock } from '@/blocks/blocks/arxiv'
 import { AsanaBlock } from '@/blocks/blocks/asana'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
@@ -17,6 +18,7 @@ import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
+import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FunctionBlock } from '@/blocks/blocks/function'
@@ -24,6 +26,7 @@ import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
 import { GitHubBlock } from '@/blocks/blocks/github'
 import { GmailBlock } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
+import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
@@ -69,6 +72,7 @@ import { PineconeBlock } from '@/blocks/blocks/pinecone'
 import { PipedriveBlock } from '@/blocks/blocks/pipedrive'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
+import { PresentationBlock } from '@/blocks/blocks/presentation'
 import { PylonBlock } from '@/blocks/blocks/pylon'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { RDSBlock } from '@/blocks/blocks/rds'
@@ -85,6 +89,7 @@ import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { SlackBlock } from '@/blocks/blocks/slack'
+import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
@@ -98,6 +103,7 @@ import { TelegramBlock } from '@/blocks/blocks/telegram'
 import { ThinkingBlock } from '@/blocks/blocks/thinking'
 import { TranslateBlock } from '@/blocks/blocks/translate'
 import { TrelloBlock } from '@/blocks/blocks/trello'
+import { TtsBlock } from '@/blocks/blocks/tts'
 import { TwilioSMSBlock } from '@/blocks/blocks/twilio'
 import { TwilioVoiceBlock } from '@/blocks/blocks/twilio_voice'
 import { TypeformBlock } from '@/blocks/blocks/typeform'
@@ -121,6 +127,7 @@ import type { BlockConfig } from '@/blocks/types'
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
   agent: AgentBlock,
+  arena: ArenaBlock,
   airtable: AirtableBlock,
   api: ApiBlock,
   api_trigger: ApiTriggerBlock,
@@ -138,13 +145,14 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
+  facebook_ads: FacebookAdsBlock,
   file: FileBlock,
   firecrawl: FirecrawlBlock,
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,
   github: GitHubBlock,
   gmail: GmailBlock,
-  guardrails: GuardrailsBlock,
+  google_ads: GoogleAdsBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
@@ -152,6 +160,7 @@ export const registry: Record<string, BlockConfig> = {
   google_search: GoogleSearchBlock,
   google_sheets: GoogleSheetsBlock,
   google_vault: GoogleVaultBlock,
+  guardrails: GuardrailsBlock,
   hubspot: HubSpotBlock,
   huggingface: HuggingFaceBlock,
   human_in_the_loop: HumanInTheLoopBlock,
@@ -166,6 +175,7 @@ export const registry: Record<string, BlockConfig> = {
   linear: LinearBlock,
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
+  presentation: PresentationBlock,
   mailchimp: MailchimpBlock,
   mailgun: MailgunBlock,
   manual_trigger: ManualTriggerBlock,
@@ -208,11 +218,13 @@ export const registry: Record<string, BlockConfig> = {
   sharepoint: SharepointBlock,
   slack: SlackBlock,
   spyfu: SpyfuBlock,
+  smtp: SmtpBlock,
   stagehand: StagehandBlock,
   stagehand_agent: StagehandAgentBlock,
   starter: StarterBlock,
   start_trigger: StartTriggerBlock,
   stt: SttBlock,
+  tts: TtsBlock,
   stripe: StripeBlock,
   supabase: SupabaseBlock,
   tavily: TavilyBlock,

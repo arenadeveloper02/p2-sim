@@ -1,8 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { client, useSession } from '@/lib/auth-client'
+import { client, useSession } from '@/lib/auth/auth-client'
+import { useBrandConfig } from '@/lib/branding/branding'
+import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getErrorMessage } from '@/app/invite/[id]/utils'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
@@ -15,6 +18,7 @@ export default function Invite() {
   const inviteId = params.id as string
   const searchParams = useSearchParams()
   const { data: session, isPending } = useSession()
+  const brandConfig = useBrandConfig()
   const [invitationDetails, setInvitationDetails] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -24,6 +28,7 @@ export default function Invite() {
   const [token, setToken] = useState<string | null>(null)
   const [invitationType, setInvitationType] = useState<'organization' | 'workspace'>('workspace')
   const [currentOrgName, setCurrentOrgName] = useState<string | null>(null)
+  const userEmail = Cookies.get('email')
 
   useEffect(() => {
     const errorReason = searchParams.get('error')
@@ -46,8 +51,29 @@ export default function Invite() {
     }
   }, [searchParams, inviteId])
 
+  const handleAutoLogin = async () => {
+    try {
+      await client.signIn.email(
+        {
+          email: userEmail || '',
+          password: 'Position2!',
+          callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+        },
+        {}
+      )
+    } catch (error) {
+      console.error('Error auto-logging in:', error)
+    }
+  }
+
   useEffect(() => {
-    if (!session?.user || !token) return
+    if (!session?.user && userEmail) {
+      handleAutoLogin()
+    }
+  }, [session?.user])
+
+  useEffect(() => {
+    if (!token) return
 
     async function fetchInvitationDetails() {
       setIsLoading(true)
@@ -188,8 +214,19 @@ export default function Invite() {
     return `/invite/${inviteId}${token && token !== inviteId ? `?token=${token}` : ''}`
   }
 
+  const getExternalLoginUrl = (callbackUrl: string) => {
+    if (typeof window === 'undefined') return ''
+    const hostname = window.location.hostname
+    const externalLoginUrl = getLoginRedirectUrl(hostname)
+    const loginUrl = new URL(externalLoginUrl)
+    loginUrl.searchParams.set('callbackUrl', callbackUrl)
+    loginUrl.searchParams.set('invite_flow', 'true')
+    return loginUrl.toString()
+  }
+
   if (!session?.user && !isPending) {
     const callbackUrl = encodeURIComponent(getCallbackUrl())
+    const externalLoginUrl = getExternalLoginUrl(callbackUrl)
 
     return (
       <InviteLayout>
@@ -212,16 +249,14 @@ export default function Invite() {
                   },
                   {
                     label: 'I already have an account',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+                    onClick: () => (window.location.href = externalLoginUrl),
                     variant: 'outline' as const,
                   },
                 ]
               : [
                   {
                     label: 'Sign in',
-                    onClick: () =>
-                      router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`),
+                    onClick: () => (window.location.href = externalLoginUrl),
                   },
                   {
                     label: 'Create an account',
@@ -318,7 +353,7 @@ export default function Invite() {
           actions={[
             {
               label: 'Return to Home',
-              onClick: () => router.push('/'),
+              onClick: () => router.push('/workspace'),
             },
           ]}
         />
@@ -334,7 +369,8 @@ export default function Invite() {
           invitationType === 'organization' ? 'Organization Invitation' : 'Workspace Invitation'
         }
         description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join.`}
-        icon={invitationType === 'organization' ? 'users' : 'mail'}
+        icon={invitationType === 'organization' ? 'users' : undefined}
+        logoUrl={invitationType === 'workspace' ? brandConfig.logoUrl : undefined}
         actions={[
           {
             label: 'Accept Invitation',
@@ -344,7 +380,7 @@ export default function Invite() {
           },
           {
             label: 'Return to Home',
-            onClick: () => router.push('/'),
+            onClick: () => router.push('/workspace'),
             variant: 'ghost',
           },
         ]}
