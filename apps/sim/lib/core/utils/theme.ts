@@ -3,38 +3,31 @@
  */
 
 /**
- * Updates the theme in next-themes by dispatching a storage event
- * This works by updating localStorage and notifying next-themes of the change
- *
- * COMMENTED OUT: Theme switching disabled - light mode is forced for workspace
+ * Updates the theme in next-themes by dispatching a storage event.
+ * This works by updating localStorage and notifying next-themes of the change.
+ * @param theme - The theme to apply ('system' | 'light' | 'dark')
  */
 export function syncThemeToNextThemes(theme: 'system' | 'light' | 'dark') {
   if (typeof window === 'undefined') return
 
-  // COMMENTED OUT: Light mode is forced for workspace pages
-  // // Update localStorage
-  // localStorage.setItem('sim-theme', theme)
+  // Use the provided theme, defaulting to 'light' if 'system' is provided
+  const themeToApply = theme === 'system' ? 'light' : theme
 
-  // // Dispatch storage event to notify next-themes
-  // window.dispatchEvent(
-  //   new StorageEvent('storage', {
-  //     key: 'sim-theme',
-  //     newValue: theme,
-  //     oldValue: localStorage.getItem('sim-theme'),
-  //     storageArea: localStorage,
-  //     url: window.location.href,
-  //   })
-  // )
+  localStorage.setItem('sim-theme', themeToApply)
 
-  // // Also update the HTML class immediately for instant feedback
-  // const root = document.documentElement
-  // const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  // const actualTheme = theme === 'system' ? systemTheme : theme
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: 'sim-theme',
+      newValue: themeToApply,
+      oldValue: localStorage.getItem('sim-theme'),
+      storageArea: localStorage,
+      url: window.location.href,
+    })
+  )
 
-  // // Remove existing theme classes
-  // root.classList.remove('light', 'dark')
-  // // Add new theme class
-  // root.classList.add(actualTheme)
+  const root = document.documentElement
+  root.classList.remove('light', 'dark')
+  root.classList.add(themeToApply)
 }
 
 /**
