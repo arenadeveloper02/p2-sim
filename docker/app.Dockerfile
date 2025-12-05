@@ -94,6 +94,7 @@ RUN apk add --no-cache \
       mesa-dri-gallium \
       mesa-gl \
       mesa-egl \
+      mesa-gbm \
       nss \
       freetype \
       freetype-dev \
