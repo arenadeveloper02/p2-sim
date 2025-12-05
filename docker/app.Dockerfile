@@ -84,33 +84,31 @@ RUN apk add --no-cache python3 py3-pip bash ffmpeg
 ENV NODE_ENV=production
 
 # 🟢 Install Chromium + ChromeDriver inside the container
-# Install Xvfb + Chrome dependencies + Google Chrome + Chromedriver
-RUN apt-get update && apt-get install -y \
-      wget gnupg ca-certificates \
+# Install Xvfb + Chrome dependencies + Chromium + ChromeDriver
+RUN apk add --no-cache \
+      chromium \
       xvfb \
-      libnss3 \
-      libxss1 \
-      libasound2 \
-      libx11-xcb1 \
-      libxcomposite1 \
-      libxrandr2 \
-      libxdamage1 \
-      libgbm1 \
-      libgtk-3-0 \
-      libatk1.0-0 \
-      libatk-bridge2.0-0 \
-      libcairo2 \
-      libpango-1.0-0 \
-      libpangocairo-1.0-0 \
-      fonts-liberation \
-    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-         > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y \
-      google-chrome-stable \
-      chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+      ttf-freefont \
+      ttf-liberation \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-dejavu \
+      gcompat \
+      wget \
+      unzip \
+    && CHROMIUM_VERSION=$(chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) \
+    && CHROMEDRIVER_MAJOR=$(echo $CHROMIUM_VERSION | cut -d. -f1) \
+    && CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4) \
+    && if [ -z "$CHROMEDRIVER_VERSION" ]; then \
+         CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROMEDRIVER_MAJOR}" 2>/dev/null); \
+       fi \
+    && wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip -q /tmp/chromedriver.zip -d /tmp \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm -rf /tmp/chromedriver* /var/cache/apk/*
 
 # (Optional, if any code reads these env vars)
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
