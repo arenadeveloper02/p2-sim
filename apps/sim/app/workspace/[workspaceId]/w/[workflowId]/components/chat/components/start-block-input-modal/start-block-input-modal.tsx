@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Label, Modal, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@/components/emcn'
+import { Button, Input, Label, Modal, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
@@ -213,9 +213,7 @@ export function StartBlockInputModal({
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="max-w-[500px]" showClose={true}>
-        <ModalHeader>
-          <ModalTitle>Workflow Inputs</ModalTitle>
-        </ModalHeader>
+        <ModalHeader>Workflow Inputs</ModalHeader>
 
         <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2">
           {customFields.map((field) => {
