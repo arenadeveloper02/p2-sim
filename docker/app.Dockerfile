@@ -183,7 +183,7 @@ COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Switch to non-root user
-USER nextjs
+# USER nextjs
 
 EXPOSE 3000
 ENV PORT=3000 \
