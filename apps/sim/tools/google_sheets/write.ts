@@ -112,8 +112,8 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
           })
         })
 
-        // Add headers as the first row, then add data rows
-        processedValues = [headers, ...rows]
+        // Only add data rows, not headers
+        processedValues = rows
       }
 
       const body: Record<string, any> = {
