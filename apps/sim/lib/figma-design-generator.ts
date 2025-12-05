@@ -101,8 +101,8 @@ const TARGET_EXPERIENCE_MAP: Record<string, TargetExperienceConfig> = {
   },
   tablet: {
     id: 'tablet',
-    label: 'Tablet (1280px)',
-    viewportWidth: 1280,
+    label: 'Tablet (768px)',
+    viewportWidth: 768,
     description: 'Medium-width layouts with condensed columns',
   },
 }

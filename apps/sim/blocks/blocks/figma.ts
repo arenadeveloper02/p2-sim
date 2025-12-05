@@ -74,7 +74,7 @@ export const FigmaBlock: BlockConfig<FigmaResponse> = {
       options: [
         { label: 'Desktop (1440px)', id: 'desktop' },
         { label: 'Mobile (375px)', id: 'mobile' },
-        { label: 'Tablet (1280px)', id: 'tablet' },
+        { label: 'Tablet (768px)', id: 'tablet' },
       ],
       multiSelect: true,
       value: () => 'desktop', // Default to Desktop
