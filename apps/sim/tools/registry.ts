@@ -996,6 +996,7 @@ import {
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
 import { smtpSendMailTool } from '@/tools/smtp'
+import { spyfuRequestTool } from '@/tools/spyfu'
 import {
   checkCommandExistsTool as sshCheckCommandExistsTool,
   checkFileExistsTool as sshCheckFileExistsTool,
@@ -1410,6 +1411,7 @@ export const tools: Record<string, ToolConfig> = {
   slack_add_reaction: slackAddReactionTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
+  spyfu_request: spyfuRequestTool,
   serper_search: serperSearch,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
