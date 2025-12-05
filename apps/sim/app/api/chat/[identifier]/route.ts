@@ -266,7 +266,13 @@ export async function POST(
       return response
     }
 
-    if (!input && (!files || files.length === 0)) {
+    // Check if we have any input: either input field, files, or startBlockInputs with values
+    const hasStartBlockInputs = startBlockInputs && typeof startBlockInputs === 'object' && Object.keys(startBlockInputs).length > 0
+    const hasStartBlockInputValues = hasStartBlockInputs && Object.values(startBlockInputs).some(
+      (value) => value !== null && value !== undefined && value !== ''
+    )
+
+    if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
       return addCorsHeaders(createErrorResponse('No input provided', 400), request)
     }
 

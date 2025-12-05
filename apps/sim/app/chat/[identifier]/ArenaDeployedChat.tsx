@@ -473,7 +473,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       file: File
       dataUrl?: string
     }>,
-    forceExecution = false // Allow execution even with empty input (e.g., when form is submitted)
+    forceExecution = false, // Allow execution even with empty input (e.g., when form is submitted)
+    overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
@@ -530,10 +531,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     try {
       // Build complete workflow input with all Start Block fields
       // Use messageToSend directly (may be empty if form was submitted)
+      // Pass overrideValues if provided (e.g., from form submission)
       const completeInput = buildCompleteWorkflowInput(
         messageToSend,
         conversationId,
-        files
+        files,
+        overrideValues
       )
 
       // Send structured payload to maintain chat context
@@ -764,8 +767,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       // Trigger workflow execution by sending a message with empty input
       // but with all Start Block inputs included
+      // Pass values as overrideValues to ensure they're used immediately
       try {
-        await handleSendMessage('', false, undefined, true) // forceExecution = true
+        await handleSendMessage('', false, undefined, true, values) // forceExecution = true, overrideValues = values
       } catch (error) {
         logger.error('Error executing workflow from modal submit:', error)
       }
@@ -899,7 +903,21 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       return welcome ? [welcome] : []
     })
     updateUrlChatId(id)
-  }, [updateUrlChatId])
+    // Clear form input values for new chat
+    setStartBlockInputs({})
+    // Open input modal if custom fields exist
+    const hasCustomFields = chatConfig?.inputFormat
+      ? normalizeInputFormatValue(chatConfig.inputFormat).filter(
+          (field) => {
+            const fieldName = field.name?.trim().toLowerCase()
+            return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+          }
+        ).length > 0
+      : false
+    if (hasCustomFields) {
+      setIsInputModalOpen(true)
+    }
+  }, [updateUrlChatId, chatConfig?.inputFormat])
 
   if (isAutoLoginInProgress) {
     return (
