@@ -477,9 +477,7 @@ export default function Logs() {
                                 <div
                                   className='h-[6px] w-[6px] rounded-[2px]'
                                   style={{
-                                    backgroundColor: isError
-                                      ? 'var(--text-error)'
-                                      : 'var(--text-muted)',
+                                    backgroundColor: isError ? 'var(--text-error)' : '#B7B7B7',
                                   }}
                                 />
                                 <span
