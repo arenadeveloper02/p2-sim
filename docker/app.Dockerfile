@@ -144,15 +144,16 @@ RUN chmod +x ./apps/sim/lib/guardrails/setup.sh && \
 RUN mkdir -p apps/sim/.next/cache && \
     chown -R nextjs:nodejs /app
 
+# 🔹 Add entrypoint that starts Xvfb and then the app
+# Copy and set permissions before switching to non-root user
+COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
+
 # Switch to non-root user
 USER nextjs
 
 EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
-# 🔹 Add entrypoint that starts Xvfb and then the app
-COPY ./docker/docker-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "apps/sim/server.js"]
