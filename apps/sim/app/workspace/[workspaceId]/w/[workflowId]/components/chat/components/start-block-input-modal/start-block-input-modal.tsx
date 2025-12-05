@@ -52,14 +52,23 @@ export function StartBlockInputModal({
   const normalizedFields = normalizeInputFormatValue(inputFormat)
   
   // Filter out reserved fields - these are handled separately (memoized to prevent recalculation)
+  // Reserved fields: 'input', 'conversationId', 'files' - these should not appear in the modal form
   const customFields = useMemo(
-    () =>
-      normalizedFields.filter(
+    () => {
+      // Create a set of reserved field names in lowercase for efficient lookup
+      const reservedFieldsLower = new Set(
+        START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
+      )
+      
+      return normalizedFields.filter(
         (field) => {
           const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+          if (!fieldName) return false
+          // Check if field is in reserved fields set (case-insensitive)
+          return !reservedFieldsLower.has(fieldName)
         }
-      ),
+      )
+    },
     [normalizedFields]
   )
 

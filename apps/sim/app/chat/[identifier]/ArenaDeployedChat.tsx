@@ -699,6 +699,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
+   * 
+   * Priority order:
+   * 1. overrideValues (when form is submitted) - highest priority, used when form is just submitted
+   * 2. field.value (persisted from Start Block inputFormat) - persisted values from workflow config
+   * 3. empty string (when user types in chat input) - default, don't use old form values
+   * 
+   * Note: startBlockInputs is only used to populate the modal form, not for building workflow input.
+   * When user types in chat input (not using form), we should NOT use old form values.
    */
   const buildCompleteWorkflowInput = useCallback(
     (
@@ -718,18 +726,19 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const completeInput: Record<string, unknown> = {}
 
       // Read values from Start Block inputFormat field values (field.value)
-      // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
       for (const field of normalizedFields) {
         const fieldName = field.name?.trim()
         if (fieldName) {
           if (overrideValues && fieldName in overrideValues) {
+            // Highest priority: overrideValues from form submission
             completeInput[fieldName] = overrideValues[fieldName] ?? ''
           } else if (field.value !== undefined && field.value !== null) {
-            // Use the value from Start Block inputFormat field (persisted value)
+            // Second priority: persisted value from Start Block inputFormat
             completeInput[fieldName] = field.value
           } else {
-            // Fallback to state or empty string
-            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+            // Default: empty string (when user types in chat input, don't use old form values)
+            // startBlockInputs is only for modal form state, not for workflow execution
+            completeInput[fieldName] = ''
           }
         }
       }
@@ -745,7 +754,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       return completeInput
     },
-    [chatConfig?.inputFormat, startBlockInputs]
+    [chatConfig?.inputFormat]
   )
 
   /**
