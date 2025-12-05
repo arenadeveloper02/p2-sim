@@ -9,6 +9,7 @@ import { AgentIcon } from '@/components/icons'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useSearchModalStore } from '@/stores/search-modal/store'
+import { getBrandConfig } from '@/lib/branding/branding'
 
 const logger = createLogger('WorkflowCommandList')
 
@@ -183,15 +184,11 @@ export function CommandList() {
         {/* Logo */}
         <div className='mb-[20px] flex justify-center'>
           <Image
-            src='/logo/b&w/text/b&w.svg'
+            src={getBrandConfig().logoUrl || ''}
             alt='Sim'
             width={99.56}
             height={48.56}
             className='opacity-70'
-            style={{
-              filter:
-                'brightness(0) saturate(100%) invert(69%) sepia(0%) saturate(0%) hue-rotate(202deg) brightness(94%) contrast(89%)',
-            }}
             priority
           />
         </div>
@@ -199,6 +196,7 @@ export function CommandList() {
         {commands.map((command) => {
           const Icon = command.icon
           const shortcuts = Array.isArray(command.shortcut) ? command.shortcut : [command.shortcut]
+          const isAgentIcon = command.label === 'New Agent'
           return (
             <div
               key={command.label}
@@ -207,7 +205,13 @@ export function CommandList() {
             >
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
-                <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                {isAgentIcon ? (
+                  <div className='h-[14px] w-[14px] flex-shrink-0 overflow-hidden rounded-[2px]'>
+                    {(Icon as any)({ width: 14, height: 14 })}
+                  </div>
+                ) : (
+                  <Icon className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                )}
                 <span className='font-medium text-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
                   {command.label}
                 </span>

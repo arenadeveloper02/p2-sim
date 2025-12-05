@@ -157,7 +157,7 @@ export const HTTP = {
 } as const
 
 export const AGENT = {
-  DEFAULT_MODEL: 'claude-sonnet-4-5',
+  DEFAULT_MODEL: 'gpt-5',
   DEFAULT_FUNCTION_TIMEOUT: 5000,
   REQUEST_TIMEOUT: 120000,
   CUSTOM_TOOL_PREFIX: 'custom_',

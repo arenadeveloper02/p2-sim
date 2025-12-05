@@ -94,7 +94,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       type: 'combobox',
       placeholder: 'Type or select a model...',
       required: true,
-      defaultValue: 'claude-sonnet-4-5',
+      defaultValue: 'gpt-5',
       options: () => {
         const providersState = useProvidersStore.getState()
         const baseModels = providersState.providers.base.models
@@ -383,7 +383,7 @@ Example 3 (Array Input):
     ],
     config: {
       tool: (params: Record<string, any>) => {
-        const model = params.model || 'claude-sonnet-4-5'
+        const model = params.model || 'gpt-5'
         if (!model) {
           throw new Error('No model selected')
         }

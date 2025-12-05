@@ -8,6 +8,9 @@ import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
+import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import type { InputFormatField } from '@/lib/workflows/types'
+import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
@@ -23,9 +26,6 @@ import {
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
-import type { InputFormatField } from '@/lib/workflows/types'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import LeftNavThread from './leftNavThread'
 
@@ -418,13 +418,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       // Check if we should show modal on load (no messages and has inputFormat)
       if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
         const normalizedFields = normalizeInputFormatValue(data.inputFormat)
-        const customFields = normalizedFields.filter(
-          (field) => {
-            const fieldName = field.name?.trim().toLowerCase()
-            return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-          }
-        )
-        
+        const customFields = normalizedFields.filter((field) => {
+          const fieldName = field.name?.trim().toLowerCase()
+          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+        })
+
         if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
           hasShownModalRef.current = true
           setIsInputModalOpen(true)
@@ -478,7 +476,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
-    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading) return
+    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
+      return
 
     logger.info('Sending message:', {
       messageToSend,
@@ -688,23 +687,21 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // Get custom fields from inputFormat
   const customFields = chatConfig?.inputFormat
-    ? normalizeInputFormatValue(chatConfig.inputFormat).filter(
-        (field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        }
-      )
+    ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
+        const fieldName = field.name?.trim().toLowerCase()
+        return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+      })
     : []
 
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
-   * 
+   *
    * Priority order:
    * 1. overrideValues (when form is submitted) - highest priority, used when form is just submitted
    * 2. field.value (persisted from Start Block inputFormat) - persisted values from workflow config
    * 3. empty string (when user types in chat input) - default, don't use old form values
-   * 
+   *
    * Note: startBlockInputs is only used to populate the modal form, not for building workflow input.
    * When user types in chat input (not using form), we should NOT use old form values.
    */
@@ -916,12 +913,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setStartBlockInputs({})
     // Open input modal if custom fields exist
     const hasCustomFields = chatConfig?.inputFormat
-      ? normalizeInputFormatValue(chatConfig.inputFormat).filter(
-          (field) => {
-            const fieldName = field.name?.trim().toLowerCase()
-            return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-          }
-        ).length > 0
+      ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
+          const fieldName = field.name?.trim().toLowerCase()
+          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+        }).length > 0
       : false
     if (hasCustomFields) {
       setIsInputModalOpen(true)
