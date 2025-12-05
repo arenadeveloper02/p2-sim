@@ -38,7 +38,7 @@ export function usePanelResize() {
       const maxWidth = window.innerWidth * MAX_WIDTH_PERCENTAGE
 
       if (newWidth >= MIN_WIDTH && newWidth <= maxWidth) {
-        setPanelWidth(newWidth)
+        setPanelWidth(newWidth + 50)
       }
     }
 
