@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { document, embedding, knowledgeBase } from '@sim/db/schema'
+import { document, embedding, knowledgeBase, userKnowledgeBase } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
-import { getUserEntityPermissions } from '@/lib/permissions/utils'
+import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 export interface KnowledgeBaseData {
   id: string
@@ -149,6 +149,23 @@ export async function checkKnowledgeBaseAccess(
     }
   }
 
+  // Case 3: User has direct access through user_knowledge_base table
+  const userKbAccess = await db
+    .select()
+    .from(userKnowledgeBase)
+    .where(
+      and(
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        eq(userKnowledgeBase.userIdRef, userId),
+        isNull(userKnowledgeBase.deletedAt)
+      )
+    )
+    .limit(1)
+
+  if (userKbAccess.length > 0) {
+    return { hasAccess: true, knowledgeBase: kbData }
+  }
+
   return { hasAccess: false }
 }
 
@@ -156,7 +173,8 @@ export async function checkKnowledgeBaseAccess(
  * Check if a user has write access to a knowledge base
  * Write access is granted if:
  * 1. User owns the knowledge base directly, OR
- * 2. User has write or admin permissions on the knowledge base's workspace
+ * 2. User has write or admin permissions on the knowledge base's workspace, OR
+ * 3. User has explicit access through user_knowledge_base table
  */
 export async function checkKnowledgeBaseWriteAccess(
   knowledgeBaseId: string,
@@ -189,6 +207,23 @@ export async function checkKnowledgeBaseWriteAccess(
     if (userPermission === 'write' || userPermission === 'admin') {
       return { hasAccess: true, knowledgeBase: kbData }
     }
+  }
+
+  // Case 3: User has direct access through user_knowledge_base table
+  const userKbAccess = await db
+    .select()
+    .from(userKnowledgeBase)
+    .where(
+      and(
+        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
+        eq(userKnowledgeBase.userIdRef, userId),
+        isNull(userKnowledgeBase.deletedAt)
+      )
+    )
+    .limit(1)
+
+  if (userKbAccess.length > 0) {
+    return { hasAccess: true, knowledgeBase: kbData }
   }
 
   return { hasAccess: false }

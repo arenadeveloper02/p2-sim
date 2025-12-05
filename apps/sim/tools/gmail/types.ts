@@ -17,6 +17,7 @@ export interface GmailSendParams extends BaseGmailParams {
   threadId?: string
   replyToMessageId?: string
   attachments?: UserFile[]
+  isHtml?: boolean
 }
 
 // Read operation parameters

@@ -14,13 +14,13 @@ import {
   languages,
 } from '@/components/emcn/components/code/code'
 import { Trash } from '@/components/emcn/icons/trash'
+import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
-import { cn } from '@/lib/utils'
 import {
   isLikelyReferenceSegment,
   SYSTEM_REFERENCE_PREFIXES,
   splitReferenceSegment,
-} from '@/lib/workflows/references'
+} from '@/lib/workflows/sanitization/references'
 import {
   checkEnvVarTrigger,
   EnvVarDropdown,
@@ -709,7 +709,7 @@ export function ConditionInput({
       {conditionalBlocks.map((block, index) => (
         <div
           key={block.id}
-          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]'
+          className='group relative overflow-visible rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]'
         >
           <div
             className={cn(
@@ -780,7 +780,7 @@ export function ConditionInput({
                     variant='ghost'
                     onClick={() => removeBlock(block.id)}
                     disabled={isPreview || conditionalBlocks.length === 1 || disabled}
-                    className='h-auto p-0 text-[var(--text-error)] hover:text-[var(--text-error)]'
+                    className='h-auto p-0 text-[var(--text-error)] hover:bg-[var(--text-error)] hover:text-[var(--white)]'
                   >
                     <Trash className='h-[14px] w-[14px]' />
                     <span className='sr-only'>Delete Block</span>

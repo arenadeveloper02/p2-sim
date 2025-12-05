@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/emcn'
 import { Input } from '@/components/emcn/components/input/input'
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
@@ -257,7 +257,7 @@ export function InputMapping({
 
   if (!selectedWorkflowId) {
     return (
-      <div className='flex flex-col items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F] p-8 text-center'>
+      <div className='flex flex-col items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)] p-8 text-center'>
         <svg
           className='mb-3 h-10 w-10 text-[var(--text-tertiary)]'
           fill='none'
@@ -369,7 +369,7 @@ function InputMappingField({
   return (
     <div
       className={cn(
-        'rounded-[4px] border border-[var(--border-strong)] bg-[#1F1F1F]',
+        'rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-2)]',
         collapsed ? 'overflow-hidden' : 'overflow-visible'
       )}
     >
