@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Button, Input, Label, Modal, ModalContent, ModalHeader, ModalTitle, ModalFooter } from '@/components/emcn'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import type { InputFormatField } from '@/lib/workflows/types'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button, Input, Label, Modal, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@/components/emcn'
 import { createLogger } from '@/lib/logs/console/logger'
+import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
 
 const logger = createLogger('StartBlockInputModal')
 
@@ -193,6 +192,13 @@ export function StartBlockInputModal({
   }, [customFields, formValues, onSubmit, onOpenChange])
 
   /**
+   * Formats field names by replacing underscores with spaces
+   */
+  const formatFieldName = useCallback((name: string): string => {
+    return name.replace(/_/g, ' ')
+  }, [])
+
+  /**
    * Handles modal close
    */
   const handleClose = useCallback(() => {
@@ -211,12 +217,13 @@ export function StartBlockInputModal({
           <ModalTitle>Workflow Inputs</ModalTitle>
         </ModalHeader>
 
-        <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
+        <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2">
           {customFields.map((field) => {
             const fieldName = field.name?.trim()
             if (!fieldName) return null
 
             const fieldType = field.type || 'string'
+            const displayName = formatFieldName(fieldName)
             // Safely get value, ensuring it's never undefined/null/object
             // Browser autofill can sometimes set values as objects or other unexpected types
             const rawValue = formValues[fieldName]
@@ -237,7 +244,7 @@ export function StartBlockInputModal({
             return (
               <div key={fieldName} className="flex flex-col gap-2">
                 <Label htmlFor={fieldName} className="font-medium text-[12px]">
-                  {fieldName}
+                  {displayName}
                   {fieldType !== 'string' && (
                     <span className="ml-1 font-normal text-[var(--text-tertiary)]">
                       ({fieldType})
@@ -294,7 +301,7 @@ export function StartBlockInputModal({
                         handleFieldChange(fieldName, Number.isNaN(numValue) ? '' : numValue)
                       }
                     }}
-                    placeholder={`Enter ${fieldName}`}
+                    placeholder={`Enter ${displayName}`}
                     className="text-[12px]"
                   />
                 ) : fieldType === 'object' || fieldType === 'array' ? (
@@ -320,7 +327,7 @@ export function StartBlockInputModal({
                         }
                       }
                     }}
-                    placeholder={`Enter ${fieldName} as JSON`}
+                    placeholder={`Enter ${displayName} as JSON`}
                     className="min-h-[80px] w-full rounded-[4px] border border-[var(--border)] bg-[var(--surface-9)] px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[var(--brand-primary)]"
                   />
                 ) : (
@@ -359,7 +366,7 @@ export function StartBlockInputModal({
                         logger.error('Error handling input blur', { fieldName, error })
                       }
                     }}
-                    placeholder={`Enter ${fieldName}`}
+                    placeholder={`Enter ${displayName}`}
                     className="text-[12px]"
                   />
                 )}

@@ -3,28 +3,6 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, ArrowDownToLine, ArrowUp, MoreVertical, Paperclip, X } from 'lucide-react'
 import {
-  Badge,
-  Button,
-  Input,
-  Popover,
-  PopoverContent,
-  PopoverItem,
-  PopoverScrollArea,
-  PopoverTrigger,
-  Trash,
-} from '@/components/emcn'
-import { useSession } from '@/lib/auth/auth-client'
-import { cn } from '@/lib/core/utils/cn'
-import {
-  extractBlockIdFromOutputId,
-  extractPathFromOutputId,
-  parseOutputContentSafely,
-} from '@/lib/core/utils/response-format'
-import { createLogger } from '@/lib/logs/console/logger'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
-import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
-import {
   ChatMessage,
   OutputSelect,
   StartBlockInputModal,
@@ -37,7 +15,29 @@ import {
   useFloatResize,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import {
+  Badge,
+  Button,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverItem,
+  PopoverScrollArea,
+  PopoverTrigger,
+  Trash,
+} from '@/components/emcn'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
+import { useSession } from '@/lib/auth/auth-client'
+import { cn } from '@/lib/core/utils/cn'
+import {
+  extractBlockIdFromOutputId,
+  extractPathFromOutputId,
+  parseOutputContentSafely,
+} from '@/lib/core/utils/response-format'
+import { createLogger } from '@/lib/logs/console/logger'
+import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
+import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
 import { getChatPosition, useChatStore } from '@/stores/chat/store'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useOperationQueue } from '@/stores/operation-queue/store'
@@ -1021,6 +1021,20 @@ export function Chat() {
           className='ml-auto flex min-w-0 flex-shrink items-center gap-[6px]'
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {startBlockInputFormat.length > 0 && (
+            <Badge
+              variant='outline'
+              className='flex-none cursor-pointer whitespace-nowrap rounded-[6px]'
+              title='Re-run with new inputs'
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                handleRerun()
+              }}
+            >
+              <span className='whitespace-nowrap text-[12px]'>Re-run</span>
+            </Badge>
+          )}
+
           {shouldShowConfigureStartInputsButton && (
             <Badge
               variant='outline'
@@ -1035,21 +1049,7 @@ export function Chat() {
             </Badge>
           )}
 
-          {customFields.length > 0 && (
-            <Button
-              variant='ghost'
-              size='sm'
-              onClick={(e) => {
-                e.stopPropagation()
-                handleRerun()
-              }}
-              className='!p-1.5 -m-1.5 h-auto text-[12px]'
-              title='Re-run with new inputs'
-            >
-              Re-run
-            </Button>
-          )}
-
+      
           <OutputSelect
             workflowId={activeWorkflowId}
             selectedOutputs={selectedOutputs}
