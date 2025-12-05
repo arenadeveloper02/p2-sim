@@ -89,7 +89,6 @@ export const env = createEnv({
     VLLM_API_KEY:                          z.string().optional(),                  // Optional bearer token for vLLM
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
-    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
     SPYFU_API_USERNAME:                    z.string().min(1).optional(),           // SpyFu API basic auth username
     SPYFU_API_PASSWORD:                    z.string().min(1).optional(),           // SpyFu API basic auth password
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
@@ -99,6 +98,9 @@ export const env = createEnv({
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
 
+    //Tools API Keys
+    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
+    
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
     AZURE_OPENAI_API_VERSION:              z.string().optional(),                  // Shared Azure OpenAI API version

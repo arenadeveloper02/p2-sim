@@ -17,7 +17,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
-import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const logger = createLogger('CancelSubscription')
 

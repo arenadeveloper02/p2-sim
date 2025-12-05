@@ -135,6 +135,7 @@ import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
+import { SemrushBlock } from './blocks/semrush'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -230,6 +231,7 @@ export const registry: Record<string, BlockConfig> = {
   router: RouterBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
+  semrush: SemrushBlock,
   schedule: ScheduleBlock,
   search: SearchBlock,
   sendgrid: SendGridBlock,

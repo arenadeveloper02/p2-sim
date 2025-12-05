@@ -919,6 +919,7 @@ import {
   salesforceUpdateTaskTool,
 } from '@/tools/salesforce'
 import { searchTool } from '@/tools/search'
+import { semrushQueryTool } from '@/tools/semrush'
 import {
   sendGridAddContactsToListTool,
   sendGridAddContactTool,
@@ -2229,6 +2230,8 @@ export const tools: Record<string, ToolConfig> = {
   salesforce_create_task: salesforceCreateTaskTool,
   salesforce_update_task: salesforceUpdateTaskTool,
   salesforce_delete_task: salesforceDeleteTaskTool,
+  //semrush tool
+  semrush_query: semrushQueryTool,
   pylon_list_issues: pylonListIssuesTool,
   pylon_create_issue: pylonCreateIssueTool,
   pylon_get_issue: pylonGetIssueTool,
