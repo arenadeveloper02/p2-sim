@@ -7,25 +7,20 @@ import { ThemeProvider as NextThemesProvider } from 'next-themes'
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   const pathname = usePathname()
 
-  // Force light mode for workspace pages and templates
-  // Force light mode for certain public
-  const forcedTheme =
-    pathname.startsWith('/workspace') || pathname.startsWith('/templates')
-      ? 'dark'
-      : pathname === '/' ||
-          pathname.startsWith('/login') ||
-          pathname.startsWith('/signup') ||
-          pathname.startsWith('/sso') ||
-          pathname.startsWith('/terms') ||
-          pathname.startsWith('/privacy') ||
-          pathname.startsWith('/invite') ||
-          pathname.startsWith('/verify') ||
-          pathname.startsWith('/careers') ||
-          pathname.startsWith('/changelog') ||
-          pathname.startsWith('/chat') ||
-          pathname.startsWith('/studio')
-        ? 'light'
-        : undefined
+  // Force light mode on public/marketing pages, dark mode everywhere else
+  const isLightModePage =
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/sso') ||
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
+    pathname.startsWith('/invite') ||
+    pathname.startsWith('/verify') ||
+    pathname.startsWith('/careers') ||
+    pathname.startsWith('/changelog') ||
+    pathname.startsWith('/chat') ||
+    pathname.startsWith('/studio')
 
   return (
     <NextThemesProvider
@@ -34,7 +29,7 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
       enableSystem={false}
       disableTransitionOnChange
       storageKey='sim-theme'
-      forcedTheme={forcedTheme}
+      {...(isLightModePage && { forcedTheme: 'light' })}
       {...props}
     >
       {children}

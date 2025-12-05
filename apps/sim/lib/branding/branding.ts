@@ -42,7 +42,7 @@ const defaultConfig: BrandConfig = {
     secondaryColor: '#488fed',
     accentColor: '#76abf1',
     accentHoverColor: '#a3c7f6',
-    backgroundColor: '#0c0c0c',
+    backgroundColor: '#F3F8FE',
   },
 }
 

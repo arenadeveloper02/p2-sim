@@ -11,6 +11,7 @@ import {
   useKnowledgeBasesQuery,
   useKnowledgeChunksQuery,
   useKnowledgeDocumentsQuery,
+  useUserAccessKnowledgeBasesQuery,
 } from '@/hooks/queries/knowledge'
 import {
   type ChunkData,
@@ -260,6 +261,33 @@ export function useKnowledgeBasesList(
     removeKnowledgeBase,
     retryCount: 0,
     maxRetries: 0,
+  }
+}
+
+/**
+ * Hook to fetch knowledge bases that user has access to via user_knowledge_base table only
+ * This is specifically for the knowledge-base-selector component
+ */
+export function useUserAccessKnowledgeBases(
+  workspaceId?: string,
+  options?: {
+    enabled?: boolean
+  }
+) {
+  const queryClient = useQueryClient()
+  const query = useUserAccessKnowledgeBasesQuery(workspaceId, {
+    enabled: options?.enabled ?? true,
+  })
+
+  const refreshList = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: knowledgeKeys.userAccess(workspaceId) })
+  }, [queryClient, workspaceId])
+
+  return {
+    knowledgeBases: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error instanceof Error ? query.error.message : null,
+    refreshList,
   }
 }
 

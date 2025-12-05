@@ -414,8 +414,6 @@ export const settings = pgTable('settings', {
   // General settings
   theme: text('theme').notNull().default('system'),
   autoConnect: boolean('auto_connect').notNull().default(true),
-  autoPan: boolean('auto_pan').notNull().default(true),
-  consoleExpandedByDefault: boolean('console_expanded_by_default').notNull().default(true),
 
   // Privacy settings
   telemetryEnabled: boolean('telemetry_enabled').notNull().default(true),
@@ -429,7 +427,6 @@ export const settings = pgTable('settings', {
     .default(true),
 
   // UI preferences
-  showFloatingControls: boolean('show_floating_controls').notNull().default(true),
   showTrainingControls: boolean('show_training_controls').notNull().default(false),
   superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
 
@@ -999,6 +996,48 @@ export const knowledgeBase = pgTable(
     userWorkspaceIdx: index('kb_user_workspace_idx').on(table.userId, table.workspaceId),
     // Index for soft delete filtering
     deletedAtIdx: index('kb_deleted_at_idx').on(table.deletedAt),
+  })
+)
+
+export const userKnowledgeBase = pgTable(
+  'user_knowledge_base',
+  {
+    id: text('id').primaryKey(),
+    userIdRef: text('user_id_ref')
+      .notNull()
+      .default('')
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userWorkspaceIdRef: text('user_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseIdRef: text('knowledge_base_id_ref')
+      .notNull()
+      .default('')
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    kbWorkspaceIdRef: text('kb_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    // Access patterns for finding knowledge bases by user or workspace
+    userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
+    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(table.userWorkspaceIdRef),
+    kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
+    kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
+    // Composite indexes for common queries
+    userKbIdx: index('user_kb_user_kb_idx').on(table.userIdRef, table.knowledgeBaseIdRef),
+    userWorkspaceKbIdx: index('user_kb_user_workspace_kb_idx').on(
+      table.userWorkspaceIdRef,
+      table.knowledgeBaseIdRef
+    ),
+    // Index for soft delete filtering
+    deletedAtIdx: index('user_kb_deleted_at_idx').on(table.deletedAt),
   })
 )
 

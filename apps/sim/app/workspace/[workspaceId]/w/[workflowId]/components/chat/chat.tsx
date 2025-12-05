@@ -29,13 +29,13 @@ import {
   OutputSelect,
   StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import {
-  useChatBoundarySync,
-  useChatDrag,
-  useChatFileUpload,
-  useChatResize,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
+import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
 import { useScrollManagement } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import {
+  useFloatBoundarySync,
+  useFloatDrag,
+  useFloatResize,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { getChatPosition, useChatStore } from '@/stores/chat/store'
@@ -222,6 +222,7 @@ export function Chat() {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
   // Refs
   const inputRef = useRef<HTMLInputElement>(null)
@@ -317,7 +318,7 @@ export function Chat() {
   )
 
   // Drag hook
-  const { handleMouseDown } = useChatDrag({
+  const { handleMouseDown } = useFloatDrag({
     position: actualPosition,
     width: chatWidth,
     height: chatHeight,
@@ -325,7 +326,7 @@ export function Chat() {
   })
 
   // Boundary sync hook - keeps chat within bounds when layout changes
-  useChatBoundarySync({
+  useFloatBoundarySync({
     isOpen: isChatOpen,
     position: actualPosition,
     width: chatWidth,
@@ -339,7 +340,7 @@ export function Chat() {
     handleMouseMove: handleResizeMouseMove,
     handleMouseLeave: handleResizeMouseLeave,
     handleMouseDown: handleResizeMouseDown,
-  } = useChatResize({
+  } = useFloatResize({
     position: actualPosition,
     width: chatWidth,
     height: chatHeight,
@@ -1062,7 +1063,7 @@ export function Chat() {
 
         <div className='flex flex-shrink-0 items-center gap-[8px]'>
           {/* More menu with actions */}
-          <Popover variant='default'>
+          <Popover variant='default' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant='ghost'
@@ -1081,9 +1082,9 @@ export function Chat() {
             >
               <PopoverScrollArea>
                 <PopoverItem
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  onClick={() => {
                     if (activeWorkflowId) exportChatCSV(activeWorkflowId)
+                    setMoreMenuOpen(false)
                   }}
                   disabled={workflowMessages.length === 0}
                 >
@@ -1091,9 +1092,9 @@ export function Chat() {
                   <span>Download</span>
                 </PopoverItem>
                 <PopoverItem
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  onClick={() => {
                     if (activeWorkflowId) clearChat(activeWorkflowId)
+                    setMoreMenuOpen(false)
                   }}
                   disabled={workflowMessages.length === 0}
                 >

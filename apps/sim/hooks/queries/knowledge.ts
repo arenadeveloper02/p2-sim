@@ -13,6 +13,8 @@ const logger = createLogger('KnowledgeQueries')
 export const knowledgeKeys = {
   all: ['knowledge'] as const,
   list: (workspaceId?: string) => [...knowledgeKeys.all, 'list', workspaceId ?? 'all'] as const,
+  userAccess: (workspaceId?: string) =>
+    [...knowledgeKeys.all, 'user-access', workspaceId ?? 'all'] as const,
   detail: (knowledgeBaseId?: string) =>
     [...knowledgeKeys.all, 'detail', knowledgeBaseId ?? ''] as const,
   documents: (knowledgeBaseId: string, paramsKey: string) =>
@@ -38,6 +40,31 @@ export async function fetchKnowledgeBases(workspaceId?: string): Promise<Knowled
   const result = await response.json()
   if (result?.success === false) {
     throw new Error(result.error || 'Failed to fetch knowledge bases')
+  }
+
+  return Array.isArray(result?.data) ? result.data : []
+}
+
+/**
+ * Fetch knowledge bases that user has access to via user_knowledge_base table only
+ */
+export async function fetchUserAccessKnowledgeBases(
+  workspaceId?: string
+): Promise<KnowledgeBaseData[]> {
+  const url = workspaceId
+    ? `/api/knowledge/user-access?workspaceId=${workspaceId}`
+    : '/api/knowledge/user-access'
+  const response = await fetch(url)
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch user knowledge base access: ${response.status} ${response.statusText}`
+    )
+  }
+
+  const result = await response.json()
+  if (result?.success === false) {
+    throw new Error(result.error || 'Failed to fetch user knowledge base access')
   }
 
   return Array.isArray(result?.data) ? result.data : []
@@ -177,6 +204,24 @@ export function useKnowledgeBasesQuery(
   return useQuery({
     queryKey: knowledgeKeys.list(workspaceId),
     queryFn: () => fetchKnowledgeBases(workspaceId),
+    enabled: options?.enabled ?? true,
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * React Query hook to fetch knowledge bases that user has access to via user_knowledge_base table only
+ */
+export function useUserAccessKnowledgeBasesQuery(
+  workspaceId?: string,
+  options?: {
+    enabled?: boolean
+  }
+) {
+  return useQuery({
+    queryKey: knowledgeKeys.userAccess(workspaceId),
+    queryFn: () => fetchUserAccessKnowledgeBases(workspaceId),
     enabled: options?.enabled ?? true,
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,

@@ -176,8 +176,7 @@ interface DerivedInputResult {
 
 function deriveInputFromFormat(
   inputFormat: InputFormatField[],
-  workflowInput: unknown,
-  isDeployedExecution: boolean
+  workflowInput: unknown
 ): DerivedInputResult {
   const structuredInput: Record<string, unknown> = {}
 
@@ -205,7 +204,8 @@ function deriveInputFromFormat(
       }
     }
 
-    if ((fieldValue === undefined || fieldValue === null) && !isDeployedExecution) {
+    // Use the default value from inputFormat if the field value wasn't provided at runtime
+    if (fieldValue === undefined || fieldValue === null) {
       fieldValue = field.value
     }
 
@@ -257,19 +257,35 @@ function ensureString(value: unknown): string {
 
 function buildUnifiedStartOutput(
   workflowInput: unknown,
+  structuredInput: Record<string, unknown>,
+  hasStructured: boolean,
   inputFormat?: InputFormatField[]
 ): NormalizedBlockOutput {
   const output: NormalizedBlockOutput = {}
 
+  // First, populate from structuredInput if available (more efficient)
+  if (hasStructured) {
+    for (const [key, value] of Object.entries(structuredInput)) {
+      output[key] = value
+    }
+  }
+
+  // Then, merge runtime values from workflowInput (runtime values override defaults)
   if (isPlainObject(workflowInput)) {
     for (const [key, value] of Object.entries(workflowInput)) {
       if (key === 'onUploadError') continue
-      output[key] = value
+      // Runtime values override defaults (except undefined/null which mean "not provided")
+      if (value !== undefined && value !== null) {
+        output[key] = value
+      } else if (!Object.hasOwn(output, key)) {
+        output[key] = value
+      }
     }
   }
 
   // Ensure all fields from inputFormat are present in output, even if empty
   // This ensures Start Block output matches inputFormat structure
+  // This is critical for chat flow to ensure all fields are always present
   if (inputFormat && inputFormat.length > 0) {
     for (const field of inputFormat) {
       const fieldName = field.name?.trim()
@@ -427,17 +443,21 @@ function extractSubBlocks(block: SerializedBlock): Record<string, unknown> | und
 export interface StartBlockOutputOptions {
   resolution: ExecutorStartResolution
   workflowInput: unknown
-  isDeployedExecution: boolean
 }
 
 export function buildStartBlockOutput(options: StartBlockOutputOptions): NormalizedBlockOutput {
-  const { resolution, workflowInput, isDeployedExecution } = options
+  const { resolution, workflowInput } = options
   const inputFormat = extractInputFormat(resolution.block)
-  const { finalInput } = deriveInputFromFormat(inputFormat, workflowInput, isDeployedExecution)
+  const { finalInput, structuredInput, hasStructured } = deriveInputFromFormat(
+    inputFormat,
+    workflowInput
+  )
 
   switch (resolution.path) {
     case StartBlockPath.UNIFIED:
-      return buildUnifiedStartOutput(workflowInput, inputFormat)
+      // Pass structuredInput and hasStructured (from incoming changes) for efficiency
+      // Also pass inputFormat to ensure all fields are present (our chat flow requirement)
+      return buildUnifiedStartOutput(workflowInput, structuredInput, hasStructured, inputFormat)
 
     case StartBlockPath.SPLIT_API:
     case StartBlockPath.SPLIT_INPUT:
