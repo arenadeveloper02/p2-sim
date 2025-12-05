@@ -125,6 +125,18 @@ import {
   exaSearchTool,
 } from '@/tools/exa'
 import { facebookAdsQueryTool } from '@/tools/facebook_ads'
+import {
+  figmaCreateTool,
+  figmaDeleteCommentTool,
+  figmaGetCommentsTool,
+  figmaGetFileImagesTool,
+  figmaGetFileNodesTool,
+  figmaGetFileTool,
+  figmaGetProjectFilesTool,
+  figmaGetTeamProjectsTool,
+  figmaPostCommentTool,
+  figmaToHTMLAITool,
+} from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import {
   crawlTool,
@@ -1053,19 +1065,6 @@ import {
   zepGetUserTool,
 } from '@/tools/zep'
 import { arenaCreateTask, arenaSearchTask } from './arena'
-
-import {
-  figmaCreateTool,
-  figmaDeleteCommentTool,
-  figmaGetCommentsTool,
-  figmaGetFileImagesTool,
-  figmaGetFileNodesTool,
-  figmaGetFileTool,
-  figmaGetProjectFilesTool,
-  figmaGetTeamProjectsTool,
-  figmaPostCommentTool,
-  figmaToHTMLAITool,
-} from '@/tools/figma'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
