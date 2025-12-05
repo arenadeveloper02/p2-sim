@@ -1,10 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Label, Modal, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
+import {
+  Button,
+  Input,
+  Label,
+  Modal,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from '@/components/emcn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import { START_BLOCK_RESERVED_FIELDS, type InputFormatField } from '@/lib/workflows/types'
+import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 
 const logger = createLogger('StartBlockInputModal')
 
@@ -50,27 +58,22 @@ export function StartBlockInputModal({
   initialValues = {},
 }: StartBlockInputModalProps) {
   const normalizedFields = normalizeInputFormatValue(inputFormat)
-  
+
   // Filter out reserved fields - these are handled separately (memoized to prevent recalculation)
   // Reserved fields: 'input', 'conversationId', 'files' - these should not appear in the modal form
-  const customFields = useMemo(
-    () => {
-      // Create a set of reserved field names in lowercase for efficient lookup
-      const reservedFieldsLower = new Set(
-        START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
-      )
-      
-      return normalizedFields.filter(
-        (field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          if (!fieldName) return false
-          // Check if field is in reserved fields set (case-insensitive)
-          return !reservedFieldsLower.has(fieldName)
-        }
-      )
-    },
-    [normalizedFields]
-  )
+  const customFields = useMemo(() => {
+    // Create a set of reserved field names in lowercase for efficient lookup
+    const reservedFieldsLower = new Set(
+      START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
+    )
+
+    return normalizedFields.filter((field) => {
+      const fieldName = field.name?.trim().toLowerCase()
+      if (!fieldName) return false
+      // Check if field is in reserved fields set (case-insensitive)
+      return !reservedFieldsLower.has(fieldName)
+    })
+  }, [normalizedFields])
 
   /**
    * Safely normalizes a value to a string for form inputs
@@ -83,10 +86,13 @@ export function StartBlockInputModal({
       if (value === null || value === undefined) {
         return ''
       }
-      
+
       // Handle objects (browser autofill can sometimes set objects)
       if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
-        logger.warn('normalizeValueForInput: received object, converting to string', { value, fieldType })
+        logger.warn('normalizeValueForInput: received object, converting to string', {
+          value,
+          fieldType,
+        })
         // Try to extract a meaningful string, or use JSON.stringify as fallback
         if ('value' in value && typeof value.value === 'string') {
           return value.value
@@ -96,25 +102,25 @@ export function StartBlockInputModal({
         }
         return JSON.stringify(value)
       }
-      
+
       // Handle arrays
       if (Array.isArray(value)) {
         return value.length > 0 ? String(value[0]) : ''
       }
-      
+
       // For non-string types, preserve the value but ensure string representation for display
       if (fieldType === 'number') {
         return typeof value === 'number' ? String(value) : value === '' ? '' : String(value)
       }
-      
+
       if (fieldType === 'boolean') {
         return value === true || value === 'true' ? 'true' : 'false'
       }
-      
+
       if (fieldType === 'object' || fieldType === 'array') {
         return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
       }
-      
+
       // For string fields, ensure it's always a string
       return typeof value === 'string' ? value : String(value)
     } catch (error) {
@@ -147,7 +153,8 @@ export function StartBlockInputModal({
         if (fieldName) {
           const initialValue = initialValues[fieldName]
           // Safely normalize initial value
-          newValues[fieldName] = initialValue === null || initialValue === undefined ? '' : initialValue
+          newValues[fieldName] =
+            initialValue === null || initialValue === undefined ? '' : initialValue
         }
       }
       setFormValues(newValues)
@@ -164,7 +171,7 @@ export function StartBlockInputModal({
   const handleFieldChange = useCallback((fieldName: string, value: unknown) => {
     // Normalize undefined/null to empty string
     let normalizedValue: unknown = value
-    
+
     if (value === undefined || value === null) {
       normalizedValue = ''
     } else if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
@@ -176,7 +183,7 @@ export function StartBlockInputModal({
       // If it's an array, convert to string
       normalizedValue = value.length > 0 ? String(value[0]) : ''
     }
-    
+
     setFormValues((prev) => ({
       ...prev,
       [fieldName]: normalizedValue,
@@ -195,7 +202,7 @@ export function StartBlockInputModal({
         finalValues[fieldName] = formValues[fieldName] ?? ''
       }
     }
-    
+
     onSubmit(finalValues)
     onOpenChange(false)
   }, [customFields, formValues, onSubmit, onOpenChange])
@@ -221,10 +228,10 @@ export function StartBlockInputModal({
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="max-w-[500px]" showClose={true}>
+      <ModalContent className='max-w-[500px]' showClose={true}>
         <ModalHeader>Workflow Inputs</ModalHeader>
 
-        <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2">
+        <div className='flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2'>
           {customFields.map((field) => {
             const fieldName = field.name?.trim()
             if (!fieldName) return null
@@ -235,7 +242,7 @@ export function StartBlockInputModal({
             // Browser autofill can sometimes set values as objects or other unexpected types
             const rawValue = formValues[fieldName]
             let value: unknown = rawValue
-            
+
             // Defensive normalization - ensure value is always a safe type
             if (value === undefined || value === null) {
               value = ''
@@ -249,40 +256,40 @@ export function StartBlockInputModal({
             }
 
             return (
-              <div key={fieldName} className="flex flex-col gap-2">
-                <Label htmlFor={fieldName} className="font-medium text-[12px]">
+              <div key={fieldName} className='flex flex-col gap-2'>
+                <Label htmlFor={fieldName} className='font-medium text-[12px]'>
                   {displayName}
                   {fieldType !== 'string' && (
-                    <span className="ml-1 font-normal text-[var(--text-tertiary)]">
+                    <span className='ml-1 font-normal text-[var(--text-tertiary)]'>
                       ({fieldType})
                     </span>
                   )}
                 </Label>
                 {fieldType === 'boolean' ? (
-                  <div className="flex items-center gap-2">
+                  <div className='flex items-center gap-2'>
                     <input
-                      type="checkbox"
+                      type='checkbox'
                       id={fieldName}
                       checked={value === true || value === 'true'}
                       onChange={(e) => handleFieldChange(fieldName, e.target.checked)}
-                      className="h-4 w-4 rounded border-[var(--border)]"
+                      className='h-4 w-4 rounded border-[var(--border)]'
                     />
-                    <label htmlFor={fieldName} className="text-[12px]">
+                    <label htmlFor={fieldName} className='text-[12px]'>
                       {value === true || value === 'true' ? 'Yes' : 'No'}
                     </label>
                   </div>
                 ) : fieldType === 'number' ? (
                   <Input
                     id={fieldName}
-                    type="number"
+                    type='number'
                     value={
                       typeof value === 'number'
                         ? value
                         : value === '' || value === null || value === undefined
-                        ? ''
-                        : typeof value === 'string' && value.trim() === ''
-                        ? ''
-                        : Number(value) || ''
+                          ? ''
+                          : typeof value === 'string' && value.trim() === ''
+                            ? ''
+                            : Number(value) || ''
                     }
                     onChange={(e) => {
                       const inputValue = e.target.value
@@ -292,7 +299,11 @@ export function StartBlockInputModal({
                         const numValue = Number(inputValue)
                         handleFieldChange(
                           fieldName,
-                          Number.isNaN(numValue) ? (typeof value === 'number' ? value : '') : numValue
+                          Number.isNaN(numValue)
+                            ? typeof value === 'number'
+                              ? value
+                              : ''
+                            : numValue
                         )
                       }
                     }}
@@ -303,13 +314,16 @@ export function StartBlockInputModal({
                       // Normalize if needed
                       if (inputValue === '') {
                         handleFieldChange(fieldName, '')
-                      } else if (typeof currentValue !== 'number' && typeof currentValue !== 'string') {
+                      } else if (
+                        typeof currentValue !== 'number' &&
+                        typeof currentValue !== 'string'
+                      ) {
                         const numValue = Number(inputValue)
                         handleFieldChange(fieldName, Number.isNaN(numValue) ? '' : numValue)
                       }
                     }}
                     placeholder={`Enter ${displayName}`}
-                    className="text-[12px]"
+                    className='text-[12px]'
                   />
                 ) : fieldType === 'object' || fieldType === 'array' ? (
                   <textarea
@@ -318,8 +332,8 @@ export function StartBlockInputModal({
                       typeof value === 'string'
                         ? value
                         : value === null || value === undefined
-                        ? ''
-                        : JSON.stringify(value, null, 2)
+                          ? ''
+                          : JSON.stringify(value, null, 2)
                     }
                     onChange={(e) => {
                       const inputValue = e.target.value
@@ -335,17 +349,21 @@ export function StartBlockInputModal({
                       }
                     }}
                     placeholder={`Enter ${displayName} as JSON`}
-                    className="min-h-[80px] w-full rounded-[4px] border border-[var(--border)] bg-[var(--surface-9)] px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[var(--brand-primary)]"
+                    className='min-h-[80px] w-full rounded-[4px] border border-[var(--border)] bg-[var(--surface-9)] px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[var(--brand-primary)]'
                   />
                 ) : (
                   <Input
                     id={fieldName}
-                    type="text"
+                    type='text'
                     value={(() => {
                       try {
                         return normalizeValueForInput(value, fieldType)
                       } catch (error) {
-                        logger.error('Error normalizing value for input', { fieldName, value, error })
+                        logger.error('Error normalizing value for input', {
+                          fieldName,
+                          value,
+                          error,
+                        })
                         return ''
                       }
                     })()}
@@ -374,7 +392,7 @@ export function StartBlockInputModal({
                       }
                     }}
                     placeholder={`Enter ${displayName}`}
-                    className="text-[12px]"
+                    className='text-[12px]'
                   />
                 )}
               </div>
@@ -383,10 +401,10 @@ export function StartBlockInputModal({
         </div>
 
         <ModalFooter>
-          <Button variant="ghost" onClick={handleClose} className="text-[12px]">
+          <Button variant='ghost' onClick={handleClose} className='text-[12px]'>
             Close
           </Button>
-          <Button onClick={handleSubmit} className="text-[12px]">
+          <Button onClick={handleSubmit} className='text-[12px]'>
             Submit
           </Button>
         </ModalFooter>
@@ -394,4 +412,3 @@ export function StartBlockInputModal({
     </Modal>
   )
 }
-
