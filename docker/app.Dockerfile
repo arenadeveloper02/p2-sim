@@ -137,10 +137,10 @@ RUN mkdir -p apps/sim/.next/cache && \
     # ========================================
 # Runner Stage: Run the actual app
 # ========================================
-FROM oven/bun:1.2.19 AS runner
-WORKDIR /app
+# FROM oven/bun:1.2.19 AS runner
+# WORKDIR /app
 
-ENV NODE_ENV=production
+# ENV NODE_ENV=production
 
 # 🟢 Install Chromium + ChromeDriver inside the container
 # Install Xvfb + Chrome dependencies + Google Chrome + Chromedriver
@@ -182,8 +182,6 @@ ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
 COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
-FROM oven/bun:1.3.3-alpine AS runner
-WORKDIR /app
 # Switch to non-root user
 # USER nextjs
 
