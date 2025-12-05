@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import {
   Button,
@@ -90,7 +91,15 @@ export function ChatDeploy({
   const setShowDeleteConfirmation =
     externalSetShowDeleteConfirmation || setInternalShowDeleteConfirmation
 
-  const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
+  const {
+    formData,
+    errors,
+    updateField,
+    setError,
+    validateForm,
+    setFormData,
+    emailValidationErrors,
+  } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
@@ -146,6 +155,7 @@ export function ChatDeploy({
                       `${config.blockId}_${config.path}`
                   )
                 : [],
+              approvalStatus: formData.approvalStatus ?? true,
             })
 
             if (chatDetail.customizations?.imageUrl) {
@@ -177,7 +187,8 @@ export function ChatDeploy({
     setChatSubmitting(true)
 
     try {
-      if (!validateForm()) {
+      const isValid = await validateForm()
+      if (!isValid) {
         setChatSubmitting(false)
         return
       }
@@ -374,6 +385,16 @@ export function ChatDeploy({
             disabled={chatSubmitting}
             isExistingChat={!!existingChat}
             error={errors.password || errors.emails}
+            approvalStatus={formData.approvalStatus}
+            nonDeletableEmails={
+              formData.approvalStatus
+                ? ['@position2.com']
+                : formData.emails.filter((e) => {
+                    const sessionEmail = Cookies.get('email')
+                    return e === sessionEmail || e === '@position2.com'
+                  })
+            }
+            emailValidationErrors={emailValidationErrors}
           />
           <div className='space-y-2'>
             <Label htmlFor='welcomeMessage' className='font-medium text-sm'>

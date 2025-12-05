@@ -17,7 +17,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
-import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const logger = createLogger('CancelSubscription')
 
@@ -211,11 +211,11 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
     <>
       <div className='flex items-center justify-between'>
         <div>
-          <span className='font-medium text-sm'>
+          <span className='font-medium text-[13px]'>
             {isCancelAtPeriodEnd ? 'Restore Subscription' : 'Manage Subscription'}
           </span>
           {isCancelAtPeriodEnd && (
-            <p className='mt-1 text-muted-foreground text-xs'>
+            <p className='mt-1 text-[var(--text-muted)] text-xs'>
               You'll keep access until {formatDate(periodEndDate)}
             </p>
           )}
@@ -226,7 +226,7 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
           disabled={isLoading}
           className={cn(
             'h-8 rounded-[8px] font-medium text-xs',
-            error && 'border-red-500 text-red-500 dark:border-red-500 dark:text-red-500'
+            error && 'border-[var(--text-error)] text-[var(--text-error)]'
           )}
         >
           {error ? 'Error' : isCancelAtPeriodEnd ? 'Restore' : 'Manage'}
@@ -255,8 +255,8 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
 
           {!isCancelAtPeriodEnd && (
             <div className='py-2'>
-              <div className='rounded-[8px] bg-muted/50 p-3 text-sm'>
-                <ul className='space-y-1 text-muted-foreground text-xs'>
+              <div className='rounded-[8px] bg-[var(--surface-3)] p-3 text-sm'>
+                <ul className='space-y-1 text-[var(--text-muted)] text-xs'>
                   <li>• Keep all features until {formatDate(periodEndDate)}</li>
                   <li>• No more charges</li>
                   <li>• Data preserved</li>

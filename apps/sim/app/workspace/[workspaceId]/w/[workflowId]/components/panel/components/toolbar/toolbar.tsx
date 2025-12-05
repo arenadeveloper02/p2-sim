@@ -529,7 +529,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
         >
           <div
             ref={triggersHeaderRef}
-            className='px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'
+            className='px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)]'
           >
             Triggers
           </div>
@@ -556,9 +556,9 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     }}
                     onClick={() => handleItemClick(trigger.type, isTriggerCapable)}
                     className={clsx(
-                      'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5px] text-[14px]',
-                      'cursor-pointer hover:bg-[var(--border)] active:cursor-grabbing dark:hover:bg-[var(--border)]',
-                      'focus-visible:bg-[var(--border)] focus-visible:outline-none dark:focus-visible:bg-[var(--border)]'
+                      'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
+                      'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
+                      'focus-visible:bg-[var(--surface-9)] focus-visible:outline-none'
                     )}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
@@ -569,7 +569,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     }}
                   >
                     <div
-                      className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                      className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
                       style={{ background: trigger.bgColor }}
                     >
                       {Icon && (
@@ -577,7 +577,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                           className={clsx(
                             'toolbar-item-icon text-white transition-transform duration-200',
                             'group-hover:scale-110',
-                            '!h-[10px] !w-[10px]'
+                            '!h-[9px] !w-[9px]'
                           )}
                         />
                       )}
@@ -585,8 +585,8 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     <span
                       className={clsx(
                         'truncate font-medium',
-                        'text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] dark:text-[var(--text-tertiary)] dark:group-hover:text-[var(--text-primary)]',
-                        'group-focus-visible:text-[var(--text-primary)] dark:group-focus-visible:text-[var(--text-primary)]'
+                        'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]',
+                        'group-focus-visible:text-[var(--text-primary)]'
                       )}
                     >
                       {trigger.name}
@@ -599,7 +599,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
         </div>
 
         {/* Resize Handle */}
-        <div className='relative flex-shrink-0 border-[var(--border)] border-t dark:border-[var(--border)]'>
+        <div className='relative flex-shrink-0 border-[var(--border)] border-t'>
           <div
             className='absolute top-[-4px] right-0 left-0 z-30 h-[8px] cursor-ns-resize'
             onMouseDown={handleMouseDown}
@@ -611,7 +611,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
           <div
             ref={blocksHeaderRef}
             onClick={handleBlocksHeaderClick}
-            className='cursor-pointer px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'
+            className='cursor-pointer px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)]'
           >
             Blocks
           </div>
@@ -646,8 +646,8 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     onClick={() => handleItemClick(block.type, false)}
                     className={clsx(
                       'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
-                      'cursor-pointer hover:bg-[var(--border)] active:cursor-grabbing dark:hover:bg-[var(--border)]',
-                      'focus-visible:bg-[var(--border)] focus-visible:outline-none dark:focus-visible:bg-[var(--border)]'
+                      'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
+                      'focus-visible:bg-[var(--surface-9)] focus-visible:outline-none'
                     )}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
@@ -658,7 +658,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     }}
                   >
                     <div
-                      className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                      className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
                       style={{ background: block.bgColor }}
                     >
                       {Icon && (
@@ -666,7 +666,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                           className={clsx(
                             'toolbar-item-icon text-white transition-transform duration-200',
                             'group-hover:scale-110',
-                            '!h-[10px] !w-[10px]'
+                            '!h-[9px] !w-[9px]'
                           )}
                         />
                       )}
@@ -674,8 +674,8 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                     <span
                       className={clsx(
                         'truncate font-medium',
-                        'text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] dark:text-[var(--text-tertiary)] dark:group-hover:text-[var(--text-primary)]',
-                        'group-focus-visible:text-[var(--text-primary)] dark:group-focus-visible:text-[var(--text-primary)]'
+                        'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]',
+                        'group-focus-visible:text-[var(--text-primary)]'
                       )}
                     >
                       {block.name}
