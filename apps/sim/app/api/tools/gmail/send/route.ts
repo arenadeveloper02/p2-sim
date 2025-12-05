@@ -5,6 +5,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 import {
   base64UrlEncode,
   buildMimeMessage,
@@ -18,6 +19,26 @@ const logger = createLogger('GmailSendAPI')
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
 
+/**
+ * Check if a string is valid HTML by looking for HTML tags
+ * @param str String to check
+ * @returns true if the string appears to be valid HTML
+ */
+function isValidHtml(str: string): boolean {
+  const trimmed = str.trim()
+  // Check if it starts with common HTML patterns
+  if (
+    trimmed.startsWith('<!DOCTYPE html>') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<HTML')
+  ) {
+    return true
+  }
+  // Check if it contains HTML tags (opening and closing tags)
+  const htmlTagPattern = /<[a-z][\s\S]*>/i
+  return htmlTagPattern.test(trimmed)
+}
+
 const GmailSendSchema = z.object({
   accessToken: z.string().min(1, 'Access token is required'),
   to: z.string().min(1, 'Recipient email is required'),
@@ -29,6 +50,7 @@ const GmailSendSchema = z.object({
   cc: z.string().optional().nullable(),
   bcc: z.string().optional().nullable(),
   attachments: z.array(z.any()).optional().nullable(),
+  isHtml: z.boolean().optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {
@@ -60,7 +82,25 @@ export async function POST(request: NextRequest) {
       subject: validatedData.subject || '',
       hasAttachments: !!(validatedData.attachments && validatedData.attachments.length > 0),
       attachmentCount: validatedData.attachments?.length || 0,
+      isHtml: validatedData.isHtml || false,
     })
+
+    // Process body based on isHtml flag
+    let processedBody = validatedData.body
+    let contentType = validatedData.contentType || 'text'
+
+    if (validatedData.isHtml) {
+      contentType = 'html'
+      if (isValidHtml(validatedData.body)) {
+        // Body is already valid HTML, use as-is
+        processedBody = validatedData.body
+        logger.info(`[${requestId}] Body is valid HTML, using as-is`)
+      } else {
+        // Body is not valid HTML, apply markdown to HTML formatting
+        processedBody = renderAgentResponseToString(validatedData.body)
+        logger.info(`[${requestId}] Body converted from markdown to HTML`)
+      }
+    }
 
     const threadingHeaders = validatedData.replyToMessageId
       ? await fetchThreadingHeaders(validatedData.replyToMessageId, validatedData.accessToken)
@@ -123,8 +163,8 @@ export async function POST(request: NextRequest) {
           cc: validatedData.cc ?? undefined,
           bcc: validatedData.bcc ?? undefined,
           subject: validatedData.subject || originalSubject || '',
-          body: validatedData.body,
-          contentType: validatedData.contentType || 'text',
+          body: processedBody,
+          contentType: contentType,
           inReplyTo: originalMessageId,
           references: originalReferences,
           attachments: attachmentBuffers,
@@ -141,8 +181,8 @@ export async function POST(request: NextRequest) {
         cc: validatedData.cc,
         bcc: validatedData.bcc,
         subject: validatedData.subject || originalSubject,
-        body: validatedData.body,
-        contentType: validatedData.contentType || 'text',
+        body: processedBody,
+        contentType: contentType,
         inReplyTo: originalMessageId,
         references: originalReferences,
       })

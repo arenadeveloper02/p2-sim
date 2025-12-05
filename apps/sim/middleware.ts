@@ -2,6 +2,7 @@ import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { isDev } from './lib/core/config/environment'
 import { generateRuntimeCSP } from './lib/core/security/csp'
+import { getLoginRedirectUrl } from './lib/core/utils/urls'
 import { createLogger } from './lib/logs/console/logger'
 
 const logger = createLogger('Middleware')
@@ -79,9 +80,12 @@ function handleInvitationRedirects(
     const token = request.nextUrl.searchParams.get('token')
     const inviteId = request.nextUrl.pathname.split('/').pop()
     const callbackParam = encodeURIComponent(`/invite/${inviteId}${token ? `?token=${token}` : ''}`)
-    return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${callbackParam}&invite_flow=true`, request.url)
-    )
+    const hostname = request.nextUrl.hostname
+    const externalLoginUrl = getLoginRedirectUrl(hostname)
+    const loginUrl = new URL(externalLoginUrl)
+    loginUrl.searchParams.set('callbackUrl', callbackParam)
+    loginUrl.searchParams.set('invite_flow', 'true')
+    return NextResponse.redirect(loginUrl.toString())
   }
   return NextResponse.next()
 }

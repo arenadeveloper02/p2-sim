@@ -18,6 +18,12 @@ export interface KnowledgeBaseWithCounts {
   docCount: number
 }
 
+// Simplified type for user knowledge base access API
+export type UserKnowledgeBaseAccess = Pick<
+  KnowledgeBaseWithCounts,
+  'id' | 'name' | 'workspaceId' | 'docCount'
+>
+
 export interface CreateKnowledgeBaseData {
   name: string
   description?: string

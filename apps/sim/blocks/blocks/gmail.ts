@@ -78,6 +78,14 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       required: true,
     },
     {
+      id: 'isHtml',
+      title: 'Format Content',
+      type: 'switch',
+      placeholder: 'Email HTML content',
+      condition: { field: 'operation', value: ['send_gmail', 'draft_gmail'] },
+      required: false,
+    },
+    {
       id: 'contentType',
       title: 'Content Type',
       type: 'dropdown',
