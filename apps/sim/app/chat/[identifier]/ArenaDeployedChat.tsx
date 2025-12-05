@@ -11,7 +11,6 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
-  ChatHeader,
   ChatInput,
   ChatLoadingState,
   type ChatMessage,
@@ -23,6 +22,7 @@ import {
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+import { ArenaChatHeader } from '../components/header/arenaHeader'
 import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
@@ -131,7 +131,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [conversationId, setConversationId] = useState('')
 
   // Left threads state managed here
-  const [currentChatId, setCurrentChatId] = useState<string | null>(identifier)
+  const [currentChatId, setCurrentChatId] = useState<string | null>()
   const [threads, setThreads] = useState<ThreadRecord[]>([])
   const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
   const [threadsError, setThreadsError] = useState<string | null>(null)
@@ -497,6 +497,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             ? userMessage.content
             : JSON.stringify(userMessage.content),
         conversationId,
+        chatId: currentChatId,
       }
 
       // Add files if present (convert to base64 for JSON transmission)
@@ -626,6 +627,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     },
     [handleSendMessage]
   )
+
+  // Get chatId from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId')
+    setCurrentChatId(chatId)
+  }, [])
 
   const fetchThreads = useCallback(
     async (workflowId: string, isInitialLoad = false) => {
@@ -817,13 +825,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
       {isHistoryLoading && (
-        <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
+        <div className='absolute top-[72px] left-[330px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-350px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
 
       {/* Header component */}
-      <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+      <ArenaChatHeader chatConfig={chatConfig} starCount={starCount} />
 
       <LeftNavThread
         threads={threads}
@@ -833,6 +841,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         onSelectThread={handleSelectThread}
         onNewChat={handleNewChat}
         isStreaming={isStreamingResponse || isLoading}
+        workflowId={identifier}
       />
 
       {/* Message Container component */}
@@ -845,6 +854,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         scrollToBottom={scrollToBottom}
         scrollToMessage={scrollToMessage}
         chatConfig={chatConfig}
+        setMessages={setMessages}
       />
 
       {/* Input area (free-standing at the bottom) */}

@@ -41,6 +41,7 @@ interface ChatDeployProps {
   onDeployed?: () => void
   onUndeploy?: () => Promise<void>
   onVersionActivated?: () => void
+  workflowWorkspaceId?: string
 }
 
 interface ExistingChat {
@@ -70,6 +71,7 @@ export function ChatDeploy({
   onDeployed,
   onUndeploy,
   onVersionActivated,
+  workflowWorkspaceId,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -255,7 +257,7 @@ export function ChatDeploy({
       <>
         <div id='chat-deploy-form'>
           <SuccessView
-            deployedUrl={deployedUrl}
+            deployedUrl={`${deployedUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`}
             existingChat={existingChat}
             onDelete={() => setShowDeleteConfirmation(true)}
             onUpdate={() => setShowSuccessView(false)}

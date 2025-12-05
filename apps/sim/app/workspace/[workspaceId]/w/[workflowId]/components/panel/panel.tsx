@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUp, Square, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
   BubbleChatPreview,
@@ -49,6 +50,62 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Panel')
+
+const RunAgentExternalChat = ({
+  workflowId,
+  workspaceId,
+}: {
+  workflowId: string
+  workspaceId: string
+}) => {
+  const [chatUrl, setChatUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!workflowId) {
+      setChatUrl(null)
+      return
+    }
+
+    const fetchChatUrl = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.isDeployed && data.deployment?.identifier) {
+            const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
+            setChatUrl(url)
+          } else {
+            setChatUrl(null)
+          }
+        } else {
+          setChatUrl(null)
+        }
+      } catch (error) {
+        logger.error('Error fetching chat status:', error)
+        setChatUrl(null)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchChatUrl()
+  }, [workflowId])
+
+  if (!chatUrl) {
+    return null
+  }
+
+  return (
+    <Link href={chatUrl}>
+      <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'primary'}>
+        <Zap className='h-[11.5px] w-[11.5px] fill-current' />
+        Run
+      </Button>
+    </Link>
+  )
+}
 
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
@@ -442,8 +499,9 @@ export function Panel() {
                 ) : (
                   <Play className='h-[11.5px] w-[11.5px]' />
                 )}
-                Run
+                Test
               </Button>
+              <RunAgentExternalChat workflowId={activeWorkflowId || ''} workspaceId={workspaceId} />
             </div>
           </div>
 

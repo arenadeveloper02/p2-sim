@@ -69,7 +69,7 @@ export function handleSheetsFormat(input: unknown): {
         return value === undefined ? '' : (value as any)
       })
     })
-    table = [headers, ...rows]
+    table = rows
   }
 
   const escapeCell = (cell: unknown): string => {
