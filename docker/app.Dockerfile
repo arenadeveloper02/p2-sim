@@ -85,10 +85,16 @@ ENV NODE_ENV=production
 
 # 🟢 Install Chromium + ChromeDriver inside the container
 # Install Xvfb + Chromium and dependencies (Alpine uses apk, not apt-get)
+# Mesa provides software OpenGL implementation for WebGL support
 RUN apk add --no-cache \
       chromium \
       chromium-chromedriver \
       xvfb \
+      mesa \
+      mesa-dri-gallium \
+      mesa-gl \
+      mesa-glapi \
+      mesa-egl \
       nss \
       freetype \
       freetype-dev \
