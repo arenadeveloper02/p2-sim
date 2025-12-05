@@ -182,6 +182,8 @@ ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
 COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
+FROM oven/bun:1.3.3-alpine AS runner
+WORKDIR /app
 # Switch to non-root user
 # USER nextjs
 
