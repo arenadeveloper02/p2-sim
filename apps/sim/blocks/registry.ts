@@ -23,6 +23,7 @@ import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
+import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FunctionBlock } from '@/blocks/blocks/function'
@@ -99,6 +100,7 @@ import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
+import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { SSHBlock } from '@/blocks/blocks/ssh'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
 import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
@@ -134,6 +136,7 @@ import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
+import { SemrushBlock } from './blocks/semrush'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -162,6 +165,7 @@ export const registry: Record<string, BlockConfig> = {
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
   file: FileBlock,
+  figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,
@@ -229,6 +233,7 @@ export const registry: Record<string, BlockConfig> = {
   router: RouterBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
+  semrush: SemrushBlock,
   schedule: ScheduleBlock,
   search: SearchBlock,
   sendgrid: SendGridBlock,
@@ -237,6 +242,7 @@ export const registry: Record<string, BlockConfig> = {
   sharepoint: SharepointBlock,
   shopify: ShopifyBlock,
   slack: SlackBlock,
+  spyfu: SpyfuBlock,
   smtp: SmtpBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,

@@ -83,6 +83,43 @@ RUN apk add --no-cache python3 py3-pip bash ffmpeg
 
 ENV NODE_ENV=production
 
+# 🟢 Install Chromium + ChromeDriver inside the container
+# Install Xvfb + Chrome dependencies + Chromium + ChromeDriver
+RUN apk add --no-cache \
+      chromium \
+      xvfb \
+      ttf-freefont \
+      ttf-liberation \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-dejavu \
+      gcompat \
+      wget \
+      unzip \
+    && CHROMIUM_VERSION=$(chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) \
+    && CHROMEDRIVER_MAJOR=$(echo $CHROMIUM_VERSION | cut -d. -f1) \
+    && CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4) \
+    && if [ -z "$CHROMEDRIVER_VERSION" ]; then \
+         CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROMEDRIVER_MAJOR}" 2>/dev/null); \
+       fi \
+    && wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip -q /tmp/chromedriver.zip -d /tmp \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm -rf /tmp/chromedriver* /var/cache/apk/*
+
+# (Optional, if any code reads these env vars)
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    CHROME_BIN=/usr/bin/chromium-browser \
+    CHROME_PATH=/usr/lib/chromium/ \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+COPY --from=builder /app/apps/sim/public ./apps/sim/public
+COPY --from=builder /app/apps/sim/.next/standalone ./
+COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
+
 # Create non-root user and group (cached separately)
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
@@ -113,5 +150,9 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
+# 🔹 Add entrypoint that starts Xvfb and then the app
+COPY ./docker/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bun", "apps/sim/server.js"]

@@ -118,7 +118,8 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
           })
         })
 
-        processedValues = [headers, ...rows]
+        // Only add data rows, not headers
+        processedValues = rows
       }
 
       const body: Record<string, any> = {

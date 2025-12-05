@@ -155,6 +155,7 @@ const LeftNavThread = ({
 
       <hr className='my-6 text-[#E2E3E5] ' />
       <div className='flex items-center gap-4 text-center font-normal text-[#2C2D33] text-sm'>
+        {/* <Link href={getExitUrl()}> */}
         <Button
           variant='outline'
           className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
@@ -164,6 +165,7 @@ const LeftNavThread = ({
         >
           <ArrowLeft className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
         </Button>
+        {/* </Link> */}
         Exit Agent
       </div>
     </div>

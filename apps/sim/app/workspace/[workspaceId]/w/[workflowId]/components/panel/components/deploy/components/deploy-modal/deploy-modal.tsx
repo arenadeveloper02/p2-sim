@@ -598,18 +598,20 @@ export function DeployModal({
                 />
               </ModalTabsContent>
 
-              <ModalTabsContent value='template'>
-                {workflowId && (
-                  <TemplateDeploy
-                    workflowId={workflowId}
-                    onDeploymentComplete={handleCloseModal}
-                    onValidationChange={setTemplateFormValid}
-                    onSubmittingChange={setTemplateSubmitting}
-                    onExistingTemplateChange={setHasExistingTemplate}
-                    onTemplateStatusChange={setTemplateStatus}
-                  />
-                )}
-              </ModalTabsContent>
+              {activeTab === 'chat' && (
+                <ModalTabsContent value='template'>
+                  {workflowId && (
+                    <TemplateDeploy
+                      workflowId={workflowId}
+                      onDeploymentComplete={handleCloseModal}
+                      onValidationChange={setTemplateFormValid}
+                      onSubmittingChange={setTemplateSubmitting}
+                      onExistingTemplateChange={setHasExistingTemplate}
+                      onTemplateStatusChange={setTemplateStatus}
+                    />
+                  )}
+                </ModalTabsContent>
+              )}
             </ModalBody>
           </ModalTabs>
 
