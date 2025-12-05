@@ -13,9 +13,9 @@ import { useParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { Badge, Button } from '@/components/emcn'
 import { Textarea } from '@/components/ui'
-import { useSession } from '@/lib/auth-client'
+import { useSession } from '@/lib/auth/auth-client'
+import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
-import { cn } from '@/lib/utils'
 import {
   AttachedFilesDisplay,
   ContextPills,
@@ -662,7 +662,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
             {/* Highlight overlay - must have identical flow as textarea */}
             <div
               ref={overlayRef}
-              className='pointer-events-none absolute top-0 left-0 z-[1] m-0 box-border h-auto max-h-[120px] min-h-[48px] w-full resize-none overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-[2px] py-1 font-medium font-sans text-[#0D0D0D] text-sm leading-[1.25rem] outline-none [-ms-overflow-style:none] [scrollbar-width:none] [text-rendering:optimizeLegibility] dark:text-gray-100 [&::-webkit-scrollbar]:hidden'
+              className='pointer-events-none absolute top-0 left-0 z-[1] m-0 box-border h-auto max-h-[120px] min-h-[48px] w-full resize-none overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-[2px] py-1 font-medium font-sans text-[var(--text-primary)] text-sm leading-[1.25rem] outline-none [-ms-overflow-style:none] [scrollbar-width:none] [text-rendering:optimizeLegibility] [&::-webkit-scrollbar]:hidden'
               aria-hidden='true'
             >
               {renderOverlayContent()}

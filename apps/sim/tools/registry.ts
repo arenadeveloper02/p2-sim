@@ -124,6 +124,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { fileParseTool } from '@/tools/file'
 import {
   crawlTool,
@@ -202,6 +203,7 @@ import {
   gmailUnarchiveTool,
 } from '@/tools/gmail'
 import { searchTool as googleSearchTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -693,6 +695,7 @@ import {
   posthogUpdatePropertyDefinitionTool,
   posthogUpdateSurveyTool,
 } from '@/tools/posthog'
+import { createTool as presentationCreateTool } from '@/tools/presentation'
 import {
   pylonBulkUpdateAccountsTool,
   pylonCreateAccountTool,
@@ -1049,6 +1052,7 @@ import {
   zepGetUserThreadsTool,
   zepGetUserTool,
 } from '@/tools/zep'
+import { arenaCreateTask, arenaSearchTask } from './arena'
 
 import {
   figmaCreateTool,
@@ -1065,6 +1069,8 @@ import {
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
+  arena_create_task: arenaCreateTask,
+  arena_search_task: arenaSearchTask,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -1377,6 +1383,8 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_ads_query: googleAdsQueryTool,
+  facebook_ads_query: facebookAdsQueryTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   posthog_capture_event: posthogCaptureEventTool,
@@ -1886,6 +1894,7 @@ export const tools: Record<string, ToolConfig> = {
   pylon_update_user: pylonUpdateUserTool,
   pylon_search_users: pylonSearchUsersTool,
   pylon_list_teams: pylonListTeamsTool,
+  presentation_create: presentationCreateTool,
   pylon_get_team: pylonGetTeamTool,
   pylon_create_team: pylonCreateTeamTool,
   pylon_update_team: pylonUpdateTeamTool,
@@ -2022,15 +2031,15 @@ export const tools: Record<string, ToolConfig> = {
   sentry_releases_list: listReleasesTool,
   sentry_releases_create: createReleaseTool,
   sentry_releases_deploy: createDeployTool,
-   // Figma tools
-   figma_create: figmaCreateTool,
-   figma_to_html_ai: figmaToHTMLAITool,
-   figma_get_comments: figmaGetCommentsTool,
-   figma_post_comment: figmaPostCommentTool,
-   figma_delete_comment: figmaDeleteCommentTool,
-   figma_get_team_projects: figmaGetTeamProjectsTool,
-   figma_get_file: figmaGetFileTool,
-   figma_get_file_nodes: figmaGetFileNodesTool,
-   figma_get_file_images: figmaGetFileImagesTool,
-   figma_get_project_files: figmaGetProjectFilesTool,
+  // Figma tools
+  figma_create: figmaCreateTool,
+  figma_to_html_ai: figmaToHTMLAITool,
+  figma_get_comments: figmaGetCommentsTool,
+  figma_post_comment: figmaPostCommentTool,
+  figma_delete_comment: figmaDeleteCommentTool,
+  figma_get_team_projects: figmaGetTeamProjectsTool,
+  figma_get_file: figmaGetFileTool,
+  figma_get_file_nodes: figmaGetFileNodesTool,
+  figma_get_file_images: figmaGetFileImagesTool,
+  figma_get_project_files: figmaGetProjectFilesTool,
 }

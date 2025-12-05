@@ -1,5 +1,5 @@
 import { workflow } from '@sim/db/schema'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -8,8 +8,8 @@ import { createLogger } from '@/lib/logs/console/logger'
 const logger = createLogger('WorkspaceByIdAPI')
 
 import { db } from '@sim/db'
-import { knowledgeBase, permissions, templates, workspace } from '@sim/db/schema'
-import { getUserEntityPermissions } from '@/lib/permissions/utils'
+import { knowledgeBase, permissions, templates, userKnowledgeBase, workspace } from '@sim/db/schema'
+import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const patchWorkspaceSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -274,6 +274,17 @@ export async function DELETE(
       await tx
         .delete(permissions)
         .where(and(eq(permissions.entityType, 'workspace'), eq(permissions.entityId, workspaceId)))
+
+      // Soft delete related entries from user_knowledge_base table
+      await tx
+        .update(userKnowledgeBase)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(
+          or(
+            eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
+            eq(userKnowledgeBase.kbWorkspaceIdRef, workspaceId)
+          )
+        )
 
       // Delete the workspace itself
       await tx.delete(workspace).where(eq(workspace.id, workspaceId))

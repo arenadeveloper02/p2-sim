@@ -208,7 +208,7 @@ async function readFileContent(filePath: string, fileType: string): Promise<stri
     console.log(`S3 key extracted for ${fileType}:`, s3Key)
 
     // Download file from S3
-    const fileBuffer = await downloadFile({key:s3Key, context:'figma-design'})
+    const fileBuffer = await downloadFile({ key: s3Key, context: 'figma-design' })
     console.log(`Downloaded ${fileType} from S3, size:`, fileBuffer.length)
 
     // Check if it's a PDF file
@@ -1052,11 +1052,48 @@ async function automateDesignCreation(
   const service = new chrome.ServiceBuilder(chromedriverPath)
 
   // Build the WebDriver with explicit service
-  const driver = await new Builder()
-    .forBrowser('chrome')
-    .setChromeOptions(options)
-    .setChromeService(service)
-    .build()
+  let driver: WebDriver
+  try {
+    driver = await new Builder()
+      .forBrowser('chrome')
+      .setChromeOptions(options)
+      .setChromeService(service)
+      .build()
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+
+    // Check for ChromeDriver version mismatch
+    if (
+      errorMessage.includes('session not created') &&
+      (errorMessage.includes('ChromeDriver') || errorMessage.includes('Chrome version'))
+    ) {
+      const versionMismatchError = `
+ChromeDriver version mismatch detected!
+
+Your Chrome browser version (143) doesn't match your ChromeDriver version (141).
+
+To fix this:
+1. Update ChromeDriver to match your Chrome version:
+   brew upgrade chromedriver
+   
+   OR manually download from: https://googlechromelabs.github.io/chrome-for-testing/
+
+2. Or set CHROMEDRIVER_PATH environment variable to point to the correct version
+
+3. Or use a ChromeDriver manager that auto-downloads the correct version
+
+Current Chrome binary: ${chromeBinaryPath}
+Current ChromeDriver path: ${chromedriverPath}
+
+Original error: ${errorMessage}
+      `.trim()
+
+      throw new Error(versionMismatchError)
+    }
+
+    // Re-throw other errors as-is
+    throw error
+  }
 
   try {
     // Step 1: Login to Figma

@@ -14,8 +14,8 @@ import {
 import { baseStyles } from '@/components/emails/base-styles'
 import EmailFooter from '@/components/emails/footer'
 import { getBrandConfig } from '@/lib/branding/branding'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
-import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('WorkspaceInvitationEmail')
 
@@ -62,11 +62,13 @@ export const WorkspaceInvitationEmail = ({
             <Row>
               <Column style={{ textAlign: 'center' }}>
                 <Img
-                  src={brand.logoUrl || `${baseUrl}/logo/reverse/text/medium.png`}
+                  src={`https://arenav2image.s3.us-west-1.amazonaws.com/arenaLogoTextBlack.png`}
                   width='114'
                   alt={brand.name}
                   style={{
                     margin: '0 auto',
+                    height: '53px',
+                    width: '49px',
                   }}
                 />
               </Column>
@@ -76,7 +78,7 @@ export const WorkspaceInvitationEmail = ({
           <Section style={baseStyles.sectionsBorders}>
             <Row>
               <Column style={baseStyles.sectionBorder} />
-              <Column style={baseStyles.sectionCenter} />
+              <Column style={baseStyles.sectionBorder} />
               <Column style={baseStyles.sectionBorder} />
             </Row>
           </Section>
@@ -84,11 +86,12 @@ export const WorkspaceInvitationEmail = ({
           <Section style={baseStyles.content}>
             <Text style={baseStyles.paragraph}>Hello,</Text>
             <Text style={baseStyles.paragraph}>
-              {inviterName} has invited you to join the "{workspaceName}" workspace on Sim!
+              {inviterName} has invited you to join the "<strong>{workspaceName}</strong>" workspace
+              on Agentic AI!
             </Text>
             <Text style={baseStyles.paragraph}>
-              Sim is a powerful platform for building, testing, and optimizing AI workflows. Join
-              this workspace to collaborate with your team.
+              Agentic AI is a powerful feature for building, testing, and optimizing AI workflows.
+              Join this workspace to collaborate with your team.
             </Text>
             <Link href={enhancedLink} style={{ textDecoration: 'none' }}>
               <Text style={baseStyles.button}>Accept Invitation</Text>
@@ -100,12 +103,11 @@ export const WorkspaceInvitationEmail = ({
             <Text style={baseStyles.paragraph}>
               Best regards,
               <br />
-              The Sim Team
+              <strong>The Arena Team</strong>
             </Text>
           </Section>
+          <EmailFooter baseUrl={baseUrl} />
         </Container>
-
-        <EmailFooter baseUrl={baseUrl} />
       </Body>
     </Html>
   )

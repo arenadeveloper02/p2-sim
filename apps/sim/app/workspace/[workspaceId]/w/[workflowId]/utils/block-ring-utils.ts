@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 
 export type BlockDiffStatus = 'new' | 'edited' | null | undefined
 
@@ -33,8 +33,8 @@ export function getBlockRingStyles(options: BlockRingOptions): {
     !!runPathStatus
 
   const ringClassName = cn(
-    // Executing block: pulsing success ring with prominent thickness
-    isActive && 'ring-[3.5px] ring-[var(--border-success)] animate-ring-pulse',
+    // Executing block: pulsing brand primary ring with prominent thickness
+    isActive && 'ring-[3.5px] ring-[var(--brand-primary-hex,var(--brand-400))] animate-ring-pulse',
     // Non-active states use standard ring utilities
     !isActive && hasRing && 'ring-[1.75px]',
     // Pending state: warning ring

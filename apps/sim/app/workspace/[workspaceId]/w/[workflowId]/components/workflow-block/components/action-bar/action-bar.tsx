@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react'
 import { ArrowLeftRight, ArrowUpDown, Circle, CircleOff, LogOut } from 'lucide-react'
 import { Button, Duplicate, Tooltip, Trash2 } from '@/components/emcn'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -184,7 +184,7 @@ export const ActionBar = memo(
                   collaborativeRemoveBlock(blockId)
                 }
               }}
-              className='h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-9)] p-0 text-[#868686] hover:bg-[var(--brand-secondary)] hover:text-[var(--bg)] dark:text-[#868686] dark:hover:bg-[var(--brand-secondary)] dark:hover:text-[var(--bg)] '
+              className='h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-9)] p-0 text-[var(--text-muted)] hover:bg-[var(--text-error)] hover:text-[var(--white)]'
               disabled={disabled}
             >
               <Trash2 className='h-[11px] w-[11px]' />
