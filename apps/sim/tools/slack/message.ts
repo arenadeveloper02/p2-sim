@@ -69,6 +69,11 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
         accessToken: params.accessToken || params.botToken,
         channel: params.channel,
         text: params.text,
+        // Enable link parsing for proper mention handling
+        link_names: true,
+        // Enable unfurling of links
+        unfurl_links: true,
+        unfurl_media: true,
         thread_ts: params.thread_ts || undefined,
         files: params.files || null,
       }

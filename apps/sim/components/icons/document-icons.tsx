@@ -190,3 +190,35 @@ export function getDocumentIcon(mimeType: string, filename: string): React.FC<Ic
   }
   return DefaultFileIcon
 }
+
+/**
+ * Renders the Spyfu icon as an SVG component.
+ * @param props - The icon props for customizing the className and styling.
+ * @returns The Spyfu icon as a React functional component.
+ */
+export const SpyfuIcon: React.FC<IconProps> = (props) => (
+  <svg
+    {...props}
+    width='32'
+    height='32'
+    viewBox='0 0 32 32'
+    xmlns='http://www.w3.org/2000/svg'
+    fill='none'
+  >
+    <rect width='32' height='32' rx='8' fill='#14213D' />
+    <path
+      d='M8 20C8 14.477 12.477 10 18 10C22.418 10 26 13.582 26 18C26 22.418 22.418 26 18 26'
+      stroke='#FCA311'
+      strokeWidth='2'
+      strokeLinecap='round'
+    />
+    <path
+      d='M8 20C8 22.2091 9.79086 24 12 24H18'
+      stroke='#E5E5E5'
+      strokeWidth='2'
+      strokeLinecap='round'
+    />
+    <circle cx='12' cy='24' r='2' fill='#E5E5E5' />
+    <circle cx='18' cy='26' r='2' fill='#FCA311' />
+  </svg>
+)

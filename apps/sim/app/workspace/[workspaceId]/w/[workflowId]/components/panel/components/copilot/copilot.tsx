@@ -405,7 +405,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
                     <ChatHistorySkeleton />
                   </PopoverScrollArea>
                 ) : groupedChats.length === 0 ? (
-                  <div className='px-[6px] py-[16px] text-center text-[12px] text-[var(--white)] dark:text-[var(--white)]'>
+                  <div className='px-[6px] py-[16px] text-center text-[12px] text-[var(--white)]'>
                     No chats yet
                   </div>
                 ) : (
@@ -460,7 +460,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
         {!isInitialized ? (
           <div className='flex h-full w-full items-center justify-center'>
             <div className='flex flex-col items-center gap-3'>
-              <p className='text-muted-foreground text-sm'>Loading chat history...</p>
+              <p className='text-muted-foreground text-sm'>Loading copilot</p>
             </div>
           </div>
         ) : (

@@ -101,12 +101,14 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     {
       id: 'text',
       title: 'Message',
-      type: 'long-input',
-      placeholder: 'Enter your message (supports Slack mrkdwn)',
+      type: 'mention-input',
+      serviceId: 'slack',
+      placeholder: 'Type your message...',
       condition: {
         field: 'operation',
         value: 'send',
       },
+      dependsOn: ['credential', 'authMethod'],
       required: true,
     },
     {
@@ -361,11 +363,15 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             if (!text || text.trim() === '') {
               throw new Error('Message text is required for send operation')
             }
+
+            // Text already contains mentions in <@USER_ID> format from mention-input
             baseParams.text = text
+
             // Add thread_ts if provided
             if (threadTs) {
               baseParams.thread_ts = threadTs
             }
+
             // Add files if provided
             const fileParam = attachmentFiles || files
             if (fileParam) {
@@ -443,8 +449,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     channel: { type: 'string', description: 'Channel identifier' },
     manualChannel: { type: 'string', description: 'Manual channel identifier' },
     text: { type: 'string', description: 'Message text' },
-    attachmentFiles: { type: 'json', description: 'Files to attach (UI upload)' },
-    files: { type: 'array', description: 'Files to attach (UserFile array)' },
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },

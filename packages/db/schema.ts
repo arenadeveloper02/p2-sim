@@ -300,6 +300,12 @@ export const workflowExecutionLogs = pgTable(
     cost: jsonb('cost'),
     files: jsonb('files'), // File metadata for execution files
     createdAt: timestamp('created_at').notNull().defaultNow(),
+
+    userId: text('user_id'),
+    isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
+    chatId: text('chat_id'), // chat_id for tracking conversation context
+    initialInput: text('initial_input'), // Initial Input to the chat API
+    finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
   },
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
@@ -408,8 +414,6 @@ export const settings = pgTable('settings', {
   // General settings
   theme: text('theme').notNull().default('system'),
   autoConnect: boolean('auto_connect').notNull().default(true),
-  autoPan: boolean('auto_pan').notNull().default(true),
-  consoleExpandedByDefault: boolean('console_expanded_by_default').notNull().default(true),
 
   // Privacy settings
   telemetryEnabled: boolean('telemetry_enabled').notNull().default(true),
@@ -423,7 +427,6 @@ export const settings = pgTable('settings', {
     .default(true),
 
   // UI preferences
-  showFloatingControls: boolean('show_floating_controls').notNull().default(true),
   showTrainingControls: boolean('show_training_controls').notNull().default(false),
   superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
 
@@ -1619,6 +1622,45 @@ export const ssoProvider = pgTable(
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
+  })
+)
+
+export const deployedChat = pgTable(
+  'deployed_chat',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    chatId: text('chat_id'),
+    title: text('title'),
+    workflowId: text('workflow_id'),
+    executingUserId: text('executing_user_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
+  })
+)
+
+export const chatPromptFeedback = pgTable(
+  'chat_prompt_feedback',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    inComplete: boolean('in_complete').default(false),
+    inAccurate: boolean('in_accurate').default(false),
+    outOfDate: boolean('out_of_date').default(false),
+    tooLong: boolean('too_long').default(false),
+    tooShort: boolean('too_short').default(false),
+    liked: boolean('liked').default(false),
+    executionId: text('execution_id').notNull(),
+    workflowId: text('workflow_id').notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
   })
 )
 

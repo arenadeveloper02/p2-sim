@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import {
   Button,
@@ -19,7 +20,6 @@ import { getEmailDomain } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import { AuthSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/auth-selector'
-import { IdentifierInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/identifier-input'
 import { SuccessView } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/success-view'
 import { useChatDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-deployment'
 import { useChatForm } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-form'
@@ -41,6 +41,7 @@ interface ChatDeployProps {
   onDeployed?: () => void
   onUndeploy?: () => Promise<void>
   onVersionActivated?: () => void
+  workflowWorkspaceId?: string
 }
 
 interface ExistingChat {
@@ -70,6 +71,7 @@ export function ChatDeploy({
   onDeployed,
   onUndeploy,
   onVersionActivated,
+  workflowWorkspaceId,
 }: ChatDeployProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [existingChat, setExistingChat] = useState<ExistingChat | null>(null)
@@ -89,7 +91,15 @@ export function ChatDeploy({
   const setShowDeleteConfirmation =
     externalSetShowDeleteConfirmation || setInternalShowDeleteConfirmation
 
-  const { formData, errors, updateField, setError, validateForm, setFormData } = useChatForm()
+  const {
+    formData,
+    errors,
+    updateField,
+    setError,
+    validateForm,
+    setFormData,
+    emailValidationErrors,
+  } = useChatForm()
   const { deployedUrl, deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
@@ -110,6 +120,8 @@ export function ChatDeploy({
   useEffect(() => {
     if (workflowId) {
       fetchExistingChat()
+      setIsIdentifierValid(true)
+      updateField('identifier', workflowId)
     }
   }, [workflowId])
 
@@ -143,6 +155,7 @@ export function ChatDeploy({
                       `${config.blockId}_${config.path}`
                   )
                 : [],
+              approvalStatus: formData.approvalStatus ?? true,
             })
 
             if (chatDetail.customizations?.imageUrl) {
@@ -174,7 +187,8 @@ export function ChatDeploy({
     setChatSubmitting(true)
 
     try {
-      if (!validateForm()) {
+      const isValid = await validateForm()
+      if (!isValid) {
         setChatSubmitting(false)
         return
       }
@@ -243,7 +257,7 @@ export function ChatDeploy({
       <>
         <div id='chat-deploy-form'>
           <SuccessView
-            deployedUrl={deployedUrl}
+            deployedUrl={`${deployedUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`}
             existingChat={existingChat}
             onDelete={() => setShowDeleteConfirmation(true)}
             onUpdate={() => setShowSuccessView(false)}
@@ -307,14 +321,14 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-4'>
-          <IdentifierInput
+          {/* <IdentifierInput
             value={formData.identifier}
             onChange={(value) => updateField('identifier', value)}
             originalIdentifier={existingChat?.identifier || undefined}
             disabled={chatSubmitting}
             onValidationChange={setIsIdentifierValid}
             isEditingExisting={!!existingChat}
-          />
+          /> */}
 
           <div className='space-y-2'>
             <Label htmlFor='title' className='font-medium text-sm'>
@@ -371,6 +385,16 @@ export function ChatDeploy({
             disabled={chatSubmitting}
             isExistingChat={!!existingChat}
             error={errors.password || errors.emails}
+            approvalStatus={formData.approvalStatus}
+            nonDeletableEmails={
+              formData.approvalStatus
+                ? ['@position2.com']
+                : formData.emails.filter((e) => {
+                    const sessionEmail = Cookies.get('email')
+                    return e === sessionEmail || e === '@position2.com'
+                  })
+            }
+            emailValidationErrors={emailValidationErrors}
           />
           <div className='space-y-2'>
             <Label htmlFor='welcomeMessage' className='font-medium text-sm'>

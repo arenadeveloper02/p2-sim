@@ -360,6 +360,7 @@ export function Editor() {
                           blockId={currentBlockId}
                           config={subBlock}
                           isPreview={false}
+                          subBlockValues={subBlockState}
                           disabled={!userPermissions.canEdit}
                           fieldDiffStatus={undefined}
                           allowExpandInPreview={false}
@@ -370,7 +371,7 @@ export function Editor() {
                               className='h-[1.25px]'
                               style={{
                                 backgroundImage:
-                                  'repeating-linear-gradient(to right, #2C2C2C 0px, #2C2C2C 6px, transparent 6px, transparent 12px)',
+                                  'repeating-linear-gradient(to right, var(--border) 0px, var(--border) 6px, transparent 6px, transparent 12px)',
                               }}
                             />
                           </div>
@@ -387,7 +388,7 @@ export function Editor() {
           {hasIncomingConnections && (
             <div
               className={
-                'connections-section flex flex-shrink-0 flex-col overflow-hidden border-[var(--border)] border-t dark:border-[var(--border)]' +
+                'connections-section flex flex-shrink-0 flex-col overflow-hidden border-[var(--border)] border-t' +
                 (!isResizing ? ' transition-[height] duration-100 ease-out' : '')
               }
               style={{ height: `${connectionsHeight}px` }}
@@ -422,7 +423,7 @@ export function Editor() {
                     (!isConnectionsAtMinHeight ? ' rotate-180' : '')
                   }
                 />
-                <div className='font-medium text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'>
+                <div className='font-medium text-[13px] text-[var(--text-primary)]'>
                   Connections
                 </div>
               </div>
