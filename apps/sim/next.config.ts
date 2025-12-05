@@ -87,11 +87,7 @@ const nextConfig: NextConfig = {
     'chromium-bidi',
     'playwright-core',
   ],
-  serverComponentsExternalPackages: [
-    'cpu-features',
-    'chromium-bidi',
-    'playwright-core',
-  ],
+  serverComponentsExternalPackages: ['cpu-features', 'chromium-bidi', 'playwright-core'],
   webpack: (config, { webpack }) => {
     // Ignore native modules and optional dependencies that shouldn't be bundled
     config.plugins = config.plugins || []
