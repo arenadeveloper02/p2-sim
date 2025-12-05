@@ -7,11 +7,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-[var(--surface-5)] hover:bg-[var(--surface-9)]',
-        active: 'bg-[var(--surface-9)] hover:bg-[var(--surface-11)] text-[var(--text-primary)]',
+        default:
+          'bg-[var(--surface-5)] dark:bg-[var(--surface-5)] hover:bg-[var(--surface-9)] dark:hover:bg-[var(--surface-9)]',
+        active:
+          'bg-[var(--surface-9)] dark:bg-[var(--surface-9)] hover:bg-[var(--surface-11)] dark:hover:bg-[var(--surface-11)] dark:text-[var(--text-primary)] text-[var(--text-primary)]',
         '3d': 'text-[var(--text-tertiary)] border-t border-l border-r border-[var(--border-strong)] shadow-[0_2px_0_0_var(--border-strong)] hover:shadow-[0_4px_0_0_var(--border-strong)] transition-all hover:-translate-y-0.5 hover:text-[var(--text-primary)]',
         outline:
-          'border border-[var(--border)] bg-[var(--border-strong)] hover:bg-[var(--surface-11)]',
+          'border border-[var(--text-muted)] bg-[var(--border-strong)] hover:bg-[var(--surface-11)]',
         primary:
           'bg-[var(--brand-primary-hex,var(--brand-400))] text-[var(--white)] hover:bg-[var(--brand-primary-hover-hex,var(--brand-400))] hover:text-[var(--white)]',
         secondary:
