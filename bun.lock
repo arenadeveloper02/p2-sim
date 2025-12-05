@@ -23,7 +23,7 @@
         "postgres": "^3.4.5",
         "remark-gfm": "4.0.1",
         "socket.io-client": "4.8.1",
-        "twilio": "5.9.0",
+        "twilio": "5.9.0"
       },
       "devDependencies": {
         "@biomejs/biome": "2.0.0-beta.5",
@@ -52,7 +52,7 @@
         "next-themes": "^0.4.6",
         "react": "19.1.0",
         "react-dom": "19.1.0",
-        "tailwind-merge": "^3.0.2",
+        "tailwind-merge": "^3.0.2"
       },
       "devDependencies": {
         "@tailwindcss/postcss": "^4.0.12",
@@ -63,8 +63,8 @@
         "dotenv-cli": "^8.0.0",
         "postcss": "^8.5.3",
         "tailwindcss": "^4.0.12",
-        "typescript": "^5.8.2",
-      },
+        "typescript": "^5.8.2"
+      }
     },
     "apps/sim": {
       "name": "sim",
@@ -182,7 +182,7 @@
         "uuid": "^11.1.0",
         "xlsx": "0.18.5",
         "zod": "^3.24.2",
-        "zustand": "^4.5.7",
+        "zustand": "^4.5.7"
       },
       "devDependencies": {
         "@testing-library/jest-dom": "^6.6.3",
@@ -209,64 +209,61 @@
         "tailwindcss": "^3.4.1",
         "typescript": "^5.7.3",
         "vite-tsconfig-paths": "^5.1.4",
-        "vitest": "^3.0.8",
-      },
+        "vitest": "^3.0.8"
+      }
     },
     "packages/cli": {
       "name": "simstudio",
       "version": "0.1.19",
       "bin": {
-        "simstudio": "dist/index.js",
+        "simstudio": "dist/index.js"
       },
       "dependencies": {
         "chalk": "^4.1.2",
         "commander": "^11.1.0",
         "dotenv": "^16.3.1",
         "inquirer": "^8.2.6",
-        "listr2": "^6.6.1",
+        "listr2": "^6.6.1"
       },
       "devDependencies": {
         "@types/inquirer": "^8.2.6",
         "@types/node": "^20.5.1",
-        "typescript": "^5.1.6",
-      },
+        "typescript": "^5.1.6"
+      }
     },
     "packages/db": {
       "name": "@sim/db",
       "version": "0.1.0",
       "devDependencies": {
-        "typescript": "^5.7.3",
+        "typescript": "^5.7.3"
       },
       "peerDependencies": {
         "drizzle-orm": "^0.44.5",
-        "postgres": "^3.4.5",
-      },
+        "postgres": "^3.4.5"
+      }
     },
     "packages/ts-sdk": {
       "name": "simstudio-ts-sdk",
       "version": "0.1.1",
       "dependencies": {
-        "node-fetch": "^3.3.2",
+        "node-fetch": "^3.3.2"
       },
       "devDependencies": {
         "@types/node": "^20.5.1",
         "@vitest/coverage-v8": "^3.0.8",
         "typescript": "^5.1.6",
-        "vitest": "^3.0.8",
-      },
-    },
+        "vitest": "^3.0.8"
+      }
+    }
   },
-  "trustedDependencies": [
-    "ffmpeg-static",
-    "sharp",
-  ],
+  "trustedDependencies": ["ffmpeg-static", "sharp"],
   "overrides": {
     "@next/env": "15.4.8",
     "drizzle-orm": "^0.44.5",
     "next": "15.4.8",
     "postgres": "^3.4.5",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.4.4", "", {}, "sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg=="],
@@ -2935,7 +2932,12 @@
 
     "sim": ["sim@workspace:apps/sim"],
 
-    "simple-swizzle": ["simple-swizzle@0.2.4", "", { "dependencies": { "is-arrayish": "^0.3.1" } }, "sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw=="],
+    "simple-swizzle": [
+      "simple-swizzle@0.2.4",
+      "",
+      { "dependencies": { "is-arrayish": "^0.3.1" } },
+      "sha512-nAu1WFPQSMNr2Zn9PGSZK9AGn4t/y97lEm+MXTtUDwfP0ksAIX4nO+6ruD9Jwut4C49SB1Ws+fbXsm/yScWOHw=="
+    ],
 
     "simstudio": ["simstudio@workspace:packages/cli"],
 

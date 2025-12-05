@@ -1,4 +1,4 @@
-import { env } from '@/lib/env'
+import { env } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'

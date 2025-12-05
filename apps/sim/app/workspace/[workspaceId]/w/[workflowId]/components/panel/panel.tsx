@@ -49,6 +49,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Panel')
+
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *

@@ -1,5 +1,5 @@
-import { getEnv } from '@/lib/env'
-import { isHosted } from '@/lib/environment'
+import { getEnv } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/environment'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
