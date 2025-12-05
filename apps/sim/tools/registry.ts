@@ -175,6 +175,18 @@ import {
   exaSearchTool,
 } from '@/tools/exa'
 import { facebookAdsQueryTool } from '@/tools/facebook_ads'
+import {
+  figmaCreateTool,
+  figmaDeleteCommentTool,
+  figmaGetCommentsTool,
+  figmaGetFileImagesTool,
+  figmaGetFileNodesTool,
+  figmaGetFileTool,
+  figmaGetProjectFilesTool,
+  figmaGetTeamProjectsTool,
+  figmaPostCommentTool,
+  figmaToHTMLAITool,
+} from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import {
   crawlTool,
@@ -2397,6 +2409,17 @@ export const tools: Record<string, ToolConfig> = {
   sentry_releases_list: listReleasesTool,
   sentry_releases_create: createReleaseTool,
   sentry_releases_deploy: createDeployTool,
+  // Figma tools
+  figma_create: figmaCreateTool,
+  figma_to_html_ai: figmaToHTMLAITool,
+  figma_get_comments: figmaGetCommentsTool,
+  figma_post_comment: figmaPostCommentTool,
+  figma_delete_comment: figmaDeleteCommentTool,
+  figma_get_team_projects: figmaGetTeamProjectsTool,
+  figma_get_file: figmaGetFileTool,
+  figma_get_file_nodes: figmaGetFileNodesTool,
+  figma_get_file_images: figmaGetFileImagesTool,
+  figma_get_project_files: figmaGetProjectFilesTool,
   zoom_create_meeting: zoomCreateMeetingTool,
   zoom_list_meetings: zoomListMeetingsTool,
   zoom_get_meeting: zoomGetMeetingTool,

@@ -109,7 +109,14 @@ export function Dropdown({
   const value = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
 
   const singleValue = multiSelect ? null : (value as string | null | undefined)
-  const multiValues = multiSelect ? (value as string[] | null | undefined) || [] : null
+  // Ensure multiValues is always an array when multiSelect is true
+  const multiValues = multiSelect
+    ? Array.isArray(value)
+      ? value
+      : value != null
+        ? [value]
+        : []
+    : null
 
   const fetchOptionsIfNeeded = useCallback(async () => {
     if (!fetchOptions || isPreview || disabled) return
@@ -343,7 +350,8 @@ export function Dropdown({
    * Custom overlay content for multi-select mode showing badges
    */
   const multiSelectOverlay = useMemo(() => {
-    if (!multiSelect || !multiValues || multiValues.length === 0) return undefined
+    if (!multiSelect || !multiValues || !Array.isArray(multiValues) || multiValues.length === 0)
+      return undefined
 
     return (
       <div className='flex items-center gap-1 overflow-hidden whitespace-nowrap'>
@@ -363,7 +371,7 @@ export function Dropdown({
     <Combobox
       options={comboboxOptions}
       value={multiSelect ? undefined : (singleValue ?? undefined)}
-      multiSelectValues={multiSelect ? (multiValues ?? undefined) : undefined}
+      multiSelectValues={multiSelect && Array.isArray(multiValues) ? multiValues : undefined}
       onChange={handleChange}
       onMultiSelectChange={handleMultiSelectChange}
       placeholder={placeholder}
