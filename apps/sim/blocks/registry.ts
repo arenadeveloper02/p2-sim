@@ -18,6 +18,7 @@ import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FileBlock } from '@/blocks/blocks/file'
+import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FunctionBlock } from '@/blocks/blocks/function'
 import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
@@ -138,6 +139,7 @@ export const registry: Record<string, BlockConfig> = {
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
   file: FileBlock,
+  figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,

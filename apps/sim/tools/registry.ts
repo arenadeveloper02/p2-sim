@@ -1050,6 +1050,19 @@ import {
   zepGetUserTool,
 } from '@/tools/zep'
 
+import {
+  figmaCreateTool,
+  figmaDeleteCommentTool,
+  figmaGetCommentsTool,
+  figmaGetFileImagesTool,
+  figmaGetFileNodesTool,
+  figmaGetFileTool,
+  figmaGetProjectFilesTool,
+  figmaGetTeamProjectsTool,
+  figmaPostCommentTool,
+  figmaToHTMLAITool,
+} from '@/tools/figma'
+
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   arxiv_search: arxivSearchTool,
@@ -2009,4 +2022,15 @@ export const tools: Record<string, ToolConfig> = {
   sentry_releases_list: listReleasesTool,
   sentry_releases_create: createReleaseTool,
   sentry_releases_deploy: createDeployTool,
+   // Figma tools
+   figma_create: figmaCreateTool,
+   figma_to_html_ai: figmaToHTMLAITool,
+   figma_get_comments: figmaGetCommentsTool,
+   figma_post_comment: figmaPostCommentTool,
+   figma_delete_comment: figmaDeleteCommentTool,
+   figma_get_team_projects: figmaGetTeamProjectsTool,
+   figma_get_file: figmaGetFileTool,
+   figma_get_file_nodes: figmaGetFileNodesTool,
+   figma_get_file_images: figmaGetFileImagesTool,
+   figma_get_project_files: figmaGetProjectFilesTool,
 }

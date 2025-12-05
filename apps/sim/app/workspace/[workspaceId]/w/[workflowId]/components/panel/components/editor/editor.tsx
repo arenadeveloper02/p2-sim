@@ -23,6 +23,9 @@ import { useFocusOnBlock } from '@/hooks/use-focus-on-block'
 import { usePanelEditorStore } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { createLogger } from '@/lib/logs/console/logger'
+
+const logger = createLogger('Editor')
 
 /**
  * Icon component for rendering block icons.
@@ -67,6 +70,10 @@ export function Editor() {
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
 
   // Focus on block hook - can be used by any component
+  // NOTE: This hook requires ReactFlowProvider. If Editor is rendered outside
+  // a ReactFlowProvider context (e.g., in tool previews), this will throw.
+  // The component should be wrapped in an error boundary or only rendered
+  // when ReactFlowProvider is available.
   const focusOnBlock = useFocusOnBlock()
 
   // Get block properties (advanced/trigger modes)

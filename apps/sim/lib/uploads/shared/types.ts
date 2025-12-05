@@ -6,6 +6,7 @@ export type StorageContext =
   | 'workspace'
   | 'profile-pictures'
   | 'logs'
+  | 'figma-design'
 
 export interface FileInfo {
   path: string
