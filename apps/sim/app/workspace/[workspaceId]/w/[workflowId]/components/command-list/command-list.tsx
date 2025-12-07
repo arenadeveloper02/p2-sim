@@ -6,10 +6,10 @@ import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
+import { getBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useSearchModalStore } from '@/stores/search-modal/store'
-import { getBrandConfig } from '@/lib/branding/branding'
 
 const logger = createLogger('WorkflowCommandList')
 

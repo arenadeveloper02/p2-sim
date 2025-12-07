@@ -11,12 +11,12 @@ import {
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
 import { Alert, AlertDescription, Skeleton } from '@/components/ui'
+import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
 import { cn } from '@/lib/core/utils/cn'
 import { getEmailDomain } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
-import { useSession } from '@/lib/auth/auth-client'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import {
   type AuthType,
