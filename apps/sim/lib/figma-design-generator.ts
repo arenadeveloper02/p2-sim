@@ -52,6 +52,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
+import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
 
 interface FigmaDesignInputs {
   projectId: string
@@ -193,16 +194,16 @@ async function readFileContent(filePath: string, fileType: string): Promise<stri
   if (filePath.startsWith('s3://') || filePath.includes('/api/files/serve/')) {
     console.log(`Reading ${fileType} from S3/cloud storage...`)
 
-    // Extract the S3 key from the URL
+    // Extract the S3 key from the URL (removes query parameters automatically)
     let s3Key: string
     if (filePath.startsWith('s3://')) {
-      s3Key = filePath.replace('s3://', '').split('/').slice(1).join('/')
-    } else if (filePath.includes('/api/files/serve/s3/')) {
-      s3Key = decodeURIComponent(filePath.split('/api/files/serve/s3/')[1])
-    } else if (filePath.includes('/api/files/serve/blob/')) {
-      s3Key = decodeURIComponent(filePath.split('/api/files/serve/blob/')[1])
+      // For s3:// URLs, remove the bucket name and query params
+      const urlWithoutProtocol = filePath.replace('s3://', '')
+      const pathParts = urlWithoutProtocol.split('/')
+      s3Key = pathParts.slice(1).join('/').split('?')[0]
     } else {
-      s3Key = decodeURIComponent(filePath.substring('/api/files/serve/'.length))
+      // Use the utility function which handles query parameter removal
+      s3Key = extractStorageKey(filePath)
     }
 
     console.log(`S3 key extracted for ${fileType}:`, s3Key)
@@ -1018,13 +1019,20 @@ async function automateDesignCreation(
 
   // Platform-specific WebGL / GPU config
   if (isLinux) {
-    // ✅ Linux / Docker: software GL via SwiftShader, but DO NOT disable GPU entirely
+    // ✅ Linux / Docker: software GL via Mesa (not SwiftShader which may not be available)
+    // Try desktop GL first, fallback to EGL if needed
     options.addArguments('--enable-webgl')
     options.addArguments('--enable-webgl2')
     options.addArguments('--ignore-gpu-blacklist')
-    options.addArguments('--use-gl=swiftshader') // software GL
-    options.addArguments('--use-angle=gl') // avoid Vulkan ANGLE backend
-    options.addArguments('--enable-zero-copy')
+    options.addArguments('--use-gl=desktop') // Use Mesa desktop GL (works better with Xvfb)
+    options.addArguments('--use-angle=gl') // Use OpenGL ANGLE backend
+    options.addArguments('--enable-accelerated-2d-canvas')
+    options.addArguments('--enable-gpu-rasterization')
+    options.addArguments('--enable-oop-rasterization')
+    options.addArguments('--disable-gpu-sandbox') // Required for software rendering in Docker
+    options.addArguments('--disable-gpu-process-crash-limit') // Prevent GPU process crashes
+    // Note: Environment variables LIBGL_ALWAYS_SOFTWARE=1 and GALLIUM_DRIVER=llvmpipe
+    // are set in docker-entrypoint.sh to enable Mesa software rendering
   } else {
     // macOS / Windows: hardware accelerated
     options.addArguments('--enable-webgl')
