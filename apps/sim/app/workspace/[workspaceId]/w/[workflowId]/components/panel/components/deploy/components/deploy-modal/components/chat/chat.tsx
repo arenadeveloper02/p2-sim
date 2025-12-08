@@ -30,6 +30,7 @@ const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
 
 interface ChatDeployProps {
   workflowId: string
+  workflowWorkspaceId?: string
   deploymentInfo: {
     apiKey: string
   } | null
@@ -84,6 +85,7 @@ const initialFormData: ChatFormData = {
 
 export function ChatDeploy({
   workflowId,
+  workflowWorkspaceId,
   deploymentInfo,
   existingChat,
   isLoadingChat,
@@ -118,7 +120,7 @@ export function ChatDeploy({
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, identifier: workflowId, [field]: value }))
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
@@ -131,11 +133,11 @@ export function ChatDeploy({
   const validateForm = (isExistingChat: boolean): boolean => {
     const newErrors: FormErrors = {}
 
-    if (!formData.identifier.trim()) {
-      newErrors.identifier = 'Identifier is required'
-    } else if (!IDENTIFIER_PATTERN.test(formData.identifier)) {
-      newErrors.identifier = 'Identifier can only contain lowercase letters, numbers, and hyphens'
-    }
+    // if (!formData.identifier.trim()) {
+    //   newErrors.identifier = 'Identifier is required'
+    // } else if (!IDENTIFIER_PATTERN.test(formData.identifier)) {
+    //   newErrors.identifier = 'Identifier can only contain lowercase letters, numbers, and hyphens'
+    // }
 
     if (!formData.title.trim()) {
       newErrors.title = 'Title is required'
@@ -175,15 +177,15 @@ export function ChatDeploy({
 
   useEffect(() => {
     if (workflowId) {
+      //set the identifier to the workflow id valid true
       setIsIdentifierValid(true)
-      updateField('identifier', workflowId)
     }
   }, [workflowId])
 
   useEffect(() => {
     if (existingChat && !hasInitializedForm) {
       setFormData({
-        identifier: existingChat.identifier || '',
+        identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
         description: existingChat.description || '',
         authType: existingChat.authType || 'public',
@@ -242,7 +244,7 @@ export function ChatDeploy({
       onVersionActivated?.()
 
       if (chatUrl) {
-        window.open(chatUrl, '_blank', 'noopener,noreferrer')
+        window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
       }
 
       setHasInitializedForm(false)

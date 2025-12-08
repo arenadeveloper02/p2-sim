@@ -1,16 +1,17 @@
 # ========================================
-# Base Stage: Alpine Linux with Bun
+# Base Stage (Bun)
 # ========================================
-FROM oven/bun:1.3.3-alpine AS base
+FROM oven/bun:1.3.3 AS base
 
-# ========================================
-# Dependencies Stage: Install Dependencies
-# ========================================
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install turbo globally (cached separately, changes infrequently)
+# ========================================
+# Dependencies Stage
+# ========================================
+FROM base AS deps
+WORKDIR /app
+
+# Install turbo globally
 RUN bun install -g turbo
 
 COPY package.json bun.lock turbo.json ./
@@ -18,37 +19,36 @@ RUN mkdir -p apps packages/db
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 
-# Install dependencies (this layer will be cached if package files don't change)
+# Install workspace deps (cached)
 RUN bun install --omit dev --ignore-scripts
 
+
 # ========================================
-# Builder Stage: Build the Application
+# Builder Stage (Next.js build)
 # ========================================
 FROM base AS builder
 WORKDIR /app
 
-# Install turbo globally (cached separately, changes infrequently)
 RUN bun install -g turbo
 
-# Copy node_modules from deps stage (cached if dependencies don't change)
+# Copy node_modules
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy package configuration files (needed for build)
+# Copy config files
 COPY package.json bun.lock turbo.json ./
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 
-# Copy workspace configuration files (needed for turbo)
 COPY apps/sim/next.config.ts ./apps/sim/next.config.ts
 COPY apps/sim/tsconfig.json ./apps/sim/tsconfig.json
 COPY apps/sim/tailwind.config.ts ./apps/sim/tailwind.config.ts
 COPY apps/sim/postcss.config.mjs ./apps/sim/postcss.config.mjs
 
-# Copy source code (changes most frequently - placed last to maximize cache hits)
+# Copy source
 COPY apps/sim ./apps/sim
 COPY packages ./packages
 
-# Required for standalone nextjs build
+# Required for standalone build
 WORKDIR /app/apps/sim
 RUN bun install sharp
 
@@ -58,102 +58,119 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 WORKDIR /app
 
-# Provide dummy database URLs during image build so server code that imports @sim/db
-# can be evaluated without crashing. Runtime environments should override these.
+# Dummy build envs
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 
-# Provide dummy NEXT_PUBLIC_APP_URL for build-time evaluation
-# Runtime environments should override this with the actual URL
 ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
+# 🔥 Build Next.js standalone
 RUN bun run build
 
-# ========================================
-# Runner Stage: Run the actual app
-# ========================================
 
-FROM base AS runner
+# ========================================
+# Runner Stage (FINAL IMAGE)
+# ========================================
+FROM oven/bun:1.3.3 AS runner
 WORKDIR /app
-
-# Install Python and dependencies for guardrails PII detection (cached separately)
-# Also install ffmpeg for audio/video processing in STT
-RUN apk add --no-cache python3 py3-pip bash ffmpeg
 
 ENV NODE_ENV=production
 
-# 🟢 Install Chromium + ChromeDriver inside the container
-# Install Xvfb + Chrome dependencies + Chromium + ChromeDriver
-RUN apk add --no-cache \
-      chromium \
+# ========================================
+# Install Python + Chrome + Chromedriver
+# ========================================
+RUN apt-get update && apt-get install -y \
+      python3 python3-pip python3-venv bash ffmpeg \
+      wget gnupg ca-certificates \
       xvfb \
-      ttf-freefont \
-      ttf-liberation \
-      nss \
-      freetype \
-      harfbuzz \
-      ca-certificates \
-      ttf-dejavu \
-      gcompat \
-      wget \
-      unzip \
-    && CHROMIUM_VERSION=$(chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1) \
-    && CHROMEDRIVER_MAJOR=$(echo $CHROMIUM_VERSION | cut -d. -f1) \
-    && CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4) \
-    && if [ -z "$CHROMEDRIVER_VERSION" ]; then \
-         CHROMEDRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROMEDRIVER_MAJOR}" 2>/dev/null); \
-       fi \
-    && wget -q -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
-    && unzip -q /tmp/chromedriver.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
-    && chmod +x /usr/bin/chromedriver \
-    && rm -rf /tmp/chromedriver* /var/cache/apk/*
+      libnss3 \
+      libxss1 \
+      libasound2 \
+      libx11-xcb1 \
+      libxcomposite1 \
+      libxrandr2 \
+      libxdamage1 \
+      libgbm1 \
+      libgtk-3-0 \
+      libatk1.0-0 \
+      libatk-bridge2.0-0 \
+      libcairo2 \
+      libpango-1.0-0 \
+      libpangocairo-1.0-0 \
+      fonts-liberation \
+    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
+         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+         > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y \
+      google-chrome-stable \
+      chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
 
-# (Optional, if any code reads these env vars)
+# Environment variables for Chrome
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
-    CHROME_BIN=/usr/bin/chromium-browser \
-    CHROME_PATH=/usr/lib/chromium/ \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROME_PATH=/usr/bin/google-chrome \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 
-COPY --from=builder /app/apps/sim/public ./apps/sim/public
-COPY --from=builder /app/apps/sim/.next/standalone ./
-COPY --from=builder /app/apps/sim/.next/static ./apps/sim/.next/static
 
-# Create non-root user and group (cached separately)
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001
+# ========================================
+# Create non-root user
+# ========================================
+RUN groupadd -g 1001 nodejs && \
+    useradd -m -u 1001 -g nodejs nextjs
 
-# Copy application artifacts from builder (these change on every build)
+
+# ========================================
+# Copy build artifacts from builder
+# ========================================
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/static ./apps/sim/.next/static
 
-# Guardrails setup (files need to be owned by nextjs for runtime)
+
+# ========================================
+# Copy Guardrails files
+# ========================================
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/setup.sh ./apps/sim/lib/guardrails/setup.sh
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/requirements.txt ./apps/sim/lib/guardrails/requirements.txt
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/validate_pii.py ./apps/sim/lib/guardrails/validate_pii.py
 
-# Run guardrails setup as root, then fix ownership of generated venv files
+
+# ========================================
+# Setup Guardrails Python VENV (NOW WORKS)
+# ========================================
 RUN chmod +x ./apps/sim/lib/guardrails/setup.sh && \
     cd ./apps/sim/lib/guardrails && \
     ./setup.sh && \
     chown -R nextjs:nodejs /app/apps/sim/lib/guardrails
 
-# Create .next/cache directory with correct ownership
+
+# Create .next cache
 RUN mkdir -p apps/sim/.next/cache && \
     chown -R nextjs:nodejs /app
 
-# 🔹 Add entrypoint that starts Xvfb and then the app
-# Copy and set permissions before switching to non-root user
-COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
 
-# Switch to non-root user
+# ========================================
+# Entrypoint for Xvfb + app
+# ========================================
+COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+
+
+# ========================================
+# Run app as non-root
+# ========================================
 USER nextjs
 
 EXPOSE 3000
+
 ENV PORT=3000 \
     HOSTNAME="0.0.0.0"
 
-ENTRYPOINT ["/entrypoint.sh"]
+
+# ========================================
+# Start Bun server
+# ========================================
 CMD ["bun", "apps/sim/server.js"]

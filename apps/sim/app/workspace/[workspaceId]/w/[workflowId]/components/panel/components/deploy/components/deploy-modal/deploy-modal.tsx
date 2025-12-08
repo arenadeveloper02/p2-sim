@@ -584,6 +584,7 @@ export function DeployModal({
               <ModalTabsContent value='chat'>
                 <ChatDeploy
                   workflowId={workflowId || ''}
+                  workflowWorkspaceId={workflowWorkspaceId || ''}
                   deploymentInfo={deploymentInfo}
                   existingChat={existingChat}
                   isLoadingChat={isLoadingChat}
