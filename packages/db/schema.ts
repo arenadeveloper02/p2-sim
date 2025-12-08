@@ -1705,3 +1705,43 @@ export const userArenaDetails = pgTable(
     airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
   })
 )
+
+export const workflowStatsDaily = pgTable(
+  'workflow_stats_daily',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id_ref'),
+    workflowName: text('workflow_name'),
+    workflowAuthorId: text('workflow_author_id'),
+    category: text('category'),
+    executionCount: integer('execution_count').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdIdx: index('workflow_stats_daily_workflow_id_idx').on(table.workflowId),
+    workflowAuthorIdIdx: index('workflow_stats_daily_workflow_author_id_idx').on(
+      table.workflowAuthorId
+    ),
+  })
+)
+
+export const workflowStatsMonthly = pgTable(
+  'workflow_stats_monthly',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id_ref'),
+    workflowName: text('workflow_name'),
+    workflowAuthorId: text('workflow_author_id'),
+    category: text('category'),
+    executionCount: integer('execution_count').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdIdx: index('workflow_stats_monthly_workflow_id_idx').on(table.workflowId),
+    workflowAuthorIdIdx: index('workflow_stats_monthly_workflow_author_id_idx').on(
+      table.workflowAuthorId
+    ),
+  })
+)
