@@ -1,10 +1,11 @@
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
 
-export interface NanoBananaRequestBody {
+interface NanoBananaRequestBody {
   contents: Array<{
     parts: Array<{
       text?: string
@@ -22,7 +23,7 @@ export interface NanoBananaRequestBody {
   }
 }
 
-export interface NanoBananaResponse {
+interface NanoBananaResponse {
   candidates: Array<{
     content: {
       parts: Array<{
@@ -36,7 +37,7 @@ export interface NanoBananaResponse {
   }>
 }
 
-export const nanoBananaTool: ToolConfig = {
+const nanoBananaTool: ToolConfig = {
   id: 'google_nano_banana',
   name: 'Google Nano Banana',
   description: "Generate images using Google's Gemini Native Image (Nano Banana) model",
@@ -90,7 +91,7 @@ export const nanoBananaTool: ToolConfig = {
         'x-goog-api-key': apiKey,
       }
     },
-    body: (params) => {
+    body: async (params) => {
       const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
         {
           text: params.prompt,
@@ -104,28 +105,28 @@ export const nanoBananaTool: ToolConfig = {
 
         // Handle file object with path
         if (typeof params.inputImage === 'object' && params.inputImage.path) {
-          // try {
-          //   // Fetch the file content from the path
-          //   const baseUrl = getBaseUrl()
-          //   const fileUrl = params.inputImage.path.startsWith('http')
-          //     ? params.inputImage.path
-          //     : `${baseUrl}${params.inputImage.path}`
-          //   logger.info('Fetching image from URL:', fileUrl)
-          //   const response = await fetch(fileUrl)
-          //   if (!response.ok) {
-          //     throw new Error(`Failed to fetch image: ${response.statusText}`)
-          //   }
-          //   const arrayBuffer = await response.arrayBuffer()
-          //   const buffer = Buffer.from(arrayBuffer)
-          //   imageData = buffer.toString('base64')
-          //   mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
-          //   logger.info('Successfully converted image to base64, length:', imageData.length)
-          // } catch (error) {
-          //   logger.error('Error fetching image:', error)
-          //   throw new Error(
-          //     `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
-          //   )
-          // }
+          try {
+            // Fetch the file content from the path
+            const baseUrl = getBaseUrl()
+            const fileUrl = params.inputImage.path.startsWith('http')
+              ? params.inputImage.path
+              : `${baseUrl}${params.inputImage.path}`
+            logger.info('Fetching image from URL:', fileUrl)
+            const response = await fetch(fileUrl)
+            if (!response.ok) {
+              throw new Error(`Failed to fetch image: ${response.statusText}`)
+            }
+            const arrayBuffer = await response.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
+            imageData = buffer.toString('base64')
+            mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
+            logger.info('Successfully converted image to base64, length:', imageData.length)
+          } catch (error) {
+            logger.error('Error fetching image:', error)
+            throw new Error(
+              `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+            )
+          }
         } else if (typeof params.inputImage === 'string') {
           // Direct base64 string
           imageData = params.inputImage
@@ -134,12 +135,12 @@ export const nanoBananaTool: ToolConfig = {
           throw new Error('Invalid input image format')
         }
 
-        // parts.push({
-        //   inlineData: {
-        //     mimeType,
-        //     data: imageData,
-        //   },
-        // })
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: imageData,
+          },
+        })
       }
 
       const body: NanoBananaRequestBody = {
@@ -264,3 +265,6 @@ export const nanoBananaTool: ToolConfig = {
     },
   },
 }
+
+export { nanoBananaTool }
+export type { NanoBananaRequestBody, NanoBananaResponse }
