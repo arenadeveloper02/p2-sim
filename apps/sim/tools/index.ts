@@ -488,7 +488,7 @@ async function handleInternalRequest(
 ): Promise<ToolResponse> {
   const requestId = generateRequestId()
 
-  const requestParams = formatRequestParams(tool, params)
+  const requestParams = await formatRequestParams(tool, params)
 
   try {
     const baseUrl = getBaseUrl()
