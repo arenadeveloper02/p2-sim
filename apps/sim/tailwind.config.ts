@@ -79,9 +79,9 @@ export default {
         },
       },
       fontWeight: {
-        base: '450',
-        medium: '480',
-        semibold: '550',
+        base: 'var(--font-weight-base)',
+        medium: 'var(--font-weight-medium)',
+        semibold: 'var(--font-weight-semibold)',
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -144,10 +144,20 @@ export default {
         },
         'ring-pulse': {
           '0%, 100%': {
-            'box-shadow': '0 0 0 1.5px var(--border-success)',
+            'box-shadow': '0 0 0 1.5px var(--brand-primary-hex, var(--brand-400))',
           },
           '50%': {
-            'box-shadow': '0 0 0 4px var(--border-success)',
+            'box-shadow': '0 0 0 4px var(--brand-primary-hex, var(--brand-400))',
+          },
+        },
+        'bg-pulse': {
+          '0%, 100%': {
+            'background-color': 'var(--brand-primary-hex, var(--brand-400))',
+            opacity: '0.1',
+          },
+          '50%': {
+            'background-color': 'var(--brand-primary-hex, var(--brand-400))',
+            opacity: '0.2',
           },
         },
       },
@@ -159,6 +169,7 @@ export default {
         'code-shimmer': 'code-shimmer 1.5s infinite',
         'placeholder-pulse': 'placeholder-pulse 1.5s ease-in-out infinite',
         'ring-pulse': 'ring-pulse 1.5s ease-in-out infinite',
+        'bg-pulse': 'bg-pulse 1.5s ease-in-out infinite',
       },
     },
   },

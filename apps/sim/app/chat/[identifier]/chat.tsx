@@ -1,9 +1,16 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import Cookies from 'js-cookie'
+import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
+import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
+import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import type { InputFormatField } from '@/lib/workflows/types'
+import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
@@ -19,6 +26,8 @@ import {
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
+import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -35,6 +44,15 @@ interface ChatConfig {
   }
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
+  inputFormat?: InputFormatField[]
+}
+
+interface ThreadRecord {
+  chatId: string
+  title: string
+  workflowId: string
+  createdAt: string
+  updatedAt: string
 }
 
 interface AudioStreamingOptions {
@@ -106,6 +124,7 @@ function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T 
 }
 
 export default function ChatClient({ identifier }: { identifier: string }) {
+  const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -116,11 +135,25 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [starCount, setStarCount] = useState('3.4k')
   const [conversationId, setConversationId] = useState('')
 
+  // Left threads state managed here
+  const [currentChatId, setCurrentChatId] = useState<string | null>(identifier)
+  const [threads, setThreads] = useState<ThreadRecord[]>([])
+  const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
+  const [threadsError, setThreadsError] = useState<string | null>(null)
+  const [isHistoryLoading, setIsHistoryLoading] = useState<any>(false)
+  const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
+
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isUserScrollingRef = useRef(false)
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
+  const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
+
+  // Start Block input modal state
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
@@ -179,6 +212,92 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [isStreamingResponse]
   )
 
+  // Fetch history messages
+  useEffect(() => {
+    const workflowId = identifier
+
+    const fetchHistory = async (workflowId: string, chatId: string | null) => {
+      // Only fetch history if we have a chatId
+      if (!chatId) {
+        setIsHistoryLoading(false)
+        return
+      }
+
+      try {
+        setIsHistoryLoading(true)
+        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
+        if (response.ok) {
+          const data = await response.json()
+
+          if (data?.logs?.length === 0) {
+            setIsHistoryLoading(false)
+          } else {
+            // Flatten and process logs as before
+            setMessages([
+              ...(chatConfig?.customizations?.welcomeMessage
+                ? [
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
+                : []),
+              ...data.logs.flatMap((log: any) => {
+                const messages = []
+                if (log.userInput) {
+                  messages.push({
+                    id: `${log.id}-user`,
+                    content: log.userInput,
+                    type: 'user',
+                    timestamp: new Date(log.startedAt),
+                  })
+                }
+                if (log.modelOutput) {
+                  messages.push({
+                    id: `${log.id}-assistant`,
+                    content: log.modelOutput,
+                    type: 'assistant',
+                    timestamp: new Date(log.endedAt || log.startedAt),
+                    isStreaming: false,
+                    executionId: log?.executionId || '',
+                    liked: log.liked,
+                  })
+                }
+                return messages
+              }),
+            ])
+            // Reset modal ref when messages are loaded
+            hasShownModalRef.current = false
+            setTimeout(() => {
+              setTimeout(() => {
+                scrollToBottom()
+              }, 100)
+            }, 500)
+            setIsHistoryLoading(false)
+          }
+        } else {
+          // If history fetch fails (404, etc.), treat as no history to show input form
+          logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          setIsHistoryLoading(false)
+        }
+      } catch (error) {
+        // If history fetch errors, treat as no history to show input form
+        logger.error('Error fetching history, treating as no history:', error)
+        setIsHistoryLoading(false)
+      }
+    }
+
+    if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
+      fetchHistory(workflowId, currentChatId)
+    } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
+      // Chat config loaded but no chatId yet - mark as no history to show input form
+      setIsHistoryLoading(false)
+    }
+  }, [identifier, chatConfig, currentChatId])
+
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
@@ -211,9 +330,42 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       })
 
       if (!response.ok) {
-        // Check if auth is required
-        if (response.status === 401) {
+        // Check if auth is required or unauthorized
+        if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
+
+          // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
+          if (errorData.error === 'auth_required_email') {
+            try {
+              const autoLoginKey = `chat:autoLoginTried:${identifier}:${
+                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+              }`
+              const alreadyTried =
+                typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+              const cookieEmail = Cookies.get('email')
+
+              // Only attempt if we have an email cookie, have not tried already, and there is no active session
+              if (cookieEmail && !alreadyTried) {
+                const sessionRes = await client.getSession()
+                const hasSession = !!sessionRes?.data?.user?.id
+                if (!hasSession) {
+                  setIsAutoLoginInProgress(true)
+                  localStorage.setItem(autoLoginKey, '1')
+                  await client.signIn.email(
+                    {
+                      email: cookieEmail,
+                      password: 'Position2!',
+                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+                    },
+                    {}
+                  )
+                  return
+                }
+              }
+            } catch (_e) {
+              // Swallow and proceed to existing auth UI
+            }
+          }
 
           if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
@@ -223,8 +375,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setAuthRequired('email')
             return
           }
-          if (errorData.error === 'auth_required_sso') {
-            setAuthRequired('sso')
+          // If user email is not authorized, show error and redirect
+          if (
+            errorData.error === 'Email not authorized' ||
+            errorData.message === 'Email not authorized' ||
+            errorData.error === 'You do not have access to this chat' ||
+            errorData.message === 'You do not have access to this chat'
+          ) {
+            setError('You do not have access to this chat.')
+            // Redirect after 3 seconds
+            setTimeout(() => {
+              if (typeof window !== 'undefined') {
+                window.history.back()
+              }
+            }, 3000)
             return
           }
         }
@@ -250,9 +414,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           },
         ])
       }
+
+      // Check if we should show modal on load (no messages and has inputFormat)
+      if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
+        const normalizedFields = normalizeInputFormatValue(data.inputFormat)
+        const customFields = normalizedFields.filter((field) => {
+          const fieldName = field.name?.trim().toLowerCase()
+          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+        })
+
+        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
+          hasShownModalRef.current = true
+          setIsInputModalOpen(true)
+        }
+      }
     } catch (error) {
       logger.error('Error fetching chat config:', error)
-      setError(CHAT_ERROR_MESSAGES.CHAT_UNAVAILABLE)
+      setError('This chat is currently unavailable. Please try again later.')
     }
   }
 
@@ -292,10 +470,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       type: string
       file: File
       dataUrl?: string
-    }>
+    }>,
+    forceExecution = false, // Allow execution even with empty input (e.g., when form is submitted)
+    overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
   ) => {
     const messageToSend = messageParam ?? inputValue
-    if ((!messageToSend.trim() && (!files || files.length === 0)) || isLoading) return
+    // Allow execution if forceExecution is true (form submission) or if there's input/files
+    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
+      return
 
     logger.info('Sending message:', {
       messageToSend,
@@ -307,29 +489,37 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
-      type: 'user',
-      timestamp: new Date(),
-      attachments: files?.map((file) => ({
-        id: file.id,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: file.dataUrl || '',
-      })),
-    }
+    // Only add user message to chat if there's actual content or files
+    // When form is submitted with empty input, we don't add a user message
+    let userMessageId: string | null = null
+    if (messageToSend.trim() || (files && files.length > 0)) {
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
+        type: 'user',
+        timestamp: new Date(),
+        attachments: files?.map((file) => ({
+          id: file.id,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          dataUrl: file.dataUrl || '',
+        })),
+      }
+      userMessageId = userMessage.id
 
-    // Add the user's message to the chat
-    setMessages((prev) => [...prev, userMessage])
+      // Add the user's message to the chat
+      setMessages((prev) => [...prev, userMessage])
+    }
     setInputValue('')
     setIsLoading(true)
 
-    // Scroll to show only the user's message and loading indicator
-    setTimeout(() => {
-      scrollToMessage(userMessage.id, true)
-    }, 100)
+    // Scroll to show only the user's message and loading indicator (if message exists)
+    if (userMessageId) {
+      setTimeout(() => {
+        scrollToMessage(userMessageId!, true)
+      }, 100)
+    }
 
     // Create abort controller for request cancellation
     const abortController = new AbortController()
@@ -338,13 +528,38 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
-      // Send structured payload to maintain chat context
-      const payload: any = {
-        input:
-          typeof userMessage.content === 'string'
-            ? userMessage.content
-            : JSON.stringify(userMessage.content),
+      // Build complete workflow input with all Start Block fields
+      // Use messageToSend directly (may be empty if form was submitted)
+      // Pass overrideValues if provided (e.g., from form submission)
+      const completeInput = buildCompleteWorkflowInput(
+        messageToSend,
         conversationId,
+        files,
+        overrideValues
+      )
+
+      // Send structured payload to maintain chat context
+      // Always include all Start Block inputs (even if empty) to ensure all fields are passed
+      const startBlockInputsPayload: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(completeInput)) {
+        if (key !== 'input' && key !== 'conversationId' && key !== 'files') {
+          // Always include field, even if empty string - ensures all inputFormat fields are passed
+          startBlockInputsPayload[key] = value
+        }
+      }
+
+      logger.debug('Building payload with Start Block inputs:', {
+        hasCustomFields: customFields.length > 0,
+        startBlockInputsKeys: Object.keys(startBlockInputsPayload),
+        completeInputKeys: Object.keys(completeInput),
+      })
+
+      const payload: any = {
+        input: completeInput.input,
+        conversationId: completeInput.conversationId,
+        // Always include startBlockInputs if there are any custom fields in inputFormat
+        // This ensures all Start Block fields are passed to execution, even if empty
+        startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,
       }
 
       // Add files if present (convert to base64 for JSON transmission)
@@ -395,6 +610,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
+      setIsConversationFinished(true)
 
       await handleStreamedResponse(
         response,
@@ -474,6 +690,229 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [handleSendMessage]
   )
 
+  // Get custom fields from inputFormat
+  const customFields = chatConfig?.inputFormat
+    ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
+        const fieldName = field.name?.trim().toLowerCase()
+        return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+      })
+    : []
+
+  /**
+   * Builds complete workflow input with all Start Block fields (including reserved ones)
+   * Ensures all fields from inputFormat are present, with empty values when not provided
+   */
+  const buildCompleteWorkflowInput = useCallback(
+    (
+      userInput: string,
+      conversationId: string,
+      files?: Array<{
+        id: string
+        name: string
+        size: number
+        type: string
+        file: File
+        dataUrl?: string
+      }>,
+      overrideValues?: Record<string, unknown>
+    ): Record<string, unknown> => {
+      const normalizedFields = normalizeInputFormatValue(chatConfig?.inputFormat)
+      const completeInput: Record<string, unknown> = {}
+
+      // Read values from Start Block inputFormat field values (field.value)
+      // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
+      for (const field of normalizedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          if (overrideValues && fieldName in overrideValues) {
+            completeInput[fieldName] = overrideValues[fieldName] ?? ''
+          } else if (field.value !== undefined && field.value !== null) {
+            // Use the value from Start Block inputFormat field (persisted value)
+            completeInput[fieldName] = field.value
+          } else {
+            // Fallback to state or empty string
+            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+          }
+        }
+      }
+
+      // Override with actual values for reserved fields
+      completeInput.input = userInput
+      completeInput.conversationId = conversationId
+
+      // Handle files - only include if present
+      if (files && files.length > 0) {
+        // Files will be added separately in the payload
+      }
+
+      return completeInput
+    },
+    [chatConfig?.inputFormat, startBlockInputs]
+  )
+
+  /**
+   * Handles Start Block input modal submission
+   * Stores the values and immediately triggers workflow execution
+   */
+  const handleStartBlockInputsSubmit = useCallback(
+    async (values: Record<string, unknown>) => {
+      // Store the form values in local state
+      setStartBlockInputs(values)
+      setIsInputModalOpen(false)
+
+      // Build complete workflow input with all Start Block fields
+      // Pass empty string for input (user submitted form, not typed message)
+      const completeInput = buildCompleteWorkflowInput('', conversationId, undefined, values)
+
+      // Ensure input is explicitly empty string when submitting form
+      completeInput.input = ''
+
+      // Trigger workflow execution by sending a message with empty input
+      // but with all Start Block inputs included
+      // Pass values as overrideValues to ensure they're used immediately
+      try {
+        await handleSendMessage('', false, undefined, true, values) // forceExecution = true, overrideValues = values
+      } catch (error) {
+        logger.error('Error executing workflow from modal submit:', error)
+      }
+    },
+    [buildCompleteWorkflowInput, conversationId, handleSendMessage]
+  )
+
+  // Handle Re-run button click
+  const handleRerun = useCallback(() => {
+    setIsInputModalOpen(true)
+  }, [])
+
+  const fetchThreads = useCallback(
+    async (workflowId: string, isInitialLoad = false) => {
+      try {
+        if (isInitialLoad) {
+          setIsThreadsLoading(true)
+        }
+        setThreadsError(null)
+        const response = await fetch(`/api/chat/${workflowId}/all-history`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        if (!response.ok) {
+          throw new Error(`Failed to fetch threads: ${response.status}`)
+        }
+        const data = (await response.json()) as { records: ThreadRecord[]; total: number }
+        const list = data.records || []
+        setThreads(list)
+
+        // Only handle initial navigation on first load
+        if (isInitialLoad) {
+          const params = new URLSearchParams(window.location.search)
+          const urlChatId = params.get('chatId')
+
+          // If no chatId in URL, decide default
+          if (!urlChatId) {
+            if (list.length > 0) {
+              const firstId = list[0].chatId
+              setCurrentChatId(firstId)
+              params.set('chatId', firstId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            } else {
+              // No threads exist yet: generate a new UUID chatId for a fresh chat
+              const newId = uuidv4()
+              setCurrentChatId(newId)
+              params.set('chatId', newId)
+              const newUrl = `/chat/${workflowId}?${params.toString()}`
+              router.push(newUrl)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching threads:', err)
+        setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
+        setThreads([])
+      } finally {
+        setIsThreadsLoading(false)
+      }
+    },
+    [router]
+  )
+
+  useEffect(() => {
+    if (identifier && chatConfig && !authRequired) {
+      fetchThreads(identifier, true)
+    }
+  }, [identifier, fetchThreads, chatConfig, authRequired])
+
+  // Check if current chatId exists in threads when conversation is finished
+  useEffect(() => {
+    if (isConversationFinished && currentChatId) {
+      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
+
+      if (!chatIdExists) {
+        fetchThreads(identifier, false)
+      }
+      // Reset the flag
+      setIsConversationFinished(false)
+    }
+  }, [isConversationFinished, currentChatId, threads, fetchThreads, identifier])
+
+  const updateUrlChatId = useCallback(
+    (newChatId: string) => {
+      const params = new URLSearchParams(window.location.search)
+      params.set('chatId', newChatId)
+      const newUrl = `/chat/${identifier}?${params.toString()}`
+      router.push(newUrl)
+    },
+    [router, identifier]
+  )
+
+  // Handle thread selection - must be defined before conditional returns
+  const handleSelectThread = useCallback(
+    (chatId: string) => {
+      if (currentChatId === chatId) return
+      setShowScrollButton(false)
+      setCurrentChatId(chatId)
+      // Clear messages except welcome
+      setMessages((prev) => {
+        const welcome = prev.find((m) => (m as any).isInitialMessage)
+        return welcome ? [welcome] : []
+      })
+      updateUrlChatId(chatId)
+    },
+    [currentChatId]
+  )
+
+  const handleNewChat = useCallback(() => {
+    setShowScrollButton(false)
+    const id = uuidv4()
+    setCurrentChatId(id)
+    // Clear messages except welcome
+    setMessages((prev) => {
+      const welcome = prev.find((m) => (m as any).isInitialMessage)
+      return welcome ? [welcome] : []
+    })
+    updateUrlChatId(id)
+    // Clear form input values for new chat
+    setStartBlockInputs({})
+    // Open input modal if custom fields exist
+    const hasCustomFields = chatConfig?.inputFormat
+      ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
+          const fieldName = field.name?.trim().toLowerCase()
+          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+        }).length > 0
+      : false
+    if (hasCustomFields) {
+      setIsInputModalOpen(true)
+    }
+  }, [updateUrlChatId, chatConfig?.inputFormat])
+
+  if (isAutoLoginInProgress) {
+    return (
+      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
+        <LoadingAgentP2 size='lg' />
+      </div>
+    )
+  }
+
   // If error, show error message using the extracted component
   if (error) {
     return <ChatErrorState error={error} starCount={starCount} />
@@ -546,8 +985,26 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Standard text-based chat interface
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+      {isHistoryLoading && (
+        <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
+          <LoadingAgentP2 size='lg' />
+        </div>
+      )}
+
       {/* Header component */}
       <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+
+      <LeftNavThread
+        threads={threads}
+        isLoading={isThreadsLoading}
+        error={threadsError || null}
+        currentChatId={currentChatId || ''}
+        onSelectThread={handleSelectThread}
+        onNewChat={handleNewChat}
+        isStreaming={isStreamingResponse || isLoading}
+        showReRun={customFields.length > 0}
+        onReRun={handleRerun}
+      />
 
       {/* Message Container component */}
       <ChatMessageContainer
@@ -574,6 +1031,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           />
         </div>
       </div>
+
+      {/* Start Block Input Modal */}
+      {customFields.length > 0 && (
+        <StartBlockInputModal
+          open={isInputModalOpen}
+          onOpenChange={setIsInputModalOpen}
+          inputFormat={chatConfig.inputFormat}
+          onSubmit={handleStartBlockInputsSubmit}
+          initialValues={startBlockInputs}
+        />
+      )}
     </div>
   )
 }

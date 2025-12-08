@@ -1,3 +1,5 @@
+import { getEnv } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/environment'
 import type { MapParams, MapResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -70,7 +72,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     url: 'https://api.firecrawl.dev/v2/map',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {

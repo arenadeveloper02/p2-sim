@@ -34,6 +34,7 @@ export interface ToolResponse {
 export interface OAuthConfig {
   required: boolean // Whether this tool requires OAuth authentication
   provider: OAuthService // The service that needs to be authorized
+  requiredScopes?: string[] // Specific scopes this tool needs (for granular scope validation)
 }
 
 export interface ToolConfig<P = any, R = any> {
@@ -92,7 +93,7 @@ export interface ToolConfig<P = any, R = any> {
     url: string | ((params: P) => string)
     method: HttpMethod | ((params: P) => HttpMethod)
     headers: (params: P) => Record<string, string>
-    body?: (params: P) => Record<string, any>
+    body?: (params: P) => Record<string, any> | string
   }
 
   // Post-processing (optional) - allows additional processing after the initial request
@@ -104,6 +105,12 @@ export interface ToolConfig<P = any, R = any> {
 
   // Response handling
   transformResponse?: (response: Response, params?: P) => Promise<R>
+
+  /**
+   * Direct execution function for tools that don't need HTTP requests.
+   * If provided, this will be called instead of making an HTTP request.
+   */
+  directExecution?: (params: P) => Promise<ToolResponse>
 }
 
 export interface TableRow {

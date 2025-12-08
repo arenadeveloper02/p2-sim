@@ -1,7 +1,10 @@
 import type { JSX, SVGProps } from 'react'
+import type { ImageProps } from 'next/image'
 import type { ToolResponse } from '@/tools/types'
 
-export type BlockIcon = (props: SVGProps<SVGSVGElement>) => JSX.Element
+export type BlockIcon =
+  | ((props: SVGProps<SVGSVGElement>) => JSX.Element) // for Lucide SVGs
+  | ((props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => JSX.Element) // for Next Image
 export type ParamType = 'string' | 'number' | 'boolean' | 'json' | 'array'
 export type PrimitiveValueType =
   | 'string'
@@ -59,6 +62,8 @@ export type SubBlockType =
   | 'file-selector' // File selector for Google Drive, etc.
   | 'project-selector' // Project selector for Jira, Discord, etc.
   | 'channel-selector' // Channel selector for Slack, Discord, etc.
+  | 'user-selector' // User selector for Slack, Discord, etc.
+  | 'mention-input' // Message input with inline user mentions
   | 'folder-selector' // Folder selector for Gmail, etc.
   | 'knowledge-base-selector' // Knowledge base selector
   | 'knowledge-tag-filters' // Multiple tag filters for knowledge bases
@@ -252,9 +257,15 @@ export interface SubBlockConfig {
     placeholder?: string // Custom placeholder for the prompt input
     maintainHistory?: boolean // Whether to maintain conversation history
   }
-  // Declarative dependency hints for cross-field clearing or invalidation
-  // Example: dependsOn: ['credential'] means this field should be cleared when credential changes
-  dependsOn?: string[]
+  /**
+   * Declarative dependency hints for cross-field clearing or invalidation.
+   * Supports two formats:
+   * - Simple array: `['credential']` - all fields must have values (AND logic)
+   * - Object with all/any: `{ all: ['authMethod'], any: ['credential', 'botToken'] }`
+   *   - `all`: all listed fields must have values (AND logic)
+   *   - `any`: at least one field must have a value (OR logic)
+   */
+  dependsOn?: string[] | { all?: string[]; any?: string[] }
   // Copyable-text specific: Use webhook URL from webhook management hook
   useWebhookUrl?: boolean
   // Trigger-save specific: The trigger ID for validation and saving

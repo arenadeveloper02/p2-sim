@@ -214,7 +214,7 @@ export const ChatInput: React.FC<{
 
   return (
     <Tooltip.Provider>
-      <div className='fixed right-0 bottom-0 left-0 flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
+      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (

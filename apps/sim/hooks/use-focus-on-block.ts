@@ -8,6 +8,10 @@ const logger = createLogger('useFocusOnBlock')
  * Hook to focus the canvas on a specific block with smooth animation.
  * Can be called from any component within the workflow (editor, toolbar, action bar, etc.).
  *
+ * NOTE: This hook must only be called within a ReactFlowProvider context.
+ * If called outside, it will throw an error. Use an error boundary or conditional
+ * rendering to prevent calling this hook when ReactFlowProvider is not available.
+ *
  * @returns Function to focus on a block by its ID
  *
  * @example
@@ -15,6 +19,9 @@ const logger = createLogger('useFocusOnBlock')
  * focusOnBlock('block-id-123')
  */
 export function useFocusOnBlock() {
+  // This will throw if ReactFlowProvider is not available
+  // The calling component should be wrapped in an error boundary or
+  // only rendered when ReactFlowProvider is available
   const { getNodes, fitView } = useReactFlow()
 
   return useCallback(

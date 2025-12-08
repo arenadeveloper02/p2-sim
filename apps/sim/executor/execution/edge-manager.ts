@@ -17,6 +17,7 @@ export class EdgeManager {
     skipBackwardsEdge = false
   ): string[] {
     const readyNodes: string[] = []
+    const activatedTargets: string[] = []
 
     for (const [edgeId, edge] of node.outgoingEdges) {
       if (skipBackwardsEdge && this.isBackwardsEdge(edge.sourceHandle)) {
@@ -44,9 +45,14 @@ export class EdgeManager {
       }
 
       targetNode.incomingEdges.delete(node.id)
+      activatedTargets.push(edge.target)
+    }
 
-      if (this.isNodeReady(targetNode)) {
-        readyNodes.push(targetNode.id)
+    // Check readiness after all edges processed to ensure cascade deactivations are complete
+    for (const targetId of activatedTargets) {
+      const targetNode = this.dag.nodes.get(targetId)
+      if (targetNode && this.isNodeReady(targetNode)) {
+        readyNodes.push(targetId)
       }
     }
 
@@ -83,6 +89,14 @@ export class EdgeManager {
   private shouldActivateEdge(edge: DAGEdge, output: NormalizedBlockOutput): boolean {
     const handle = edge.sourceHandle
 
+    if (output.selectedRoute === EDGE.LOOP_EXIT) {
+      return handle === EDGE.LOOP_EXIT
+    }
+
+    if (output.selectedRoute === EDGE.LOOP_CONTINUE) {
+      return handle === EDGE.LOOP_CONTINUE || handle === EDGE.LOOP_CONTINUE_ALT
+    }
+
     if (!handle) {
       return true
     }
@@ -98,13 +112,6 @@ export class EdgeManager {
     }
 
     switch (handle) {
-      case EDGE.LOOP_CONTINUE:
-      case EDGE.LOOP_CONTINUE_ALT:
-        return output.selectedRoute === EDGE.LOOP_CONTINUE
-
-      case EDGE.LOOP_EXIT:
-        return output.selectedRoute === EDGE.LOOP_EXIT
-
       case EDGE.ERROR:
         return !!output.error
 

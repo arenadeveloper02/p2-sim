@@ -181,6 +181,7 @@ export function useChatStreaming() {
                   success: boolean
                   error?: string | { message?: string }
                   output?: Record<string, Record<string, any>>
+                  executionId?: string
                 }
 
                 const outputConfigs = streamingOptions?.outputConfigs
@@ -291,6 +292,8 @@ export function useChatStreaming() {
                           ...msg,
                           isStreaming: false,
                           content: finalContent ?? msg.content,
+                          executionId: finalData?.executionId || msg.executionId,
+                          liked: null,
                         }
                       : msg
                   )

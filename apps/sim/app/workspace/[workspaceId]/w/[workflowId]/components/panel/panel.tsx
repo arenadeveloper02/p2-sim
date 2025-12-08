@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Braces, Square } from 'lucide-react'
+import { ArrowUp, Square, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
   BubbleChatPreview,
@@ -9,11 +10,10 @@ import {
   Copy,
   Layout,
   Modal,
+  ModalBody,
   ModalContent,
-  ModalDescription,
   ModalFooter,
   ModalHeader,
-  ModalTitle,
   MoreHorizontal,
   Play,
   Popover,
@@ -43,13 +43,69 @@ import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspace
 import { useChatStore } from '@/stores/chat/store'
 import { usePanelStore } from '@/stores/panel/store'
 import type { PanelTab } from '@/stores/panel/types'
-import { DEFAULT_TERMINAL_HEIGHT, MIN_TERMINAL_HEIGHT, useTerminalStore } from '@/stores/terminal'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useWorkflowJsonStore } from '@/stores/workflows/json/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Panel')
+
+const RunAgentExternalChat = ({
+  workflowId,
+  workspaceId,
+}: {
+  workflowId: string
+  workspaceId: string
+}) => {
+  const [chatUrl, setChatUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!workflowId) {
+      setChatUrl(null)
+      return
+    }
+
+    const fetchChatUrl = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.isDeployed && data.deployment?.identifier) {
+            const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
+            setChatUrl(url)
+          } else {
+            setChatUrl(null)
+          }
+        } else {
+          setChatUrl(null)
+        }
+      } catch (error) {
+        logger.error('Error fetching chat status:', error)
+        setChatUrl(null)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchChatUrl()
+  }, [workflowId])
+
+  if (!chatUrl) {
+    return null
+  }
+
+  return (
+    <Link href={chatUrl}>
+      <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'primary'}>
+        <Zap className='h-[11.5px] w-[11.5px] fill-current' />
+        Run
+      </Button>
+    </Link>
+  )
+}
+
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *
@@ -143,10 +199,6 @@ export function Panel() {
       openSubscriptionSettings()
       return
     }
-    const { openOnRun, terminalHeight, setTerminalHeight } = useTerminalStore.getState()
-    if (openOnRun && terminalHeight <= MIN_TERMINAL_HEIGHT) {
-      setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)
-    }
     await handleRunWorkflow()
   }, [usageExceeded, handleRunWorkflow])
 
@@ -170,18 +222,6 @@ export function Panel() {
   useEffect(() => {
     setHasHydrated(true)
   }, [setHasHydrated])
-
-  /**
-   * Focus Copilot user input when the Copilot tab becomes active or when
-   * the panel loads with Copilot already selected, after hydration.
-   */
-  useEffect(() => {
-    if (!_hasHydrated || activeTab !== 'copilot') {
-      return
-    }
-
-    copilotRef.current?.focusInput()
-  }, [_hasHydrated, activeTab])
 
   /**
    * Handles tab click events
@@ -373,10 +413,10 @@ export function Panel() {
     <>
       <aside
         ref={panelRef}
-        className='panel-container fixed inset-y-0 right-0 z-10 overflow-hidden dark:bg-[var(--surface-1)]'
+        className='panel-container fixed inset-y-0 right-0 z-10 overflow-hidden bg-[var(--surface-1)] dark:bg-[var(--surface-1)]'
         aria-label='Workflow panel'
       >
-        <div className='flex h-full flex-col border-l pt-[14px] dark:border-[var(--border)]'>
+        <div className='flex h-full flex-col border-[var(--border)] border-l pt-[14px] dark:border-[var(--border)]'>
           {/* Header */}
           <div className='flex flex-shrink-0 items-center justify-between px-[8px]'>
             {/* More and Chat */}
@@ -413,7 +453,7 @@ export function Panel() {
                     onClick={handleExportJson}
                     disabled={!userPermissions.canEdit || isExporting || !currentWorkflow}
                   >
-                    <Braces className='h-3 w-3' />
+                    <ArrowUp className='h-3 w-3' />
                     <span>Export workflow</span>
                   </PopoverItem>
                   <PopoverItem
@@ -458,8 +498,9 @@ export function Panel() {
                 ) : (
                   <Play className='h-[11.5px] w-[11.5px]' />
                 )}
-                Run
+                Test
               </Button>
+              <RunAgentExternalChat workflowId={activeWorkflowId || ''} workspaceId={workspaceId} />
             </div>
           </div>
 
@@ -467,7 +508,7 @@ export function Panel() {
           <div className='flex flex-shrink-0 items-center justify-between px-[8px] pt-[14px]'>
             <div className='flex gap-[4px]'>
               <Button
-                className='h-[28px] px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)] dark:hover:bg-[var(--surface-9)] dark:hover:text-[var(--text-primary)]'
+                className='h-[28px] truncate px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)]'
                 variant={_hasHydrated && activeTab === 'copilot' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('copilot')}
                 data-tab-button='copilot'
@@ -475,7 +516,7 @@ export function Panel() {
                 Copilot
               </Button>
               <Button
-                className='h-[28px] px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)] dark:hover:bg-[var(--surface-9)] dark:hover:text-[var(--text-primary)]'
+                className='h-[28px] px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)]'
                 variant={_hasHydrated && activeTab === 'toolbar' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('toolbar')}
                 data-tab-button='toolbar'
@@ -483,7 +524,7 @@ export function Panel() {
                 Toolbar
               </Button>
               <Button
-                className='h-[28px] px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)] dark:hover:bg-[var(--surface-9)] dark:hover:text-[var(--text-primary)]'
+                className='h-[28px] px-[8px] py-[5px] text-[12.5px] hover:bg-[var(--surface-9)] hover:text-[var(--text-primary)]'
                 variant={_hasHydrated && activeTab === 'editor' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('editor')}
                 data-tab-button='editor'
@@ -549,30 +590,28 @@ export function Panel() {
 
       {/* Delete Confirmation Modal */}
       <Modal open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <ModalContent>
-          <ModalHeader>
-            <ModalTitle>Delete workflow?</ModalTitle>
-            <ModalDescription>
+        <ModalContent className='w-[400px]'>
+          <ModalHeader>Delete Workflow</ModalHeader>
+          <ModalBody>
+            <p className='text-[12px] text-[var(--text-tertiary)]'>
               Deleting this workflow will permanently remove all associated blocks, executions, and
               configuration.{' '}
-              <span className='text-[var(--text-error)] dark:text-[var(--text-error)]'>
-                This action cannot be undone.
-              </span>
-            </ModalDescription>
-          </ModalHeader>
+              <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+            </p>
+          </ModalBody>
           <ModalFooter>
             <Button
-              className='h-[32px] px-[12px]'
-              variant='outline'
+              variant='active'
               onClick={() => setIsDeleteModalOpen(false)}
               disabled={isDeleting}
             >
               Cancel
             </Button>
             <Button
-              className='h-[32px] bg-[var(--text-error)] px-[12px] text-[var(--white)] hover:bg-[var(--text-error)] hover:text-[var(--white)] dark:bg-[var(--text-error)] dark:text-[var(--white)] hover:dark:bg-[var(--text-error)] dark:hover:text-[var(--white)]'
+              variant='primary'
               onClick={handleDeleteWorkflow}
               disabled={isDeleting}
+              className='!bg-[var(--text-error)] !text-white hover:!bg-[var(--text-error)]/90'
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>

@@ -223,6 +223,41 @@ export async function executeTool(
       }
     }
 
+    // Check for direct execution (no HTTP request needed)
+    if (tool.directExecution) {
+      logger.info(`[${requestId}] Using directExecution for ${toolId}`)
+      const result = await tool.directExecution(contextParams)
+
+      // Apply post-processing if available and not skipped
+      let finalResult = result
+      if (tool.postProcess && result.success && !skipPostProcess) {
+        try {
+          finalResult = await tool.postProcess(result, contextParams, executeTool)
+        } catch (error) {
+          logger.error(`[${requestId}] Post-processing error for ${toolId}:`, {
+            error: error instanceof Error ? error.message : String(error),
+          })
+          finalResult = result
+        }
+      }
+
+      // Process file outputs if execution context is available
+      finalResult = await processFileOutputs(finalResult, tool, executionContext)
+
+      // Add timing data to the result
+      const endTime = new Date()
+      const endTimeISO = endTime.toISOString()
+      const duration = endTime.getTime() - startTime.getTime()
+      return {
+        ...finalResult,
+        timing: {
+          startTime: startTimeISO,
+          endTime: endTimeISO,
+          duration,
+        },
+      }
+    }
+
     // For internal routes or when skipProxy is true, call the API directly
     // Internal routes are automatically detected by checking if URL starts with /api/
     const endpointUrl =
@@ -453,7 +488,7 @@ async function handleInternalRequest(
 ): Promise<ToolResponse> {
   const requestId = generateRequestId()
 
-  const requestParams = formatRequestParams(tool, params)
+  const requestParams = await formatRequestParams(tool, params)
 
   try {
     const baseUrl = getBaseUrl()
@@ -474,9 +509,21 @@ async function handleInternalRequest(
 
     if (toolId.startsWith('custom_') && tool.request.body) {
       const requestBody = tool.request.body(params)
-      if (requestBody.schema && requestBody.params) {
+      if (
+        typeof requestBody === 'object' &&
+        requestBody !== null &&
+        'schema' in requestBody &&
+        'params' in requestBody
+      ) {
         try {
-          validateClientSideParams(requestBody.params, requestBody.schema)
+          validateClientSideParams(
+            requestBody.params as Record<string, any>,
+            requestBody.schema as {
+              type: string
+              properties: Record<string, any>
+              required?: string[]
+            }
+          )
         } catch (validationError) {
           logger.error(`[${requestId}] Custom tool validation failed for ${toolId}:`, {
             error:
@@ -498,20 +545,33 @@ async function handleInternalRequest(
     }
 
     const response = await fetch(fullUrl, requestOptions)
+    const contentType = response.headers.get('content-type') || ''
+    const hasTransformResponse = Boolean(tool.transformResponse)
+    const prefersTextTransform =
+      hasTransformResponse &&
+      (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
 
-    // For non-OK responses, attempt JSON first; if parsing fails, fall back to text
+    // For non-OK responses, attempt JSON first; if parsing fails, fall back to text so APIs like Semrush
+    // (which respond with text/csv) can still surface a useful error
     if (!response.ok) {
       let errorData: any
-      try {
-        errorData = await response.json()
-      } catch (jsonError) {
-        // JSON parsing failed, fall back to reading as text for error extraction
-        logger.warn(`[${requestId}] Response is not JSON for ${toolId}, reading as text`)
+      if (contentType.toLowerCase().includes('application/json')) {
+        try {
+          errorData = await response.json()
+        } catch (jsonError) {
+          logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
+            error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+          })
+          throw new Error(`Failed to parse response from ${toolId}: ${jsonError}`)
+        }
+      } else {
         try {
           errorData = await response.text()
         } catch (textError) {
-          logger.error(`[${requestId}] Failed to read response body for ${toolId}`)
-          errorData = null
+          logger.error(`[${requestId}] Text parse error for ${toolId}:`, {
+            error: textError instanceof Error ? textError.message : String(textError),
+          })
+          throw new Error(`Failed to read response from ${toolId}: ${textError}`)
         }
       }
 
@@ -537,19 +597,17 @@ async function handleInternalRequest(
     if (status === 202) {
       // Many APIs (e.g., Microsoft Graph) return 202 with empty body
       responseData = { status }
-    } else {
-      if (tool.transformResponse) {
-        responseData = null
-      } else {
-        try {
-          responseData = await response.json()
-        } catch (jsonError) {
-          logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
-            error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-          })
-          throw new Error(`Failed to parse response from ${toolId}: ${jsonError}`)
-        }
+    } else if (!hasTransformResponse || !prefersTextTransform) {
+      try {
+        responseData = await response.json()
+      } catch (jsonError) {
+        logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
+          error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+        })
+        throw new Error(`Failed to parse response from ${toolId}: ${jsonError}`)
       }
+    } else {
+      responseData = null
     }
 
     // Check for error conditions
@@ -569,6 +627,20 @@ async function handleInternalRequest(
 
     // Success case: use transformResponse if available
     if (tool.transformResponse) {
+      // If the tool expects text (Semrush), pass through the original response immediately so it can read the body.
+      if (prefersTextTransform) {
+        try {
+          const data = await tool.transformResponse(response, params)
+          return data
+        } catch (transformError) {
+          logger.error(`[${requestId}] Transform response error for ${toolId}:`, {
+            error:
+              transformError instanceof Error ? transformError.message : String(transformError),
+          })
+          throw transformError
+        }
+      }
+
       try {
         // Create a mock response object that provides the methods transformResponse needs
         const mockResponse = {
@@ -577,8 +649,13 @@ async function handleInternalRequest(
           statusText: response.statusText,
           headers: response.headers,
           url: fullUrl,
-          json: () => response.json(),
-          text: () => response.text(),
+          json: async () => responseData ?? (await response.clone().json()),
+          text: async () =>
+            responseData !== null && responseData !== undefined
+              ? typeof responseData === 'string'
+                ? responseData
+                : JSON.stringify(responseData)
+              : await response.clone().text(),
         } as Response
 
         const data = await tool.transformResponse(mockResponse, params)

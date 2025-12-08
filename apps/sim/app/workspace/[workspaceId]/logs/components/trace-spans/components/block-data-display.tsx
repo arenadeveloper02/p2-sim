@@ -26,16 +26,16 @@ export function BlockDataDisplay({
     const errorData = data as { error: string; [key: string]: unknown }
     return (
       <div className='space-y-2 text-xs'>
-        <div className='rounded border border-red-200 bg-red-50 p-2 dark:border-red-800 dark:bg-red-950/20'>
-          <div className='mb-1 font-medium text-red-800 dark:text-red-400'>Error</div>
-          <div className='text-red-700 dark:text-red-300'>{errorData.error}</div>
+        <div className='rounded border border-[var(--text-error)]/20 bg-[var(--text-error)]/10 p-2'>
+          <div className='mb-1 font-medium text-[var(--text-error)]'>Error</div>
+          <div className='text-[var(--text-error)]'>{errorData.error}</div>
         </div>
         {transformedData &&
           Object.keys(transformedData).filter((key) => key !== 'error' && key !== 'success')
             .length > 0 && (
-            <div className='code-editor-theme'>
+            <div className='code-editor-theme rounded-[4px] border border-[var(--border)] bg-[var(--surface-2)] p-2 dark:bg-[#1F1F1F]'>
               <pre
-                className='w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all font-mono text-[#eeeeee] text-[11px] leading-[16px]'
+                className='w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all font-mono text-[11px] text-[var(--text-primary)] leading-[16px] dark:text-[#eeeeee]'
                 dangerouslySetInnerHTML={{
                   __html: highlight(
                     JSON.stringify(
@@ -59,9 +59,9 @@ export function BlockDataDisplay({
   }
 
   return (
-    <div className='code-editor-theme overflow-hidden'>
+    <div className='code-editor-theme overflow-hidden rounded-[4px] border border-[var(--border)] bg-[var(--surface-2)] p-2 dark:bg-[#1F1F1F]'>
       <pre
-        className='w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all font-mono text-[#eeeeee] text-[11px] leading-[16px]'
+        className='w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all font-mono text-[11px] text-[var(--text-primary)] leading-[16px] dark:text-[#eeeeee]'
         dangerouslySetInnerHTML={{
           __html: highlight(jsonString, languages.json, 'json'),
         }}

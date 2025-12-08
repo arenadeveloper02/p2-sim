@@ -136,7 +136,8 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
       type: 'short-input',
       placeholder: 'Enter your Firecrawl API key',
       password: true,
-      required: true,
+      required: false,
+      hidden: true,
     },
   ],
   tools: {

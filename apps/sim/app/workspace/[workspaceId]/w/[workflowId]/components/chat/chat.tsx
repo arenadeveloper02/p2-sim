@@ -23,18 +23,19 @@ import {
 import { createLogger } from '@/lib/logs/console/logger'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import {
   ChatMessage,
   OutputSelect,
+  StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import {
-  useChatBoundarySync,
-  useChatDrag,
-  useChatFileUpload,
-  useChatResize,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
+import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
 import { useScrollManagement } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import {
+  useFloatBoundarySync,
+  useFloatDrag,
+  useFloatResize,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { getChatPosition, useChatStore } from '@/stores/chat/store'
@@ -219,11 +220,16 @@ export function Chat() {
   const [chatMessage, setChatMessage] = useState('')
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [isInputModalOpen, setIsInputModalOpen] = useState(false)
+  const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
   // Refs
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const hasShownModalRef = useRef<boolean>(false)
+  const hasCheckedModalRef = useRef<boolean>(false)
 
   // File upload hook
   const {
@@ -312,7 +318,7 @@ export function Chat() {
   )
 
   // Drag hook
-  const { handleMouseDown } = useChatDrag({
+  const { handleMouseDown } = useFloatDrag({
     position: actualPosition,
     width: chatWidth,
     height: chatHeight,
@@ -320,7 +326,7 @@ export function Chat() {
   })
 
   // Boundary sync hook - keeps chat within bounds when layout changes
-  useChatBoundarySync({
+  useFloatBoundarySync({
     isOpen: isChatOpen,
     position: actualPosition,
     width: chatWidth,
@@ -334,7 +340,7 @@ export function Chat() {
     handleMouseMove: handleResizeMouseMove,
     handleMouseLeave: handleResizeMouseLeave,
     handleMouseDown: handleResizeMouseDown,
-  } = useChatResize({
+  } = useFloatResize({
     position: actualPosition,
     width: chatWidth,
     height: chatHeight,
@@ -362,6 +368,45 @@ export function Chat() {
     const lastMessage = workflowMessages[workflowMessages.length - 1]
     return Boolean(lastMessage?.isStreaming)
   }, [workflowMessages])
+
+  // Get custom fields (excluding reserved fields)
+  const customFields = useMemo(() => {
+    const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+    return normalizedFields.filter((field) => {
+      const fieldName = field.name?.trim().toLowerCase()
+      return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
+    })
+  }, [startBlockInputFormat])
+
+  // Reset modal flags when workflow changes or messages are added
+  useEffect(() => {
+    if (workflowMessages.length > 0) {
+      hasShownModalRef.current = false
+      hasCheckedModalRef.current = false
+    }
+  }, [workflowMessages.length, activeWorkflowId])
+
+  // Reset check flag when chat closes
+  useEffect(() => {
+    if (!isChatOpen) {
+      hasCheckedModalRef.current = false
+    }
+  }, [isChatOpen])
+
+  // Show modal on load if no history and there are custom fields
+  // Only check once when chat opens to prevent infinite loops
+  useEffect(() => {
+    // Only check once per chat session when chat opens
+    if (isChatOpen && !hasCheckedModalRef.current && workflowMessages.length === 0) {
+      hasCheckedModalRef.current = true
+
+      // Check if we have custom fields (check once, don't depend on it)
+      if (customFields.length > 0 && !hasShownModalRef.current) {
+        hasShownModalRef.current = true
+        setIsInputModalOpen(true)
+      }
+    }
+  }, [isChatOpen, workflowMessages.length])
 
   // Map chat messages to copilot message format (type -> role) for scroll hook
   const messagesForScrollHook = useMemo(() => {
@@ -574,6 +619,58 @@ export function Chat() {
   )
 
   /**
+   * Builds complete workflow input with all Start Block fields (including reserved ones)
+   * Reads values from Start Block inputFormat field values naturally, ensuring all fields
+   * are present with empty values when not provided
+   *
+   * @param userInput - The user's typed message (empty string when submitting form)
+   * @param conversationId - The conversation ID
+   * @param files - Optional array of uploaded files
+   * @param overrideValues - Optional values to override temporarily (e.g., from modal form submission before values are persisted)
+   */
+  const buildCompleteWorkflowInput = useCallback(
+    (
+      userInput: string,
+      conversationId: string,
+      files?: Array<{ name: string; size: number; type: string; file: File }>,
+      overrideValues?: Record<string, unknown>
+    ) => {
+      const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+      const completeInput: Record<string, unknown> = {}
+
+      // Read values from Start Block inputFormat field values (field.value)
+      // This ensures values persist and are used naturally in execution flow
+      for (const field of normalizedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
+          if (overrideValues && fieldName in overrideValues) {
+            completeInput[fieldName] = overrideValues[fieldName] ?? ''
+          } else if (field.value !== undefined && field.value !== null) {
+            // Use the value from Start Block inputFormat field (persisted value)
+            completeInput[fieldName] = field.value
+          } else {
+            // Fallback to state or empty string
+            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+          }
+        }
+      }
+
+      // Override with actual values for reserved fields
+      completeInput.input = userInput
+      completeInput.conversationId = conversationId
+
+      // Handle files - only include if present, otherwise don't set it
+      if (files && files.length > 0) {
+        completeInput.files = files
+      }
+
+      return completeInput
+    },
+    [startBlockInputFormat, startBlockInputs]
+  )
+
+  /**
    * Sends a chat message and executes the workflow
    * Processes file attachments, adds the user message to the chat,
    * and triggers workflow execution with the message as input
@@ -609,24 +706,22 @@ export function Chat() {
         attachments: attachmentsWithData,
       })
 
-      // Prepare workflow input
-      const workflowInput: {
-        input: string
-        conversationId: string
-        files?: Array<{ name: string; size: number; type: string; file: File }>
-        onUploadError?: (message: string) => void
-      } = {
-        input: sentMessage,
-        conversationId,
-      }
+      // Prepare file array if present
+      const fileArray =
+        chatFiles.length > 0
+          ? chatFiles.map((chatFile) => ({
+              name: chatFile.name,
+              size: chatFile.size,
+              type: chatFile.type,
+              file: chatFile.file,
+            }))
+          : undefined
 
-      if (chatFiles.length > 0) {
-        workflowInput.files = chatFiles.map((chatFile) => ({
-          name: chatFile.name,
-          size: chatFile.size,
-          type: chatFile.type,
-          file: chatFile.file,
-        }))
+      // Build complete workflow input with all Start Block fields
+      const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
+
+      // Add upload error handler if files are present
+      if (fileArray && fileArray.length > 0) {
         workflowInput.onUploadError = (message: string) => {
           logger.error('File upload error:', message)
         }
@@ -659,7 +754,120 @@ export function Chat() {
     focusInput,
     clearFiles,
     clearErrors,
+    buildCompleteWorkflowInput,
   ])
+
+  /**
+   * Handles Start Block input modal submission
+   * Copies form values to Start Block inputFormat field values,
+   * stores them in state, and triggers workflow execution
+   */
+  const handleStartBlockInputsSubmit = useCallback(
+    async (values: Record<string, unknown>) => {
+      if (!activeWorkflowId || isExecuting || !startBlockId) return
+
+      // Store the form values in local state
+      setStartBlockInputs(values)
+      setIsInputModalOpen(false)
+
+      // Update Start Block inputFormat field values with form values
+      // This ensures values persist and are used naturally in execution flow
+      let updatedFields: InputFormatField[] = []
+      try {
+        const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
+        updatedFields = normalizedFields.map((field) => {
+          const fieldName = field.name?.trim()
+          if (fieldName && fieldName in values) {
+            // Update the field's value with the form value
+            return {
+              ...field,
+              value: values[fieldName] ?? '',
+            }
+          }
+          return field
+        })
+
+        // Update the Start Block's inputFormat with new values
+        setSubBlockValue(startBlockId, 'inputFormat', updatedFields)
+
+        // Persist to server via operation queue
+        const userId = session?.user?.id || 'unknown'
+        addToQueue({
+          id: crypto.randomUUID(),
+          operation: {
+            operation: 'subblock-update',
+            target: 'subblock',
+            payload: {
+              blockId: startBlockId,
+              subblockId: 'inputFormat',
+              value: updatedFields,
+            },
+          },
+          workflowId: activeWorkflowId,
+          userId,
+        })
+
+        triggerWorkflowUpdate()
+      } catch (error) {
+        logger.error('Error updating Start Block inputFormat values:', error)
+        // Fallback: use original format if update failed
+        updatedFields = normalizeInputFormatValue(startBlockInputFormat)
+      }
+
+      // Build complete workflow input using the updated Start Block inputFormat field values
+      // This ensures execution flow naturally uses the persisted values
+      const conversationId = getConversationId(activeWorkflowId)
+
+      // Build input from updated fields (read from field.value)
+      const completeInput: Record<string, unknown> = {}
+      for (const field of updatedFields) {
+        const fieldName = field.name?.trim()
+        if (fieldName) {
+          // Use the value from Start Block inputFormat field (persisted value)
+          completeInput[fieldName] =
+            field.value !== undefined && field.value !== null ? field.value : ''
+        }
+      }
+
+      // Override with actual values for reserved fields
+      completeInput.input = ''
+      completeInput.conversationId = conversationId
+
+      const workflowInput = completeInput
+
+      try {
+        // Execute workflow immediately
+        const result = await handleRunWorkflow(workflowInput)
+        handleWorkflowResponse(result)
+      } catch (error) {
+        logger.error('Error executing workflow from modal submit:', error)
+      }
+
+      focusInput(100)
+    },
+    [
+      activeWorkflowId,
+      isExecuting,
+      startBlockId,
+      startBlockInputFormat,
+      setSubBlockValue,
+      session,
+      addToQueue,
+      triggerWorkflowUpdate,
+      getConversationId,
+      buildCompleteWorkflowInput,
+      handleRunWorkflow,
+      handleWorkflowResponse,
+      focusInput,
+    ]
+  )
+
+  /**
+   * Handles Re-run button click - opens modal to collect new inputs
+   */
+  const handleRerun = useCallback(() => {
+    setIsInputModalOpen(true)
+  }, [])
 
   /**
    * Handles keyboard input for chat
@@ -809,6 +1017,20 @@ export function Chat() {
           className='ml-auto flex min-w-0 flex-shrink items-center gap-[6px]'
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {startBlockInputFormat.length > 0 && (
+            <Badge
+              variant='outline'
+              className='flex-none cursor-pointer whitespace-nowrap rounded-[6px]'
+              title='Re-run with new inputs'
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                handleRerun()
+              }}
+            >
+              <span className='whitespace-nowrap text-[12px]'>Re-run</span>
+            </Badge>
+          )}
+
           {shouldShowConfigureStartInputsButton && (
             <Badge
               variant='outline'
@@ -836,7 +1058,7 @@ export function Chat() {
 
         <div className='flex flex-shrink-0 items-center gap-[8px]'>
           {/* More menu with actions */}
-          <Popover variant='default'>
+          <Popover variant='default' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant='ghost'
@@ -855,9 +1077,9 @@ export function Chat() {
             >
               <PopoverScrollArea>
                 <PopoverItem
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  onClick={() => {
                     if (activeWorkflowId) exportChatCSV(activeWorkflowId)
+                    setMoreMenuOpen(false)
                   }}
                   disabled={workflowMessages.length === 0}
                 >
@@ -865,9 +1087,9 @@ export function Chat() {
                   <span>Download</span>
                 </PopoverItem>
                 <PopoverItem
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  onClick={() => {
                     if (activeWorkflowId) clearChat(activeWorkflowId)
+                    setMoreMenuOpen(false)
                   }}
                   disabled={workflowMessages.length === 0}
                 >
@@ -1053,6 +1275,17 @@ export function Chat() {
           </div>
         </div>
       </div>
+
+      {/* Start Block Input Modal */}
+      {customFields.length > 0 && (
+        <StartBlockInputModal
+          open={isInputModalOpen}
+          onOpenChange={setIsInputModalOpen}
+          inputFormat={startBlockInputFormat}
+          onSubmit={handleStartBlockInputsSubmit}
+          initialValues={startBlockInputs}
+        />
+      )}
     </div>
   )
 }

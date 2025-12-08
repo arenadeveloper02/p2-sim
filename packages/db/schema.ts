@@ -300,6 +300,12 @@ export const workflowExecutionLogs = pgTable(
     cost: jsonb('cost'),
     files: jsonb('files'), // File metadata for execution files
     createdAt: timestamp('created_at').notNull().defaultNow(),
+
+    userId: text('user_id'),
+    isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
+    chatId: text('chat_id'), // chat_id for tracking conversation context
+    initialInput: text('initial_input'), // Initial Input to the chat API
+    finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
   },
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
@@ -408,8 +414,6 @@ export const settings = pgTable('settings', {
   // General settings
   theme: text('theme').notNull().default('system'),
   autoConnect: boolean('auto_connect').notNull().default(true),
-  autoPan: boolean('auto_pan').notNull().default(true),
-  consoleExpandedByDefault: boolean('console_expanded_by_default').notNull().default(true),
 
   // Privacy settings
   telemetryEnabled: boolean('telemetry_enabled').notNull().default(true),
@@ -423,7 +427,6 @@ export const settings = pgTable('settings', {
     .default(true),
 
   // UI preferences
-  showFloatingControls: boolean('show_floating_controls').notNull().default(true),
   showTrainingControls: boolean('show_training_controls').notNull().default(false),
   superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
 
@@ -432,6 +435,9 @@ export const settings = pgTable('settings', {
 
   // Copilot preferences - maps model_id to enabled/disabled boolean
   copilotEnabledModels: jsonb('copilot_enabled_models').notNull().default('{}'),
+
+  // Copilot auto-allowed integration tools - array of tool IDs that can run without confirmation
+  copilotAutoAllowedTools: jsonb('copilot_auto_allowed_tools').notNull().default('[]'),
 
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
@@ -496,19 +502,25 @@ export const webhook = pgTable(
   }
 )
 
-export const workflowLogWebhook = pgTable(
-  'workflow_log_webhook',
+export const notificationTypeEnum = pgEnum('notification_type', ['webhook', 'email', 'slack'])
+
+export const notificationDeliveryStatusEnum = pgEnum('notification_delivery_status', [
+  'pending',
+  'in_progress',
+  'success',
+  'failed',
+])
+
+export const workspaceNotificationSubscription = pgTable(
+  'workspace_notification_subscription',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id')
+    workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workflow.id, { onDelete: 'cascade' }),
-    url: text('url').notNull(),
-    secret: text('secret'),
-    includeFinalOutput: boolean('include_final_output').notNull().default(false),
-    includeTraceSpans: boolean('include_trace_spans').notNull().default(false),
-    includeRateLimits: boolean('include_rate_limits').notNull().default(false),
-    includeUsageData: boolean('include_usage_data').notNull().default(false),
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    notificationType: notificationTypeEnum('notification_type').notNull(),
+    workflowIds: text('workflow_ids').array().notNull().default(sql`'{}'::text[]`),
+    allWorkflows: boolean('all_workflows').notNull().default(false),
     levelFilter: text('level_filter')
       .array()
       .notNull()
@@ -517,35 +529,46 @@ export const workflowLogWebhook = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY['api', 'webhook', 'schedule', 'manual', 'chat']::text[]`),
+    includeFinalOutput: boolean('include_final_output').notNull().default(false),
+    includeTraceSpans: boolean('include_trace_spans').notNull().default(false),
+    includeRateLimits: boolean('include_rate_limits').notNull().default(false),
+    includeUsageData: boolean('include_usage_data').notNull().default(false),
+
+    // Channel-specific configuration
+    webhookConfig: jsonb('webhook_config'),
+    emailRecipients: text('email_recipients').array(),
+    slackConfig: jsonb('slack_config'),
+
+    // Alert rule configuration (if null, sends on every execution)
+    alertConfig: jsonb('alert_config'),
+    lastAlertAt: timestamp('last_alert_at'),
+
     active: boolean('active').notNull().default(true),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    workflowIdIdx: index('workflow_log_webhook_workflow_id_idx').on(table.workflowId),
-    activeIdx: index('workflow_log_webhook_active_idx').on(table.active),
+    workspaceIdIdx: index('workspace_notification_workspace_id_idx').on(table.workspaceId),
+    activeIdx: index('workspace_notification_active_idx').on(table.active),
+    typeIdx: index('workspace_notification_type_idx').on(table.notificationType),
   })
 )
 
-export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', [
-  'pending',
-  'in_progress',
-  'success',
-  'failed',
-])
-
-export const workflowLogWebhookDelivery = pgTable(
-  'workflow_log_webhook_delivery',
+export const workspaceNotificationDelivery = pgTable(
+  'workspace_notification_delivery',
   {
     id: text('id').primaryKey(),
     subscriptionId: text('subscription_id')
       .notNull()
-      .references(() => workflowLogWebhook.id, { onDelete: 'cascade' }),
+      .references(() => workspaceNotificationSubscription.id, { onDelete: 'cascade' }),
     workflowId: text('workflow_id')
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
     executionId: text('execution_id').notNull(),
-    status: webhookDeliveryStatusEnum('status').notNull().default('pending'),
+    status: notificationDeliveryStatusEnum('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     lastAttemptAt: timestamp('last_attempt_at'),
     nextAttemptAt: timestamp('next_attempt_at'),
@@ -556,12 +579,14 @@ export const workflowLogWebhookDelivery = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    subscriptionIdIdx: index('workflow_log_webhook_delivery_subscription_id_idx').on(
+    subscriptionIdIdx: index('workspace_notification_delivery_subscription_id_idx').on(
       table.subscriptionId
     ),
-    executionIdIdx: index('workflow_log_webhook_delivery_execution_id_idx').on(table.executionId),
-    statusIdx: index('workflow_log_webhook_delivery_status_idx').on(table.status),
-    nextAttemptIdx: index('workflow_log_webhook_delivery_next_attempt_idx').on(table.nextAttemptAt),
+    executionIdIdx: index('workspace_notification_delivery_execution_id_idx').on(table.executionId),
+    statusIdx: index('workspace_notification_delivery_status_idx').on(table.status),
+    nextAttemptIdx: index('workspace_notification_delivery_next_attempt_idx').on(
+      table.nextAttemptAt
+    ),
   })
 )
 
@@ -573,17 +598,16 @@ export const apiKey = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }), // Only set for workspace keys
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }), // Who created the workspace key
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     key: text('key').notNull().unique(),
-    type: text('type').notNull().default('personal'), // 'personal' or 'workspace'
+    type: text('type').notNull().default('personal'),
     lastUsed: timestamp('last_used'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     expiresAt: timestamp('expires_at'),
   },
   (table) => ({
-    // Ensure workspace keys have a workspace_id and personal keys don't
     workspaceTypeCheck: check(
       'workspace_type_check',
       sql`(type = 'workspace' AND workspace_id IS NOT NULL) OR (type = 'personal' AND workspace_id IS NULL)`
@@ -993,6 +1017,48 @@ export const knowledgeBase = pgTable(
     userWorkspaceIdx: index('kb_user_workspace_idx').on(table.userId, table.workspaceId),
     // Index for soft delete filtering
     deletedAtIdx: index('kb_deleted_at_idx').on(table.deletedAt),
+  })
+)
+
+export const userKnowledgeBase = pgTable(
+  'user_knowledge_base',
+  {
+    id: text('id').primaryKey(),
+    userIdRef: text('user_id_ref')
+      .notNull()
+      .default('')
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userWorkspaceIdRef: text('user_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseIdRef: text('knowledge_base_id_ref')
+      .notNull()
+      .default('')
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    kbWorkspaceIdRef: text('kb_workspace_id_ref')
+      .notNull()
+      .default('')
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    knowledgeBaseNameRef: text('knowledge_base_name_ref').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    // Access patterns for finding knowledge bases by user or workspace
+    userIdRefIdx: index('user_kb_user_id_ref_idx').on(table.userIdRef),
+    userWorkspaceIdRefIdx: index('user_kb_user_workspace_id_ref_idx').on(table.userWorkspaceIdRef),
+    kbIdRefIdx: index('user_kb_kb_id_ref_idx').on(table.knowledgeBaseIdRef),
+    kbWorkspaceIdRefIdx: index('user_kb_kb_workspace_id_ref_idx').on(table.kbWorkspaceIdRef),
+    // Composite indexes for common queries
+    userKbIdx: index('user_kb_user_kb_idx').on(table.userIdRef, table.knowledgeBaseIdRef),
+    userWorkspaceKbIdx: index('user_kb_user_workspace_kb_idx').on(
+      table.userWorkspaceIdRef,
+      table.knowledgeBaseIdRef
+    ),
+    // Index for soft delete filtering
+    deletedAtIdx: index('user_kb_deleted_at_idx').on(table.deletedAt),
   })
 )
 
@@ -1577,6 +1643,45 @@ export const ssoProvider = pgTable(
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
+  })
+)
+
+export const deployedChat = pgTable(
+  'deployed_chat',
+  {
+    id: text('id').primaryKey(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    chatId: text('chat_id'),
+    title: text('title'),
+    workflowId: text('workflow_id'),
+    executingUserId: text('executing_user_id'),
+  },
+  (table) => ({
+    chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),
+    workflowIdIdx: index('deployed_chat_workflow_id_idx').on(table.workflowId),
+  })
+)
+
+export const chatPromptFeedback = pgTable(
+  'chat_prompt_feedback',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    inComplete: boolean('in_complete').default(false),
+    inAccurate: boolean('in_accurate').default(false),
+    outOfDate: boolean('out_of_date').default(false),
+    tooLong: boolean('too_long').default(false),
+    tooShort: boolean('too_short').default(false),
+    liked: boolean('liked').default(false),
+    executionId: text('execution_id').notNull(),
+    workflowId: text('workflow_id').notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index('chat_prompt_feedback_created_at_idx').on(table.createdAt),
   })
 )
 

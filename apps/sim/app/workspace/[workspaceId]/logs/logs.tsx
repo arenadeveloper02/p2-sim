@@ -8,10 +8,12 @@ import { cn } from '@/lib/core/utils/cn'
 import { getIntegrationMetadata } from '@/lib/logs/get-trigger-options'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import Controls from '@/app/workspace/[workspaceId]/logs/components/dashboard/controls'
+import { NotificationSettings } from '@/app/workspace/[workspaceId]/logs/components/notification-settings/notification-settings'
 import { AutocompleteSearch } from '@/app/workspace/[workspaceId]/logs/components/search/search'
 import { Sidebar } from '@/app/workspace/[workspaceId]/logs/components/sidebar/sidebar'
 import Dashboard from '@/app/workspace/[workspaceId]/logs/dashboard'
 import { formatDate } from '@/app/workspace/[workspaceId]/logs/utils'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useFolders } from '@/hooks/queries/folders'
 import { useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -58,7 +60,6 @@ export default function Logs() {
     level,
     workflowIds,
     folderIds,
-    searchQuery: storeSearchQuery,
     setSearchQuery: setStoreSearchQuery,
     triggers,
     viewMode,
@@ -77,14 +78,24 @@ export default function Logs() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isInitialized = useRef<boolean>(false)
 
-  const [searchQuery, setSearchQuery] = useState(storeSearchQuery)
+  const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  // Sync search query from URL on mount (client-side only)
+  useEffect(() => {
+    const urlSearch = new URLSearchParams(window.location.search).get('search') || ''
+    if (urlSearch && urlSearch !== searchQuery) {
+      setSearchQuery(urlSearch)
+    }
+  }, [])
 
   const [, setAvailableWorkflows] = useState<string[]>([])
   const [, setAvailableFolders] = useState<string[]>([])
 
   const [isLive, setIsLive] = useState(false)
   const isSearchOpenRef = useRef<boolean>(false)
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
+  const userPermissions = useUserPermissionsContext()
 
   const logFilters = useMemo(
     () => ({
@@ -110,10 +121,6 @@ export default function Logs() {
     if (!logsQuery.data?.pages) return []
     return logsQuery.data.pages.flatMap((page) => page.logs)
   }, [logsQuery.data?.pages])
-
-  useEffect(() => {
-    setSearchQuery(storeSearchQuery)
-  }, [storeSearchQuery])
 
   const foldersQuery = useFolders(workspaceId)
   const { getFolderTree } = useFolderStore()
@@ -166,10 +173,10 @@ export default function Logs() {
   }, [workspaceId, getFolderTree, foldersQuery.data])
 
   useEffect(() => {
-    if (isInitialized.current && debouncedSearchQuery !== storeSearchQuery) {
+    if (isInitialized.current) {
       setStoreSearchQuery(debouncedSearchQuery)
     }
-  }, [debouncedSearchQuery, storeSearchQuery])
+  }, [debouncedSearchQuery, setStoreSearchQuery])
 
   const handleLogClick = (log: WorkflowLog) => {
     setSelectedLog(log)
@@ -249,6 +256,8 @@ export default function Logs() {
   useEffect(() => {
     const handlePopState = () => {
       initializeFromURL()
+      const params = new URLSearchParams(window.location.search)
+      setSearchQuery(params.get('search') || '')
     }
 
     window.addEventListener('popstate', handlePopState)
@@ -354,7 +363,7 @@ export default function Logs() {
   }
 
   return (
-    <div className='fixed inset-0 left-[256px] flex min-w-0 flex-col'>
+    <div className='fixed inset-0 left-[256px] flex min-w-0 flex-col bg-white dark:bg-[var(--bg)]'>
       {/* Add the animation styles */}
       <style jsx global>
         {selectedRowAnimation}
@@ -381,30 +390,24 @@ export default function Logs() {
             }
             showExport={true}
             onExport={handleExport}
+            canConfigureNotifications={userPermissions.canEdit}
+            onConfigureNotifications={() => setIsNotificationSettingsOpen(true)}
           />
 
           {/* Table container */}
-          <div className='flex flex-1 flex-col overflow-hidden rounded-[8px] border dark:border-[var(--border)]'>
+          <div className='flex flex-1 flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)]'>
             {/* Header */}
-            <div className='flex-shrink-0 border-b bg-[var(--surface-1)] dark:border-[var(--border)] dark:bg-[var(--surface-1)]'>
+            <div className='flex-shrink-0 border-[var(--border)] border-b bg-[var(--surface-2)]'>
               <div className='grid min-w-[600px] grid-cols-[120px_80px_120px_120px] gap-[8px] px-[24px] py-[12px] md:grid-cols-[140px_90px_140px_120px] md:gap-[12px] lg:min-w-0 lg:grid-cols-[160px_100px_160px_120px] lg:gap-[16px] xl:grid-cols-[160px_100px_160px_120px_120px_100px]'>
-                <div className='font-medium text-[13px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
-                  Time
-                </div>
-                <div className='font-medium text-[13px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
-                  Status
-                </div>
-                <div className='font-medium text-[13px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
-                  Workflow
-                </div>
-                <div className='font-medium text-[13px] text-[var(--text-tertiary)] dark:text-[var(--text-tertiary)]'>
-                  Cost
-                </div>
-                <div className='hidden font-medium text-[13px] text-[var(--text-tertiary)] xl:block dark:text-[var(--text-tertiary)]'>
+                <div className='font-semibold text-[13px] text-[var(--text-primary)]'>Time</div>
+                <div className='font-semibold text-[13px] text-[var(--text-primary)]'>Status</div>
+                <div className='font-semibold text-[13px] text-[var(--text-primary)]'>Workflow</div>
+                <div className='font-semibold text-[13px] text-[var(--text-primary)]'>Cost</div>
+                <div className='hidden font-semibold text-[13px] text-[var(--text-primary)] xl:block'>
                   Trigger
                 </div>
 
-                <div className='hidden font-medium text-[13px] text-[var(--text-tertiary)] xl:block dark:text-[var(--text-tertiary)]'>
+                <div className='hidden font-semibold text-[13px] text-[var(--text-primary)] xl:block'>
                   Duration
                 </div>
               </div>
@@ -414,14 +417,14 @@ export default function Logs() {
             <div className='flex-1 overflow-y-auto overflow-x-hidden' ref={scrollContainerRef}>
               {logsQuery.isLoading && !logsQuery.data ? (
                 <div className='flex h-full items-center justify-center'>
-                  <div className='flex items-center gap-[8px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                  <div className='flex items-center gap-[8px] text-[var(--text-primary)]'>
                     <Loader2 className='h-[16px] w-[16px] animate-spin' />
                     <span className='text-[13px]'>Loading logs...</span>
                   </div>
                 </div>
               ) : logsQuery.isError ? (
                 <div className='flex h-full items-center justify-center'>
-                  <div className='flex items-center gap-[8px] text-[var(--text-error)] dark:text-[var(--text-error)]'>
+                  <div className='flex items-center gap-[8px] text-[var(--text-error)]'>
                     <AlertCircle className='h-[16px] w-[16px]' />
                     <span className='text-[13px]'>
                       Error: {logsQuery.error?.message || 'Failed to load logs'}
@@ -430,7 +433,7 @@ export default function Logs() {
                 </div>
               ) : logs.length === 0 ? (
                 <div className='flex h-full items-center justify-center'>
-                  <div className='flex items-center gap-[8px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                  <div className='flex items-center gap-[8px] text-[var(--text-primary)]'>
                     <Info className='h-[16px] w-[16px]' />
                     <span className='text-[13px]'>No logs found</span>
                   </div>
@@ -451,8 +454,10 @@ export default function Logs() {
                       <div
                         key={log.id}
                         ref={isSelected ? selectedRowRef : null}
-                        className={`cursor-pointer border-b transition-all duration-200 dark:border-[var(--border)] ${
-                          isSelected ? 'bg-[var(--border)]' : 'hover:bg-[var(--border)]'
+                        className={`cursor-pointer border-[var(--border)] border-b transition-all duration-200 ${
+                          isSelected
+                            ? 'bg-[var(--surface-2)]'
+                            : 'bg-[var(--surface-1)] hover:bg-[var(--surface-2)]'
                         }`}
                         onClick={() => handleLogClick(log)}
                       >
@@ -460,10 +465,10 @@ export default function Logs() {
                           {/* Time */}
                           <div>
                             <div className='text-[13px]'>
-                              <span className='text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                              <span className='text-[var(--text-primary)]'>
                                 {formattedDate.compactDate}
                               </span>
-                              <span className='ml-[8px] hidden font-medium sm:inline'>
+                              <span className='ml-[8px] hidden font-medium text-[var(--text-muted)] sm:inline'>
                                 {formattedDate.compactTime}
                               </span>
                             </div>
@@ -476,25 +481,27 @@ export default function Logs() {
                                 className={cn(
                                   'flex h-[24px] w-[56px] items-center justify-start rounded-[6px] border pl-[9px]',
                                   isError
-                                    ? 'gap-[5px] border-[#883827] bg-[#491515]'
-                                    : 'gap-[8px] border-[#686868] bg-[#383838]'
+                                    ? 'gap-[5px] border-[var(--text-error)]/20 bg-[var(--text-error)]/10 dark:border-[#883827] dark:bg-[#491515]'
+                                    : 'gap-[8px] border-[var(--border)] bg-[var(--surface-2)] dark:border-[#686868] dark:bg-[#383838]'
                                 )}
                               >
                                 <div
                                   className='h-[6px] w-[6px] rounded-[2px]'
                                   style={{
-                                    backgroundColor: isError ? '#EF4444' : '#B7B7B7',
+                                    backgroundColor: isError ? 'var(--text-error)' : '#B7B7B7',
                                   }}
                                 />
                                 <span
                                   className='font-medium text-[11.5px]'
-                                  style={{ color: isError ? '#EF4444' : '#B7B7B7' }}
+                                  style={{
+                                    color: isError ? 'var(--text-error)' : 'var(--text-secondary)',
+                                  }}
                                 >
                                   {statusLabel}
                                 </span>
                               </div>
                             ) : (
-                              <div className='inline-flex items-center bg-amber-300 px-[8px] py-[2px] font-medium text-[12px] text-amber-900 dark:bg-amber-500/90 dark:text-black'>
+                              <div className='inline-flex items-center bg-[var(--warning)]/20 px-[8px] py-[2px] font-medium text-[12px] text-[var(--warning)] dark:bg-[var(--warning)]/20'>
                                 {statusLabel}
                               </div>
                             )}
@@ -509,7 +516,7 @@ export default function Logs() {
                                   backgroundColor: log.workflow?.color || '#64748b',
                                 }}
                               />
-                              <span className='truncate font-medium text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'>
+                              <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
                                 {log.workflow?.name || 'Unknown Workflow'}
                               </span>
                             </div>
@@ -517,7 +524,7 @@ export default function Logs() {
 
                           {/* Cost */}
                           <div>
-                            <div className='font-medium text-[12px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            <div className='font-medium text-[12px] text-[var(--text-primary)]'>
                               {typeof (log as any)?.cost?.total === 'number'
                                 ? `$${((log as any).cost.total as number).toFixed(4)}`
                                 : '—'}
@@ -529,7 +536,7 @@ export default function Logs() {
                             {log.trigger ? (
                               <TriggerBadge trigger={log.trigger} />
                             ) : (
-                              <div className='font-medium text-[12px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                              <div className='font-medium text-[12px] text-[var(--text-primary)]'>
                                 —
                               </div>
                             )}
@@ -537,7 +544,7 @@ export default function Logs() {
 
                           {/* Duration */}
                           <div className='hidden xl:block'>
-                            <div className='font-medium text-[12px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'>
+                            <div className='font-medium text-[12px] text-[var(--text-primary)]'>
                               {log.duration || '—'}
                             </div>
                           </div>
@@ -568,7 +575,7 @@ export default function Logs() {
                     <div className='flex items-center justify-center py-[16px]'>
                       <div
                         ref={loaderRef}
-                        className='flex items-center gap-[8px] text-[var(--text-secondary)] dark:text-[var(--text-secondary)]'
+                        className='flex items-center gap-[8px] text-[var(--text-primary)]'
                       >
                         {logsQuery.isFetchingNextPage ? (
                           <>
@@ -598,6 +605,12 @@ export default function Logs() {
         onNavigatePrev={handleNavigatePrev}
         hasNext={selectedLogIndex < logs.length - 1}
         hasPrev={selectedLogIndex > 0}
+      />
+
+      <NotificationSettings
+        workspaceId={workspaceId}
+        open={isNotificationSettingsOpen}
+        onOpenChange={setIsNotificationSettingsOpen}
       />
     </div>
   )

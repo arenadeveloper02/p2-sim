@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import {
   AlertCircle,
   CheckCircle2,
@@ -22,6 +21,7 @@ interface InviteStatusCardProps {
   title: string
   description: string | React.ReactNode
   icon?: 'userPlus' | 'mail' | 'users' | 'error' | 'success' | 'warning'
+  logoUrl?: string
   actions?: Array<{
     label: string
     onClick: () => void
@@ -64,35 +64,12 @@ export function InviteStatusCard({
   title,
   description,
   icon,
+  logoUrl,
   actions = [],
   isExpiredError = false,
 }: InviteStatusCardProps) {
   const router = useRouter()
-  const [buttonClass, setButtonClass] = useState('auth-button-gradient')
   const brandConfig = useBrandConfig()
-
-  useEffect(() => {
-    const checkCustomBrand = () => {
-      const computedStyle = getComputedStyle(document.documentElement)
-      const brandAccent = computedStyle.getPropertyValue('--brand-accent-hex').trim()
-      if (brandAccent && brandAccent !== '#6f3dfa') {
-        setButtonClass('auth-button-custom')
-      } else {
-        setButtonClass('auth-button-gradient')
-      }
-    }
-    checkCustomBrand()
-    window.addEventListener('resize', checkCustomBrand)
-    const observer = new MutationObserver(checkCustomBrand)
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['style', 'class'],
-    })
-    return () => {
-      window.removeEventListener('resize', checkCustomBrand)
-      observer.disconnect()
-    }
-  }, [])
 
   if (type === 'loading') {
     return (
@@ -126,8 +103,29 @@ export function InviteStatusCard({
   const iconColor = icon ? iconColorMap[icon] : ''
   const iconBg = icon ? iconBgMap[icon] : ''
 
+  // Helper function to convert hex to rgba with opacity
+  const hexToRgba = (hex: string, opacity: number): string => {
+    const r = Number.parseInt(hex.slice(1, 3), 16)
+    const g = Number.parseInt(hex.slice(3, 5), 16)
+    const b = Number.parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`
+  }
+
   return (
     <div className={`${soehne.className} space-y-6`}>
+      {(logoUrl || IconComponent) && (
+        <div className='flex w-full items-center justify-center'>
+          {logoUrl ? (
+            <div className='flex h-16 w-16 items-center justify-center'>
+              <img src={logoUrl} alt='Logo' className='h-full w-full object-contain' />
+            </div>
+          ) : IconComponent ? (
+            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${iconBg}`}>
+              <IconComponent className={`h-8 w-8 ${iconColor}`} />
+            </div>
+          ) : null}
+        </div>
+      )}
       <div className='space-y-1 text-center'>
         <h1 className='font-medium text-[32px] text-black tracking-tight'>{title}</h1>
         <p className={`${inter.className} font-[380] text-[16px] text-muted-foreground`}>
@@ -148,43 +146,59 @@ export function InviteStatusCard({
             </Button>
           )}
 
-          {actions.map((action, index) => (
-            <Button
-              key={index}
-              variant={action.variant || 'default'}
-              className={
-                (action.variant || 'default') === 'default'
-                  ? `${buttonClass} flex w-full items-center justify-center gap-2 rounded-[10px] border font-medium text-[15px] text-white transition-all duration-200`
-                  : action.variant === 'outline'
-                    ? 'w-full rounded-[10px] border-[var(--brand-primary-hex)] font-medium text-[15px] text-[var(--brand-primary-hex)] transition-colors duration-200 hover:bg-[var(--brand-primary-hex)] hover:text-white'
-                    : 'w-full rounded-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }
-              onClick={action.onClick}
-              disabled={action.disabled || action.loading}
-            >
-              {action.loading ? (
-                <>
-                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                  {action.label}...
-                </>
-              ) : (
-                action.label
-              )}
-            </Button>
-          ))}
-        </div>
-      </div>
+          {actions.map((action, index) => {
+            const isDefaultVariant = (action.variant || 'default') === 'default'
+            const primaryColor = brandConfig.theme?.primaryColor || '#701ffc'
+            const primaryHoverColor = brandConfig.theme?.primaryHoverColor || '#802fff'
+            const shadowColor = hexToRgba(primaryColor, 0.2)
 
-      <div
-        className={`${inter.className} auth-text-muted fixed right-0 bottom-0 left-0 z-50 pb-8 text-center font-[340] text-[13px] leading-relaxed`}
-      >
-        Need help?{' '}
-        <a
-          href={`mailto:${brandConfig.supportEmail}`}
-          className='auth-link underline-offset-4 transition hover:underline'
-        >
-          Contact support
-        </a>
+            return (
+              <Button
+                key={index}
+                variant={action.variant || 'default'}
+                className={
+                  isDefaultVariant
+                    ? `flex w-full items-center justify-center gap-2 rounded-[10px] border font-medium text-[15px] text-white transition-all duration-200`
+                    : action.variant === 'outline'
+                      ? 'w-full rounded-[10px] border-[var(--brand-primary-hex)] font-medium text-[15px] text-[var(--brand-primary-hex)] transition-colors duration-200 hover:bg-[var(--brand-primary-hex)] hover:text-white'
+                      : 'w-full rounded-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground'
+                }
+                style={
+                  isDefaultVariant
+                    ? {
+                        backgroundColor: primaryColor,
+                        borderColor: primaryColor,
+                        boxShadow: `0 10px 15px -3px ${shadowColor}, 0 4px 6px -2px ${shadowColor}`,
+                      }
+                    : undefined
+                }
+                onMouseEnter={(e) => {
+                  if (isDefaultVariant) {
+                    e.currentTarget.style.backgroundColor = primaryHoverColor
+                    e.currentTarget.style.borderColor = primaryHoverColor
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (isDefaultVariant) {
+                    e.currentTarget.style.backgroundColor = primaryColor
+                    e.currentTarget.style.borderColor = primaryColor
+                  }
+                }}
+                onClick={action.onClick}
+                disabled={action.disabled || action.loading}
+              >
+                {action.loading ? (
+                  <>
+                    <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                    {action.label}...
+                  </>
+                ) : (
+                  action.label
+                )}
+              </Button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

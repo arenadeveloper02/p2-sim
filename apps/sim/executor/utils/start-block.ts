@@ -118,7 +118,7 @@ function readMetadataSubBlockValue(block: SerializedBlock, key: string): unknown
   return (raw as { value?: unknown }).value
 }
 
-function extractInputFormat(block: SerializedBlock): InputFormatField[] {
+export function extractInputFormat(block: SerializedBlock): InputFormatField[] {
   const fromMetadata = readMetadataSubBlockValue(block, 'inputFormat')
   const fromParams = block.config?.params?.inputFormat
   const source = fromMetadata ?? fromParams
@@ -176,8 +176,7 @@ interface DerivedInputResult {
 
 function deriveInputFromFormat(
   inputFormat: InputFormatField[],
-  workflowInput: unknown,
-  isDeployedExecution: boolean
+  workflowInput: unknown
 ): DerivedInputResult {
   const structuredInput: Record<string, unknown> = {}
 
@@ -205,7 +204,8 @@ function deriveInputFromFormat(
       }
     }
 
-    if ((fieldValue === undefined || fieldValue === null) && !isDeployedExecution) {
+    // Use the default value from inputFormat if the field value wasn't provided at runtime
+    if (fieldValue === undefined || fieldValue === null) {
       fieldValue = field.value
     }
 
@@ -255,26 +255,69 @@ function ensureString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-function buildUnifiedStartOutput(workflowInput: unknown): NormalizedBlockOutput {
+function buildUnifiedStartOutput(
+  workflowInput: unknown,
+  structuredInput: Record<string, unknown>,
+  hasStructured: boolean,
+  inputFormat?: InputFormatField[]
+): NormalizedBlockOutput {
   const output: NormalizedBlockOutput = {}
 
-  if (isPlainObject(workflowInput)) {
-    for (const [key, value] of Object.entries(workflowInput)) {
-      if (key === 'onUploadError') continue
+  // First, populate from structuredInput if available (more efficient)
+  if (hasStructured) {
+    for (const [key, value] of Object.entries(structuredInput)) {
       output[key] = value
     }
   }
 
+  // Then, merge runtime values from workflowInput (runtime values override defaults)
+  if (isPlainObject(workflowInput)) {
+    for (const [key, value] of Object.entries(workflowInput)) {
+      if (key === 'onUploadError') continue
+      // Runtime values override defaults (except undefined/null which mean "not provided")
+      if (value !== undefined && value !== null) {
+        output[key] = value
+      } else if (!Object.hasOwn(output, key)) {
+        output[key] = value
+      }
+    }
+  }
+
+  // Ensure all fields from inputFormat are present in output, even if empty
+  // This ensures Start Block output matches inputFormat structure
+  // This is critical for chat flow to ensure all fields are always present
+  if (inputFormat && inputFormat.length > 0) {
+    for (const field of inputFormat) {
+      const fieldName = field.name?.trim()
+      if (!fieldName) continue
+
+      // If field is not already in output, set it from workflowInput or empty string
+      if (!Object.hasOwn(output, fieldName)) {
+        const workflowRecord = isPlainObject(workflowInput) ? workflowInput : undefined
+        if (workflowRecord && Object.hasOwn(workflowRecord, fieldName)) {
+          output[fieldName] = workflowRecord[fieldName]
+        } else {
+          // Set to empty string to ensure field is present in output
+          output[fieldName] = ''
+        }
+      }
+    }
+  }
+
+  // Ensure input field is always present (even if empty string)
+  // Don't remove empty strings - they should be preserved in output
   if (!Object.hasOwn(output, 'input')) {
     const fallbackInput =
       isPlainObject(workflowInput) && typeof workflowInput.input !== 'undefined'
         ? ensureString(workflowInput.input)
         : ''
-    output.input = fallbackInput ? fallbackInput : undefined
-  } else if (typeof output.input === 'string' && output.input.length === 0) {
-    output.input = undefined
+    // Always include input field, even if empty string
+    output.input = fallbackInput
   }
+  // Keep empty string values - don't convert to undefined
+  // This ensures form-submitted empty values are preserved in output
 
+  // Ensure conversationId is present if it exists, but allow empty string
   if (!Object.hasOwn(output, 'conversationId')) {
     const conversationId =
       isPlainObject(workflowInput) && workflowInput.conversationId
@@ -283,9 +326,8 @@ function buildUnifiedStartOutput(workflowInput: unknown): NormalizedBlockOutput 
     if (conversationId) {
       output.conversationId = conversationId
     }
-  } else if (typeof output.conversationId === 'string' && output.conversationId.length === 0) {
-    output.conversationId = undefined
   }
+  // Keep empty string conversationId if present (don't convert to undefined)
 
   return mergeFilesIntoOutput(output, workflowInput)
 }
@@ -401,17 +443,21 @@ function extractSubBlocks(block: SerializedBlock): Record<string, unknown> | und
 export interface StartBlockOutputOptions {
   resolution: ExecutorStartResolution
   workflowInput: unknown
-  isDeployedExecution: boolean
 }
 
 export function buildStartBlockOutput(options: StartBlockOutputOptions): NormalizedBlockOutput {
-  const { resolution, workflowInput, isDeployedExecution } = options
+  const { resolution, workflowInput } = options
   const inputFormat = extractInputFormat(resolution.block)
-  const { finalInput } = deriveInputFromFormat(inputFormat, workflowInput, isDeployedExecution)
+  const { finalInput, structuredInput, hasStructured } = deriveInputFromFormat(
+    inputFormat,
+    workflowInput
+  )
 
   switch (resolution.path) {
     case StartBlockPath.UNIFIED:
-      return buildUnifiedStartOutput(workflowInput)
+      // Pass structuredInput and hasStructured (from incoming changes) for efficiency
+      // Also pass inputFormat to ensure all fields are present (our chat flow requirement)
+      return buildUnifiedStartOutput(workflowInput, structuredInput, hasStructured, inputFormat)
 
     case StartBlockPath.SPLIT_API:
     case StartBlockPath.SPLIT_INPUT:

@@ -72,14 +72,40 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: isTruthy(env.DOCKER_BUILD),
   },
-  eslint: {
-    ignoreDuringBuilds: isTruthy(env.DOCKER_BUILD),
-  },
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   turbopack: {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
-  serverExternalPackages: ['unpdf', 'ffmpeg-static', 'fluent-ffmpeg'],
+  serverExternalPackages: [
+    'unpdf',
+    'ffmpeg-static',
+    'fluent-ffmpeg',
+    'cpu-features',
+    'chromium-bidi',
+    'playwright-core',
+    'pino',
+    'pino-pretty',
+    'thread-stream',
+  ],
+  serverComponentsExternalPackages: ['cpu-features', 'chromium-bidi', 'playwright-core'],
+  webpack: (config, { webpack }) => {
+    // Ignore native modules and optional dependencies that shouldn't be bundled
+    config.plugins = config.plugins || []
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /^(cpu-features|chromium-bidi)$/,
+      })
+    )
+
+    // Exclude these modules from resolution to prevent bundling errors
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      'cpu-features': false,
+      'chromium-bidi': false,
+    }
+
+    return config
+  },
   experimental: {
     optimizeCss: true,
     turbopackSourceMaps: false,

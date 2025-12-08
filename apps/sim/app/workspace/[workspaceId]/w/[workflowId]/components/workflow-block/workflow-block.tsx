@@ -24,12 +24,13 @@ import {
   getProviderName,
   shouldSkipBlockRender,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/utils'
-import { useBlockCore } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   BLOCK_DIMENSIONS,
   useBlockDimensions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
+import { getDependsOnFields } from '@/blocks/utils'
 import { useMcpServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
 import { useCredentialName } from '@/hooks/queries/oauth-credentials'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -264,8 +265,9 @@ const SubBlockRow = ({
   )
 
   const dependencyValues = useMemo(() => {
-    if (!subBlock?.dependsOn?.length) return {}
-    return subBlock.dependsOn.reduce<Record<string, string>>((accumulator, dependency) => {
+    const fields = getDependsOnFields(subBlock?.dependsOn)
+    if (!fields.length) return {}
+    return fields.reduce<Record<string, string>>((accumulator, dependency) => {
       const dependencyValue = getStringValue(dependency)
       if (dependencyValue) {
         accumulator[dependency] = dependencyValue
@@ -407,7 +409,7 @@ const SubBlockRow = ({
       </span>
       {displayValue !== undefined && (
         <span
-          className='flex-1 truncate text-right text-[14px] text-[var(--white)]'
+          className='flex-1 truncate text-right font-semibold text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'
           title={displayValue}
         >
           {displayValue}
@@ -433,15 +435,11 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow,
     activeWorkflowId,
     isEnabled,
-    isActive,
-    diffStatus,
-    isDeletedBlock,
-    isFocused,
     handleClick,
     hasRing,
     ringStyles,
     runPathStatus,
-  } = useBlockCore({ blockId: id, data, isPending })
+  } = useBlockVisual({ blockId: id, data, isPending })
 
   const currentBlock = currentWorkflow.getBlockById(id)
 
@@ -811,6 +809,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         onClick={handleClick}
         className={cn(
           'relative z-[20] w-[250px] cursor-default select-none rounded-[8px] border border-[var(--border)] bg-[var(--surface-2)]'
+          // isActive && 'animate-bg-pulse'
         )}
       >
         {isPending && (
@@ -834,7 +833,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
             data-handleid='target'
             isConnectableStart={false}
             isConnectableEnd={true}
-            isValidConnection={(connection) => connection.source !== id}
+            isValidConnection={(connection: any) => connection.source !== id}
           />
         )}
 
@@ -859,7 +858,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
             <span
               className={cn(
                 'truncate font-medium text-[16px]',
-                !isEnabled && runPathStatus !== 'success' && 'text-[#808080]'
+                !isEnabled && runPathStatus !== 'success' && 'text-[var(--text-muted)]'
               )}
               title={name}
             >
@@ -877,8 +876,8 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                       variant='outline'
                       className='cursor-pointer'
                       style={{
-                        borderColor: !childIsDeployed ? '#EF4444' : '#FF6600',
-                        color: !childIsDeployed ? '#EF4444' : '#FF6600',
+                        borderColor: !childIsDeployed ? 'var(--text-error)' : 'var(--warning)',
+                        color: !childIsDeployed ? 'var(--text-error)' : 'var(--warning)',
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -906,8 +905,8 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                     variant='outline'
                     className='cursor-pointer'
                     style={{
-                      borderColor: '#FF6600',
-                      color: '#FF6600',
+                      borderColor: 'var(--warning)',
+                      color: 'var(--warning)',
                     }}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -960,7 +959,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                   <Badge
                     variant='outline'
                     className='cursor-pointer'
-                    style={{ borderColor: '#FF6600', color: '#FF6600' }}
+                    style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }}
                     onClick={(e) => {
                       e.stopPropagation()
                       reactivateWebhook(webhookId)
@@ -1032,7 +1031,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                   data-handleid={`condition-${cond.id}`}
                   isConnectableStart={true}
                   isConnectableEnd={false}
-                  isValidConnection={(connection) => connection.target !== id}
+                  isValidConnection={(connection: any) => connection.target !== id}
                 />
               )
             })}
@@ -1046,7 +1045,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               data-handleid='error'
               isConnectableStart={true}
               isConnectableEnd={false}
-              isValidConnection={(connection) => connection.target !== id}
+              isValidConnection={(connection: any) => connection.target !== id}
             />
           </>
         )}
@@ -1063,7 +1062,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               data-handleid='source'
               isConnectableStart={true}
               isConnectableEnd={false}
-              isValidConnection={(connection) => connection.target !== id}
+              isValidConnection={(connection: any) => connection.target !== id}
             />
 
             {shouldShowDefaultHandles && (
@@ -1077,7 +1076,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                 data-handleid='error'
                 isConnectableStart={true}
                 isConnectableEnd={false}
-                isValidConnection={(connection) => connection.target !== id}
+                isValidConnection={(connection: any) => connection.target !== id}
               />
             )}
           </>

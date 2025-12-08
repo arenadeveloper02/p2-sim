@@ -17,12 +17,46 @@ interface ChatHeaderProps {
     }
   } | null
   starCount: string
+  workflowId?: string
 }
 
-export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
+export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProps) {
   const brand = useBrandConfig()
   const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
+
+  const params = new URLSearchParams(window.location.search)
+  const workspaceId = params.get('workspaceId')
+  const isFromControlBar = params.get('fromControlBar') === 'true'
+
+  // Determine environment and construct exit URL
+  const getExitUrl = () => {
+    // If opened from control bar, redirect to workspace
+    if (isFromControlBar && workspaceId && workflowId) {
+      return `/workspace/${workspaceId}/w/${workflowId}`
+    }
+
+    // Otherwise redirect based on environment
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname
+
+      if (hostname.includes('localhost')) {
+        return 'http://localhost:3001/hub/agents'
+      }
+      if (hostname.includes('dev-agent')) {
+        return 'https://dev.thearena.ai/hub/agents'
+      }
+      if (hostname.includes('test-agent')) {
+        return 'https://test.thearena.ai/hub/agents'
+      }
+      // prod - agent.thearena.ai
+      return 'https://app.thearena.ai/hub/agents'
+    }
+
+    return '/'
+  }
+
+  const exitUrl = getExitUrl()
 
   return (
     <nav
@@ -37,6 +71,7 @@ export function ChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
               alt={`${chatConfig?.title || 'Chat'} logo`}
               width={24}
               height={24}
+              unoptimized
               className='h-6 w-6 rounded-md object-cover'
             />
           )}

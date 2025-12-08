@@ -550,7 +550,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
             {/* Back button */}
             <button
               onClick={handleBack}
-              className='flex items-center gap-[6px] font-medium text-[#ADADAD] text-[14px] transition-colors hover:text-white'
+              className='flex items-center gap-[6px] font-medium text-[#ADADAD] text-[14px] transition-colors '
             >
               <ArrowLeft className='h-[14px] w-[14px]' />
               <span>More Templates</span>
@@ -684,7 +684,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                     <Copy className='h-3 w-3' />
                     <span>Copy link</span>
                   </PopoverItem>
-                  <PopoverItem onClick={handleShareToTwitter}>
+                  {/* <PopoverItem onClick={handleShareToTwitter}>
                     <svg
                       className='h-3 w-3'
                       viewBox='0 0 24 24'
@@ -698,7 +698,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                   <PopoverItem onClick={handleShareToLinkedIn}>
                     <Linkedin className='h-3 w-3' />
                     <span>Share on LinkedIn</span>
-                  </PopoverItem>
+                  </PopoverItem> */}
                 </PopoverContent>
               </Popover>
             </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Check, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
 import { Button, Tooltip } from '@/components/emcn'
+import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   ConnectionBlocks,
@@ -23,6 +24,8 @@ import { useFocusOnBlock } from '@/hooks/use-focus-on-block'
 import { usePanelEditorStore } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+
+const logger = createLogger('Editor')
 
 /**
  * Icon component for rendering block icons.
@@ -67,6 +70,10 @@ export function Editor() {
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
 
   // Focus on block hook - can be used by any component
+  // NOTE: This hook requires ReactFlowProvider. If Editor is rendered outside
+  // a ReactFlowProvider context (e.g., in tool previews), this will throw.
+  // The component should be wrapped in an error boundary or only rendered
+  // when ReactFlowProvider is available.
   const focusOnBlock = useFocusOnBlock()
 
   // Get block properties (advanced/trigger modes)
@@ -183,7 +190,7 @@ export function Editor() {
   return (
     <div className='flex h-full flex-col'>
       {/* Header */}
-      <div className='flex flex-shrink-0 items-center justify-between rounded-[4px] bg-[#2A2A2A] px-[12px] py-[8px] dark:bg-[#2A2A2A]'>
+      <div className='flex flex-shrink-0 items-center justify-between rounded-[4px] bg-[var(--surface-2)] px-[12px] py-[8px] dark:bg-[#2A2A2A]'>
         <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
           {(blockConfig || isSubflow) && (
             <div
@@ -210,11 +217,11 @@ export function Editor() {
                   handleCancelRename()
                 }
               }}
-              className='min-w-0 flex-1 truncate bg-transparent pr-[8px] font-medium text-[14px] text-[var(--white)] outline-none dark:text-[var(--white)]'
+              className='min-w-0 flex-1 truncate bg-transparent pr-[8px] font-medium text-[14px] text-[var(--text-primary)] outline-none dark:text-[var(--white)]'
             />
           ) : (
             <h2
-              className='min-w-0 flex-1 cursor-pointer select-none truncate pr-[8px] font-medium text-[14px] text-[var(--white)] dark:text-[var(--white)]'
+              className='min-w-0 flex-1 cursor-pointer select-none truncate pr-[8px] font-medium text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'
               title={title}
               onDoubleClick={handleStartRename}
               onMouseDown={(e) => {
@@ -353,6 +360,7 @@ export function Editor() {
                           blockId={currentBlockId}
                           config={subBlock}
                           isPreview={false}
+                          subBlockValues={subBlockState}
                           disabled={!userPermissions.canEdit}
                           fieldDiffStatus={undefined}
                           allowExpandInPreview={false}
@@ -363,7 +371,7 @@ export function Editor() {
                               className='h-[1.25px]'
                               style={{
                                 backgroundImage:
-                                  'repeating-linear-gradient(to right, #2C2C2C 0px, #2C2C2C 6px, transparent 6px, transparent 12px)',
+                                  'repeating-linear-gradient(to right, var(--border) 0px, var(--border) 6px, transparent 6px, transparent 12px)',
                               }}
                             />
                           </div>
@@ -380,7 +388,7 @@ export function Editor() {
           {hasIncomingConnections && (
             <div
               className={
-                'connections-section flex flex-shrink-0 flex-col overflow-hidden border-[var(--border)] border-t dark:border-[var(--border)]' +
+                'connections-section flex flex-shrink-0 flex-col overflow-hidden border-[var(--border)] border-t' +
                 (!isResizing ? ' transition-[height] duration-100 ease-out' : '')
               }
               style={{ height: `${connectionsHeight}px` }}
@@ -415,7 +423,7 @@ export function Editor() {
                     (!isConnectionsAtMinHeight ? ' rotate-180' : '')
                   }
                 />
-                <div className='font-medium text-[13px] text-[var(--text-primary)] dark:text-[var(--text-primary)]'>
+                <div className='font-medium text-[13px] text-[var(--text-primary)]'>
                   Connections
                 </div>
               </div>

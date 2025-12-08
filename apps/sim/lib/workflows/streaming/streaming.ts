@@ -191,6 +191,7 @@ export async function createStreamingResponse(
           success: result.success,
           error: result.error,
           output: {} as any,
+          ...(executionId ? { executionId } : {}),
         }
 
         if (streamConfig.selectedOutputs?.length && result.output) {

@@ -59,6 +59,15 @@ interface UserInputProps {
   panelWidth?: number
   clearOnSubmit?: boolean
   hasPlanArtifact?: boolean
+  /** Override workflowId from store (for use outside copilot context) */
+  workflowIdOverride?: string | null
+  /** Override selectedModel from store (for use outside copilot context) */
+  selectedModelOverride?: string
+  /** Override setSelectedModel from store (for use outside copilot context) */
+  onModelChangeOverride?: (model: string) => void
+  hideModeSelector?: boolean
+  /** Disable @mention functionality */
+  disableMentions?: boolean
 }
 
 interface UserInputRef {
@@ -90,6 +99,11 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
       panelWidth = 308,
       clearOnSubmit = true,
       hasPlanArtifact = false,
+      workflowIdOverride,
+      selectedModelOverride,
+      onModelChangeOverride,
+      hideModeSelector = false,
+      disableMentions = false,
     },
     ref
   ) => {
@@ -98,8 +112,13 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
     const params = useParams()
     const workspaceId = params.workspaceId as string
 
-    // Store hooks
-    const { workflowId, selectedModel, setSelectedModel, contextUsage } = useCopilotStore()
+    const copilotStore = useCopilotStore()
+    const workflowId =
+      workflowIdOverride !== undefined ? workflowIdOverride : copilotStore.workflowId
+    const selectedModel =
+      selectedModelOverride !== undefined ? selectedModelOverride : copilotStore.selectedModel
+    const setSelectedModel = onModelChangeOverride || copilotStore.setSelectedModel
+    const contextUsage = copilotStore.contextUsage
 
     // Internal state
     const [internalMessage, setInternalMessage] = useState('')
@@ -459,6 +478,9 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
         const newValue = e.target.value
         setMessage(newValue)
 
+        // Skip mention menu logic if mentions are disabled
+        if (disableMentions) return
+
         const caret = e.target.selectionStart ?? newValue.length
         const active = mentionMenu.getActiveMentionQueryAtPosition(caret, newValue)
 
@@ -477,7 +499,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           mentionMenu.setSubmenuQueryStart(null)
         }
       },
-      [setMessage, mentionMenu]
+      [setMessage, mentionMenu, disableMentions]
     )
 
     const handleSelectAdjust = useCallback(() => {
@@ -608,32 +630,27 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           {/* Top Row: Context controls + Build Workflow button */}
           <div className='mb-[6px] flex flex-wrap items-center justify-between gap-[6px]'>
             <div className='flex flex-wrap items-center gap-[6px]'>
-              <Badge
-                variant='outline'
-                onClick={handleOpenMentionMenuWithAt}
-                title='Insert @'
-                className={cn(
-                  'cursor-pointer rounded-[6px] p-[4.5px]',
-                  (disabled || isLoading) && 'cursor-not-allowed'
-                )}
-              >
-                <AtSign className='h-3 w-3' strokeWidth={1.75} />
-              </Badge>
+              {!disableMentions && (
+                <>
+                  <Badge
+                    variant='outline'
+                    onClick={handleOpenMentionMenuWithAt}
+                    title='Insert @'
+                    className={cn(
+                      'cursor-pointer rounded-[6px] p-[4.5px]',
+                      (disabled || isLoading) && 'cursor-not-allowed'
+                    )}
+                  >
+                    <AtSign className='h-3 w-3' strokeWidth={1.75} />
+                  </Badge>
 
-              {/* Context Usage Indicator */}
-              {/* {contextUsage && contextUsage.percentage > 0 && (
-                <ContextUsageIndicator
-                  percentage={contextUsage.percentage}
-                  size={18}
-                  strokeWidth={2.5}
-                />
-              )} */}
-
-              {/* Selected Context Pills */}
-              <ContextPills
-                contexts={contextManagement.selectedContexts}
-                onRemoveContext={contextManagement.removeContext}
-              />
+                  {/* Selected Context Pills */}
+                  <ContextPills
+                    contexts={contextManagement.selectedContexts}
+                    onRemoveContext={contextManagement.removeContext}
+                  />
+                </>
+              )}
             </div>
 
             {hasPlanArtifact && (
@@ -662,7 +679,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
             {/* Highlight overlay - must have identical flow as textarea */}
             <div
               ref={overlayRef}
-              className='pointer-events-none absolute top-0 left-0 z-[1] m-0 box-border h-auto max-h-[120px] min-h-[48px] w-full resize-none overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-[2px] py-1 font-medium font-sans text-[#0D0D0D] text-sm leading-[1.25rem] outline-none [-ms-overflow-style:none] [scrollbar-width:none] [text-rendering:optimizeLegibility] dark:text-gray-100 [&::-webkit-scrollbar]:hidden'
+              className='pointer-events-none absolute top-0 left-0 z-[1] m-0 box-border h-auto max-h-[120px] min-h-[48px] w-full resize-none overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-[2px] py-1 font-medium font-sans text-[var(--text-primary)] text-sm leading-[1.25rem] outline-none [-ms-overflow-style:none] [scrollbar-width:none] [text-rendering:optimizeLegibility] [&::-webkit-scrollbar]:hidden'
               aria-hidden='true'
             >
               {renderOverlayContent()}
@@ -690,7 +707,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
             />
 
             {/* Mention Menu Portal */}
-            {mentionMenu.showMentionMenu &&
+            {!disableMentions &&
+              mentionMenu.showMentionMenu &&
               createPortal(
                 <MentionMenu
                   mentionMenu={mentionMenu}
@@ -706,12 +724,14 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           <div className='flex items-center justify-between gap-2'>
             {/* Left side: Mode Selector + Model Selector */}
             <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
-              <ModeSelector
-                mode={mode}
-                onModeChange={onModeChange}
-                isNearTop={isNearTop}
-                disabled={disabled}
-              />
+              {!hideModeSelector && (
+                <ModeSelector
+                  mode={mode}
+                  onModeChange={onModeChange}
+                  isNearTop={isNearTop}
+                  disabled={disabled}
+                />
+              )}
 
               <ModelSelector
                 selectedModel={selectedModel}

@@ -110,11 +110,25 @@ export class ExecutionLogger implements IExecutionLoggerService {
     trigger: ExecutionTrigger
     environment: ExecutionEnvironment
     workflowState: WorkflowState
+    userId?: string
+    isExternalChat?: boolean
+    chatId?: string
+    initialInput?: string
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
   }> {
-    const { workflowId, executionId, trigger, environment, workflowState } = params
+    const {
+      workflowId,
+      executionId,
+      trigger,
+      environment,
+      workflowState,
+      userId,
+      isExternalChat,
+      chatId,
+      initialInput,
+    } = params
 
     logger.debug(`Starting workflow execution ${executionId} for workflow ${workflowId}`)
 
@@ -174,6 +188,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
           environment,
           trigger,
         },
+        userId: userId || null,
+        isExternalChat: isExternalChat ?? false,
+        chatId: chatId || null,
+        initialInput: initialInput || null,
       })
       .returning()
 
@@ -224,6 +242,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     traceSpans?: TraceSpan[]
     workflowInput?: any
     isResume?: boolean // If true, merge with existing data instead of replacing
+    finalChatOutput?: string // Final chat output based on output_configs
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -234,6 +253,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       traceSpans,
       workflowInput,
       isResume,
+      finalChatOutput,
     } = params
 
     logger.debug(`Completing workflow execution ${executionId}`, { isResume })
@@ -333,6 +353,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           models: mergedCost.models,
         },
         cost: mergedCost,
+        finalChatOutput: finalChatOutput || null,
       })
       .where(eq(workflowExecutionLogs.executionId, executionId))
       .returning()

@@ -55,6 +55,12 @@ export const env = createEnv({
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
     OVERAGE_THRESHOLD_DOLLARS:             z.number().optional().default(50),      // Dollar threshold for incremental overage billing (default: $50)
 
+     //browseruse
+     BROWSER_USE_API_KEY:                   z.string().min(1).optional(),           // BrowserUse API key for browser automation
+
+     // Firecrawl
+     FIRECRAWL_API_KEY:                     z.string().min(1).optional(),           // Firecrawl API key for web crawling
+     
     // Email & Communication
     EMAIL_VERIFICATION_ENABLED:            z.boolean().optional(),                 // Enable email verification for user registration and login (defaults to false)
     RESEND_API_KEY:                        z.string().min(1).optional(),           // Resend API key for transactional emails
@@ -89,7 +95,6 @@ export const env = createEnv({
     VLLM_API_KEY:                          z.string().optional(),                  // Optional bearer token for vLLM
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
-    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
     SPYFU_API_USERNAME:                    z.string().min(1).optional(),           // SpyFu API basic auth username
     SPYFU_API_PASSWORD:                    z.string().min(1).optional(),           // SpyFu API basic auth password
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
@@ -99,6 +104,9 @@ export const env = createEnv({
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
 
+    //Tools API Keys
+    SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
+    
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
     AZURE_OPENAI_API_VERSION:              z.string().optional(),                  // Shared Azure OpenAI API version
@@ -119,6 +127,9 @@ export const env = createEnv({
     BROWSERBASE_API_KEY:                   z.string().min(1).optional(),           // Browserbase API key for browser automation
     BROWSERBASE_PROJECT_ID:                z.string().min(1).optional(),           // Browserbase project ID
     GITHUB_TOKEN:                          z.string().optional(),                  // GitHub personal access token for API access
+
+    // Admin API
+    ADMIN_API_KEY:                         z.string().min(32).optional(),          // Admin API key for self-hosted GitOps access (generate with: openssl rand -hex 32)
 
     // Infrastructure & Deployment
     NEXT_RUNTIME:                          z.string().optional(),                  // Next.js runtime environment
@@ -225,6 +236,8 @@ export const env = createEnv({
     PIPEDRIVE_CLIENT_SECRET:               z.string().optional(),                  // Pipedrive OAuth client secret
     LINEAR_CLIENT_ID:                      z.string().optional(),                  // Linear OAuth client ID
     LINEAR_CLIENT_SECRET:                  z.string().optional(),                  // Linear OAuth client secret
+    DROPBOX_CLIENT_ID:                     z.string().optional(),                  // Dropbox OAuth client ID
+    DROPBOX_CLIENT_SECRET:                 z.string().optional(),                  // Dropbox OAuth client secret
     SLACK_CLIENT_ID:                       z.string().optional(),                  // Slack OAuth client ID
     SLACK_CLIENT_SECRET:                   z.string().optional(),                  // Slack OAuth client secret
     REDDIT_CLIENT_ID:                      z.string().optional(),                  // Reddit OAuth client ID
@@ -234,6 +247,12 @@ export const env = createEnv({
     TRELLO_API_KEY:                        z.string().optional(),                  // Trello API Key
     LINKEDIN_CLIENT_ID:                    z.string().optional(),                  // LinkedIn OAuth client ID
     LINKEDIN_CLIENT_SECRET:                z.string().optional(),                  // LinkedIn OAuth client secret
+    SHOPIFY_CLIENT_ID:                     z.string().optional(),                  // Shopify OAuth client ID
+    SHOPIFY_CLIENT_SECRET:                 z.string().optional(),                  // Shopify OAuth client secret
+    ZOOM_CLIENT_ID:                        z.string().optional(),                  // Zoom OAuth client ID
+    ZOOM_CLIENT_SECRET:                    z.string().optional(),                  // Zoom OAuth client secret
+    WORDPRESS_CLIENT_ID:                   z.string().optional(),                  // WordPress.com OAuth client ID
+    WORDPRESS_CLIENT_SECRET:               z.string().optional(),                  // WordPress.com OAuth client secret
 
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
@@ -326,6 +345,10 @@ export const env = createEnv({
     NEXT_PUBLIC_SSO_ENABLED:               z.boolean().optional(),                 // Enable SSO login UI components
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: z.boolean().optional().default(true), // Control visibility of email/password login forms
 
+
+    // Firecrawl API Key            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
+    NEXT_PUBLIC_FIRECRAWL_API_KEY:                   z.string().min(1).optional(),
+               // Firecrawl API key for web crawling
     // Arena
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
@@ -368,6 +391,7 @@ export const env = createEnv({
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NODE_ENV: process.env.NODE_ENV,
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
+    NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
   },
 })
 
