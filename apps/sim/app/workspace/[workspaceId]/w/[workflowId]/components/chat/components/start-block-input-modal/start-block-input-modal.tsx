@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Input,
@@ -11,8 +11,8 @@ import {
   ModalHeader,
 } from '@/components/emcn'
 import { createLogger } from '@/lib/logs/console/logger'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import { getCustomInputFields } from '@/lib/workflows/input-format-utils'
+import type { InputFormatField } from '@/lib/workflows/types'
 
 const logger = createLogger('StartBlockInputModal')
 
@@ -57,23 +57,11 @@ export function StartBlockInputModal({
   onSubmit,
   initialValues = {},
 }: StartBlockInputModalProps) {
-  const normalizedFields = normalizeInputFormatValue(inputFormat)
-
   // Filter out reserved fields - these are handled separately (memoized to prevent recalculation)
   // Reserved fields: 'input', 'conversationId', 'files' - these should not appear in the modal form
   const customFields = useMemo(() => {
-    // Create a set of reserved field names in lowercase for efficient lookup
-    const reservedFieldsLower = new Set(
-      START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
-    )
-
-    return normalizedFields.filter((field) => {
-      const fieldName = field.name?.trim().toLowerCase()
-      if (!fieldName) return false
-      // Check if field is in reserved fields set (case-insensitive)
-      return !reservedFieldsLower.has(fieldName)
-    })
-  }, [normalizedFields])
+    return getCustomInputFields(inputFormat)
+  }, [inputFormat])
 
   /**
    * Safely normalizes a value to a string for form inputs
@@ -144,6 +132,9 @@ export function StartBlockInputModal({
     return initial
   })
 
+  // Ref to track the first input field for auto-focus
+  const firstInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+
   // Reset form when modal opens (only when opening, not on every change)
   useEffect(() => {
     if (open) {
@@ -158,6 +149,13 @@ export function StartBlockInputModal({
         }
       }
       setFormValues(newValues)
+
+      // Auto-focus the first input field after a short delay to ensure modal is fully rendered
+      setTimeout(() => {
+        if (firstInputRef.current) {
+          firstInputRef.current.focus()
+        }
+      }, 100)
     }
     // Only reset when modal opens, not when initialValues change
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,12 +230,13 @@ export function StartBlockInputModal({
         <ModalHeader>Workflow Inputs</ModalHeader>
 
         <div className='flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2'>
-          {customFields.map((field) => {
+          {customFields.map((field, index) => {
             const fieldName = field.name?.trim()
             if (!fieldName) return null
 
             const fieldType = field.type || 'string'
             const displayName = formatFieldName(fieldName)
+            const isFirstField = index === 0
             // Safely get value, ensuring it's never undefined/null/object
             // Browser autofill can sometimes set values as objects or other unexpected types
             const rawValue = formValues[fieldName]
@@ -268,6 +267,7 @@ export function StartBlockInputModal({
                 {fieldType === 'boolean' ? (
                   <div className='flex items-center gap-2'>
                     <input
+                      ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
                       type='checkbox'
                       id={fieldName}
                       checked={value === true || value === 'true'}
@@ -280,6 +280,7 @@ export function StartBlockInputModal({
                   </div>
                 ) : fieldType === 'number' ? (
                   <Input
+                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
                     id={fieldName}
                     type='number'
                     value={
@@ -327,6 +328,7 @@ export function StartBlockInputModal({
                   />
                 ) : fieldType === 'object' || fieldType === 'array' ? (
                   <textarea
+                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
                     id={fieldName}
                     value={
                       typeof value === 'string'
@@ -353,6 +355,7 @@ export function StartBlockInputModal({
                   />
                 ) : (
                   <Input
+                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
                     id={fieldName}
                     type='text'
                     value={(() => {

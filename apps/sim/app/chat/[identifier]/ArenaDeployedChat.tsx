@@ -1,6 +1,6 @@
 'use client'
 
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
@@ -8,9 +8,8 @@ import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
@@ -432,11 +431,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       // Check if we should show modal on load (no messages and has inputFormat)
       if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
-        const normalizedFields = normalizeInputFormatValue(data.inputFormat)
-        const customFields = normalizedFields.filter((field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        })
+        const customFields = getCustomInputFields(data.inputFormat)
 
         if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
           hasShownModalRef.current = true
@@ -700,13 +695,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [handleSendMessage]
   )
 
-  // Get custom fields from inputFormat
-  const customFields = chatConfig?.inputFormat
-    ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
-        const fieldName = field.name?.trim().toLowerCase()
-        return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-      })
-    : []
+  // Get custom fields from inputFormat (excluding reserved fields: input, conversationId, files)
+  const customFields = useMemo(() => {
+    return getCustomInputFields(chatConfig?.inputFormat)
+  }, [chatConfig?.inputFormat])
 
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
@@ -819,13 +811,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       chatConfig.inputFormat.length > 0 &&
       !hasShownModalRef.current
     ) {
-      const normalizedFields = normalizeInputFormatValue(chatConfig.inputFormat)
-      const customFields = normalizedFields.filter(
-        (field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        }
-      )
+      const customFields = getCustomInputFields(chatConfig.inputFormat)
       
       if (customFields.length > 0) {
         hasShownModalRef.current = true
@@ -958,12 +944,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Clear form input values for new chat
     setStartBlockInputs({})
     // Open input modal if custom fields exist
-    const hasCustomFields = chatConfig?.inputFormat
-      ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        }).length > 0
-      : false
+    const hasCustomFields = getCustomInputFields(chatConfig?.inputFormat).length > 0
     if (hasCustomFields) {
       setIsInputModalOpen(true)
     }
@@ -1070,7 +1051,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
       />
-
+      {console.log('customFields >>>>> ', customFields)}
       {/* Message Container component */}
       <ChatMessageContainer
         messages={messages}
