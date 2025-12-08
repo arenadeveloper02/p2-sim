@@ -71,6 +71,7 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
               alt={`${chatConfig?.title || 'Chat'} logo`}
               width={24}
               height={24}
+              unoptimized
               className='h-6 w-6 rounded-md object-cover'
             />
           )}

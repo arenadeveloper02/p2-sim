@@ -72,9 +72,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: isTruthy(env.DOCKER_BUILD),
   },
-  eslint: {
-    ignoreDuringBuilds: isTruthy(env.DOCKER_BUILD),
-  },
   output: isTruthy(env.DOCKER_BUILD) ? 'standalone' : undefined,
   turbopack: {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
@@ -86,6 +83,9 @@ const nextConfig: NextConfig = {
     'cpu-features',
     'chromium-bidi',
     'playwright-core',
+    'pino',
+    'pino-pretty',
+    'thread-stream',
   ],
   serverComponentsExternalPackages: ['cpu-features', 'chromium-bidi', 'playwright-core'],
   webpack: (config, { webpack }) => {
