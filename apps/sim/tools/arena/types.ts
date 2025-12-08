@@ -28,6 +28,20 @@ export interface ArenaCreateTaskResponse extends ToolResponse {}
 
 export interface SearchTaskResponse extends ToolResponse {}
 
+export type ArenaSaveSummaryParams = {
+  operation: string
+  'save-summary-client': {
+    clientId: string
+    name: string
+  }
+  'save-summary-text': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaSaveSummaryResponse extends ToolResponse {}
+
 export interface SearchTaskApiResponse {
   errors: string | null
   errorMessage: string | null

@@ -1,0 +1,83 @@
+import type { ArenaSaveSummaryParams, ArenaSaveSummaryResponse } from '@/tools/arena/types'
+import type { ToolConfig } from '@/tools/types'
+
+export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryResponse> = {
+  id: 'arena_save_summary',
+  name: 'Arena Save Summary',
+  description: 'Save a summary for a client in Arena.',
+  version: '1.0.0',
+
+  params: {
+    operation: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Operation to perform (e.g., save_summary)',
+    },
+    'save-summary-client': {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Client associated with the summary',
+    },
+    'save-summary-text': {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Summary text to save',
+    },
+  },
+
+  request: {
+    url: (params: ArenaSaveSummaryParams) => {
+      const url = `/api/tools/arena/save-summary`
+      return url
+    },
+    method: 'POST',
+    headers: (params: ArenaSaveSummaryParams) => {
+      return {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      }
+    },
+    body: (params: ArenaSaveSummaryParams) => {
+      // ✅ Validation checks
+      if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
+      if (!params['save-summary-client']?.clientId) {
+        throw new Error('Missing required field: Client')
+      }
+      if (!params['save-summary-text']) {
+        throw new Error('Missing required field: Summary')
+      }
+
+      const body: Record<string, any> = {
+        workflowId: params._context.workflowId,
+        clientId: params['save-summary-client']?.clientId,
+        summary: params['save-summary-text'],
+      }
+
+      return body
+    },
+  },
+
+  transformResponse: async (
+    response: Response,
+    params?: ArenaSaveSummaryParams
+  ): Promise<ArenaSaveSummaryResponse> => {
+    const data = await response.json()
+    return {
+      success: true,
+      output: {
+        success: true,
+        output: data,
+      },
+    }
+  },
+
+  outputs: {
+    success: { type: 'boolean', description: 'Indicates if transform was successful' },
+    output: { type: 'object', description: 'Output from Arena' },
+  },
+}
+
+

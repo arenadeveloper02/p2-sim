@@ -1270,12 +1270,13 @@ import {
   zoomListRecordingsTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
-import { arenaCreateTask, arenaSearchTask } from './arena'
+import { arenaCreateTask, arenaSearchTask, arenaSaveSummary } from './arena'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   arena_create_task: arenaCreateTask,
   arena_search_task: arenaSearchTask,
+  arena_save_summary: arenaSaveSummary,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
