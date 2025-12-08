@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import clsx from 'clsx'
-import { Database, HelpCircle, Layout, LibraryBig, Settings } from 'lucide-react'
+import { Database, Layout, LibraryBig, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import {
