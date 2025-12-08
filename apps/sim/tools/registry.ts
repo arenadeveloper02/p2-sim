@@ -285,7 +285,7 @@ import {
   gmailSendTool,
   gmailUnarchiveTool,
 } from '@/tools/gmail'
-import { searchTool as googleSearchTool } from '@/tools/google'
+import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
@@ -1334,6 +1334,8 @@ export const tools: Record<string, ToolConfig> = {
   grafana_list_folders: grafanaListFoldersTool,
   grafana_create_folder: grafanaCreateFolderTool,
   google_search: googleSearchTool,
+  google_imagen: imagenTool,
+  google_nano_banana: nanoBananaTool,
   guardrails_validate: guardrailsValidateTool,
   jina_read_url: readUrlTool,
   jina_search: jinaSearchTool,

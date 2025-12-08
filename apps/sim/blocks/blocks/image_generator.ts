@@ -148,18 +148,27 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
       value: () => '1:1',
       condition: { field: 'model', value: 'gemini-2.5-flash-image' },
     },
-    {
-      id: 'inputImage',
-      title: 'Input Image to Edit',
-      type: 'file-upload',
-      acceptedTypes: 'image/*',
-      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
-    },
+    // {
+    //   id: 'inputImage',
+    //   title: 'Input Image to Edit',
+    //   type: 'file-upload',
+    //   acceptedTypes: 'image/*',
+    //   condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+    // },
   ],
   tools: {
-    access: ['openai_image'],
+    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
     config: {
-      tool: () => 'openai_image',
+      tool: (params) => {
+        // Select tool based on model
+        if (params.model?.startsWith('imagen-')) {
+          return 'google_imagen'
+        }
+        if (params.model?.startsWith('gemini-')) {
+          return 'google_nano_banana'
+        }
+        return 'openai_image'
+      },
       params: (params) => {
         if (!params.prompt) {
           throw new Error('Prompt is required')
