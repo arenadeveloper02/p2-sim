@@ -67,16 +67,21 @@ export const SUPPORTED_MIME_TYPES: Record<SupportedDocumentExtension, string[]> 
     'application/x-excel',
     'application/x-msexcel',
   ],
-  ppt: ['application/vnd.ms-powerpoint', 'application/powerpoint', 'application/x-mspowerpoint'],
+  ppt: [
+    'application/vnd.ms-powerpoint',
+    'application/powerpoint',
+    'application/x-mspowerpoint',
+    'application/octet-stream',
+  ],
   pptx: [
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/octet-stream',
   ],
-  html: ['text/html', 'application/xhtml+xml'],
-  htm: ['text/html', 'application/xhtml+xml'],
+  html: ['text/html', 'application/xhtml+xml', 'text/plain'],
+  htm: ['text/html', 'application/xhtml+xml', 'text/plain'],
   json: ['application/json', 'text/json', 'application/x-json'],
-  yaml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml'],
-  yml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml'],
+  yaml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml', 'text/plain'],
+  yml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml', 'text/plain'],
 }
 
 export const SUPPORTED_AUDIO_MIME_TYPES: Record<SupportedAudioExtension, string[]> = {
