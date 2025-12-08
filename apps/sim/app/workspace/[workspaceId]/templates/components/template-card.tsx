@@ -201,10 +201,7 @@ function TemplateCardInner({
   return (
     <div
       onClick={handleCardClick}
-      className={cn(
-        'w-full cursor-pointer rounded-[8px] bg-[var(--surface-5)] p-[8px]',
-        className
-      )}
+      className={cn('w-full cursor-pointer rounded-[8px] bg-[var(--surface-5)] p-[8px]', className)}
     >
       <div
         ref={previewRef}
@@ -227,7 +224,9 @@ function TemplateCardInner({
       </div>
 
       <div className='mt-[10px] flex items-center justify-between'>
-        <h3 className='truncate pr-[8px] pl-[2px] font-medium text-[16px] text-[var(--text-primary)]'>{title}</h3>
+        <h3 className='truncate pr-[8px] pl-[2px] font-medium text-[16px] text-[var(--text-primary)]'>
+          {title}
+        </h3>
 
         <div className='flex flex-shrink-0'>
           {blockTypes.length > 4 ? (

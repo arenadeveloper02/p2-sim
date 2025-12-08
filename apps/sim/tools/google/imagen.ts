@@ -46,13 +46,13 @@ export const imagenTool: ToolConfig = {
     },
     imageSize: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-or-llm',
       description: 'The size of the generated image (1K or 2K)',
     },
     aspectRatio: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-or-llm',
       description: 'The aspect ratio of the generated image (1:1, 3:4, 4:3, 9:16, 16:9)',
     },

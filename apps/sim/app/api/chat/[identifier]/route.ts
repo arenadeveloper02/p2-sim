@@ -252,7 +252,15 @@ export async function POST(
       logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
     }
 
-    const { input, password, email, conversationId, chatId: payload, files, startBlockInputs } = parsedBody
+    const {
+      input,
+      password,
+      email,
+      conversationId,
+      chatId: payload,
+      files,
+      startBlockInputs,
+    } = parsedBody
 
     // Get userId from session for external chat API requests
     const session = await getSession()
@@ -267,10 +275,15 @@ export async function POST(
     }
 
     // Check if we have any input: either input field, files, or startBlockInputs with values
-    const hasStartBlockInputs = startBlockInputs && typeof startBlockInputs === 'object' && Object.keys(startBlockInputs).length > 0
-    const hasStartBlockInputValues = hasStartBlockInputs && Object.values(startBlockInputs).some(
-      (value) => value !== null && value !== undefined && value !== ''
-    )
+    const hasStartBlockInputs =
+      startBlockInputs &&
+      typeof startBlockInputs === 'object' &&
+      Object.keys(startBlockInputs).length > 0
+    const hasStartBlockInputValues =
+      hasStartBlockInputs &&
+      Object.values(startBlockInputs).some(
+        (value) => value !== null && value !== undefined && value !== ''
+      )
 
     if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
       return addCorsHeaders(createErrorResponse('No input provided', 400), request)
@@ -333,18 +346,20 @@ export async function POST(
       const createFilteredResult = (executeRoute as any).createFilteredResult
 
       const workflowInput: any = { input, conversationId }
-      
+
       // Merge additional Start Block inputs (custom fields from inputFormat)
       // Always merge to ensure all Start Block fields are included, even if empty
       if (startBlockInputs && typeof startBlockInputs === 'object') {
         Object.assign(workflowInput, startBlockInputs)
-        logger.debug(`[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`)
+        logger.debug(
+          `[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`
+        )
       } else {
         // Even if startBlockInputs is not provided, ensure empty values for consistency
         // The client should always send startBlockInputs, but this is a safety check
         logger.debug(`[${requestId}] No Start Block inputs provided in request`)
       }
-      
+
       if (files && Array.isArray(files) && files.length > 0) {
         const executionContext = {
           workspaceId,

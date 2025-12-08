@@ -1,5 +1,4 @@
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ToolConfig } from '@/tools/types'
 
@@ -91,7 +90,7 @@ export const nanoBananaTool: ToolConfig = {
         'x-goog-api-key': apiKey,
       }
     },
-    body: async (params) => {
+    body: (params) => {
       const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
         {
           text: params.prompt,
@@ -105,32 +104,28 @@ export const nanoBananaTool: ToolConfig = {
 
         // Handle file object with path
         if (typeof params.inputImage === 'object' && params.inputImage.path) {
-          try {
-            // Fetch the file content from the path
-            const baseUrl = getBaseUrl()
-            const fileUrl = params.inputImage.path.startsWith('http')
-              ? params.inputImage.path
-              : `${baseUrl}${params.inputImage.path}`
-
-            logger.info('Fetching image from URL:', fileUrl)
-
-            const response = await fetch(fileUrl)
-            if (!response.ok) {
-              throw new Error(`Failed to fetch image: ${response.statusText}`)
-            }
-
-            const arrayBuffer = await response.arrayBuffer()
-            const buffer = Buffer.from(arrayBuffer)
-            imageData = buffer.toString('base64')
-            mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
-
-            logger.info('Successfully converted image to base64, length:', imageData.length)
-          } catch (error) {
-            logger.error('Error fetching image:', error)
-            throw new Error(
-              `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
-            )
-          }
+          // try {
+          //   // Fetch the file content from the path
+          //   const baseUrl = getBaseUrl()
+          //   const fileUrl = params.inputImage.path.startsWith('http')
+          //     ? params.inputImage.path
+          //     : `${baseUrl}${params.inputImage.path}`
+          //   logger.info('Fetching image from URL:', fileUrl)
+          //   const response = await fetch(fileUrl)
+          //   if (!response.ok) {
+          //     throw new Error(`Failed to fetch image: ${response.statusText}`)
+          //   }
+          //   const arrayBuffer = await response.arrayBuffer()
+          //   const buffer = Buffer.from(arrayBuffer)
+          //   imageData = buffer.toString('base64')
+          //   mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
+          //   logger.info('Successfully converted image to base64, length:', imageData.length)
+          // } catch (error) {
+          //   logger.error('Error fetching image:', error)
+          //   throw new Error(
+          //     `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+          //   )
+          // }
         } else if (typeof params.inputImage === 'string') {
           // Direct base64 string
           imageData = params.inputImage
@@ -139,12 +134,12 @@ export const nanoBananaTool: ToolConfig = {
           throw new Error('Invalid input image format')
         }
 
-        parts.push({
-          inlineData: {
-            mimeType,
-            data: imageData,
-          },
-        })
+        // parts.push({
+        //   inlineData: {
+        //     mimeType,
+        //     data: imageData,
+        //   },
+        // })
       }
 
       const body: NanoBananaRequestBody = {
