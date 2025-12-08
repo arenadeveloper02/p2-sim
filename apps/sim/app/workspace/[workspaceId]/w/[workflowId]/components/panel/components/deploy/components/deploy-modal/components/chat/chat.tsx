@@ -118,6 +118,7 @@ export function ChatDeploy({
   const { deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
+  const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
@@ -170,7 +171,9 @@ export function ChatDeploy({
     (formData.authType !== 'password' ||
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
-    ((formData.authType !== 'email' && formData.authType !== 'sso') || formData.emails.length > 0)
+    ((formData.authType !== 'email' && formData.authType !== 'sso') ||
+      formData.emails.length > 0) &&
+    !hasInvalidEmails
 
   useEffect(() => {
     onValidationChange?.(isFormValid)
@@ -361,6 +364,7 @@ export function ChatDeploy({
             onAuthTypeChange={(type) => updateField('authType', type)}
             onPasswordChange={(password) => updateField('password', password)}
             onEmailsChange={(emails) => updateField('emails', emails)}
+            onInvalidEmailsChange={setHasInvalidEmails}
             disabled={chatSubmitting}
             isExistingChat={!!existingChat}
             error={errors.password || errors.emails}
@@ -568,6 +572,7 @@ interface AuthSelectorProps {
   onAuthTypeChange: (type: AuthType) => void
   onPasswordChange: (password: string) => void
   onEmailsChange: (emails: string[]) => void
+  onInvalidEmailsChange?: (hasInvalidEmails: boolean) => void
   disabled?: boolean
   isExistingChat?: boolean
   error?: string
@@ -587,6 +592,7 @@ function AuthSelector({
   onAuthTypeChange,
   onPasswordChange,
   onEmailsChange,
+  onInvalidEmailsChange,
   disabled = false,
   isExistingChat = false,
   error,
@@ -598,6 +604,10 @@ function AuthSelector({
   const [copySuccess, setCopySuccess] = useState(false)
   const [invalidEmails, setInvalidEmails] = useState<string[]>([])
   const [emailValidationErrors, setEmailValidationErrors] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    onInvalidEmailsChange?.(invalidEmails.length > 0)
+  }, [invalidEmails, onInvalidEmailsChange])
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
