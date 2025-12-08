@@ -48,7 +48,7 @@ export function FooterNavigation() {
     },
     {
       id: 'knowledge-base',
-      label: 'Vector Database',
+      label: 'Knowledge Base',
       icon: Database,
       href: `/workspace/${workspaceId}/knowledge`,
     },
