@@ -196,7 +196,7 @@ export function CommandList() {
         {commands.map((command) => {
           const Icon = command.icon
           const shortcuts = Array.isArray(command.shortcut) ? command.shortcut : [command.shortcut]
-          const isAgentIcon = command.label === 'New Agent'
+          const isAgentIcon = Icon === AgentIcon
           return (
             <div
               key={command.label}
@@ -206,11 +206,11 @@ export function CommandList() {
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
                 {isAgentIcon ? (
-                  <div className='h-[14px] w-[14px] flex-shrink-0 overflow-hidden rounded-[2px]'>
-                    {(Icon as any)({ width: 14, height: 14 })}
+                  <div className='flex h-[14px] w-[14px] items-center justify-center'>
+                    <AgentIcon width={14} height={14} className='h-[14px] w-[14px]' />
                   </div>
                 ) : (
-                  <Icon className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                  <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
                 )}
                 <span className='font-medium text-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
                   {command.label}

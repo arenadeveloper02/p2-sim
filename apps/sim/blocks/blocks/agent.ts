@@ -94,7 +94,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
       type: 'combobox',
       placeholder: 'Type or select a model...',
       required: true,
-      defaultValue: 'gpt-5',
+      defaultValue: 'gpt-4o',
       options: () => {
         const providersState = useProvidersStore.getState()
         const baseModels = providersState.providers.base.models

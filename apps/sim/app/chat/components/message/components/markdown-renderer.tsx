@@ -107,7 +107,7 @@ export default function MarkdownRenderer({
       }
 
       return (
-        <div className='my-6 rounded-md bg-gray-900 text-sm dark:bg-black'>
+        <div className='my-6 rounded-md bg-[var(--surface-2)] text-sm dark:bg-gray-900'>
           <div className='flex items-center justify-between border-gray-700 border-b px-4 py-1.5 dark:border-gray-800'>
             <span className='font-sans text-gray-400 text-xs'>
               {codeProps.className?.replace('language-', '') || 'code'}

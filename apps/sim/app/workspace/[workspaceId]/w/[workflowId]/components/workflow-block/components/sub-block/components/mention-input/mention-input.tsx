@@ -103,6 +103,7 @@ export function MentionInput({
                 workflowId={workflowIdFromUrl}
                 isForeignCredential={isForeignCredential}
                 placeholder={subBlock.placeholder || 'Type your message...'}
+                blockId={blockId}
               />
             </div>
           </Tooltip.Trigger>

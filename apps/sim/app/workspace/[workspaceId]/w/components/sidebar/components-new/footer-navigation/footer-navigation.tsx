@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import clsx from 'clsx'
-import { Database, HelpCircle, Layout, LibraryBig, Settings } from 'lucide-react'
+import { Database, Layout, LibraryBig, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import {
@@ -48,16 +48,16 @@ export function FooterNavigation() {
     },
     {
       id: 'knowledge-base',
-      label: 'Vector Database',
+      label: 'Knowledge Base',
       icon: Database,
       href: `/workspace/${workspaceId}/knowledge`,
     },
-    {
-      id: 'help',
-      label: 'Help',
-      icon: HelpCircle,
-      onClick: () => setIsHelpModalOpen(true),
-    },
+    // {
+    //   id: 'help',
+    //   label: 'Help',
+    //   icon: HelpCircle,
+    //   onClick: () => setIsHelpModalOpen(true),
+    // },
     {
       id: 'settings',
       label: 'Settings',

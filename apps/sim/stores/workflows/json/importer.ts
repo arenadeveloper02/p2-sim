@@ -105,6 +105,40 @@ function regenerateIds(workflowState: WorkflowState): WorkflowState {
   }
 }
 
+/**
+ * Normalize subblock values by converting empty strings to null.
+ * This provides backwards compatibility for workflows exported before the null sanitization fix,
+ * preventing Zod validation errors like "Expected array, received string".
+ */
+function normalizeSubblockValues(blocks: Record<string, any>): Record<string, any> {
+  const normalizedBlocks: Record<string, any> = {}
+
+  Object.entries(blocks).forEach(([blockId, block]) => {
+    const normalizedBlock = { ...block }
+
+    if (block.subBlocks) {
+      const normalizedSubBlocks: Record<string, any> = {}
+
+      Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]: [string, any]) => {
+        const normalizedSubBlock = { ...subBlock }
+
+        // Convert empty strings to null for consistency
+        if (normalizedSubBlock.value === '') {
+          normalizedSubBlock.value = null
+        }
+
+        normalizedSubBlocks[subBlockId] = normalizedSubBlock
+      })
+
+      normalizedBlock.subBlocks = normalizedSubBlocks
+    }
+
+    normalizedBlocks[blockId] = normalizedBlock
+  })
+
+  return normalizedBlocks
+}
+
 export function parseWorkflowJson(
   jsonContent: string,
   regenerateIdsFlag = true
@@ -203,15 +237,50 @@ export function parseWorkflowJson(
       return { data: null, errors }
     }
 
+    // Normalize non-string subblock values (convert empty strings to null)
+    // This handles exported workflows that may have empty strings for non-string types
+    const normalizedBlocks = normalizeSubblockValues(workflowData.blocks || {})
+
     // Construct the workflow state with defaults
     let workflowState: WorkflowState = {
-      blocks: workflowData.blocks || {},
+      blocks: normalizedBlocks,
       edges: workflowData.edges || [],
       loops: workflowData.loops || {},
       parallels: workflowData.parallels || {},
       metadata: workflowData.metadata,
       variables: Array.isArray(workflowData.variables) ? workflowData.variables : undefined,
     }
+
+    // Sanitize subBlocks: remove invalid subBlocks (missing id or with "undefined" key)
+    // and ensure all valid subBlocks have required fields
+    Object.entries(workflowState.blocks).forEach(([blockId, block]) => {
+      if (block.subBlocks && typeof block.subBlocks === 'object') {
+        const sanitizedSubBlocks: Record<string, any> = {}
+
+        Object.entries(block.subBlocks).forEach(([subBlockKey, subBlock]: [string, any]) => {
+          // Skip subBlocks with "undefined" key or missing id
+          if (subBlockKey === 'undefined' || !subBlock || typeof subBlock !== 'object') {
+            logger.warn(`Removing invalid subBlock "${subBlockKey}" from block ${blockId}`)
+            return
+          }
+
+          // If subBlock is missing id, use the key as id (for backward compatibility)
+          if (!subBlock.id) {
+            logger.warn(`SubBlock "${subBlockKey}" in block ${blockId} missing id, using key as id`)
+            sanitizedSubBlocks[subBlockKey] = {
+              ...subBlock,
+              id: subBlockKey,
+            }
+          } else {
+            // Valid subBlock - keep it
+            sanitizedSubBlocks[subBlockKey] = subBlock
+          }
+        })
+
+        // Update block with sanitized subBlocks
+        block.subBlocks = sanitizedSubBlocks
+      }
+    })
 
     // Regenerate IDs if requested (default: true)
     if (regenerateIdsFlag) {

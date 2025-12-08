@@ -5,7 +5,7 @@ import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
 
-export interface NanoBananaRequestBody {
+interface NanoBananaRequestBody {
   contents: Array<{
     parts: Array<{
       text?: string
@@ -23,7 +23,7 @@ export interface NanoBananaRequestBody {
   }
 }
 
-export interface NanoBananaResponse {
+interface NanoBananaResponse {
   candidates: Array<{
     content: {
       parts: Array<{
@@ -37,7 +37,7 @@ export interface NanoBananaResponse {
   }>
 }
 
-export const nanoBananaTool: ToolConfig = {
+const nanoBananaTool: ToolConfig = {
   id: 'google_nano_banana',
   name: 'Google Nano Banana',
   description: "Generate images using Google's Gemini Native Image (Nano Banana) model",
@@ -111,19 +111,15 @@ export const nanoBananaTool: ToolConfig = {
             const fileUrl = params.inputImage.path.startsWith('http')
               ? params.inputImage.path
               : `${baseUrl}${params.inputImage.path}`
-
             logger.info('Fetching image from URL:', fileUrl)
-
             const response = await fetch(fileUrl)
             if (!response.ok) {
               throw new Error(`Failed to fetch image: ${response.statusText}`)
             }
-
             const arrayBuffer = await response.arrayBuffer()
             const buffer = Buffer.from(arrayBuffer)
             imageData = buffer.toString('base64')
             mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
-
             logger.info('Successfully converted image to base64, length:', imageData.length)
           } catch (error) {
             logger.error('Error fetching image:', error)
@@ -269,3 +265,6 @@ export const nanoBananaTool: ToolConfig = {
     },
   },
 }
+
+export { nanoBananaTool }
+export type { NanoBananaRequestBody, NanoBananaResponse }
