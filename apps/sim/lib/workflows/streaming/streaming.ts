@@ -12,6 +12,12 @@ export interface StreamingConfig {
     stream: ReadableStream
     execution?: { blockId?: string }
   }) => Promise<void>
+  onBlockComplete?: (
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    callbackData: { input?: any; output: any; executionTime: number }
+  ) => Promise<void>
 }
 
 export interface StreamingResponseOptions {
@@ -140,7 +146,19 @@ export async function createStreamingResponse(
             isSecureMode: streamConfig.isSecureMode,
             workflowTriggerType: streamConfig.workflowTriggerType,
             onStream: onStreamCallback,
-            onBlockComplete: onBlockCompleteCallback,
+            onBlockComplete: streamConfig.onBlockComplete
+              ? async (
+                  blockId: string,
+                  blockName: string,
+                  blockType: string,
+                  callbackData: { input?: any; output: any; executionTime: number }
+                ) => {
+                  // Call custom callback first (for memory storage, etc.)
+                  await streamConfig.onBlockComplete(blockId, blockName, blockType, callbackData)
+                  // Then call original callback for selectedOutputs handling
+                  await onBlockCompleteCallback(blockId, callbackData.output)
+                }
+              : onBlockCompleteCallback,
             skipLoggingComplete: true, // We'll complete logging after tokenization
           },
           executionId

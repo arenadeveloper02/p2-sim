@@ -75,7 +75,12 @@ export async function executeWorkflow(
     isSecureMode?: boolean
     workflowTriggerType?: 'api' | 'chat'
     onStream?: (streamingExec: any) => Promise<void>
-    onBlockComplete?: (blockId: string, output: any) => Promise<void>
+    onBlockComplete?: (
+      blockId: string,
+      blockName: string,
+      blockType: string,
+      callbackData: { input?: any; output: any; executionTime: number }
+    ) => Promise<void>
     skipLoggingComplete?: boolean
   },
   providedExecutionId?: string
@@ -112,16 +117,16 @@ export async function executeWorkflow(
       callbacks: {
         onStream: streamConfig?.onStream,
         onBlockComplete: streamConfig?.onBlockComplete
-          ? async (blockId: string, _blockName: string, _blockType: string, output: any) => {
-              await streamConfig.onBlockComplete!(blockId, output)
+          ? async (blockId: string, blockName: string, blockType: string, callbackData: any) => {
+              await streamConfig.onBlockComplete!(blockId, blockName, blockType, callbackData)
             }
           : undefined,
       },
       loggingSession,
     })
 
-    if (result.status === 'paused') {
-      if (!result.snapshotSeed) {
+    if ((result as any).status === 'paused') {
+      if (!(result as any).snapshotSeed) {
         logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
           executionId,
         })
@@ -129,9 +134,9 @@ export async function executeWorkflow(
         await PauseResumeManager.persistPauseResult({
           workflowId,
           executionId,
-          pausePoints: result.pausePoints || [],
-          snapshotSeed: result.snapshotSeed,
-          executorUserId: result.metadata?.userId,
+          pausePoints: (result as any).pausePoints || [],
+          snapshotSeed: (result as any).snapshotSeed,
+          executorUserId: (result.metadata as any)?.userId,
         })
       }
     } else {
@@ -803,8 +808,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             loggingSession,
           })
 
-          if (result.status === 'paused') {
-            if (!result.snapshotSeed) {
+          if ((result as any).status === 'paused') {
+            if (!(result as any).snapshotSeed) {
               logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
                 executionId,
               })
@@ -812,9 +817,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               await PauseResumeManager.persistPauseResult({
                 workflowId,
                 executionId,
-                pausePoints: result.pausePoints || [],
-                snapshotSeed: result.snapshotSeed,
-                executorUserId: result.metadata?.userId,
+                pausePoints: (result as any).pausePoints || [],
+                snapshotSeed: (result as any).snapshotSeed,
+                executorUserId: (result.metadata as any)?.userId,
               })
             }
           } else {

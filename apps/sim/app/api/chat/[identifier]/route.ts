@@ -13,6 +13,7 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import * as ChatFiles from '@/lib/uploads/contexts/chat'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
+import { callMemoryAPI } from '@/app/api/chat/memory-api'
 import {
   addCorsHeaders,
   setChatAuthCookie,
@@ -20,6 +21,7 @@ import {
   validateChatAuth,
 } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import { BlockType } from '@/executor/consts'
 
 const logger = createLogger('ChatIdentifierAPI')
 
@@ -417,6 +419,87 @@ export async function POST(
           selectedOutputs,
           isSecureMode: true,
           workflowTriggerType: 'chat',
+          onBlockComplete: async (
+            blockId: string,
+            blockName: string,
+            blockType: string,
+            callbackData: { input?: any; output: any; executionTime: number }
+          ) => {
+            // Only process Agent blocks
+            if (blockType === BlockType.AGENT && callbackData?.input && callbackData?.output) {
+              try {
+                const agentInput = callbackData.input
+                const agentOutput = callbackData.output
+
+                // Extract user message from Agent input
+                let userMessage = ''
+                if (agentInput.messages && Array.isArray(agentInput.messages)) {
+                  const userMessages = agentInput.messages.filter((msg: any) => msg.role === 'user')
+                  if (userMessages.length > 0) {
+                    userMessage = userMessages[userMessages.length - 1].content || ''
+                  }
+                } else if (typeof agentInput.prompt === 'string') {
+                  userMessage = agentInput.prompt
+                } else if (typeof agentInput === 'string') {
+                  userMessage = agentInput
+                }
+
+                // Extract assistant output
+                let assistantMessage = ''
+                if (agentOutput.content) {
+                  assistantMessage =
+                    typeof agentOutput.content === 'string'
+                      ? agentOutput.content
+                      : JSON.stringify(agentOutput.content)
+                } else if (agentOutput.response) {
+                  assistantMessage =
+                    typeof agentOutput.response === 'string'
+                      ? agentOutput.response
+                      : JSON.stringify(agentOutput.response)
+                } else if (typeof agentOutput === 'string') {
+                  assistantMessage = agentOutput
+                }
+
+                // Store to memory if we have both messages
+                if (userMessage && assistantMessage) {
+                  const userId = deployment.userId
+                  const chatId = payload || conversationId || ''
+
+                  const messages = [
+                    { role: 'user', content: userMessage },
+                    { role: 'assistant', content: assistantMessage },
+                  ]
+
+                  // Call memory API twice: once for conversation, once for fact
+                  await Promise.all([
+                    callMemoryAPI(
+                      requestId,
+                      messages,
+                      userId,
+                      chatId,
+                      conversationId,
+                      false, // infer = true
+                      'conversation', // memory_type
+                      blockId // block_id
+                    ),
+                    callMemoryAPI(
+                      requestId,
+                      messages,
+                      userId,
+                      chatId,
+                      conversationId,
+                      true, // infer = true
+                      'fact', // memory_type
+                      blockId // block_id
+                    ),
+                  ])
+                }
+              } catch (error: any) {
+                // Log error but don't fail the workflow
+                logger.error(`[${requestId}] Failed to store Agent block memory:`, error)
+              }
+            }
+          },
         },
         createFilteredResult,
         executionId,
