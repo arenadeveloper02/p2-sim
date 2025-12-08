@@ -1701,6 +1701,11 @@ function applyInlineFormatting(
   startIndex: number
 ): void {
   for (const range of formatRanges) {
+    // Skip empty ranges
+    if (range.start >= range.end) {
+      continue
+    }
+
     const formatStart = startIndex + range.start
     const formatEnd = startIndex + range.end
 
@@ -1743,6 +1748,11 @@ function applyInlineFormatting(
   }
 
   for (const linkRange of linkRanges) {
+    // Skip empty ranges
+    if (linkRange.start >= linkRange.end) {
+      continue
+    }
+
     const formatStart = startIndex + linkRange.start
     const formatEnd = startIndex + linkRange.end
     requests.push({
