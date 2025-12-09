@@ -419,7 +419,7 @@ export function SlackMentionInput({
             inputValue={actualValue}
             cursorPosition={tagCursorPosition}
             onClose={() => setShowTagDropdown(false)}
-            inputRef={textareaRef}
+            inputRef={textareaRef as React.RefObject<HTMLInputElement | HTMLTextAreaElement>}
           />
         )}
 

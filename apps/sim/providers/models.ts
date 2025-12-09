@@ -259,6 +259,19 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 400000,
       },
       {
+        id: 'gpt-4o-search-preview',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-08-07',
+        },
+        capabilities: {
+          toolUsageControl: true,
+        },
+        contextWindow: 128000,
+      },
+      {
         id: 'o1',
         pricing: {
           input: 15.0,
