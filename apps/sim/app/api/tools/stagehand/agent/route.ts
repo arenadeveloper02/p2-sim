@@ -7,6 +7,9 @@ import { ensureZodObject, normalizeUrl } from '@/app/api/tools/stagehand/utils'
 
 const logger = createLogger('StagehandAgentAPI')
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 // Environment variables for Browserbase
 const BROWSERBASE_API_KEY = env.BROWSERBASE_API_KEY
 const BROWSERBASE_PROJECT_ID = env.BROWSERBASE_PROJECT_ID

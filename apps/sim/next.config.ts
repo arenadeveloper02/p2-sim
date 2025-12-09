@@ -86,14 +86,18 @@ const nextConfig: NextConfig = {
     'pino',
     'pino-pretty',
     'thread-stream',
+    'ssh2',
+    '@browserbasehq/stagehand',
   ],
-  serverComponentsExternalPackages: ['cpu-features', 'chromium-bidi', 'playwright-core'],
   webpack: (config, { webpack }) => {
     // Ignore native modules and optional dependencies that shouldn't be bundled
     config.plugins = config.plugins || []
     config.plugins.push(
       new webpack.IgnorePlugin({
         resourceRegExp: /^(cpu-features|chromium-bidi)$/,
+      }),
+      new webpack.IgnorePlugin({
+        resourceRegExp: /thread-stream\/(test|bench\.js|LICENSE)/,
       })
     )
 
@@ -102,6 +106,20 @@ const nextConfig: NextConfig = {
       ...config.resolve.fallback,
       'cpu-features': false,
       'chromium-bidi': false,
+      'thread-stream/test': false,
+      'thread-stream/bench': false,
+      'thread-stream/LICENSE': false,
+      desm: false,
+      fastbench: false,
+      tap: false,
+      'pino-elasticsearch': false,
+    }
+
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'thread-stream/test': false,
+      'thread-stream/bench': false,
+      'thread-stream/LICENSE': false,
     }
 
     return config
