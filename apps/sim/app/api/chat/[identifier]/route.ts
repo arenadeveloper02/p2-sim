@@ -739,7 +739,13 @@ export async function GET(
       )
     }
 
-    return addCorsHeaders(buildChatConfigResponse(), request)
+    const response = buildChatConfigResponse()
+
+    if (deployment.authType !== 'public') {
+      setChatAuthCookie(response, deployment.id, deployment.authType)
+    }
+
+    return addCorsHeaders(response, request)
   } catch (error: any) {
     logger.error(`[${requestId}] Error fetching chat info:`, error)
     return addCorsHeaders(
