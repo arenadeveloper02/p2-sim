@@ -206,6 +206,29 @@ export function StartBlockInputModal({
   }, [customFields, formValues, onSubmit, onOpenChange])
 
   /**
+   * Handles Enter key press to submit form
+   * For textarea fields, uses Ctrl+Enter or Shift+Enter to submit (allows Enter for new lines)
+   */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, fieldType?: string) => {
+      // For textarea (object/array), use Ctrl+Enter or Shift+Enter to submit
+      if (fieldType === 'object' || fieldType === 'array') {
+        if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+          e.preventDefault()
+          handleSubmit()
+        }
+      } else {
+        // For other inputs, Enter key submits the form
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          handleSubmit()
+        }
+      }
+    },
+    [handleSubmit]
+  )
+
+  /**
    * Formats field names by replacing underscores with spaces
    */
   const formatFieldName = useCallback((name: string): string => {
@@ -308,6 +331,7 @@ export function StartBlockInputModal({
                         )
                       }
                     }}
+                    onKeyDown={(e) => handleKeyDown(e, fieldType)}
                     onBlur={(e) => {
                       // Additional safety check on blur
                       const inputValue = e.target.value
@@ -350,7 +374,8 @@ export function StartBlockInputModal({
                         }
                       }
                     }}
-                    placeholder={`Enter ${displayName} as JSON`}
+                    onKeyDown={(e) => handleKeyDown(e, fieldType)}
+                    placeholder={`Enter ${displayName} as JSON (Ctrl+Enter or Shift+Enter to submit)`}
                     className='min-h-[80px] w-full rounded-[4px] border border-[var(--border)] bg-[var(--surface-9)] px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[var(--brand-primary)]'
                   />
                 ) : (
@@ -381,6 +406,7 @@ export function StartBlockInputModal({
                         handleFieldChange(fieldName, '')
                       }
                     }}
+                    onKeyDown={(e) => handleKeyDown(e, fieldType)}
                     onBlur={(e) => {
                       try {
                         // Additional safety check on blur - normalize the value again

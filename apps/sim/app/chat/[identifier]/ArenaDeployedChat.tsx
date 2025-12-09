@@ -228,7 +228,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       try {
         setIsHistoryLoading(true)
-        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
+            
         if (response.ok) {
           const data = await response.json()
 
@@ -429,15 +429,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         ])
       }
 
-      // Check if we should show modal on load (no messages and has inputFormat)
-      if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
-        const customFields = getCustomInputFields(data.inputFormat)
-
-        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
-          hasShownModalRef.current = true
-          setIsInputModalOpen(true)
-        }
-      }
+      // Don't show modal here - let the useEffect handle it after history check completes
+      // This ensures modal only shows when there's no chat history
     } catch (error) {
       logger.error('Error fetching chat config:', error)
       setError('This chat is currently unavailable. Please try again later.')
@@ -803,12 +796,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Only show modal if:
     // 1. Chat config is loaded
     // 2. Has inputFormat with custom fields
-    // 3. No history was found (hasShownModalRef.current is false)
-    // 4. Modal hasn't been shown yet
+    // 3. No history was found (hasShownModalRef.current is false) - this means no chat history exists
+    // 4. No messages exist (double-check to ensure no history)
+    // 5. Modal hasn't been shown yet
     if (
       chatConfig?.inputFormat &&
       Array.isArray(chatConfig.inputFormat) &&
       chatConfig.inputFormat.length > 0 &&
+      messages.length === 0 &&
       !hasShownModalRef.current
     ) {
       const customFields = getCustomInputFields(chatConfig.inputFormat)
@@ -818,7 +813,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         setIsInputModalOpen(true)
       }
     }
-  }, [isHistoryLoading, hasCheckedHistory, chatConfig])
+  }, [isHistoryLoading, hasCheckedHistory, chatConfig, messages.length])
 
   // Reset modal ref when messages are added (user sends a message)
   useEffect(() => {
