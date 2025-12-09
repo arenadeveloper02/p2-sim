@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
         userId: chat.userId,
         authorEmail: user.email,
         allowedEmails: chat.allowedEmails,
-        name: workflow.name,
+        name: chat.title,
         author: chat.userId,
         workflowName: workflow.name,
         workflowDescription: chat.remarks,
@@ -148,7 +148,10 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: chatRecord.department,
+      department: chatRecord.department
+        ? categories.find((category) => category.value === chatRecord.department)?.label ||
+          chatRecord.department
+        : null,
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
