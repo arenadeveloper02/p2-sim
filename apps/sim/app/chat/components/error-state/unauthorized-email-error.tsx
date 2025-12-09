@@ -54,7 +54,25 @@ export function UnauthorizedEmailError({
   }, [])
 
   const handleExit = () => {
-    router.push('/workspace')
+    function getRedirectUrl(hostname: string) {
+      let redirectUrl = ''
+      if (hostname === 'dev-agent.thearena.ai') {
+        redirectUrl = 'https://dev.thearena.ai/hub/agents'
+      } else if (hostname === 'test-agent.thearena.ai') {
+        redirectUrl = 'https://test.thearena.ai/hub/agents'
+      } else if (hostname === 'sandbox-agent.thearena.ai') {
+        redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
+      } else if (hostname === 'agent.thearena.ai') {
+        redirectUrl = 'https://app.thearena.ai/hub/agents'
+      } else {
+        redirectUrl = 'https://app.thearena.ai/hub/agents'
+      }
+      return redirectUrl
+    }
+    const hostname = window.location.hostname
+    const redirectUrl = getRedirectUrl(hostname)
+
+    window.location.href = redirectUrl
   }
 
   return (
