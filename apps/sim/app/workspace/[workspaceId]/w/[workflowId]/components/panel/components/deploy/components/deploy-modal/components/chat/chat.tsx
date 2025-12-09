@@ -10,16 +10,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
-import {
-  Alert,
-  AlertDescription,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-} from '@/components/ui'
+import { Alert, AlertDescription, Skeleton } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
@@ -63,6 +54,7 @@ export interface ExistingChat {
   identifier: string
   title: string
   description: string
+  department?: string
   authType: 'public' | 'password' | 'email' | 'sso'
   allowedEmails: string[]
   outputConfigs: Array<{ blockId: string; path: string }>
@@ -222,7 +214,7 @@ export function ChatDeploy({
         identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
         description: existingChat.description || '',
-        department: formData.department || 'creative',
+        department: existingChat.department || '',
         authType: existingChat.authType || 'public',
         password: '',
         emails: Array.isArray(existingChat.allowedEmails) ? [...existingChat.allowedEmails] : [],
@@ -376,22 +368,19 @@ export function ChatDeploy({
             <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
               Department
             </Label>
-            <Select
+            <select
               value={formData.department || ''}
-              onValueChange={(value) => updateField('department', value)}
+              onChange={(e) => updateField('department', e.target.value)}
               disabled={chatSubmitting}
+              className='h-[34px] w-full rounded-[6px] border-none bg-[var(--surface-6)] px-[10px] text-left text-[13px] text-[var(--text-primary)] shadow-none focus:border-none focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60'
             >
-              <SelectTrigger className='bg-gray-100'>
-                <SelectValue placeholder='Select department' />
-              </SelectTrigger>
-              <SelectContent className='z-[500]'>
-                {CATEGORIES.map((cat) => (
-                  <SelectItem key={cat.value} value={cat.value}>
-                    {cat.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <option value=''>Select department</option>
+              {CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
           </div>
           {errors.department && (
             <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
