@@ -1,27 +1,9 @@
-import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+// import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
+import type { NanoBananaRequestBody } from '@/app/api/google/api-service'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
-
-interface NanoBananaRequestBody {
-  contents: Array<{
-    parts: Array<{
-      text?: string
-      inlineData?: {
-        mimeType: string
-        data: string
-      }
-    }>
-  }>
-  generationConfig?: {
-    imageConfig?: {
-      aspectRatio?: string
-    }
-    responseModalities?: string[]
-  }
-}
 
 interface NanoBananaResponse {
   candidates: Array<{
@@ -79,91 +61,22 @@ const nanoBananaTool: ToolConfig = {
 
   request: {
     url: (params) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:generateContent`
-      logger.info('Nano Banana API URL:', url)
-      return url
+      logger.info('Routing Nano Banana tool request through internal API')
+      return '/api/google'
     },
     method: 'POST',
     headers: () => {
-      const apiKey = getRotatingApiKey('google')
       return {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
       }
     },
-    body: async (params) => {
-      const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
-        {
-          text: params.prompt,
-        },
-      ]
-
-      // Add input image if provided
-      if (params.inputImage) {
-        let imageData: string
-        let mimeType: string
-
-        // Handle file object with path
-        if (typeof params.inputImage === 'object' && params.inputImage.path) {
-          try {
-            // Fetch the file content from the path
-            const baseUrl = getBaseUrl()
-            const fileUrl = params.inputImage.path.startsWith('http')
-              ? params.inputImage.path
-              : `${baseUrl}${params.inputImage.path}`
-            logger.info('Fetching image from URL:', fileUrl)
-            const response = await fetch(fileUrl)
-            if (!response.ok) {
-              throw new Error(`Failed to fetch image: ${response.statusText}`)
-            }
-            const arrayBuffer = await response.arrayBuffer()
-            const buffer = Buffer.from(arrayBuffer)
-            imageData = buffer.toString('base64')
-            mimeType = params.inputImage.type || params.inputImageMimeType || 'image/png'
-            logger.info('Successfully converted image to base64, length:', imageData.length)
-          } catch (error) {
-            logger.error('Error fetching image:', error)
-            throw new Error(
-              `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
-            )
-          }
-        } else if (typeof params.inputImage === 'string') {
-          // Direct base64 string
-          imageData = params.inputImage
-          mimeType = params.inputImageMimeType || 'image/png'
-        } else {
-          throw new Error('Invalid input image format')
-        }
-
-        parts.push({
-          inlineData: {
-            mimeType,
-            data: imageData,
-          },
-        })
-      }
-
-      const body: NanoBananaRequestBody = {
-        contents: [
-          {
-            parts,
-          },
-        ],
-        generationConfig: {
-          responseModalities: ['Image'],
-        },
-      }
-
-      // Add aspect ratio if specified
-      if (params.aspectRatio) {
-        body.generationConfig!.imageConfig = {
-          aspectRatio: params.aspectRatio,
-        }
-      }
-
-      logger.info('Nano Banana API request body:', JSON.stringify(body, null, 2))
-      return body
-    },
+    body: async (params) => ({
+      model: params.model,
+      prompt: params.prompt,
+      aspectRatio: params.aspectRatio,
+      inputImage: params.inputImage,
+      inputImageMimeType: params.inputImageMimeType,
+    }),
   },
 
   transformResponse: async (response, params) => {
@@ -181,16 +94,14 @@ const nanoBananaTool: ToolConfig = {
         )
       }
 
-      const data: NanoBananaResponse = await response.json()
+      const dt: any = await response.json()
 
-      logger.info('Raw Nano Banana API response:', JSON.stringify(data, null, 2))
-
-      if (!data.candidates || data.candidates.length === 0) {
-        logger.error('No candidates found in Nano Banana response:', data)
+      if (!dt.data?.candidates || dt.data?.candidates.length === 0) {
+        logger.error('No candidates found in Nano Banana response:', dt.data?.candidates)
         throw new Error('No candidates found in response')
       }
 
-      const candidate = data.candidates[0]
+      const candidate = dt.data?.candidates[0]
       if (!candidate.content || !candidate.content.parts) {
         logger.error('No content parts found in candidate:', candidate)
         throw new Error('No content parts found in candidate')
