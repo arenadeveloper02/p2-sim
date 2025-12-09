@@ -98,6 +98,7 @@ export function useChatStreaming() {
     const decoder = new TextDecoder()
     let accumulatedText = ''
     let lastAudioPosition = 0
+    let buffer = '' // Buffer for incomplete JSON strings
 
     // Track which blocks have streamed content (like chat panel)
     const messageIdMap = new Map<string, string>()
@@ -125,6 +126,34 @@ export function useChatStreaming() {
         const { done, value } = await reader.read()
 
         if (done) {
+          // Process any remaining buffered data
+          if (buffer.trim()) {
+            const remainingLines = buffer.split('\n\n').filter((line) => line.trim())
+            for (const line of remainingLines) {
+              if (line.startsWith('data: ')) {
+                const data = line.substring(6).trim()
+                if (data && data !== '[DONE]') {
+                  try {
+                    const json = JSON.parse(data)
+                    // Process the final JSON if it's valid
+                    if (json.chunk) {
+                      accumulatedText += json.chunk
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+                        )
+                      )
+                    }
+                  } catch (parseError) {
+                    logger.warn('Failed to parse final buffered data:', parseError, {
+                      dataLength: data.length,
+                    })
+                  }
+                }
+              }
+            }
+          }
+
           // Stream any remaining text for TTS
           if (
             shouldPlayAudio &&
@@ -144,17 +173,32 @@ export function useChatStreaming() {
         }
 
         const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n\n')
+        buffer += chunk
 
-        for (const line of lines) {
+        // Process complete SSE lines (ending with \n\n)
+        // We need to be careful not to split in the middle of a JSON string
+        let lineEndIndex = buffer.indexOf('\n\n')
+
+        while (lineEndIndex !== -1) {
+          const line = buffer.substring(0, lineEndIndex)
+          buffer = buffer.substring(lineEndIndex + 2) // Remove processed line and \n\n
+
           if (line.startsWith('data: ')) {
-            const data = line.substring(6)
+            const data = line.substring(6).trim()
 
             if (data === '[DONE]') {
+              lineEndIndex = buffer.indexOf('\n\n')
+              continue
+            }
+
+            // Skip empty data
+            if (!data) {
+              lineEndIndex = buffer.indexOf('\n\n')
               continue
             }
 
             try {
+              // Try to parse JSON - if it fails due to incomplete string, buffer it
               const json = JSON.parse(data)
               const { blockId, chunk: contentChunk, event: eventType } = json
 
@@ -357,9 +401,42 @@ export function useChatStreaming() {
                   prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
                 )
               }
+
+              // Move to next line
+              lineEndIndex = buffer.indexOf('\n\n')
             } catch (parseError) {
-              logger.error('Error parsing stream data:', parseError)
+              // Check if this is an unterminated string error (common with large base64)
+              if (
+                parseError instanceof SyntaxError &&
+                (parseError.message.includes('Unterminated string') ||
+                  parseError.message.includes('Unexpected end of JSON') ||
+                  parseError.message.includes('position'))
+              ) {
+                logger.debug(
+                  'Incomplete JSON string detected (likely large base64), buffering for next chunk',
+                  {
+                    dataLength: data.length,
+                    error: parseError.message,
+                    bufferLength: buffer.length,
+                  }
+                )
+                // Put the incomplete line back in buffer with its original format - it will be processed when more data arrives
+                buffer = `${line}\n\n${buffer}`
+                break // Exit the while loop to wait for more data
+              }
+
+              // For other parse errors, log and continue
+              logger.error('Error parsing stream data:', parseError, {
+                dataLength: data.length,
+                dataPreview: data.substring(0, 200),
+              })
+
+              // Move to next line even on error
+              lineEndIndex = buffer.indexOf('\n\n')
             }
+          } else {
+            // Not a data line, move to next
+            lineEndIndex = buffer.indexOf('\n\n')
           }
         }
       }

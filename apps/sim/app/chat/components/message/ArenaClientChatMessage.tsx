@@ -16,7 +16,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // import { toastError, toastSuccess } from '@/components/ui'
 import {
   downloadImage,
+  extractAllBase64Images,
+  extractBase64Image,
+  hasBase64Images,
   isBase64,
+  renderBs64Img,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -77,12 +81,36 @@ export const ArenaClientChatMessage = memo(
       }
 
       try {
-        // if (isBase64(content)) {
-        //   return renderBs64Img({ isBase64: true, imageData: content })
-        // }
-        if (content) {
+        // If content is a pure base64 image, render it directly
+        if (typeof content === 'string' && isBase64(content)) {
+          const cleanedContent = content.replace(/\s+/g, '')
+          return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+        }
+
+        // If content is a string, check for mixed content (text + base64 images)
+        if (typeof content === 'string') {
+          const { textParts, base64Images } = extractBase64Image(content)
+
+          // If we found base64 images, render both text and images
+          if (base64Images.length > 0) {
+            return (
+              <>
+                {textParts.length > 0 && (
+                  <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
+                )}
+                {base64Images.map((imageData, index) => (
+                  <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+                ))}
+              </>
+            )
+          }
+
+          // If no base64 images, just render as markdown
           return <ArenaCopilotMarkdownRenderer content={content} />
         }
+
+        // For other content types, render as markdown
+        return <ArenaCopilotMarkdownRenderer content={content} />
       } catch (error) {
         console.error('Error rendering message content:', error)
         return (
@@ -109,6 +137,18 @@ export const ArenaClientChatMessage = memo(
       setIsCopied(true)
       setTimeout(() => setIsCopied(false), 2000)
     }
+
+    const handleDownload = () => {
+      const base64Images = extractAllBase64Images(cleanTextContent)
+      if (base64Images.length > 0) {
+        // Download the first image (or all if multiple)
+        base64Images.forEach((imageData, index) => {
+          downloadImage(true, imageData)
+        })
+      }
+    }
+
+    const containsBase64Images = hasBase64Images(cleanTextContent)
 
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
@@ -231,7 +271,7 @@ export const ArenaClientChatMessage = memo(
               !message.isInitialMessage &&
               hasRenderableText && (
                 <div className='flex items-center justify-start space-x-2'>
-                  {!isJsonObject && !isBase64(cleanTextContent) && hasRenderableText && (
+                  {!isJsonObject && !containsBase64Images && hasRenderableText && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
@@ -342,21 +382,19 @@ export const ArenaClientChatMessage = memo(
                     </>
                   )}
 
-                  {isBase64(cleanTextContent) && (
+                  {containsBase64Images && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
                           <button
                             className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={() => {
-                              downloadImage(isBase64(cleanTextContent), cleanTextContent as string)
-                            }}
+                            onClick={handleDownload}
                           >
                             <Download className='h-4 w-4' strokeWidth={2} />
                           </button>
                         </Tooltip.Trigger>
                         <Tooltip.Content side='top' align='center' sideOffset={5}>
-                          Download
+                          Download image
                         </Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
