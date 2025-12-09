@@ -352,7 +352,7 @@ export const env = createEnv({
     // Arena
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
-    NEXT_PUBLIC_PLATFORM_ADMIN_EMAIL:                 z.string().email().optional(),          // Platform admin email
+    NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS:                z.array(z.string().email()).optional(),          // Platform admin emails
   },
 
   // Variables available on both server and client
@@ -393,7 +393,7 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
     NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
-    NEXT_PUBLIC_PLATFORM_ADMIN_EMAIL: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAIL,
+    NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS,
   },
 })
 
