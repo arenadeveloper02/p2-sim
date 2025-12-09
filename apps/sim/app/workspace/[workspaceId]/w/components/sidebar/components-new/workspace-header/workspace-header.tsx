@@ -14,6 +14,8 @@ import {
   PopoverTrigger,
   Tooltip,
 } from '@/components/emcn'
+import { useSession } from '@/lib/auth/auth-client'
+import { env } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components-new/workflow-list/components/context-menu/context-menu'
@@ -129,6 +131,7 @@ export function WorkspaceHeader({
   showCollapseButton = true,
 }: WorkspaceHeaderProps) {
   const userPermissions = useUserPermissionsContext()
+  const { data: session } = useSession()
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -137,6 +140,37 @@ export function WorkspaceHeader({
   const [editingName, setEditingName] = useState('')
   const [isListRenaming, setIsListRenaming] = useState(false)
   const listRenameInputRef = useRef<HTMLInputElement | null>(null)
+
+  /**
+   * Check if current user is a platform admin
+   */
+  const isPlatformAdmin = (() => {
+    if (!session?.user?.email) return false
+
+    const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
+    if (!adminEmailsEnv) return false
+
+    // Parse admin emails (can be array, JSON string array, or comma-separated string)
+    let adminEmails: string[] = []
+
+    if (Array.isArray(adminEmailsEnv)) {
+      adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
+    } else if (typeof adminEmailsEnv === 'string') {
+      const emailsStr = adminEmailsEnv as string
+      // Try to parse as JSON array first
+      try {
+        const parsed = JSON.parse(emailsStr)
+        if (Array.isArray(parsed)) {
+          adminEmails = parsed.map((email: string) => email.toLowerCase())
+        }
+      } catch {
+        // Fallback to comma-separated string
+        adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
+      }
+    }
+
+    return adminEmails.includes(session.user.email.toLowerCase())
+  })()
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
@@ -332,27 +366,31 @@ export function WorkspaceHeader({
                         </p>
                       </Tooltip.Content>
                     </Tooltip.Root>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger asChild>
-                        <Button
-                          variant='ghost'
-                          type='button'
-                          aria-label='Create workspace'
-                          className='!p-[3px]'
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            await onCreateWorkspace()
-                            setIsWorkspaceMenuOpen(false)
-                          }}
-                          disabled={isCreatingWorkspace}
-                        >
-                          <Plus className='h-[14px] w-[14px]' />
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content className='py-[2.5px]'>
-                        <p>{isCreatingWorkspace ? 'Creating workspace...' : 'Create workspace'}</p>
-                      </Tooltip.Content>
-                    </Tooltip.Root>
+                    {isPlatformAdmin && (
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <Button
+                            variant='ghost'
+                            type='button'
+                            aria-label='Create workspace'
+                            className='!p-[3px]'
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              await onCreateWorkspace()
+                              setIsWorkspaceMenuOpen(false)
+                            }}
+                            disabled={isCreatingWorkspace}
+                          >
+                            <Plus className='h-[14px] w-[14px]' />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content className='py-[2.5px]'>
+                          <p>
+                            {isCreatingWorkspace ? 'Creating workspace...' : 'Create workspace'}
+                          </p>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                    )}
                   </div>
                 </div>
                 <div className='max-h-[200px] overflow-y-auto'>
