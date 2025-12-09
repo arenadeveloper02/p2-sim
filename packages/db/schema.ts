@@ -748,6 +748,8 @@ export const chat = pgTable(
     identifier: text('identifier').notNull(),
     title: text('title').notNull(),
     description: text('description'),
+    remarks: text('remarks'),
+    department: text('department'),
     isActive: boolean('is_active').notNull().default(true),
     customizations: json('customizations').default('{}'), // For UI customization options
 

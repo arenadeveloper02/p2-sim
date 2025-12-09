@@ -95,12 +95,12 @@ export async function GET(request: NextRequest) {
         userId: chat.userId,
         authorEmail: user.email,
         allowedEmails: chat.allowedEmails,
-        name: templates.name,
-        author: templates.creatorId,
+        name: workflow.name,
+        author: chat.userId,
         workflowName: workflow.name,
-        workflowDescription: workflow.description,
+        workflowDescription: chat.remarks,
         templateDescription: templates.details,
-        department: templates.tags,
+        department: chat.department,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.workflowName,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: 'department',
+      department: chatRecord.department,
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
