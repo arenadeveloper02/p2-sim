@@ -4399,4 +4399,3 @@ export function FigmaIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
-
