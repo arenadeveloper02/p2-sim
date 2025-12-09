@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { chat, templates, user, workflow } from '@sim/db/schema'
+import { chat, user, workflow } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -99,13 +99,12 @@ export async function GET(request: NextRequest) {
         author: chat.userId,
         workflowName: workflow.name,
         workflowDescription: chat.remarks,
-        templateDescription: templates.details,
+        templateDescription: chat.remarks,
         department: chat.department,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
-      .from(templates)
-      .innerJoin(chat, eq(chat.workflowId, templates.workflowId))
+      .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
       .innerJoin(user, eq(user.id, chat.userId))
       .where(eq(chat.isActive, true))
