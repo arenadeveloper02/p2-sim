@@ -11,6 +11,7 @@ import {
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
 import { Alert, AlertDescription, Skeleton } from '@/components/ui'
+import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
 import { cn } from '@/lib/core/utils/cn'
@@ -76,7 +77,7 @@ const initialFormData: ChatFormData = {
   identifier: '',
   title: '',
   description: '',
-  authType: 'public',
+  authType: 'email',
   password: '',
   emails: [],
   welcomeMessage: 'Hi there! How can I help you today?',
@@ -117,6 +118,7 @@ export function ChatDeploy({
   const { deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
+  const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
@@ -169,7 +171,9 @@ export function ChatDeploy({
     (formData.authType !== 'password' ||
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
-    ((formData.authType !== 'email' && formData.authType !== 'sso') || formData.emails.length > 0)
+    ((formData.authType !== 'email' && formData.authType !== 'sso') ||
+      formData.emails.length > 0) &&
+    !hasInvalidEmails
 
   useEffect(() => {
     onValidationChange?.(isFormValid)
@@ -360,6 +364,7 @@ export function ChatDeploy({
             onAuthTypeChange={(type) => updateField('authType', type)}
             onPasswordChange={(password) => updateField('password', password)}
             onEmailsChange={(emails) => updateField('emails', emails)}
+            onInvalidEmailsChange={setHasInvalidEmails}
             disabled={chatSubmitting}
             isExistingChat={!!existingChat}
             error={errors.password || errors.emails}
@@ -567,6 +572,7 @@ interface AuthSelectorProps {
   onAuthTypeChange: (type: AuthType) => void
   onPasswordChange: (password: string) => void
   onEmailsChange: (emails: string[]) => void
+  onInvalidEmailsChange?: (hasInvalidEmails: boolean) => void
   disabled?: boolean
   isExistingChat?: boolean
   error?: string
@@ -586,15 +592,22 @@ function AuthSelector({
   onAuthTypeChange,
   onPasswordChange,
   onEmailsChange,
+  onInvalidEmailsChange,
   disabled = false,
   isExistingChat = false,
   error,
 }: AuthSelectorProps) {
+  const { data: session } = useSession()
   const [showPassword, setShowPassword] = useState(false)
   const [emailInputValue, setEmailInputValue] = useState('')
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [invalidEmails, setInvalidEmails] = useState<string[]>([])
+  const [emailValidationErrors, setEmailValidationErrors] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    onInvalidEmailsChange?.(invalidEmails.length > 0)
+  }, [invalidEmails, onInvalidEmailsChange])
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
@@ -607,7 +620,7 @@ function AuthSelector({
     setTimeout(() => setCopySuccess(false), 2000)
   }
 
-  const addEmail = (email: string): boolean => {
+  const addEmail = async (email: string): Promise<boolean> => {
     if (!email.trim()) return false
 
     const normalized = email.trim().toLowerCase()
@@ -623,51 +636,129 @@ function AuthSelector({
       return false
     }
 
-    setEmailError('')
-    onEmailsChange([...emails, normalized])
-    setEmailInputValue('')
-    return true
+    // Skip validation for domain emails (starting with @)
+    if (normalized.startsWith('@')) {
+      setEmailError('')
+      onEmailsChange([...emails, normalized])
+      setEmailInputValue('')
+      return true
+    }
+
+    // Validate email using API
+    try {
+      const response = await fetch('/api/users/validate-emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emails: [normalized] }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to validate email')
+      }
+
+      const data = await response.json()
+
+      if (data.valid && data.existingEmails.includes(normalized)) {
+        // Email is valid and exists
+        setEmailError('')
+        setEmailValidationErrors((prev) => {
+          const next = new Map(prev)
+          next.delete(normalized)
+          return next
+        })
+        onEmailsChange([...emails, normalized])
+        setEmailInputValue('')
+        return true
+      }
+      // Email doesn't exist in the system
+      setEmailValidationErrors((prev) => {
+        const next = new Map(prev)
+        next.set(normalized, 'User does not have access to Agentic AI')
+        return next
+      })
+      setInvalidEmails((prev) => [...prev, normalized])
+      setEmailInputValue('')
+      return false
+    } catch (error) {
+      logger.error('Error validating email', { error, email: normalized })
+      // On error, still add the email but show a warning
+      setEmailError('Failed to validate email. Please verify it exists.')
+      onEmailsChange([...emails, normalized])
+      setEmailInputValue('')
+      return true
+    }
   }
 
   const handleRemoveEmail = (emailToRemove: string) => {
+    // Prevent removing session email
+    const sessionEmail = session?.user?.email?.toLowerCase()
+    if (sessionEmail && emailToRemove.toLowerCase() === sessionEmail) {
+      return
+    }
     onEmailsChange(emails.filter((e) => e !== emailToRemove))
   }
 
   const handleRemoveInvalidEmail = (index: number) => {
+    const emailToRemove = invalidEmails[index]
     setInvalidEmails((prev) => prev.filter((_, i) => i !== index))
+    setEmailValidationErrors((prev) => {
+      const next = new Map(prev)
+      next.delete(emailToRemove)
+      return next
+    })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (['Enter', ',', ' '].includes(e.key) && emailInputValue.trim()) {
       e.preventDefault()
-      addEmail(emailInputValue)
+      await addEmail(emailInputValue)
     }
 
     if (e.key === 'Backspace' && !emailInputValue) {
       if (invalidEmails.length > 0) {
         handleRemoveInvalidEmail(invalidEmails.length - 1)
       } else if (emails.length > 0) {
-        handleRemoveEmail(emails[emails.length - 1])
+        const lastEmail = emails[emails.length - 1]
+        const sessionEmail = session?.user?.email?.toLowerCase()
+        // Only remove if it's not the session email
+        if (!sessionEmail || lastEmail.toLowerCase() !== sessionEmail) {
+          handleRemoveEmail(lastEmail)
+        }
       }
     }
   }
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault()
     const pastedText = e.clipboardData.getData('text')
     const pastedEmails = pastedText.split(/[\s,;]+/).filter(Boolean)
 
     let addedCount = 0
-    pastedEmails.forEach((email) => {
-      if (addEmail(email)) {
+    for (const email of pastedEmails) {
+      if (await addEmail(email)) {
         addedCount++
       }
-    })
+    }
 
     if (addedCount === 0 && pastedEmails.length === 1) {
       setEmailInputValue(emailInputValue + pastedEmails[0])
     }
   }
+
+  // Prefill session.email on mount
+  useEffect(() => {
+    if (session?.user?.email && !isExistingChat) {
+      const sessionEmail = session.user.email.toLowerCase()
+      if (!emails.includes(sessionEmail) && !invalidEmails.includes(sessionEmail)) {
+        addEmail(sessionEmail).catch((error) => {
+          logger.error('Error prefilling session email', { error })
+        })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.email, isExistingChat])
 
   const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
   const authOptions = ssoEnabled
@@ -676,7 +767,7 @@ function AuthSelector({
 
   return (
     <div className='space-y-[16px]'>
-      <div>
+      {/* <div>
         <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
           Access control
         </Label>
@@ -700,7 +791,7 @@ function AuthSelector({
             </Button>
           ))}
         </div>
-      </div>
+      </div> */}
 
       {authType === 'password' && (
         <div>
@@ -789,31 +880,47 @@ function AuthSelector({
           <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
             {authType === 'email' ? 'Allowed emails' : 'Allowed SSO emails'}
           </Label>
-          <div className='scrollbar-hide flex max-h-32 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--surface-11)] bg-[var(--surface-6)] px-[8px] py-[6px] focus-within:outline-none dark:bg-[var(--surface-9)]'>
+          <div className='scrollbar-hide flex max-h-32 flex-wrap items-start gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--surface-11)] bg-[var(--surface-6)] px-[8px] py-[6px] focus-within:outline-none dark:bg-[var(--surface-9)]'>
             {invalidEmails.map((email, index) => (
-              <EmailTag
-                key={`invalid-${index}`}
-                email={email}
-                onRemove={() => handleRemoveInvalidEmail(index)}
-                disabled={disabled}
-                isInvalid={true}
-              />
+              <div key={`invalid-${index}`} className='flex flex-col items-start'>
+                <EmailTag
+                  email={email}
+                  onRemove={() => handleRemoveInvalidEmail(index)}
+                  disabled={disabled}
+                  isInvalid={true}
+                />
+                {emailValidationErrors.has(email) && (
+                  <p className='mt-[2px] whitespace-nowrap text-[11px] text-[var(--text-error)]'>
+                    {emailValidationErrors.get(email)}
+                  </p>
+                )}
+              </div>
             ))}
-            {emails.map((email, index) => (
-              <EmailTag
-                key={`valid-${index}`}
-                email={email}
-                onRemove={() => handleRemoveEmail(email)}
-                disabled={disabled}
-              />
-            ))}
+            {emails.map((email, index) => {
+              const sessionEmail = session?.user?.email?.toLowerCase()
+              const isSessionEmail = Boolean(sessionEmail && email.toLowerCase() === sessionEmail)
+              return (
+                <EmailTag
+                  key={`valid-${index}`}
+                  email={email}
+                  onRemove={() => handleRemoveEmail(email)}
+                  disabled={disabled || isSessionEmail}
+                />
+              )
+            })}
             <input
               type='text'
               value={emailInputValue}
               onChange={(e) => setEmailInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              onBlur={() => emailInputValue.trim() && addEmail(emailInputValue)}
+              onBlur={() => {
+                if (emailInputValue.trim()) {
+                  addEmail(emailInputValue).catch((error) => {
+                    logger.error('Error adding email on blur', { error })
+                  })
+                }
+              }}
               placeholder={
                 emails.length > 0 || invalidEmails.length > 0
                   ? 'Add another email'

@@ -193,7 +193,9 @@ export async function POST(
 
           const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
           const title =
-            startBlockValues.length > 0 ? startBlockValues.join(', ') : words.slice(0, 5).join(' ') || 'New Chat'
+            startBlockValues.length > 0
+              ? startBlockValues.join(', ')
+              : words.slice(0, 5).join(' ') || 'New Chat'
 
           const deployedChatId = uuidv4()
           const now = new Date()

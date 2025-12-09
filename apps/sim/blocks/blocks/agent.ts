@@ -383,7 +383,7 @@ Example 3 (Array Input):
     ],
     config: {
       tool: (params: Record<string, any>) => {
-        const model = params.model || 'claude-sonnet-4-5'
+        const model = params.model || 'gpt-5'
         if (!model) {
           throw new Error('No model selected')
         }

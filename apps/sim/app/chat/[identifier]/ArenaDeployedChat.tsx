@@ -20,6 +20,7 @@ import {
   EmailAuth,
   PasswordAuth,
   SSOAuth,
+  UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
@@ -385,24 +386,22 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setAuthRequired('password')
             return
           }
+
+          // Skip email auth screen; rely on server to auto-auth or deny
           if (errorData.error === 'auth_required_email') {
-            setAuthRequired('email')
+            setError('You do not have access to this chat')
             return
           }
-          // If user email is not authorized, show error and redirect
+
+          // If user email is not authorized, show error
           if (
+            errorData.error === 'Email is not authorized for this chat' ||
             errorData.error === 'Email not authorized' ||
             errorData.message === 'Email not authorized' ||
             errorData.error === 'You do not have access to this chat' ||
             errorData.message === 'You do not have access to this chat'
           ) {
-            setError('You do not have access to this chat.')
-            // Redirect after 3 seconds
-            setTimeout(() => {
-              if (typeof window !== 'undefined') {
-                window.history.back()
-              }
-            }, 3000)
+            setError('You do not have access to this chat')
             return
           }
         }
@@ -970,6 +969,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // If error, show error message using the extracted component
   if (error) {
+    // Show specialized component for unauthorized email errors
+    if (
+      error === 'Email is not authorized for this chat' ||
+      error === 'You do not have access to this chat'
+    ) {
+      return <UnauthorizedEmailError message={error} />
+    }
     return <ChatErrorState error={error} starCount={starCount} />
   }
 
@@ -1078,7 +1084,18 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
           <ChatInput
-            onSubmit={(value, isVoiceInput, files) => {
+            onSubmit={(
+              value: string,
+              isVoiceInput?: boolean,
+              files?: Array<{
+                id: string
+                name: string
+                size: number
+                type: string
+                file: File
+                dataUrl?: string
+              }>
+            ) => {
               void handleSendMessage(value, isVoiceInput, files)
             }}
             isStreaming={isStreamingResponse}

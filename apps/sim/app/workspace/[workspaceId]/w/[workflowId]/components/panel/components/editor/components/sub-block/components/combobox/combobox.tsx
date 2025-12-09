@@ -11,7 +11,7 @@ import type { SubBlockConfig } from '@/blocks/types'
 /**
  * Constants for ComboBox component behavior
  */
-const DEFAULT_MODEL = 'claude-sonnet-4-5'
+const DEFAULT_MODEL = 'gpt-5'
 const ZOOM_FACTOR_BASE = 0.96
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 1
@@ -99,18 +99,18 @@ export function ComboBox({
 
   /**
    * Determines the default option value to use.
-   * Priority: explicit defaultValue > claude-sonnet-4-5 for model field > first option
+   * Priority: explicit defaultValue > gpt-5 for model field > first option
    */
   const defaultOptionValue = useMemo(() => {
     if (defaultValue !== undefined) {
       return defaultValue
     }
 
-    // For model field, default to claude-sonnet-4-5 if available
+    // For model field, default to gpt-5 if available
     if (subBlockId === 'model') {
-      const claudeSonnet45 = evaluatedOptions.find((opt) => getOptionValue(opt) === DEFAULT_MODEL)
-      if (claudeSonnet45) {
-        return getOptionValue(claudeSonnet45)
+      const gpt5 = evaluatedOptions.find((opt) => getOptionValue(opt) === DEFAULT_MODEL)
+      if (gpt5) {
+        return getOptionValue(gpt5)
       }
     }
 

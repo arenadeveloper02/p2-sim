@@ -3,7 +3,14 @@ import { Check, Copy, Download } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
-import { downloadImage, isBase64 } from './constants'
+import {
+  downloadImage,
+  extractAllBase64Images,
+  extractBase64Image,
+  hasBase64Images,
+  isBase64,
+  renderBs64Img,
+} from './constants'
 
 interface ChatAttachment {
   id: string
@@ -111,11 +118,24 @@ const RenderButtons = ({
     setIsCopied(true)
     setTimeout(() => setIsCopied(false), 2000)
   }
+
+  const handleDownload = () => {
+    const base64Images = extractAllBase64Images(message?.content)
+    if (base64Images.length > 0) {
+      // Download the first image (or all if multiple)
+      base64Images.forEach((imageData, index) => {
+        downloadImage(true, imageData)
+      })
+    }
+  }
+
+  const containsBase64Images = hasBase64Images(message?.content)
+
   return (
     <>
       {!message.isStreaming && (
         <div className='mt-2 flex items-center gap-2'>
-          {!isBase64(message?.content) && (
+          {!containsBase64Images && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
@@ -139,21 +159,19 @@ const RenderButtons = ({
             </Tooltip.Provider>
           )}
 
-          {isBase64(message?.content) && (
+          {containsBase64Images && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
                   <button
                     className='text-muted-foreground transition-colors hover:bg-muted'
-                    onClick={() => {
-                      downloadImage(isBase64(message?.content), message.content)
-                    }}
+                    onClick={handleDownload}
                   >
                     <Download className='h-4 w-4' strokeWidth={2} />
                   </button>
                 </Tooltip.Trigger>
                 <Tooltip.Content side='top' align='center' sideOffset={5}>
-                  Download
+                  Download image
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>
@@ -245,12 +263,43 @@ export function ChatMessage({ message }: ChatMessageProps) {
     if (!content) {
       return null
     }
-    // if (isBase64(content)) {
-    //   return renderBs64Img({ isBase64: true, imageData: message.content })
-    // }
+
+    // If content is a pure base64 image, render it directly
+    if (typeof content === 'string' && isBase64(content)) {
+      const cleanedContent = content.replace(/\s+/g, '')
+      return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+    }
+
+    // If content is a string, check for mixed content (text + base64 images)
+    if (typeof content === 'string') {
+      const { textParts, base64Images } = extractBase64Image(content)
+
+      // If we found base64 images, render both text and images
+      if (base64Images.length > 0) {
+        return (
+          <>
+            {textParts.length > 0 && (
+              <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
+            )}
+            {base64Images.map((imageData, index) => (
+              <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+            ))}
+          </>
+        )
+      }
+
+      // If no base64 images, just render as markdown
+      if (formattedContent) {
+        return <ArenaCopilotMarkdownRenderer content={formattedContent} />
+      }
+    }
+
+    // For other content types, use formatted content
     if (formattedContent) {
       return <ArenaCopilotMarkdownRenderer content={formattedContent} />
     }
+
+    return null
   }
 
   return (
@@ -258,7 +307,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
         {renderContent(message?.content)}
-        {message.isStreaming && <StreamingIndicator />}
+        {message?.isStreaming && <StreamingIndicator />}
       </div>
       <RenderButtons message={message} formattedContent={formattedContent} />
     </div>

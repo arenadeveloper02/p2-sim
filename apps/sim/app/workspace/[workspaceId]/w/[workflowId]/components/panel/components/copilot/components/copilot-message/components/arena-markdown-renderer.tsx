@@ -190,7 +190,7 @@ export default function ArenaCopilotMarkdownRenderer({
       // Lists
       ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => (
         <ul
-          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'disc' }}
         >
           {children}
@@ -198,7 +198,7 @@ export default function ArenaCopilotMarkdownRenderer({
       ),
       ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
         <ol
-          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'decimal' }}
         >
           {children}

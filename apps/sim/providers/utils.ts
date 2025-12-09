@@ -652,8 +652,9 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGeminiModel = provider === 'google'
+  const isSambaNovaModel = provider === 'sambanova'
 
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel)) {
+  if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel || isSambaNovaModel)) {
     // Only use server key if model is explicitly in our hosted list
     const hostedModels = getHostedModels()
     const isModelHosted = hostedModels.some((m) => m.toLowerCase() === model.toLowerCase())
@@ -661,7 +662,8 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     if (isModelHosted) {
       try {
         const { getRotatingApiKey } = require('@/lib/core/config/api-keys')
-        const serverKey = getRotatingApiKey(isGeminiModel ? 'gemini' : provider)
+        // For Google/Gemini models, use the Google key namespace
+        const serverKey = getRotatingApiKey(isGeminiModel ? 'google' : provider)
         return serverKey
       } catch (_error) {
         if (hasUserKey) {

@@ -122,6 +122,18 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 128000,
       },
       {
+        id: 'gpt-4o-search-preview',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-08-07',
+        },
+        capabilities: {
+          toolUsageControl: true,
+        },
+      },
+      {
         id: 'gpt-5.1',
         pricing: {
           input: 1.25,
@@ -257,6 +269,19 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {},
         contextWindow: 400000,
+      },
+      {
+        id: 'gpt-4o-search-preview',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-08-07',
+        },
+        capabilities: {
+          toolUsageControl: true,
+        },
+        contextWindow: 128000,
       },
       {
         id: 'o1',
@@ -715,6 +740,58 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           cachedInput: 0.01,
           output: 0.4,
           updatedAt: '2025-12-02',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+        contextWindow: 1048576,
+      },
+      {
+        id: 'gemini-1.5-pro',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.625,
+          output: 5.0,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+        contextWindow: 1048576,
+      },
+      {
+        id: 'gemini-1.5-flash',
+        pricing: {
+          input: 0.075,
+          cachedInput: 0.0375,
+          output: 0.3,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+        contextWindow: 1048576,
+      },
+      {
+        id: 'gemini-1.5-flash-8b',
+        pricing: {
+          input: 0.0375,
+          cachedInput: 0.01875,
+          output: 0.15,
+          updatedAt: '2025-06-17',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+        contextWindow: 1048576,
+      },
+      {
+        id: 'gemini-1.0-pro',
+        pricing: {
+          input: 0.5,
+          cachedInput: 0.25,
+          output: 1.5,
+          updatedAt: '2025-06-17',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1451,11 +1528,13 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 128000,
       },
       {
         id: 'DeepSeek-R1-Distill-Llama-70B',
         pricing: { input: 0.07, output: 0.14, updatedAt: '2025-01-15' },
         capabilities: { temperature: { min: 0, max: 2 } },
+        contextWindow: 128000,
       },
       {
         id: 'Meta-Llama-3.3-70B-Instruct',
@@ -1467,6 +1546,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 128000,
       },
     ],
   },
@@ -1589,13 +1669,17 @@ export function getProvidersWithToolUsageControl(): string[] {
  */
 export function getHostedModels(): string[] {
   // Currently, OpenAI and Anthropic models are hosted
-  return [
+  const hosted = [
     ...getProviderModels('openai'),
     ...getProviderModels('anthropic'),
     ...getProviderModels('sambanova'),
     ...getProviderModels('google'),
     ...getProviderModels('xai'),
   ]
+
+  // Include lowercase variants to ensure UI condition checks match regardless of casing
+  const lowercased = hosted.map((m) => m.toLowerCase())
+  return Array.from(new Set([...hosted, ...lowercased]))
 }
 
 /**
