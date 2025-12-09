@@ -67,16 +67,28 @@ export interface ExistingChat {
 interface FormErrors {
   identifier?: string
   title?: string
+  description?: string
   password?: string
   emails?: string
   outputBlocks?: string
   general?: string
 }
 
+const CATEGORIES = [
+  { value: 'creative', label: 'Creative' },
+  { value: 'ma', label: 'MA' },
+  { value: 'ppc', label: 'PPC' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'waas', label: 'WAAS' },
+] as const
+
 const initialFormData: ChatFormData = {
   identifier: '',
   title: '',
   description: '',
+  department: '',
   authType: 'email',
   password: '',
   emails: [],
@@ -145,6 +157,10 @@ export function ChatDeploy({
       newErrors.title = 'Title is required'
     }
 
+    if (!formData.description.trim()) {
+      newErrors.description = 'Description is required'
+    }
+
     if (formData.authType === 'password' && !isExistingChat && !formData.password.trim()) {
       newErrors.password = 'Password is required when using password protection'
     }
@@ -158,6 +174,10 @@ export function ChatDeploy({
 
     if (formData.selectedOutputBlocks.length === 0) {
       newErrors.outputBlocks = 'Please select at least one output block'
+    }
+
+    if (!formData.department?.trim()) {
+      newErrors.general = 'Department is required'
     }
 
     setErrors(newErrors)
@@ -192,6 +212,7 @@ export function ChatDeploy({
         identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
         description: existingChat.description || '',
+        department: formData.department || 'creative',
         authType: existingChat.authType || 'public',
         password: '',
         emails: Array.isArray(existingChat.allowedEmails) ? [...existingChat.allowedEmails] : [],
@@ -314,6 +335,27 @@ export function ChatDeploy({
         )}
 
         <div className='space-y-[12px]'>
+          <div>
+            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+              Department
+            </Label>
+            <select
+              value={formData.department || ''}
+              onChange={(e) => updateField('department', e.target.value)}
+              disabled={chatSubmitting}
+              className='h-[34px] w-full rounded-[4px] border border-[var(--surface-11)] bg-background px-[8px] text-[13px] text-[var(--text-primary)] shadow-sm focus:outline-none'
+            >
+              <option value='' disabled>
+                Select department
+              </option>
+              {CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* <IdentifierInput
             value={formData.identifier}
             onChange={(value) => updateField('identifier', value)}
@@ -339,6 +381,24 @@ export function ChatDeploy({
               disabled={chatSubmitting}
             />
             {errors.title && <p className='mt-1 text-destructive text-sm'>{errors.title}</p>}
+          </div>
+
+          <div>
+            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+              Description
+            </Label>
+            <Textarea
+              id='description'
+              placeholder='A brief description of what this chat does'
+              value={formData.description}
+              onChange={(e) => updateField('description', e.target.value)}
+              rows={3}
+              disabled={chatSubmitting}
+              className='min-h-[80px] resize-none'
+            />
+            {errors.description && (
+              <p className='mt-1 text-destructive text-sm'>{errors.description}</p>
+            )}
           </div>
 
           <div>

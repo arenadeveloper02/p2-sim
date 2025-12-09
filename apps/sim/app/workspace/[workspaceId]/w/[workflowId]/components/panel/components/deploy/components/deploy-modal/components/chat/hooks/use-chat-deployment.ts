@@ -11,6 +11,8 @@ export interface ChatFormData {
   identifier: string
   title: string
   description: string
+  department?: string
+  remarks?: string
   authType: AuthType
   password: string
   emails: string[]
@@ -34,6 +36,8 @@ const chatSchema = z.object({
   authType: z.enum(['public', 'password', 'email', 'sso']).default('public'),
   password: z.string().optional(),
   allowedEmails: z.array(z.string()).optional().default([]),
+  department: z.string().optional(),
+  remarks: z.string().optional(),
   outputConfigs: z
     .array(
       z.object({
@@ -83,6 +87,7 @@ export function useChatDeployment() {
         identifier: formData.identifier.trim(),
         title: formData.title.trim(),
         description: formData.description.trim(),
+        remarks: formData.description.trim(),
         customizations: {
           primaryColor: 'var(--brand-primary-hover-hex)',
           welcomeMessage: formData.welcomeMessage.trim(),
@@ -92,6 +97,7 @@ export function useChatDeployment() {
         password: formData.authType === 'password' ? formData.password : undefined,
         allowedEmails:
           formData.authType === 'email' || formData.authType === 'sso' ? formData.emails : [],
+        department: formData.department || undefined,
         outputConfigs,
         apiKey: deploymentInfo?.apiKey,
         deployApiEnabled: !existingChatId,
