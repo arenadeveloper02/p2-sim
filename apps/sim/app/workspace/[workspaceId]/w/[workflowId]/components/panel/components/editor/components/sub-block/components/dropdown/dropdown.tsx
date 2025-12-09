@@ -116,8 +116,8 @@ export function Dropdown({
   // Ensure multiValues is always an array when multiSelect is true
   const multiValues = multiSelect
     ? Array.isArray(value)
-      ? value
-      : value != null
+      ? value.filter((val) => val !== null && val !== undefined && val !== '')
+      : value !== null && value !== undefined && value !== ''
         ? [value]
         : []
     : null
