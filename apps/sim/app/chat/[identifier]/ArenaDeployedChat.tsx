@@ -1,6 +1,6 @@
 'use client'
 
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
@@ -8,9 +8,8 @@ import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
@@ -141,8 +140,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [threads, setThreads] = useState<ThreadRecord[]>([])
   const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
   const [threadsError, setThreadsError] = useState<string | null>(null)
-  const [isHistoryLoading, setIsHistoryLoading] = useState<any>(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
+  const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -220,7 +220,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
       // Only fetch history if we have a chatId
       if (!chatId) {
+        // No chatId means no history - can show modal
+        hasShownModalRef.current = false
         setIsHistoryLoading(false)
+        setHasCheckedHistory(true)
         return
       }
 
@@ -230,10 +233,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (response.ok) {
           const data = await response.json()
 
+          // Check if there's any chat history in the API response
           if (data?.logs?.length === 0) {
+            // No history found - mark that we can show modal after loading completes
+            hasShownModalRef.current = false
             setIsHistoryLoading(false)
+            setHasCheckedHistory(true)
           } else {
-            // Flatten and process logs as before
+            // History exists - load messages and prevent modal from showing
             setMessages([
               ...(chatConfig?.customizations?.welcomeMessage
                 ? [
@@ -270,32 +277,39 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 return messages
               }),
             ])
-            // Reset modal ref when messages are loaded
-            hasShownModalRef.current = false
+            // History exists - mark modal as shown so it won't appear
+            hasShownModalRef.current = true
             setTimeout(() => {
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
             setIsHistoryLoading(false)
+            setHasCheckedHistory(true)
           }
         } else {
-          // If history fetch fails (404, etc.), treat as no history to show input form
+          // If history fetch fails (404, etc.), treat as no history - can show modal
           logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          hasShownModalRef.current = false
           setIsHistoryLoading(false)
+          setHasCheckedHistory(true)
         }
       } catch (error) {
-        // If history fetch errors, treat as no history to show input form
+        // If history fetch errors, treat as no history - can show modal
         logger.error('Error fetching history, treating as no history:', error)
+        hasShownModalRef.current = false
         setIsHistoryLoading(false)
+        setHasCheckedHistory(true)
       }
     }
 
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
     } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
-      // Chat config loaded but no chatId yet - mark as no history to show input form
+      // Chat config loaded but no chatId yet - no history, can show modal
+      hasShownModalRef.current = false
       setIsHistoryLoading(false)
+      setHasCheckedHistory(true)
     }
   }, [identifier, chatConfig, currentChatId])
 
@@ -414,19 +428,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         ])
       }
 
-      // Check if we should show modal on load (no messages and has inputFormat)
-      if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
-        const normalizedFields = normalizeInputFormatValue(data.inputFormat)
-        const customFields = normalizedFields.filter((field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        })
-
-        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
-          hasShownModalRef.current = true
-          setIsInputModalOpen(true)
-        }
-      }
+      // Don't show modal here - let the useEffect handle it after history check completes
+      // This ensures modal only shows when there's no chat history
     } catch (error) {
       logger.error('Error fetching chat config:', error)
       setError('This chat is currently unavailable. Please try again later.')
@@ -684,13 +687,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [handleSendMessage]
   )
 
-  // Get custom fields from inputFormat
-  const customFields = chatConfig?.inputFormat
-    ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
-        const fieldName = field.name?.trim().toLowerCase()
-        return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-      })
-    : []
+  // Get custom fields from inputFormat (excluding reserved fields: input, conversationId, files)
+  const customFields = useMemo(() => {
+    return getCustomInputFields(chatConfig?.inputFormat)
+  }, [chatConfig?.inputFormat])
 
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
@@ -763,6 +763,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
+      // Add a system message summarizing received inputs
+      const formattedInputs = Object.entries(values)
+        .map(([key, value]) => `${key}: ${value ?? ''}`)
+        .join(', ')
+
+      const inputMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: `Inputs received: ${formattedInputs}`,
+        type: 'assistant',
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, inputMessage])
+
       // Build complete workflow input with all Start Block fields
       // Pass empty string for input (user submitted form, not typed message)
       const completeInput = buildCompleteWorkflowInput('', conversationId, undefined, values)
@@ -787,7 +801,35 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setIsInputModalOpen(true)
   }, [])
 
-  // Reset modal ref when messages are added
+  // Show modal on load only if no chat history exists (after history check completes)
+  useEffect(() => {
+    // Only check after history check is complete (both loading done and hasCheckedHistory is true)
+    if (isHistoryLoading || !hasCheckedHistory) return
+
+    // Only show modal if:
+    // 1. Chat config is loaded
+    // 2. Has inputFormat with custom fields
+    // 3. No history was found (hasShownModalRef.current is false) - this means no chat history exists
+    // 4. No messages exist (double-check to ensure no history)
+    // 5. Modal hasn't been shown yet
+    if (
+      chatConfig?.inputFormat &&
+      Array.isArray(chatConfig.inputFormat) &&
+      chatConfig.inputFormat.length > 0 &&
+      messages.length === 0 &&
+      !hasShownModalRef.current
+    ) {
+      const customFields = getCustomInputFields(chatConfig.inputFormat)
+      const hasNoHistory = messages.length === 0 && !hasShownModalRef.current
+
+      if (customFields.length > 0 && hasNoHistory) {
+        hasShownModalRef.current = true
+        setIsInputModalOpen(true)
+      }
+    }
+  }, [isHistoryLoading, hasCheckedHistory, chatConfig, messages.length])
+
+  // Reset modal ref when messages are added (user sends a message)
   useEffect(() => {
     if (messages.length > 0) {
       hasShownModalRef.current = false
@@ -911,12 +953,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // Clear form input values for new chat
     setStartBlockInputs({})
     // Open input modal if custom fields exist
-    const hasCustomFields = chatConfig?.inputFormat
-      ? normalizeInputFormatValue(chatConfig.inputFormat).filter((field) => {
-          const fieldName = field.name?.trim().toLowerCase()
-          return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-        }).length > 0
-      : false
+    const hasCustomFields = getCustomInputFields(chatConfig?.inputFormat).length > 0
     if (hasCustomFields) {
       setIsInputModalOpen(true)
     }
@@ -1030,7 +1067,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
       />
-
       {/* Message Container component */}
       <ChatMessageContainer
         messages={messages}

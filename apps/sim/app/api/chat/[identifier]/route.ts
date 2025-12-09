@@ -179,9 +179,21 @@ export async function POST(
           logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
         } else {
           // ChatId doesn't exist - create a new record
-          // Generate title from first 5 words of input
+          // Prefer Start Block input values for title; otherwise use first 5 words of input
+          const startBlockValues =
+            parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
+              ? Object.values(parsedBody.startBlockInputs)
+                  .filter((value) => value !== undefined && value !== null)
+                  .map((value) => {
+                    const stringValue = typeof value === 'string' ? value.trim() : `${value}`.trim()
+                    return stringValue
+                  })
+                  .filter((value) => value.length > 0)
+              : []
+
           const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
-          const title = words.slice(0, 5).join(' ') || 'New Chat'
+          const title =
+            startBlockValues.length > 0 ? startBlockValues.join(', ') : words.slice(0, 5).join(' ') || 'New Chat'
 
           const deployedChatId = uuidv4()
           const now = new Date()
