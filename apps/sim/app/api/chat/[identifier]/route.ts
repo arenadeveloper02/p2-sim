@@ -667,100 +667,7 @@ export async function GET(
       return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
     }
 
-    const cookieName = `chat_auth_${deployment.id}`
-    const authCookie = request.cookies.get(cookieName)
-
-    if (
-      deployment.authType !== 'public' &&
-      authCookie &&
-      validateAuthToken(authCookie.value, deployment.id)
-    ) {
-      return addCorsHeaders(
-        createSuccessResponse({
-          id: deployment.id,
-          title: deployment.title,
-          description: deployment.description,
-          customizations: deployment.customizations,
-          authType: deployment.authType,
-          outputConfigs: deployment.outputConfigs,
-        }),
-        request
-      )
-    }
-
-    // Auto-authenticate email-protected chats using session email; otherwise deny access
-    if (deployment.authType === 'email') {
-      try {
-        const session = await getSession()
-        const userEmail = session?.user?.email?.toLowerCase().trim()
-
-        if (!userEmail) {
-          logger.warn(`[${requestId}] No session email found for chat: ${identifier}`)
-          return addCorsHeaders(
-            createErrorResponse('You do not have access to this chat', 403),
-            request
-          )
-        }
-
-        const allowedEmails: string[] = Array.isArray(deployment.allowedEmails)
-          ? deployment.allowedEmails
-          : []
-
-        const isEmailAllowed =
-          allowedEmails.includes(userEmail) ||
-          allowedEmails.some((allowed: string) => {
-            if (allowed.startsWith('@')) {
-              const domain = userEmail.split('@')[1]
-              return domain && allowed === `@${domain}`
-            }
-            return false
-          })
-
-        if (isEmailAllowed) {
-          logger.info(
-            `[${requestId}] Auto-authenticating user ${userEmail} for chat: ${identifier}`
-          )
-          const response = addCorsHeaders(
-            createSuccessResponse({
-              id: deployment.id,
-              title: deployment.title,
-              description: deployment.description,
-              customizations: deployment.customizations,
-              authType: deployment.authType,
-              outputConfigs: deployment.outputConfigs,
-            }),
-            request
-          )
-          setChatAuthCookie(response, deployment.id, deployment.authType)
-          return response
-        }
-
-        logger.warn(`[${requestId}] User ${userEmail} is not authorized for chat: ${identifier}`)
-        return addCorsHeaders(
-          createErrorResponse('You do not have access to this chat', 403),
-          request
-        )
-      } catch (error) {
-        logger.warn(`[${requestId}] Error checking session email:`, error)
-        return addCorsHeaders(
-          createErrorResponse('You do not have access to this chat', 403),
-          request
-        )
-      }
-    }
-
-    const authResult = await validateChatAuth(requestId, deployment, request)
-    if (!authResult.authorized) {
-      logger.info(
-        `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
-      )
-      return addCorsHeaders(
-        createErrorResponse(authResult.error || 'Authentication required', 401),
-        request
-      )
-    }
-
-    // Extract Start Block inputFormat for chat UI
+    // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
     let inputFormat: InputFormatField[] = []
     try {
       const deployedData = await loadDeployedWorkflowState(deployment.workflowId)
@@ -794,18 +701,45 @@ export async function GET(
       // Continue without inputFormat - not critical for chat config
     }
 
-    return addCorsHeaders(
-      createSuccessResponse({
+    /**
+     * Helper function to build chat config response with inputFormat always included
+     * Ensures inputFormat is never missing from successful responses
+     */
+    const buildChatConfigResponse = () => {
+      return createSuccessResponse({
         id: deployment.id,
         title: deployment.title,
         description: deployment.description,
         customizations: deployment.customizations,
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
-        inputFormat,
-      }),
-      request
-    )
+        inputFormat, // Always included in successful responses
+      })
+    }
+
+    const cookieName = `chat_auth_${deployment.id}`
+    const authCookie = request.cookies.get(cookieName)
+
+    if (
+      deployment.authType !== 'public' &&
+      authCookie &&
+      validateAuthToken(authCookie.value, deployment.id)
+    ) {
+      return addCorsHeaders(buildChatConfigResponse(), request)
+    }
+
+    const authResult = await validateChatAuth(requestId, deployment, request)
+    if (!authResult.authorized) {
+      logger.info(
+        `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
+      )
+      return addCorsHeaders(
+        createErrorResponse(authResult.error || 'Authentication required', 401),
+        request
+      )
+    }
+
+    return addCorsHeaders(buildChatConfigResponse(), request)
   } catch (error: any) {
     logger.error(`[${requestId}] Error fetching chat info:`, error)
     return addCorsHeaders(
