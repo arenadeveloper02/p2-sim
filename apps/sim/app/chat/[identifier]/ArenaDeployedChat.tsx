@@ -693,22 +693,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return getCustomInputFields(chatConfig?.inputFormat)
   }, [chatConfig?.inputFormat])
 
-  const fallbackTitle = useMemo(() => {
-    for (const value of Object.values(startBlockInputs)) {
-      if (value === null || value === undefined) continue
-      if (typeof value === 'string' && value.trim() !== '') {
-        return value.trim()
-      }
-      try {
-        const stringified = JSON.stringify(value)
-        if (stringified && stringified !== '{}') return stringified
-      } catch {
-        continue
-      }
-    }
-    return undefined
-  }, [startBlockInputs])
-
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
@@ -1076,7 +1060,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         workflowId={identifier}
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
-        fallbackTitle={fallbackTitle}
       />
       {/* Message Container component */}
       <ChatMessageContainer
