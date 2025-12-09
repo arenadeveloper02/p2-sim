@@ -10,7 +10,16 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
-import { Alert, AlertDescription, Skeleton } from '@/components/ui'
+import {
+  Alert,
+  AlertDescription,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+} from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
@@ -67,6 +76,7 @@ export interface ExistingChat {
 interface FormErrors {
   identifier?: string
   title?: string
+  department?: string
   description?: string
   password?: string
   emails?: string
@@ -334,29 +344,7 @@ export function ChatDeploy({
           </Alert>
         )}
 
-        <div className='space-y-[12px]'>
-          <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-              Department
-            </Label>
-            <select
-              value={formData.department || ''}
-              onChange={(e) => updateField('department', e.target.value)}
-              disabled={chatSubmitting}
-              className='h-[34px] w-full rounded-[4px] border border-[var(--surface-11)] bg-background px-[8px] text-[13px] text-[var(--text-primary)] shadow-sm focus:outline-none'
-            >
-              <option value='' disabled>
-                Select department
-              </option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* <IdentifierInput
+        {/* <IdentifierInput
             value={formData.identifier}
             onChange={(value) => updateField('identifier', value)}
             originalIdentifier={existingChat?.identifier || undefined}
@@ -365,24 +353,49 @@ export function ChatDeploy({
             isEditingExisting={!!existingChat}
           /> */}
 
-          <div>
-            <Label
-              htmlFor='title'
-              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
-            >
-              Title
-            </Label>
-            <Input
-              id='title'
-              placeholder='Customer Support Assistant'
-              value={formData.title}
-              onChange={(e) => updateField('title', e.target.value)}
-              required
-              disabled={chatSubmitting}
-            />
-            {errors.title && <p className='mt-1 text-destructive text-sm'>{errors.title}</p>}
-          </div>
+        <div>
+          <Label
+            htmlFor='title'
+            className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+          >
+            Title
+          </Label>
+          <Input
+            id='title'
+            placeholder='Customer Support Assistant'
+            value={formData.title}
+            onChange={(e) => updateField('title', e.target.value)}
+            required
+            disabled={chatSubmitting}
+          />
+          {errors.title && <p className='mt-1 text-destructive text-sm'>{errors.title}</p>}
+        </div>
 
+        <div className='space-y-[12px]'>
+          <div>
+            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+              Department
+            </Label>
+            <Select
+              value={formData.department || ''}
+              onValueChange={(value) => updateField('department', value)}
+              disabled={chatSubmitting}
+            >
+              <SelectTrigger className='bg-gray-100'>
+                <SelectValue placeholder='Select department' />
+              </SelectTrigger>
+              <SelectContent className='z-[500]'>
+                {CATEGORIES.map((cat) => (
+                  <SelectItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {errors.department && (
+            <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
+          )}
           <div>
             <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
               Description
