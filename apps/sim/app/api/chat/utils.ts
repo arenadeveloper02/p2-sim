@@ -2,11 +2,11 @@ import { db } from '@sim/db'
 import { chat, workflow } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/environment'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { createLogger } from '@/lib/logs/console/logger'
 import { hasAdminPermission } from '@/lib/workspaces/permissions/utils'
-import { getSession } from '@/lib/auth'
 
 const logger = createLogger('ChatAuthUtils')
 
