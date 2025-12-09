@@ -206,8 +206,11 @@ export function CommandList() {
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
                 {isAgentIcon ? (
-                  <div className='flex h-[14px] w-[14px] items-center justify-center'>
-                    <AgentIcon className='h-3 w-3' />
+                  <div
+                    className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                    style={{ background: 'var(--brand-primary-hex)' }}
+                  >
+                    <AgentIcon className='h-[9px] w-[9px] text-white' />
                   </div>
                 ) : (
                   <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
