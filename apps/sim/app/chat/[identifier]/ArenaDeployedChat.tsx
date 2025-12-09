@@ -228,7 +228,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       try {
         setIsHistoryLoading(true)
-            
+        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
         if (response.ok) {
           const data = await response.json()
 
@@ -693,6 +693,22 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return getCustomInputFields(chatConfig?.inputFormat)
   }, [chatConfig?.inputFormat])
 
+  const fallbackTitle = useMemo(() => {
+    for (const value of Object.values(startBlockInputs)) {
+      if (value === null || value === undefined) continue
+      if (typeof value === 'string' && value.trim() !== '') {
+        return value.trim()
+      }
+      try {
+        const stringified = JSON.stringify(value)
+        if (stringified && stringified !== '{}') return stringified
+      } catch {
+        continue
+      }
+    }
+    return undefined
+  }, [startBlockInputs])
+
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
@@ -764,6 +780,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
+      // Add a system message summarizing received inputs
+      const formattedInputs = Object.entries(values)
+        .map(([key, value]) => `${key}: ${value ?? ''}`)
+        .join(', ')
+
+      const inputMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: `Inputs received: ${formattedInputs}`,
+        type: 'assistant',
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, inputMessage])
+
       // Build complete workflow input with all Start Block fields
       // Pass empty string for input (user submitted form, not typed message)
       const completeInput = buildCompleteWorkflowInput('', conversationId, undefined, values)
@@ -792,7 +822,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   useEffect(() => {
     // Only check after history check is complete (both loading done and hasCheckedHistory is true)
     if (isHistoryLoading || !hasCheckedHistory) return
-    
+
     // Only show modal if:
     // 1. Chat config is loaded
     // 2. Has inputFormat with custom fields
@@ -807,8 +837,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       !hasShownModalRef.current
     ) {
       const customFields = getCustomInputFields(chatConfig.inputFormat)
-      
-      if (customFields.length > 0) {
+      const hasNoHistory = messages.length === 0 && !hasShownModalRef.current
+
+      if (customFields.length > 0 && hasNoHistory) {
         hasShownModalRef.current = true
         setIsInputModalOpen(true)
       }
@@ -1045,8 +1076,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         workflowId={identifier}
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
+        fallbackTitle={fallbackTitle}
       />
-      {console.log('customFields >>>>> ', customFields)}
       {/* Message Container component */}
       <ChatMessageContainer
         messages={messages}
