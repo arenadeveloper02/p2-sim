@@ -49,11 +49,13 @@ export function normalizeInputFormatValue(inputFormatValue: unknown): InputForma
  * @param inputFormat - Input format array from Start Block configuration
  * @returns Array of custom fields (excluding reserved fields)
  */
-export function getCustomInputFields(inputFormat: InputFormatField[] | null | undefined): InputFormatField[] {
+export function getCustomInputFields(
+  inputFormat: InputFormatField[] | null | undefined
+): InputFormatField[] {
   if (!inputFormat) return []
 
   const normalizedFields = normalizeInputFormatValue(inputFormat)
-  
+
   // Create a set of reserved field names in lowercase for case-insensitive comparison
   const reservedFieldsLower = new Set(
     START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
