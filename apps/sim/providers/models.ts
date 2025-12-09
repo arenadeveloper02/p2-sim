@@ -119,7 +119,80 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 128000,
       },
+      {
+        id: 'gpt-5.1',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.125,
+          output: 10.0,
+          updatedAt: '2025-11-14',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+        },
+        contextWindow: 400000,
+      },
+      // {
+      //   id: 'gpt-5.1-mini',
+      //   pricing: {
+      //     input: 0.25,
+      //     cachedInput: 0.025,
+      //     output: 2.0,
+      //     updatedAt: '2025-11-14',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['none', 'low', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      //   contextWindow: 400000,
+      // },
+      // {
+      //   id: 'gpt-5.1-nano',
+      //   pricing: {
+      //     input: 0.05,
+      //     cachedInput: 0.005,
+      //     output: 0.4,
+      //     updatedAt: '2025-11-14',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['none', 'low', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      //   contextWindow: 400000,
+      // },
+      // {
+      //   id: 'gpt-5.1-codex',
+      //   pricing: {
+      //     input: 1.25,
+      //     cachedInput: 0.125,
+      //     output: 10.0,
+      //     updatedAt: '2025-11-14',
+      //   },
+      //   capabilities: {
+      //     reasoningEffort: {
+      //       values: ['none', 'medium', 'high'],
+      //     },
+      //     verbosity: {
+      //       values: ['low', 'medium', 'high'],
+      //     },
+      //   },
+      //   contextWindow: 400000,
+      // },
       {
         id: 'gpt-5',
         pricing: {
@@ -136,6 +209,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             values: ['low', 'medium', 'high'],
           },
         },
+        contextWindow: 400000,
       },
       {
         id: 'gpt-5-mini',
@@ -153,6 +227,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             values: ['low', 'medium', 'high'],
           },
         },
+        contextWindow: 400000,
       },
       {
         id: 'gpt-5-nano',
@@ -170,6 +245,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             values: ['low', 'medium', 'high'],
           },
         },
+        contextWindow: 400000,
       },
       {
         id: 'gpt-5-chat-latest',
@@ -180,6 +256,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-08-07',
         },
         capabilities: {},
+        contextWindow: 400000,
       },
       {
         id: 'gpt-4o-search-preview',
@@ -192,6 +269,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           toolUsageControl: true,
         },
+        contextWindow: 128000,
       },
       {
         id: 'o1',
@@ -202,6 +280,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-06-17',
         },
         capabilities: {},
+        contextWindow: 200000,
       },
       {
         id: 'o3',
@@ -212,6 +291,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-06-17',
         },
         capabilities: {},
+        contextWindow: 128000,
       },
       {
         id: 'o4-mini',
@@ -222,6 +302,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2025-06-17',
         },
         capabilities: {},
+        contextWindow: 128000,
       },
       {
         id: 'gpt-4.1',
@@ -234,6 +315,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 1000000,
       },
       {
         id: 'gpt-4.1-nano',
@@ -246,6 +328,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 1000000,
       },
       {
         id: 'gpt-4.1-mini',
@@ -258,6 +341,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
+        contextWindow: 1000000,
       },
     ],
   },
