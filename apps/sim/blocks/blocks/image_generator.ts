@@ -148,13 +148,13 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
       value: () => '1:1',
       condition: { field: 'model', value: 'gemini-2.5-flash-image' },
     },
-    // {
-    //   id: 'inputImage',
-    //   title: 'Input Image to Edit',
-    //   type: 'file-upload',
-    //   acceptedTypes: 'image/*',
-    //   condition: { field: 'model', value: 'gemini-2.5-flash-image' },
-    // },
+    {
+      id: 'inputImage',
+      title: 'Input Image to Edit',
+      type: 'file-upload',
+      acceptedTypes: 'image/*',
+      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+    },
   ],
   tools: {
     access: ['openai_image', 'google_imagen', 'google_nano_banana'],
