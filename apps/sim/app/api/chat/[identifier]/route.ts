@@ -701,6 +701,22 @@ export async function GET(
       // Continue without inputFormat - not critical for chat config
     }
 
+    /**
+     * Helper function to build chat config response with inputFormat always included
+     * Ensures inputFormat is never missing from successful responses
+     */
+    const buildChatConfigResponse = () => {
+      return createSuccessResponse({
+        id: deployment.id,
+        title: deployment.title,
+        description: deployment.description,
+        customizations: deployment.customizations,
+        authType: deployment.authType,
+        outputConfigs: deployment.outputConfigs,
+        inputFormat, // Always included in successful responses
+      })
+    }
+
     const cookieName = `chat_auth_${deployment.id}`
     const authCookie = request.cookies.get(cookieName)
 
@@ -709,18 +725,7 @@ export async function GET(
       authCookie &&
       validateAuthToken(authCookie.value, deployment.id)
     ) {
-      return addCorsHeaders(
-        createSuccessResponse({
-          id: deployment.id,
-          title: deployment.title,
-          description: deployment.description,
-          customizations: deployment.customizations,
-          authType: deployment.authType,
-          outputConfigs: deployment.outputConfigs,
-          inputFormat,
-        }),
-        request
-      )
+      return addCorsHeaders(buildChatConfigResponse(), request)
     }
 
     const authResult = await validateChatAuth(requestId, deployment, request)
@@ -734,18 +739,7 @@ export async function GET(
       )
     }
 
-    return addCorsHeaders(
-      createSuccessResponse({
-        id: deployment.id,
-        title: deployment.title,
-        description: deployment.description,
-        customizations: deployment.customizations,
-        authType: deployment.authType,
-        outputConfigs: deployment.outputConfigs,
-        inputFormat,
-      }),
-      request
-    )
+    return addCorsHeaders(buildChatConfigResponse(), request)
   } catch (error: any) {
     logger.error(`[${requestId}] Error fetching chat info:`, error)
     return addCorsHeaders(
