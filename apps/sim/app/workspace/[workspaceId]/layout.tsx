@@ -14,12 +14,23 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       <ProviderModelsLoader />
       <GlobalCommandsProvider>
         <Tooltip.Provider delayDuration={600} skipDelayDuration={0}>
+<<<<<<< HEAD
           <WorkspacePermissionsProvider>
             <div className='flex min-h-screen w-full'>
               <SidebarNew />
               <div className='flex flex-1 flex-col bg-white dark:bg-[var(--bg)]'>{children}</div>
             </div>
           </WorkspacePermissionsProvider>
+=======
+          <div className='flex min-h-screen w-full'>
+            <WorkspacePermissionsProvider>
+              <div className='shrink-0' suppressHydrationWarning>
+                <SidebarNew />
+              </div>
+              {children}
+            </WorkspacePermissionsProvider>
+          </div>
+>>>>>>> 1ec60f77733970b775244ed498ea9df845ed7f7a
         </Tooltip.Provider>
       </GlobalCommandsProvider>
     </>
