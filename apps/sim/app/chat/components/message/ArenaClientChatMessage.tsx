@@ -24,6 +24,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
+import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 
 export interface ChatMessage {
   id: string
@@ -55,6 +56,7 @@ export const ArenaClientChatMessage = memo(
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
     const [popoverSide, setPopoverSide] = useState<'top' | 'bottom'>('top')
+    const [isFeedbackPending, setIsFeedbackPending] = useState(false)
     const dislikeButtonRef = useRef<HTMLButtonElement>(null)
 
     const isJsonObject = useMemo(() => {
@@ -152,6 +154,7 @@ export const ArenaClientChatMessage = memo(
 
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
+      setIsFeedbackPending(true)
       try {
         await fetch(`/api/chat/feedback/${currentExecutionId}`, {
           method: 'POST',
@@ -180,6 +183,7 @@ export const ArenaClientChatMessage = memo(
         // })
       } finally {
         setIsFeedbackOpen(false)
+        setIsFeedbackPending(false)
       }
     }
 
@@ -196,6 +200,7 @@ export const ArenaClientChatMessage = memo(
     const handleSubmitFeedback = async (feedback: any, currentExecutionId: string) => {
       if (!currentExecutionId) return
 
+      setIsFeedbackPending(true)
       try {
         await fetch(`/api/chat/feedback/${currentExecutionId}`, {
           method: 'POST',
@@ -224,6 +229,7 @@ export const ArenaClientChatMessage = memo(
         // })
       } finally {
         setIsFeedbackOpen(false)
+        setIsFeedbackPending(false)
       }
     }
 
@@ -297,87 +303,93 @@ export const ArenaClientChatMessage = memo(
                   )}
                   {cleanTextContent && message?.executionId && (
                     <>
-                      {(message?.liked === true || message?.liked === null) && (
-                        <Tooltip.Provider>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <button
-                                className='text-muted-foreground transition-colors hover:bg-muted'
-                                onClick={() => {
-                                  if (message?.liked === true) {
-                                    return
-                                  }
-                                  handleLike(message?.executionId || '')
-                                }}
-                              >
-                                <ThumbsUp
-                                  stroke={'gray'}
-                                  fill={message?.liked === true ? 'gray' : 'white'}
-                                  className='h-4 w-4'
-                                  strokeWidth={2}
-                                />
-                              </button>
-                            </Tooltip.Trigger>
-
-                            <Tooltip.Content>
-                              {message?.liked === true ? 'Liked' : 'Like'}
-                            </Tooltip.Content>
-                          </Tooltip.Root>
-                        </Tooltip.Provider>
-                      )}
-
-                      {(message?.liked === false || message?.liked === null) && (
-                        <Tooltip.Provider>
-                          <Tooltip.Root>
-                            <Popover
-                              open={isFeedbackOpen && message?.liked !== false}
-                              onOpenChange={setIsFeedbackOpen}
-                            >
-                              <PopoverTrigger asChild>
+                      {isFeedbackPending ? (
+                        <StreamingIndicator />
+                      ) : (
+                        <>
+                          {(message?.liked === true || message?.liked === null) && (
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
                                 <Tooltip.Trigger asChild>
                                   <button
-                                    ref={dislikeButtonRef}
                                     className='text-muted-foreground transition-colors hover:bg-muted'
                                     onClick={() => {
-                                      if (message?.liked === false) {
+                                      if (message?.liked === true) {
                                         return
                                       }
-                                      handleDislike(message?.executionId || '')
+                                      handleLike(message?.executionId || '')
                                     }}
                                   >
-                                    <ThumbsDown
+                                    <ThumbsUp
                                       stroke={'gray'}
-                                      fill={message?.liked === false ? 'gray' : 'white'}
+                                      fill={message?.liked === true ? 'gray' : 'white'}
                                       className='h-4 w-4'
                                       strokeWidth={2}
                                     />
                                   </button>
                                 </Tooltip.Trigger>
-                              </PopoverTrigger>
-                              <PopoverContent
-                                className='z-[9999] w-[400px]'
-                                align='start'
-                                side={popoverSide}
-                                sideOffset={-15}
-                                avoidCollisions={true}
-                                collisionPadding={16}
-                                style={{
-                                  padding: 0,
-                                }}
-                              >
-                                <FeedbackBox
-                                  isOpen={true}
-                                  onClose={() => setIsFeedbackOpen(false)}
-                                  onSubmit={handleSubmitFeedback}
-                                  currentExecutionId={message?.executionId || ''}
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            <Tooltip.Content side='top' align='center' sideOffset={5}>
-                              {message?.liked === false ? 'Disliked' : 'Dislike'}
-                            </Tooltip.Content>
-                          </Tooltip.Root>
-                        </Tooltip.Provider>
+
+                                <Tooltip.Content>
+                                  {message?.liked === true ? 'Liked' : 'Like'}
+                                </Tooltip.Content>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                          )}
+
+                          {(message?.liked === false || message?.liked === null) && (
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
+                                <Popover
+                                  open={isFeedbackOpen && message?.liked !== false}
+                                  onOpenChange={setIsFeedbackOpen}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <Tooltip.Trigger asChild>
+                                      <button
+                                        ref={dislikeButtonRef}
+                                        className='text-muted-foreground transition-colors hover:bg-muted'
+                                        onClick={() => {
+                                          if (message?.liked === false) {
+                                            return
+                                          }
+                                          handleDislike(message?.executionId || '')
+                                        }}
+                                      >
+                                        <ThumbsDown
+                                          stroke={'gray'}
+                                          fill={message?.liked === false ? 'gray' : 'white'}
+                                          className='h-4 w-4'
+                                          strokeWidth={2}
+                                        />
+                                      </button>
+                                    </Tooltip.Trigger>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className='z-[9999] w-[400px]'
+                                    align='start'
+                                    side={popoverSide}
+                                    sideOffset={-15}
+                                    avoidCollisions={true}
+                                    collisionPadding={16}
+                                    style={{
+                                      padding: 0,
+                                    }}
+                                  >
+                                    <FeedbackBox
+                                      isOpen={true}
+                                      onClose={() => setIsFeedbackOpen(false)}
+                                      onSubmit={handleSubmitFeedback}
+                                      currentExecutionId={message?.executionId || ''}
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                                <Tooltip.Content side='top' align='center' sideOffset={5}>
+                                  {message?.liked === false ? 'Disliked' : 'Dislike'}
+                                </Tooltip.Content>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                          )}
+                        </>
                       )}
                     </>
                   )}
