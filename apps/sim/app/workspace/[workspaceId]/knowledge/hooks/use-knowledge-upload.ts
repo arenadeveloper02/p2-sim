@@ -84,6 +84,42 @@ class ProcessingError extends KnowledgeUploadError {
   }
 }
 
+/**
+ * Get content type from file, with fallback to extension-based detection
+ * Browsers don't always set MIME types for certain file extensions (e.g., .yaml),
+ * so we fall back to determining it from the file extension
+ */
+function getFileContentType(file: File): string {
+  // Use file.type if it's not empty
+  if (file.type && file.type.trim().length > 0) {
+    return file.type
+  }
+
+  // Fallback: determine MIME type from file extension
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+
+  // MIME type mapping matching server-side validation (apps/sim/lib/uploads/utils/validation.ts)
+  const mimeTypeMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    csv: 'text/csv',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    xls: 'application/vnd.ms-excel',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    html: 'text/html',
+    htm: 'text/html',
+    json: 'application/json',
+    yaml: 'text/yaml',
+    yml: 'text/yaml',
+  }
+
+  return mimeTypeMap[extension] || 'application/octet-stream'
+}
+
 const UPLOAD_CONFIG = {
   MAX_PARALLEL_UPLOADS: 3, // Prevent client saturation – mirrors guidance on limiting simultaneous transfers (@Web)
   MAX_RETRIES: 3,
@@ -238,7 +274,7 @@ const getPresignedData = async (
       },
       body: JSON.stringify({
         fileName: file.name,
-        contentType: file.type,
+        contentType: getFileContentType(file),
         fileSize: file.size,
       }),
       signal: localController.signal,
@@ -482,7 +518,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
               throughputMbps: calculateThroughputMbps(file.size, durationMs),
               status: xhr.status,
             })
-            resolve(createUploadedFile(file.name, fullFileUrl, file.size, file.type, file))
+            resolve(
+              createUploadedFile(file.name, fullFileUrl, file.size, getFileContentType(file), file)
+            )
           } else {
             logger.error('S3 PUT request failed', {
               status: xhr.status,
@@ -521,7 +559,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       xhr.open('PUT', presignedData.presignedUrl)
 
       // Set headers
-      xhr.setRequestHeader('Content-Type', file.type)
+      xhr.setRequestHeader('Content-Type', getFileContentType(file))
       if (presignedData.uploadHeaders) {
         Object.entries(presignedData.uploadHeaders).forEach(([key, value]) => {
           xhr.setRequestHeader(key, value as string)
@@ -553,7 +591,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileName: file.name,
-          contentType: file.type,
+          contentType: getFileContentType(file),
           fileSize: file.size,
         }),
       })
@@ -612,7 +650,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
                 body: chunk,
                 signal: controller.signal,
                 headers: {
-                  'Content-Type': file.type,
+                  'Content-Type': getFileContentType(file),
                 },
               })
 
@@ -696,7 +734,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       const fullFileUrl = path.startsWith('http') ? path : `${window.location.origin}${path}`
 
-      return createUploadedFile(file.name, fullFileUrl, file.size, file.type, file)
+      return createUploadedFile(file.name, fullFileUrl, file.size, getFileContentType(file), file)
     } catch (error) {
       logger.error(`Multipart upload failed for ${file.name}:`, error)
       const durationMs = getHighResTime() - startTime
@@ -761,7 +799,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         file.name,
         filePath.startsWith('http') ? filePath : `${window.location.origin}${filePath}`,
         file.size,
-        file.type,
+        getFileContentType(file),
         file
       )
     } finally {
@@ -814,7 +852,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         const batchRequest = {
           files: batchFiles.map((file) => ({
             fileName: file.name,
-            contentType: file.type,
+            contentType: getFileContentType(file),
             fileSize: file.size,
           })),
         }
