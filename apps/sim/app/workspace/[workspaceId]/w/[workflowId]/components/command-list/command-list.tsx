@@ -207,7 +207,7 @@ export function CommandList() {
               <div className='flex items-center gap-[8px]'>
                 {isAgentIcon ? (
                   <div className='flex h-[14px] w-[14px] items-center justify-center'>
-                    <AgentIcon width={14} height={14} className='h-[14px] w-[14px]' />
+                    <AgentIcon className='h-3 w-3' />
                   </div>
                 ) : (
                   <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />

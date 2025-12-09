@@ -10,7 +10,8 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
-import { Skeleton, TagInput } from '@/components/ui'
+import { Skeleton } from '@/components/ui'
+import { TagInput } from '@/components/ui/tag-input'
 import { useSession } from '@/lib/auth/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
@@ -362,7 +363,7 @@ export function TemplateDeploy({
           </Label>
           <TagInput
             value={formData.tags}
-            onChange={(tags) => updateField('tags', tags)}
+            onChange={(tags: string[]) => updateField('tags', tags)}
             placeholder='Dev, Agents, Research, etc.'
             maxTags={10}
             disabled={isSubmitting}
