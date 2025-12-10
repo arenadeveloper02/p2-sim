@@ -25,6 +25,8 @@ const chatUpdateSchema = z.object({
     .optional(),
   title: z.string().min(1, 'Title is required').optional(),
   description: z.string().optional(),
+  remarks: z.string().optional(),
+  department: z.string().optional(),
   customizations: z
     .object({
       primaryColor: z.string(),
@@ -116,6 +118,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         identifier,
         title,
         description,
+        remarks,
+        department,
         customizations,
         authType,
         password,
@@ -172,6 +176,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (identifier) updateData.identifier = identifier
       if (title) updateData.title = title
       if (description !== undefined) updateData.description = description
+      if (remarks !== undefined) updateData.remarks = remarks
+      if (department !== undefined) updateData.department = department
       if (customizations) updateData.customizations = customizations
 
       if (authType) {

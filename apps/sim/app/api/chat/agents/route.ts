@@ -1,6 +1,6 @@
 import { db } from '@sim/db'
-import { chat, templates, user, workflow } from '@sim/db/schema'
-import { eq } from 'drizzle-orm'
+import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { createLogger } from '@/lib/logs/console/logger'
 
@@ -95,20 +95,24 @@ export async function GET(request: NextRequest) {
         userId: chat.userId,
         authorEmail: user.email,
         allowedEmails: chat.allowedEmails,
-        name: workflow.name,
+        name: chat.title,
         author: chat.userId,
         workflowName: workflow.name,
         workflowDescription: chat.remarks,
-        templateDescription: templates.details,
+        templateDescription: chat.remarks,
         department: chat.department,
         workspaceId: workflow.workspaceId,
         createdAt: chat.createdAt,
       })
-      .from(templates)
-      .innerJoin(chat, eq(chat.workflowId, templates.workflowId))
+      .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
       .innerJoin(user, eq(user.id, chat.userId))
-      .where(eq(chat.isActive, true))
+      .leftJoin(webhook, and(eq(webhook.workflowId, workflow.id), eq(webhook.isActive, true)))
+      .leftJoin(
+        workflowSchedule,
+        and(eq(workflowSchedule.workflowId, workflow.id), eq(workflowSchedule.status, 'active'))
+      )
+      .where(and(eq(chat.isActive, true), and(isNull(webhook.id), isNull(workflowSchedule.id))))
 
     // Step 3: Filter chats based on access rules
     const accessibleChats = chats.filter((chatRecord) => {
@@ -146,10 +150,13 @@ export async function GET(request: NextRequest) {
       author_email: chatRecord.authorEmail,
       workflow_id: chatRecord.workflowId,
       subdomain: chatRecord.subdomain,
-      workflow_name: chatRecord.workflowName,
+      workflow_name: chatRecord.name,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: chatRecord.department,
+      department: chatRecord.department
+        ? categories.find((category) => category.value === chatRecord.department)?.label ||
+          chatRecord.department
+        : null,
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
