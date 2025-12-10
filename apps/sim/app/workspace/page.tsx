@@ -105,11 +105,15 @@ export default function WorkspacePage() {
           return
         }
 
-        const ownerWorkspaces = sortedWorkspaces.filter((workspaceItem) => workspaceItem.role === 'owner')
+        const ownerWorkspaces = sortedWorkspaces.filter(
+          (workspaceItem) => workspaceItem.role === 'owner'
+        )
         const defaultWorkspace =
           ownerWorkspaces.length > 0
             ? ownerWorkspaces.reduce((oldest, current) => {
-                const oldestTimestamp = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Number.POSITIVE_INFINITY
+                const oldestTimestamp = oldest.createdAt
+                  ? new Date(oldest.createdAt).getTime()
+                  : Number.POSITIVE_INFINITY
                 const currentTimestamp = current.createdAt
                   ? new Date(current.createdAt).getTime()
                   : Number.POSITIVE_INFINITY
