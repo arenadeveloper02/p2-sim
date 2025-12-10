@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { Database, HelpCircle, Layout, LibraryBig, Settings } from 'lucide-react'
+import { Database, Layout, LibraryBig, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import {
@@ -33,6 +33,13 @@ export function FooterNavigation() {
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
 
+  // Listen for external events to open modals
+  useEffect(() => {
+    const handleOpenHelpModal = () => setIsHelpModalOpen(true)
+    window.addEventListener('open-help-modal', handleOpenHelpModal)
+    return () => window.removeEventListener('open-help-modal', handleOpenHelpModal)
+  }, [])
+
   const navigationItems: FooterNavigationItem[] = [
     {
       id: 'logs',
@@ -48,16 +55,16 @@ export function FooterNavigation() {
     },
     {
       id: 'knowledge-base',
-      label: 'Vector Database',
+      label: 'Knowledge Base',
       icon: Database,
       href: `/workspace/${workspaceId}/knowledge`,
     },
-    {
-      id: 'help',
-      label: 'Help',
-      icon: HelpCircle,
-      onClick: () => setIsHelpModalOpen(true),
-    },
+    // {
+    //   id: 'help',
+    //   label: 'Help',
+    //   icon: HelpCircle,
+    //   onClick: () => setIsHelpModalOpen(true),
+    // },
     {
       id: 'settings',
       label: 'Settings',

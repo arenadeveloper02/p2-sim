@@ -82,6 +82,15 @@ import {
   confluenceUpdateTool,
 } from '@/tools/confluence'
 import {
+  cursorAddFollowupTool,
+  cursorDeleteAgentTool,
+  cursorGetAgentTool,
+  cursorGetConversationTool,
+  cursorLaunchAgentTool,
+  cursorListAgentsTool,
+  cursorStopAgentTool,
+} from '@/tools/cursor'
+import {
   datadogCancelDowntimeTool,
   datadogCreateDowntimeTool,
   datadogCreateEventTool,
@@ -145,12 +154,12 @@ import {
   dropboxUploadTool,
 } from '@/tools/dropbox'
 import {
-  deleteTool as dynamodbDeleteTool,
-  getTool as dynamodbGetTool,
-  putTool as dynamodbPutTool,
-  queryTool as dynamodbQueryTool,
-  scanTool as dynamodbScanTool,
-  updateTool as dynamodbUpdateTool,
+  dynamodbDeleteTool,
+  dynamodbGetTool,
+  dynamodbPutTool,
+  dynamodbQueryTool,
+  dynamodbScanTool,
+  dynamodbUpdateTool,
 } from '@/tools/dynamodb'
 import {
   elasticsearchBulkTool,
@@ -189,11 +198,11 @@ import {
 } from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import {
-  crawlTool,
-  extractTool,
-  searchTool as firecrawlSearchTool,
-  mapTool,
-  scrapeTool,
+  firecrawlCrawlTool,
+  firecrawlExtractTool,
+  firecrawlMapTool,
+  firecrawlScrapeTool,
+  firecrawlSearchTool,
 } from '@/tools/firecrawl'
 import { functionExecuteTool } from '@/tools/function'
 import {
@@ -285,7 +294,7 @@ import {
   gmailSendTool,
   gmailUnarchiveTool,
 } from '@/tools/gmail'
-import { searchTool as googleSearchTool } from '@/tools/google'
+import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import {
   googleCalendarCreateTool,
@@ -303,6 +312,19 @@ import {
   googleDriveUploadTool,
 } from '@/tools/google_drive'
 import { googleFormsGetResponsesTool } from '@/tools/google_form'
+import {
+  googleGroupsAddMemberTool,
+  googleGroupsCreateGroupTool,
+  googleGroupsDeleteGroupTool,
+  googleGroupsGetGroupTool,
+  googleGroupsGetMemberTool,
+  googleGroupsHasMemberTool,
+  googleGroupsListGroupsTool,
+  googleGroupsListMembersTool,
+  googleGroupsRemoveMemberTool,
+  googleGroupsUpdateGroupTool,
+  googleGroupsUpdateMemberTool,
+} from '@/tools/google_groups'
 import {
   googleSheetsAppendTool,
   googleSheetsReadTool,
@@ -349,7 +371,7 @@ import {
   grafanaUpdateDashboardTool,
 } from '@/tools/grafana'
 import { guardrailsValidateTool } from '@/tools/guardrails'
-import { requestTool as httpRequest } from '@/tools/http'
+import { httpRequestTool } from '@/tools/http'
 import {
   hubspotCreateCompanyTool,
   hubspotCreateContactTool,
@@ -438,7 +460,7 @@ import {
   intercomSearchConversationsTool,
   intercomUpdateContactTool,
 } from '@/tools/intercom'
-import { searchTool as jinaSearchTool, readUrlTool } from '@/tools/jina'
+import { jinaReadUrlTool, jinaSearchTool } from '@/tools/jina'
 import {
   jiraAddCommentTool,
   jiraAddWatcherTool,
@@ -696,26 +718,26 @@ import {
 } from '@/tools/microsoft_teams'
 import { mistralParserTool } from '@/tools/mistral'
 import {
-  deleteTool as mongodbDeleteTool,
-  executeTool as mongodbExecuteTool,
-  insertTool as mongodbInsertTool,
-  queryTool as mongodbQueryTool,
-  updateTool as mongodbUpdateTool,
+  mongodbDeleteTool,
+  mongodbExecuteTool,
+  mongodbInsertTool,
+  mongodbQueryTool,
+  mongodbUpdateTool,
 } from '@/tools/mongodb'
 import {
-  deleteTool as mysqlDeleteTool,
-  executeTool as mysqlExecuteTool,
-  insertTool as mysqlInsertTool,
-  queryTool as mysqlQueryTool,
-  updateTool as mysqlUpdateTool,
+  mysqlDeleteTool,
+  mysqlExecuteTool,
+  mysqlInsertTool,
+  mysqlQueryTool,
+  mysqlUpdateTool,
 } from '@/tools/mysql'
 import {
-  createTool as neo4jCreateTool,
-  deleteTool as neo4jDeleteTool,
-  executeTool as neo4jExecuteTool,
-  mergeTool as neo4jMergeTool,
-  queryTool as neo4jQueryTool,
-  updateTool as neo4jUpdateTool,
+  neo4jCreateTool,
+  neo4jDeleteTool,
+  neo4jExecuteTool,
+  neo4jMergeTool,
+  neo4jQueryTool,
+  neo4jUpdateTool,
 } from '@/tools/neo4j'
 import {
   notionCreateDatabaseTool,
@@ -733,7 +755,7 @@ import {
   onedriveListTool,
   onedriveUploadTool,
 } from '@/tools/onedrive'
-import { imageTool, embeddingsTool as openAIEmbeddings } from '@/tools/openai'
+import { openAIEmbeddingsTool, openAIImageTool } from '@/tools/openai'
 import {
   outlookCopyTool,
   outlookDeleteTool,
@@ -794,11 +816,11 @@ import {
   polymarketSearchTool,
 } from '@/tools/polymarket'
 import {
-  deleteTool as postgresDeleteTool,
-  executeTool as postgresExecuteTool,
-  insertTool as postgresInsertTool,
-  queryTool as postgresQueryTool,
-  updateTool as postgresUpdateTool,
+  postgresDeleteTool,
+  postgresExecuteTool,
+  postgresInsertTool,
+  postgresQueryTool,
+  postgresUpdateTool,
 } from '@/tools/postgresql'
 import {
   posthogBatchEventsTool,
@@ -888,11 +910,11 @@ import {
 } from '@/tools/pylon'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import {
-  deleteTool as rdsDeleteTool,
-  executeTool as rdsExecuteTool,
-  insertTool as rdsInsertTool,
-  queryTool as rdsQueryTool,
-  updateTool as rdsUpdateTool,
+  rdsDeleteTool,
+  rdsExecuteTool,
+  rdsInsertTool,
+  rdsQueryTool,
+  rdsUpdateTool,
 } from '@/tools/rds'
 import {
   redditDeleteTool,
@@ -930,12 +952,23 @@ import {
   salesforceDeleteLeadTool,
   salesforceDeleteOpportunityTool,
   salesforceDeleteTaskTool,
+  salesforceDescribeObjectTool,
   salesforceGetAccountsTool,
   salesforceGetCasesTool,
   salesforceGetContactsTool,
+  salesforceGetDashboardTool,
   salesforceGetLeadsTool,
   salesforceGetOpportunitiesTool,
+  salesforceGetReportTool,
   salesforceGetTasksTool,
+  salesforceListDashboardsTool,
+  salesforceListObjectsTool,
+  salesforceListReportsTool,
+  salesforceListReportTypesTool,
+  salesforceQueryMoreTool,
+  salesforceQueryTool,
+  salesforceRefreshDashboardTool,
+  salesforceRunReportTool,
   salesforceUpdateAccountTool,
   salesforceUpdateCaseTool,
   salesforceUpdateContactTool,
@@ -977,7 +1010,7 @@ import {
   updateIssueTool,
   updateProjectTool,
 } from '@/tools/sentry'
-import { searchTool as serperSearch } from '@/tools/serper'
+import { serperSearchTool } from '@/tools/serper'
 import {
   sharepointAddListItemTool,
   sharepointCreateListTool,
@@ -1028,19 +1061,19 @@ import { smsSendTool } from '@/tools/sms'
 import { smtpSendMailTool } from '@/tools/smtp'
 import { spyfuRequestTool } from '@/tools/spyfu'
 import {
-  checkCommandExistsTool as sshCheckCommandExistsTool,
-  checkFileExistsTool as sshCheckFileExistsTool,
-  createDirectoryTool as sshCreateDirectoryTool,
-  deleteFileTool as sshDeleteFileTool,
-  downloadFileTool as sshDownloadFileTool,
-  executeCommandTool as sshExecuteCommandTool,
-  executeScriptTool as sshExecuteScriptTool,
-  getSystemInfoTool as sshGetSystemInfoTool,
-  listDirectoryTool as sshListDirectoryTool,
-  moveRenameTool as sshMoveRenameTool,
-  readFileContentTool as sshReadFileContentTool,
-  uploadFileTool as sshUploadFileTool,
-  writeFileContentTool as sshWriteFileContentTool,
+  sshCheckCommandExistsTool,
+  sshCheckFileExistsTool,
+  sshCreateDirectoryTool,
+  sshDeleteFileTool,
+  sshDownloadFileTool,
+  sshExecuteCommandTool,
+  sshExecuteScriptTool,
+  sshGetSystemInfoTool,
+  sshListDirectoryTool,
+  sshMoveRenameTool,
+  sshReadFileContentTool,
+  sshUploadFileTool,
+  sshWriteFileContentTool,
 } from '@/tools/ssh'
 import { stagehandAgentTool, stagehandExtractTool } from '@/tools/stagehand'
 import {
@@ -1303,17 +1336,17 @@ export const tools: Record<string, ToolConfig> = {
   asana_search_tasks: asanaSearchTasksTool,
   asana_add_comment: asanaAddCommentTool,
   browser_use_run_task: browserUseRunTaskTool,
-  openai_embeddings: openAIEmbeddings,
-  http_request: httpRequest,
+  openai_embeddings: openAIEmbeddingsTool,
+  http_request: httpRequestTool,
   huggingface_chat: huggingfaceChatTool,
   function_execute: functionExecuteTool,
   vision_tool: visionTool,
   file_parser: fileParseTool,
-  firecrawl_scrape: scrapeTool,
+  firecrawl_scrape: firecrawlScrapeTool,
   firecrawl_search: firecrawlSearchTool,
-  firecrawl_crawl: crawlTool,
-  firecrawl_map: mapTool,
-  firecrawl_extract: extractTool,
+  firecrawl_crawl: firecrawlCrawlTool,
+  firecrawl_map: firecrawlMapTool,
+  firecrawl_extract: firecrawlExtractTool,
   grafana_get_dashboard: grafanaGetDashboardTool,
   grafana_list_dashboards: grafanaListDashboardsTool,
   grafana_create_dashboard: grafanaCreateDashboardTool,
@@ -1334,8 +1367,10 @@ export const tools: Record<string, ToolConfig> = {
   grafana_list_folders: grafanaListFoldersTool,
   grafana_create_folder: grafanaCreateFolderTool,
   google_search: googleSearchTool,
+  google_imagen: imagenTool,
+  google_nano_banana: nanoBananaTool,
   guardrails_validate: guardrailsValidateTool,
-  jina_read_url: readUrlTool,
+  jina_read_url: jinaReadUrlTool,
   jina_search: jinaSearchTool,
   linkup_search: linkupSearchTool,
   linkedin_share_post: linkedInSharePostTool,
@@ -1450,7 +1485,7 @@ export const tools: Record<string, ToolConfig> = {
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
   spyfu_request: spyfuRequestTool,
-  serper_search: serperSearch,
+  serper_search: serperSearchTool,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
   tavily_crawl: tavilyCrawlTool,
@@ -1786,6 +1821,13 @@ export const tools: Record<string, ToolConfig> = {
   confluence_list_labels: confluenceListLabelsTool,
   confluence_get_space: confluenceGetSpaceTool,
   confluence_list_spaces: confluenceListSpacesTool,
+  cursor_list_agents: cursorListAgentsTool,
+  cursor_get_agent: cursorGetAgentTool,
+  cursor_get_conversation: cursorGetConversationTool,
+  cursor_launch_agent: cursorLaunchAgentTool,
+  cursor_add_followup: cursorAddFollowupTool,
+  cursor_stop_agent: cursorStopAgentTool,
+  cursor_delete_agent: cursorDeleteAgentTool,
   trello_list_lists: trelloListListsTool,
   trello_list_cards: trelloListCardsTool,
   trello_create_card: trelloCreateCardTool,
@@ -1937,7 +1979,7 @@ export const tools: Record<string, ToolConfig> = {
   datadog_create_downtime: datadogCreateDowntimeTool,
   datadog_list_downtimes: datadogListDowntimesTool,
   datadog_cancel_downtime: datadogCancelDowntimeTool,
-  openai_image: imageTool,
+  openai_image: openAIImageTool,
   microsoft_teams_read_chat: microsoftTeamsReadChatTool,
   microsoft_teams_write_chat: microsoftTeamsWriteChatTool,
   microsoft_teams_read_channel: microsoftTeamsReadChannelTool,
@@ -2138,6 +2180,17 @@ export const tools: Record<string, ToolConfig> = {
   google_vault_create_matters: createMattersTool,
   google_vault_list_matters: listMattersTool,
   google_vault_download_export_file: downloadExportFileTool,
+  google_groups_list_groups: googleGroupsListGroupsTool,
+  google_groups_get_group: googleGroupsGetGroupTool,
+  google_groups_create_group: googleGroupsCreateGroupTool,
+  google_groups_update_group: googleGroupsUpdateGroupTool,
+  google_groups_delete_group: googleGroupsDeleteGroupTool,
+  google_groups_list_members: googleGroupsListMembersTool,
+  google_groups_get_member: googleGroupsGetMemberTool,
+  google_groups_add_member: googleGroupsAddMemberTool,
+  google_groups_remove_member: googleGroupsRemoveMemberTool,
+  google_groups_update_member: googleGroupsUpdateMemberTool,
+  google_groups_has_member: googleGroupsHasMemberTool,
   qdrant_fetch_points: qdrantFetchTool,
   qdrant_search_vector: qdrantSearchTool,
   qdrant_upsert_points: qdrantUpsertTool,
@@ -2276,6 +2329,17 @@ export const tools: Record<string, ToolConfig> = {
   salesforce_delete_task: salesforceDeleteTaskTool,
   //semrush tool
   semrush_query: semrushQueryTool,
+  salesforce_list_reports: salesforceListReportsTool,
+  salesforce_get_report: salesforceGetReportTool,
+  salesforce_run_report: salesforceRunReportTool,
+  salesforce_list_report_types: salesforceListReportTypesTool,
+  salesforce_list_dashboards: salesforceListDashboardsTool,
+  salesforce_get_dashboard: salesforceGetDashboardTool,
+  salesforce_refresh_dashboard: salesforceRefreshDashboardTool,
+  salesforce_query: salesforceQueryTool,
+  salesforce_query_more: salesforceQueryMoreTool,
+  salesforce_describe_object: salesforceDescribeObjectTool,
+  salesforce_list_objects: salesforceListObjectsTool,
   pylon_list_issues: pylonListIssuesTool,
   pylon_create_issue: pylonCreateIssueTool,
   pylon_get_issue: pylonGetIssueTool,

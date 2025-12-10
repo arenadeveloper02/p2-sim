@@ -648,12 +648,17 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
 
-  // Use server key rotation for all OpenAI models, Anthropic's Claude models, and Google's Gemini models on the hosted platform
+  // Use server key rotation for all OpenAI models, Anthropic's Claude models, Google's Gemini models, SambaNova models, and xAI models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGeminiModel = provider === 'google'
+  const isSambaNovaModel = provider === 'sambanova'
+  const isXaiModel = provider === 'xai'
 
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel)) {
+  if (
+    isHosted &&
+    (isOpenAIModel || isClaudeModel || isGeminiModel || isSambaNovaModel || isXaiModel)
+  ) {
     // Only use server key if model is explicitly in our hosted list
     const hostedModels = getHostedModels()
     const isModelHosted = hostedModels.some((m) => m.toLowerCase() === model.toLowerCase())
@@ -661,7 +666,8 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     if (isModelHosted) {
       try {
         const { getRotatingApiKey } = require('@/lib/core/config/api-keys')
-        const serverKey = getRotatingApiKey(isGeminiModel ? 'gemini' : provider)
+        // For Google/Gemini models, use the Google key namespace
+        const serverKey = getRotatingApiKey(isGeminiModel ? 'google' : provider)
         return serverKey
       } catch (_error) {
         if (hasUserKey) {

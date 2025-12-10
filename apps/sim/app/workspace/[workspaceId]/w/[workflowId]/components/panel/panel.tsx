@@ -60,6 +60,9 @@ const RunAgentExternalChat = ({
   const [chatUrl, setChatUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Watch for deployment status changes
+  const deploymentStatus = useWorkflowRegistry((state) => state.deploymentStatuses[workflowId])
+
   useEffect(() => {
     if (!workflowId) {
       setChatUrl(null)
@@ -90,7 +93,7 @@ const RunAgentExternalChat = ({
     }
 
     fetchChatUrl()
-  }, [workflowId])
+  }, [workflowId, deploymentStatus?.isDeployed, deploymentStatus?.deployedAt])
 
   if (!chatUrl) {
     return null

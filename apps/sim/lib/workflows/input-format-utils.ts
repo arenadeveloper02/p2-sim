@@ -1,4 +1,5 @@
 import type { InputFormatField } from '@/lib/workflows/types'
+import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 
 /**
  * Normalizes an input format value into a list of valid fields.
@@ -36,4 +37,34 @@ export function normalizeInputFormatValue(inputFormatValue: unknown): InputForma
       typeof field.name === 'string' &&
       field.name.trim() !== ''
   )
+}
+
+/**
+ * Filters custom fields from inputFormat, excluding reserved fields.
+ * Reserved fields are: 'input', 'conversationId', 'files'
+ *
+ * This function provides a consistent way to identify custom (user-defined) input fields
+ * that should trigger features like the Re-run button and input modal.
+ *
+ * @param inputFormat - Input format array from Start Block configuration
+ * @returns Array of custom fields (excluding reserved fields)
+ */
+export function getCustomInputFields(
+  inputFormat: InputFormatField[] | null | undefined
+): InputFormatField[] {
+  if (!inputFormat) return []
+
+  const normalizedFields = normalizeInputFormatValue(inputFormat)
+
+  // Create a set of reserved field names in lowercase for case-insensitive comparison
+  const reservedFieldsLower = new Set(
+    START_BLOCK_RESERVED_FIELDS.map((field) => field.toLowerCase())
+  )
+
+  return normalizedFields.filter((field) => {
+    const fieldName = field.name?.trim().toLowerCase()
+    if (!fieldName) return false
+    // Check if field is in reserved fields set (case-insensitive)
+    return !reservedFieldsLower.has(fieldName)
+  })
 }

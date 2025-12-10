@@ -5,6 +5,10 @@ import { AtSign, Check, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  checkTagTrigger,
+  TagDropdown,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 
 export interface SlackUserInfo {
   id: string
@@ -21,6 +25,7 @@ interface SlackMentionInputProps {
   workflowId?: string
   isForeignCredential?: boolean
   placeholder?: string
+  blockId?: string
 }
 
 export function SlackMentionInput({
@@ -31,6 +36,7 @@ export function SlackMentionInput({
   workflowId,
   isForeignCredential = false,
   placeholder = 'Type your message... Use @ to mention users',
+  blockId,
 }: SlackMentionInputProps) {
   const [users, setUsers] = useState<SlackUserInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -39,6 +45,11 @@ export function SlackMentionInput({
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionPosition, setMentionPosition] = useState(0)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
+
+  // Tag dropdown state for variable/block references
+  const [showTagDropdown, setShowTagDropdown] = useState(false)
+  const [tagCursorPosition, setTagCursorPosition] = useState(0)
+  const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
 
   // Display value (user-friendly) and actual value (with mention format)
   const [displayValue, setDisplayValue] = useState('')
@@ -163,7 +174,7 @@ export function SlackMentionInput({
     return () => clearTimeout(timeoutId)
   }, [displayValue, users.length])
 
-  // Close mention menu when clicking outside
+  // Close mention menu and tag dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -174,6 +185,7 @@ export function SlackMentionInput({
       ) {
         setShowMentionMenu(false)
       }
+      // TagDropdown handles its own click outside logic
     }
 
     if (showMentionMenu) {
@@ -182,7 +194,7 @@ export function SlackMentionInput({
     }
   }, [showMentionMenu])
 
-  // Handle text change and detect @ mentions
+  // Handle text change and detect @ mentions and < tag triggers
   const handleTextChange = (newDisplayValue: string, cursorPos?: number) => {
     setDisplayValue(newDisplayValue)
 
@@ -196,6 +208,31 @@ export function SlackMentionInput({
     // Use provided cursor position or get from textarea ref
     const cursorPosition =
       cursorPos ?? textareaRef.current?.selectionStart ?? newDisplayValue.length
+    setTagCursorPosition(cursorPosition)
+
+    // Check for tag trigger (<) first, as it takes precedence
+    // Use actual value for tag trigger check since tag dropdown works with actual format
+    if (blockId) {
+      // Map cursor position from display value to actual value
+      // For simplicity, use the same cursor position (they should be similar unless there are mentions)
+      const tagTrigger = checkTagTrigger(newActualValue, cursorPosition)
+      if (tagTrigger.show) {
+        setShowTagDropdown(true)
+        setShowMentionMenu(false)
+
+        // Determine active source block ID if applicable
+        const textBeforeCursor = newActualValue.slice(0, cursorPosition)
+        const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
+        const tagContent = textBeforeCursor.slice(lastOpenBracket + 1)
+        const dotIndex = tagContent.indexOf('.')
+        const sourceBlock = dotIndex > 0 ? tagContent.slice(0, dotIndex) : null
+        setActiveSourceBlockId(sourceBlock)
+        return
+      }
+      setShowTagDropdown(false)
+    }
+
+    // Check for @ mentions
     const textBeforeCursor = newDisplayValue.substring(0, cursorPosition)
     const lastAtIndex = textBeforeCursor.lastIndexOf('@')
 
@@ -254,8 +291,32 @@ export function SlackMentionInput({
     }, 0)
   }
 
+  // Handle tag selection from TagDropdown
+  const handleTagSelect = (newValue: string) => {
+    // The newValue already contains the tag in format like <block.output>
+    // Convert it to display format (only Slack mentions will be converted)
+    const { display } = convertToDisplayFormat(newValue, users)
+    setDisplayValue(display)
+    setActualValue(newValue)
+    onChange(newValue)
+    setShowTagDropdown(false)
+    setActiveSourceBlockId(null)
+
+    // Focus back to textarea and position cursor after the inserted tag
+    setTimeout(() => {
+      textareaRef.current?.focus()
+      const newCursorPosition = newValue.length
+      textareaRef.current?.setSelectionRange(newCursorPosition, newCursorPosition)
+    }, 0)
+  }
+
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // If tag dropdown is open, let it handle keyboard events
+    if (showTagDropdown) {
+      return
+    }
+
     if (!showMentionMenu || filteredUsers.length === 0) return
 
     switch (e.key) {
@@ -348,6 +409,20 @@ export function SlackMentionInput({
           </div>
         )}
 
+        {/* Tag dropdown for variable/block references */}
+        {showTagDropdown && blockId && (
+          <TagDropdown
+            visible={showTagDropdown}
+            onSelect={handleTagSelect}
+            blockId={blockId}
+            activeSourceBlockId={activeSourceBlockId}
+            inputValue={actualValue}
+            cursorPosition={tagCursorPosition}
+            onClose={() => setShowTagDropdown(false)}
+            inputRef={textareaRef as React.RefObject<HTMLInputElement | HTMLTextAreaElement>}
+          />
+        )}
+
         {/* Mention menu */}
         {showMentionMenu && (
           <div
@@ -411,7 +486,8 @@ export function SlackMentionInput({
 
       {/* Help text */}
       <div className='text-muted-foreground text-xs'>
-        Type @ or click the @ button to mention users.
+        Type @ or click the @ button to mention users. Type &lt; to reference variables and block
+        outputs.
         <br />
       </div>
     </div>

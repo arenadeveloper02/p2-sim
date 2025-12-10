@@ -157,9 +157,18 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
     },
   ],
   tools: {
-    access: ['openai_image'],
+    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
     config: {
-      tool: () => 'openai_image',
+      tool: (params) => {
+        // Select tool based on model
+        if (params.model?.startsWith('imagen-')) {
+          return 'google_imagen'
+        }
+        if (params.model?.startsWith('gemini-')) {
+          return 'google_nano_banana'
+        }
+        return 'openai_image'
+      },
       params: (params) => {
         if (!params.prompt) {
           throw new Error('Prompt is required')

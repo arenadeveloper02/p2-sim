@@ -160,7 +160,8 @@ const LeftNavThread = ({
           variant='outline'
           className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
           onClick={() => {
-            window.location.href = getExitUrl()
+            const exitUrl = getExitUrl()
+            window.location.replace(exitUrl)
           }}
         >
           <ArrowLeft className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
