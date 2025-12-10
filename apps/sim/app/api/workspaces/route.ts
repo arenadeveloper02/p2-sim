@@ -1,6 +1,6 @@
 import { db } from '@sim/db'
 import { permissions, workflow, workspace } from '@sim/db/schema'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -31,7 +31,7 @@ export async function GET() {
     .from(permissions)
     .innerJoin(workspace, eq(permissions.entityId, workspace.id))
     .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
-    .orderBy(desc(workspace.createdAt))
+    .orderBy(asc(workspace.name))
 
   if (userWorkspaces.length === 0) {
     // Create a default workspace for the user
