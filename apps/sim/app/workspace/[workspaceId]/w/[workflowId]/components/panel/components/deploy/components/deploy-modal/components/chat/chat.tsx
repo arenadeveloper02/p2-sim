@@ -268,12 +268,12 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      if (chatUrl) {
-        window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
-      }
+      // if (chatUrl) {
+      //   window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
+      // }
 
-      setHasInitializedForm(false)
       await onRefetchChat()
+      setHasInitializedForm(false)
     } catch (error: any) {
       if (error.message?.includes('identifier')) {
         setError('identifier', error.message)
