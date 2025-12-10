@@ -1,3 +1,5 @@
+import { env } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/environment'
 import type { ExaSearchParams, ExaSearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -89,7 +91,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': params.apiKey,
+      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {

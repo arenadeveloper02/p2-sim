@@ -1,4 +1,5 @@
 import { ExaAIIcon } from '@/components/icons'
+import { isHosted } from '@/lib/core/config/environment'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { ExaResponse } from '@/tools/exa/types'
@@ -296,7 +297,8 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
       type: 'short-input',
       placeholder: 'Enter your Exa API key',
       password: true,
-      required: true,
+      required: false,
+      hidden: isHosted,
     },
   ],
   tools: {
