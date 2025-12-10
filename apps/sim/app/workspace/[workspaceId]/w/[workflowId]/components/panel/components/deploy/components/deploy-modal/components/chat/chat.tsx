@@ -11,7 +11,7 @@ import {
   ModalHeader,
 } from '@/components/emcn/components/modal/modal'
 import { Alert, AlertDescription, Skeleton } from '@/components/ui'
-import { NativeSelect } from '@/components/ui/native-select'
+import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
@@ -369,18 +369,13 @@ export function ChatDeploy({
             <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
               Department
             </Label>
-            <NativeSelect
+            <CustomSelect
               value={formData.department || ''}
-              onChange={(e) => updateField('department', e.target.value)}
+              onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
               placeholder='Select department'
-            >
-              {CATEGORIES.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.label}
-                </option>
-              ))}
-            </NativeSelect>
+              options={CATEGORIES.map((cat) => ({ value: cat.value, label: cat.label }))}
+            />
           </div>
           {errors.department && (
             <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
