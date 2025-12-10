@@ -190,7 +190,7 @@ export default function ArenaCopilotMarkdownRenderer({
       // Lists
       ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => (
         <ul
-          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'disc' }}
         >
           {children}
@@ -198,7 +198,7 @@ export default function ArenaCopilotMarkdownRenderer({
       ),
       ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
         <ol
-          className='ml-2 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
           style={{ listStyleType: 'decimal' }}
         >
           {children}
@@ -279,7 +279,7 @@ export default function ArenaCopilotMarkdownRenderer({
               : 'javascript'
 
         return (
-          <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[#1F1F1F] text-sm'>
+          <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm dark:bg-[#1F1F1F]'>
             <div className='flex items-center justify-between border-[var(--border-strong)] border-b px-4 py-1.5'>
               <span className='font-season text-[#A3A3A3] text-xs'>
                 {language === 'code' ? viewerLanguage : language}

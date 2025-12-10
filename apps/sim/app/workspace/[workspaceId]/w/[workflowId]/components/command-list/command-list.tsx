@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
+import { getBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useSearchModalStore } from '@/stores/search-modal/store'
@@ -183,15 +184,11 @@ export function CommandList() {
         {/* Logo */}
         <div className='mb-[20px] flex justify-center'>
           <Image
-            src='/logo/b&w/text/b&w.svg'
+            src={getBrandConfig().logoUrl || ''}
             alt='Sim'
             width={99.56}
             height={48.56}
             className='opacity-70'
-            style={{
-              filter:
-                'brightness(0) saturate(100%) invert(69%) sepia(0%) saturate(0%) hue-rotate(202deg) brightness(94%) contrast(89%)',
-            }}
             priority
           />
         </div>
@@ -199,6 +196,7 @@ export function CommandList() {
         {commands.map((command) => {
           const Icon = command.icon
           const shortcuts = Array.isArray(command.shortcut) ? command.shortcut : [command.shortcut]
+          const isAgentIcon = Icon === AgentIcon
           return (
             <div
               key={command.label}
@@ -207,7 +205,16 @@ export function CommandList() {
             >
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
-                <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                {isAgentIcon ? (
+                  <div
+                    className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                    style={{ background: 'var(--brand-primary-hex)' }}
+                  >
+                    <AgentIcon className='h-[9px] w-[9px] text-white' />
+                  </div>
+                ) : (
+                  <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                )}
                 <span className='font-medium text-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
                   {command.label}
                 </span>

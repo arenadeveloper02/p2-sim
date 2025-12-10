@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 import { useQueryClient } from '@tanstack/react-query'
-import { Files, LogIn, Settings, User, Users, Wrench } from 'lucide-react'
+import { LogIn, Settings, User, Users, Wrench } from 'lucide-react'
 import {
   Card,
   Connections,
   FolderCode,
-  HexSimple,
+  // HexSimple,
   Key,
   SModal,
   SModalContent,
@@ -113,14 +113,14 @@ const allNavigationItems: NavigationItem[] = [
   { id: 'mcp', label: 'MCPs', icon: McpIcon, section: 'tools' },
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
-  {
-    id: 'copilot',
-    label: 'Copilot Keys',
-    icon: HexSimple,
-    section: 'system',
-    requiresHosted: true,
-  },
-  { id: 'files', label: 'Files', icon: Files, section: 'system' },
+  // {
+  //   id: 'copilot',
+  //   label: 'Copilot Keys',
+  //   icon: HexSimple,
+  //   section: 'system',
+  //   requiresHosted: true,
+  // },
+  // { id: 'files', label: 'Files', icon: Files, section: 'system' },
   {
     id: 'sso',
     label: 'Single Sign-On',
@@ -434,9 +434,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             )}
             {activeSection === 'apikeys' && <ApiKeys onOpenChange={onOpenChange} />}
             {activeSection === 'files' && <FileUploads />}
-            {isBillingEnabled && activeSection === 'subscription' && (
-              <Subscription onOpenChange={onOpenChange} />
-            )}
+            {isBillingEnabled && activeSection === 'subscription' && <Subscription />}
             {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
             {activeSection === 'sso' && <SSO />}
             {activeSection === 'copilot' && <Copilot />}

@@ -21,7 +21,7 @@ import {
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
 import { createLogger } from '@/lib/logs/console/logger'
-import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import {
@@ -369,13 +369,9 @@ export function Chat() {
     return Boolean(lastMessage?.isStreaming)
   }, [workflowMessages])
 
-  // Get custom fields (excluding reserved fields)
+  // Get custom fields (excluding reserved fields: input, conversationId, files)
   const customFields = useMemo(() => {
-    const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
-    return normalizedFields.filter((field) => {
-      const fieldName = field.name?.trim().toLowerCase()
-      return fieldName && !START_BLOCK_RESERVED_FIELDS.includes(fieldName as any)
-    })
+    return getCustomInputFields(startBlockInputFormat)
   }, [startBlockInputFormat])
 
   // Reset modal flags when workflow changes or messages are added
@@ -546,6 +542,7 @@ export function Chat() {
               } else if (contentChunk) {
                 accumulatedContent += contentChunk
                 appendMessageContent(responseMessageId, contentChunk)
+                await new Promise((resolve) => setTimeout(resolve, 20))
               }
             } catch (e) {
               logger.error('Error parsing stream data:', e)
@@ -1017,7 +1014,7 @@ export function Chat() {
           className='ml-auto flex min-w-0 flex-shrink items-center gap-[6px]'
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {startBlockInputFormat.length > 0 && (
+          {customFields.length > 0 && (
             <Badge
               variant='outline'
               className='flex-none cursor-pointer whitespace-nowrap rounded-[6px]'

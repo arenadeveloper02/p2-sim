@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { createLogger } from '@/lib/logs/console/logger'
+import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 import type { WorkflowState } from '../workflow/types'
 
 const logger = createLogger('WorkflowJsonImporter')
@@ -60,10 +61,18 @@ function regenerateIds(workflowState: WorkflowState): WorkflowState {
     })
   }
 
-  // Fifth pass: update any block references in subblock values
+  // Fifth pass: update any block references in subblock values and clear runtime trigger values
   Object.entries(newBlocks).forEach(([blockId, block]) => {
     if (block.subBlocks) {
       Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]) => {
+        if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(subBlockId)) {
+          block.subBlocks[subBlockId] = {
+            ...subBlock,
+            value: null,
+          }
+          return
+        }
+
         if (subBlock.value && typeof subBlock.value === 'string') {
           // Replace any block references in the value
           let updatedValue = subBlock.value
@@ -250,6 +259,37 @@ export function parseWorkflowJson(
       metadata: workflowData.metadata,
       variables: Array.isArray(workflowData.variables) ? workflowData.variables : undefined,
     }
+
+    // Sanitize subBlocks: remove invalid subBlocks (missing id or with "undefined" key)
+    // and ensure all valid subBlocks have required fields
+    Object.entries(workflowState.blocks).forEach(([blockId, block]) => {
+      if (block.subBlocks && typeof block.subBlocks === 'object') {
+        const sanitizedSubBlocks: Record<string, any> = {}
+
+        Object.entries(block.subBlocks).forEach(([subBlockKey, subBlock]: [string, any]) => {
+          // Skip subBlocks with "undefined" key or missing id
+          if (subBlockKey === 'undefined' || !subBlock || typeof subBlock !== 'object') {
+            logger.warn(`Removing invalid subBlock "${subBlockKey}" from block ${blockId}`)
+            return
+          }
+
+          // If subBlock is missing id, use the key as id (for backward compatibility)
+          if (!subBlock.id) {
+            logger.warn(`SubBlock "${subBlockKey}" in block ${blockId} missing id, using key as id`)
+            sanitizedSubBlocks[subBlockKey] = {
+              ...subBlock,
+              id: subBlockKey,
+            }
+          } else {
+            // Valid subBlock - keep it
+            sanitizedSubBlocks[subBlockKey] = subBlock
+          }
+        })
+
+        // Update block with sanitized subBlocks
+        block.subBlocks = sanitizedSubBlocks
+      }
+    })
 
     // Regenerate IDs if requested (default: true)
     if (regenerateIdsFlag) {

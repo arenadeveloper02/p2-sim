@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { chat, workflow } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/environment'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -187,11 +188,25 @@ export async function validateChatAuth(
   }
 
   if (authType === 'email') {
-    if (request.method === 'GET') {
-      return { authorized: false, error: 'auth_required_email' }
-    }
-
     try {
+      const allowedEmails = deployment.allowedEmails || []
+
+      // For GET requests, allow auto-auth with session email (e.g., already logged-in users)
+      if (request.method === 'GET') {
+        const session = await getSession()
+        const sessionEmail = session?.user?.email
+        if (sessionEmail) {
+          const domain = sessionEmail.split('@')[1]
+          const isAllowed =
+            allowedEmails.includes(sessionEmail) ||
+            (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`))
+          if (isAllowed) {
+            return { authorized: true }
+          }
+        }
+        return { authorized: false, error: 'auth_required_email' }
+      }
+
       if (!parsedBody) {
         return { authorized: false, error: 'Email is required' }
       }
@@ -205,8 +220,6 @@ export async function validateChatAuth(
       if (!email) {
         return { authorized: false, error: 'Email is required' }
       }
-
-      const allowedEmails = deployment.allowedEmails || []
 
       if (allowedEmails.includes(email)) {
         return { authorized: false, error: 'otp_required' }

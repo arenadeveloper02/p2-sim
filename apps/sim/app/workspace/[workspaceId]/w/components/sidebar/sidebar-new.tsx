@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Plus, Search } from 'lucide-react'
+import { ArrowDown, ArrowLeft, Plus, Search } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, FolderPlus, Tooltip } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
@@ -60,10 +60,14 @@ export function SidebarNew() {
   // Session data
   const { data: sessionData, isPending: sessionLoading } = useSession()
 
-  // Sidebar state
-  const isCollapsed = useSidebarStore((state) => state.isCollapsed)
+  // Sidebar state - use store's hydration tracking to prevent SSR mismatch
+  const hasHydrated = useSidebarStore((state) => state._hasHydrated)
+  const isCollapsedStore = useSidebarStore((state) => state.isCollapsed)
   const setIsCollapsed = useSidebarStore((state) => state.setIsCollapsed)
   const setSidebarWidth = useSidebarStore((state) => state.setSidebarWidth)
+
+  // Use default (expanded) state until hydrated to prevent hydration mismatch
+  const isCollapsed = hasHydrated ? isCollapsedStore : false
 
   // Determine if we're on a workflow page (only workflow pages allow collapse and resize)
   const isOnWorkflowPage = !!workflowId
@@ -452,6 +456,22 @@ export function SidebarNew() {
     ])
   )
 
+  function getRedirectUrl(hostname: string) {
+    let redirectUrl = ''
+    if (hostname === 'dev-agent.thearena.ai') {
+      redirectUrl = 'https://dev.thearena.ai/hub/agents'
+    } else if (hostname === 'test-agent.thearena.ai') {
+      redirectUrl = 'https://test.thearena.ai/hub/agents'
+    } else if (hostname === 'sandbox-agent.thearena.ai') {
+      redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
+    } else if (hostname === 'agent.thearena.ai') {
+      redirectUrl = 'https://app.thearena.ai/hub/agents'
+    } else {
+      redirectUrl = 'https://app.thearena.ai/hub/agents'
+    }
+    return redirectUrl
+  }
+
   return (
     <>
       {isCollapsed ? (
@@ -488,6 +508,23 @@ export function SidebarNew() {
             onClick={handleSidebarClick}
           >
             <div className='flex h-full flex-col border-[var(--border)] border-r pt-[14px]'>
+              <div>
+                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-gray-500 text-sm hover:cursor-pointer'>
+                  <span
+                    onClick={() => {
+                      const hostname = window.location.hostname
+                      const redirectUrl = getRedirectUrl(hostname)
+
+                      window.location.href = redirectUrl
+                    }}
+                    className='flex items-center justify-start gap-2 text-primary'
+                  >
+                    <ArrowLeft className='h-5 w-5' />
+                    <span> Back </span>
+                  </span>
+                </p>
+              </div>
+
               {/* Header */}
               <div className='flex-shrink-0 px-[14px]'>
                 <WorkspaceHeader

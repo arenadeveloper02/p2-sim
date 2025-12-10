@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { devtools, persist } from 'zustand/middleware'
+import { devtools, type PersistStorage, persist } from 'zustand/middleware'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { createLogger } from '@/lib/logs/console/logger'
+import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { NormalizedBlockOutput } from '@/executor/types'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useNotificationStore } from '@/stores/notifications'
@@ -9,6 +10,64 @@ import { useGeneralStore } from '@/stores/settings/general/store'
 import type { ConsoleEntry, ConsoleStore, ConsoleUpdate } from '@/stores/terminal/console/types'
 
 const logger = createLogger('TerminalConsoleStore')
+
+/**
+ * Safe storage adapter that handles QuotaExceededError gracefully
+ */
+const safeStorageAdapter: PersistStorage<ConsoleStore> = {
+  getItem: (name: string) => {
+    if (typeof localStorage === 'undefined') return null
+    try {
+      const value = localStorage.getItem(name)
+      if (value === null) return null
+      return JSON.parse(value)
+    } catch (e) {
+      logger.warn('Failed to read from localStorage', e)
+      return null
+    }
+  },
+  setItem: (name: string, value: any) => {
+    if (typeof localStorage === 'undefined') return
+    try {
+      const serialized = JSON.stringify(value)
+      localStorage.setItem(name, serialized)
+    } catch (e) {
+      // Handle QuotaExceededError gracefully
+      if (e instanceof Error && e.name === 'QuotaExceededError') {
+        logger.warn('localStorage quota exceeded, clearing old entries and retrying', e)
+        try {
+          // Try to clear some old entries and retry
+          if (value?.state?.entries && Array.isArray(value.state.entries)) {
+            // Keep only the most recent 20 entries to ensure we don't exceed quota
+            const limitedEntries = value.state.entries.slice(0, 20)
+            const limitedState = {
+              ...value,
+              state: {
+                ...value.state,
+                entries: limitedEntries,
+              },
+            }
+            const serialized = JSON.stringify(limitedState)
+            localStorage.setItem(name, serialized)
+            logger.info('Successfully stored console entries after truncation')
+          }
+        } catch (retryError) {
+          logger.error('Failed to store console entries even after truncation', retryError)
+        }
+      } else {
+        logger.warn('Failed to save to localStorage', e)
+      }
+    }
+  },
+  removeItem: (name: string) => {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.removeItem(name)
+    } catch (e) {
+      logger.warn('Failed to remove from localStorage', e)
+    }
+  },
+}
 
 /**
  * Updates a NormalizedBlockOutput with new content
@@ -81,13 +140,20 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
             }
 
             // Redact API keys from output
-            const redactedEntry = { ...entry }
+            let redactedEntry = { ...entry }
             if (
               !isStreamingOutput(entry.output) &&
               redactedEntry.output &&
               typeof redactedEntry.output === 'object'
             ) {
               redactedEntry.output = redactApiKeys(redactedEntry.output)
+            }
+
+            // Truncate large base64 image data to prevent localStorage quota issues
+            redactedEntry = {
+              ...redactedEntry,
+              output: truncateLargeBase64Data(redactedEntry.output),
+              input: truncateLargeBase64Data(redactedEntry.input),
             }
 
             // Create new entry with ID and timestamp
@@ -97,7 +163,12 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               timestamp: new Date().toISOString(),
             }
 
-            return { entries: [newEntry, ...state.entries] }
+            // Limit total entries to prevent localStorage quota issues
+            // Keep only the most recent 30 entries to ensure we don't exceed quota
+            const maxEntries = 30
+            const newEntries = [newEntry, ...state.entries].slice(0, maxEntries)
+
+            return { entries: newEntries }
           })
 
           const newEntry = get().entries[0]
@@ -260,23 +331,28 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               // Handle simple string update
               if (typeof update === 'string') {
                 const newOutput = updateBlockOutput(entry.output, update)
-                return { ...entry, output: newOutput }
+                return {
+                  ...entry,
+                  output: truncateLargeBase64Data(newOutput),
+                }
               }
 
               // Handle complex update
               const updatedEntry = { ...entry }
 
               if (update.content !== undefined) {
-                updatedEntry.output = updateBlockOutput(entry.output, update.content)
+                updatedEntry.output = truncateLargeBase64Data(
+                  updateBlockOutput(entry.output, update.content)
+                )
               }
 
               if (update.replaceOutput !== undefined) {
-                updatedEntry.output = update.replaceOutput
+                updatedEntry.output = truncateLargeBase64Data(update.replaceOutput)
               } else if (update.output !== undefined) {
-                updatedEntry.output = {
+                updatedEntry.output = truncateLargeBase64Data({
                   ...(entry.output || {}),
                   ...update.output,
-                }
+                })
               }
 
               if (update.error !== undefined) {
@@ -300,7 +376,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               }
 
               if (update.input !== undefined) {
-                updatedEntry.input = update.input
+                updatedEntry.input = truncateLargeBase64Data(update.input)
               }
 
               return updatedEntry
@@ -312,6 +388,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
       }),
       {
         name: 'terminal-console-store',
+        storage: safeStorageAdapter,
       }
     )
   )
