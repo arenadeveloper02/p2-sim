@@ -155,6 +155,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const hasShownModalRef = useRef<boolean>(false)
+  const hasNonWelcomeMessages = useMemo(
+    () => messages.some((message) => !message.isInitialMessage),
+    [messages]
+  )
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
@@ -810,24 +814,24 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     // 1. Chat config is loaded
     // 2. Has inputFormat with custom fields
     // 3. No history was found (hasShownModalRef.current is false) - this means no chat history exists
-    // 4. No messages exist (double-check to ensure no history)
+    // 4. No non-welcome messages exist (welcome message alone should not block the modal)
     // 5. Modal hasn't been shown yet
     if (
       chatConfig?.inputFormat &&
       Array.isArray(chatConfig.inputFormat) &&
       chatConfig.inputFormat.length > 0 &&
-      messages.length === 0 &&
+      !hasNonWelcomeMessages &&
       !hasShownModalRef.current
     ) {
       const customFields = getCustomInputFields(chatConfig.inputFormat)
-      const hasNoHistory = messages.length === 0 && !hasShownModalRef.current
+      const hasNoHistory = !hasNonWelcomeMessages && !hasShownModalRef.current
 
       if (customFields.length > 0 && hasNoHistory) {
         hasShownModalRef.current = true
         setIsInputModalOpen(true)
       }
     }
-  }, [isHistoryLoading, hasCheckedHistory, chatConfig, messages.length])
+  }, [isHistoryLoading, hasCheckedHistory, chatConfig, hasNonWelcomeMessages])
 
   // Reset modal ref when messages are added (user sends a message)
   useEffect(() => {

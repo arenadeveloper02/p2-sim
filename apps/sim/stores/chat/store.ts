@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
+import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('ChatStore')
 
@@ -380,6 +381,15 @@ export const useChatStore = create<ChatState>()(
       }),
       {
         name: 'chat-store',
+        partialize: (state) => {
+          // Sanitize messages before persisting - replace base64 images with placeholders
+          // This prevents localStorage quota issues while preserving message structure
+          const sanitizedMessages = sanitizeMessagesForPersistence(state.messages)
+          return {
+            ...state,
+            messages: sanitizedMessages,
+          }
+        },
       }
     )
   )
