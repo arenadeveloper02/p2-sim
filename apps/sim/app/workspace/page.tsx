@@ -6,6 +6,13 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 
+interface WorkspaceSummary {
+  id: string
+  name: string
+  role?: string
+  createdAt?: string
+}
+
 const logger = createLogger('WorkspacePage')
 
 export default function WorkspacePage() {
@@ -60,9 +67,12 @@ export default function WorkspacePage() {
         }
 
         const data = await response.json()
-        const workspaces = data.workspaces || []
+        const workspaces: WorkspaceSummary[] = Array.isArray(data.workspaces) ? data.workspaces : []
+        const sortedWorkspaces = [...workspaces].sort((a, b) =>
+          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        )
 
-        if (workspaces.length === 0) {
+        if (sortedWorkspaces.length === 0) {
           logger.warn('No workspaces found for user, creating default workspace')
 
           try {
@@ -95,12 +105,26 @@ export default function WorkspacePage() {
           return
         }
 
-        // Get the first workspace (they should be ordered by most recent)
-        const firstWorkspace = workspaces[0]
-        logger.info(`Redirecting to first workspace: ${firstWorkspace.id}`)
+        const ownerWorkspaces = sortedWorkspaces.filter((workspaceItem) => workspaceItem.role === 'owner')
+        const defaultWorkspace =
+          ownerWorkspaces.length > 0
+            ? ownerWorkspaces.reduce((oldest, current) => {
+                const oldestTimestamp = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Number.POSITIVE_INFINITY
+                const currentTimestamp = current.createdAt
+                  ? new Date(current.createdAt).getTime()
+                  : Number.POSITIVE_INFINITY
+                return currentTimestamp < oldestTimestamp ? current : oldest
+              }, ownerWorkspaces[0])
+            : sortedWorkspaces[0]
 
-        // Redirect to the first workspace
-        router.replace(`/workspace/${firstWorkspace.id}/w`)
+        if (!defaultWorkspace) {
+          logger.error('No workspace available after fetching and sorting')
+          router.replace('/login')
+          return
+        }
+
+        logger.info(`Redirecting to workspace: ${defaultWorkspace.id}`)
+        router.replace(`/workspace/${defaultWorkspace.id}/w`)
       } catch (error) {
         logger.error('Error fetching workspaces for redirect:', error)
         // Don't redirect if there's an error - let the user stay on the page
