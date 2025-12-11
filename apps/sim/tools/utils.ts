@@ -166,17 +166,23 @@ export function validateRequiredParametersAfterMerge(
   for (const [paramName, paramConfig] of Object.entries(tool.params)) {
     if (
       (paramConfig as any).visibility === 'user-or-llm' &&
-      paramConfig.required &&
-      (!(paramName in params) ||
-        params[paramName] === null ||
-        params[paramName] === undefined ||
-        params[paramName] === '')
+      paramConfig.required
     ) {
-      // Create a more user-friendly error message
-      const toolName = tool.name || toolId
-      const friendlyParamName =
-        parameterNameMap?.[paramName] || formatParameterNameForError(paramName)
-      throw new Error(`${friendlyParamName} is required for ${toolName}`)
+      const value = params[paramName]
+      const isEmpty =
+        !(paramName in params) ||
+        value === null ||
+        value === undefined ||
+        value === '' ||
+        (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
+      
+      if (isEmpty) {
+        // Create a more user-friendly error message
+        const toolName = tool.name || toolId
+        const friendlyParamName =
+          parameterNameMap?.[paramName] || formatParameterNameForError(paramName)
+        throw new Error(`${friendlyParamName} is required for ${toolName}`)
+      }
     }
   }
 }
