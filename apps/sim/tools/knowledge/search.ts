@@ -39,6 +39,20 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         },
       },
     },
+    rerank: {
+      type: 'object',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional reranking configuration',
+      items: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          model: { type: 'string' },
+          topN: { type: 'number' },
+        },
+      },
+    },
   },
 
   request: {
@@ -91,6 +105,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         query: params.query,
         topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
         ...(Object.keys(filters).length > 0 && { filters }),
+        ...(params.rerank ? { rerank: params.rerank } : {}),
         ...(workflowId && { workflowId }),
       }
 
