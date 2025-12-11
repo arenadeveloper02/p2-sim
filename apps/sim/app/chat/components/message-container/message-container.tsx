@@ -3,6 +3,7 @@
 import { type Dispatch, memo, type RefObject, type SetStateAction } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import type { BlockProgress, ToolProgress } from '@/app/chat/hooks/use-chat-streaming'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
@@ -17,6 +18,8 @@ interface ChatMessageContainerProps {
     description?: string
   } | null
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
+  currentBlockProgress?: BlockProgress | null
+  currentToolProgress?: ToolProgress | null
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -29,6 +32,8 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   scrollToMessage,
   chatConfig,
   setMessages,
+  currentBlockProgress,
+  currentToolProgress,
 }: ChatMessageContainerProps) {
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
@@ -72,8 +77,40 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             ))
           )}
 
-          {/* Loading indicator (shows only when executing) */}
-          {isLoading && (
+          {/* Block and tool progress indicator (shows what's running) */}
+          {currentBlockProgress && currentBlockProgress.status === 'running' && (
+            <div className='px-4 py-3'>
+              <div className='mx-auto max-w-3xl'>
+                <div className='flex flex-col gap-1'>
+                  <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+                    <div className='loading-dot h-2 w-2 rounded-full bg-blue-500' />
+                    <span>🔧 Running {currentBlockProgress.blockName}...</span>
+                  </div>
+
+                  {/* High-level thinking steps while the block is running */}
+                  <div className='ml-4 flex flex-col gap-0.5 text-muted-foreground text-xs'>
+                    <span>• Understanding your request…</span>
+                    {currentToolProgress && currentToolProgress.status === 'running' ? (
+                      <>
+                        <span>
+                          • {currentToolProgress.description || `Calling ${currentToolProgress.toolName}…`}
+                        </span>
+                        <span>• Analyzing results from the tool…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>• Planning next step…</span>
+                        <span>• Preparing answer…</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Loading indicator (shows only when executing and no block progress) */}
+          {isLoading && !currentBlockProgress && (
             <div className='px-4 py-5'>
               <div className='mx-auto max-w-3xl'>
                 <div className='flex'>

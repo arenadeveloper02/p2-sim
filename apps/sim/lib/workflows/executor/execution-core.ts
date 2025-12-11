@@ -100,7 +100,8 @@ export async function executeWorkflowCore(
   const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
-  const { onBlockStart, onBlockComplete, onStream, onExecutorCreated } = callbacks
+  const { onBlockStart, onBlockComplete, onStream, onExecutorCreated, onToolStart, onToolComplete } =
+    callbacks
 
   const providedWorkspaceId = metadata.workspaceId
 
@@ -303,6 +304,8 @@ export async function executeWorkflowCore(
       onBlockStart,
       onBlockComplete,
       onStream,
+      onToolStart,
+      onToolComplete,
       resumeFromSnapshot,
       resumePendingQueue,
       remainingEdges: snapshot.state?.remainingEdges,

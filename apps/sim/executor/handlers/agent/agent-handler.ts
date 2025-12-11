@@ -546,6 +546,9 @@ export class AgentBlockHandler implements BlockHandler {
       blockNameMapping,
       reasoningEffort: inputs.reasoningEffort,
       verbosity: inputs.verbosity,
+      // Chain-of-thought progress callbacks
+      onToolStart: ctx.onToolStart,
+      onToolComplete: ctx.onToolComplete,
     }
   }
 
@@ -636,6 +639,9 @@ export class AgentBlockHandler implements BlockHandler {
       workflowVariables: ctx.workflowVariables || {},
       blockData,
       blockNameMapping,
+      // Chain-of-thought progress callbacks
+      onToolStart: providerRequest.onToolStart,
+      onToolComplete: providerRequest.onToolComplete,
     })
 
     this.logExecutionSuccess(providerId, model, ctx, block, providerStartTime, response)

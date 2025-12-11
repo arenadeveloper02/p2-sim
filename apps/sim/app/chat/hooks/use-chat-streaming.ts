@@ -24,8 +24,24 @@ export interface StreamingOptions {
   outputConfigs?: Array<{ blockId: string; path?: string }>
 }
 
+export interface BlockProgress {
+  blockId: string
+  blockName: string
+  blockType: string
+  status: 'running' | 'complete'
+}
+
+export interface ToolProgress {
+  toolName: string
+  status: 'running' | 'complete'
+  // Human-readable description of what the tool is doing for this call
+  description?: string
+}
+
 export function useChatStreaming() {
   const [isStreamingResponse, setIsStreamingResponse] = useState(false)
+  const [currentBlockProgress, setCurrentBlockProgress] = useState<BlockProgress | null>(null)
+  const [currentToolProgress, setCurrentToolProgress] = useState<ToolProgress | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const accumulatedTextRef = useRef<string>('')
   const lastStreamedPositionRef = useRef<number>(0)
@@ -172,8 +188,86 @@ export function useChatStreaming() {
                       : msg
                   )
                 )
+                setCurrentBlockProgress(null)
                 setIsLoading(false)
                 return
+              }
+
+              // Handle block_start event for chain-of-thought progress
+              if (eventType === 'block_start') {
+                setCurrentBlockProgress({
+                  blockId: json.blockId,
+                  blockName: json.blockName,
+                  blockType: json.blockType,
+                  status: 'running',
+                })
+                continue
+              }
+
+              // Handle block_complete event
+              if (eventType === 'block_complete') {
+                setCurrentBlockProgress((prev) => {
+                  if (prev && prev.blockId === json.blockId) {
+                    return {
+                      blockId: prev.blockId,
+                      blockName: prev.blockName,
+                      blockType: prev.blockType,
+                      status: 'complete' as const,
+                    }
+                  }
+                  return prev
+                })
+                // Clear tool progress when block completes
+                setCurrentToolProgress(null)
+                continue
+              }
+
+              // Handle tool_start event for chain-of-thought progress
+              if (eventType === 'tool_start') {
+                const toolArgs = (json.toolArgs || {}) as Record<string, any>
+
+                // Build a simple, dynamic description from the tool name and args
+                let description: string | undefined
+
+                const questionLike =
+                  typeof toolArgs.question === 'string'
+                    ? toolArgs.question
+                    : typeof toolArgs.query === 'string'
+                      ? toolArgs.query
+                      : undefined
+
+                if (questionLike) {
+                  const shortQuestion = questionLike.length > 120
+                    ? `${questionLike.slice(0, 117)}...`
+                    : questionLike
+                  description = `Using ${json.toolName} for: "${shortQuestion}"`
+                } else if (toolArgs.period_type || toolArgs.date_range) {
+                  const period = String(toolArgs.period_type || toolArgs.date_range)
+                  description = `Fetching data (${period}) with ${json.toolName}`
+                } else {
+                  description = `Running ${json.toolName} with live data`
+                }
+
+                setCurrentToolProgress({
+                  toolName: json.toolName,
+                  status: 'running',
+                  description,
+                })
+                continue
+              }
+
+              // Handle tool_complete event
+              if (eventType === 'tool_complete') {
+                setCurrentToolProgress((prev) => {
+                  if (prev && prev.toolName === json.toolName) {
+                    return {
+                      toolName: prev.toolName,
+                      status: 'complete' as const,
+                    }
+                  }
+                  return prev
+                })
+                continue
               }
 
               if (eventType === 'final' && json.data) {
@@ -299,6 +393,10 @@ export function useChatStreaming() {
                   )
                 )
 
+                // Clear block and tool progress when workflow completes
+                setCurrentBlockProgress(null)
+                setCurrentToolProgress(null)
+
                 accumulatedTextRef.current = ''
                 lastStreamedPositionRef.current = 0
                 lastDisplayedPositionRef.current = 0
@@ -387,6 +485,8 @@ export function useChatStreaming() {
   return {
     isStreamingResponse,
     setIsStreamingResponse,
+    currentBlockProgress,
+    currentToolProgress,
     abortControllerRef,
     stopStreaming,
     handleStreamedResponse,

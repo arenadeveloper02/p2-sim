@@ -156,8 +156,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
-  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
-    useChatStreaming()
+  const {
+    isStreamingResponse,
+    currentBlockProgress,
+    currentToolProgress,
+    abortControllerRef,
+    stopStreaming,
+    handleStreamedResponse,
+  } = useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
@@ -1036,6 +1042,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         scrollToMessage={scrollToMessage}
         chatConfig={chatConfig}
         setMessages={setMessages}
+        currentBlockProgress={currentBlockProgress}
+        currentToolProgress={currentToolProgress}
       />
 
       {/* Input area (free-standing at the bottom) */}

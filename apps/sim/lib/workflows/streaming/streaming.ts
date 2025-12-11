@@ -101,7 +101,64 @@ export async function createStreamingResponse(
           }
         }
 
-        const onBlockCompleteCallback = async (blockId: string, output: any) => {
+        // Callback to emit block_start events for chain-of-thought progress
+        const onBlockStartCallback = (
+          blockId: string,
+          blockName: string,
+          blockType: string,
+          iterationContext?: { loopBlockId: string; iterationIndex: number }
+        ) => {
+          // Send a block_start event so the UI can show progress like "Running Google Ads 1..."
+          controller.enqueue(
+            encodeSSE({
+              event: 'block_start',
+              blockId,
+              blockName,
+              blockType,
+              iterationContext,
+            })
+          )
+        }
+
+        // Callback to emit tool_start events for chain-of-thought progress
+        const onToolStartCallback = (toolName: string, toolArgs: Record<string, any>) => {
+          console.log('[Streaming] Emitting tool_start event:', toolName)
+          controller.enqueue(
+            encodeSSE({
+              event: 'tool_start',
+              toolName,
+              toolArgs,
+            })
+          )
+        }
+
+        // Callback to emit tool_complete events for chain-of-thought progress
+        const onToolCompleteCallback = (toolName: string, result: any, success: boolean) => {
+          controller.enqueue(
+            encodeSSE({
+              event: 'tool_complete',
+              toolName,
+              success,
+            })
+          )
+        }
+
+        const onBlockCompleteCallback = async (
+          blockId: string,
+          output: any,
+          blockName?: string,
+          blockType?: string
+        ) => {
+          // Send a block_complete event so the UI can update progress
+          controller.enqueue(
+            encodeSSE({
+              event: 'block_complete',
+              blockId,
+              blockName,
+              blockType,
+            })
+          )
+
           if (!streamConfig.selectedOutputs?.length) return
 
           const { extractBlockIdFromOutputId, extractPathFromOutputId, traverseObjectPath } =
@@ -140,7 +197,10 @@ export async function createStreamingResponse(
             isSecureMode: streamConfig.isSecureMode,
             workflowTriggerType: streamConfig.workflowTriggerType,
             onStream: onStreamCallback,
+            onBlockStart: onBlockStartCallback,
             onBlockComplete: onBlockCompleteCallback,
+            onToolStart: onToolStartCallback,
+            onToolComplete: onToolCompleteCallback,
             skipLoggingComplete: true, // We'll complete logging after tokenization
           },
           executionId

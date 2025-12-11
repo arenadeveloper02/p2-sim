@@ -75,7 +75,20 @@ export async function executeWorkflow(
     isSecureMode?: boolean
     workflowTriggerType?: 'api' | 'chat'
     onStream?: (streamingExec: any) => Promise<void>
-    onBlockComplete?: (blockId: string, output: any) => Promise<void>
+    onBlockStart?: (
+      blockId: string,
+      blockName: string,
+      blockType: string,
+      iterationContext?: { loopBlockId: string; iterationIndex: number }
+    ) => void
+    onBlockComplete?: (
+      blockId: string,
+      output: any,
+      blockName?: string,
+      blockType?: string
+    ) => Promise<void>
+    onToolStart?: (toolName: string, toolArgs: Record<string, any>) => void
+    onToolComplete?: (toolName: string, result: any, success: boolean) => void
     skipLoggingComplete?: boolean
   },
   providedExecutionId?: string
@@ -111,11 +124,18 @@ export async function executeWorkflow(
       snapshot,
       callbacks: {
         onStream: streamConfig?.onStream,
-        onBlockComplete: streamConfig?.onBlockComplete
-          ? async (blockId: string, _blockName: string, _blockType: string, output: any) => {
-              await streamConfig.onBlockComplete!(blockId, output)
+        onBlockStart: streamConfig?.onBlockStart
+          ? async (blockId: string, blockName: string, blockType: string) => {
+              streamConfig.onBlockStart!(blockId, blockName, blockType)
             }
           : undefined,
+        onBlockComplete: streamConfig?.onBlockComplete
+          ? async (blockId: string, blockName: string, blockType: string, output: any) => {
+              await streamConfig.onBlockComplete!(blockId, output, blockName, blockType)
+            }
+          : undefined,
+        onToolStart: streamConfig?.onToolStart,
+        onToolComplete: streamConfig?.onToolComplete,
       },
       loggingSession,
     })

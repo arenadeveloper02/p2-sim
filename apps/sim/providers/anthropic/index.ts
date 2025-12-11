@@ -453,6 +453,9 @@ ${fieldDescriptions}
                 const tool = request.tools?.find((t: any) => t.id === toolName)
                 if (!tool) continue
 
+                // Emit tool start event for chain-of-thought progress
+                request.onToolStart?.(toolName, toolArgs)
+
                 // Execute the tool
                 const toolCallStartTime = Date.now()
 
@@ -489,6 +492,9 @@ ${fieldDescriptions}
                     tool: toolName,
                   }
                 }
+
+                // Emit tool complete event for chain-of-thought progress
+                request.onToolComplete?.(toolName, resultContent, result.success)
 
                 toolCalls.push({
                   name: toolName,
@@ -807,6 +813,9 @@ ${fieldDescriptions}
               const tool = request.tools?.find((t) => t.id === toolName)
               if (!tool) continue
 
+              // Emit tool start event for chain-of-thought progress
+              request.onToolStart?.(toolName, toolArgs)
+
               // Execute the tool
               const toolCallStartTime = Date.now()
 
@@ -839,6 +848,9 @@ ${fieldDescriptions}
                   tool: toolName,
                 }
               }
+
+              // Emit tool complete event for chain-of-thought progress
+              request.onToolComplete?.(toolName, resultContent, result.success)
 
               toolCalls.push({
                 name: toolName,

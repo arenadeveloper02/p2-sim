@@ -220,6 +220,8 @@ export interface ExecutionContext {
     blockType: string,
     output: any
   ) => Promise<void>
+  onToolStart?: (toolName: string, toolArgs: Record<string, any>) => void
+  onToolComplete?: (toolName: string, result: any, success: boolean) => void
 
   // Cancellation support
   isCancelled?: boolean

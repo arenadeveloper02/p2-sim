@@ -33,6 +33,8 @@ export interface ExecutionCallbacks {
     blockType: string,
     output: any
   ) => Promise<void>
+  onToolStart?: (toolName: string, toolArgs: Record<string, any>) => void
+  onToolComplete?: (toolName: string, result: any, success: boolean) => void
   onExecutorCreated?: (executor: any) => void
 }
 

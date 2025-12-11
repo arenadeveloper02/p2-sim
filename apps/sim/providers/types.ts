@@ -167,6 +167,9 @@ export interface ProviderRequest {
   // GPT-5 specific parameters
   reasoningEffort?: string
   verbosity?: string
+  // Tool execution progress callbacks for chain-of-thought UI
+  onToolStart?: (toolName: string, toolArgs: Record<string, any>) => void
+  onToolComplete?: (toolName: string, result: any, success: boolean) => void
 }
 
 // Map of provider IDs to their configurations

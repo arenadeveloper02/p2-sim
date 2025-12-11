@@ -366,6 +366,10 @@ export const openaiProvider: ProviderConfig = {
             const tool = request.tools?.find((t) => t.id === toolName)
             if (!tool) continue
 
+            // Emit tool start event for chain-of-thought progress
+            console.log('[OpenAI Provider] Tool start:', toolName, 'hasCallback:', !!request.onToolStart)
+            request.onToolStart?.(toolName, toolArgs)
+
             // Execute the tool
             const toolCallStartTime = Date.now()
 
@@ -396,6 +400,9 @@ export const openaiProvider: ProviderConfig = {
                 tool: toolName,
               }
             }
+
+            // Emit tool complete event for chain-of-thought progress
+            request.onToolComplete?.(toolName, resultContent, result.success)
 
             toolCalls.push({
               name: toolName,
