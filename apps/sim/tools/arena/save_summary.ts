@@ -15,7 +15,7 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
       description: 'Operation to perform (e.g., save_summary)',
     },
     'save-summary-client': {
-      type: 'string',
+      type: 'object',
       required: true,
       visibility: 'user-or-llm',
       description: 'Client associated with the summary',
@@ -64,6 +64,19 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
     response: Response,
     params?: ArenaSaveSummaryParams
   ): Promise<ArenaSaveSummaryResponse> => {
+    if (!response.ok) {
+      let errorData: any
+      try {
+        errorData = await response.json()
+      } catch {
+        errorData = { message: response.statusText || 'Unknown error' }
+      }
+      
+      const errorMessage = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`
+      const errorDetails = errorData.details ? ` - ${errorData.details}` : ''
+      throw new Error(`Failed to save summary: ${errorMessage}${errorDetails}`)
+    }
+
     const data = await response.json()
     return {
       success: true,
