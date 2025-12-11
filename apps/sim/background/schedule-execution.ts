@@ -117,6 +117,34 @@ async function determineNextRunAfterError(
   return new Date(now.getTime() + 24 * 60 * 60 * 1000)
 }
 
+/**
+ * Known server environment variables that might be available from server config
+ * even if not in user's personal/workspace env vars. These will be checked
+ * during execution via getApiKey fallback mechanism.
+ */
+const SERVER_ENV_VARS = new Set([
+  'OPENAI_API_KEY',
+  'OPENAI_API_KEY_1',
+  'OPENAI_API_KEY_2',
+  'OPENAI_API_KEY_3',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_API_KEY_1',
+  'ANTHROPIC_API_KEY_2',
+  'ANTHROPIC_API_KEY_3',
+  'GEMINI_API_KEY_1',
+  'GEMINI_API_KEY_2',
+  'GEMINI_API_KEY_3',
+  'SAMBANOVA_API_KEY',
+  'SAMBANOVA_API_KEY_1',
+  'SAMBANOVA_API_KEY_2',
+  'SAMBANOVA_API_KEY_3',
+  'XAI_API_KEY',
+  'XAI_API_KEY_1',
+  'XAI_API_KEY_2',
+  'XAI_API_KEY_3',
+  'AZURE_OPENAI_API_KEY',
+])
+
 async function ensureBlockVariablesResolvable(
   blocks: Record<string, BlockState>,
   variables: Record<string, string>,
@@ -140,6 +168,16 @@ async function ensureBlockVariablesResolvable(
           for (const match of matches) {
             const varName = match.slice(2, -2)
             const encryptedValue = variables[varName]
+
+            // Skip validation for known server environment variables that might be
+            // available from server config. These will be checked during execution.
+            if (!encryptedValue && SERVER_ENV_VARS.has(varName)) {
+              logger.debug(
+                `[${requestId}] Skipping validation for server environment variable "${varName}" - will be checked during execution`
+              )
+              continue
+            }
+
             if (!encryptedValue) {
               throw new Error(`Environment variable "${varName}" was not found`)
             }
