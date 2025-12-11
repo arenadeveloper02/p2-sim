@@ -27,14 +27,16 @@ SimダッシュボードのユーザーセッティングからAPIキーを生�
 "limits": {
   "workflowExecutionRateLimit": {
     "sync": {
-      "limit": 60,        // Max sync workflow executions per minute
-      "remaining": 58,    // Remaining sync workflow executions
-      "resetAt": "..."    // When the window resets
+      "requestsPerMinute": 60,  // Sustained rate limit per minute
+      "maxBurst": 120,          // Maximum burst capacity
+      "remaining": 118,         // Current tokens available (up to maxBurst)
+      "resetAt": "..."          // When tokens next refill
     },
     "async": {
-      "limit": 60,        // Max async workflow executions per minute
-      "remaining": 59,    // Remaining async workflow executions
-      "resetAt": "..."    // When the window resets
+      "requestsPerMinute": 200, // Sustained rate limit per minute
+      "maxBurst": 400,          // Maximum burst capacity
+      "remaining": 398,         // Current tokens available
+      "resetAt": "..."          // When tokens next refill
     }
   },
   "usage": {
@@ -46,7 +48,7 @@ SimダッシュボードのユーザーセッティングからAPIキーを生�
 }
 ```
 
-**注意：** レスポンス本文のレート制限はワークフロー実行に関するものです。このAPIエンドポイントを呼び出すためのレート制限はレスポンスヘッダー（`X-RateLimit-*`）にあります。
+**注意:** レート制限はトークンバケットアルゴリズムを使用しています。最近の割り当てを完全に使用していない場合、`remaining`は`requestsPerMinute`を超えて`maxBurst`まで達することができ、バーストトラフィックを許可します。レスポンスボディのレート制限はワークフロー実行のためのものです。このAPIエンドポイントを呼び出すためのレート制限はレスポンスヘッダー（`X-RateLimit-*`）にあります。
 
 ### ログの照会
 
@@ -110,13 +112,15 @@ SimダッシュボードのユーザーセッティングからAPIキーを生�
       "limits": {
         "workflowExecutionRateLimit": {
           "sync": {
-            "limit": 60,
-            "remaining": 58,
+            "requestsPerMinute": 60,
+            "maxBurst": 120,
+            "remaining": 118,
             "resetAt": "2025-01-01T12:35:56.789Z"
           },
           "async": {
-            "limit": 60,
-            "remaining": 59,
+            "requestsPerMinute": 200,
+            "maxBurst": 400,
+            "remaining": 398,
             "resetAt": "2025-01-01T12:35:56.789Z"
           }
         },
@@ -190,13 +194,15 @@ SimダッシュボードのユーザーセッティングからAPIキーを生�
         "limits": {
           "workflowExecutionRateLimit": {
             "sync": {
-              "limit": 60,
-              "remaining": 58,
+              "requestsPerMinute": 60,
+              "maxBurst": 120,
+              "remaining": 118,
               "resetAt": "2025-01-01T12:35:56.789Z"
             },
             "async": {
-              "limit": 60,
-              "remaining": 59,
+              "requestsPerMinute": 200,
+              "maxBurst": 400,
+              "remaining": 398,
               "resetAt": "2025-01-01T12:35:56.789Z"
             }
           },
@@ -251,32 +257,78 @@ SimダッシュボードのユーザーセッティングからAPIキーを生�
   </Tab>
 </Tabs>
 
-## Webhookサブスクリプション
+## 通知
 
-ワークフロー実行が完了したときにリアルタイム通知を受け取ります。WebhookはSim UIのワークフローエディタで設定されます。
+ワークフローの実行が完了したときに、Webhook、メール、またはSlackを通じてリアルタイム通知を受け取ることができます。通知はログページからワークスペースレベルで設定されます。
 
 ### 設定
 
-Webhookは、ワークフローエディタUIを通じて各ワークフローに設定できます。コントロールバーのWebhookアイコンをクリックして、Webhookサブスクリプションを設定します。
+ログページからメニューボタンをクリックし、「通知を設定する」を選択して通知を設定します。
 
-<div className="mx-auto w-full overflow-hidden rounded-lg">
-  <Video src="configure-webhook.mp4" width={700} height={450} />
-</div>
+**通知チャネル:**
+- **Webhook**: エンドポイントにHTTP POSTリクエストを送信
+- **メール**: 実行詳細を含むメール通知を受信
+- **Slack**: Slackチャンネルにメッセージを投稿
 
-**利用可能な設定オプション:**
-- `url`: WebhookエンドポイントURL
-- `secret`: HMAC署名検証用のオプションシークレット
-- `includeFinalOutput`: ペイロードにワークフローの最終出力を含める
+**ワークフロー選択:**
+- 監視する特定のワークフローを選択
+- または「すべてのワークフロー」を選択して現在および将来のワークフローを含める
+
+**フィルタリングオプション:**
+- `levelFilter`: 受信するログレベル (`info`, `error`)
+- `triggerFilter`: 受信するトリガータイプ (`api`, `webhook`, `schedule`, `manual`, `chat`)
+
+**オプションデータ:**
+- `includeFinalOutput`: ワークフローの最終出力を含める
 - `includeTraceSpans`: 詳細な実行トレーススパンを含める
-- `includeRateLimits`: ワークフロー所有者のレート制限情報を含める
-- `includeUsageData`: ワークフロー所有者の使用状況と請求データを含める
-- `levelFilter`: 受信するログレベルの配列 (`info`, `error`)
-- `triggerFilter`: 受信するトリガータイプの配列 (`api`, `webhook`, `schedule`, `manual`, `chat`)
-- `active`: Webhookサブスクリプションの有効化/無効化
+- `includeRateLimits`: レート制限情報（同期/非同期の制限と残り）を含める
+- `includeUsageData`: 請求期間の使用状況と制限を含める
 
-### Webhookペイロード
+### アラートルール
 
-ワークフロー実行が完了すると、SimはWebhook URLにPOSTリクエストを送信します:
+すべての実行について通知を受け取る代わりに、問題が検出された場合にのみ通知されるようにアラートルールを設定できます：
+
+**連続失敗**
+- X回連続して実行が失敗した後にアラート（例：3回連続の失敗）
+- 実行が成功すると、リセットされます
+
+**失敗率**
+- 過去Y時間の失敗率がX%を超えた場合にアラート
+- ウィンドウ内で最低5回の実行が必要
+- 完全な時間ウィンドウが経過した後にのみトリガーされます
+
+**レイテンシーしきい値**
+- 実行がX秒以上かかった場合にアラート
+- 遅いまたは停止しているワークフローを検出するのに役立ちます
+
+**レイテンシースパイク**
+- 実行が平均よりX%遅い場合にアラート
+- 設定された時間ウィンドウでの平均所要時間と比較
+- ベースラインを確立するために最低5回の実行が必要
+
+**コスト閾値**
+- 単一の実行コストが$Xを超えた場合にアラート
+- 高価なLLM呼び出しを検出するのに役立つ
+
+**アクティビティなし**
+- X時間以内に実行がない場合にアラート
+- 定期的に実行されるべきスケジュールされたワークフローの監視に役立つ
+
+**エラー数**
+- 時間枠内でエラー数がXを超えた場合にアラート
+- 連続ではなく、総エラー数を追跡
+
+すべてのアラートタイプには、通知スパムを防ぐための1時間のクールダウンが含まれています。
+
+### Webhook設定
+
+Webhookの場合、追加オプションが利用可能です：
+- `url`：WebhookエンドポイントURL
+- `secret`：HMAC署名検証用のオプションシークレット
+
+### ペイロード構造
+
+ワークフロー実行が完了すると、Simは以下のペイロードを送信します（webhook POST、メール、またはSlackを介して）：
 
 ```json
 {
@@ -327,17 +379,17 @@ Webhookは、ワークフローエディタUIを通じて各ワークフロー�
 
 ### Webhookヘッダー
 
-各Webhookリクエストには以下のヘッダーが含まれます：
+各Webhookリクエストには以下のヘッダーが含まれます（Webhookチャンネルのみ）：
 
-- `sim-event`: イベントタイプ（常に `workflow.execution.completed`）
-- `sim-timestamp`: ミリ秒単位のUnixタイムスタンプ
-- `sim-delivery-id`: べき等性のための一意の配信ID
-- `sim-signature`: 検証用のHMAC-SHA256署名（シークレットが設定されている場合）
-- `Idempotency-Key`: 重複検出のための配信IDと同じ値
+- `sim-event`：イベントタイプ（常に`workflow.execution.completed`）
+- `sim-timestamp`：ミリ秒単位のUnixタイムスタンプ
+- `sim-delivery-id`：べき等性のための一意の配信ID
+- `sim-signature`：検証用のHMAC-SHA256署名（シークレットが設定されている場合）
+- `Idempotency-Key`：重複検出のための配信IDと同じ
 
 ### 署名検証
 
-Webhookシークレットを設定した場合、署名を検証してWebhookがSimからのものであることを確認してください：
+Webhookシークレットを設定した場合、署名を検証してWebhookがSimからのものであることを確認します：
 
 <Tabs items={['Node.js', 'Python']}>
   <Tab value="Node.js">
@@ -412,21 +464,21 @@ Webhookシークレットを設定した場合、署名を検証してWebhookが
 
 失敗したWebhook配信は指数バックオフとジッターを使用して再試行されます：
 
-- 最大試行回数: 5回
-- リトライ間隔: 5秒、15秒、1分、3分、10分
-- ジッター: 最大10%の追加遅延（サンダリングハード問題を防ぐため）
+- 最大試行回数：5回
+- リトライ遅延：5秒、15秒、1分、3分、10分
+- ジッター：サンダリングハード問題を防ぐために最大10%の追加遅延
 - HTTP 5xxと429レスポンスのみがリトライをトリガー
 - 配信は30秒後にタイムアウト
 
 <Callout type="info">
-  Webhook配信は非同期で処理され、ワークフロー実行のパフォーマンスには影響しません。
+  Webhook配信は非同期で処理され、ワークフロー実行のパフォーマンスに影響しません。
 </Callout>
 
 ## ベストプラクティス
 
-1. **ポーリング戦略**: ログをポーリングする場合、`order=asc`と`startDate`を使用したカーソルベースのページネーションを使用して、新しいログを効率的に取得してください。
+1. **ポーリング戦略**: ログをポーリングする場合、`order=asc`と`startDate`を使用したカーソルベースのページネーションを利用して、新しいログを効率的に取得してください。
 
-2. **Webhookセキュリティ**: 常にWebhookシークレットを設定し、署名を検証してリクエストがSimからのものであることを確認してください。
+2. **Webhookセキュリティ**: 常にWebhookシークレットを設定し、署名を検証して、リクエストがSimからのものであることを確認してください。
 
 3. **べき等性**: `Idempotency-Key`ヘッダーを使用して、重複するWebhook配信を検出し処理してください。
 
@@ -436,17 +488,25 @@ Webhookシークレットを設定した場合、署名を検証してWebhookが
 
 ## レート制限
 
-APIは公平な使用を確保するためにレート制限を実装しています：
+APIは**トークンバケットアルゴリズム**をレート制限に使用し、バーストトラフィックを許可しながら公平な使用を提供します：
 
-- **無料プラン**: 1分あたり10リクエスト
-- **プロプラン**: 1分あたり30リクエスト
-- **チームプラン**: 1分あたり60リクエスト
-- **エンタープライズプラン**: カスタム制限
+| プラン | リクエスト/分 | バースト容量 |
+|------|-----------------|----------------|
+| 無料 | 10 | 20 |
+| プロ | 30 | 60 |
+| チーム | 60 | 120 |
+| エンタープライズ | 120 | 240 |
+
+**仕組み:**
+- トークンは`requestsPerMinute`のレートで補充されます
+- アイドル状態のとき、最大`maxBurst`トークンまで蓄積できます
+- 各リクエストは1トークンを消費します
+- バースト容量によりトラフィックスパイクの処理が可能になります
 
 レート制限情報はレスポンスヘッダーに含まれています：
-- `X-RateLimit-Limit`: ウィンドウあたりの最大リクエスト数
-- `X-RateLimit-Remaining`: 現在のウィンドウで残りのリクエスト数
-- `X-RateLimit-Reset`: ウィンドウがリセットされるISOタイムスタンプ
+- `X-RateLimit-Limit`：1分あたりのリクエスト数（補充レート）
+- `X-RateLimit-Remaining`：現在利用可能なトークン
+- `X-RateLimit-Reset`：トークンが次に補充されるISOタイムスタンプ
 
 ## 例：新しいログのポーリング
 

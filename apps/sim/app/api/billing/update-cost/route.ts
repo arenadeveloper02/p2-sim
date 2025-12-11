@@ -90,11 +90,10 @@ export async function POST(req: NextRequest) {
       )
       return NextResponse.json({ error: 'User stats record not found' }, { status: 500 })
     }
-    // Update existing user stats record
+
     const updateFields = {
       totalCost: sql`total_cost + ${cost}`,
       currentPeriodCost: sql`current_period_cost + ${cost}`,
-      // Copilot usage tracking increments
       totalCopilotCost: sql`total_copilot_cost + ${cost}`,
       currentPeriodCopilotCost: sql`current_period_copilot_cost + ${cost}`,
       totalCopilotCalls: sql`total_copilot_calls + 1`,

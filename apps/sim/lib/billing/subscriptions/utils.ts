@@ -4,6 +4,7 @@ import {
   DEFAULT_PRO_TIER_COST_LIMIT,
   DEFAULT_TEAM_TIER_COST_LIMIT,
 } from '@/lib/billing/constants'
+import type { EnterpriseSubscriptionMetadata } from '@/lib/billing/types'
 import { env } from '@/lib/core/config/env'
 
 /**
@@ -36,6 +37,38 @@ export function getEnterpriseTierLimitPerSeat(): number {
 
 export function checkEnterprisePlan(subscription: any): boolean {
   return subscription?.plan === 'enterprise' && subscription?.status === 'active'
+}
+
+/**
+ * Type guard to check if metadata is valid EnterpriseSubscriptionMetadata
+ */
+function isEnterpriseMetadata(metadata: unknown): metadata is EnterpriseSubscriptionMetadata {
+  return (
+    !!metadata &&
+    typeof metadata === 'object' &&
+    'seats' in metadata &&
+    typeof (metadata as EnterpriseSubscriptionMetadata).seats === 'string'
+  )
+}
+
+export function getEffectiveSeats(subscription: any): number {
+  if (!subscription) {
+    return 0
+  }
+
+  if (subscription.plan === 'enterprise') {
+    const metadata = subscription.metadata as EnterpriseSubscriptionMetadata | null
+    if (isEnterpriseMetadata(metadata)) {
+      return Number.parseInt(metadata.seats, 10)
+    }
+    return 0
+  }
+
+  if (subscription.plan === 'team') {
+    return subscription.seats ?? 0
+  }
+
+  return 0
 }
 
 export function checkProPlan(subscription: any): boolean {
@@ -87,4 +120,22 @@ export function canEditUsageLimit(subscription: any): boolean {
   // Only Pro and Team plans can edit limits
   // Enterprise has fixed limits that match their monthly cost
   return subscription.plan === 'pro' || subscription.plan === 'team'
+}
+
+/**
+ * Get pricing info for a plan
+ */
+export function getPlanPricing(plan: string): { basePrice: number } {
+  switch (plan) {
+    case 'free':
+      return { basePrice: 0 }
+    case 'pro':
+      return { basePrice: getProTierLimit() }
+    case 'team':
+      return { basePrice: getTeamTierLimitPerSeat() }
+    case 'enterprise':
+      return { basePrice: getEnterpriseTierLimitPerSeat() }
+    default:
+      return { basePrice: 0 }
+  }
 }

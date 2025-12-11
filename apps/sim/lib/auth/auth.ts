@@ -18,7 +18,6 @@ import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import {
   getEmailSubject,
-  renderInvitationEmail,
   renderOTPEmail,
   renderPasswordResetEmail,
 } from '@/components/emails/render-email'
@@ -28,6 +27,7 @@ import { handleNewUser } from '@/lib/billing/core/usage'
 import { syncSubscriptionUsageLimits } from '@/lib/billing/organization'
 import { getPlans } from '@/lib/billing/plans'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
+import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
 import { handleManualEnterpriseSubscription } from '@/lib/billing/webhooks/enterprise'
 import {
   handleInvoiceFinalized,
@@ -94,6 +94,70 @@ export const auth = betterAuth({
               userId: user.id,
               error,
             })
+          }
+        },
+      },
+    },
+    account: {
+      create: {
+        before: async (account) => {
+          const existing = await db.query.account.findFirst({
+            where: and(
+              eq(schema.account.userId, account.userId),
+              eq(schema.account.providerId, account.providerId),
+              eq(schema.account.accountId, account.accountId)
+            ),
+          })
+
+          if (existing) {
+            logger.warn(
+              '[databaseHooks.account.create.before] Duplicate account detected, updating existing',
+              {
+                existingId: existing.id,
+                userId: account.userId,
+                providerId: account.providerId,
+                accountId: account.accountId,
+              }
+            )
+
+            await db
+              .update(schema.account)
+              .set({
+                accessToken: account.accessToken,
+                refreshToken: account.refreshToken,
+                idToken: account.idToken,
+                accessTokenExpiresAt: account.accessTokenExpiresAt,
+                refreshTokenExpiresAt: account.refreshTokenExpiresAt,
+                scope: account.scope,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.account.id, existing.id))
+
+            return false
+          }
+
+          return { data: account }
+        },
+        after: async (account) => {
+          // Salesforce doesn't return expires_in in its token response (unlike other OAuth providers).
+          // We set a default 2-hour expiration so token refresh logic works correctly.
+          if (account.providerId === 'salesforce' && !account.accessTokenExpiresAt) {
+            const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000)
+            try {
+              await db
+                .update(schema.account)
+                .set({ accessTokenExpiresAt: twoHoursFromNow })
+                .where(eq(schema.account.id, account.id))
+              logger.info(
+                '[databaseHooks.account.create.after] Set default expiration for Salesforce token',
+                { accountId: account.id, expiresAt: twoHoursFromNow }
+              )
+            } catch (error) {
+              logger.error(
+                '[databaseHooks.account.create.after] Failed to set Salesforce token expiration',
+                { accountId: account.id, error }
+              )
+            }
           }
         },
       },
@@ -482,7 +546,6 @@ export const auth = betterAuth({
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-forms`,
         },
-
         {
           providerId: 'google-vault',
           clientId: env.GOOGLE_CLIENT_ID as string,
@@ -497,6 +560,22 @@ export const auth = betterAuth({
           ],
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-vault`,
+        },
+
+        {
+          providerId: 'google-groups',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: [
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            'https://www.googleapis.com/auth/admin.directory.group',
+            'https://www.googleapis.com/auth/admin.directory.group.member',
+          ],
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-groups`,
         },
 
         {
@@ -826,9 +905,10 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
           tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
           userInfoUrl: 'https://login.salesforce.com/services/oauth2/userinfo',
-          scopes: ['api', 'refresh_token', 'openid'],
+          scopes: ['api', 'refresh_token', 'openid', 'offline_access'],
           pkce: true,
           prompt: 'consent',
+          accessType: 'offline',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/salesforce`,
           getUserInfo: async (tokens) => {
             try {
@@ -1981,7 +2061,14 @@ export const auth = betterAuth({
                     await handleManualEnterpriseSubscription(event)
                     break
                   }
-                  // Note: customer.subscription.deleted is handled by better-auth's onSubscriptionDeleted callback above
+                  case 'charge.dispute.created': {
+                    await handleChargeDispute(event)
+                    break
+                  }
+                  case 'charge.dispute.closed': {
+                    await handleDisputeClosed(event)
+                    break
+                  }
                   default:
                     logger.info('[onEvent] Ignoring unsupported webhook event', {
                       eventId: event.id,
@@ -2017,79 +2104,6 @@ export const auth = betterAuth({
               )
 
               return hasTeamPlan
-            },
-            // Set a fixed membership limit of 50, but the actual limit will be enforced in the invitation flow
-            membershipLimit: 50,
-            // Validate seat limits before sending invitations
-            beforeInvite: async ({ organization }: { organization: { id: string } }) => {
-              const subscriptions = await db
-                .select()
-                .from(schema.subscription)
-                .where(
-                  and(
-                    eq(schema.subscription.referenceId, organization.id),
-                    eq(schema.subscription.status, 'active')
-                  )
-                )
-
-              const teamOrEnterpriseSubscription = subscriptions.find(
-                (sub) => sub.plan === 'team' || sub.plan === 'enterprise'
-              )
-
-              if (!teamOrEnterpriseSubscription) {
-                throw new Error('No active team or enterprise subscription for this organization')
-              }
-
-              const members = await db
-                .select()
-                .from(schema.member)
-                .where(eq(schema.member.organizationId, organization.id))
-
-              const pendingInvites = await db
-                .select()
-                .from(schema.invitation)
-                .where(
-                  and(
-                    eq(schema.invitation.organizationId, organization.id),
-                    eq(schema.invitation.status, 'pending')
-                  )
-                )
-
-              const totalCount = members.length + pendingInvites.length
-              const seatLimit = teamOrEnterpriseSubscription.seats || 1
-
-              if (totalCount >= seatLimit) {
-                throw new Error(`Organization has reached its seat limit of ${seatLimit}`)
-              }
-            },
-            sendInvitationEmail: async (data: any) => {
-              try {
-                const { invitation, organization, inviter } = data
-
-                const inviteUrl = `${getBaseUrl()}/invite/${invitation.id}`
-                const inviterName = inviter.user?.name || 'A team member'
-
-                const html = await renderInvitationEmail(
-                  inviterName,
-                  organization.name,
-                  inviteUrl,
-                  invitation.email
-                )
-
-                const result = await sendEmail({
-                  to: invitation.email,
-                  subject: `${inviterName} has invited you to join ${organization.name} on Sim`,
-                  html,
-                  from: getFromEmailAddress(),
-                  emailType: 'transactional',
-                })
-
-                if (!result.success) {
-                  logger.error('Failed to send organization invitation email:', result.message)
-                }
-              } catch (error) {
-                logger.error('Error sending invitation email', { error })
-              }
             },
             organizationCreation: {
               afterCreate: async ({ organization, user }) => {

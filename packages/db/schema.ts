@@ -17,7 +17,7 @@ import {
   uuid,
   vector,
 } from 'drizzle-orm/pg-core'
-import { DEFAULT_FREE_CREDITS, TAG_SLOTS } from './consts'
+import { DEFAULT_FREE_CREDITS, TAG_SLOTS } from './constants'
 
 // Custom tsvector type for full-text search
 export const tsvector = customType<{
@@ -87,6 +87,11 @@ export const account = pgTable(
     accountProviderIdx: index('idx_account_on_account_id_provider_id').on(
       table.accountId,
       table.providerId
+    ),
+    uniqueUserProviderAccount: uniqueIndex('account_user_provider_account_unique').on(
+      table.userId,
+      table.providerId,
+      table.accountId
     ),
   })
 )
@@ -430,6 +435,9 @@ export const settings = pgTable('settings', {
   // Copilot preferences - maps model_id to enabled/disabled boolean
   copilotEnabledModels: jsonb('copilot_enabled_models').notNull().default('{}'),
 
+  // Copilot auto-allowed integration tools - array of tool IDs that can run without confirmation
+  copilotAutoAllowedTools: jsonb('copilot_auto_allowed_tools').notNull().default('[]'),
+
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
@@ -493,19 +501,25 @@ export const webhook = pgTable(
   }
 )
 
-export const workflowLogWebhook = pgTable(
-  'workflow_log_webhook',
+export const notificationTypeEnum = pgEnum('notification_type', ['webhook', 'email', 'slack'])
+
+export const notificationDeliveryStatusEnum = pgEnum('notification_delivery_status', [
+  'pending',
+  'in_progress',
+  'success',
+  'failed',
+])
+
+export const workspaceNotificationSubscription = pgTable(
+  'workspace_notification_subscription',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id')
+    workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workflow.id, { onDelete: 'cascade' }),
-    url: text('url').notNull(),
-    secret: text('secret'),
-    includeFinalOutput: boolean('include_final_output').notNull().default(false),
-    includeTraceSpans: boolean('include_trace_spans').notNull().default(false),
-    includeRateLimits: boolean('include_rate_limits').notNull().default(false),
-    includeUsageData: boolean('include_usage_data').notNull().default(false),
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    notificationType: notificationTypeEnum('notification_type').notNull(),
+    workflowIds: text('workflow_ids').array().notNull().default(sql`'{}'::text[]`),
+    allWorkflows: boolean('all_workflows').notNull().default(false),
     levelFilter: text('level_filter')
       .array()
       .notNull()
@@ -514,35 +528,46 @@ export const workflowLogWebhook = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY['api', 'webhook', 'schedule', 'manual', 'chat']::text[]`),
+    includeFinalOutput: boolean('include_final_output').notNull().default(false),
+    includeTraceSpans: boolean('include_trace_spans').notNull().default(false),
+    includeRateLimits: boolean('include_rate_limits').notNull().default(false),
+    includeUsageData: boolean('include_usage_data').notNull().default(false),
+
+    // Channel-specific configuration
+    webhookConfig: jsonb('webhook_config'),
+    emailRecipients: text('email_recipients').array(),
+    slackConfig: jsonb('slack_config'),
+
+    // Alert rule configuration (if null, sends on every execution)
+    alertConfig: jsonb('alert_config'),
+    lastAlertAt: timestamp('last_alert_at'),
+
     active: boolean('active').notNull().default(true),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    workflowIdIdx: index('workflow_log_webhook_workflow_id_idx').on(table.workflowId),
-    activeIdx: index('workflow_log_webhook_active_idx').on(table.active),
+    workspaceIdIdx: index('workspace_notification_workspace_id_idx').on(table.workspaceId),
+    activeIdx: index('workspace_notification_active_idx').on(table.active),
+    typeIdx: index('workspace_notification_type_idx').on(table.notificationType),
   })
 )
 
-export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', [
-  'pending',
-  'in_progress',
-  'success',
-  'failed',
-])
-
-export const workflowLogWebhookDelivery = pgTable(
-  'workflow_log_webhook_delivery',
+export const workspaceNotificationDelivery = pgTable(
+  'workspace_notification_delivery',
   {
     id: text('id').primaryKey(),
     subscriptionId: text('subscription_id')
       .notNull()
-      .references(() => workflowLogWebhook.id, { onDelete: 'cascade' }),
+      .references(() => workspaceNotificationSubscription.id, { onDelete: 'cascade' }),
     workflowId: text('workflow_id')
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
     executionId: text('execution_id').notNull(),
-    status: webhookDeliveryStatusEnum('status').notNull().default('pending'),
+    status: notificationDeliveryStatusEnum('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     lastAttemptAt: timestamp('last_attempt_at'),
     nextAttemptAt: timestamp('next_attempt_at'),
@@ -553,12 +578,14 @@ export const workflowLogWebhookDelivery = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    subscriptionIdIdx: index('workflow_log_webhook_delivery_subscription_id_idx').on(
+    subscriptionIdIdx: index('workspace_notification_delivery_subscription_id_idx').on(
       table.subscriptionId
     ),
-    executionIdIdx: index('workflow_log_webhook_delivery_execution_id_idx').on(table.executionId),
-    statusIdx: index('workflow_log_webhook_delivery_status_idx').on(table.status),
-    nextAttemptIdx: index('workflow_log_webhook_delivery_next_attempt_idx').on(table.nextAttemptAt),
+    executionIdIdx: index('workspace_notification_delivery_execution_id_idx').on(table.executionId),
+    statusIdx: index('workspace_notification_delivery_status_idx').on(table.status),
+    nextAttemptIdx: index('workspace_notification_delivery_next_attempt_idx').on(
+      table.nextAttemptAt
+    ),
   })
 )
 
@@ -570,17 +597,16 @@ export const apiKey = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }), // Only set for workspace keys
-    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }), // Who created the workspace key
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     key: text('key').notNull().unique(),
-    type: text('type').notNull().default('personal'), // 'personal' or 'workspace'
+    type: text('type').notNull().default('personal'),
     lastUsed: timestamp('last_used'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     expiresAt: timestamp('expires_at'),
   },
   (table) => ({
-    // Ensure workspace keys have a workspace_id and personal keys don't
     workspaceTypeCheck: check(
       'workspace_type_check',
       sql`(type = 'workspace' AND workspace_id IS NOT NULL) OR (type = 'personal' AND workspace_id IS NULL)`
@@ -606,6 +632,11 @@ export const marketplace = pgTable('marketplace', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
+export const billingBlockedReasonEnum = pgEnum('billing_blocked_reason', [
+  'payment_failed',
+  'dispute',
+])
+
 export const userStats = pgTable('user_stats', {
   id: text('id').primaryKey(),
   userId: text('user_id')
@@ -627,6 +658,8 @@ export const userStats = pgTable('user_stats', {
   billedOverageThisPeriod: decimal('billed_overage_this_period').notNull().default('0'), // Amount of overage already billed via threshold billing
   // Pro usage snapshot when joining a team (to prevent double-billing)
   proPeriodCostSnapshot: decimal('pro_period_cost_snapshot').default('0'), // Snapshot of Pro usage when joining team
+  // Pre-purchased credits (for Pro users only)
+  creditBalance: decimal('credit_balance').notNull().default('0'),
   // Copilot usage tracking
   totalCopilotCost: decimal('total_copilot_cost').notNull().default('0'),
   currentPeriodCopilotCost: decimal('current_period_copilot_cost').notNull().default('0'),
@@ -637,6 +670,7 @@ export const userStats = pgTable('user_stats', {
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
   lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
+  billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
 })
 
 export const customTools = pgTable(
@@ -689,15 +723,11 @@ export const subscription = pgTable(
   })
 )
 
-export const userRateLimits = pgTable('user_rate_limits', {
-  referenceId: text('reference_id').primaryKey(), // Can be userId or organizationId for pooling
-  syncApiRequests: integer('sync_api_requests').notNull().default(0), // Sync API requests counter
-  asyncApiRequests: integer('async_api_requests').notNull().default(0), // Async API requests counter
-  apiEndpointRequests: integer('api_endpoint_requests').notNull().default(0), // External API endpoint requests counter
-  windowStart: timestamp('window_start').notNull().defaultNow(),
-  lastRequestAt: timestamp('last_request_at').notNull().defaultNow(),
-  isRateLimited: boolean('is_rate_limited').notNull().default(false),
-  rateLimitResetAt: timestamp('rate_limit_reset_at'),
+export const rateLimitBucket = pgTable('rate_limit_bucket', {
+  key: text('key').primaryKey(),
+  tokens: decimal('tokens').notNull(),
+  lastRefillAt: timestamp('last_refill_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
 export const chat = pgTable(
@@ -744,6 +774,7 @@ export const organization = pgTable('organization', {
   orgUsageLimit: decimal('org_usage_limit'),
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
   departedMemberUsage: decimal('departed_member_usage').notNull().default('0'),
+  creditBalance: decimal('credit_balance').notNull().default('0'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })

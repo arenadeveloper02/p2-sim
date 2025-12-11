@@ -35,13 +35,14 @@ export const listTool: ToolConfig<GoogleDriveToolParams, GoogleDriveListResponse
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'A query to filter the files',
+      description:
+        'Search term to filter files by name (e.g. "budget" finds files with "budget" in the name). Do NOT use Google Drive query syntax here - just provide a plain search term.',
     },
     pageSize: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'The number of files to return',
+      visibility: 'user-or-llm',
+      description: 'The maximum number of files to return (default: 100)',
     },
     pageToken: {
       type: 'string',
@@ -58,10 +59,10 @@ export const listTool: ToolConfig<GoogleDriveToolParams, GoogleDriveListResponse
         'fields',
         'files(id,name,mimeType,webViewLink,webContentLink,size,createdTime,modifiedTime,parents),nextPageToken'
       )
-      // Ensure shared drives support
+      // Ensure shared drives support - corpora=allDrives is critical for searching across shared drives
+      url.searchParams.append('corpora', 'allDrives')
       url.searchParams.append('supportsAllDrives', 'true')
       url.searchParams.append('includeItemsFromAllDrives', 'true')
-      url.searchParams.append('spaces', 'drive')
 
       // Build the query conditions
       const conditions = ['trashed = false'] // Always exclude trashed files

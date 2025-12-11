@@ -2,7 +2,7 @@ import type { Edge } from 'reactflow'
 import { sanitizeWorkflowForSharing } from '@/lib/workflows/credentials/credential-extractor'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
-import { TRIGGER_PERSISTED_SUBBLOCK_IDS } from '@/triggers/consts'
+import { TRIGGER_PERSISTED_SUBBLOCK_IDS } from '@/triggers/constants'
 
 /**
  * Sanitized workflow state for copilot (removes all UI-specific data)
@@ -128,6 +128,16 @@ function sanitizeConditions(conditionsJson: string): string {
 function sanitizeTools(tools: any[]): any[] {
   return tools.map((tool) => {
     if (tool.type === 'custom-tool') {
+      // New reference format: minimal fields only
+      if (tool.customToolId && !tool.schema && !tool.code) {
+        return {
+          type: tool.type,
+          customToolId: tool.customToolId,
+          usageControl: tool.usageControl,
+        }
+      }
+
+      // Legacy inline format: include all fields
       const sanitized: any = {
         type: tool.type,
         title: tool.title,
@@ -135,15 +145,19 @@ function sanitizeTools(tools: any[]): any[] {
         usageControl: tool.usageControl,
       }
 
+      // Include schema for inline format (legacy format)
       if (tool.schema?.function) {
         sanitized.schema = {
+          type: tool.schema.type || 'function',
           function: {
+            name: tool.schema.function.name,
             description: tool.schema.function.description,
             parameters: tool.schema.function.parameters,
           },
         }
       }
 
+      // Include code for inline format (legacy format)
       if (tool.code) {
         sanitized.code = tool.code
       }
@@ -321,13 +335,37 @@ export function sanitizeForCopilot(state: WorkflowState): CopilotWorkflowState {
     let inputs: Record<string, string | number | string[][] | object>
 
     if (block.type === 'loop' || block.type === 'parallel') {
-      // Extract configuration from block.data
+      // Extract configuration from block.data (only include type-appropriate fields)
       const loopInputs: Record<string, string | number | string[][] | object> = {}
-      if (block.data?.loopType) loopInputs.loopType = block.data.loopType
-      if (block.data?.count !== undefined) loopInputs.iterations = block.data.count
-      if (block.data?.collection !== undefined) loopInputs.collection = block.data.collection
-      if (block.data?.whileCondition !== undefined) loopInputs.condition = block.data.whileCondition
-      if (block.data?.parallelType) loopInputs.parallelType = block.data.parallelType
+
+      if (block.type === 'loop') {
+        const loopType = block.data?.loopType || 'for'
+        loopInputs.loopType = loopType
+        // Only export fields relevant to the current loopType
+        if (loopType === 'for' && block.data?.count !== undefined) {
+          loopInputs.iterations = block.data.count
+        }
+        if (loopType === 'forEach' && block.data?.collection !== undefined) {
+          loopInputs.collection = block.data.collection
+        }
+        if (loopType === 'while' && block.data?.whileCondition !== undefined) {
+          loopInputs.condition = block.data.whileCondition
+        }
+        if (loopType === 'doWhile' && block.data?.doWhileCondition !== undefined) {
+          loopInputs.condition = block.data.doWhileCondition
+        }
+      } else if (block.type === 'parallel') {
+        const parallelType = block.data?.parallelType || 'count'
+        loopInputs.parallelType = parallelType
+        // Only export fields relevant to the current parallelType
+        if (parallelType === 'count' && block.data?.count !== undefined) {
+          loopInputs.iterations = block.data.count
+        }
+        if (parallelType === 'collection' && block.data?.collection !== undefined) {
+          loopInputs.collection = block.data.collection
+        }
+      }
+
       inputs = loopInputs
     } else {
       // For regular blocks, sanitize subBlocks

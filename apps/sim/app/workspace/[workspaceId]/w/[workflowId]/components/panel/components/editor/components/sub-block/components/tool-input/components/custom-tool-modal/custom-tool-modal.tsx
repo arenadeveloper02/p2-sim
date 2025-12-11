@@ -3,14 +3,6 @@ import { AlertCircle, Wand2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
   Button,
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverItem,
-  PopoverScrollArea,
-  PopoverSection,
-} from '@/components/emcn'
-import {
   Modal,
   ModalBody,
   ModalContent,
@@ -20,7 +12,13 @@ import {
   ModalTabsContent,
   ModalTabsList,
   ModalTabsTrigger,
-} from '@/components/emcn/components/modal/modal'
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverItem,
+  PopoverScrollArea,
+  PopoverSection,
+} from '@/components/emcn'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -58,6 +56,7 @@ interface CustomToolModalProps {
 
 export interface CustomTool {
   type: 'custom-tool'
+  id?: string
   title: string
   name: string
   description: string
@@ -433,6 +432,8 @@ try {
         }
       }
 
+      let savedToolId: string | undefined
+
       if (isEditing && toolIdToUpdate) {
         await updateToolMutation.mutateAsync({
           workspaceId,
@@ -443,8 +444,9 @@ try {
             code: functionCode || '',
           },
         })
+        savedToolId = toolIdToUpdate
       } else {
-        await createToolMutation.mutateAsync({
+        const result = await createToolMutation.mutateAsync({
           workspaceId,
           tool: {
             title: name,
@@ -452,10 +454,13 @@ try {
             code: functionCode || '',
           },
         })
+        // Get the ID from the created tool
+        savedToolId = result?.[0]?.id
       }
 
       const customTool: CustomTool = {
         type: 'custom-tool',
+        id: savedToolId,
         title: name,
         name,
         description,
@@ -831,7 +836,7 @@ try {
     <>
       <Modal open={open} onOpenChange={handleClose}>
         <ModalContent
-          className='h-[80vh] w-[900px]'
+          size='xl'
           onKeyDown={(e) => {
             if (e.key === 'Escape' && (showEnvVars || showTags || showSchemaParams)) {
               e.preventDefault()
@@ -1184,7 +1189,7 @@ try {
       </Modal>
 
       <Modal open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <ModalContent className='w-[400px]'>
+        <ModalContent size='sm'>
           <ModalHeader>Delete Custom Tool</ModalHeader>
           <ModalBody>
             <p className='text-[12px] text-[var(--text-tertiary)]'>

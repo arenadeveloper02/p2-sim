@@ -1,8 +1,17 @@
 import { createLogger } from '@/lib/logs/console/logger'
+import {
+  DEFAULT_HORIZONTAL_SPACING,
+  DEFAULT_VERTICAL_SPACING,
+} from '@/lib/workflows/autolayout/constants'
 import { layoutContainers } from '@/lib/workflows/autolayout/containers'
-import { layoutBlocksCore } from '@/lib/workflows/autolayout/core'
+import { assignLayers, layoutBlocksCore } from '@/lib/workflows/autolayout/core'
 import type { Edge, LayoutOptions, LayoutResult } from '@/lib/workflows/autolayout/types'
-import { filterLayoutEligibleBlockIds, getBlocksByParent } from '@/lib/workflows/autolayout/utils'
+import {
+  calculateSubflowDepths,
+  filterLayoutEligibleBlockIds,
+  getBlocksByParent,
+  prepareContainerDimensions,
+} from '@/lib/workflows/autolayout/utils'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('AutoLayout')
@@ -24,6 +33,19 @@ export function applyAutoLayout(
 
     const blocksCopy: Record<string, BlockState> = JSON.parse(JSON.stringify(blocks))
 
+    const horizontalSpacing = options.horizontalSpacing ?? DEFAULT_HORIZONTAL_SPACING
+    const verticalSpacing = options.verticalSpacing ?? DEFAULT_VERTICAL_SPACING
+
+    // Pre-calculate container dimensions by laying out their children (bottom-up)
+    // This ensures accurate widths/heights before root-level layout
+    prepareContainerDimensions(
+      blocksCopy,
+      edges,
+      layoutBlocksCore,
+      horizontalSpacing,
+      verticalSpacing
+    )
+
     const { root: rootBlockIds } = getBlocksByParent(blocksCopy)
     const layoutRootIds = filterLayoutEligibleBlockIds(rootBlockIds, blocksCopy)
 
@@ -36,10 +58,15 @@ export function applyAutoLayout(
       (edge) => layoutRootIds.includes(edge.source) && layoutRootIds.includes(edge.target)
     )
 
+    // Calculate subflow depths before laying out root blocks
+    // This ensures blocks connected to subflow ends are positioned correctly
+    const subflowDepths = calculateSubflowDepths(blocksCopy, edges, assignLayers)
+
     if (Object.keys(rootBlocks).length > 0) {
       const { nodes } = layoutBlocksCore(rootBlocks, rootEdges, {
         isContainer: false,
         layoutOptions: options,
+        subflowDepths,
       })
 
       for (const node of nodes.values()) {

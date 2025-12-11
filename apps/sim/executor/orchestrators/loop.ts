@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
-import { buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/consts'
+import { buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { LoopScope } from '@/executor/execution/state'
 import type { BlockStateController } from '@/executor/execution/types'
@@ -48,11 +48,13 @@ export class LoopOrchestrator {
 
     switch (loopType) {
       case 'for':
+        scope.loopType = 'for'
         scope.maxIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
         scope.condition = buildLoopIndexCondition(scope.maxIterations)
         break
 
       case 'forEach': {
+        scope.loopType = 'forEach'
         const items = this.resolveForEachItems(ctx, loopConfig.forEachItems)
         scope.items = items
         scope.maxIterations = items.length
@@ -62,17 +64,18 @@ export class LoopOrchestrator {
       }
 
       case 'while':
+        scope.loopType = 'while'
         scope.condition = loopConfig.whileCondition
         break
 
       case 'doWhile':
+        scope.loopType = 'doWhile'
         if (loopConfig.doWhileCondition) {
           scope.condition = loopConfig.doWhileCondition
         } else {
           scope.maxIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
           scope.condition = buildLoopIndexCondition(scope.maxIterations)
         }
-        scope.skipFirstConditionCheck = true
         break
 
       default:
@@ -130,12 +133,8 @@ export class LoopOrchestrator {
 
     scope.currentIterationOutputs.clear()
 
-    const isFirstIteration = scope.iteration === 0
-    const shouldSkipFirstCheck = scope.skipFirstConditionCheck && isFirstIteration
-    if (!shouldSkipFirstCheck) {
-      if (!this.evaluateCondition(ctx, scope, scope.iteration + 1)) {
-        return this.createExitResult(ctx, loopId, scope)
-      }
+    if (!this.evaluateCondition(ctx, scope, scope.iteration + 1)) {
+      return this.createExitResult(ctx, loopId, scope)
     }
 
     scope.iteration++
@@ -243,6 +242,65 @@ export class LoopOrchestrator {
 
   getLoopScope(ctx: ExecutionContext, loopId: string): LoopScope | undefined {
     return ctx.loopExecutions?.get(loopId)
+  }
+
+  /**
+   * Evaluates the initial condition for loops at the sentinel start.
+   * - For while loops, the condition must be checked BEFORE the first iteration.
+   * - For forEach loops, skip if the items array is empty.
+   * - For for loops, skip if maxIterations is 0.
+   * - For doWhile loops, always execute at least once.
+   *
+   * @returns true if the loop should execute, false if it should be skipped
+   */
+  evaluateInitialCondition(ctx: ExecutionContext, loopId: string): boolean {
+    const scope = ctx.loopExecutions?.get(loopId)
+    if (!scope) {
+      logger.warn('Loop scope not found for initial condition evaluation', { loopId })
+      return true
+    }
+
+    // forEach: skip if items array is empty
+    if (scope.loopType === 'forEach') {
+      if (!scope.items || scope.items.length === 0) {
+        logger.info('ForEach loop has empty items, skipping loop body', { loopId })
+        return false
+      }
+      return true
+    }
+
+    // for: skip if maxIterations is 0
+    if (scope.loopType === 'for') {
+      if (scope.maxIterations === 0) {
+        logger.info('For loop has 0 iterations, skipping loop body', { loopId })
+        return false
+      }
+      return true
+    }
+
+    // doWhile: always execute at least once
+    if (scope.loopType === 'doWhile') {
+      return true
+    }
+
+    // while: check condition before first iteration
+    if (scope.loopType === 'while') {
+      if (!scope.condition) {
+        logger.warn('No condition defined for while loop', { loopId })
+        return false
+      }
+
+      const result = this.evaluateWhileCondition(ctx, scope.condition, scope)
+      logger.info('While loop initial condition evaluation', {
+        loopId,
+        condition: scope.condition,
+        result,
+      })
+
+      return result
+    }
+
+    return true
   }
 
   shouldExecuteLoopNode(_ctx: ExecutionContext, _nodeId: string, _loopId: string): boolean {

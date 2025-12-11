@@ -34,7 +34,7 @@ const ExecuteWorkflowSchema = z.object({
   stream: z.boolean().optional(),
   useDraftState: z.boolean().optional(),
   input: z.any().optional(),
-  // Optional workflow state override (for executing diff workflows)
+  isClientSession: z.boolean().optional(),
   workflowStateOverride: z
     .object({
       blocks: z.record(z.any()),
@@ -92,16 +92,17 @@ export async function executeWorkflow(
       workflowId,
       workspaceId: workflow.workspaceId,
       userId: actorUserId,
+      workflowUserId: workflow.userId,
       triggerType,
       useDraftState: false,
       startTime: new Date().toISOString(),
+      isClientSession: false,
     }
 
     const snapshot = new ExecutionSnapshot(
       metadata,
       workflow,
       input,
-      {},
       workflow.variables || {},
       streamConfig?.selectedOutputs || []
     )
@@ -329,6 +330,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       stream: streamParam,
       useDraftState,
       input: validatedInput,
+      isClientSession = false,
       workflowStateOverride,
     } = validation.data
 
@@ -393,8 +395,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       triggerType: loggingTriggerType,
       executionId,
       requestId,
-      checkRateLimit: false, // Manual executions bypass rate limits
-      checkDeployment: !shouldUseDraftState, // Check deployment unless using draft
+      checkDeployment: !shouldUseDraftState,
       loggingSession,
     })
 
@@ -503,9 +504,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           workflowId,
           workspaceId: workflow.workspaceId ?? undefined,
           userId: actorUserId,
+          sessionUserId: isClientSession ? userId : undefined,
+          workflowUserId: workflow.userId,
           triggerType,
           useDraftState: shouldUseDraftState,
           startTime: new Date().toISOString(),
+          isClientSession,
           workflowStateOverride: effectiveWorkflowStateOverride,
         }
 
@@ -513,7 +517,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           metadata,
           workflow,
           processedInput,
-          {},
           workflow.variables || {},
           selectedOutputs
         )
@@ -769,9 +772,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             workflowId,
             workspaceId: workflow.workspaceId ?? undefined,
             userId: actorUserId,
+            sessionUserId: isClientSession ? userId : undefined,
+            workflowUserId: workflow.userId,
             triggerType,
             useDraftState: shouldUseDraftState,
             startTime: new Date().toISOString(),
+            isClientSession,
             workflowStateOverride: effectiveWorkflowStateOverride,
           }
 
@@ -779,7 +785,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             metadata,
             workflow,
             processedInput,
-            {},
             workflow.variables || {},
             selectedOutputs
           )

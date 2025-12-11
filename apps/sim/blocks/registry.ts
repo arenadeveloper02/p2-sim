@@ -14,9 +14,11 @@ import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock } from '@/blocks/blocks/confluence'
+import { CursorBlock } from '@/blocks/blocks/cursor'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
+import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
@@ -34,7 +36,9 @@ import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
 import { GoogleFormsBlock } from '@/blocks/blocks/google_form'
+import { GoogleGroupsBlock } from '@/blocks/blocks/google_groups'
 import { GoogleSheetsBlock } from '@/blocks/blocks/google_sheets'
+import { GoogleSlidesBlock } from '@/blocks/blocks/google_slides'
 import { GoogleVaultBlock } from '@/blocks/blocks/google_vault'
 import { GrafanaBlock } from '@/blocks/blocks/grafana'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
@@ -85,6 +89,7 @@ import { RedditBlock } from '@/blocks/blocks/reddit'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock } from '@/blocks/blocks/router'
+import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
@@ -92,6 +97,7 @@ import { SearchBlock } from '@/blocks/blocks/search'
 import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
+import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
@@ -150,9 +156,11 @@ export const registry: Record<string, BlockConfig> = {
   clay: ClayBlock,
   condition: ConditionBlock,
   confluence: ConfluenceBlock,
+  cursor: CursorBlock,
   datadog: DatadogBlock,
   discord: DiscordBlock,
   dropbox: DropboxBlock,
+  duckduckgo: DuckDuckGoBlock,
   elevenlabs: ElevenLabsBlock,
   elasticsearch: ElasticsearchBlock,
   evaluator: EvaluatorBlock,
@@ -172,7 +180,9 @@ export const registry: Record<string, BlockConfig> = {
   google_forms: GoogleFormsBlock,
   google_search: GoogleSearchBlock,
   google_sheets: GoogleSheetsBlock,
+  google_slides: GoogleSlidesBlock,
   google_vault: GoogleVaultBlock,
+  google_groups: GoogleGroupsBlock,
   hubspot: HubSpotBlock,
   huggingface: HuggingFaceBlock,
   human_in_the_loop: HumanInTheLoopBlock,
@@ -220,6 +230,7 @@ export const registry: Record<string, BlockConfig> = {
   reddit: RedditBlock,
   resend: ResendBlock,
   response: ResponseBlock,
+  rss: RssBlock,
   router: RouterBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
@@ -232,6 +243,7 @@ export const registry: Record<string, BlockConfig> = {
   shopify: ShopifyBlock,
   slack: SlackBlock,
   smtp: SmtpBlock,
+  sftp: SftpBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,
   stagehand_agent: StagehandAgentBlock,
@@ -268,13 +280,26 @@ export const registry: Record<string, BlockConfig> = {
   zoom: ZoomBlock,
 }
 
-export const getBlock = (type: string): BlockConfig | undefined => registry[type]
+export const getBlock = (type: string): BlockConfig | undefined => {
+  // Direct lookup first
+  if (registry[type]) {
+    return registry[type]
+  }
+  // Fallback: normalize hyphens to underscores (e.g., 'microsoft-teams' -> 'microsoft_teams')
+  const normalized = type.replace(/-/g, '_')
+  return registry[normalized]
+}
+
+export const getBlockByToolName = (toolName: string): BlockConfig | undefined => {
+  return Object.values(registry).find((block) => block.tools?.access?.includes(toolName))
+}
 
 export const getBlocksByCategory = (category: 'blocks' | 'tools' | 'triggers'): BlockConfig[] =>
   Object.values(registry).filter((block) => block.category === category)
 
 export const getAllBlockTypes = (): string[] => Object.keys(registry)
 
-export const isValidBlockType = (type: string): type is string => type in registry
+export const isValidBlockType = (type: string): type is string =>
+  type in registry || type.replace(/-/g, '_') in registry
 
 export const getAllBlocks = (): BlockConfig[] => Object.values(registry)

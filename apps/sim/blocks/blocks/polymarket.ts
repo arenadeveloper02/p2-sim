@@ -193,17 +193,40 @@ export const PolymarketBlock: BlockConfig = {
     {
       id: 'order',
       title: 'Sort By',
-      type: 'short-input',
-      placeholder: 'Sort field (e.g., id, volume, liquidity)',
-      condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      type: 'dropdown',
+      options: [
+        { label: 'Default', id: '' },
+        { label: 'Volume', id: 'volumeNum' },
+        { label: 'Liquidity', id: 'liquidityNum' },
+        { label: 'Start Date', id: 'startDate' },
+        { label: 'End Date', id: 'endDate' },
+        { label: 'Created At', id: 'createdAt' },
+        { label: 'Updated At', id: 'updatedAt' },
+      ],
+      condition: { field: 'operation', value: ['get_markets'] },
+    },
+    {
+      id: 'orderEvents',
+      title: 'Sort By',
+      type: 'dropdown',
+      options: [
+        { label: 'Default', id: '' },
+        { label: 'Volume', id: 'volume' },
+        { label: 'Liquidity', id: 'liquidity' },
+        { label: 'Start Date', id: 'startDate' },
+        { label: 'End Date', id: 'endDate' },
+        { label: 'Created At', id: 'createdAt' },
+        { label: 'Updated At', id: 'updatedAt' },
+      ],
+      condition: { field: 'operation', value: ['get_events'] },
     },
     {
       id: 'ascending',
       title: 'Sort Order',
       type: 'dropdown',
       options: [
-        { label: 'Descending (newest first)', id: 'false' },
-        { label: 'Ascending (oldest first)', id: 'true' },
+        { label: 'Descending', id: 'false' },
+        { label: 'Ascending', id: 'true' },
       ],
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
     },
@@ -219,7 +242,7 @@ export const PolymarketBlock: BlockConfig = {
       id: 'limit',
       title: 'Limit',
       type: 'short-input',
-      placeholder: 'Number of results (recommended: 25-50)',
+      placeholder: 'Number of results (max 50)',
       condition: {
         field: 'operation',
         value: ['get_markets', 'get_events', 'get_tags', 'search', 'get_series', 'get_trades'],
@@ -298,7 +321,7 @@ export const PolymarketBlock: BlockConfig = {
         }
       },
       params: (params) => {
-        const { operation, marketSlug, eventSlug, ...rest } = params
+        const { operation, marketSlug, eventSlug, orderEvents, order, ...rest } = params
         const cleanParams: Record<string, any> = {}
 
         // Map marketSlug to slug for get_market
@@ -309,6 +332,13 @@ export const PolymarketBlock: BlockConfig = {
         // Map eventSlug to slug for get_event
         if (operation === 'get_event' && eventSlug) {
           cleanParams.slug = eventSlug
+        }
+
+        // Map order field based on operation (markets use volumeNum/liquidityNum, events use volume/liquidity)
+        if (operation === 'get_markets' && order) {
+          cleanParams.order = order
+        } else if (operation === 'get_events' && orderEvents) {
+          cleanParams.order = orderEvents
         }
 
         // Convert numeric fields from string to number for get_price_history
@@ -349,7 +379,30 @@ export const PolymarketBlock: BlockConfig = {
     endTs: { type: 'number', description: 'End timestamp (Unix)' },
   },
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: { type: 'json', description: 'Operation result data' },
+    // List operations
+    markets: { type: 'json', description: 'Array of market objects (get_markets)' },
+    events: { type: 'json', description: 'Array of event objects (get_events)' },
+    tags: { type: 'json', description: 'Array of tag objects (get_tags)' },
+    series: {
+      type: 'json',
+      description: 'Array or single series object (get_series, get_series_by_id)',
+    },
+    positions: { type: 'json', description: 'Array of position objects (get_positions)' },
+    trades: { type: 'json', description: 'Array of trade objects (get_trades)' },
+    // Single item operations
+    market: { type: 'json', description: 'Single market object (get_market)' },
+    event: { type: 'json', description: 'Single event object (get_event)' },
+    // Search
+    results: {
+      type: 'json',
+      description: 'Search results with markets, events, profiles (search)',
+    },
+    // CLOB operations
+    orderbook: { type: 'json', description: 'Order book with bids and asks (get_orderbook)' },
+    price: { type: 'string', description: 'Market price (get_price, get_last_trade_price)' },
+    midpoint: { type: 'string', description: 'Midpoint price (get_midpoint)' },
+    history: { type: 'json', description: 'Price history entries (get_price_history)' },
+    spread: { type: 'json', description: 'Bid-ask spread (get_spread)' },
+    tickSize: { type: 'string', description: 'Minimum tick size (get_tick_size)' },
   },
 }

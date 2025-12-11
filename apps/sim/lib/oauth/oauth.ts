@@ -11,6 +11,7 @@ import {
   GoogleDocsIcon,
   GoogleDriveIcon,
   GoogleFormsIcon,
+  GoogleGroupsIcon,
   GoogleIcon,
   GoogleSheetsIcon,
   HubspotIcon,
@@ -80,6 +81,7 @@ export type OAuthService =
   | 'google-calendar'
   | 'google-vault'
   | 'google-forms'
+  | 'google-groups'
   | 'github'
   | 'x'
   // | 'supabase'
@@ -223,6 +225,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'https://www.googleapis.com/auth/devstorage.read_only',
         ],
         scopeHints: ['ediscovery', 'devstorage'],
+      },
+      'google-groups': {
+        id: 'google-groups',
+        name: 'Google Groups',
+        description: 'Manage Google Workspace Groups and their members.',
+        providerId: 'google-groups',
+        icon: (props) => GoogleGroupsIcon(props),
+        baseProviderIcon: (props) => GoogleIcon(props),
+        scopes: [
+          'https://www.googleapis.com/auth/admin.directory.group',
+          'https://www.googleapis.com/auth/admin.directory.group.member',
+        ],
+        scopeHints: ['admin.directory.group'],
       },
     },
     defaultService: 'gmail',
@@ -825,7 +840,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'salesforce',
         icon: (props) => SalesforceIcon(props),
         baseProviderIcon: (props) => SalesforceIcon(props),
-        scopes: ['api', 'refresh_token', 'openid'],
+        scopes: ['api', 'refresh_token', 'openid', 'offline_access'],
       },
     },
     defaultService: 'salesforce',
@@ -866,8 +881,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     services: {
       wordpress: {
         id: 'wordpress',
-        name: 'WordPress.com',
-        description: 'Manage posts, pages, media, comments, and more on WordPress.com sites.',
+        name: 'WordPress',
+        description: 'Manage posts, pages, media, comments, and more on WordPress sites.',
         providerId: 'wordpress',
         icon: (props) => WordpressIcon(props),
         baseProviderIcon: (props) => WordpressIcon(props),
@@ -876,6 +891,37 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'wordpress',
   },
+}
+
+/**
+ * Service metadata without React components - safe for server-side use
+ */
+export interface OAuthServiceMetadata {
+  providerId: string
+  name: string
+  description: string
+  baseProvider: string
+}
+
+/**
+ * Returns a flat list of all available OAuth services with metadata.
+ * This is safe to use on the server as it doesn't include React components.
+ */
+export function getAllOAuthServices(): OAuthServiceMetadata[] {
+  const services: OAuthServiceMetadata[] = []
+
+  for (const [baseProviderId, provider] of Object.entries(OAUTH_PROVIDERS)) {
+    for (const service of Object.values(provider.services)) {
+      services.push({
+        providerId: service.providerId,
+        name: service.name,
+        description: service.description,
+        baseProvider: baseProviderId,
+      })
+    }
+  }
+
+  return services
 }
 
 export function getServiceByProviderAndId(
@@ -1381,7 +1427,7 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         clientId,
         clientSecret,
         useBasicAuth: false,
-        supportsRefreshTokenRotation: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'shopify': {
@@ -1500,9 +1546,15 @@ export async function refreshOAuthToken(
 
       logger.error('Token refresh failed:', {
         status: response.status,
+        statusText: response.statusText,
         error: errorText,
         parsedError: errorData,
         providerId,
+        tokenEndpoint: config.tokenEndpoint,
+        hasClientId: !!config.clientId,
+        hasClientSecret: !!config.clientSecret,
+        hasRefreshToken: !!refreshToken,
+        refreshTokenPrefix: refreshToken ? `${refreshToken.substring(0, 10)}...` : 'none',
       })
       throw new Error(`Failed to refresh token: ${response.status} ${errorText}`)
     }

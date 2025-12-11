@@ -4,13 +4,15 @@ import {
   DEFAULT_HORIZONTAL_SPACING,
   DEFAULT_VERTICAL_SPACING,
 } from '@/lib/workflows/autolayout/constants'
-import { layoutBlocksCore } from '@/lib/workflows/autolayout/core'
+import { assignLayers, layoutBlocksCore } from '@/lib/workflows/autolayout/core'
 import type { Edge, LayoutOptions } from '@/lib/workflows/autolayout/types'
 import {
+  calculateSubflowDepths,
   filterLayoutEligibleBlockIds,
   getBlockMetrics,
   getBlocksByParent,
   isContainerType,
+  prepareContainerDimensions,
   shouldSkipAutoLayout,
 } from '@/lib/workflows/autolayout/utils'
 import { CONTAINER_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
@@ -46,9 +48,31 @@ export function applyTargetedLayout(
   const changedSet = new Set(changedBlockIds)
   const blocksCopy: Record<string, BlockState> = JSON.parse(JSON.stringify(blocks))
 
+  // Pre-calculate container dimensions by laying out their children (bottom-up)
+  // This ensures accurate widths/heights before root-level layout
+  prepareContainerDimensions(
+    blocksCopy,
+    edges,
+    layoutBlocksCore,
+    horizontalSpacing,
+    verticalSpacing
+  )
+
   const groups = getBlocksByParent(blocksCopy)
 
-  layoutGroup(null, groups.root, blocksCopy, edges, changedSet, verticalSpacing, horizontalSpacing)
+  // Calculate subflow depths before layout to properly position blocks after subflow ends
+  const subflowDepths = calculateSubflowDepths(blocksCopy, edges, assignLayers)
+
+  layoutGroup(
+    null,
+    groups.root,
+    blocksCopy,
+    edges,
+    changedSet,
+    verticalSpacing,
+    horizontalSpacing,
+    subflowDepths
+  )
 
   for (const [parentId, childIds] of groups.children.entries()) {
     layoutGroup(
@@ -58,7 +82,8 @@ export function applyTargetedLayout(
       edges,
       changedSet,
       verticalSpacing,
-      horizontalSpacing
+      horizontalSpacing,
+      subflowDepths
     )
   }
 
@@ -75,7 +100,8 @@ function layoutGroup(
   edges: Edge[],
   changedSet: Set<string>,
   verticalSpacing: number,
-  horizontalSpacing: number
+  horizontalSpacing: number,
+  subflowDepths: Map<string, number>
 ): void {
   if (childIds.length === 0) return
 
@@ -94,14 +120,15 @@ function layoutGroup(
   const requestedLayout = layoutEligibleChildIds.filter((id) => {
     const block = blocks[id]
     if (!block) return false
-    // Never reposition containers, only update their dimensions
-    if (isContainerType(block.type)) return false
+    if (isContainerType(block.type)) {
+      return changedSet.has(id) && isDefaultPosition(block)
+    }
     return changedSet.has(id)
   })
   const missingPositions = layoutEligibleChildIds.filter((id) => {
     const block = blocks[id]
     if (!block) return false
-    return !hasPosition(block)
+    return !hasPosition(block) || isDefaultPosition(block)
   })
   const needsLayoutSet = new Set([...requestedLayout, ...missingPositions])
   const needsLayout = Array.from(needsLayoutSet)
@@ -123,13 +150,15 @@ function layoutGroup(
   }
 
   // Compute layout positions using core function
+  // Only pass subflowDepths for root-level layout (not inside containers)
   const layoutPositions = computeLayoutPositions(
     layoutEligibleChildIds,
     blocks,
     edges,
     parentBlock,
     horizontalSpacing,
-    verticalSpacing
+    verticalSpacing,
+    parentId === null ? subflowDepths : undefined
   )
 
   if (layoutPositions.size === 0) {
@@ -177,7 +206,8 @@ function computeLayoutPositions(
   edges: Edge[],
   parentBlock: BlockState | undefined,
   horizontalSpacing: number,
-  verticalSpacing: number
+  verticalSpacing: number,
+  subflowDepths?: Map<string, number>
 ): Map<string, { x: number; y: number }> {
   const subsetBlocks: Record<string, BlockState> = {}
   for (const id of childIds) {
@@ -198,8 +228,8 @@ function computeLayoutPositions(
     layoutOptions: {
       horizontalSpacing: isContainer ? horizontalSpacing * 0.85 : horizontalSpacing,
       verticalSpacing,
-      alignment: 'center',
     },
+    subflowDepths,
   })
 
   // Update parent container dimensions if applicable
@@ -288,4 +318,14 @@ function hasPosition(block: BlockState): boolean {
   if (!block.position) return false
   const { x, y } = block.position
   return Number.isFinite(x) && Number.isFinite(y)
+}
+
+/**
+ * Checks if a block is at the default/uninitialized position (0, 0).
+ * New blocks typically start at this position before being laid out.
+ */
+function isDefaultPosition(block: BlockState): boolean {
+  if (!block.position) return true
+  const { x, y } = block.position
+  return x === 0 && y === 0
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { KnowledgeBaseArgsSchema, KnowledgeBaseResultSchema } from './tools/shared/schemas'
 
 // Tool IDs supported by the Copilot runtime
 export const ToolIds = z.enum([
@@ -19,19 +20,19 @@ export const ToolIds = z.enum([
   'make_api_request',
   'set_environment_variables',
   'get_credentials',
-  'gdrive_request_access',
-  'list_gdrive_files',
-  'read_gdrive_file',
   'reason',
   'list_user_workflows',
   'get_workflow_from_name',
-  'get_global_workflow_variables',
+  'get_workflow_data',
   'set_global_workflow_variables',
   'oauth_request_access',
   'get_trigger_blocks',
   'deploy_workflow',
   'check_deployment_status',
   'navigate_ui',
+  'knowledge_base',
+  'manage_custom_tool',
+  'manage_mcp_tool',
 ])
 export type ToolId = z.infer<typeof ToolIds>
 
@@ -58,8 +59,10 @@ export const ToolArgSchemas = {
   // New tools
   list_user_workflows: z.object({}),
   get_workflow_from_name: z.object({ workflow_name: z.string() }),
-  // New variable tools
-  get_global_workflow_variables: z.object({}),
+  // Workflow data tool (variables, custom tools, MCP tools, files)
+  get_workflow_data: z.object({
+    data_type: z.enum(['global_variables', 'custom_tools', 'mcp_tools', 'files']),
+  }),
   set_global_workflow_variables: z.object({
     operations: z.array(
       z.object({
@@ -71,7 +74,9 @@ export const ToolArgSchemas = {
     ),
   }),
   // New
-  oauth_request_access: z.object({}),
+  oauth_request_access: z.object({
+    providerName: z.string(),
+  }),
 
   deploy_workflow: z.object({
     action: z.enum(['deploy', 'undeploy']).optional().default('deploy'),
@@ -179,21 +184,73 @@ export const ToolArgSchemas = {
 
   get_credentials: z.object({}),
 
-  gdrive_request_access: z.object({}),
-
-  list_gdrive_files: z.object({
-    search_query: z.string().optional(),
-    num_results: z.number().optional().default(50),
-  }),
-
-  read_gdrive_file: z.object({
-    fileId: z.string(),
-    type: z.enum(['doc', 'sheet']),
-    range: z.string().optional(),
-  }),
-
   reason: z.object({
     reasoning: z.string(),
+  }),
+
+  knowledge_base: KnowledgeBaseArgsSchema,
+
+  manage_custom_tool: z.object({
+    operation: z
+      .enum(['add', 'edit', 'delete'])
+      .describe('The operation to perform: add (create new), edit (update existing), or delete'),
+    toolId: z
+      .string()
+      .optional()
+      .describe(
+        'Required for edit and delete operations. The database ID of the custom tool (e.g., "0robnW7_JUVwZrDkq1mqj"). Use get_workflow_data with data_type "custom_tools" to get the list of tools and their IDs. Do NOT use the function name - use the actual "id" field from the tool.'
+      ),
+    schema: z
+      .object({
+        type: z.literal('function'),
+        function: z.object({
+          name: z.string().describe('The function name (camelCase, e.g. getWeather)'),
+          description: z.string().optional().describe('What the function does'),
+          parameters: z.object({
+            type: z.string(),
+            properties: z.record(z.any()),
+            required: z.array(z.string()).optional(),
+          }),
+        }),
+      })
+      .optional()
+      .describe('Required for add. The OpenAI function calling format schema.'),
+    code: z
+      .string()
+      .optional()
+      .describe(
+        'Required for add. The JavaScript function body code. Use {{ENV_VAR}} for environment variables and reference parameters directly by name.'
+      ),
+  }),
+
+  manage_mcp_tool: z.object({
+    operation: z
+      .enum(['add', 'edit', 'delete'])
+      .describe('The operation to perform: add (create new), edit (update existing), or delete'),
+    serverId: z
+      .string()
+      .optional()
+      .describe(
+        'Required for edit and delete operations. The database ID of the MCP server. Use the MCP settings panel or API to get server IDs.'
+      ),
+    config: z
+      .object({
+        name: z.string().describe('The display name for the MCP server'),
+        transport: z
+          .enum(['streamable-http'])
+          .optional()
+          .default('streamable-http')
+          .describe('Transport protocol (currently only streamable-http is supported)'),
+        url: z.string().optional().describe('The MCP server endpoint URL (required for add)'),
+        headers: z
+          .record(z.string())
+          .optional()
+          .describe('Optional HTTP headers to send with requests'),
+        timeout: z.number().optional().describe('Request timeout in milliseconds (default: 30000)'),
+        enabled: z.boolean().optional().describe('Whether the server is enabled (default: true)'),
+      })
+      .optional()
+      .describe('Required for add and edit operations. The MCP server configuration.'),
   }),
 } as const
 export type ToolArgSchemaMap = typeof ToolArgSchemas
@@ -219,11 +276,8 @@ export const ToolSSESchemas = {
     'get_workflow_from_name',
     ToolArgSchemas.get_workflow_from_name
   ),
-  // New variable tools
-  get_global_workflow_variables: toolCallSSEFor(
-    'get_global_workflow_variables',
-    ToolArgSchemas.get_global_workflow_variables
-  ),
+  // Workflow data tool (variables, custom tools, MCP tools, files)
+  get_workflow_data: toolCallSSEFor('get_workflow_data', ToolArgSchemas.get_workflow_data),
   set_global_workflow_variables: toolCallSSEFor(
     'set_global_workflow_variables',
     ToolArgSchemas.set_global_workflow_variables
@@ -252,12 +306,6 @@ export const ToolSSESchemas = {
     ToolArgSchemas.set_environment_variables
   ),
   get_credentials: toolCallSSEFor('get_credentials', ToolArgSchemas.get_credentials),
-  gdrive_request_access: toolCallSSEFor(
-    'gdrive_request_access',
-    ToolArgSchemas.gdrive_request_access as any
-  ),
-  list_gdrive_files: toolCallSSEFor('list_gdrive_files', ToolArgSchemas.list_gdrive_files),
-  read_gdrive_file: toolCallSSEFor('read_gdrive_file', ToolArgSchemas.read_gdrive_file),
   reason: toolCallSSEFor('reason', ToolArgSchemas.reason),
   // New
   oauth_request_access: toolCallSSEFor('oauth_request_access', ToolArgSchemas.oauth_request_access),
@@ -267,6 +315,9 @@ export const ToolSSESchemas = {
     ToolArgSchemas.check_deployment_status
   ),
   navigate_ui: toolCallSSEFor('navigate_ui', ToolArgSchemas.navigate_ui),
+  knowledge_base: toolCallSSEFor('knowledge_base', ToolArgSchemas.knowledge_base),
+  manage_custom_tool: toolCallSSEFor('manage_custom_tool', ToolArgSchemas.manage_custom_tool),
+  manage_mcp_tool: toolCallSSEFor('manage_mcp_tool', ToolArgSchemas.manage_mcp_tool),
 } as const
 export type ToolSSESchemaMap = typeof ToolSSESchemas
 
@@ -314,10 +365,47 @@ export const ToolResultSchemas = {
     .object({ yamlContent: z.string() })
     .or(z.object({ userWorkflow: z.string() }))
     .or(z.string()),
-  // New variable tools
-  get_global_workflow_variables: z
-    .object({ variables: z.record(z.any()) })
-    .or(z.array(z.object({ name: z.string(), value: z.any() }))),
+  // Workflow data tool results (variables, custom tools, MCP tools, files)
+  get_workflow_data: z.union([
+    z.object({
+      variables: z.array(z.object({ id: z.string(), name: z.string(), value: z.any() })),
+    }),
+    z.object({
+      customTools: z.array(
+        z.object({
+          id: z.string(),
+          title: z.string(),
+          functionName: z.string(),
+          description: z.string(),
+          parameters: z.any().optional(),
+        })
+      ),
+    }),
+    z.object({
+      mcpTools: z.array(
+        z.object({
+          name: z.string(),
+          serverId: z.string(),
+          serverName: z.string(),
+          description: z.string(),
+          inputSchema: z.any().optional(),
+        })
+      ),
+    }),
+    z.object({
+      files: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          key: z.string(),
+          path: z.string(),
+          size: z.number(),
+          type: z.string(),
+          uploadedAt: z.string(),
+        })
+      ),
+    }),
+  ]),
   set_global_workflow_variables: z
     .object({ variables: z.record(z.any()) })
     .or(z.object({ message: z.any().optional(), data: z.any().optional() })),
@@ -424,21 +512,6 @@ export const ToolResultSchemas = {
       count: z.number(),
     }),
   }),
-  gdrive_request_access: z.object({
-    granted: z.boolean().optional(),
-    message: z.string().optional(),
-  }),
-  list_gdrive_files: z.object({
-    files: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string().optional(),
-        mimeType: z.string().optional(),
-        size: z.number().optional(),
-      })
-    ),
-  }),
-  read_gdrive_file: z.object({ content: z.string().optional(), data: z.any().optional() }),
   reason: z.object({ reasoning: z.string() }),
   deploy_workflow: z.object({
     action: z.enum(['deploy', 'undeploy']).optional(),
@@ -463,6 +536,21 @@ export const ToolResultSchemas = {
     destination: z.enum(['workflow', 'logs', 'templates', 'vector_db', 'settings']),
     workflowName: z.string().optional(),
     navigated: z.boolean(),
+  }),
+  knowledge_base: KnowledgeBaseResultSchema,
+  manage_custom_tool: z.object({
+    success: z.boolean(),
+    operation: z.enum(['add', 'edit', 'delete']),
+    toolId: z.string().optional(),
+    title: z.string().optional(),
+    message: z.string().optional(),
+  }),
+  manage_mcp_tool: z.object({
+    success: z.boolean(),
+    operation: z.enum(['add', 'edit', 'delete']),
+    serverId: z.string().optional(),
+    serverName: z.string().optional(),
+    message: z.string().optional(),
   }),
 } as const
 export type ToolResultSchemaMap = typeof ToolResultSchemas

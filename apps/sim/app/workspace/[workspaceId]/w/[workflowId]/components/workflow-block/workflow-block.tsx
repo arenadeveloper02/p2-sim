@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position, useUpdateNodeInternals } from 'reactflow'
-import { Badge } from '@/components/emcn/components/badge/badge'
-import { Tooltip } from '@/components/emcn/components/tooltip/tooltip'
+import { Badge, Tooltip } from '@/components/emcn'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
@@ -27,9 +27,11 @@ import {
 import { useBlockVisual } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   BLOCK_DIMENSIONS,
+  HANDLE_POSITIONS,
   useBlockDimensions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-block-dimensions'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
+import { getDependsOnFields } from '@/blocks/utils'
 import { useMcpServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
 import { useCredentialName } from '@/hooks/queries/oauth-credentials'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -241,6 +243,7 @@ const SubBlockRow = ({
   rawValue,
   workspaceId,
   workflowId,
+  blockId,
   allSubBlockValues,
 }: {
   title: string
@@ -249,6 +252,7 @@ const SubBlockRow = ({
   rawValue?: unknown
   workspaceId?: string
   workflowId?: string
+  blockId?: string
   allSubBlockValues?: Record<string, { value: unknown }>
 }) => {
   const getStringValue = useCallback(
@@ -261,8 +265,9 @@ const SubBlockRow = ({
   )
 
   const dependencyValues = useMemo(() => {
-    if (!subBlock?.dependsOn?.length) return {}
-    return subBlock.dependsOn.reduce<Record<string, string>>((accumulator, dependency) => {
+    const fields = getDependsOnFields(subBlock?.dependsOn)
+    if (!fields.length) return {}
+    return fields.reduce<Record<string, string>>((accumulator, dependency) => {
       const dependencyValue = getStringValue(dependency)
       if (dependencyValue) {
         accumulator[dependency] = dependencyValue
@@ -351,6 +356,17 @@ const SubBlockRow = ({
     return tool?.name ?? null
   }, [subBlock?.type, rawValue, mcpToolsData])
 
+  const webhookUrlDisplayValue = useMemo(() => {
+    if (subBlock?.id !== 'webhookUrlDisplay' || !blockId) {
+      return null
+    }
+    const baseUrl = getBaseUrl()
+    const triggerPath = allSubBlockValues?.triggerPath?.value as string | undefined
+    return triggerPath
+      ? `${baseUrl}/api/webhooks/trigger/${triggerPath}`
+      : `${baseUrl}/api/webhooks/trigger/${blockId}`
+  }, [subBlock?.id, blockId, allSubBlockValues])
+
   const allVariables = useVariablesStore((state) => state.variables)
 
   const variablesDisplayValue = useMemo(() => {
@@ -391,6 +407,7 @@ const SubBlockRow = ({
     workflowSelectionName ||
     mcpServerDisplayName ||
     mcpToolDisplayName ||
+    webhookUrlDisplayValue ||
     selectorDisplayName
   const displayValue = maskedValue || hydratedName || (isSelectorType && value ? '-' : value)
 
@@ -686,12 +703,12 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     const colorClasses = isError ? '!bg-red-400 dark:!bg-red-500' : '!bg-[var(--surface-12)]'
 
     const positionClasses = {
-      left: '!left-[-7px] !h-5 !w-[7px] !rounded-l-[2px] !rounded-r-none hover:!left-[-10px] hover:!w-[10px] hover:!rounded-l-full',
+      left: '!left-[-8px] !h-5 !w-[7px] !rounded-l-[2px] !rounded-r-none hover:!left-[-11px] hover:!w-[10px] hover:!rounded-l-full',
       right:
-        '!right-[-7px] !h-5 !w-[7px] !rounded-r-[2px] !rounded-l-none hover:!right-[-10px] hover:!w-[10px] hover:!rounded-r-full',
-      top: '!top-[-7px] !h-[7px] !w-5 !rounded-t-[2px] !rounded-b-none hover:!top-[-10px] hover:!h-[10px] hover:!rounded-t-full',
+        '!right-[-8px] !h-5 !w-[7px] !rounded-r-[2px] !rounded-l-none hover:!right-[-11px] hover:!w-[10px] hover:!rounded-r-full',
+      top: '!top-[-8px] !h-[7px] !w-5 !rounded-t-[2px] !rounded-b-none hover:!top-[-11px] hover:!h-[10px] hover:!rounded-t-full',
       bottom:
-        '!bottom-[-7px] !h-[7px] !w-5 !rounded-b-[2px] !rounded-t-none hover:!bottom-[-10px] hover:!h-[10px] hover:!rounded-b-full',
+        '!bottom-[-8px] !h-[7px] !w-5 !rounded-b-[2px] !rounded-t-none hover:!bottom-[-11px] hover:!h-[10px] hover:!rounded-b-full',
     }
 
     return cn(baseClasses, colorClasses, positionClasses[position])
@@ -699,7 +716,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
 
   const getHandleStyle = (position: 'horizontal' | 'vertical') => {
     if (position === 'horizontal') {
-      return { top: '20px', transform: 'translateY(-50%)' }
+      return { top: `${HANDLE_POSITIONS.DEFAULT_Y_OFFSET}px`, transform: 'translateY(-50%)' }
     }
     return { left: '50%', transform: 'translateX(-50%)' }
   }
@@ -1000,6 +1017,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                         rawValue={rawValue}
                         workspaceId={workspaceId}
                         workflowId={currentWorkflowId}
+                        blockId={id}
                         allSubBlockValues={subBlockState}
                       />
                     )
@@ -1012,7 +1030,9 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         {type === 'condition' && (
           <>
             {conditionRows.map((cond, condIndex) => {
-              const topOffset = 60 + condIndex * 29
+              const topOffset =
+                HANDLE_POSITIONS.CONDITION_START_Y +
+                condIndex * HANDLE_POSITIONS.CONDITION_ROW_HEIGHT
               return (
                 <Handle
                   key={`handle-${cond.id}`}
@@ -1034,7 +1054,12 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               position={Position.Right}
               id='error'
               className={getHandleClasses('right', true)}
-              style={{ right: '-7px', top: 'auto', bottom: '17px', transform: 'translateY(50%)' }}
+              style={{
+                right: '-7px',
+                top: 'auto',
+                bottom: `${HANDLE_POSITIONS.ERROR_BOTTOM_OFFSET}px`,
+                transform: 'translateY(50%)',
+              }}
               data-nodeid={id}
               data-handleid='error'
               isConnectableStart={true}
@@ -1065,7 +1090,12 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                 position={Position.Right}
                 id='error'
                 className={getHandleClasses('right', true)}
-                style={{ right: '-7px', top: 'auto', bottom: '17px', transform: 'translateY(50%)' }}
+                style={{
+                  right: '-7px',
+                  top: 'auto',
+                  bottom: `${HANDLE_POSITIONS.ERROR_BOTTOM_OFFSET}px`,
+                  transform: 'translateY(50%)',
+                }}
                 data-nodeid={id}
                 data-handleid='error'
                 isConnectableStart={true}

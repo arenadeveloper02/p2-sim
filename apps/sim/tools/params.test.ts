@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createExecutionToolSchema,
   createLLMToolSchema,
+  createUserToolSchema,
   filterSchemaForLLM,
   formatParameterLabel,
   getToolParametersConfig,
@@ -110,6 +111,38 @@ describe('Tool Parameters Utils', () => {
     })
   })
 
+  describe('createUserToolSchema', () => {
+    it.concurrent('should include user-only parameters and omit hidden ones', () => {
+      const toolWithHiddenParam = {
+        ...mockToolConfig,
+        id: 'user_schema_tool',
+        params: {
+          ...mockToolConfig.params,
+          spreadsheetId: {
+            type: 'string',
+            required: true,
+            visibility: 'user-only' as ParameterVisibility,
+            description: 'Spreadsheet ID to operate on',
+          },
+          accessToken: {
+            type: 'string',
+            required: true,
+            visibility: 'hidden' as ParameterVisibility,
+            description: 'OAuth access token',
+          },
+        },
+      }
+
+      const schema = createUserToolSchema(toolWithHiddenParam)
+
+      expect(schema.properties).toHaveProperty('spreadsheetId')
+      expect(schema.required).toContain('spreadsheetId')
+      expect(schema.properties).not.toHaveProperty('accessToken')
+      expect(schema.required).not.toContain('accessToken')
+      expect(schema.properties).toHaveProperty('message')
+    })
+  })
+
   describe('createExecutionToolSchema', () => {
     it.concurrent('should create complete schema with all parameters', () => {
       const schema = createExecutionToolSchema(mockToolConfig)
@@ -143,6 +176,44 @@ describe('Tool Parameters Utils', () => {
       expect(merged.channel).toBe('#general')
       expect(merged.message).toBe('Hello world')
       expect(merged.timeout).toBe(10000)
+    })
+
+    it.concurrent('should skip empty strings so LLM values are used', () => {
+      const userProvided = {
+        apiKey: 'user-key',
+        channel: '', // User cleared this field
+        message: '', // User cleared this field too
+      }
+      const llmGenerated = {
+        message: 'Hello world',
+        channel: '#random',
+        timeout: 10000,
+      }
+
+      const merged = mergeToolParameters(userProvided, llmGenerated)
+
+      expect(merged.apiKey).toBe('user-key') // Non-empty user value preserved
+      expect(merged.channel).toBe('#random') // LLM value used because user value was empty
+      expect(merged.message).toBe('Hello world') // LLM value used because user value was empty
+      expect(merged.timeout).toBe(10000)
+    })
+
+    it.concurrent('should skip null and undefined values', () => {
+      const userProvided = {
+        apiKey: 'user-key',
+        channel: null,
+        message: undefined,
+      }
+      const llmGenerated = {
+        message: 'Hello world',
+        channel: '#random',
+      }
+
+      const merged = mergeToolParameters(userProvided, llmGenerated)
+
+      expect(merged.apiKey).toBe('user-key')
+      expect(merged.channel).toBe('#random') // LLM value used
+      expect(merged.message).toBe('Hello world') // LLM value used
     })
   })
 

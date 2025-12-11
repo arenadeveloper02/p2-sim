@@ -1,6 +1,6 @@
 ---
 title: Kalshi
-description: Accede a datos de mercados de predicción de Kalshi
+description: Accede a mercados de predicción y opera en Kalshi
 ---
 
 import { BlockInfoCard } from "@/components/ui/block-info-card"
@@ -27,7 +27,7 @@ Al utilizar estas herramientas y puntos de acceso unificados, puedes incorporar 
 
 ## Instrucciones de uso
 
-Integra los mercados de predicción de Kalshi en el flujo de trabajo. Puede obtener mercados, mercado, eventos, evento, saldo, posiciones, órdenes, libro de órdenes, operaciones, velas, ejecuciones, series y estado del mercado.
+Integra los mercados de predicción de Kalshi en el flujo de trabajo. Puede obtener mercados, mercado específico, eventos, evento específico, saldo, posiciones, órdenes, libro de órdenes, operaciones, gráficos de velas, ejecuciones, series, estado del intercambio y realizar/cancelar/modificar operaciones.
 
 ## Herramientas
 
@@ -49,8 +49,8 @@ Obtener una lista de mercados de predicción de Kalshi con filtrado opcional
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de mercados y metadatos |
+| `markets` | array | Array de objetos de mercado |
+| `paging` | object | Cursor de paginación para obtener más resultados |
 
 ### `kalshi_get_market`
 
@@ -66,8 +66,7 @@ Obtener detalles de un mercado de predicción específico por ticker
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos del mercado y metadatos |
+| `market` | object | Objeto de mercado con detalles |
 
 ### `kalshi_get_events`
 
@@ -87,8 +86,8 @@ Obtener una lista de eventos de Kalshi con filtrado opcional
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos y metadatos de eventos |
+| `events` | array | Array de objetos de eventos |
+| `paging` | object | Cursor de paginación para obtener más resultados |
 
 ### `kalshi_get_event`
 
@@ -105,8 +104,7 @@ Recuperar detalles de un evento específico por ticker
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos y metadatos del evento |
+| `event` | object | Objeto de evento con detalles |
 
 ### `kalshi_get_balance`
 
@@ -123,8 +121,10 @@ Recuperar el saldo de tu cuenta y el valor de la cartera desde Kalshi
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos y metadatos del saldo |
+| `balance` | number | Saldo de la cuenta en centavos |
+| `portfolioValue` | number | Valor de la cartera en centavos |
+| `balanceDollars` | number | Saldo de la cuenta en dólares |
+| `portfolioValueDollars` | number | Valor de la cartera en dólares |
 
 ### `kalshi_get_positions`
 
@@ -146,8 +146,8 @@ Recuperar tus posiciones abiertas desde Kalshi
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de posiciones y metadatos |
+| `positions` | array | Array de objetos de posición |
+| `paging` | object | Cursor de paginación para obtener más resultados |
 
 ### `kalshi_get_orders`
 
@@ -169,38 +169,51 @@ Recupera tus órdenes de Kalshi con filtrado opcional
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de órdenes y metadatos |
+| `orders` | array | Array de objetos de órdenes |
+| `paging` | object | Cursor de paginación para obtener más resultados |
+
+### `kalshi_get_order`
+
+Recupera detalles de una orden específica por ID desde Kalshi
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | -------- | ----------- |
+| `keyId` | string | Sí | Tu ID de clave API de Kalshi |
+| `privateKey` | string | Sí | Tu clave privada RSA \(formato PEM\) |
+| `orderId` | string | Sí | El ID de la orden a recuperar |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `order` | object | Objeto de orden con detalles |
 
 ### `kalshi_get_orderbook`
 
-Recupera el libro de órdenes (ofertas de compra y venta) para un mercado específico
+Recupera el libro de órdenes (ofertas de sí y no) para un mercado específico
 
 #### Entrada
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
 | `ticker` | string | Sí | Ticker del mercado \(p. ej., KXBTC-24DEC31\) |
-| `depth` | number | No | Número de niveles de precio a devolver por lado |
 
 #### Salida
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos y metadatos del libro de órdenes |
+| `orderbook` | object | Libro de órdenes con ofertas y demandas de sí/no |
 
 ### `kalshi_get_trades`
 
-Recuperar operaciones recientes en todos los mercados o para un mercado específico
+Recupera operaciones recientes de todos los mercados
 
 #### Entrada
 
-| Parámetro | Tipo | Requerido | Descripción |
+| Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
-| `ticker` | string | No | Filtrar por ticker de mercado |
-| `minTs` | number | No | Marca de tiempo mínima \(Unix en milisegundos\) |
-| `maxTs` | number | No | Marca de tiempo máxima \(Unix en milisegundos\) |
 | `limit` | string | No | Número de resultados \(1-1000, predeterminado: 100\) |
 | `cursor` | string | No | Cursor de paginación para la siguiente página |
 
@@ -208,57 +221,56 @@ Recuperar operaciones recientes en todos los mercados o para un mercado específ
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos y metadatos de operaciones |
+| `trades` | array | Array de objetos de operaciones |
+| `paging` | object | Cursor de paginación para obtener más resultados |
 
 ### `kalshi_get_candlesticks`
 
-Recuperar datos de velas OHLC para un mercado específico
+Obtener datos de velas OHLC para un mercado específico
 
 #### Entrada
 
-| Parámetro | Tipo | Requerido | Descripción |
+| Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
 | `seriesTicker` | string | Sí | Ticker de serie |
-| `ticker` | string | Sí | Ticker de mercado \(p. ej., KXBTC-24DEC31\) |
-| `startTs` | number | No | Marca de tiempo de inicio \(Unix en milisegundos\) |
-| `endTs` | number | No | Marca de tiempo de fin \(Unix en milisegundos\) |
-| `periodInterval` | number | No | Intervalo de período: 1 \(1min\), 60 \(1hora\), o 1440 \(1día\) |
+| `ticker` | string | Sí | Ticker del mercado \(p. ej., KXBTC-24DEC31\) |
+| `startTs` | number | Sí | Marca de tiempo inicial \(segundos Unix\) |
+| `endTs` | number | Sí | Marca de tiempo final \(segundos Unix\) |
+| `periodInterval` | number | Sí | Intervalo de período: 1 \(1min\), 60 \(1hora\), o 1440 \(1día\) |
 
 #### Salida
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de velas e información adicional |
+| `candlesticks` | array | Array de datos de velas OHLC |
 
 ### `kalshi_get_fills`
 
-Recuperar tu cartera
+Recuperar tu portafolio
 
 #### Entrada
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
 | `keyId` | string | Sí | Tu ID de clave API de Kalshi |
-| `privateKey` | string | Sí | Tu clave privada RSA (formato PEM) |
+| `privateKey` | string | Sí | Tu clave privada RSA \(formato PEM\) |
 | `ticker` | string | No | Filtrar por ticker de mercado |
 | `orderId` | string | No | Filtrar por ID de orden |
-| `minTs` | number | No | Marca de tiempo mínima (milisegundos Unix) |
-| `maxTs` | number | No | Marca de tiempo máxima (milisegundos Unix) |
-| `limit` | string | No | Número de resultados (1-1000, predeterminado: 100) |
+| `minTs` | number | No | Marca de tiempo mínima \(milisegundos Unix\) |
+| `maxTs` | number | No | Marca de tiempo máxima \(milisegundos Unix\) |
+| `limit` | string | No | Número de resultados \(1-1000, predeterminado: 100\) |
 | `cursor` | string | No | Cursor de paginación para la siguiente página |
 
 #### Salida
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de ejecuciones e información adicional |
+| `fills` | array | Array de objetos de ejecuciones/operaciones |
+| `paging` | object | Cursor de paginación para obtener más resultados |
 
 ### `kalshi_get_series_by_ticker`
 
-Recuperar detalles de una serie de mercado específica por ticker
+Obtener detalles de una serie de mercado específica por ticker
 
 #### Entrada
 
@@ -270,24 +282,103 @@ Recuperar detalles de una serie de mercado específica por ticker
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de la serie e información adicional |
+| `series` | object | Objeto de serie con detalles |
 
 ### `kalshi_get_exchange_status`
 
-Recupera el estado actual del intercambio Kalshi (actividad de trading y del intercambio)
+Obtener el estado actual del intercambio Kalshi (actividad de trading y del intercambio)
 
 #### Entrada
 
-| Parámetro | Tipo | Requerido | Descripción |
+| Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
 
 #### Salida
 
 | Parámetro | Tipo | Descripción |
 | --------- | ---- | ----------- |
-| `success` | boolean | Estado de éxito de la operación |
-| `output` | object | Datos de estado del intercambio y metadatos |
+| `status` | object | Estado del exchange con indicadores trading_active y exchange_active |
+
+### `kalshi_create_order`
+
+Crear una nueva orden en un mercado de predicción de Kalshi
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | -------- | ----------- |
+| `keyId` | string | Sí | Tu ID de clave API de Kalshi |
+| `privateKey` | string | Sí | Tu clave privada RSA \(formato PEM\) |
+| `ticker` | string | Sí | Ticker del mercado \(p. ej., KXBTC-24DEC31\) |
+| `side` | string | Sí | Lado de la orden: 'yes' o 'no' |
+| `action` | string | Sí | Tipo de acción: 'buy' o 'sell' |
+| `count` | string | Sí | Número de contratos \(mínimo 1\) |
+| `type` | string | No | Tipo de orden: 'limit' o 'market' \(predeterminado: limit\) |
+| `yesPrice` | string | No | Precio de 'yes' en centavos \(1-99\) |
+| `noPrice` | string | No | Precio de 'no' en centavos \(1-99\) |
+| `yesPriceDollars` | string | No | Precio de 'yes' en dólares \(p. ej., "0.56"\) |
+| `noPriceDollars` | string | No | Precio de 'no' en dólares \(p. ej., "0.56"\) |
+| `clientOrderId` | string | No | Identificador personalizado de la orden |
+| `expirationTs` | string | No | Marca de tiempo Unix para la expiración de la orden |
+| `timeInForce` | string | No | Tiempo en vigor: 'fill_or_kill', 'good_till_canceled', 'immediate_or_cancel' |
+| `buyMaxCost` | string | No | Costo máximo en centavos \(habilita automáticamente fill_or_kill\) |
+| `postOnly` | string | No | Establecer como 'true' para órdenes solo maker |
+| `reduceOnly` | string | No | Establecer como 'true' solo para reducción de posición |
+| `selfTradePreventionType` | string | No | Prevención de auto-negociación: 'taker_at_cross' o 'maker' |
+| `orderGroupId` | string | No | ID de grupo de órdenes asociado |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `order` | object | El objeto de orden creada |
+
+### `kalshi_cancel_order`
+
+Cancelar una orden existente en Kalshi
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | -------- | ----------- |
+| `keyId` | string | Sí | Tu ID de clave API de Kalshi |
+| `privateKey` | string | Sí | Tu clave privada RSA \(formato PEM\) |
+| `orderId` | string | Sí | El ID de la orden a cancelar |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `order` | object | El objeto de orden cancelada |
+| `reducedBy` | number | Número de contratos cancelados |
+
+### `kalshi_amend_order`
+
+Modificar el precio o la cantidad de una orden existente en Kalshi
+
+#### Entrada
+
+| Parámetro | Tipo | Obligatorio | Descripción |
+| --------- | ---- | -------- | ----------- |
+| `keyId` | string | Sí | Tu ID de clave API de Kalshi |
+| `privateKey` | string | Sí | Tu clave privada RSA \(formato PEM\) |
+| `orderId` | string | Sí | El ID de la orden a modificar |
+| `ticker` | string | Sí | Ticker del mercado |
+| `side` | string | Sí | Lado de la orden: 'yes' o 'no' |
+| `action` | string | Sí | Tipo de acción: 'buy' o 'sell' |
+| `clientOrderId` | string | Sí | El ID de orden original especificado por el cliente |
+| `updatedClientOrderId` | string | Sí | El nuevo ID de orden especificado por el cliente después de la modificación |
+| `count` | string | No | Cantidad actualizada para la orden |
+| `yesPrice` | string | No | Precio actualizado para 'yes' en centavos \(1-99\) |
+| `noPrice` | string | No | Precio actualizado para 'no' en centavos \(1-99\) |
+| `yesPriceDollars` | string | No | Precio actualizado para 'yes' en dólares \(p. ej., "0.56"\) |
+| `noPriceDollars` | string | No | Precio actualizado para 'no' en dólares \(p. ej., "0.56"\) |
+
+#### Salida
+
+| Parámetro | Tipo | Descripción |
+| --------- | ---- | ----------- |
+| `order` | object | El objeto de orden modificada |
 
 ## Notas
 

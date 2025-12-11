@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
-import { EDGE } from '@/executor/consts'
+import { EDGE } from '@/executor/constants'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { BlockExecutor } from '@/executor/execution/block-executor'
 import type { BlockStateController } from '@/executor/execution/types'
@@ -78,6 +78,17 @@ export class NodeExecutionOrchestrator {
 
     switch (sentinelType) {
       case 'start': {
+        if (loopId) {
+          const shouldExecute = this.loopOrchestrator.evaluateInitialCondition(ctx, loopId)
+          if (!shouldExecute) {
+            logger.info('While loop initial condition false, skipping loop body', { loopId })
+            return {
+              sentinelStart: true,
+              shouldExit: true,
+              selectedRoute: EDGE.LOOP_EXIT,
+            }
+          }
+        }
         return { sentinelStart: true }
       }
 

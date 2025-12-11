@@ -11,10 +11,6 @@ export interface KalshiGetBalanceResponse {
     portfolioValue?: number // In cents
     balanceDollars: number // Converted to dollars
     portfolioValueDollars?: number // Converted to dollars
-    metadata: {
-      operation: 'get_balance'
-    }
-    success: boolean
   }
 }
 
@@ -28,11 +24,13 @@ export const kalshiGetBalanceTool: ToolConfig<KalshiGetBalanceParams, KalshiGetB
     keyId: {
       type: 'string',
       required: true,
+      visibility: 'user-only',
       description: 'Your Kalshi API Key ID',
     },
     privateKey: {
       type: 'string',
       required: true,
+      visibility: 'user-only',
       description: 'Your RSA Private Key (PEM format)',
     },
   },
@@ -63,27 +61,14 @@ export const kalshiGetBalanceTool: ToolConfig<KalshiGetBalanceParams, KalshiGetB
         portfolioValue,
         balanceDollars: balance / 100,
         portfolioValueDollars: portfolioValue ? portfolioValue / 100 : undefined,
-        metadata: {
-          operation: 'get_balance' as const,
-        },
-        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Balance data and metadata',
-      properties: {
-        balance: { type: 'number', description: 'Account balance in cents' },
-        portfolioValue: { type: 'number', description: 'Portfolio value in cents' },
-        balanceDollars: { type: 'number', description: 'Account balance in dollars' },
-        portfolioValueDollars: { type: 'number', description: 'Portfolio value in dollars' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
-      },
-    },
+    balance: { type: 'number', description: 'Account balance in cents' },
+    portfolioValue: { type: 'number', description: 'Portfolio value in cents' },
+    balanceDollars: { type: 'number', description: 'Account balance in dollars' },
+    portfolioValueDollars: { type: 'number', description: 'Portfolio value in dollars' },
   },
 }

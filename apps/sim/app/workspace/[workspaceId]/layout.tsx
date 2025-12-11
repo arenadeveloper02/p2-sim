@@ -5,7 +5,7 @@ import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
 import { WorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { SidebarNew } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar-new'
+import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,12 +14,14 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
       <ProviderModelsLoader />
       <GlobalCommandsProvider>
         <Tooltip.Provider delayDuration={600} skipDelayDuration={0}>
-          <WorkspacePermissionsProvider>
-            <div className='flex min-h-screen w-full'>
-              <SidebarNew />
-              <div className='flex flex-1 flex-col'>{children}</div>
-            </div>
-          </WorkspacePermissionsProvider>
+          <div className='flex h-screen w-full'>
+            <WorkspacePermissionsProvider>
+              <div className='shrink-0' suppressHydrationWarning>
+                <Sidebar />
+              </div>
+              {children}
+            </WorkspacePermissionsProvider>
+          </div>
         </Tooltip.Provider>
       </GlobalCommandsProvider>
     </>

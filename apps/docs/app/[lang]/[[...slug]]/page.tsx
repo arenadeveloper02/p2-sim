@@ -1,4 +1,4 @@
-import { findNeighbour } from 'fumadocs-core/server'
+import { findNeighbour } from 'fumadocs-core/page-tree'
 import defaultMdxComponents from 'fumadocs-ui/mdx'
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
@@ -6,9 +6,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageNavigationArrows } from '@/components/docs-layout/page-navigation-arrows'
 import { TOCFooter } from '@/components/docs-layout/toc-footer'
+import { LLMCopyButton } from '@/components/page-actions'
 import { StructuredData } from '@/components/structured-data'
 import { CodeBlock } from '@/components/ui/code-block'
-import { CopyPageButton } from '@/components/ui/copy-page-button'
+import { Heading } from '@/components/ui/heading'
 import { source } from '@/lib/source'
 
 export default async function Page(props: { params: Promise<{ slug?: string[]; lang: string }> }) {
@@ -182,12 +183,13 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
         tableOfContent={{
           style: 'clerk',
           enabled: true,
-          header: <div className='mb-2 font-medium text-sm'>On this page</div>,
+          header: (
+            <div key='toc-header' className='mb-2 font-medium text-sm'>
+              On this page
+            </div>
+          ),
           footer: <TOCFooter />,
           single: false,
-        }}
-        article={{
-          className: 'scroll-smooth max-sm:pb-16',
         }}
         tableOfContentPopover={{
           style: 'clerk',
@@ -201,7 +203,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
         <div className='relative mt-6 sm:mt-0'>
           <div className='absolute top-1 right-0 flex items-center gap-2'>
             <div className='hidden sm:flex'>
-              <CopyPageButton markdownUrl={`${page.url}.mdx`} />
+              <LLMCopyButton markdownUrl={`${page.url}.mdx`} />
             </div>
             <PageNavigationArrows previous={neighbours?.previous} next={neighbours?.next} />
           </div>
@@ -213,6 +215,12 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
             components={{
               ...defaultMdxComponents,
               CodeBlock,
+              h1: (props) => <Heading as='h1' {...props} />,
+              h2: (props) => <Heading as='h2' {...props} />,
+              h3: (props) => <Heading as='h3' {...props} />,
+              h4: (props) => <Heading as='h4' {...props} />,
+              h5: (props) => <Heading as='h5' {...props} />,
+              h6: (props) => <Heading as='h6' {...props} />,
             }}
           />
         </DocsBody>

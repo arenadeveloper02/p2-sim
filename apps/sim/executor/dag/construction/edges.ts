@@ -1,5 +1,5 @@
 import { createLogger } from '@/lib/logs/console/logger'
-import { EDGE, isConditionBlockType, isRouterBlockType } from '@/executor/consts'
+import { EDGE, isConditionBlockType, isRouterBlockType } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import {
   buildBranchNodeId,
@@ -163,10 +163,13 @@ export class EdgeConstructor {
         sourceIsParallelBlock ||
         targetIsParallelBlock
       ) {
-        if (sourceIsLoopBlock) {
-          const sentinelEndId = buildSentinelEndId(source)
+        let loopSentinelStartId: string | undefined
 
-          if (!dag.nodes.has(sentinelEndId)) {
+        if (sourceIsLoopBlock) {
+          const sentinelEndId = buildSentinelEndId(originalSource)
+          loopSentinelStartId = buildSentinelStartId(originalSource)
+
+          if (!dag.nodes.has(sentinelEndId) || !dag.nodes.has(loopSentinelStartId)) {
             continue
           }
 
@@ -182,6 +185,10 @@ export class EdgeConstructor {
           }
 
           target = sentinelStartId
+        }
+
+        if (loopSentinelStartId) {
+          this.addEdge(dag, loopSentinelStartId, target, EDGE.LOOP_EXIT, targetHandle)
         }
 
         if (sourceIsParallelBlock || targetIsParallelBlock) {

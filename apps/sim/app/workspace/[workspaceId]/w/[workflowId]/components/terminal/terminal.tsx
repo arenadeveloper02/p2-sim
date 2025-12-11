@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   ArrowDown,
@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Button,
   Code,
@@ -237,6 +238,43 @@ const isEventFromEditableElement = (e: KeyboardEvent): boolean => {
   return false
 }
 
+interface OutputCodeContentProps {
+  code: string
+  language: 'javascript' | 'json'
+  wrapText: boolean
+  searchQuery: string | undefined
+  currentMatchIndex: number
+  onMatchCountChange: (count: number) => void
+  contentRef: React.RefObject<HTMLDivElement | null>
+}
+
+const OutputCodeContent = React.memo(function OutputCodeContent({
+  code,
+  language,
+  wrapText,
+  searchQuery,
+  currentMatchIndex,
+  onMatchCountChange,
+  contentRef,
+}: OutputCodeContentProps) {
+  return (
+    <Code.Viewer
+      code={code}
+      showGutter
+      language={language}
+      className='m-0 min-h-full rounded-none border-0 bg-[var(--surface-1)]'
+      paddingLeft={8}
+      gutterStyle={{ backgroundColor: 'transparent' }}
+      wrapText={wrapText}
+      searchQuery={searchQuery}
+      currentMatchIndex={currentMatchIndex}
+      onMatchCountChange={onMatchCountChange}
+      contentRef={contentRef}
+      virtualized
+    />
+  )
+})
+
 /**
  * Terminal component with resizable height that persists across page refreshes.
  *
@@ -254,7 +292,6 @@ export function Terminal() {
   const prevEntriesLengthRef = useRef(0)
   const prevWorkflowEntriesLengthRef = useRef(0)
   const {
-    terminalHeight,
     setTerminalHeight,
     lastExpandedHeight,
     outputPanelWidth,
@@ -263,10 +300,16 @@ export function Terminal() {
     setOpenOnRun,
     setHasHydrated,
   } = useTerminalStore()
-  const entries = useTerminalConsoleStore((state) => state.entries)
+  const isExpanded = useTerminalStore((state) => state.terminalHeight > NEAR_MIN_THRESHOLD)
+  const { activeWorkflowId } = useWorkflowRegistry()
+  const workflowEntriesSelector = useCallback(
+    (state: { entries: ConsoleEntry[] }) =>
+      state.entries.filter((entry) => entry.workflowId === activeWorkflowId),
+    [activeWorkflowId]
+  )
+  const entries = useTerminalConsoleStore(useShallow(workflowEntriesSelector))
   const clearWorkflowConsole = useTerminalConsoleStore((state) => state.clearWorkflowConsole)
   const exportConsoleCSV = useTerminalConsoleStore((state) => state.exportConsoleCSV)
-  const { activeWorkflowId } = useWorkflowRegistry()
   const [selectedEntry, setSelectedEntry] = useState<ConsoleEntry | null>(null)
   const [isToggling, setIsToggling] = useState(false)
   const [wrapText, setWrapText] = useState(true)
@@ -304,8 +347,6 @@ export function Terminal() {
     hasActiveFilters,
   } = useTerminalFilters()
 
-  const isExpanded = terminalHeight > NEAR_MIN_THRESHOLD
-
   /**
    * Expands the terminal to its last meaningful height, with safeguards:
    * - Never expands below {@link DEFAULT_EXPANDED_HEIGHT}.
@@ -322,13 +363,7 @@ export function Terminal() {
     setTerminalHeight(targetHeight)
   }, [lastExpandedHeight, setTerminalHeight])
 
-  /**
-   * Get all entries for current workflow (before filtering) for filter options
-   */
-  const allWorkflowEntries = useMemo(() => {
-    if (!activeWorkflowId) return []
-    return entries.filter((entry) => entry.workflowId === activeWorkflowId)
-  }, [entries, activeWorkflowId])
+  const allWorkflowEntries = entries
 
   /**
    * Filter entries for current workflow and apply filters
@@ -425,6 +460,11 @@ export function Terminal() {
     return selectedEntry.output
   }, [selectedEntry, showInput])
 
+  const outputDataStringified = useMemo(() => {
+    if (outputData === null || outputData === undefined) return ''
+    return JSON.stringify(outputData, null, 2)
+  }, [outputData])
+
   /**
    * Auto-open the terminal on new entries when "Open on run" is enabled.
    * This mirrors the header toggle behavior by using expandToLastHeight,
@@ -439,13 +479,12 @@ export function Terminal() {
     const previousLength = prevWorkflowEntriesLengthRef.current
     const currentLength = allWorkflowEntries.length
 
-    // Only react when new entries are added for the active workflow
-    if (currentLength > previousLength && terminalHeight <= MIN_HEIGHT) {
+    if (currentLength > previousLength && !isExpanded) {
       expandToLastHeight()
     }
 
     prevWorkflowEntriesLengthRef.current = currentLength
-  }, [allWorkflowEntries.length, expandToLastHeight, openOnRun, terminalHeight])
+  }, [allWorkflowEntries.length, expandToLastHeight, openOnRun, isExpanded])
 
   /**
    * Handle row click - toggle if clicking same entry
@@ -485,13 +524,11 @@ export function Terminal() {
   const handleCopy = useCallback(() => {
     if (!selectedEntry) return
 
-    const textToCopy = shouldShowCodeDisplay
-      ? selectedEntry.input.code
-      : JSON.stringify(outputData, null, 2)
+    const textToCopy = shouldShowCodeDisplay ? selectedEntry.input.code : outputDataStringified
 
     navigator.clipboard.writeText(textToCopy)
     setShowCopySuccess(true)
-  }, [selectedEntry, outputData, shouldShowCodeDisplay])
+  }, [selectedEntry, outputDataStringified, shouldShowCodeDisplay])
 
   /**
    * Clears the console for the active workflow.
@@ -1576,15 +1613,11 @@ export function Terminal() {
               {/* Content */}
               <div className='flex-1 overflow-x-auto overflow-y-auto'>
                 {shouldShowCodeDisplay ? (
-                  <Code.Viewer
+                  <OutputCodeContent
                     code={selectedEntry.input.code}
-                    showGutter
                     language={
                       (selectedEntry.input.language as 'javascript' | 'json') || 'javascript'
                     }
-                    className='m-0 min-h-full rounded-none border-0 bg-[var(--surface-1)]'
-                    paddingLeft={8}
-                    gutterStyle={{ backgroundColor: 'transparent' }}
                     wrapText={wrapText}
                     searchQuery={isOutputSearchActive ? outputSearchQuery : undefined}
                     currentMatchIndex={currentMatchIndex}
@@ -1592,13 +1625,9 @@ export function Terminal() {
                     contentRef={outputContentRef}
                   />
                 ) : (
-                  <Code.Viewer
-                    code={JSON.stringify(outputData, null, 2)}
-                    showGutter
+                  <OutputCodeContent
+                    code={outputDataStringified}
                     language='json'
-                    className='m-0 min-h-full rounded-none border-0 bg-[var(--surface-1)]'
-                    paddingLeft={8}
-                    gutterStyle={{ backgroundColor: 'transparent' }}
                     wrapText={wrapText}
                     searchQuery={isOutputSearchActive ? outputSearchQuery : undefined}
                     currentMatchIndex={currentMatchIndex}

@@ -11,6 +11,7 @@ import {
   canEditUsageLimit,
   getFreeTierLimit,
   getPerUserMinimumLimit,
+  getPlanPricing,
 } from '@/lib/billing/subscriptions/utils'
 import type { BillingData, UsageData, UsageLimitInfo } from '@/lib/billing/types'
 import { isBillingEnabled } from '@/lib/core/config/environment'
@@ -20,6 +21,56 @@ import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getEmailPreferences } from '@/lib/messaging/email/unsubscribe'
 
 const logger = createLogger('UsageManagement')
+
+export interface OrgUsageLimitResult {
+  limit: number
+  minimum: number
+}
+
+/**
+ * Calculates the effective usage limit for a team or enterprise organization.
+ * - Enterprise: Uses orgUsageLimit directly (fixed pricing)
+ * - Team: Uses orgUsageLimit but never below seats × basePrice
+ */
+export async function getOrgUsageLimit(
+  organizationId: string,
+  plan: string,
+  seats: number | null
+): Promise<OrgUsageLimitResult> {
+  const orgData = await db
+    .select({ orgUsageLimit: organization.orgUsageLimit })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1)
+
+  const configured =
+    orgData.length > 0 && orgData[0].orgUsageLimit
+      ? Number.parseFloat(orgData[0].orgUsageLimit)
+      : null
+
+  if (plan === 'enterprise') {
+    // Enterprise: Use configured limit directly (no per-seat minimum)
+    if (configured !== null) {
+      return { limit: configured, minimum: configured }
+    }
+    logger.warn('Enterprise org missing usage limit', { orgId: organizationId })
+    return { limit: 0, minimum: 0 }
+  }
+
+  const { basePrice } = getPlanPricing(plan)
+  const minimum = (seats ?? 0) * basePrice
+
+  if (configured !== null) {
+    return { limit: Math.max(configured, minimum), minimum }
+  }
+
+  logger.warn('Team org missing usage limit, using seats × basePrice fallback', {
+    orgId: organizationId,
+    seats,
+    minimum,
+  })
+  return { limit: minimum, minimum }
+}
 
 /**
  * Handle new user setup when they join the platform
@@ -86,23 +137,13 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
         ? Number.parseFloat(stats.currentUsageLimit)
         : getFreeTierLimit()
     } else {
-      // Team/Enterprise: Use organization limit but never below minimum (seats × cost per seat)
-      const orgData = await db
-        .select({ orgUsageLimit: organization.orgUsageLimit })
-        .from(organization)
-        .where(eq(organization.id, subscription.referenceId))
-        .limit(1)
-
-      const { getPlanPricing } = await import('@/lib/billing/core/billing')
-      const { basePrice } = getPlanPricing(subscription.plan)
-      const minimum = (subscription.seats || 1) * basePrice
-
-      if (orgData.length > 0 && orgData[0].orgUsageLimit) {
-        const configured = Number.parseFloat(orgData[0].orgUsageLimit)
-        limit = Math.max(configured, minimum)
-      } else {
-        limit = minimum
-      }
+      // Team/Enterprise: Use organization limit
+      const orgLimit = await getOrgUsageLimit(
+        subscription.referenceId,
+        subscription.plan,
+        subscription.seats
+      )
+      limit = orgLimit.limit
     }
 
     const percentUsed = limit > 0 ? Math.min((currentUsage / limit) * 100, 100) : 0
@@ -159,25 +200,15 @@ export async function getUserUsageLimitInfo(userId: string): Promise<UsageLimitI
       minimumLimit = getPerUserMinimumLimit(subscription)
       canEdit = canEditUsageLimit(subscription)
     } else {
-      // Team/Enterprise: Use organization limits (users cannot edit)
-      const orgData = await db
-        .select({ orgUsageLimit: organization.orgUsageLimit })
-        .from(organization)
-        .where(eq(organization.id, subscription.referenceId))
-        .limit(1)
-
-      const { getPlanPricing } = await import('@/lib/billing/core/billing')
-      const { basePrice } = getPlanPricing(subscription.plan)
-      const minimum = (subscription.seats || 1) * basePrice
-
-      if (orgData.length > 0 && orgData[0].orgUsageLimit) {
-        const configured = Number.parseFloat(orgData[0].orgUsageLimit)
-        currentLimit = Math.max(configured, minimum)
-      } else {
-        currentLimit = minimum
-      }
-      minimumLimit = minimum
-      canEdit = false // Team/enterprise members cannot edit limits
+      // Team/Enterprise: Use organization limits
+      const orgLimit = await getOrgUsageLimit(
+        subscription.referenceId,
+        subscription.plan,
+        subscription.seats
+      )
+      currentLimit = orgLimit.limit
+      minimumLimit = orgLimit.minimum
+      canEdit = false
     }
 
     return {
@@ -270,28 +301,6 @@ export async function updateUserUsageLimit(
       }
     }
 
-    // Get current usage to validate against
-    const userStatsRecord = await db
-      .select()
-      .from(userStats)
-      .where(eq(userStats.userId, userId))
-      .limit(1)
-
-    if (userStatsRecord.length > 0) {
-      const currentUsage = Number.parseFloat(
-        userStatsRecord[0].currentPeriodCost?.toString() || userStatsRecord[0].totalCost.toString()
-      )
-
-      // Validate new limit is not below current usage
-      if (newLimit < currentUsage) {
-        return {
-          success: false,
-          error: `Usage limit cannot be below current usage of $${currentUsage.toFixed(2)}`,
-        }
-      }
-    }
-
-    // Update the usage limit
     await db
       .update(userStats)
       .set({
@@ -346,29 +355,23 @@ export async function getUserUsageLimit(userId: string): Promise<number> {
 
     return Number.parseFloat(userStatsQuery[0].currentUsageLimit)
   }
-  // Team/Enterprise: Use organization limit but never below minimum
-  const orgData = await db
-    .select({ orgUsageLimit: organization.orgUsageLimit })
+  // Team/Enterprise: Verify org exists then use organization limit
+  const orgExists = await db
+    .select({ id: organization.id })
     .from(organization)
     .where(eq(organization.id, subscription.referenceId))
     .limit(1)
 
-  if (orgData.length === 0) {
+  if (orgExists.length === 0) {
     throw new Error(`Organization not found: ${subscription.referenceId} for user: ${userId}`)
   }
 
-  if (orgData[0].orgUsageLimit) {
-    const configured = Number.parseFloat(orgData[0].orgUsageLimit)
-    const { getPlanPricing } = await import('@/lib/billing/core/billing')
-    const { basePrice } = getPlanPricing(subscription.plan)
-    const minimum = (subscription.seats || 1) * basePrice
-    return Math.max(configured, minimum)
-  }
-
-  // If org hasn't set a custom limit, use minimum (seats × cost per seat)
-  const { getPlanPricing } = await import('@/lib/billing/core/billing')
-  const { basePrice } = getPlanPricing(subscription.plan)
-  return (subscription.seats || 1) * basePrice
+  const orgLimit = await getOrgUsageLimit(
+    subscription.referenceId,
+    subscription.plan,
+    subscription.seats
+  )
+  return orgLimit.limit
 }
 
 /**
