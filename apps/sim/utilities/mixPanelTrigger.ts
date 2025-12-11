@@ -130,7 +130,7 @@ export const setPeople = async ({
 export const trackMp = async (
   PageName?: string,
   eventName?: string,
-  properties?: Record<string, any>
+  properties?: any
 ) => {
   if (!mixpanel || typeof window === 'undefined' || !eventName) {
     return

@@ -54,6 +54,7 @@ import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { getUniqueBlockName } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { trackMp } from '@/utilities/mixPanelTrigger'
 
 const logger = createLogger('Workflow')
 
@@ -173,6 +174,14 @@ const WorkflowContent = React.memo(() => {
   const isWorkflowEmpty = useMemo(() => {
     return Object.keys(blocks).length === 0
   }, [blocks])
+
+  useEffect(()=>{
+    if(workflowIdParam){
+      trackMp("P2-Agents","Workflow Agent",{
+        "Agent ID": workflowIdParam,
+      })
+    }
+  },[workflowIdParam])
 
   // Listen for global OAuth connect events (from Copilot tool)
   useEffect(() => {
