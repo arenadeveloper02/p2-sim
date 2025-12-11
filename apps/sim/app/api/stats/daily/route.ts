@@ -26,16 +26,34 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Calculate yesterday's date range
+    // Calculate yesterday's date range (UTC to match database timestamps)
     const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    yesterday.setHours(0, 0, 0, 0)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+    yesterday.setUTCHours(0, 0, 0, 0)
 
-    const endOfYesterday = new Date(yesterday)
-    endOfYesterday.setHours(23, 59, 59, 999)
+    const endDate = new Date(yesterday)
+    endDate.setUTCHours(23, 59, 59, 999)
 
     logger.info(
-      `[${requestId}] Fetching external chat executions from ${yesterday.toISOString()} to ${endOfYesterday.toISOString()}`
+      `[${requestId}] Fetching external chat executions from ${yesterday.toISOString()} to ${endDate.toISOString()}`
+    )
+
+    const executionStatsYesterday = await db
+      .select({
+        workflowId: workflowExecutionLogs.workflowId,
+        id: workflowExecutionLogs.id,
+      })
+      .from(workflowExecutionLogs)
+      .where(
+        and(
+          eq(workflowExecutionLogs.isExternalChat, true),
+          gte(workflowExecutionLogs.startedAt, yesterday),
+          lte(workflowExecutionLogs.startedAt, endDate)
+        )
+      )
+
+    logger.info(
+      `[${requestId}] Found ${executionStatsYesterday.length} workflows with external chat executions`
     )
 
     // Fetch workflow execution logs for yesterday where is_external_chat is true
@@ -50,7 +68,7 @@ export async function GET(request: NextRequest) {
         and(
           eq(workflowExecutionLogs.isExternalChat, true),
           gte(workflowExecutionLogs.startedAt, yesterday),
-          lte(workflowExecutionLogs.startedAt, endOfYesterday)
+          lte(workflowExecutionLogs.startedAt, endDate)
         )
       )
       .groupBy(workflowExecutionLogs.workflowId)
