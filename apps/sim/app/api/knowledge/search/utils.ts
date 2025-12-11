@@ -383,7 +383,7 @@ export async function handleTagAndVectorSearch(params: SearchParams): Promise<Se
 }
 
 /**
- * Apply LLM-based reranking on search results using the OpenAI rerank API.
+ * Apply LLM-based reranking on search results using the Cohere rerank API.
  */
 export async function rerankSearchResults(
   query: string,
@@ -400,27 +400,24 @@ export async function rerankSearchResults(
     return results
   }
 
-  const apiKey = env.OPENAI_API_KEY
+  const apiKey = env.COHERE_API_KEY || 'FtSOTZsLWqFsfgvPlZC2UawkIiTP9kYaH2bvU0BD'
 
   if (!apiKey) {
-    logger.warn('Skipping rerank because OPENAI_API_KEY is not configured', {
+    logger.warn('Skipping rerank because COHERE_API_KEY is not configured', {
       requestId: rerankConfig?.requestId,
     })
     return results
   }
 
-  const model = rerankConfig?.model || env.KB_RERANK_MODEL_NAME || 'gpt-4o-mini-rerank-2024-12-17'
-  const candidateCount = Math.min(results.length, 50)
+  const model = rerankConfig?.model || env.KB_RERANK_MODEL_NAME || 'rerank-v3.5'
+  const candidateCount = Math.min(results.length, 100)
   const topN = Math.min(rerankConfig?.topN ?? results.length, candidateCount)
 
   const candidates = results.slice(0, candidateCount)
-  const documents = candidates.map((result) => ({
-    id: result.id,
-    text: result.content?.slice(0, 4000) ?? '',
-  }))
+  const documents = candidates.map((result) => result.content?.slice(0, 4000) ?? '')
 
   try {
-    const response = await fetch('https://api.openai.com/v1/rerank', {
+    const response = await fetch('https://api.cohere.com/v2/rerank', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -444,45 +441,61 @@ export async function rerankSearchResults(
     }
 
     const data = await response.json()
-    const rerankedItems: any[] = Array.isArray(data?.data)
-      ? data.data
-      : Array.isArray(data?.results)
-        ? data.results
-        : []
+    const rerankedItems: any[] = Array.isArray(data?.results) ? data.results : []
 
     if (!Array.isArray(rerankedItems) || rerankedItems.length === 0) {
       logger.warn('Rerank API returned no data', { requestId: rerankConfig?.requestId })
       return results
     }
 
-    const scoreMap = new Map<string, number>()
+    // Filter results with relevance_score > 0.1
+    const filteredRerankedItems = rerankedItems.filter(
+      (item: any) => typeof item.relevance_score === 'number' && item.relevance_score > 0.1
+    )
 
-    rerankedItems.forEach((item: any, index: number) => {
-      const candidateIndex = typeof item.index === 'number' ? item.index : index
-      const candidate = candidates[candidateIndex]
-      const candidateId = item.document?.id ?? candidate?.id
-      const relevanceScore =
-        typeof item.relevance_score === 'number'
-          ? item.relevance_score
-          : typeof item.score === 'number'
-            ? item.score
-            : rerankedItems.length - index
-
-      if (candidateId) {
-        scoreMap.set(candidateId, relevanceScore)
-      }
-    })
-
-    if (scoreMap.size === 0) {
-      return results
+    if (filteredRerankedItems.length === 0) {
+      logger.debug('No results with relevance_score > 0.1', { requestId: rerankConfig?.requestId })
+      return []
     }
 
-    const rerankedResults = [...results].sort((a, b) => {
+    // Extract indices from filtered results
+    const validIndices = new Set<number>()
+    filteredRerankedItems.forEach((item: any) => {
+      const candidateIndex = typeof item.index === 'number' ? item.index : -1
+      if (candidateIndex >= 0 && candidateIndex < candidates.length) {
+        validIndices.add(candidateIndex)
+      }
+    })
+    console.log('validIndices', validIndices)
+
+    if (validIndices.size === 0) {
+      return []
+    }
+
+    // Filter candidates to only include those at valid indices
+    const filteredCandidates = candidates.filter((_, index) => validIndices.has(index))
+    console.log('filteredCandidates', filteredCandidates)
+    // Create score map for sorting
+    const scoreMap = new Map<string, number>()
+    filteredRerankedItems.forEach((item: any) => {
+      const candidateIndex = typeof item.index === 'number' ? item.index : -1
+      if (candidateIndex >= 0 && candidateIndex < candidates.length) {
+        const candidate = candidates[candidateIndex]
+        const relevanceScore = typeof item.relevance_score === 'number' ? item.relevance_score : 0
+
+        if (candidate?.id) {
+          scoreMap.set(candidate.id, relevanceScore)
+        }
+      }
+    })
+    console.log(scoreMap, 'scoreMap')
+    // Sort filtered results by relevance score
+    const rerankedResults = filteredCandidates.sort((a, b) => {
       const scoreB = scoreMap.get(b.id) ?? Number.NEGATIVE_INFINITY
       const scoreA = scoreMap.get(a.id) ?? Number.NEGATIVE_INFINITY
       return scoreB - scoreA
     })
-
+    console.log('rerankedResults', rerankedResults)
     return rerankedResults.slice(0, topN)
   } catch (error) {
     logger.warn('Failed to rerank knowledge base results', {

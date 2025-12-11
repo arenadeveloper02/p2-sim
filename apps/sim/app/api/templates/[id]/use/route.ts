@@ -65,6 +65,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const templateData = template[0]
 
+    // Validate that template has a valid state
+    if (!templateData.state || typeof templateData.state !== 'object') {
+      logger.error(`[${requestId}] Template ${id} has invalid or missing state`)
+      return NextResponse.json({ error: 'Template state is invalid or missing' }, { status: 400 })
+    }
+
     // Create a new workflow ID
     const newWorkflowId = uuidv4()
     const now = new Date()
@@ -104,13 +110,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Step 2: Regenerate IDs when creating a copy (not when connecting/editing template)
     // When connecting to template (edit mode), keep original IDs
     // When using template (copy mode), regenerate all IDs to avoid conflicts
-    const workflowState = connectToTemplate
-      ? templateData.state
-      : regenerateWorkflowStateIds(templateData.state)
+    let workflowState: any
+    try {
+      workflowState = connectToTemplate
+        ? templateData.state
+        : regenerateWorkflowStateIds(templateData.state)
+    } catch (error) {
+      logger.error(`[${requestId}] Failed to regenerate workflow state IDs`, error)
+      // Clean up the workflow we created
+      await db.delete(workflow).where(eq(workflow.id, newWorkflowId))
+      return NextResponse.json({ error: 'Failed to process template state' }, { status: 500 })
+    }
 
     // Step 3: Save the workflow state using the existing state endpoint (like imports do)
     // Ensure variables in state are remapped for the new workflow as well
-    const workflowStateWithVariables = { ...workflowState, variables: remappedVariables }
+    // Convert lastSaved to number if it exists (template state might have it as string)
+    const workflowStateWithVariables = {
+      ...workflowState,
+      variables: remappedVariables,
+      lastSaved:
+        workflowState.lastSaved !== undefined
+          ? typeof workflowState.lastSaved === 'string'
+            ? Number.parseInt(workflowState.lastSaved, 10) || Date.now()
+            : typeof workflowState.lastSaved === 'number'
+              ? workflowState.lastSaved
+              : Date.now()
+          : Date.now(),
+    }
     const stateResponse = await fetch(`${getBaseUrl()}/api/workflows/${newWorkflowId}/state`, {
       method: 'PUT',
       headers: {
@@ -122,11 +148,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     })
 
     if (!stateResponse.ok) {
-      logger.error(`[${requestId}] Failed to save workflow state for template use`)
+      const errorBody = await stateResponse.text()
+      let errorDetails: any = {}
+      try {
+        errorDetails = JSON.parse(errorBody)
+      } catch {
+        errorDetails = { raw: errorBody }
+      }
+      logger.error(
+        `[${requestId}] Failed to save workflow state for template use: ${stateResponse.status} ${stateResponse.statusText}`,
+        { errorDetails, workflowId: newWorkflowId }
+      )
       // Clean up the workflow we created
       await db.delete(workflow).where(eq(workflow.id, newWorkflowId))
       return NextResponse.json(
-        { error: 'Failed to create workflow from template' },
+        {
+          error: 'Failed to create workflow from template',
+          details: errorDetails,
+        },
         { status: 500 }
       )
     }

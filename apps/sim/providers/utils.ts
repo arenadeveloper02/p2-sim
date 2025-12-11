@@ -636,10 +636,21 @@ export function shouldBillModelUsage(model: string): boolean {
 /**
  * Get an API key for a specific provider, handling rotation and fallbacks
  * For use server-side only
+ * @param provider - The provider name (e.g., 'openai', 'anthropic')
+ * @param model - The model name
+ * @param userProvidedKey - Optional user-provided API key (may contain template variables)
+ * @param environmentVariables - Optional execution context environment variables to check as fallback
  */
-export function getApiKey(provider: string, model: string, userProvidedKey?: string): string {
-  // If user provided a key, use it as a fallback
-  const hasUserKey = !!userProvidedKey
+export function getApiKey(
+  provider: string,
+  model: string,
+  userProvidedKey?: string,
+  environmentVariables?: Record<string, string>
+): string {
+  // Check if user-provided key is a valid key (not a template variable)
+  const isResolvedKey =
+    userProvidedKey && !userProvidedKey.includes('{{') && !userProvidedKey.includes('}}')
+  const hasUserKey = !!isResolvedKey
 
   // Ollama models don't require API keys - they run locally
   const isOllamaModel =
@@ -679,12 +690,56 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     }
   }
 
-  // For all other cases, require user-provided key
-  if (!hasUserKey) {
-    throw new Error(`API key is required for ${provider} ${model}`)
+  // If user provided a resolved key, use it
+  if (hasUserKey) {
+    return userProvidedKey!
   }
 
-  return userProvidedKey!
+  // Try to get API key from environment variables if provided
+  if (environmentVariables) {
+    let envVarName: string | undefined
+    if (isOpenAIModel) {
+      envVarName = 'OPENAI_API_KEY'
+    } else if (isClaudeModel) {
+      envVarName = 'ANTHROPIC_API_KEY'
+    } else if (isGeminiModel) {
+      envVarName = 'GEMINI_API_KEY_1'
+    } else if (isSambaNovaModel) {
+      envVarName = 'SAMBANOVA_API_KEY'
+    } else if (isXaiModel) {
+      envVarName = 'XAI_API_KEY'
+    }
+
+    if (envVarName && environmentVariables[envVarName]) {
+      return environmentVariables[envVarName]
+    }
+  }
+
+  // Try to get API key from server environment variables as final fallback
+  try {
+    const { env } = require('@/lib/core/config/env')
+    let serverEnvVarName: string | undefined
+    if (isOpenAIModel) {
+      serverEnvVarName = 'OPENAI_API_KEY'
+    } else if (isClaudeModel) {
+      serverEnvVarName = 'ANTHROPIC_API_KEY'
+    } else if (isGeminiModel) {
+      serverEnvVarName = 'GEMINI_API_KEY_1'
+    } else if (isSambaNovaModel) {
+      serverEnvVarName = 'SAMBANOVA_API_KEY'
+    } else if (isXaiModel) {
+      serverEnvVarName = 'XAI_API_KEY'
+    }
+
+    if (serverEnvVarName && env[serverEnvVarName as keyof typeof env]) {
+      return env[serverEnvVarName as keyof typeof env] as string
+    }
+  } catch (_error) {
+    // Server env not available, continue to error
+  }
+
+  // For all other cases, require user-provided key
+  throw new Error(`API key is required for ${provider} ${model}`)
 }
 
 /**

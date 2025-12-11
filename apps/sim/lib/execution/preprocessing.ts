@@ -113,7 +113,7 @@ export interface PreprocessExecutionOptions {
   requestId: string
 
   // Optional checks configuration
-  checkRateLimit?: boolean // Default: false for manual/chat, true for others
+  checkRateLimit?: boolean // Default: false for manual/chat/schedule/webhook, true for others
   checkDeployment?: boolean // Default: true for non-manual triggers
   skipUsageLimits?: boolean // Default: false (only use for test mode)
 
@@ -155,7 +155,10 @@ export async function preprocessExecution(
     triggerType,
     executionId,
     requestId,
-    checkRateLimit = triggerType !== 'manual' && triggerType !== 'chat',
+    checkRateLimit = triggerType !== 'manual' &&
+      triggerType !== 'chat' &&
+      triggerType !== 'schedule' &&
+      triggerType !== 'webhook',
     checkDeployment = triggerType !== 'manual',
     skipUsageLimits = false,
     workspaceId: providedWorkspaceId,

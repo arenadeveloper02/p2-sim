@@ -163,11 +163,98 @@ export async function executeWorkflowCore(
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
       await getPersonalAndWorkspaceEnv(personalEnvUserId, providedWorkspaceId)
 
+    // For scheduler/webhook executions, prioritize server environment variables
+    const isScheduledOrWebhook =
+      metadata.triggerType === 'schedule' || metadata.triggerType === 'webhook'
+    const serverEnvVars: Record<string, string> = {}
+
+    if (isScheduledOrWebhook) {
+      const { env } = await import('@/lib/core/config/env')
+      const serverEnvVarNames = [
+        'OPENAI_API_KEY',
+        'OPENAI_API_KEY_1',
+        'OPENAI_API_KEY_2',
+        'OPENAI_API_KEY_3',
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_API_KEY_1',
+        'ANTHROPIC_API_KEY_2',
+        'ANTHROPIC_API_KEY_3',
+        'GEMINI_API_KEY_1',
+        'GEMINI_API_KEY_2',
+        'GEMINI_API_KEY_3',
+        'SAMBANOVA_API_KEY',
+        'SAMBANOVA_API_KEY_1',
+        'SAMBANOVA_API_KEY_2',
+        'SAMBANOVA_API_KEY_3',
+        'XAI_API_KEY',
+        'XAI_API_KEY_1',
+        'XAI_API_KEY_2',
+        'XAI_API_KEY_3',
+        'AZURE_OPENAI_API_KEY',
+        'SEMRUSH_API_KEY',
+        'BROWSERBASE_API_KEY',
+        'PRESENTATION_API_BASE_URL',
+        'EXA_API_KEY',
+        'COPILOT_API_KEY',
+        'S3_PROFILE_PICTURES_BUCKET_NAME',
+        'S3_COPILOT_BUCKET_NAME',
+        'S3_CHAT_BUCKET_NAME',
+        'S3_EXECUTION_FILES_BUCKET_NAME',
+        'S3_KB_BUCKET_NAME',
+        'S3_LOGS_BUCKET_NAME',
+        'NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS',
+        'CRON_SECRET',
+        'FB_CLIENT_SECRET',
+        'FB_CLIENT_ID',
+        'FB_ACCESS_TOKEN',
+        'FROM_EMAIL_ADDRESS',
+        'NEXT_PUBLIC_FIRECRAWL_API_KEY',
+        'FIRECRAWL_API_KEY',
+        'BROWSER_USE_API_KEY',
+        'SPYFU_API_PASSWORD',
+        'SPYFU_API_USERNAME',
+        'CHROMEDRIVER_PATH',
+        'FIGMA_API_KEY',
+        'GOOGLE_ADS_REFRESH_TOKEN',
+        'GOOGLE_ADS_CLIENT_SECRET',
+        'GOOGLE_ADS_CLIENT_ID',
+        'GOOGLE_ADS_DEVELOPER_TOKEN',
+        'S3_COPILOT_BUCKET_NAME',
+        'INTERNAL_API_SECRET',
+        'S3_KB_BUCKET_NAME',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_ACCESS_KEY_ID',
+        'AWS_REGION',
+        'S3_BUCKET_NAME',
+        'SLACK_CLIENT_ID',
+        'SLACK_CLIENT_SECRET',
+        'GOOGLE_CLIENT_SECRET',
+        'GOOGLE_CLIENT_ID',
+      ]
+
+      for (const varName of serverEnvVarNames) {
+        const value = env[varName as keyof typeof env]
+        if (value && typeof value === 'string') {
+          serverEnvVars[varName] = value
+        }
+      }
+    }
+
+    // Merge: Server env vars take priority, then workspace, then personal
     // Use encrypted values for logging (don't log decrypted secrets)
-    const variables = EnvVarsSchema.parse({ ...personalEncrypted, ...workspaceEncrypted })
+    const variables = EnvVarsSchema.parse({
+      ...personalEncrypted,
+      ...workspaceEncrypted,
+      ...serverEnvVars, // Server vars override user/workspace vars
+    })
 
     // Use already-decrypted values for execution (no redundant decryption)
-    const decryptedEnvVars: Record<string, string> = { ...personalDecrypted, ...workspaceDecrypted }
+    // Server env vars override user/workspace vars
+    const decryptedEnvVars: Record<string, string> = {
+      ...personalDecrypted,
+      ...workspaceDecrypted,
+      ...serverEnvVars, // Server vars override user/workspace vars
+    }
 
     await loggingSession.safeStart({
       userId,

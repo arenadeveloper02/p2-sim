@@ -61,7 +61,7 @@ const BlockStateSchema = z.object({
   horizontalHandles: z.boolean().optional(),
   height: z.number().optional(),
   advancedMode: z.boolean().optional(),
-  triggerMode: z.boolean().optional(),
+  triggerMode: z.union([z.boolean(), z.null()]).optional(),
   data: BlockDataSchema.optional(),
 })
 
@@ -176,6 +176,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             horizontalHandles:
               block.horizontalHandles !== undefined ? block.horizontalHandles : true,
             height: block.height !== undefined ? block.height : 0,
+            triggerMode:
+              block.triggerMode !== null && block.triggerMode !== undefined
+                ? block.triggerMode
+                : false,
             subBlocks: block.subBlocks || {},
             outputs: block.outputs || {},
           }
