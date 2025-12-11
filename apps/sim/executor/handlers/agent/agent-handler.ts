@@ -613,7 +613,12 @@ export class AgentBlockHandler implements BlockHandler {
     responseFormat: any,
     providerStartTime: number
   ) {
-    const finalApiKey = this.getApiKey(providerId, model, providerRequest.apiKey)
+    const finalApiKey = this.getApiKey(
+      providerId,
+      model,
+      providerRequest.apiKey,
+      ctx.environmentVariables
+    )
 
     const { blockData, blockNameMapping } = collectBlockData(ctx)
 
@@ -732,15 +737,21 @@ export class AgentBlockHandler implements BlockHandler {
     return this.createMinimalStreamingExecution(response.body!)
   }
 
-  private getApiKey(providerId: string, model: string, inputApiKey: string): string {
+  private getApiKey(
+    providerId: string,
+    model: string,
+    inputApiKey: string,
+    environmentVariables?: Record<string, string>
+  ): string {
     try {
-      return getApiKey(providerId, model, inputApiKey)
+      return getApiKey(providerId, model, inputApiKey, environmentVariables)
     } catch (error) {
       logger.error('Failed to get API key:', {
         provider: providerId,
         model,
         error: error instanceof Error ? error.message : String(error),
         hasProvidedApiKey: !!inputApiKey,
+        hasEnvironmentVariables: !!environmentVariables,
       })
       throw new Error(error instanceof Error ? error.message : 'API key error')
     }
