@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { document, embedding } from '@sim/db/schema'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { env } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('KnowledgeSearchUtils')
@@ -51,6 +52,13 @@ export interface SearchParams {
   filters?: Record<string, string>
   queryVector?: string
   distanceThreshold?: number
+}
+
+export interface RerankConfig {
+  enabled?: boolean
+  model?: string
+  topN?: number
+  requestId?: string
 }
 
 // Use shared embedding utility
@@ -372,4 +380,115 @@ export async function handleTagAndVectorSearch(params: SearchParams): Promise<Se
     topK,
     distanceThreshold
   )
+}
+
+/**
+ * Apply LLM-based reranking on search results using the OpenAI rerank API.
+ */
+export async function rerankSearchResults(
+  query: string,
+  results: SearchResult[],
+  rerankConfig?: RerankConfig
+): Promise<SearchResult[]> {
+  const rerankEnabled = rerankConfig?.enabled ?? true
+
+  if (!rerankEnabled) {
+    return results
+  }
+
+  if (!query?.trim() || results.length === 0) {
+    return results
+  }
+
+  const apiKey = env.OPENAI_API_KEY
+
+  if (!apiKey) {
+    logger.warn('Skipping rerank because OPENAI_API_KEY is not configured', {
+      requestId: rerankConfig?.requestId,
+    })
+    return results
+  }
+
+  const model = rerankConfig?.model || env.KB_RERANK_MODEL_NAME || 'gpt-4o-mini-rerank-2024-12-17'
+  const candidateCount = Math.min(results.length, 50)
+  const topN = Math.min(rerankConfig?.topN ?? results.length, candidateCount)
+
+  const candidates = results.slice(0, candidateCount)
+  const documents = candidates.map((result) => ({
+    id: result.id,
+    text: result.content?.slice(0, 4000) ?? '',
+  }))
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/rerank', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        query,
+        documents,
+        top_n: topN,
+      }),
+    })
+
+    if (!response.ok) {
+      logger.warn('Rerank API request failed', {
+        status: response.status,
+        statusText: response.statusText,
+        requestId: rerankConfig?.requestId,
+      })
+      return results
+    }
+
+    const data = await response.json()
+    const rerankedItems: any[] = Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data?.results)
+        ? data.results
+        : []
+
+    if (!Array.isArray(rerankedItems) || rerankedItems.length === 0) {
+      logger.warn('Rerank API returned no data', { requestId: rerankConfig?.requestId })
+      return results
+    }
+
+    const scoreMap = new Map<string, number>()
+
+    rerankedItems.forEach((item: any, index: number) => {
+      const candidateIndex = typeof item.index === 'number' ? item.index : index
+      const candidate = candidates[candidateIndex]
+      const candidateId = item.document?.id ?? candidate?.id
+      const relevanceScore =
+        typeof item.relevance_score === 'number'
+          ? item.relevance_score
+          : typeof item.score === 'number'
+            ? item.score
+            : rerankedItems.length - index
+
+      if (candidateId) {
+        scoreMap.set(candidateId, relevanceScore)
+      }
+    })
+
+    if (scoreMap.size === 0) {
+      return results
+    }
+
+    const rerankedResults = [...results].sort((a, b) => {
+      const scoreB = scoreMap.get(b.id) ?? Number.NEGATIVE_INFINITY
+      const scoreA = scoreMap.get(a.id) ?? Number.NEGATIVE_INFINITY
+      return scoreB - scoreA
+    })
+
+    return rerankedResults.slice(0, topN)
+  } catch (error) {
+    logger.warn('Failed to rerank knowledge base results', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      requestId: rerankConfig?.requestId,
+    })
+    return results
+  }
 }
