@@ -102,6 +102,7 @@ export const env = createEnv({
     SAMBANOVA_API_KEY_2:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
     SAMBANOVA_API_KEY_3:                   z.string().min(1).optional(),    
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
+    COHERE_API_KEY:                        z.string().min(1).optional(),           // Cohere API key for reranking
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
 
     //Tools API Keys
