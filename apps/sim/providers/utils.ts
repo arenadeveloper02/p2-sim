@@ -715,6 +715,29 @@ export function getApiKey(
     }
   }
 
+  // Try to get API key from server environment variables as final fallback
+  try {
+    const { env } = require('@/lib/core/config/env')
+    let serverEnvVarName: string | undefined
+    if (isOpenAIModel) {
+      serverEnvVarName = 'OPENAI_API_KEY'
+    } else if (isClaudeModel) {
+      serverEnvVarName = 'ANTHROPIC_API_KEY'
+    } else if (isGeminiModel) {
+      serverEnvVarName = 'GEMINI_API_KEY_1'
+    } else if (isSambaNovaModel) {
+      serverEnvVarName = 'SAMBANOVA_API_KEY'
+    } else if (isXaiModel) {
+      serverEnvVarName = 'XAI_API_KEY'
+    }
+
+    if (serverEnvVarName && env[serverEnvVarName as keyof typeof env]) {
+      return env[serverEnvVarName as keyof typeof env] as string
+    }
+  } catch (_error) {
+    // Server env not available, continue to error
+  }
+
   // For all other cases, require user-provided key
   throw new Error(`API key is required for ${provider} ${model}`)
 }
