@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
+import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
 
 interface WorkspaceSummary {
   id: string
@@ -18,6 +19,10 @@ const logger = createLogger('WorkspacePage')
 export default function WorkspacePage() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
+
+  useEffect(() => {
+    fetchUserProfileSetPeopleMP()
+  }, [])
 
   useEffect(() => {
     const redirectToFirstWorkspace = async () => {

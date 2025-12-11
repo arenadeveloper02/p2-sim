@@ -141,6 +141,7 @@ export const env = createEnv({
     TRIGGER_DEV_ENABLED:                   z.boolean().optional(),                 // Toggle to enable/disable Trigger.dev for async jobs
     CRON_SECRET:                           z.string().optional(),                  // Secret for authenticating cron job requests
     JOB_RETENTION_DAYS:                    z.string().optional().default('1'),     // Days to retain job logs/data
+    MIX_PANEL_TOKEN:                  z.string().optional(),            
 
     // Cloud Storage - AWS S3
     AWS_REGION:                            z.string().optional(),                  // AWS region for S3 buckets
@@ -319,6 +320,7 @@ export const env = createEnv({
     NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER:     z.string().optional(),                  // Google project number for Drive picker
     NEXT_PUBLIC_POSTHOG_ENABLED:           z.boolean().optional(),                 // Enable PostHog analytics (client-side)
     NEXT_PUBLIC_POSTHOG_KEY:               z.string().optional(),                  // PostHog project API key
+    NEXT_PUBLIC_MIX_PANEL_TOKEN:      z.string().optional(),                  // Mixpanel dev token (client-side)
 
     // UI Branding & Whitelabeling
     NEXT_PUBLIC_BRAND_NAME:                z.string().optional(),                  // Custom brand name (defaults to "Sim")
@@ -394,6 +396,7 @@ export const env = createEnv({
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
     NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS,
+    NEXT_PUBLIC_MIX_PANEL_TOKEN: process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN,
   },
 })
 
