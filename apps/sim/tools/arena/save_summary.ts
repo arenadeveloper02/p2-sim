@@ -71,8 +71,9 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
       } catch {
         errorData = { message: response.statusText || 'Unknown error' }
       }
-      
-      const errorMessage = errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`
+
+      const errorMessage =
+        errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`
       const errorDetails = errorData.details ? ` - ${errorData.details}` : ''
       throw new Error(`Failed to save summary: ${errorMessage}${errorDetails}`)
     }
@@ -92,5 +93,3 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
     output: { type: 'object', description: 'Output from Arena' },
   },
 }
-
-

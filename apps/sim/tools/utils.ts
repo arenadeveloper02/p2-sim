@@ -164,10 +164,7 @@ export function validateRequiredParametersAfterMerge(
   // Validate all required user-or-llm parameters after merge
   // user-only parameters should have been validated earlier during serialization
   for (const [paramName, paramConfig] of Object.entries(tool.params)) {
-    if (
-      (paramConfig as any).visibility === 'user-or-llm' &&
-      paramConfig.required
-    ) {
+    if ((paramConfig as any).visibility === 'user-or-llm' && paramConfig.required) {
       const value = params[paramName]
       const isEmpty =
         !(paramName in params) ||
@@ -175,7 +172,7 @@ export function validateRequiredParametersAfterMerge(
         value === undefined ||
         value === '' ||
         (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
-      
+
       if (isEmpty) {
         // Create a more user-friendly error message
         const toolName = tool.name || toolId
