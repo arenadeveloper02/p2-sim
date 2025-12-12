@@ -57,6 +57,7 @@ export function ArenaProjectSelector({
 
   const [projects, setProjects] = React.useState<Project[]>([])
   const [open, setOpen] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState('')
 
   React.useEffect(() => {
     if (!clientId) return // No clientId, don't fetch projects
@@ -86,7 +87,7 @@ export function ArenaProjectSelector({
     return () => {
       setProjects([])
     }
-  }, [clientId])
+  }, [clientId, searchQuery])
 
   const selectedLabel =
     selectedValue?.customDisplayValue ||
