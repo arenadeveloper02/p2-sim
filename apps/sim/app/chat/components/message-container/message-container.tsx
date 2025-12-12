@@ -1,13 +1,15 @@
 'use client'
 
 import { type Dispatch, memo, type RefObject, type SetStateAction } from 'react'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, CheckCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import type { ThinkingStep } from '@/app/chat/hooks/use-chat-streaming'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
   isLoading: boolean
+  thinkingSteps?: ThinkingStep[]
   showScrollButton: boolean
   messagesContainerRef: RefObject<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
@@ -22,6 +24,7 @@ interface ChatMessageContainerProps {
 export const ChatMessageContainer = memo(function ChatMessageContainer({
   messages,
   isLoading,
+  thinkingSteps = [],
   showScrollButton,
   messagesContainerRef,
   messagesEndRef,
@@ -72,8 +75,52 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             ))
           )}
 
-          {/* Loading indicator (shows only when executing) */}
-          {isLoading && (
+          {/* Thinking steps indicator (shows dynamic block execution steps) */}
+          {thinkingSteps.length > 0 && (
+            <div className='px-4 py-3'>
+              <div className='mx-auto max-w-3xl'>
+                <div className='flex'>
+                  <div className='max-w-[80%]'>
+                    <div className='space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3'>
+                      <div className='flex items-center gap-2 font-medium text-gray-700 text-sm'>
+                        <Loader2 className='h-4 w-4 animate-spin' />
+                        <span>Processing...</span>
+                      </div>
+                      <div className='space-y-1.5'>
+                        {thinkingSteps.map((step, index) => (
+                          <div
+                            key={step.blockId}
+                            className='flex items-start gap-2 text-gray-600 text-sm'
+                          >
+                            <div className='mt-0.5'>
+                              {step.status === 'complete' ? (
+                                <CheckCircle className='h-3.5 w-3.5 text-green-500' />
+                              ) : (
+                                <Loader2 className='h-3.5 w-3.5 animate-spin text-blue-500' />
+                              )}
+                            </div>
+                            <div className='flex flex-col'>
+                              <span className={step.status === 'complete' ? 'text-gray-400' : ''}>
+                                {step.blockName}
+                              </span>
+                              {step.status === 'running' && step.progressMessage && (
+                                <span className='text-xs text-muted-foreground animate-pulse'>
+                                  {step.progressMessage}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Loading indicator (shows only when executing and no thinking steps) */}
+          {isLoading && thinkingSteps.length === 0 && (
             <div className='px-4 py-5'>
               <div className='mx-auto max-w-3xl'>
                 <div className='flex'>

@@ -12,6 +12,8 @@ export interface StreamingConfig {
     stream: ReadableStream
     execution?: { blockId?: string }
   }) => Promise<void>
+  onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onBlockProgress?: (blockId: string, message: string) => Promise<void>
 }
 
 export interface StreamingResponseOptions {
@@ -129,6 +131,39 @@ export async function createStreamingResponse(
           }
         }
 
+        // Callback to emit block start events for dynamic "thinking" UI
+        const onBlockStartCallback = async (
+          blockId: string,
+          blockName: string,
+          blockType: string
+        ) => {
+          logger.info(`[streaming] Emitting block_start event:`, { blockId, blockName, blockType })
+          controller.enqueue(
+            encodeSSE({
+              event: 'block_start',
+              blockId,
+              blockName,
+              blockType,
+            })
+          )
+        }
+
+        // Callback to emit block progress events for detailed status messages
+        const onBlockProgressCallback = async (blockId: string, message: string) => {
+          logger.info(`[streaming] Emitting block_progress event:`, { blockId, message })
+          controller.enqueue(
+            encodeSSE({
+              event: 'block_progress',
+              blockId,
+              message,
+            })
+          )
+        }
+
+        logger.info(
+          `[streaming] Calling executeWorkflow with onBlockStart callback defined: ${!!onBlockStartCallback}`
+        )
+
         const result = await executeWorkflow(
           workflow,
           requestId,
@@ -140,6 +175,8 @@ export async function createStreamingResponse(
             isSecureMode: streamConfig.isSecureMode,
             workflowTriggerType: streamConfig.workflowTriggerType,
             onStream: onStreamCallback,
+            onBlockStart: onBlockStartCallback,
+            onBlockProgress: onBlockProgressCallback,
             onBlockComplete: onBlockCompleteCallback,
             skipLoggingComplete: true, // We'll complete logging after tokenization
           },

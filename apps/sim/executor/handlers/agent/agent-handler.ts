@@ -38,9 +38,21 @@ export class AgentBlockHandler implements BlockHandler {
     const responseFormat = this.parseResponseFormat(inputs.responseFormat)
     const model = inputs.model || AGENT.DEFAULT_MODEL
     const providerId = getProviderFromModel(model)
+
+    if (ctx.onBlockProgress) {
+      await ctx.onBlockProgress(block.id, 'Formatting tools...')
+    }
     const formattedTools = await this.formatTools(ctx, inputs.tools || [])
     const streamingConfig = this.getStreamingConfig(ctx, block)
+
+    if (ctx.onBlockProgress) {
+      await ctx.onBlockProgress(block.id, 'Building messages from history...')
+    }
     const messages = await this.buildMessages(ctx, inputs, block.id)
+
+    if (ctx.onBlockProgress) {
+      await ctx.onBlockProgress(block.id, 'Calling AI model...')
+    }
 
     const providerRequest = this.buildProviderRequest({
       ctx,

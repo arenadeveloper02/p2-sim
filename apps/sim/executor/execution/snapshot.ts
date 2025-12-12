@@ -27,6 +27,7 @@ export interface ExecutionMetadata {
 export interface ExecutionCallbacks {
   onStream?: (streamingExec: any) => Promise<void>
   onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onBlockProgress?: (blockId: string, message: string) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,
@@ -63,7 +64,7 @@ export class ExecutionSnapshot {
     public readonly workflowVariables: Record<string, any>,
     public readonly selectedOutputs: string[] = [],
     public readonly state?: SerializableExecutionState
-  ) {}
+  ) { }
 
   toJSON(): string {
     return JSON.stringify({

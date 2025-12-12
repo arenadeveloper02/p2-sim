@@ -75,6 +75,8 @@ export async function executeWorkflow(
     isSecureMode?: boolean
     workflowTriggerType?: 'api' | 'chat'
     onStream?: (streamingExec: any) => Promise<void>
+    onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+    onBlockProgress?: (blockId: string, message: string) => Promise<void>
     onBlockComplete?: (blockId: string, output: any) => Promise<void>
     skipLoggingComplete?: boolean
   },
@@ -111,10 +113,20 @@ export async function executeWorkflow(
       snapshot,
       callbacks: {
         onStream: streamConfig?.onStream,
+        onBlockStart: streamConfig?.onBlockStart
+          ? async (blockId: string, blockName: string, blockType: string) => {
+            await streamConfig.onBlockStart!(blockId, blockName, blockType)
+          }
+          : undefined,
+        onBlockProgress: streamConfig?.onBlockProgress
+          ? async (blockId: string, message: string) => {
+            await streamConfig.onBlockProgress!(blockId, message)
+          }
+          : undefined,
         onBlockComplete: streamConfig?.onBlockComplete
           ? async (blockId: string, _blockName: string, _blockType: string, output: any) => {
-              await streamConfig.onBlockComplete!(blockId, output)
-            }
+            await streamConfig.onBlockComplete!(blockId, output)
+          }
           : undefined,
       },
       loggingSession,
@@ -161,9 +173,9 @@ export function createFilteredResult(result: any) {
     logs: undefined,
     metadata: result.metadata
       ? {
-          ...result.metadata,
-          workflowConnections: undefined,
-        }
+        ...result.metadata,
+        workflowConnections: undefined,
+      }
       : undefined,
   }
 }
@@ -339,16 +351,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const input =
       auth.authType === 'api_key'
         ? (() => {
-            const {
-              selectedOutputs,
-              triggerType,
-              stream,
-              useDraftState,
-              workflowStateOverride,
-              ...rest
-            } = body
-            return Object.keys(rest).length > 0 ? rest : validatedInput
-          })()
+          const {
+            selectedOutputs,
+            triggerType,
+            stream,
+            useDraftState,
+            workflowStateOverride,
+            ...rest
+          } = body
+          return Object.keys(rest).length > 0 ? rest : validatedInput
+        })()
         : validatedInput
 
     const shouldUseDraftState = useDraftState ?? auth.authType === 'session'
@@ -539,10 +551,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           error: result.error,
           metadata: result.metadata
             ? {
-                duration: result.metadata.duration,
-                startTime: result.metadata.startTime,
-                endTime: result.metadata.endTime,
-              }
+              duration: result.metadata.duration,
+              startTime: result.metadata.startTime,
+              endTime: result.metadata.endTime,
+            }
             : undefined,
         }
 
@@ -560,10 +572,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             error: executionResult?.error || error.message || 'Execution failed',
             metadata: executionResult?.metadata
               ? {
-                  duration: executionResult.metadata.duration,
-                  startTime: executionResult.metadata.startTime,
-                  endTime: executionResult.metadata.endTime,
-                }
+                duration: executionResult.metadata.duration,
+                startTime: executionResult.metadata.startTime,
+                endTime: executionResult.metadata.endTime,
+              }
               : undefined,
           },
           { status: 500 }
@@ -763,7 +775,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             } finally {
               try {
                 reader.releaseLock()
-              } catch {}
+              } catch { }
             }
           }
 

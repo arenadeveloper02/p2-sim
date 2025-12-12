@@ -141,29 +141,29 @@ export class DAGExecutor {
         : new Set(),
       loopExecutions: snapshotState?.loopExecutions
         ? new Map(
-            Object.entries(snapshotState.loopExecutions).map(([loopId, scope]) => [
-              loopId,
-              {
-                ...scope,
-                currentIterationOutputs: scope.currentIterationOutputs
-                  ? new Map(Object.entries(scope.currentIterationOutputs))
-                  : new Map(),
-              },
-            ])
-          )
+          Object.entries(snapshotState.loopExecutions).map(([loopId, scope]) => [
+            loopId,
+            {
+              ...scope,
+              currentIterationOutputs: scope.currentIterationOutputs
+                ? new Map(Object.entries(scope.currentIterationOutputs))
+                : new Map(),
+            },
+          ])
+        )
         : new Map(),
       parallelExecutions: snapshotState?.parallelExecutions
         ? new Map(
-            Object.entries(snapshotState.parallelExecutions).map(([parallelId, scope]) => [
-              parallelId,
-              {
-                ...scope,
-                branchOutputs: scope.branchOutputs
-                  ? new Map(Object.entries(scope.branchOutputs).map(([k, v]) => [Number(k), v]))
-                  : new Map(),
-              },
-            ])
-          )
+          Object.entries(snapshotState.parallelExecutions).map(([parallelId, scope]) => [
+            parallelId,
+            {
+              ...scope,
+              branchOutputs: scope.branchOutputs
+                ? new Map(Object.entries(scope.branchOutputs).map(([k, v]) => [Number(k), v]))
+                : new Map(),
+            },
+          ])
+        )
         : new Map(),
       executedBlocks: state.getExecutedBlocks(),
       activeExecutionPath: snapshotState?.activeExecutionPath
@@ -175,6 +175,7 @@ export class DAGExecutor {
       edges: this.contextExtensions.edges ?? [],
       onStream: this.contextExtensions.onStream,
       onBlockStart: this.contextExtensions.onBlockStart,
+      onBlockProgress: this.contextExtensions.onBlockProgress,
       onBlockComplete: this.contextExtensions.onBlockComplete,
     }
 
@@ -188,7 +189,7 @@ export class DAGExecutor {
     }
 
     if (this.contextExtensions.remainingEdges) {
-      ;(context.metadata as any).remainingEdges = this.contextExtensions.remainingEdges
+      ; (context.metadata as any).remainingEdges = this.contextExtensions.remainingEdges
       logger.info('Set remaining edges for resume', {
         edgeCount: this.contextExtensions.remainingEdges.length,
       })

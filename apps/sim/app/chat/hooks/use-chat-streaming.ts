@@ -24,8 +24,56 @@ export interface StreamingOptions {
   outputConfigs?: Array<{ blockId: string; path?: string }>
 }
 
+// Thinking step for dynamic UI feedback
+export interface ThinkingStep {
+  blockId: string
+  blockName: string
+  blockType: string
+  status: 'running' | 'complete'
+  startTime: Date
+  progressMessage?: string
+}
+
+// Convert block type to human-readable action description
+function getHumanReadableName(blockType: string, blockName: string): string {
+  // If we have a custom block name (not a UUID), use it
+  if (blockName && !blockName.match(/^[a-f0-9-]{36}$/i)) {
+    return blockName
+  }
+
+  // Map block types to descriptive action messages
+  const actionMap: Record<string, string> = {
+    agent: 'AI Agent is processing...',
+    google_ads: 'Connecting to Google Ads...',
+    google_ads_query: 'Connecting to Google Ads...',
+    api: 'Making API request...',
+    function: 'Executing function...',
+    router: 'Routing request...',
+    condition: 'Evaluating condition...',
+    start_trigger: 'Starting workflow...',
+    starter: 'Starting workflow...',
+    evaluator: 'Evaluating response...',
+    code: 'Running code...',
+    webhook: 'Processing webhook...',
+    database: 'Querying database...',
+  }
+
+  // Return action message if we have one for this block type
+  if (actionMap[blockType]) {
+    return actionMap[blockType]
+  }
+
+  // For unknown types, generate a readable message from the block name or type
+  if (blockName && !blockName.match(/^[a-f0-9-]{36}$/i)) {
+    return `Processing ${blockName}...`
+  }
+
+  return `Processing ${blockType.replace(/_/g, ' ')}...`
+}
+
 export function useChatStreaming() {
   const [isStreamingResponse, setIsStreamingResponse] = useState(false)
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([])
   const abortControllerRef = useRef<AbortController | null>(null)
   const accumulatedTextRef = useRef<string>('')
   const lastStreamedPositionRef = useRef<number>(0)
@@ -202,17 +250,48 @@ export function useChatStreaming() {
               const json = JSON.parse(data)
               const { blockId, chunk: contentChunk, event: eventType } = json
 
+              // Handle block_progress event
+              if (eventType === 'block_progress') {
+                setThinkingSteps((prev) =>
+                  prev.map((step) =>
+                    step.blockId === json.blockId
+                      ? { ...step, progressMessage: json.message }
+                      : step
+                  )
+                )
+                lineEndIndex = buffer.indexOf('\n\n')
+                continue
+              }
+
+              // Handle block_start event for dynamic "thinking" UI
+              if (eventType === 'block_start') {
+                const humanName = getHumanReadableName(json.blockType, json.blockName)
+                setThinkingSteps((prev) => [
+                  ...prev,
+                  {
+                    blockId: json.blockId,
+                    blockName: humanName,
+                    blockType: json.blockType,
+                    status: 'running',
+                    startTime: new Date(),
+                    progressMessage: '', // Initialize generic progress
+                  },
+                ])
+                lineEndIndex = buffer.indexOf('\n\n')
+                continue
+              }
+
               if (eventType === 'error' || json.event === 'error') {
                 const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === messageId
                       ? {
-                          ...msg,
-                          content: errorMessage,
-                          isStreaming: false,
-                          type: 'assistant' as const,
-                        }
+                        ...msg,
+                        content: errorMessage,
+                        isStreaming: false,
+                        type: 'assistant' as const,
+                      }
                       : msg
                   )
                 )
@@ -333,12 +412,12 @@ export function useChatStreaming() {
                   prev.map((msg) =>
                     msg.id === messageId
                       ? {
-                          ...msg,
-                          isStreaming: false,
-                          content: finalContent ?? msg.content,
-                          executionId: finalData?.executionId || msg.executionId,
-                          liked: null,
-                        }
+                        ...msg,
+                        isStreaming: false,
+                        content: finalContent ?? msg.content,
+                        executionId: finalData?.executionId || msg.executionId,
+                        liked: null,
+                      }
                       : msg
                   )
                 )
@@ -356,7 +435,6 @@ export function useChatStreaming() {
                   messageIdMap.set(blockId, messageId)
                 }
 
-                accumulatedText += contentChunk
                 logger.debug('[useChatStreaming] Received chunk', {
                   blockId,
                   chunkLength: contentChunk.length,
@@ -364,42 +442,58 @@ export function useChatStreaming() {
                   messageId,
                   chunk: contentChunk.substring(0, 20),
                 })
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+              }
+
+              // Handle response chunk
+              if (contentChunk || eventType === 'message' || eventType === 'streamed_response') {
+                const text = contentChunk || json.content || ''
+                if (text) {
+                  // If we receive actual content, clear thinking steps immediately
+                  // This ensures the thinking UI disappears as soon as response starts
+                  setThinkingSteps((prev) => {
+                    if (prev.length > 0) return []
+                    return prev
+                  })
+
+                  accumulatedText += text
+
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+                    )
                   )
-                )
 
-                // Real-time TTS for voice mode
-                if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
-                  const newText = accumulatedText.substring(lastAudioPosition)
-                  const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
-                  let sentenceEnd = -1
+                  // Real-time TTS for voice mode
+                  if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
+                    const newText = accumulatedText.substring(lastAudioPosition)
+                    const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
+                    let sentenceEnd = -1
 
-                  for (const ending of sentenceEndings) {
-                    const index = newText.indexOf(ending)
-                    if (index > 0) {
-                      sentenceEnd = index + ending.length
-                      break
+                    for (const ending of sentenceEndings) {
+                      const index = newText.indexOf(ending)
+                      if (index > 0) {
+                        sentenceEnd = index + ending.length
+                        break
+                      }
                     }
-                  }
 
-                  if (sentenceEnd > 0) {
-                    const sentence = newText.substring(0, sentenceEnd).trim()
-                    if (sentence && sentence.length >= 3) {
-                      try {
-                        await streamingOptions.audioStreamHandler(sentence)
-                        lastAudioPosition += sentenceEnd
-                      } catch (error) {
-                        logger.error('TTS error:', error)
+                    if (sentenceEnd > 0) {
+                      const sentence = newText.substring(0, sentenceEnd).trim()
+                      if (sentence && sentence.length >= 3) {
+                        try {
+                          await streamingOptions.audioStreamHandler(sentence)
+                          lastAudioPosition += sentenceEnd
+                        } catch (error) {
+                          logger.error('TTS error:', error)
+                        }
                       }
                     }
                   }
+                } else if (blockId && eventType === 'end') {
+                  setMessages((prev) =>
+                    prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
+                  )
                 }
-              } else if (blockId && eventType === 'end') {
-                setMessages((prev) =>
-                  prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
-                )
               }
 
               // Move to next line
@@ -447,6 +541,7 @@ export function useChatStreaming() {
       )
     } finally {
       setIsStreamingResponse(false)
+      setThinkingSteps([]) // Clear thinking steps when streaming ends
       abortControllerRef.current = null
 
       if (!userHasScrolled) {
@@ -464,6 +559,8 @@ export function useChatStreaming() {
   return {
     isStreamingResponse,
     setIsStreamingResponse,
+    thinkingSteps,
+    setThinkingSteps,
     abortControllerRef,
     stopStreaming,
     handleStreamedResponse,

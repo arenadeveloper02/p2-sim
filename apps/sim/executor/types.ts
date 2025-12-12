@@ -214,6 +214,7 @@ export interface ExecutionContext {
 
   onStream?: (streamingExecution: StreamingExecution) => Promise<void>
   onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onBlockProgress?: (blockId: string, message: string) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,

@@ -155,8 +155,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
-  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
-    useChatStreaming()
+  const {
+    isStreamingResponse,
+    thinkingSteps,
+    setThinkingSteps,
+    abortControllerRef,
+    stopStreaming,
+    handleStreamedResponse,
+  } = useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
@@ -508,6 +514,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
     setInputValue('')
     setIsLoading(true)
+    setThinkingSteps([]) // Clear thinking steps for new message
 
     // Scroll to show only the user's message and loading indicator (if message exists)
     if (userMessageId) {
@@ -997,6 +1004,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       <ChatMessageContainer
         messages={messages}
         isLoading={isLoading}
+        thinkingSteps={thinkingSteps}
         showScrollButton={showScrollButton}
         messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
         messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}

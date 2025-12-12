@@ -33,6 +33,7 @@ export interface ContextExtensions {
       iterationType: SubflowType
     }
   ) => Promise<void>
+  onBlockProgress?: (blockId: string, message: string) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,

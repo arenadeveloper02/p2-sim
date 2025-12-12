@@ -63,6 +63,10 @@ export class GenericBlockHandler implements BlockHandler {
     }
 
     try {
+      if (ctx.onBlockProgress) {
+        await ctx.onBlockProgress(block.id, `Executing ${block.metadata?.name || block.config.tool || 'tool'}...`)
+      }
+
       const result = await executeTool(
         block.config.tool,
         {
