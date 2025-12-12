@@ -26,6 +26,10 @@ export const ArenaBlock: BlockConfig = {
           label: 'Search Task',
           id: 'arena_search_task',
         },
+        {
+          label: 'Save Summary',
+          id: 'arena_save_summary',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -220,6 +224,32 @@ export const ArenaBlock: BlockConfig = {
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'arena_search_task' },
     },
+
+    //save summary blocks
+    {
+      id: 'save-summary-client',
+      title: 'Client',
+      type: 'arena-client-selector',
+      required: true,
+      placeholder: 'Enter client name',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_save_summary'],
+      },
+    },
+    {
+      id: 'save-summary-text',
+      title: 'Summary',
+      type: 'long-input',
+      required: true,
+      placeholder: 'Enter summary',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_save_summary'],
+      },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
@@ -229,7 +259,7 @@ export const ArenaBlock: BlockConfig = {
     output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
-    access: ['arena_create_task'],
+    access: ['arena_create_task', 'arena_save_summary'],
     config: {
       tool: (params) => {
         switch (params.operation) {
@@ -239,8 +269,10 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_create_task'
           case 'arena_search_task':
             return 'arena_search_task'
+          case 'arena_save_summary':
+            return 'arena_save_summary'
           default:
-            throw new Error(`Invalid Gmail operation: ${params.operation}`)
+            throw new Error(`Invalid Arena operation: ${params.operation}`)
         }
       },
       params: (params) => {
