@@ -153,6 +153,7 @@ import {
   dropboxSearchTool,
   dropboxUploadTool,
 } from '@/tools/dropbox'
+import { duckduckgoSearchTool } from '@/tools/duckduckgo'
 import {
   dynamodbDeleteTool,
   dynamodbGetTool,
@@ -1012,6 +1013,13 @@ import {
 } from '@/tools/sentry'
 import { serperSearchTool } from '@/tools/serper'
 import {
+  sftpDeleteTool,
+  sftpDownloadTool,
+  sftpListTool,
+  sftpMkdirTool,
+  sftpUploadTool,
+} from '@/tools/sftp'
+import {
   sharepointAddListItemTool,
   sharepointCreateListTool,
   sharepointCreatePageTool,
@@ -1393,6 +1401,11 @@ export const tools: Record<string, ToolConfig> = {
   sendgrid_delete_template: sendGridDeleteTemplateTool,
   sendgrid_create_template_version: sendGridCreateTemplateVersionTool,
   smtp_send_mail: smtpSendMailTool,
+  sftp_upload: sftpUploadTool,
+  sftp_download: sftpDownloadTool,
+  sftp_list: sftpListTool,
+  sftp_delete: sftpDeleteTool,
+  sftp_mkdir: sftpMkdirTool,
   ssh_execute_command: sshExecuteCommandTool,
   ssh_execute_script: sshExecuteScriptTool,
   ssh_check_command_exists: sshCheckCommandExistsTool,
@@ -1610,6 +1623,7 @@ export const tools: Record<string, ToolConfig> = {
   dropbox_get_metadata: dropboxGetMetadataTool,
   dropbox_create_shared_link: dropboxCreateSharedLinkTool,
   dropbox_search: dropboxSearchTool,
+  duckduckgo_search: duckduckgoSearchTool,
   mongodb_query: mongodbQueryTool,
   mongodb_insert: mongodbInsertTool,
   mongodb_update: mongodbUpdateTool,
