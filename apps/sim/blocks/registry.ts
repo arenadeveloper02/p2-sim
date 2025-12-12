@@ -18,6 +18,7 @@ import { CursorBlock } from '@/blocks/blocks/cursor'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
+import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
@@ -92,6 +93,7 @@ import { RedditBlock } from '@/blocks/blocks/reddit'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock } from '@/blocks/blocks/router'
+import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
@@ -99,6 +101,7 @@ import { SearchBlock } from '@/blocks/blocks/search'
 import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
+import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
@@ -163,6 +166,7 @@ export const registry: Record<string, BlockConfig> = {
   datadog: DatadogBlock,
   discord: DiscordBlock,
   dropbox: DropboxBlock,
+  duckduckgo: DuckDuckGoBlock,
   elevenlabs: ElevenLabsBlock,
   elasticsearch: ElasticsearchBlock,
   evaluator: EvaluatorBlock,
@@ -236,6 +240,7 @@ export const registry: Record<string, BlockConfig> = {
   reddit: RedditBlock,
   resend: ResendBlock,
   response: ResponseBlock,
+  rss: RssBlock,
   router: RouterBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
@@ -250,6 +255,7 @@ export const registry: Record<string, BlockConfig> = {
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,
+  sftp: SftpBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,
   stagehand_agent: StagehandAgentBlock,
