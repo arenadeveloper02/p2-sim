@@ -37,7 +37,12 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       }
 
       // Add all optional parameters if provided
-      if (params.limit !== undefined) body.limit = Number(params.limit)
+      if (params.limit !== undefined && params.limit !== null) {
+        const limitNum = typeof params.limit === 'string' ? Number(params.limit) : params.limit
+        if (!Number.isNaN(limitNum) && limitNum > 0) {
+          body.limit = limitNum
+        }
+      }
       if (params.sources !== undefined) body.sources = params.sources
       if (params.categories !== undefined) body.categories = params.categories
       if (params.tbs !== undefined) body.tbs = params.tbs

@@ -48,9 +48,17 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
       Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
+      let validLimit = 100
+      if (params.limit !== undefined && params.limit !== null) {
+        const limitNum = typeof params.limit === 'string' ? Number(params.limit) : params.limit
+        if (!Number.isNaN(limitNum) && limitNum > 0) {
+          validLimit = limitNum
+        }
+      }
+
       const body: Record<string, any> = {
         url: params.url,
-        limit: Number(params.limit) || 100,
+        limit: validLimit,
         scrapeOptions: params.scrapeOptions || {
           formats: ['markdown'],
           onlyMainContent: params.onlyMainContent || false,
