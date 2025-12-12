@@ -596,6 +596,7 @@ export function DeployModal({
                   onDeploymentComplete={handleCloseModal}
                   onDeployed={handlePostDeploymentUpdate}
                   onVersionActivated={() => {}}
+                  chatAlreadyExists={chatExists}
                 />
               </ModalTabsContent>
               <ModalTabsContent value='template'>

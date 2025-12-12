@@ -52,6 +52,14 @@ export const KnowledgeBlock: BlockConfig = {
       condition: { field: 'operation', value: 'search' },
     },
     {
+      id: 'rerankEnabled',
+      title: 'Rerank Results',
+      type: 'switch',
+      placeholder: 'Enable reranking',
+      defaultValue: true,
+      condition: { field: 'operation', value: 'search' },
+    },
+    {
       id: 'tagFilters',
       title: 'Tag Filters',
       type: 'knowledge-tag-filters',
@@ -134,6 +142,33 @@ export const KnowledgeBlock: BlockConfig = {
           throw new Error('Document ID is required for upload_chunk operation')
         }
 
+        if (params.operation === 'search') {
+          const rerankModel =
+            typeof params.rerankModel === 'string' && params.rerankModel.trim().length > 0
+              ? params.rerankModel.trim()
+              : undefined
+          const rerankTopN =
+            params.rerankTopN !== undefined && params.rerankTopN !== null
+              ? Number(params.rerankTopN)
+              : undefined
+          const rerankEnabled =
+            typeof params.rerankEnabled === 'boolean' ? params.rerankEnabled : true
+
+          const rerank =
+            rerankEnabled !== undefined || rerankModel || Number.isFinite(rerankTopN)
+              ? {
+                  ...(rerankEnabled !== undefined ? { enabled: rerankEnabled } : {}),
+                  ...(rerankModel ? { model: rerankModel } : {}),
+                  ...(Number.isFinite(rerankTopN) ? { topN: rerankTopN } : {}),
+                }
+              : undefined
+
+          return {
+            ...params,
+            ...(rerank ? { rerank } : {}),
+          }
+        }
+
         return params
       },
     },
@@ -148,6 +183,9 @@ export const KnowledgeBlock: BlockConfig = {
     name: { type: 'string', description: 'Document name' },
     // Dynamic tag filters for search
     tagFilters: { type: 'string', description: 'Tag filter criteria' },
+    rerankEnabled: { type: 'boolean', description: 'Enable or disable reranking' },
+    rerankModel: { type: 'string', description: 'Optional rerank model name' },
+    rerankTopN: { type: 'number', description: 'Optional rerank top N' },
     // Document tags for create document (JSON string of tag objects)
     documentTags: { type: 'string', description: 'Document tags' },
   },
