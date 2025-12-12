@@ -84,7 +84,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
     url: 'https://api.firecrawl.dev/v2/extract',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
