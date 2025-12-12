@@ -463,8 +463,35 @@ const geographicFragment: FragmentBuilder = () =>
   `
 **GEOGRAPHIC PERFORMANCE:**
 - Use geographic_view for location performance metrics.
-- Include campaign.id, campaign.name, campaign.status, geographic_view.country_criterion_id (or requested geo field), geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros.
+- Include campaign.id, campaign.name, campaign.status, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros, metrics.conversions_value, metrics.ctr.
 - Filter on segments.date DURING/BETWEEN requested range and campaign.status = 'ENABLED'.
+
+**CRITICAL - STATE/REGION LEVEL ANALYSIS:**
+When users ask for "top performing states", "state-level analysis", "regional performance", or "location by state":
+- **MUST use segments.geo_target_region** in the SELECT clause to get state/region-level breakdown
+- segments.geo_target_region returns the state/region criterion ID (e.g., California, Texas, New York)
+- DO NOT use only geographic_view.country_criterion_id - this only returns country-level data (entire USA)
+
+**STATE-LEVEL QUERY EXAMPLE:**
+SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_region, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.cost_micros, metrics.ctr FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC LIMIT 20
+
+**CITY-LEVEL QUERY EXAMPLE:**
+SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_city, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.cost_micros, metrics.ctr FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC LIMIT 20
+
+**METRO-LEVEL QUERY EXAMPLE:**
+SELECT campaign.id, campaign.name, campaign.status, segments.geo_target_metro, geographic_view.location_type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.cost_micros, metrics.ctr FROM geographic_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC LIMIT 20
+
+**LOCATION SEGMENT FIELD MAPPING:**
+- segments.geo_target_country → Country-level (USA, UK, etc.)
+- segments.geo_target_region → State/Province/Region-level (California, Texas, etc.)
+- segments.geo_target_city → City-level (Los Angeles, Houston, etc.)
+- segments.geo_target_metro → Metro/DMA-level (Los Angeles DMA, New York DMA, etc.)
+
+**IMPORTANT:**
+- The geo segment fields return criterion IDs that map to geographic locations
+- For "top performing states", ALWAYS include segments.geo_target_region in SELECT
+- You can combine multiple geo segments if needed for detailed breakdowns
+- ORDER BY metrics.conversions DESC or metrics.cost_micros DESC based on user's performance criteria
 `.trim()
 
 const locationTargetingFragment: FragmentBuilder = () =>

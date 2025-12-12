@@ -9,7 +9,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
   longDescription:
     'Connect to Facebook Ads API and query campaign performance, ad set metrics, and account insights using natural language. Supports all 22 Position2 Facebook ad accounts with AI-powered query parsing.',
   docsLink: 'https://docs.sim.ai/blocks/facebook-ads',
-  category: 'blocks',
+  category: 'tools',
   bgColor: '#1877F2',
   icon: MetaIcon,
   subBlocks: [
