@@ -1,5 +1,3 @@
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ExtractParams, ExtractResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
@@ -84,7 +82,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
     url: 'https://api.firecrawl.dev/v2/extract',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -146,7 +144,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/extract/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+            Authorization: `Bearer ${params.apiKey}`,
             'Content-Type': 'application/json',
           },
         })

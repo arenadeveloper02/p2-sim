@@ -1,4 +1,5 @@
 import { FirecrawlIcon } from '@/components/icons'
+import { env } from '@/lib/core/config/env'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { FirecrawlResponse } from '@/tools/firecrawl/types'
@@ -138,6 +139,7 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
       password: true,
       required: false,
       hidden: true,
+      defaultValue: env.FIRECRAWL_API_KEY || env.NEXT_PUBLIC_FIRECRAWL_API_KEY || '',
     },
   ],
   tools: {

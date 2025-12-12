@@ -1,5 +1,3 @@
-import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -29,7 +27,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     url: 'https://api.firecrawl.dev/v2/search',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? env.FIRECRAWL_API_KEY || env.NEXT_PUBLIC_FIRECRAWL_API_KEY : params.apiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -37,12 +35,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       }
 
       // Add all optional parameters if provided
-      if (params.limit !== undefined && params.limit !== null) {
-        const limitNum = typeof params.limit === 'string' ? Number(params.limit) : params.limit
-        if (!Number.isNaN(limitNum) && limitNum > 0) {
-          body.limit = limitNum
-        }
-      }
+      if (params.limit !== undefined) body.limit = Number(params.limit)
       if (params.sources !== undefined) body.sources = params.sources
       if (params.categories !== undefined) body.categories = params.categories
       if (params.tbs !== undefined) body.tbs = params.tbs
