@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   try {
     // Calculate yesterday's date range (UTC to match database timestamps)
     const yesterday = new Date()
-    yesterday.setUTCDate(yesterday.getUTCDate() - 7)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 4)
     yesterday.setUTCHours(0, 0, 0, 0)
 
     const endDate = new Date(yesterday)
@@ -38,30 +38,13 @@ export async function GET(request: NextRequest) {
       `[${requestId}] Fetching external chat executions from ${yesterday.toISOString()} to ${endDate.toISOString()}`
     )
 
-    const executionStatsYesterday = await db
-      .select({
-        workflowId: workflowExecutionLogs.workflowId,
-        id: workflowExecutionLogs.id,
-      })
-      .from(workflowExecutionLogs)
-      .where(
-        and(
-          eq(workflowExecutionLogs.isExternalChat, true),
-          gte(workflowExecutionLogs.startedAt, yesterday),
-          lte(workflowExecutionLogs.startedAt, endDate)
-        )
-      )
-
-    logger.info(
-      `[${requestId}] Found ${executionStatsYesterday.length} workflows with external chat executions`
-    )
-
     // Fetch workflow execution logs for yesterday where is_external_chat is true
     // Group by workflow_id and count executions
     const executionStats = await db
       .select({
         workflowId: workflowExecutionLogs.workflowId,
         executionCount: count(workflowExecutionLogs.id),
+        userId: workflowExecutionLogs.userId,
       })
       .from(workflowExecutionLogs)
       .where(
@@ -71,7 +54,7 @@ export async function GET(request: NextRequest) {
           lte(workflowExecutionLogs.startedAt, endDate)
         )
       )
-      .groupBy(workflowExecutionLogs.workflowId)
+      .groupBy(workflowExecutionLogs.workflowId, workflowExecutionLogs.userId)
 
     logger.info(
       `[${requestId}] Found ${executionStats.length} workflows with external chat executions`
@@ -110,6 +93,27 @@ export async function GET(request: NextRequest) {
       `[${requestId}] Fetched ${allDeployedChats.length} templates for ${workflowIds.length} workflows`
     )
 
+    const executedUserIds = executionStats
+      .map((stat) => stat.userId as string)
+      .filter(Boolean) as string[]
+    const executedUsers = await db
+      .select({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      })
+      .from(user)
+      .where(inArray(user.id, executedUserIds))
+
+    const executedUsersMap = new Map<string, { name: string | null }>()
+    for (const executedUser of executedUsers) {
+      if (executedUser.id) {
+        executedUsersMap.set(executedUser.id, {
+          name: executedUser.name,
+        })
+      }
+    }
+
     const statsToInsert: Array<{
       id: string
       workflowId: string | null
@@ -118,6 +122,8 @@ export async function GET(request: NextRequest) {
       category: string | null
       executionCount: number
       workflowAuthorUserName: string | null
+      executionUserName: string | null
+      executionUserId: string | null
     }> = []
 
     // For each workflow, get template info and workflow info
@@ -160,6 +166,11 @@ export async function GET(request: NextRequest) {
         logger.warn(`[${requestId}] Workflow ${stat.workflowId} not found, skipping`)
         continue
       }
+      const executedUser = executedUsersMap.get(stat.userId as string)
+      if (!executedUser) {
+        logger.warn(`[${requestId}] User ${stat.userId} not found, skipping`)
+        continue
+      }
 
       statsToInsert.push({
         id: crypto.randomUUID(),
@@ -169,6 +180,8 @@ export async function GET(request: NextRequest) {
         category: deployedChat.department,
         executionCount: stat.executionCount,
         workflowAuthorUserName: authorUser.userName,
+        executionUserName: executedUser.name,
+        executionUserId: stat.userId,
       })
     }
 
@@ -189,6 +202,8 @@ export async function GET(request: NextRequest) {
           category: stat.category,
           executionCount: stat.executionCount,
           executionDate,
+          executionUserName: stat.executionUserName,
+          executionUserId: stat.executionUserId,
           createdAt: new Date(),
           updatedAt: new Date(),
         }))

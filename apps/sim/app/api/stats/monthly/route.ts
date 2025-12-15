@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
         >`MAX(${workflowStatsDaily.workflowAuthorUserName})`,
         category: sql<string | null>`MAX(${workflowStatsDaily.category})`,
         executionCount: sql<number>`SUM(${workflowStatsDaily.executionCount})`,
+        executionUserName: sql<string | null>`MAX(${workflowStatsDaily.executionUserName})`,
+        executionUserId: sql<string | null>`MAX(${workflowStatsDaily.executionUserId})`,
       })
       .from(workflowStatsDaily)
       .where(
@@ -85,6 +87,8 @@ export async function GET(request: NextRequest) {
         category: stat.category,
         executionCount: stat.executionCount,
         executionMonth,
+        executionUserName: stat.executionUserName,
+        executionUserId: stat.executionUserId,
       }))
 
     logger.info(`[${requestId}] Prepared ${statsToInsert.length} monthly stats records to insert`)
@@ -101,6 +105,8 @@ export async function GET(request: NextRequest) {
           category: stat.category,
           executionCount: stat.executionCount,
           executionMonth: stat.executionMonth,
+          executionUserName: stat.executionUserName,
+          executionUserId: stat.executionUserId,
           createdAt: sql`now()`,
           updatedAt: sql`now()`,
         }))

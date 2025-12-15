@@ -83,6 +83,8 @@ async function processMonthStats(
       workflowAuthorUserName: sql<string | null>`MAX(${workflowStatsDaily.workflowAuthorUserName})`,
       category: sql<string | null>`MAX(${workflowStatsDaily.category})`,
       executionCount: sql<number>`SUM(${workflowStatsDaily.executionCount})`,
+      executionUserName: sql<string | null>`MAX(${workflowStatsDaily.executionUserName})`,
+      executionUserId: sql<string | null>`MAX(${workflowStatsDaily.executionUserId})`,
     })
     .from(workflowStatsDaily)
     .where(
@@ -118,6 +120,8 @@ async function processMonthStats(
       category: stat.category,
       executionCount: stat.executionCount,
       executionMonth,
+      executionUserName: stat.executionUserName,
+      executionUserId: stat.executionUserId,
     }))
 
   logger.info(
@@ -127,6 +131,13 @@ async function processMonthStats(
   // Insert stats into workflow_stats_monthly
   let insertedCount = 0
   if (statsToInsert.length > 0) {
+    // If we're not skipping existing records, clear any existing stats for this month first
+    if (!skipExisting) {
+      await db
+        .delete(workflowStatsMonthly)
+        .where(eq(workflowStatsMonthly.executionMonth, executionMonth))
+    }
+
     await db.insert(workflowStatsMonthly).values(
       statsToInsert.map((stat) => ({
         id: stat.id,
@@ -137,6 +148,8 @@ async function processMonthStats(
         category: stat.category,
         executionCount: stat.executionCount,
         executionMonth: stat.executionMonth,
+        executionUserName: stat.executionUserName,
+        executionUserId: stat.executionUserId,
         createdAt: sql`now()`,
         updatedAt: sql`now()`,
       }))

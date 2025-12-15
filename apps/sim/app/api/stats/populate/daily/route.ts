@@ -72,6 +72,7 @@ async function processDateStats(
     .select({
       workflowId: workflowExecutionLogs.workflowId,
       executionCount: count(workflowExecutionLogs.id),
+      userId: workflowExecutionLogs.userId,
     })
     .from(workflowExecutionLogs)
     .where(
@@ -81,7 +82,7 @@ async function processDateStats(
         lte(workflowExecutionLogs.startedAt, endDate)
       )
     )
-    .groupBy(workflowExecutionLogs.workflowId)
+    .groupBy(workflowExecutionLogs.workflowId, workflowExecutionLogs.userId)
 
   logger.info(
     `[${requestId}] Found ${executionStats.length} workflows with external chat executions for ${executionDate}`
@@ -98,7 +99,24 @@ async function processDateStats(
 
   // Extract all workflow IDs from executionStats
   const workflowIds = executionStats.map((stat) => stat.workflowId).filter(Boolean) as string[]
+  const executedUserIds = executionStats.map((stat) => stat.userId).filter(Boolean) as string[]
+  const executedUsers = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    })
+    .from(user)
+    .where(inArray(user.id, executedUserIds))
 
+  const executedUsersMap = new Map<string, { name: string | null }>()
+  for (const executedUser of executedUsers) {
+    if (executedUser.id) {
+      executedUsersMap.set(executedUser.id, {
+        name: executedUser.name,
+      })
+    }
+  }
   // Fetch all templates for these workflow IDs in one query
   const allDeployedChats = await db
     .select({
@@ -181,6 +199,8 @@ async function processDateStats(
     category: string | null
     executionCount: number
     workflowAuthorUserName: string | null
+    executionUserName: string | null
+    executionUserId: string | null
   }> = []
 
   // For each workflow, get template info and workflow info
@@ -204,11 +224,16 @@ async function processDateStats(
 
     // Get User from the map
     const authorUser = userMap.get(workflowRecord.userId)
-
     if (!authorUser) {
       logger.warn(
         `[${requestId}] User ${workflowRecord.userId} not found for workflow ${stat.workflowId}, skipping`
       )
+      continue
+    }
+
+    const executedUser = executedUsersMap.get(stat.userId as string)
+    if (!executedUser) {
+      logger.warn(`[${requestId}] User ${stat.userId} not found, skipping`)
       continue
     }
 
@@ -220,6 +245,8 @@ async function processDateStats(
       category: deployedChat.department,
       executionCount: stat.executionCount,
       workflowAuthorUserName: authorUser.name,
+      executionUserName: executedUser.name,
+      executionUserId: stat.userId,
     })
   }
 
@@ -240,6 +267,8 @@ async function processDateStats(
         category: stat.category,
         executionCount: stat.executionCount,
         executionDate,
+        executionUserName: stat.executionUserName,
+        executionUserId: stat.executionUserId,
         createdAt: new Date(),
         updatedAt: new Date(),
       }))
