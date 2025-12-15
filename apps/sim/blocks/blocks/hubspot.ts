@@ -32,6 +32,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Update Company', id: 'update_company' },
         { label: 'Search Companies', id: 'search_companies' },
         { label: 'Get Deals', id: 'get_deals' },
+        { label: 'List Campaigns', id: 'list_campaigns' },
+        { label: 'Get Campaign', id: 'get_campaign' },
+        { label: 'Get Campaign Spend', id: 'get_campaign_spend' },
+        { label: 'Get Campaign Metrics', id: 'get_campaign_metrics' },
+        { label: 'Get Campaign Revenue', id: 'get_campaign_revenue' },
+        { label: 'Get Campaign Contacts', id: 'get_campaign_contacts' },
+        { label: 'Get Campaign Budget Totals', id: 'get_campaign_budget_totals' },
+        { label: 'Get Campaign Budget Item', id: 'get_campaign_budget_item' },
+        { label: 'Get Campaign Assets', id: 'get_campaign_assets' },
       ],
       value: () => 'get_contacts',
     },
@@ -81,6 +90,53 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Optional - Leave empty to list all companies',
       condition: { field: 'operation', value: ['get_companies', 'update_company'] },
+    },
+    {
+      id: 'campaignGuid',
+      title: 'Campaign GUID',
+      type: 'short-input',
+      placeholder: 'Required for campaign operations (except listing)',
+      condition: {
+        field: 'operation',
+        value: [
+          'get_campaign',
+          'get_campaign_spend',
+          'get_campaign_metrics',
+          'get_campaign_revenue',
+          'get_campaign_contacts',
+          'get_campaign_budget_totals',
+          'get_campaign_budget_item',
+          'get_campaign_assets',
+        ],
+      },
+    },
+    {
+      id: 'spendId',
+      title: 'Spend ID',
+      type: 'short-input',
+      placeholder: 'Required to fetch a specific spend item',
+      condition: { field: 'operation', value: ['get_campaign_spend'] },
+    },
+    {
+      id: 'budgetId',
+      title: 'Budget ID',
+      type: 'short-input',
+      placeholder: 'Required to fetch a specific budget item',
+      condition: { field: 'operation', value: ['get_campaign_budget_item'] },
+    },
+    {
+      id: 'contactType',
+      title: 'Contact Type',
+      type: 'short-input',
+      placeholder: 'e.g., influenced, new-first-touch, new-last-touch',
+      condition: { field: 'operation', value: ['get_campaign_contacts'] },
+    },
+    {
+      id: 'assetType',
+      title: 'Asset Type',
+      type: 'short-input',
+      placeholder: 'Asset type to list (e.g., emails, pages)',
+      condition: { field: 'operation', value: ['get_campaign_assets'] },
     },
     {
       id: 'idProperty',
@@ -255,6 +311,7 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_deals',
           'search_contacts',
           'search_companies',
+          'list_campaigns',
         ],
       },
     },
@@ -271,6 +328,9 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_deals',
           'search_contacts',
           'search_companies',
+          'list_campaigns',
+          'get_campaign_contacts',
+          'get_campaign_assets',
         ],
       },
     },
@@ -777,6 +837,15 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_update_company',
       'hubspot_search_companies',
       'hubspot_list_deals',
+      'hubspot_list_campaigns',
+      'hubspot_get_campaign',
+      'hubspot_get_campaign_spend',
+      'hubspot_get_campaign_metrics',
+      'hubspot_get_campaign_revenue',
+      'hubspot_get_campaign_contacts',
+      'hubspot_get_campaign_budget_totals',
+      'hubspot_get_campaign_budget_item',
+      'hubspot_get_campaign_assets',
     ],
     config: {
       tool: (params) => {
@@ -801,6 +870,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_search_companies'
           case 'get_deals':
             return 'hubspot_list_deals'
+          case 'list_campaigns':
+            return 'hubspot_list_campaigns'
+          case 'get_campaign':
+            return 'hubspot_get_campaign'
+          case 'get_campaign_spend':
+            return 'hubspot_get_campaign_spend'
+          case 'get_campaign_metrics':
+            return 'hubspot_get_campaign_metrics'
+          case 'get_campaign_revenue':
+            return 'hubspot_get_campaign_revenue'
+          case 'get_campaign_contacts':
+            return 'hubspot_get_campaign_contacts'
+          case 'get_campaign_budget_totals':
+            return 'hubspot_get_campaign_budget_totals'
+          case 'get_campaign_budget_item':
+            return 'hubspot_get_campaign_budget_item'
+          case 'get_campaign_assets':
+            return 'hubspot_get_campaign_assets'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -862,6 +949,11 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     credential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
+    campaignGuid: { type: 'string', description: 'Campaign GUID for marketing operations' },
+    spendId: { type: 'string', description: 'Spend ID for campaign spend retrieval' },
+    budgetId: { type: 'string', description: 'Budget ID for campaign budget retrieval' },
+    contactType: { type: 'string', description: 'Contact type for campaign reports' },
+    assetType: { type: 'string', description: 'Asset type for campaign assets' },
     idProperty: { type: 'string', description: 'Property name to use as unique identifier' },
     propertiesToSet: { type: 'json', description: 'Properties to create/update (JSON object)' },
     properties: {
@@ -883,6 +975,14 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     companies: { type: 'json', description: 'Array of company objects' },
     company: { type: 'json', description: 'Single company object' },
     deals: { type: 'json', description: 'Array of deal objects' },
+    campaigns: { type: 'json', description: 'Array of campaign objects' },
+    campaign: { type: 'json', description: 'Single campaign object' },
+    spend: { type: 'json', description: 'Campaign spend item' },
+    metrics: { type: 'json', description: 'Campaign metrics' },
+    revenue: { type: 'json', description: 'Campaign revenue' },
+    budgetTotals: { type: 'json', description: 'Campaign budget totals' },
+    budgetItem: { type: 'json', description: 'Campaign budget item' },
+    assets: { type: 'json', description: 'Campaign assets' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },

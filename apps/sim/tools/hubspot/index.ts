@@ -10,3 +10,14 @@ export { hubspotSearchCompaniesTool } from './search_companies'
 export { hubspotSearchContactsTool } from './search_contacts'
 export { hubspotUpdateCompanyTool } from './update_company'
 export { hubspotUpdateContactTool } from './update_contact'
+export {
+  hubspotGetCampaignAssetsTool,
+  hubspotGetCampaignBudgetItemTool,
+  hubspotGetCampaignBudgetTotalsTool,
+  hubspotGetCampaignContactsTool,
+  hubspotGetCampaignMetricsTool,
+  hubspotGetCampaignRevenueTool,
+  hubspotGetCampaignSpendTool,
+  hubspotGetCampaignTool,
+  hubspotListCampaignsTool,
+} from './campaigns'

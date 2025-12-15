@@ -542,7 +542,7 @@ export function Chat() {
               } else if (contentChunk) {
                 accumulatedContent += contentChunk
                 appendMessageContent(responseMessageId, contentChunk)
-                await new Promise((resolve) => setTimeout(resolve, 20))
+                await new Promise((resolve) => setTimeout(resolve, 5))
               }
             } catch (e) {
               logger.error('Error parsing stream data:', e)
