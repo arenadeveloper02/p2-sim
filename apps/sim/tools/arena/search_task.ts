@@ -9,6 +9,7 @@ import {
   getPastDate,
   getToday,
   getTomorrow,
+  getYesterday,
 } from '@/lib/arena-utils/arena-date-utils'
 import type { SearchTaskQueryParams, SearchTaskResponse } from '@/tools/arena/types'
 import type { ToolConfig } from '@/tools/types'
@@ -119,16 +120,16 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         url += `&fromDate=${startDate}`
         url += `&toDate=${endDate}`
       }
+      if (params['search-task-due-date'] === 'Yesterday') {
+        const { startDate, endDate } = getYesterday()
+        url += `&fromDate=${startDate}`
+        url += `&toDate=${endDate}`
+      }
       if (params['search-task-due-date'] === 'Tomorrow') {
         const { startDate, endDate } = getTomorrow()
         url += `&fromDate=${startDate}`
         url += `&toDate=${endDate}`
       }
-      //  if(params['search-task-due-date'] === 'yesterday') {
-      //     const { startDate, endDate } = getYesterday()
-      //     url += `&fromDate=${startDate}`
-      //     url += `&toDate=${endDate}`
-      //   }
       if (params['search-task-due-date'] === 'This Week') {
         const { startDate, endDate } = getCurrentWeek()
         url += `&fromDate=${startDate}`

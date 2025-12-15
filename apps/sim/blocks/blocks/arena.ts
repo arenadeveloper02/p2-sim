@@ -187,6 +187,7 @@ export const ArenaBlock: BlockConfig = {
       placeholder: 'Enter due date',
       dependsOn: ['operation'],
       options: [
+        { label: 'Yesterday', id: 'Yesterday' },
         { label: 'Today', id: 'Today' },
         { label: 'Tomorrow', id: 'Tomorrow' },
         { label: 'This Week', id: 'This Week' },
