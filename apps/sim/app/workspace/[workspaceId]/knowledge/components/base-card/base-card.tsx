@@ -67,7 +67,7 @@ function formatAbsoluteDate(dateString: string): string {
  */
 export function BaseCardSkeleton() {
   return (
-    <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-elevated)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
+    <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
       <div className='flex items-center justify-between gap-[8px]'>
         <div className='h-[17px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-9)]' />
         <div className='h-[22px] w-[90px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
@@ -122,7 +122,7 @@ export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCa
 
   return (
     <Link href={href} prefetch={true} className='h-full'>
-      <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-elevated)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
+      <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
         <div className='flex items-center justify-between gap-[8px]'>
           <h3 className='min-w-0 flex-1 truncate text-[14px] text-[var(--text-primary)]'>
             {title}

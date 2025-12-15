@@ -207,12 +207,12 @@ export function Sidebar() {
         icon: Database,
         href: `/workspace/${workspaceId}/knowledge`,
       },
-      {
-        id: 'help',
-        label: 'Help',
-        icon: HelpCircle,
-        onClick: () => setIsHelpModalOpen(true),
-      },
+      // {
+      //   id: 'help',
+      //   label: 'Help',
+      //   icon: HelpCircle,
+      //   onClick: () => setIsHelpModalOpen(true),
+      // },
       {
         id: 'settings',
         label: 'Settings',
