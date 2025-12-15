@@ -1,6 +1,14 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ToolConfig } from '@/tools/types'
 
+export type {
+  AccountReportRow,
+  AccountReportSummary,
+  FacebookAdsAccountReportOutput,
+  FacebookAdsAccountReportResponse,
+} from './account-report'
+export { facebookAdsAccountReportTool } from './account-report'
+
 const logger = createLogger('FacebookAdsQuery')
 
 export const facebookAdsQueryTool: ToolConfig = {

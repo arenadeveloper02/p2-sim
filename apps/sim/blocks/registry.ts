@@ -23,6 +23,7 @@ import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
+import { FacebookAccountReportBlock } from '@/blocks/blocks/facebook_account_report'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
@@ -168,6 +169,7 @@ export const registry: Record<string, BlockConfig> = {
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
+  facebook_account_report: FacebookAccountReportBlock,
   file: FileBlock,
   figma: FigmaBlock,
   firecrawl: FirecrawlBlock,

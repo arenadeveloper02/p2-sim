@@ -183,7 +183,7 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
-import { facebookAdsQueryTool } from '@/tools/facebook_ads'
+import { facebookAdsAccountReportTool, facebookAdsQueryTool } from '@/tools/facebook_ads'
 import {
   figmaCreateTool,
   figmaDeleteCommentTool,
@@ -1754,6 +1754,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
   facebook_ads_query: facebookAdsQueryTool,
+  facebook_ads_account_report: facebookAdsAccountReportTool,
   google_slides_read: googleSlidesReadTool,
   google_slides_write: googleSlidesWriteTool,
   google_slides_create: googleSlidesCreateTool,
