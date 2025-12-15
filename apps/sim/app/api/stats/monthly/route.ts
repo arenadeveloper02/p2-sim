@@ -34,25 +34,33 @@ export async function GET(request: NextRequest) {
     const lastDayOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
     lastDayOfLastMonth.setHours(23, 59, 59, 999)
 
+    // Format dates as YYYY-MM-DD for comparison with execution_date (DATE column)
+    const startExecutionDate = `${firstDayOfLastMonth.getFullYear()}-${String(firstDayOfLastMonth.getMonth() + 1).padStart(2, '0')}-${String(firstDayOfLastMonth.getDate()).padStart(2, '0')}`
+    const endExecutionDate = `${lastDayOfLastMonth.getFullYear()}-${String(lastDayOfLastMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDayOfLastMonth.getDate()).padStart(2, '0')}`
+
     logger.info(
-      `[${requestId}] Fetching daily stats from ${firstDayOfLastMonth.toISOString()} to ${lastDayOfLastMonth.toISOString()}`
+      `[${requestId}] Fetching daily stats with execution_date from ${startExecutionDate} to ${endExecutionDate}`
     )
 
     // Fetch and aggregate workflow_stats_daily records from last month
     // Group by workflow_id and sum executionCount
+    // Filter by execution_date column instead of createdAt
     const monthlyStats = await db
       .select({
         workflowId: workflowStatsDaily.workflowId,
         workflowName: sql<string | null>`MAX(${workflowStatsDaily.workflowName})`,
         workflowAuthorId: sql<string | null>`MAX(${workflowStatsDaily.workflowAuthorId})`,
+        workflowAuthorUserName: sql<
+          string | null
+        >`MAX(${workflowStatsDaily.workflowAuthorUserName})`,
         category: sql<string | null>`MAX(${workflowStatsDaily.category})`,
         executionCount: sql<number>`SUM(${workflowStatsDaily.executionCount})`,
       })
       .from(workflowStatsDaily)
       .where(
         and(
-          gte(workflowStatsDaily.createdAt, firstDayOfLastMonth),
-          lte(workflowStatsDaily.createdAt, lastDayOfLastMonth)
+          gte(workflowStatsDaily.executionDate, startExecutionDate),
+          lte(workflowStatsDaily.executionDate, endExecutionDate)
         )
       )
       .groupBy(workflowStatsDaily.workflowId)
@@ -60,6 +68,10 @@ export async function GET(request: NextRequest) {
     logger.info(
       `[${requestId}] Found ${monthlyStats.length} workflows with daily stats to aggregate`
     )
+
+    // Calculate execution month (YYYYMM format, e.g., 202501 for January 2025)
+    const executionMonth =
+      firstDayOfLastMonth.getFullYear() * 100 + (firstDayOfLastMonth.getMonth() + 1)
 
     // Prepare stats to insert into workflow_stats_monthly
     const statsToInsert = monthlyStats
@@ -69,8 +81,10 @@ export async function GET(request: NextRequest) {
         workflowId: stat.workflowId,
         workflowName: stat.workflowName,
         workflowAuthorId: stat.workflowAuthorId,
+        workflowAuthorUserName: stat.workflowAuthorUserName,
         category: stat.category,
         executionCount: stat.executionCount,
+        executionMonth,
       }))
 
     logger.info(`[${requestId}] Prepared ${statsToInsert.length} monthly stats records to insert`)
@@ -83,8 +97,10 @@ export async function GET(request: NextRequest) {
           workflowId: stat.workflowId,
           workflowName: stat.workflowName,
           workflowAuthorId: stat.workflowAuthorId,
+          workflowAuthorUserName: stat.workflowAuthorUserName,
           category: stat.category,
           executionCount: stat.executionCount,
+          executionMonth: stat.executionMonth,
           createdAt: sql`now()`,
           updatedAt: sql`now()`,
         }))

@@ -1,5 +1,5 @@
-import { db, templates, workflow, workflowExecutionLogs, workflowStatsDaily } from '@sim/db'
-import { and, count, eq, gte, lte, sql } from 'drizzle-orm'
+import { chat, db, user, workflow, workflowExecutionLogs, workflowStatsDaily } from '@sim/db'
+import { and, count, eq, gte, inArray, lte } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   try {
     // Calculate yesterday's date range (UTC to match database timestamps)
     const yesterday = new Date()
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 7)
     yesterday.setUTCHours(0, 0, 0, 0)
 
     const endDate = new Date(yesterday)
@@ -77,6 +77,39 @@ export async function GET(request: NextRequest) {
       `[${requestId}] Found ${executionStats.length} workflows with external chat executions`
     )
 
+    // Extract all workflow IDs from executionStats
+    const workflowIds = executionStats.map((stat) => stat.workflowId).filter(Boolean) as string[]
+
+    // Fetch all templates for these workflow IDs in one query
+    const allDeployedChats = await db
+      .select({
+        workflowId: chat.workflowId,
+        name: chat.title,
+        details: chat.remarks,
+        department: chat.department,
+      })
+      .from(chat)
+      .where(inArray(chat.workflowId, workflowIds))
+
+    // Create a Map<workflowId, template> for quick lookup
+    const deployedChatMap = new Map<
+      string,
+      { name: string; details: any; department: string | null }
+    >()
+    for (const deployedChat of allDeployedChats) {
+      if (deployedChat.workflowId) {
+        deployedChatMap.set(deployedChat.workflowId, {
+          name: deployedChat.name,
+          details: deployedChat.details,
+          department: deployedChat.department,
+        })
+      }
+    }
+
+    logger.info(
+      `[${requestId}] Fetched ${allDeployedChats.length} templates for ${workflowIds.length} workflows`
+    )
+
     const statsToInsert: Array<{
       id: string
       workflowId: string | null
@@ -84,22 +117,16 @@ export async function GET(request: NextRequest) {
       workflowAuthorId: string | null
       category: string | null
       executionCount: number
+      workflowAuthorUserName: string | null
     }> = []
 
     // For each workflow, get template info and workflow info
     for (const stat of executionStats) {
-      // Check if template exists for this workflow
-      const [template] = await db
-        .select({
-          name: templates.name,
-          details: templates.details,
-        })
-        .from(templates)
-        .where(eq(templates.workflowId, stat.workflowId))
-        .limit(1)
+      // Fetch template from the map
+      const deployedChat = deployedChatMap.get(stat.workflowId)
 
       // If template doesn't exist, skip this workflow
-      if (!template) {
+      if (!deployedChat) {
         logger.debug(`[${requestId}] Skipping workflow ${stat.workflowId} - no template found`)
         continue
       }
@@ -118,19 +145,30 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      // Extract category from template details (JSONB field)
-      const category =
-        template.details && typeof template.details === 'object' && 'category' in template.details
-          ? ((template.details as { category?: string }).category ?? null)
-          : null
+      // Get User from workflow record
+      const [authorUser] = await db
+        .select({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+        })
+        .from(user)
+        .where(eq(user.id, workflowRecord.userId))
+        .limit(1)
+
+      if (!authorUser) {
+        logger.warn(`[${requestId}] Workflow ${stat.workflowId} not found, skipping`)
+        continue
+      }
 
       statsToInsert.push({
         id: crypto.randomUUID(),
         workflowId: stat.workflowId,
-        workflowName: template.name,
+        workflowName: deployedChat.name,
         workflowAuthorId: workflowRecord.userId,
-        category,
+        category: deployedChat.department,
         executionCount: stat.executionCount,
+        workflowAuthorUserName: authorUser.userName,
       })
     }
 
@@ -138,16 +176,21 @@ export async function GET(request: NextRequest) {
 
     // Insert stats into workflow_stats_daily
     if (statsToInsert.length > 0) {
+      // Format yesterday date as YYYY-MM-DD for PostgreSQL DATE type
+      const executionDate = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterday.getUTCDate()).padStart(2, '0')}`
+
       await db.insert(workflowStatsDaily).values(
         statsToInsert.map((stat) => ({
           id: stat.id,
           workflowId: stat.workflowId,
           workflowName: stat.workflowName,
           workflowAuthorId: stat.workflowAuthorId,
+          workflowAuthorUserName: stat.workflowAuthorUserName,
           category: stat.category,
           executionCount: stat.executionCount,
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
+          executionDate,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         }))
       )
 
