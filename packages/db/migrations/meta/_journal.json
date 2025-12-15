@@ -827,6 +827,34 @@
       "when": 1765231535125,
       "tag": "0118_tiresome_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1765271011445,
+      "tag": "0119_far_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1765339999291,
+      "tag": "0120_illegal_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1765434895472,
+      "tag": "0121_new_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1765587157593,
+      "tag": "0122_pale_absorbing_man",
+      "breakpoints": true
     }
   ]
 }

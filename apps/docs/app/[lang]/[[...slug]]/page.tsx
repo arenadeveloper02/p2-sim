@@ -6,9 +6,10 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageNavigationArrows } from '@/components/docs-layout/page-navigation-arrows'
 import { TOCFooter } from '@/components/docs-layout/toc-footer'
+import { LLMCopyButton } from '@/components/page-actions'
 import { StructuredData } from '@/components/structured-data'
 import { CodeBlock } from '@/components/ui/code-block'
-import { CopyPageButton } from '@/components/ui/copy-page-button'
+import { Heading } from '@/components/ui/heading'
 import { source } from '@/lib/source'
 
 export default async function Page(props: { params: Promise<{ slug?: string[]; lang: string }> }) {
@@ -202,7 +203,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
         <div className='relative mt-6 sm:mt-0'>
           <div className='absolute top-1 right-0 flex items-center gap-2'>
             <div className='hidden sm:flex'>
-              <CopyPageButton markdownUrl={`${page.url}.mdx`} />
+              <LLMCopyButton markdownUrl={`${page.url}.mdx`} />
             </div>
             <PageNavigationArrows previous={neighbours?.previous} next={neighbours?.next} />
           </div>
@@ -214,6 +215,12 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
             components={{
               ...defaultMdxComponents,
               CodeBlock,
+              h1: (props) => <Heading as='h1' {...props} />,
+              h2: (props) => <Heading as='h2' {...props} />,
+              h3: (props) => <Heading as='h3' {...props} />,
+              h4: (props) => <Heading as='h4' {...props} />,
+              h5: (props) => <Heading as='h5' {...props} />,
+              h6: (props) => <Heading as='h6' {...props} />,
             }}
           />
         </DocsBody>
@@ -235,6 +242,9 @@ export async function generateMetadata(props: {
 
   const baseUrl = 'https://docs.sim.ai'
   const fullUrl = `${baseUrl}${page.url}`
+
+  const description = page.data.description || ''
+  const ogImageUrl = `${baseUrl}/api/og?title=${encodeURIComponent(page.data.title)}&category=DOCUMENTATION${description ? `&description=${encodeURIComponent(description)}` : ''}`
 
   return {
     title: page.data.title,
@@ -265,12 +275,23 @@ export async function generateMetadata(props: {
       alternateLocale: ['en', 'es', 'fr', 'de', 'ja', 'zh']
         .filter((lang) => lang !== params.lang)
         .map((lang) => (lang === 'en' ? 'en_US' : `${lang}_${lang.toUpperCase()}`)),
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: page.data.title,
+        },
+      ],
     },
     twitter: {
-      card: 'summary',
+      card: 'summary_large_image',
       title: page.data.title,
       description:
         page.data.description || 'Sim visual workflow builder for AI applications documentation',
+      images: [ogImageUrl],
+      creator: '@simdotai',
+      site: '@simdotai',
     },
     robots: {
       index: true,
