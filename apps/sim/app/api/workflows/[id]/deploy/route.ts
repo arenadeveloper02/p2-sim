@@ -1,4 +1,4 @@
-import { db, workflow, workflowDeploymentVersion } from '@sim/db'
+import { chat, db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -156,15 +156,20 @@ export async function DELETE(
     }
 
     await db.transaction(async (tx) => {
+      // Mark all deployment versions for this workflow as inactive
       await tx
         .update(workflowDeploymentVersion)
         .set({ isActive: false })
         .where(eq(workflowDeploymentVersion.workflowId, id))
 
+      // Mark the workflow itself as undeployed
       await tx
         .update(workflow)
         .set({ isDeployed: false, deployedAt: null })
         .where(eq(workflow.id, id))
+
+      // Also deactivate any chat deployments linked to this workflow
+      await tx.update(chat).set({ isActive: false }).where(eq(chat.workflowId, id))
     })
 
     logger.info(`[${requestId}] Workflow undeployed successfully: ${id}`)
