@@ -1,3 +1,14 @@
+export {
+  hubspotGetCampaignAssetsTool,
+  hubspotGetCampaignBudgetItemTool,
+  hubspotGetCampaignBudgetTotalsTool,
+  hubspotGetCampaignContactsTool,
+  hubspotGetCampaignMetricsTool,
+  hubspotGetCampaignRevenueTool,
+  hubspotGetCampaignSpendTool,
+  hubspotGetCampaignTool,
+  hubspotListCampaignsTool,
+} from './campaigns'
 export { hubspotCreateCompanyTool } from './create_company'
 export { hubspotCreateContactTool } from './create_contact'
 export { hubspotGetCompanyTool } from './get_company'
