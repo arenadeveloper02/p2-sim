@@ -13,6 +13,8 @@ import {
   handleTagAndVectorSearch,
   handleTagOnlySearch,
   handleVectorOnlySearch,
+  type RerankConfig,
+  rerankSearchResults,
   type SearchResult,
 } from '@/app/api/knowledge/search/utils'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
@@ -44,6 +46,13 @@ const VectorSearchSchema = z
       .optional()
       .nullable()
       .transform((val) => val || undefined), // Allow dynamic filter keys (display names)
+    rerank: z
+      .object({
+        enabled: z.boolean().optional().default(true),
+        model: z.string().optional(),
+        topN: z.number().min(1).max(50).optional(),
+      })
+      .optional(),
   })
   .refine(
     (data) => {
@@ -243,6 +252,14 @@ export async function POST(request: NextRequest) {
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
       const documentNameMap = await getDocumentNamesByIds(documentIds)
+
+      const rerankConfig: RerankConfig = {
+        ...(validatedData.rerank || {}),
+        requestId,
+      }
+      if (hasQuery && (rerankConfig.enabled ?? true)) {
+        results = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+      }
 
       return NextResponse.json({
         success: true,

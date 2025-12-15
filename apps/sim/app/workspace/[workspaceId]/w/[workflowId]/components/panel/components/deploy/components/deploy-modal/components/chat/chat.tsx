@@ -48,6 +48,7 @@ interface ChatDeployProps {
   onDeploymentComplete?: () => void
   onDeployed?: () => void
   onVersionActivated?: () => void
+  chatAlreadyExists?: boolean | any
 }
 
 export interface ExistingChat {
@@ -115,6 +116,7 @@ export function ChatDeploy({
   onDeploymentComplete,
   onDeployed,
   onVersionActivated,
+  chatAlreadyExists,
 }: ChatDeployProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -271,9 +273,9 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      // if (chatUrl) {
-      //   window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
-      // }
+      if (chatUrl && !chatAlreadyExists) {
+        window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
+      }
 
       await onRefetchChat()
       setHasInitializedForm(false)

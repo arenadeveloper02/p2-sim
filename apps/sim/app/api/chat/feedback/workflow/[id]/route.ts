@@ -8,33 +8,66 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 const logger = createLogger('ChatFeedbackByWorkflowAPI')
 
 /**
- * Extract user prompt and response from executionData
+ * Extract user prompt and response from executionData, initialInput, and finalChatOutput
+ * Priority: database columns (initialInput/finalChatOutput) > traceSpans extraction
  */
-function extractChatData(executionData: any): {
+function extractChatData(
+  executionData: any,
+  initialInput: string | null,
+  finalChatOutput: string | null
+): {
   userPrompt: string | null
   response: string | null
 } {
   let userPrompt = null
   let response = null
 
-  if (executionData?.traceSpans && Array.isArray(executionData.traceSpans)) {
-    // Look for workflow execution span
-    const workflowSpan = executionData.traceSpans.find((span: any) => span.type === 'workflow')
-    if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
-      // Look for agent spans in children
-      const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
-      if (agentSpans.length > 0) {
-        const agentSpan = agentSpans[0] // Get first agent span
-        const rawUserPrompt = agentSpan.input?.userPrompt || null
+  // Get userPrompt from initialInput column (most reliable source)
+  if (initialInput && typeof initialInput === 'string' && initialInput.trim().length > 0) {
+    userPrompt = initialInput.trim()
+  }
 
-        // Strip "user input: " prefix if present
-        if (rawUserPrompt && typeof rawUserPrompt === 'string') {
-          userPrompt = rawUserPrompt.replace(/^user input:\s*/i, '').trim()
-        } else {
-          userPrompt = rawUserPrompt
+  // Get response from finalChatOutput column (most reliable source)
+  if (finalChatOutput && typeof finalChatOutput === 'string' && finalChatOutput.trim().length > 0) {
+    response = finalChatOutput.trim()
+  }
+
+  // Fallback: extract from traceSpans if database columns are not available
+  if (executionData?.traceSpans) {
+    let traceSpansArray: any[] = []
+
+    // Handle both traceSpans formats: object with spans property or direct array
+    if (executionData.traceSpans.spans && Array.isArray(executionData.traceSpans.spans)) {
+      traceSpansArray = executionData.traceSpans.spans
+    } else if (Array.isArray(executionData.traceSpans)) {
+      traceSpansArray = executionData.traceSpans
+    }
+
+    if (traceSpansArray.length > 0) {
+      // Find workflow execution span in traceSpans
+      const workflowSpan = traceSpansArray.find((span: any) => span.type === 'workflow')
+      if (workflowSpan?.children && Array.isArray(workflowSpan.children)) {
+        // Filter agent spans from workflow children
+        const agentSpans = workflowSpan.children.filter((child: any) => child.type === 'agent')
+        if (agentSpans.length > 0) {
+          const agentSpan = agentSpans[0] // Use first agent span
+
+          // Extract userPrompt from traceSpans only if not already set from initialInput
+          if (!userPrompt) {
+            const rawUserPrompt = agentSpan.input?.userPrompt || null
+            // Remove "user input: " prefix if present
+            if (rawUserPrompt && typeof rawUserPrompt === 'string') {
+              userPrompt = rawUserPrompt.replace(/^user input:\s*/i, '').trim()
+            } else if (rawUserPrompt) {
+              userPrompt = rawUserPrompt
+            }
+          }
+
+          // Extract response from traceSpans only if not already set from finalChatOutput
+          if (!response) {
+            response = agentSpan.output?.content || null
+          }
         }
-
-        response = agentSpan.output?.content || null
       }
     }
   }
@@ -53,7 +86,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return createErrorResponse('workflowId is required', 400)
     }
 
-    // Pagination params
+    // Parse pagination parameters from query string with validation
     const { searchParams } = new URL(request.url)
     const pageSizeParam = Number(searchParams.get('pageSize'))
     const pageParam = Number(searchParams.get('page'))
@@ -61,10 +94,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const pageNumber = Number.isFinite(pageParam) ? Math.max(pageParam, 1) : 1
     const offset = (pageNumber - 1) * pageSize
 
-    // Fetch author email from chat table (same approach as agents route)
+    // Fetch author email from chat table for workflow context
     let authorEmail: string | null = null
 
-    // Get chat record for the workflow
+    // Get chat record to find the user who created the chat
     const chatRecord = await db
       .select({
         userId: chat.userId,
@@ -74,7 +107,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .limit(1)
 
     if (chatRecord.length > 0 && chatRecord[0].userId) {
-      // Get email from user table using chat.userId
+      // Get author email from user table using chat userId
       const author = await db
         .select({ email: user.email })
         .from(user)
@@ -86,7 +119,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    // Get total count of feedback records for pagination (only where liked is false)
+    // Get total count of negative feedback records (liked = false) for pagination
     const totalCountResult = await db
       .select({ count: count() })
       .from(chatPromptFeedback)
@@ -97,7 +130,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const totalCount = totalCountResult[0]?.count || 0
     const totalPages = Math.ceil(totalCount / pageSize)
 
-    // Fetch all feedback for the workflow, ordered by creation date descending, with user email and workflow name
+    // Fetch feedback records with user email and workflow name via joins
     const feedbackRecords = await db
       .select({
         id: chatPromptFeedback.id,
@@ -124,28 +157,40 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .limit(pageSize)
       .offset(offset)
 
-    // Fetch execution logs for all executionIds
+    // Fetch execution logs to extract userPrompt and response data
     const executionIds = feedbackRecords.map((f) => f.executionId).filter(Boolean)
     const executionLogsMap = new Map()
 
     if (executionIds.length > 0) {
+      // Get execution data, initialInput, and finalChatOutput for each executionId
       const logs = await db
         .select({
           executionId: workflowExecutionLogs.executionId,
           executionData: workflowExecutionLogs.executionData,
+          initialInput: workflowExecutionLogs.initialInput,
+          finalChatOutput: workflowExecutionLogs.finalChatOutput,
         })
         .from(workflowExecutionLogs)
         .where(inArray(workflowExecutionLogs.executionId, executionIds))
 
+      // Map execution logs by executionId for quick lookup
       logs.forEach((log) => {
-        executionLogsMap.set(log.executionId, log.executionData)
+        executionLogsMap.set(log.executionId, {
+          executionData: log.executionData,
+          initialInput: log.initialInput,
+          finalChatOutput: log.finalChatOutput,
+        })
       })
     }
 
-    // Build enriched feedback response
+    // Build enriched feedback response with extracted userPrompt and response
     const feedback = feedbackRecords.map((record) => {
-      const executionData = executionLogsMap.get(record.executionId)
-      const { userPrompt, response } = extractChatData(executionData)
+      const logData = executionLogsMap.get(record.executionId)
+      const executionData = logData?.executionData
+      const initialInput = logData?.initialInput || null
+      const finalChatOutput = logData?.finalChatOutput || null
+      // Extract userPrompt and response using database columns first, then traceSpans fallback
+      const { userPrompt, response } = extractChatData(executionData, initialInput, finalChatOutput)
 
       return {
         id: record.id,
