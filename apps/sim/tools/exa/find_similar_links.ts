@@ -1,5 +1,5 @@
 import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaFindSimilarLinksParams, ExaFindSimilarLinksResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -50,13 +50,6 @@ export const findSimilarLinksTool: ToolConfig<
       visibility: 'user-only',
       description: 'Exclude the source domain from results (default: false)',
     },
-    category: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description:
-        'Filter by category: company, research_paper, news_article, pdf, github, tweet, movie, song, personal_site',
-    },
     highlights: {
       type: 'boolean',
       required: false,
@@ -73,7 +66,8 @@ export const findSimilarLinksTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Live crawling mode: always, fallback, or never (default: never)',
+      description:
+        'Live crawling mode: never (default), fallback, always, or preferred (always try livecrawl, fall back to cache if fails)',
     },
     apiKey: {
       type: 'string',
@@ -114,9 +108,6 @@ export const findSimilarLinksTool: ToolConfig<
       if (params.excludeSourceDomain !== undefined) {
         body.excludeSourceDomain = params.excludeSourceDomain
       }
-
-      // Category filtering
-      if (params.category) body.category = params.category
 
       // Content options - build contents object
       const contents: Record<string, any> = {}

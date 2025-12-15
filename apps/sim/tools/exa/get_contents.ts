@@ -1,5 +1,5 @@
 import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaGetContentsParams, ExaGetContentsResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -53,7 +53,8 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Live crawling mode: always, fallback, or never (default: never)',
+      description:
+        'Live crawling mode: never (default), fallback, always, or preferred (always try livecrawl, fall back to cache if fails)',
     },
     apiKey: {
       type: 'string',

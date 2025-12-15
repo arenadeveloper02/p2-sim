@@ -1,5 +1,5 @@
 import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -36,16 +36,17 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
         query: params.query,
       }
 
-      // Add all optional parameters if provided
-      if (params.limit !== undefined) body.limit = Number(params.limit)
-      if (params.sources !== undefined) body.sources = params.sources
-      if (params.categories !== undefined) body.categories = params.categories
-      if (params.tbs !== undefined) body.tbs = params.tbs
-      if (params.location !== undefined) body.location = params.location
-      if (params.country !== undefined) body.country = params.country
-      if (params.timeout !== undefined) body.timeout = Number(params.timeout)
-      if (params.ignoreInvalidURLs !== undefined) body.ignoreInvalidURLs = params.ignoreInvalidURLs
-      if (params.scrapeOptions !== undefined) body.scrapeOptions = params.scrapeOptions
+      // Add optional parameters if provided (truthy check filters empty strings, null, undefined)
+      if (params.limit) body.limit = Number(params.limit)
+      if (params.sources) body.sources = params.sources
+      if (params.categories) body.categories = params.categories
+      if (params.tbs) body.tbs = params.tbs
+      if (params.location) body.location = params.location
+      if (params.country) body.country = params.country
+      if (params.timeout) body.timeout = Number(params.timeout)
+      if (typeof params.ignoreInvalidURLs === 'boolean')
+        body.ignoreInvalidURLs = params.ignoreInvalidURLs
+      if (params.scrapeOptions) body.scrapeOptions = params.scrapeOptions
 
       return body
     },
@@ -58,7 +59,6 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       success: true,
       output: {
         data: data.data,
-        warning: data.warning,
       },
     }
   },
@@ -82,6 +82,5 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
         },
       },
     },
-    warning: { type: 'string', description: 'Warning messages from the search operation' },
   },
 }

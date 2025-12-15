@@ -1,5 +1,5 @@
 import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import type { MapParams, MapResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -79,14 +79,15 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
         url: params.url,
       }
 
-      if (params.search != null) body.search = params.search
-      if (params.sitemap != null) body.sitemap = params.sitemap
-      if (params.includeSubdomains != null) body.includeSubdomains = params.includeSubdomains
-      if (params.ignoreQueryParameters != null)
+      if (params.search) body.search = params.search
+      if (params.sitemap) body.sitemap = params.sitemap
+      if (typeof params.includeSubdomains === 'boolean')
+        body.includeSubdomains = params.includeSubdomains
+      if (typeof params.ignoreQueryParameters === 'boolean')
         body.ignoreQueryParameters = params.ignoreQueryParameters
-      if (params.limit !== undefined) body.limit = Number(params.limit)
-      if (params.timeout !== undefined) body.timeout = Number(params.timeout)
-      if (params.location !== undefined) body.location = params.location
+      if (params.limit) body.limit = Number(params.limit)
+      if (params.timeout) body.timeout = Number(params.timeout)
+      if (params.location) body.location = params.location
 
       return body
     },

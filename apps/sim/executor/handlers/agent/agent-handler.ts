@@ -61,7 +61,6 @@ export class AgentBlockHandler implements BlockHandler {
       inputs
     )
 
-    // Auto-persist response to memory if configured
     await this.persistResponseToMemory(ctx, inputs, result, block.id)
 
     return result
@@ -119,56 +118,85 @@ export class AgentBlockHandler implements BlockHandler {
   private async formatTools(ctx: ExecutionContext, inputTools: ToolInput[]): Promise<any[]> {
     if (!Array.isArray(inputTools)) return []
 
-    const tools = await Promise.all(
-      inputTools
-        .filter((tool) => {
-          const usageControl = tool.usageControl || 'auto'
-          return usageControl !== 'none'
-        })
-        .map(async (tool) => {
-          try {
-            if (tool.type === 'custom-tool' && tool.schema) {
-              return await this.createCustomTool(ctx, tool)
-            }
-            if (tool.type === 'mcp') {
-              return await this.createMcpTool(ctx, tool)
-            }
-            return this.transformBlockTool(ctx, tool)
-          } catch (error) {
-            logger.error(`[AgentHandler] Error creating tool:`, { tool, error })
-            return null
+    const filtered = inputTools.filter((tool) => {
+      const usageControl = tool.usageControl || 'auto'
+      return usageControl !== 'none'
+    })
+
+    const mcpTools: ToolInput[] = []
+    const otherTools: ToolInput[] = []
+
+    for (const tool of filtered) {
+      if (tool.type === 'mcp') {
+        mcpTools.push(tool)
+      } else {
+        otherTools.push(tool)
+      }
+    }
+
+    const otherResults = await Promise.all(
+      otherTools.map(async (tool) => {
+        try {
+          if (tool.type === 'custom-tool' && (tool.schema || tool.customToolId)) {
+            return await this.createCustomTool(ctx, tool)
           }
-        })
+          return this.transformBlockTool(ctx, tool)
+        } catch (error) {
+          logger.error(`[AgentHandler] Error creating tool:`, { tool, error })
+          return null
+        }
+      })
     )
 
-    const filteredTools = tools.filter(
+    const mcpResults = await this.processMcpToolsBatched(ctx, mcpTools)
+
+    const allTools = [...otherResults, ...mcpResults]
+    return allTools.filter(
       (tool): tool is NonNullable<typeof tool> => tool !== null && tool !== undefined
     )
-
-    return filteredTools
   }
 
   private async createCustomTool(ctx: ExecutionContext, tool: ToolInput): Promise<any> {
     const userProvidedParams = tool.params || {}
 
+    let schema = tool.schema
+    let code = tool.code
+    let title = tool.title
+
+    if (tool.customToolId && !schema) {
+      const resolved = await this.fetchCustomToolById(ctx, tool.customToolId)
+      if (!resolved) {
+        logger.error(`Custom tool not found: ${tool.customToolId}`)
+        return null
+      }
+      schema = resolved.schema
+      code = resolved.code
+      title = resolved.title
+    }
+
+    if (!schema?.function) {
+      logger.error('Custom tool missing schema:', { customToolId: tool.customToolId, title })
+      return null
+    }
+
     const { filterSchemaForLLM, mergeToolParameters } = await import('@/tools/params')
 
-    const filteredSchema = filterSchemaForLLM(tool.schema.function.parameters, userProvidedParams)
+    const filteredSchema = filterSchemaForLLM(schema.function.parameters, userProvidedParams)
 
-    const toolId = `${AGENT.CUSTOM_TOOL_PREFIX}${tool.title}`
+    const toolId = `${AGENT.CUSTOM_TOOL_PREFIX}${title}`
     const base: any = {
       id: toolId,
-      name: tool.schema.function.name,
-      description: tool.schema.function.description || '',
+      name: schema.function.name,
+      description: schema.function.description || '',
       params: userProvidedParams,
       parameters: {
         ...filteredSchema,
-        type: tool.schema.function.parameters.type,
+        type: schema.function.parameters.type,
       },
       usageControl: tool.usageControl || 'auto',
     }
 
-    if (tool.code) {
+    if (code) {
       base.executeFunction = async (callParams: Record<string, any>) => {
         const mergedParams = mergeToolParameters(userProvidedParams, callParams)
 
@@ -177,7 +205,7 @@ export class AgentBlockHandler implements BlockHandler {
         const result = await executeTool(
           'function_execute',
           {
-            code: tool.code,
+            code,
             ...mergedParams,
             timeout: tool.timeout ?? AGENT.DEFAULT_FUNCTION_TIMEOUT,
             envVars: ctx.environmentVariables || {},
@@ -205,104 +233,370 @@ export class AgentBlockHandler implements BlockHandler {
     return base
   }
 
-  private async createMcpTool(ctx: ExecutionContext, tool: ToolInput): Promise<any> {
-    const { serverId, toolName, ...userProvidedParams } = tool.params || {}
-
-    if (!serverId || !toolName) {
-      logger.error('MCP tool missing required parameters:', { serverId, toolName })
-      return null
+  /**
+   * Fetches a custom tool definition from the database by ID
+   */
+  private async fetchCustomToolById(
+    ctx: ExecutionContext,
+    customToolId: string
+  ): Promise<{ schema: any; code: string; title: string } | null> {
+    if (typeof window !== 'undefined') {
+      try {
+        const { useCustomToolsStore } = await import('@/stores/custom-tools/store')
+        const tool = useCustomToolsStore.getState().getTool(customToolId)
+        if (tool) {
+          return {
+            schema: tool.schema,
+            code: tool.code || '',
+            title: tool.title,
+          }
+        }
+        logger.warn(`Custom tool not found in store: ${customToolId}`)
+      } catch (error) {
+        logger.error('Error accessing custom tools store:', { error })
+      }
     }
 
     try {
-      if (!ctx.workspaceId) {
-        throw new Error('workspaceId is required for MCP tool discovery')
-      }
-      if (!ctx.workflowId) {
-        throw new Error('workflowId is required for internal JWT authentication')
-      }
-
       const headers = await buildAuthHeaders()
-      const url = buildAPIUrl('/api/mcp/tools/discover', {
-        serverId,
-        workspaceId: ctx.workspaceId,
-        workflowId: ctx.workflowId,
-      })
+      const params: Record<string, string> = {}
 
+      if (ctx.workspaceId) {
+        params.workspaceId = ctx.workspaceId
+      }
+      if (ctx.workflowId) {
+        params.workflowId = ctx.workflowId
+      }
+
+      const url = buildAPIUrl('/api/tools/custom', params)
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers,
       })
+
       if (!response.ok) {
-        throw new Error(`Failed to discover tools from server ${serverId}`)
+        logger.error(`Failed to fetch custom tools: ${response.status}`)
+        return null
       }
 
       const data = await response.json()
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to discover MCP tools')
+      if (!data.data || !Array.isArray(data.data)) {
+        logger.error('Invalid custom tools API response')
+        return null
       }
 
-      const mcpTool = data.data.tools.find((t: any) => t.name === toolName)
-      if (!mcpTool) {
-        throw new Error(`MCP tool ${toolName} not found on server ${serverId}`)
+      const tool = data.data.find((t: any) => t.id === customToolId)
+      if (!tool) {
+        logger.warn(`Custom tool not found by ID: ${customToolId}`)
+        return null
       }
-
-      const toolId = createMcpToolId(serverId, toolName)
-
-      const { filterSchemaForLLM } = await import('@/tools/params')
-      const filteredSchema = filterSchemaForLLM(
-        mcpTool.inputSchema || { type: 'object', properties: {} },
-        userProvidedParams
-      )
 
       return {
-        id: toolId,
-        name: toolName,
-        description: mcpTool.description || `MCP tool ${toolName} from ${mcpTool.serverName}`,
-        parameters: filteredSchema,
-        params: userProvidedParams,
-        usageControl: tool.usageControl || 'auto',
-        executeFunction: async (callParams: Record<string, any>) => {
-          const headers = await buildAuthHeaders()
-          const execUrl = buildAPIUrl('/api/mcp/tools/execute')
-
-          const execResponse = await fetch(execUrl.toString(), {
-            method: 'POST',
-            headers,
-            body: stringifyJSON({
-              serverId,
-              toolName,
-              arguments: callParams,
-              workspaceId: ctx.workspaceId,
-              workflowId: ctx.workflowId,
-            }),
-          })
-
-          if (!execResponse.ok) {
-            throw new Error(
-              `MCP tool execution failed: ${execResponse.status} ${execResponse.statusText}`
-            )
-          }
-
-          const result = await execResponse.json()
-          if (!result.success) {
-            throw new Error(result.error || 'MCP tool execution failed')
-          }
-
-          return {
-            success: true,
-            output: result.data.output || {},
-            metadata: {
-              source: 'mcp',
-              serverId,
-              serverName: mcpTool.serverName,
-              toolName,
-            },
-          }
-        },
+        schema: tool.schema,
+        code: tool.code || '',
+        title: tool.title,
       }
     } catch (error) {
-      logger.error(`Failed to create MCP tool ${toolName} from server ${serverId}:`, error)
+      logger.error('Error fetching custom tool:', { customToolId, error })
       return null
+    }
+  }
+
+  /**
+   * Process MCP tools using cached schemas from build time.
+   */
+  private async processMcpToolsBatched(
+    ctx: ExecutionContext,
+    mcpTools: ToolInput[]
+  ): Promise<any[]> {
+    if (mcpTools.length === 0) return []
+
+    const results: any[] = []
+
+    const toolsWithSchema: ToolInput[] = []
+    const toolsNeedingDiscovery: ToolInput[] = []
+
+    for (const tool of mcpTools) {
+      const serverId = tool.params?.serverId
+      const toolName = tool.params?.toolName
+
+      if (!serverId || !toolName) {
+        logger.error('MCP tool missing serverId or toolName:', tool)
+        continue
+      }
+
+      if (tool.schema) {
+        toolsWithSchema.push(tool)
+      } else {
+        logger.warn(`MCP tool ${toolName} missing cached schema, will need discovery`)
+        toolsNeedingDiscovery.push(tool)
+      }
+    }
+
+    for (const tool of toolsWithSchema) {
+      try {
+        const created = await this.createMcpToolFromCachedSchema(ctx, tool)
+        if (created) results.push(created)
+      } catch (error) {
+        logger.error(`Error creating MCP tool from cached schema:`, { tool, error })
+      }
+    }
+
+    if (toolsNeedingDiscovery.length > 0) {
+      const discoveredResults = await this.processMcpToolsWithDiscovery(ctx, toolsNeedingDiscovery)
+      results.push(...discoveredResults)
+    }
+
+    return results
+  }
+
+  /**
+   * Create MCP tool from cached schema. No MCP server connection required.
+   */
+  private async createMcpToolFromCachedSchema(
+    ctx: ExecutionContext,
+    tool: ToolInput
+  ): Promise<any> {
+    const { serverId, toolName, serverName, ...userProvidedParams } = tool.params || {}
+
+    const { filterSchemaForLLM } = await import('@/tools/params')
+    const filteredSchema = filterSchemaForLLM(
+      tool.schema || { type: 'object', properties: {} },
+      userProvidedParams
+    )
+
+    const toolId = createMcpToolId(serverId, toolName)
+
+    return {
+      id: toolId,
+      name: toolName,
+      description:
+        tool.schema?.description || `MCP tool ${toolName} from ${serverName || serverId}`,
+      parameters: filteredSchema,
+      params: userProvidedParams,
+      usageControl: tool.usageControl || 'auto',
+      executeFunction: async (callParams: Record<string, any>) => {
+        const headers = await buildAuthHeaders()
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+
+        const execResponse = await fetch(execUrl.toString(), {
+          method: 'POST',
+          headers,
+          body: stringifyJSON({
+            serverId,
+            toolName,
+            arguments: callParams,
+            workspaceId: ctx.workspaceId,
+            workflowId: ctx.workflowId,
+            toolSchema: tool.schema,
+          }),
+        })
+
+        if (!execResponse.ok) {
+          throw new Error(
+            `MCP tool execution failed: ${execResponse.status} ${execResponse.statusText}`
+          )
+        }
+
+        const result = await execResponse.json()
+        if (!result.success) {
+          throw new Error(result.error || 'MCP tool execution failed')
+        }
+
+        return {
+          success: true,
+          output: result.data.output || {},
+          metadata: {
+            source: 'mcp',
+            serverId,
+            serverName: serverName || serverId,
+            toolName,
+          },
+        }
+      },
+    }
+  }
+
+  /**
+   * Fallback for legacy tools without cached schemas. Groups by server to minimize connections.
+   */
+  private async processMcpToolsWithDiscovery(
+    ctx: ExecutionContext,
+    mcpTools: ToolInput[]
+  ): Promise<any[]> {
+    const toolsByServer = new Map<string, ToolInput[]>()
+    for (const tool of mcpTools) {
+      const serverId = tool.params?.serverId
+      if (!toolsByServer.has(serverId)) {
+        toolsByServer.set(serverId, [])
+      }
+      toolsByServer.get(serverId)!.push(tool)
+    }
+
+    const serverDiscoveryResults = await Promise.all(
+      Array.from(toolsByServer.entries()).map(async ([serverId, tools]) => {
+        try {
+          const discoveredTools = await this.discoverMcpToolsForServer(ctx, serverId)
+          return { serverId, tools, discoveredTools, error: null as Error | null }
+        } catch (error) {
+          logger.error(`Failed to discover tools from server ${serverId}:`, error)
+          return { serverId, tools, discoveredTools: [] as any[], error: error as Error }
+        }
+      })
+    )
+
+    const results: any[] = []
+    for (const { serverId, tools, discoveredTools, error } of serverDiscoveryResults) {
+      if (error) continue
+
+      for (const tool of tools) {
+        try {
+          const toolName = tool.params?.toolName
+          const mcpTool = discoveredTools.find((t: any) => t.name === toolName)
+
+          if (!mcpTool) {
+            logger.error(`MCP tool ${toolName} not found on server ${serverId}`)
+            continue
+          }
+
+          const created = await this.createMcpToolFromDiscoveredData(ctx, tool, mcpTool, serverId)
+          if (created) results.push(created)
+        } catch (error) {
+          logger.error(`Error creating MCP tool:`, { tool, error })
+        }
+      }
+    }
+
+    return results
+  }
+
+  /**
+   * Discover tools from a single MCP server with retry logic.
+   */
+  private async discoverMcpToolsForServer(ctx: ExecutionContext, serverId: string): Promise<any[]> {
+    if (!ctx.workspaceId) {
+      throw new Error('workspaceId is required for MCP tool discovery')
+    }
+    if (!ctx.workflowId) {
+      throw new Error('workflowId is required for internal JWT authentication')
+    }
+
+    const headers = await buildAuthHeaders()
+    const url = buildAPIUrl('/api/mcp/tools/discover', {
+      serverId,
+      workspaceId: ctx.workspaceId,
+      workflowId: ctx.workflowId,
+    })
+
+    const maxAttempts = 2
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(url.toString(), { method: 'GET', headers })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          if (this.isRetryableError(errorText) && attempt < maxAttempts - 1) {
+            logger.warn(
+              `[AgentHandler] Session error discovering tools from ${serverId}, retrying (attempt ${attempt + 1})`
+            )
+            await new Promise((r) => setTimeout(r, 100))
+            continue
+          }
+          throw new Error(`Failed to discover tools: ${response.status} ${errorText}`)
+        }
+
+        const data = await response.json()
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to discover MCP tools')
+        }
+
+        return data.data.tools
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        if (this.isRetryableError(errorMsg) && attempt < maxAttempts - 1) {
+          logger.warn(
+            `[AgentHandler] Retryable error discovering tools from ${serverId} (attempt ${attempt + 1}):`,
+            error
+          )
+          await new Promise((r) => setTimeout(r, 100))
+          continue
+        }
+        throw error
+      }
+    }
+
+    throw new Error(
+      `Failed to discover tools from server ${serverId} after ${maxAttempts} attempts`
+    )
+  }
+
+  private isRetryableError(errorMsg: string): boolean {
+    const lowerMsg = errorMsg.toLowerCase()
+    return lowerMsg.includes('session') || lowerMsg.includes('400') || lowerMsg.includes('404')
+  }
+
+  private async createMcpToolFromDiscoveredData(
+    ctx: ExecutionContext,
+    tool: ToolInput,
+    mcpTool: any,
+    serverId: string
+  ): Promise<any> {
+    const { toolName, ...userProvidedParams } = tool.params || {}
+
+    const { filterSchemaForLLM } = await import('@/tools/params')
+    const filteredSchema = filterSchemaForLLM(
+      mcpTool.inputSchema || { type: 'object', properties: {} },
+      userProvidedParams
+    )
+
+    const toolId = createMcpToolId(serverId, toolName)
+
+    return {
+      id: toolId,
+      name: toolName,
+      description: mcpTool.description || `MCP tool ${toolName} from ${mcpTool.serverName}`,
+      parameters: filteredSchema,
+      params: userProvidedParams,
+      usageControl: tool.usageControl || 'auto',
+      executeFunction: async (callParams: Record<string, any>) => {
+        const headers = await buildAuthHeaders()
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+
+        const execResponse = await fetch(execUrl.toString(), {
+          method: 'POST',
+          headers,
+          body: stringifyJSON({
+            serverId,
+            toolName,
+            arguments: callParams,
+            workspaceId: ctx.workspaceId,
+            workflowId: ctx.workflowId,
+            toolSchema: mcpTool.inputSchema,
+          }),
+        })
+
+        if (!execResponse.ok) {
+          throw new Error(
+            `MCP tool execution failed: ${execResponse.status} ${execResponse.statusText}`
+          )
+        }
+
+        const result = await execResponse.json()
+        if (!result.success) {
+          throw new Error(result.error || 'MCP tool execution failed')
+        }
+
+        return {
+          success: true,
+          output: result.data.output || {},
+          metadata: {
+            source: 'mcp',
+            serverId,
+            serverName: mcpTool.serverName,
+            toolName,
+          },
+        }
+      },
     }
   }
 
@@ -528,7 +822,7 @@ export class AgentBlockHandler implements BlockHandler {
       provider: providerId,
       model,
       systemPrompt: validMessages ? undefined : inputs.systemPrompt,
-      context: stringifyJSON(messages),
+      context: validMessages ? undefined : stringifyJSON(messages),
       tools: formattedTools,
       temperature: inputs.temperature,
       maxTokens: inputs.maxTokens,

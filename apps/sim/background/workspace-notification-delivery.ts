@@ -11,13 +11,13 @@ import { and, eq, isNull, lte, or, sql } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { checkUsageStatus } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { RateLimiter } from '@/lib/core/rate-limiter'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import type { AlertConfig } from '@/lib/notifications/alert-rules'
-import { RateLimiter } from '@/services/queue'
 
 const logger = createLogger('WorkspaceNotificationDelivery')
 
@@ -116,12 +116,14 @@ async function buildPayload(
 
       payload.data.rateLimits = {
         sync: {
-          limit: syncStatus.limit,
+          requestsPerMinute: syncStatus.requestsPerMinute,
+          maxBurst: syncStatus.maxBurst,
           remaining: syncStatus.remaining,
           resetAt: syncStatus.resetAt.toISOString(),
         },
         async: {
-          limit: asyncStatus.limit,
+          requestsPerMinute: asyncStatus.requestsPerMinute,
+          maxBurst: asyncStatus.maxBurst,
           remaining: asyncStatus.remaining,
           resetAt: asyncStatus.resetAt.toISOString(),
         },

@@ -50,7 +50,8 @@ COPY packages ./packages
 
 # Required for standalone build
 WORKDIR /app/apps/sim
-RUN bun install sharp
+RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
+    bun install sharp
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \

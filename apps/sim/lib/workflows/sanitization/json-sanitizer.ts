@@ -2,7 +2,6 @@ import type { Edge } from 'reactflow'
 import { sanitizeWorkflowForSharing } from '@/lib/workflows/credentials/credential-extractor'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
-import { TRIGGER_PERSISTED_SUBBLOCK_IDS } from '@/triggers/constants'
 
 /**
  * Sanitized workflow state for copilot (removes all UI-specific data)
@@ -66,41 +65,6 @@ export interface ExportWorkflowState {
 }
 
 /**
- * Check if a subblock contains sensitive/secret data
- */
-function isSensitiveSubBlock(key: string, subBlock: BlockState['subBlocks'][string]): boolean {
-  if (TRIGGER_PERSISTED_SUBBLOCK_IDS.includes(key)) {
-    return false
-  }
-
-  // Check if it's an OAuth input type
-  if (subBlock.type === 'oauth-input') {
-    return true
-  }
-
-  // Check if the field name suggests it contains sensitive data
-  const sensitivePattern = /credential|oauth|api[_-]?key|token|secret|auth|password|bearer/i
-  if (sensitivePattern.test(key)) {
-    return true
-  }
-
-  // Check if the value itself looks like a secret (but not environment variable references)
-  if (typeof subBlock.value === 'string' && subBlock.value.length > 0) {
-    // Don't sanitize environment variable references like {{VAR_NAME}}
-    if (subBlock.value.startsWith('{{') && subBlock.value.endsWith('}}')) {
-      return false
-    }
-
-    // If it matches sensitive patterns in the value, it's likely a hardcoded secret
-    if (sensitivePattern.test(subBlock.value)) {
-      return true
-    }
-  }
-
-  return false
-}
-
-/**
  * Sanitize condition blocks by removing UI-specific metadata
  * Returns cleaned JSON string (not parsed array)
  */
@@ -128,6 +92,16 @@ function sanitizeConditions(conditionsJson: string): string {
 function sanitizeTools(tools: any[]): any[] {
   return tools.map((tool) => {
     if (tool.type === 'custom-tool') {
+      // New reference format: minimal fields only
+      if (tool.customToolId && !tool.schema && !tool.code) {
+        return {
+          type: tool.type,
+          customToolId: tool.customToolId,
+          usageControl: tool.usageControl,
+        }
+      }
+
+      // Legacy inline format: include all fields
       const sanitized: any = {
         type: tool.type,
         title: tool.title,
@@ -135,15 +109,19 @@ function sanitizeTools(tools: any[]): any[] {
         usageControl: tool.usageControl,
       }
 
+      // Include schema for inline format (legacy format)
       if (tool.schema?.function) {
         sanitized.schema = {
+          type: tool.schema.type || 'function',
           function: {
+            name: tool.schema.function.name,
             description: tool.schema.function.description,
             parameters: tool.schema.function.parameters,
           },
         }
       }
 
+      // Include code for inline format (legacy format)
       if (tool.code) {
         sanitized.code = tool.code
       }
@@ -157,9 +135,26 @@ function sanitizeTools(tools: any[]): any[] {
 }
 
 /**
- * Sanitize subblocks by removing null values, secrets, and simplifying structure
+ * Sort object keys recursively for consistent comparison
+ */
+function sortKeysRecursively(item: any): any {
+  if (Array.isArray(item)) {
+    return item.map(sortKeysRecursively)
+  }
+  if (item !== null && typeof item === 'object') {
+    return Object.keys(item)
+      .sort()
+      .reduce((result: any, key: string) => {
+        result[key] = sortKeysRecursively(item[key])
+        return result
+      }, {})
+  }
+  return item
+}
+
+/**
+ * Sanitize subblocks by removing null values and simplifying structure
  * Maps each subblock key directly to its value instead of the full object
- * Note: responseFormat is kept as an object for better copilot understanding
  */
 function sanitizeSubBlocks(
   subBlocks: BlockState['subBlocks']
@@ -167,76 +162,35 @@ function sanitizeSubBlocks(
   const sanitized: Record<string, string | number | string[][] | object> = {}
 
   Object.entries(subBlocks).forEach(([key, subBlock]) => {
-    // Special handling for responseFormat - process BEFORE null check
-    // so we can detect when it's added/removed
+    // Skip null/undefined values
+    if (subBlock.value === null || subBlock.value === undefined) {
+      return
+    }
+
+    // Normalize responseFormat for consistent key ordering (important for training data)
     if (key === 'responseFormat') {
       try {
-        // Handle null/undefined - skip if no value
-        if (subBlock.value === null || subBlock.value === undefined) {
-          return
-        }
-
         let obj = subBlock.value
 
-        // Handle string values - parse them first
+        // Parse JSON string if needed
         if (typeof subBlock.value === 'string') {
           const trimmed = subBlock.value.trim()
           if (!trimmed) {
-            // Empty string - skip this field
             return
           }
           obj = JSON.parse(trimmed)
         }
 
-        // Handle object values - normalize keys and keep as object for copilot
+        // Sort keys for consistent comparison
         if (obj && typeof obj === 'object') {
-          // Sort keys recursively for consistent comparison
-          const sortKeys = (item: any): any => {
-            if (Array.isArray(item)) {
-              return item.map(sortKeys)
-            }
-            if (item !== null && typeof item === 'object') {
-              return Object.keys(item)
-                .sort()
-                .reduce((result: any, key: string) => {
-                  result[key] = sortKeys(item[key])
-                  return result
-                }, {})
-            }
-            return item
-          }
-
-          // Keep as object (not stringified) for better copilot understanding
-          const normalized = sortKeys(obj)
-          sanitized[key] = normalized
+          sanitized[key] = sortKeysRecursively(obj)
           return
         }
-
-        // If we get here, obj is not an object (maybe null or primitive) - skip it
-        return
-      } catch (error) {
-        // Invalid JSON - skip this field to avoid crashes
-        return
-      }
-    }
-
-    // Skip null/undefined values for other fields
-    if (subBlock.value === null || subBlock.value === undefined) {
-      return
-    }
-
-    // For sensitive fields, either omit or replace with placeholder
-    if (isSensitiveSubBlock(key, subBlock)) {
-      // If it's an environment variable reference, keep it
-      if (
-        typeof subBlock.value === 'string' &&
-        subBlock.value.startsWith('{{') &&
-        subBlock.value.endsWith('}}')
-      ) {
+      } catch {
+        // Invalid JSON - pass through as-is
         sanitized[key] = subBlock.value
+        return
       }
-      // Otherwise omit the sensitive value entirely
-      return
     }
 
     // Special handling for condition-input type - clean UI metadata

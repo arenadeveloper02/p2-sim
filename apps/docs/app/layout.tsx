@@ -5,11 +5,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 }
 
 export const metadata = {
-  metadataBase: new URL('https://docs.sim.ai'),
-  title: {
-    default: 'Sim Documentation - Visual Workflow Builder for AI Applications',
-    template: '%s',
-  },
+  title: 'P2 Agents',
   description:
     'Comprehensive documentation for Sim - the visual workflow builder for AI applications. Create powerful AI agents, automation workflows, and data processing pipelines by connecting blocks on a canvas—no coding required.',
   keywords: [
@@ -45,7 +41,7 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Sim Docs',
+    title: 'P2 Agents Docs',
   },
   openGraph: {
     type: 'website',
@@ -56,6 +52,14 @@ export const metadata = {
     title: 'Sim Documentation - Visual Workflow Builder for AI Applications',
     description:
       'Comprehensive documentation for Sim - the visual workflow builder for AI applications. Create powerful AI agents, automation workflows, and data processing pipelines.',
+    images: [
+      {
+        url: 'https://docs.sim.ai/api/og?title=Sim%20Documentation&category=DOCUMENTATION',
+        width: 1200,
+        height: 630,
+        alt: 'Sim Documentation',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -64,7 +68,7 @@ export const metadata = {
       'Comprehensive documentation for Sim - the visual workflow builder for AI applications.',
     creator: '@simdotai',
     site: '@simdotai',
-    images: ['/og-image.png'],
+    images: ['https://docs.sim.ai/api/og?title=Sim%20Documentation&category=DOCUMENTATION'],
   },
   robots: {
     index: true,

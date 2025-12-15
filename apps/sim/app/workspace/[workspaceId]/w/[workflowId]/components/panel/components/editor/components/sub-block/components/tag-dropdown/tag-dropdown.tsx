@@ -1,4 +1,6 @@
+import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RepeatIcon, SplitIcon } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   Popover,
@@ -204,7 +206,30 @@ const generateOutputPaths = (outputs: Record<string, any>, prefix = ''): string[
       paths.push(currentPath)
     } else if (typeof value === 'object' && value !== null) {
       if ('type' in value && typeof value.type === 'string') {
-        paths.push(currentPath)
+        const hasNestedProperties =
+          (value.type === 'object' && value.properties) ||
+          (value.type === 'array' && value.items?.properties) ||
+          (value.type === 'array' &&
+            value.items &&
+            typeof value.items === 'object' &&
+            !('type' in value.items))
+
+        if (!hasNestedProperties) {
+          paths.push(currentPath)
+        }
+
+        if (value.type === 'object' && value.properties) {
+          paths.push(...generateOutputPaths(value.properties, currentPath))
+        } else if (value.type === 'array' && value.items?.properties) {
+          paths.push(...generateOutputPaths(value.items.properties, currentPath))
+        } else if (
+          value.type === 'array' &&
+          value.items &&
+          typeof value.items === 'object' &&
+          !('type' in value.items)
+        ) {
+          paths.push(...generateOutputPaths(value.items, currentPath))
+        }
       } else {
         const subPaths = generateOutputPaths(value, currentPath)
         paths.push(...subPaths)
@@ -349,14 +374,24 @@ const getCaretViewportPosition = (
 }
 
 /**
- * Renders a tag icon with background color
+ * Renders a tag icon with background color - can use either a React icon component or a letter
  */
-const TagIcon: React.FC<{ icon: string; color: string }> = ({ icon, color }) => (
+const TagIcon: React.FC<{
+  icon: string | React.ComponentType<{ className?: string }>
+  color: string
+}> = ({ icon, color }) => (
   <div
     className='flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center rounded'
-    style={{ backgroundColor: color }}
+    style={{ background: color }}
   >
-    <span className='font-bold text-[10px] text-white'>{icon}</span>
+    {typeof icon === 'string' ? (
+      <span className='font-bold text-[10px] text-white'>{icon}</span>
+    ) : (
+      (() => {
+        const IconComponent = icon
+        return <IconComponent className='h-[9px] w-[9px] text-white' />
+      })()
+    )}
   </div>
 )
 
@@ -1385,7 +1420,17 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                   blockColor = BLOCK_COLORS.PARALLEL
                 }
 
-                const tagIcon = group.blockName.charAt(0).toUpperCase()
+                // Use actual block icon if available, otherwise fall back to special icons for loop/parallel or first letter
+                let tagIcon: string | React.ComponentType<{ className?: string }> = group.blockName
+                  .charAt(0)
+                  .toUpperCase()
+                if (blockConfig?.icon) {
+                  tagIcon = blockConfig.icon
+                } else if (group.blockType === 'loop') {
+                  tagIcon = RepeatIcon
+                } else if (group.blockType === 'parallel') {
+                  tagIcon = SplitIcon
+                }
 
                 return (
                   <div key={group.blockId}>

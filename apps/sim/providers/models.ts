@@ -132,6 +132,25 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           toolUsageControl: true,
         },
+        contextWindow: 128000,
+      },
+      {
+        id: 'gpt-5.2',
+        pricing: {
+          input: 1.75,
+          cachedInput: 0.175,
+          output: 14.0,
+          updatedAt: '2025-12-11',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+        },
+        contextWindow: 400000,
       },
       {
         id: 'gpt-5.1',
