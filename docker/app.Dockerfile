@@ -5,16 +5,19 @@ FROM oven/bun:1.3.3 AS base
 
 WORKDIR /app
 
+# ========================================
+# Dependencies Stage: Install Dependencies
+# ========================================
+FROM base AS deps
+
 COPY package.json bun.lock turbo.json ./
 RUN mkdir -p apps packages/db
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 
-# Install turbo globally and dependencies with cache mount for faster builds
+# Install dependencies with cache mount for faster builds
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
-    bun install -g turbo && \
     bun install --omit=dev --ignore-scripts
-
 
 # ========================================
 # Builder Stage (Next.js build)
@@ -26,7 +29,7 @@ WORKDIR /app
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     bun install -g turbo
 
-# Copy node_modules
+# Copy node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
 # Copy config files
