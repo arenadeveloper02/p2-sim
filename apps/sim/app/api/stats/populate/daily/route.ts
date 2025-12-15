@@ -322,10 +322,10 @@ export async function GET(request: NextRequest) {
     const skipExisting = skipExistingParam !== 'false' // Default to true unless explicitly false
 
     // Parse dates
-    const startDate = new Date(startDateParam + 'T00:00:00Z')
-    const endDate = new Date(endDateParam + 'T00:00:00Z')
+    const startDate = new Date(`${startDateParam}T00:00:00Z`)
+    const endDate = new Date(`${endDateParam}T00:00:00Z`)
 
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       return NextResponse.json({ error: 'Invalid date format. Use YYYY-MM-DD' }, { status: 400 })
     }
 
