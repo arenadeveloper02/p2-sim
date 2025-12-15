@@ -129,7 +129,9 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
         let subscriptionId: string | undefined
 
         if ((subscriptionStatus.isTeam || subscriptionStatus.isEnterprise) && activeOrgId) {
+          // const orgSubscription = useOrganizationStore.getState().subscriptionData
           referenceId = activeOrgId
+          // subscriptionId = orgSubscription?.id
           subscriptionId = subData?.data?.id
         } else {
           // For personal subscriptions, use user ID and let better-auth find the subscription
@@ -149,9 +151,9 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
 
         logger.info('Subscription restored successfully', result)
       }
-
       // Invalidate queries to refresh data
       await queryClient.invalidateQueries({ queryKey: subscriptionKeys.user() })
+      // await refresh()
       if (activeOrgId) {
         await queryClient.invalidateQueries({ queryKey: organizationKeys.detail(activeOrgId) })
         await queryClient.invalidateQueries({ queryKey: organizationKeys.billing(activeOrgId) })
@@ -266,6 +268,7 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
 
             {(() => {
               const subscriptionStatus = currentSubscriptionStatus
+              // const subscriptionStatus = getSubscriptionStatus()
               if (subscriptionStatus.isPaid && isCancelAtPeriodEnd) {
                 return (
                   <Button
