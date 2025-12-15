@@ -242,6 +242,199 @@ export type HubSpotListDealsResponse = Omit<HubSpotListContactsResponse, 'output
   }
 }
 
+// Marketing campaigns
+export interface HubSpotCampaign {
+  id: string
+  createdAt: string
+  updatedAt: string
+  properties: Record<string, any>
+  businessUnits?: Array<{ id: string | number }>
+  assets?: Record<string, any>
+}
+
+export interface HubSpotCampaignSpend {
+  amount: number
+  createdAt: number | string
+  id: string
+  name?: string
+  order?: number
+  updatedAt?: number | string
+  description?: string
+}
+
+export interface HubSpotCampaignAsset {
+  id: string
+  metrics?: Record<string, any>
+  name?: string
+}
+
+export interface HubSpotCampaignMetrics {
+  influencedContacts?: number
+  newContactsFirstTouch?: number
+  newContactsLastTouch?: number
+  sessions?: number
+}
+
+export interface HubSpotCampaignRevenue {
+  contactsNumber?: number
+  currencyCode?: string
+  dealAmount?: number
+  dealsNumber?: number
+  revenueAmount?: number
+}
+
+export interface HubSpotListCampaignsParams {
+  accessToken: string
+  limit?: string
+  after?: string
+}
+
+export interface HubSpotListCampaignsResponse extends ToolResponse {
+  output: {
+    campaigns: HubSpotCampaign[]
+    total?: number
+    paging?: HubSpotPaging
+    metadata: {
+      operation: 'list_campaigns'
+      totalReturned: number
+      total?: number
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignParams {
+  accessToken: string
+  campaignGuid: string
+}
+
+export interface HubSpotGetCampaignResponse extends ToolResponse {
+  output: {
+    campaign: HubSpotCampaign
+    metadata: {
+      operation: 'get_campaign'
+      campaignGuid: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignSpendParams extends HubSpotGetCampaignParams {
+  spendId: string
+}
+
+export interface HubSpotGetCampaignSpendResponse extends ToolResponse {
+  output: {
+    spend: HubSpotCampaignSpend
+    metadata: {
+      operation: 'get_campaign_spend'
+      campaignGuid: string
+      spendId: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignMetricsParams extends HubSpotGetCampaignParams {}
+
+export interface HubSpotGetCampaignMetricsResponse extends ToolResponse {
+  output: {
+    metrics: HubSpotCampaignMetrics
+    metadata: {
+      operation: 'get_campaign_metrics'
+      campaignGuid: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignRevenueParams extends HubSpotGetCampaignParams {}
+
+export interface HubSpotGetCampaignRevenueResponse extends ToolResponse {
+  output: {
+    revenue: HubSpotCampaignRevenue
+    metadata: {
+      operation: 'get_campaign_revenue'
+      campaignGuid: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignContactsParams extends HubSpotGetCampaignParams {
+  contactType: string
+  after?: string
+}
+
+export interface HubSpotGetCampaignContactsResponse extends ToolResponse {
+  output: {
+    contacts: Array<{ id: string }>
+    paging?: HubSpotPaging
+    metadata: {
+      operation: 'get_campaign_contacts'
+      campaignGuid: string
+      contactType: string
+      totalReturned: number
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignBudgetTotalsParams extends HubSpotGetCampaignParams {}
+
+export interface HubSpotGetCampaignBudgetTotalsResponse extends ToolResponse {
+  output: {
+    budgetTotals: {
+      budgetItems?: HubSpotCampaignSpend[]
+      currencyCode?: string
+      spendItems?: HubSpotCampaignSpend[]
+      budgetTotal?: number
+      remainingBudget?: number
+      spendTotal?: number
+    }
+    metadata: {
+      operation: 'get_campaign_budget_totals'
+      campaignGuid: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignBudgetItemParams extends HubSpotGetCampaignParams {
+  budgetId: string
+}
+
+export interface HubSpotGetCampaignBudgetItemResponse extends ToolResponse {
+  output: {
+    budgetItem: HubSpotCampaignSpend
+    metadata: {
+      operation: 'get_campaign_budget_item'
+      campaignGuid: string
+      budgetId: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCampaignAssetsParams extends HubSpotGetCampaignParams {
+  assetType: string
+  after?: string
+}
+
+export interface HubSpotGetCampaignAssetsResponse extends ToolResponse {
+  output: {
+    assets: HubSpotCampaignAsset[]
+    paging?: HubSpotPaging
+    metadata: {
+      operation: 'get_campaign_assets'
+      campaignGuid: string
+      assetType: string
+      totalReturned: number
+    }
+    success: boolean
+  }
+}
+
 // Generic HubSpot response type for the block
 export type HubSpotResponse =
   | HubSpotGetUsersResponse
@@ -256,3 +449,12 @@ export type HubSpotResponse =
   | HubSpotUpdateCompanyResponse
   | HubSpotSearchCompaniesResponse
   | HubSpotListDealsResponse
+  | HubSpotListCampaignsResponse
+  | HubSpotGetCampaignResponse
+  | HubSpotGetCampaignSpendResponse
+  | HubSpotGetCampaignMetricsResponse
+  | HubSpotGetCampaignRevenueResponse
+  | HubSpotGetCampaignContactsResponse
+  | HubSpotGetCampaignBudgetTotalsResponse
+  | HubSpotGetCampaignBudgetItemResponse
+  | HubSpotGetCampaignAssetsResponse
