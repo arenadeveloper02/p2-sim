@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Database, HelpCircle, Layout, Plus, Search, Settings } from 'lucide-react'
+import { ArrowDown, Database, HelpCircle, Layout, Plus, Search, Settings , ArrowLeft} from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
@@ -427,6 +427,22 @@ export function Sidebar() {
     ])
   )
 
+  function getRedirectUrl(hostname: string) {
+    let redirectUrl = ''
+    if (hostname === 'dev-agent.thearena.ai') {
+      redirectUrl = 'https://dev.thearena.ai/hub/agents'
+    } else if (hostname === 'test-agent.thearena.ai') {
+      redirectUrl = 'https://test.thearena.ai/hub/agents'
+    } else if (hostname === 'sandbox-agent.thearena.ai') {
+      redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
+    } else if (hostname === 'agent.thearena.ai') {
+      redirectUrl = 'https://app.thearena.ai/hub/agents'
+    } else {
+      redirectUrl = 'https://app.thearena.ai/hub/agents'
+    }
+    return redirectUrl
+  }
+
   return (
     <>
       {isCollapsed ? (
@@ -464,6 +480,22 @@ export function Sidebar() {
           >
             <div className='flex h-full flex-col border-[var(--border)] border-r pt-[14px]'>
               {/* Header */}
+              <div>
+                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-gray-500 text-sm hover:cursor-pointer'>
+                  <span
+                    onClick={() => {
+                      const hostname = window.location.hostname
+                      const redirectUrl = getRedirectUrl(hostname)
+
+                      window.location.href = redirectUrl
+                    }}
+                    className='flex items-center justify-start gap-2 text-primary'
+                  >
+                    <ArrowLeft className='h-5 w-5' />
+                    <span> Back </span>
+                  </span>
+                </p>
+              </div>
               <div className='flex-shrink-0 px-[14px]'>
                 <WorkspaceHeader
                   activeWorkspace={activeWorkspace}
