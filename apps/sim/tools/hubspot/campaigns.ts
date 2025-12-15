@@ -305,7 +305,9 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
 
     if (!response.ok) {
       logger.error('HubSpot get campaign metrics request failed', { data, status: response.status })
-      throw new Error((data as { message?: string }).message || 'Failed to retrieve campaign metrics')
+      throw new Error(
+        (data as { message?: string }).message || 'Failed to retrieve campaign metrics'
+      )
     }
 
     return {
@@ -371,7 +373,9 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
 
     if (!response.ok) {
       logger.error('HubSpot get campaign revenue request failed', { data, status: response.status })
-      throw new Error((data as { message?: string }).message || 'Failed to retrieve campaign revenue')
+      throw new Error(
+        (data as { message?: string }).message || 'Failed to retrieve campaign revenue'
+      )
     }
 
     return {
@@ -454,11 +458,17 @@ export const hubspotGetCampaignContactsTool: ToolConfig<
     headers: ({ accessToken }) => buildHeaders(accessToken),
   },
   transformResponse: async (response: Response, params) => {
-    const data: { results?: Array<{ id: string }>; paging?: Record<string, any>; message?: string } =
-      await response.json()
+    const data: {
+      results?: Array<{ id: string }>
+      paging?: Record<string, any>
+      message?: string
+    } = await response.json()
 
     if (!response.ok) {
-      logger.error('HubSpot get campaign contacts request failed', { data, status: response.status })
+      logger.error('HubSpot get campaign contacts request failed', {
+        data,
+        status: response.status,
+      })
       throw new Error(data.message || 'Failed to retrieve campaign contacts')
     }
 
@@ -615,7 +625,10 @@ export const hubspotGetCampaignBudgetItemTool: ToolConfig<
     const data: HubSpotCampaignSpend | { message?: string } = await response.json()
 
     if (!response.ok) {
-      logger.error('HubSpot get campaign budget item request failed', { data, status: response.status })
+      logger.error('HubSpot get campaign budget item request failed', {
+        data,
+        status: response.status,
+      })
       throw new Error((data as { message?: string }).message || 'Failed to retrieve budget item')
     }
 
@@ -710,7 +723,9 @@ export const hubspotGetCampaignAssetsTool: ToolConfig<
 
     if (!response.ok) {
       logger.error('HubSpot get campaign assets request failed', { data, status: response.status })
-      throw new Error((data as { message?: string }).message || 'Failed to retrieve campaign assets')
+      throw new Error(
+        (data as { message?: string }).message || 'Failed to retrieve campaign assets'
+      )
     }
 
     const assets = (data as { results?: HubSpotCampaignAsset[] }).results || []
@@ -744,4 +759,3 @@ export const hubspotGetCampaignAssetsTool: ToolConfig<
     },
   },
 }
-
