@@ -12,20 +12,27 @@
  * POST /api/v1/admin/organizations/[id]/members
  *
  * Add a user to an organization with full billing logic.
+ * Validates seat availability before adding (uses same logic as invitation flow):
+ *   - Team plans: checks seats column
+ *   - Enterprise plans: checks metadata.seats
  * Handles Pro usage snapshot and subscription cancellation like the invitation flow.
+ * If user is already a member, updates their role if different.
  *
  * Body:
  *   - userId: string - User ID to add
  *   - role: string - Role ('admin' | 'member')
- *   - skipBillingLogic?: boolean - Skip Pro cancellation (default: false)
  *
- * Response: AdminSingleResponse<AdminMember>
+ * Response: AdminSingleResponse<AdminMember & {
+ *   action: 'created' | 'updated' | 'already_member',
+ *   billingActions: { proUsageSnapshotted, proCancelledAtPeriodEnd }
+ * }>
  */
 
 import { db } from '@sim/db'
 import { member, organization, user, userStats } from '@sim/db/schema'
 import { count, eq } from 'drizzle-orm'
 import { addUserToOrganization } from '@/lib/billing/organizations/membership'
+import { requireStripeClient } from '@/lib/billing/stripe-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
@@ -129,8 +136,6 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       return badRequestResponse('role must be "admin" or "member"')
     }
 
-    const skipBillingLogic = body.skipBillingLogic === true
-
     const [orgData] = await db
       .select({ id: organization.id, name: organization.name })
       .from(organization)
@@ -151,15 +156,98 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       return notFoundResponse('User')
     }
 
+    const [existingMember] = await db
+      .select({
+        id: member.id,
+        role: member.role,
+        createdAt: member.createdAt,
+        organizationId: member.organizationId,
+      })
+      .from(member)
+      .where(eq(member.userId, body.userId))
+      .limit(1)
+
+    if (existingMember) {
+      if (existingMember.organizationId === organizationId) {
+        if (existingMember.role !== body.role) {
+          await db.update(member).set({ role: body.role }).where(eq(member.id, existingMember.id))
+
+          logger.info(
+            `Admin API: Updated user ${body.userId} role in organization ${organizationId}`,
+            {
+              previousRole: existingMember.role,
+              newRole: body.role,
+            }
+          )
+
+          return singleResponse({
+            id: existingMember.id,
+            userId: body.userId,
+            organizationId,
+            role: body.role,
+            createdAt: existingMember.createdAt.toISOString(),
+            userName: userData.name,
+            userEmail: userData.email,
+            action: 'updated' as const,
+            billingActions: {
+              proUsageSnapshotted: false,
+              proCancelledAtPeriodEnd: false,
+            },
+          })
+        }
+
+        return singleResponse({
+          id: existingMember.id,
+          userId: body.userId,
+          organizationId,
+          role: existingMember.role,
+          createdAt: existingMember.createdAt.toISOString(),
+          userName: userData.name,
+          userEmail: userData.email,
+          action: 'already_member' as const,
+          billingActions: {
+            proUsageSnapshotted: false,
+            proCancelledAtPeriodEnd: false,
+          },
+        })
+      }
+
+      return badRequestResponse(
+        `User is already a member of another organization. Users can only belong to one organization at a time.`
+      )
+    }
+
     const result = await addUserToOrganization({
       userId: body.userId,
       organizationId,
       role: body.role,
-      skipBillingLogic,
     })
 
     if (!result.success) {
       return badRequestResponse(result.error || 'Failed to add member')
+    }
+
+    // Sync Pro subscription cancellation with Stripe (same as invitation flow)
+    if (result.billingActions.proSubscriptionToCancel?.stripeSubscriptionId) {
+      try {
+        const stripe = requireStripeClient()
+        await stripe.subscriptions.update(
+          result.billingActions.proSubscriptionToCancel.stripeSubscriptionId,
+          { cancel_at_period_end: true }
+        )
+        logger.info('Admin API: Synced Pro cancellation with Stripe', {
+          userId: body.userId,
+          subscriptionId: result.billingActions.proSubscriptionToCancel.subscriptionId,
+          stripeSubscriptionId: result.billingActions.proSubscriptionToCancel.stripeSubscriptionId,
+        })
+      } catch (stripeError) {
+        logger.error('Admin API: Failed to sync Pro cancellation with Stripe', {
+          userId: body.userId,
+          subscriptionId: result.billingActions.proSubscriptionToCancel.subscriptionId,
+          stripeSubscriptionId: result.billingActions.proSubscriptionToCancel.stripeSubscriptionId,
+          error: stripeError,
+        })
+      }
     }
 
     const data: AdminMember = {
@@ -176,11 +264,11 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       role: body.role,
       memberId: result.memberId,
       billingActions: result.billingActions,
-      skipBillingLogic,
     })
 
     return singleResponse({
       ...data,
+      action: 'created' as const,
       billingActions: {
         proUsageSnapshotted: result.billingActions.proUsageSnapshotted,
         proCancelledAtPeriodEnd: result.billingActions.proCancelledAtPeriodEnd,

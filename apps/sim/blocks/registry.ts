@@ -18,6 +18,7 @@ import { CursorBlock } from '@/blocks/blocks/cursor'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
+import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
@@ -85,13 +86,13 @@ import { PolymarketBlock } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
 import { PresentationBlock } from '@/blocks/blocks/presentation'
-import { PylonBlock } from '@/blocks/blocks/pylon'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock } from '@/blocks/blocks/router'
+import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
@@ -99,14 +100,15 @@ import { SearchBlock } from '@/blocks/blocks/search'
 import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
+import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpyfuBlock } from '@/blocks/blocks/spyfu'
+import { SpotifyBlock } from '@/blocks/blocks/spotify'
 import { SSHBlock } from '@/blocks/blocks/ssh'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
-import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StartTriggerBlock } from '@/blocks/blocks/start_trigger'
 import { StarterBlock } from '@/blocks/blocks/starter'
 import { StripeBlock } from '@/blocks/blocks/stripe'
@@ -140,6 +142,7 @@ import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
 import { SemrushBlock } from './blocks/semrush'
+import { SQSBlock } from './blocks/sqs'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -163,6 +166,7 @@ export const registry: Record<string, BlockConfig> = {
   datadog: DatadogBlock,
   discord: DiscordBlock,
   dropbox: DropboxBlock,
+  duckduckgo: DuckDuckGoBlock,
   elevenlabs: ElevenLabsBlock,
   elasticsearch: ElasticsearchBlock,
   evaluator: EvaluatorBlock,
@@ -229,13 +233,14 @@ export const registry: Record<string, BlockConfig> = {
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
-  pylon: PylonBlock,
   qdrant: QdrantBlock,
   rds: RDSBlock,
+  sqs: SQSBlock,
   dynamodb: DynamoDBBlock,
   reddit: RedditBlock,
   resend: ResendBlock,
   response: ResponseBlock,
+  rss: RssBlock,
   router: RouterBlock,
   s3: S3Block,
   salesforce: SalesforceBlock,
@@ -249,10 +254,11 @@ export const registry: Record<string, BlockConfig> = {
   shopify: ShopifyBlock,
   slack: SlackBlock,
   spyfu: SpyfuBlock,
+  spotify: SpotifyBlock,
   smtp: SmtpBlock,
+  sftp: SftpBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,
-  stagehand_agent: StagehandAgentBlock,
   starter: StarterBlock,
   start_trigger: StartTriggerBlock,
   stt: SttBlock,
@@ -286,13 +292,26 @@ export const registry: Record<string, BlockConfig> = {
   zoom: ZoomBlock,
 }
 
-export const getBlock = (type: string): BlockConfig | undefined => registry[type]
+export const getBlock = (type: string): BlockConfig | undefined => {
+  // Direct lookup first
+  if (registry[type]) {
+    return registry[type]
+  }
+  // Fallback: normalize hyphens to underscores (e.g., 'microsoft-teams' -> 'microsoft_teams')
+  const normalized = type.replace(/-/g, '_')
+  return registry[normalized]
+}
+
+export const getBlockByToolName = (toolName: string): BlockConfig | undefined => {
+  return Object.values(registry).find((block) => block.tools?.access?.includes(toolName))
+}
 
 export const getBlocksByCategory = (category: 'blocks' | 'tools' | 'triggers'): BlockConfig[] =>
   Object.values(registry).filter((block) => block.category === category)
 
 export const getAllBlockTypes = (): string[] => Object.keys(registry)
 
-export const isValidBlockType = (type: string): type is string => type in registry
+export const isValidBlockType = (type: string): type is string =>
+  type in registry || type.replace(/-/g, '_') in registry
 
 export const getAllBlocks = (): BlockConfig[] => Object.values(registry)

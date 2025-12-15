@@ -1,6 +1,7 @@
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
-import { isDev } from './lib/core/config/environment'
+import { isDev } from '@/lib/core/config/feature-flags'
+import { isAuthDisabled, isHosted } from './lib/core/config/feature-flags'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getLoginRedirectUrl } from './lib/core/utils/urls'
 import { createLogger } from './lib/logs/console/logger'
@@ -150,7 +151,7 @@ export async function proxy(request: NextRequest) {
   const url = request.nextUrl
 
   const sessionCookie = getSessionCookie(request)
-  const hasActiveSession = !!sessionCookie
+  const hasActiveSession = isAuthDisabled || !!sessionCookie
 
   const redirect = handleRootPathRedirects(request, hasActiveSession)
   if (redirect) return redirect
@@ -161,10 +162,9 @@ export async function proxy(request: NextRequest) {
       // In non-local environments, redirect to workspace (auto-login will handle authentication)
       return NextResponse.redirect(new URL('/workspace', request.url))
     }
-
-    // In local environment, always allow access to login/signup pages
-    // This allows users to switch accounts even when logged in
-    return NextResponse.next()
+    const response = NextResponse.next()
+    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    return response
   }
 
   if (url.pathname.startsWith('/chat/')) {

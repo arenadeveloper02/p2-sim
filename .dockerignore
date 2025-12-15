@@ -1,61 +1,70 @@
+# Git
+.git
+.gitignore
+
+# Documentation
 LICENSE
 NOTICE
-.prettierrc
-.prettierignore
 README.md
-.gitignore
-.husky
-.github
-.devcontainer
-.env.example
-node_modules
+*.md
+docs/
 
-# Build artifacts
-.next
-dist
-build
-out
-*.log
-
-# Test files
-**/__tests__/**
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.ts
-**/*.spec.tsx
-**/test/**
-**/tests/**
-coverage
-.nyc_output
-
-# Development files
+# IDE and editor
 .vscode
 .idea
 *.swp
 *.swo
-*~
 
-# Documentation
-docs
-*.md
-!README.md
-
-# CI/CD
-.github
-.gitlab-ci.yml
-.travis.yml
-
-# Docker files (except the one being used)
-docker-compose*.yml
-Dockerfile*
-!docker/app.Dockerfile
-
-# Environment files
+# Environment and config
 .env*
 !.env.example
+.prettierrc
+.prettierignore
+.eslintrc*
+.eslintignore
+
+# CI/CD and DevOps
+.github
+.devcontainer
+.husky
+docker-compose*.yml
+Dockerfile*
+
+# Build artifacts and caches
+.next
+.turbo
+.cache
+dist
+build
+out
+coverage
+*.log
+
+# Dependencies (will be installed fresh in container)
+node_modules
+.bun
+
+# Test files
+**/__tests__/**
+
+# Test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+__tests__
+__mocks__
+jest.config.*
+vitest.config.*
+
+# TypeScript build info
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Temporary files
 tmp
 temp
 *.tmp
-.cache

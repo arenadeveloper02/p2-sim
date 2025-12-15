@@ -29,7 +29,7 @@ export function TemplateCardSkeleton({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'h-[268px] w-full rounded-[8px] bg-[var(--surface-elevated)] p-[8px]',
+        'h-[268px] w-full rounded-[8px] bg-[var(--surface-elevated)] p-[8px] transition-colors hover:bg-[var(--surface-5)]',
         className
       )}
     >
@@ -201,7 +201,10 @@ function TemplateCardInner({
   return (
     <div
       onClick={handleCardClick}
-      className={cn('w-full cursor-pointer rounded-[8px] bg-[var(--surface-5)] p-[8px]', className)}
+      className={cn(
+        'w-full cursor-pointer rounded-[8px] bg-[var(--surface-elevated)] p-[8px] transition-colors hover:bg-[var(--surface-5)]',
+        className
+      )}
     >
       <div
         ref={previewRef}
@@ -217,6 +220,7 @@ function TemplateCardInner({
             defaultZoom={0.8}
             fitPadding={0.2}
             lightweight
+            cursorStyle='pointer'
           />
         ) : (
           <div className='h-full w-full bg-[var(--surface-6)]' />
