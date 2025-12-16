@@ -260,12 +260,12 @@ export function SlackMentionInput({
   }
 
   // Filter users based on mention query
-  const filteredUsers = users.filter((user) => {
-    const searchText = mentionQuery.toLowerCase()
+  const filteredUsers = users?.filter((user) => {
+    const searchText = mentionQuery?.toLowerCase()
     return (
-      user.name.toLowerCase().includes(searchText) ||
-      user.realName.toLowerCase().includes(searchText) ||
-      user.displayName.toLowerCase().includes(searchText)
+      user?.name?.toLowerCase()?.includes(searchText) ||
+      user?.realName?.toLowerCase()?.includes(searchText) ||
+      user?.displayName?.toLowerCase()?.includes(searchText)
     )
   })
 

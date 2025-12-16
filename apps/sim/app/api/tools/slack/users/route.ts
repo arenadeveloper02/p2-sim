@@ -95,26 +95,56 @@ export async function POST(request: Request) {
 }
 
 async function fetchSlackUsers(accessToken: string) {
-  const url = new URL('https://slack.com/api/users.list')
-  url.searchParams.append('limit', '200')
+  const allMembers: SlackUser[] = []
+  let cursor: string | undefined = undefined
+  const limit = 200
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  do {
+    const url = new URL('https://slack.com/api/users.list')
+    url.searchParams.append('limit', String(limit))
+    if (cursor) {
+      url.searchParams.append('cursor', cursor)
+    }
 
-  if (!response.ok) {
-    throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Failed to fetch users')
+    }
+
+    // Accumulate members from this page
+    if (data.members && Array.isArray(data.members)) {
+      allMembers.push(...data.members)
+    }
+
+    // Check if there are more pages
+    cursor = data.response_metadata?.next_cursor
+    if (cursor && cursor.trim() === '') {
+      cursor = undefined
+    }
+
+    logger.info(`Fetched ${data.members?.length || 0} users (total so far: ${allMembers.length})`, {
+      hasMore: !!cursor,
+    })
+  } while (cursor)
+
+  logger.info(`Completed fetching all Slack users: ${allMembers.length} total`)
+
+  // Return data in the same format as before, but with all members
+  return {
+    ok: true,
+    members: allMembers,
   }
-
-  const data = await response.json()
-
-  if (!data.ok) {
-    throw new Error(data.error || 'Failed to fetch users')
-  }
-
-  return data
 }
