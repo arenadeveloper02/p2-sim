@@ -130,18 +130,12 @@ RUN groupadd -g 1001 nodejs && \
 # ========================================
 # Copy build artifacts from builder
 # ========================================
-# Install Node.js 22 (for isolated-vm worker), Python, and other runtime dependencies
+# Install Node.js 22 (for isolated-vm worker) and other runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv bash ffmpeg curl ca-certificates \
+    curl ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-ENV NODE_ENV=production
-
-# Create non-root user and group
-RUN groupadd -g 1001 nodejs && \
-    useradd -u 1001 -g nodejs nextjs
 
 # Copy application artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
