@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   try {
     // Calculate yesterday's date range (UTC to match database timestamps)
     const yesterday = new Date()
-    yesterday.setUTCDate(yesterday.getUTCDate() - 4)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
     yesterday.setUTCHours(0, 0, 0, 0)
 
     const endDate = new Date(yesterday)
