@@ -42,6 +42,7 @@ import {
   apolloTaskCreateTool,
   apolloTaskSearchTool,
 } from '@/tools/apollo'
+import { arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -951,6 +952,7 @@ import {
 } from '@/tools/salesforce'
 import { searchTool } from '@/tools/search'
 import { semrushQueryTool } from '@/tools/semrush'
+import { sqsSendTool } from '@/tools/sqs'
 import {
   sendGridAddContactsToListTool,
   sendGridAddContactTool,
@@ -1379,8 +1381,6 @@ import {
   zoomListRecordingsTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
-import { arenaCreateTask, arenaSaveSummary, arenaSearchTask } from './arena'
-import { sqsSendTool } from './sqs'
 
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {

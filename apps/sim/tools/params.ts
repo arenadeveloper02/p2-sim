@@ -395,12 +395,19 @@ export async function createLLMToolSchema(
 
   // Only include parameters that the LLM should/can provide
   for (const [paramId, param] of Object.entries(toolConfig.params)) {
-    const isUserProvided =
-      userProvidedParams[paramId] !== undefined &&
-      userProvidedParams[paramId] !== null &&
-      userProvidedParams[paramId] !== ''
+    const paramValue = userProvidedParams[paramId]
 
-    // Skip parameters that user has already provided
+    // Check if the value is a variable reference (e.g., <start.input>, <block.output>)
+    // These should NOT be considered as "user provided" because they're resolved at runtime
+    const isVarRef =
+      typeof paramValue === 'string' &&
+      paramValue.trim().startsWith('<') &&
+      paramValue.trim().endsWith('>')
+
+    const isUserProvided =
+      paramValue !== undefined && paramValue !== null && paramValue !== '' && !isVarRef // Variable references are NOT user-provided values
+
+    // Skip parameters that user has already provided (with actual values, not variable references)
     if (isUserProvided) {
       continue
     }
@@ -597,6 +604,13 @@ export function mergeToolParameters(
 }
 
 /**
+ * Checks if a value is a variable reference (e.g., <start.input>, <block.output>)
+ */
+function isVariableReference(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().startsWith('<') && value.trim().endsWith('>')
+}
+
+/**
  * Filters out user-provided parameters from tool schema for LLM
  */
 export function filterSchemaForLLM(
@@ -611,12 +625,16 @@ export function filterSchemaForLLM(
   const filteredRequired = [...(originalSchema.required || [])]
 
   // Remove user-provided parameters from the schema
+  // But keep parameters that use variable references (they're resolved at runtime)
   Object.keys(userProvidedParams).forEach((paramKey) => {
-    if (
-      userProvidedParams[paramKey] !== undefined &&
-      userProvidedParams[paramKey] !== null &&
-      userProvidedParams[paramKey] !== ''
-    ) {
+    const paramValue = userProvidedParams[paramKey]
+
+    // Skip variable references - these should remain visible to LLM
+    if (isVariableReference(paramValue)) {
+      return
+    }
+
+    if (paramValue !== undefined && paramValue !== null && paramValue !== '') {
       delete filteredProperties[paramKey]
       const reqIndex = filteredRequired.indexOf(paramKey)
       if (reqIndex > -1) {
