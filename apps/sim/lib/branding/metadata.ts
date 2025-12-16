@@ -9,8 +9,8 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
   const brand = getBrandConfig()
 
   const defaultTitle = brand.name
-  const summaryFull = `Sim is an open-source AI agent workflow builder. Developers at trail-blazing startups to Fortune 500 companies deploy agentic workflows on the Sim platform. 60,000+ developers already use Sim to build and deploy AI agent workflows and connect them to 100+ apps. Sim is SOC2 and HIPAA compliant, ensuring enterprise-grade security for AI automation.`
-  const summaryShort = `Sim is an open-source AI agent workflow builder for production workflows.`
+  const summaryFull = `Arena's AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`
+  const summaryShort = `Arena's AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`
 
   return {
     title: {
@@ -64,13 +64,13 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
       url: getBaseUrl(),
       title: defaultTitle,
       description: summaryFull,
-      siteName: brand.name,
+      siteName: 'Arena AI',
       images: [
         {
           url: brand.logoUrl || '/social/facebook.png',
           width: 1200,
           height: 630,
-          alt: brand.name,
+          alt: `Arena’s Visual AI agent builder for production workflows.`,
         },
       ],
     },
@@ -79,8 +79,8 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
       title: defaultTitle,
       description: summaryFull,
       images: [brand.logoUrl || '/social/twitter.png'],
-      creator: '@simstudioai',
-      site: '@simstudioai',
+      creator: '@position2',
+      site: '@position2',
     },
     manifest: '/manifest.webmanifest',
     icons: {
@@ -128,9 +128,9 @@ export function generateStructuredData() {
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Sim',
+    name: 'Arena',
     description:
-      'Sim is an open-source AI agent workflow builder. Developers at trail-blazing startups to Fortune 500 companies deploy agentic workflows on the Sim platform. 60,000+ developers already use Sim to build and deploy AI agent workflows and connect them to 100+ apps. Sim is SOC2 and HIPAA compliant, ensuring enterprise-level security.',
+      `Arena\'s AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`,
     url: getBaseUrl(),
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web Browser',
@@ -143,8 +143,8 @@ export function generateStructuredData() {
     },
     creator: {
       '@type': 'Organization',
-      name: 'Sim',
-      url: 'https://sim.ai',
+      name: 'Position2',
+      url: 'https://position2.com',
     },
     featureList: [
       'Visual AI Agent Builder',
