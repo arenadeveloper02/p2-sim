@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('KnowledgeUpload')
 
@@ -85,50 +86,17 @@ class ProcessingError extends KnowledgeUploadError {
 }
 
 /**
- * Get content type from file, with fallback to extension-based detection
- * Browsers don't always set MIME types for certain file extensions (e.g., .yaml),
- * so we fall back to determining it from the file extension
+ * Configuration constants for file upload operations
  */
-function getFileContentType(file: File): string {
-  // Use file.type if it's not empty
-  if (file.type && file.type.trim().length > 0) {
-    return file.type
-  }
-
-  // Fallback: determine MIME type from file extension
-  const extension = file.name.split('.').pop()?.toLowerCase() || ''
-
-  // MIME type mapping matching server-side validation (apps/sim/lib/uploads/utils/validation.ts)
-  const mimeTypeMap: Record<string, string> = {
-    pdf: 'application/pdf',
-    csv: 'text/csv',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    xls: 'application/vnd.ms-excel',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    html: 'text/html',
-    htm: 'text/html',
-    json: 'application/json',
-    yaml: 'text/yaml',
-    yml: 'text/yaml',
-  }
-
-  return mimeTypeMap[extension] || 'application/octet-stream'
-}
-
 const UPLOAD_CONFIG = {
-  MAX_PARALLEL_UPLOADS: 3, // Prevent client saturation – mirrors guidance on limiting simultaneous transfers (@Web)
+  MAX_PARALLEL_UPLOADS: 3,
   MAX_RETRIES: 3,
   RETRY_DELAY_MS: 2000,
   RETRY_BACKOFF: 2,
-  CHUNK_SIZE: 8 * 1024 * 1024, // 8MB keeps us well above S3 minimum part size while reducing part count (@Web)
+  CHUNK_SIZE: 8 * 1024 * 1024,
   DIRECT_UPLOAD_THRESHOLD: 4 * 1024 * 1024,
   LARGE_FILE_THRESHOLD: 50 * 1024 * 1024,
-  BASE_TIMEOUT_MS: 2 * 60 * 1000, // baseline per transfer window per large-file guidance (@Web)
+  BASE_TIMEOUT_MS: 2 * 60 * 1000,
   TIMEOUT_PER_MB_MS: 1500,
   MAX_TIMEOUT_MS: 10 * 60 * 1000,
   MULTIPART_PART_CONCURRENCY: 3,
@@ -136,28 +104,60 @@ const UPLOAD_CONFIG = {
   BATCH_REQUEST_SIZE: 50,
 } as const
 
+/**
+ * Calculates the upload timeout based on file size
+ */
 const calculateUploadTimeoutMs = (fileSize: number) => {
   const sizeInMb = fileSize / (1024 * 1024)
   const dynamicBudget = UPLOAD_CONFIG.BASE_TIMEOUT_MS + sizeInMb * UPLOAD_CONFIG.TIMEOUT_PER_MB_MS
   return Math.min(dynamicBudget, UPLOAD_CONFIG.MAX_TIMEOUT_MS)
 }
 
+/**
+ * Delays execution for the specified duration
+ */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/**
+ * Gets high resolution timestamp for performance measurements
+ */
 const getHighResTime = () =>
   typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now()
 
+/**
+ * Formats bytes to megabytes with 2 decimal places
+ */
 const formatMegabytes = (bytes: number) => Number((bytes / (1024 * 1024)).toFixed(2))
 
+/**
+ * Calculates throughput in Mbps
+ */
 const calculateThroughputMbps = (bytes: number, durationMs: number) => {
   if (!bytes || !durationMs) return 0
   return Number((((bytes * 8) / durationMs) * 0.001).toFixed(2))
 }
 
+/**
+ * Formats duration from milliseconds to seconds
+ */
 const formatDurationSeconds = (durationMs: number) => Number((durationMs / 1000).toFixed(2))
 
+/**
+ * Gets the content type for a file, falling back to extension-based lookup if browser doesn't provide one
+ */
+const getFileContentType = (file: File): string => {
+  if (file.type && file.type.trim().length > 0) {
+    return file.type
+  }
+  const extension = getFileExtension(file.name)
+  return getMimeTypeFromExtension(extension)
+}
+
+/**
+ * Runs async operations with concurrency limit
+ */
 const runWithConcurrency = async <T, R>(
   items: T[],
   limit: number,
@@ -192,14 +192,26 @@ const runWithConcurrency = async <T, R>(
   return results
 }
 
+/**
+ * Extracts the error name from an unknown error object
+ */
 const getErrorName = (error: unknown) =>
   typeof error === 'object' && error !== null && 'name' in error ? String((error as any).name) : ''
 
+/**
+ * Extracts a human-readable message from an unknown error
+ */
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error'
 
+/**
+ * Checks if an error is an abort error
+ */
 const isAbortError = (error: unknown) => getErrorName(error) === 'AbortError'
 
+/**
+ * Checks if an error is a network-related error
+ */
 const isNetworkError = (error: unknown) => {
   if (!(error instanceof Error)) {
     return false
@@ -233,6 +245,9 @@ interface PresignedUploadInfo {
   presignedUrls?: any
 }
 
+/**
+ * Normalizes presigned URL response data into a consistent format
+ */
 const normalizePresignedData = (data: any, context: string): PresignedUploadInfo => {
   const presignedUrl = data?.presignedUrl || data?.uploadUrl
   const fileInfo = data?.fileInfo
@@ -257,6 +272,9 @@ const normalizePresignedData = (data: any, context: string): PresignedUploadInfo
   }
 }
 
+/**
+ * Fetches presigned URL data for file upload
+ */
 const getPresignedData = async (
   file: File,
   timeoutMs: number,
@@ -285,7 +303,7 @@ const getPresignedData = async (
       try {
         errorDetails = await presignedResponse.json()
       } catch {
-        // Ignore JSON parsing errors (@Web)
+        errorDetails = null
       }
 
       logger.error('Presigned URL request failed', {
@@ -315,6 +333,9 @@ const getPresignedData = async (
   }
 }
 
+/**
+ * Hook for managing file uploads to knowledge bases
+ */
 export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
@@ -324,6 +345,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
   })
   const [uploadError, setUploadError] = useState<UploadError | null>(null)
 
+  /**
+   * Creates an UploadedFile object from file metadata
+   */
   const createUploadedFile = (
     filename: string,
     fileUrl: string,
@@ -335,7 +359,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     fileUrl,
     fileSize,
     mimeType,
-    // Include tags from original file if available
     tag1: (originalFile as any)?.tag1,
     tag2: (originalFile as any)?.tag2,
     tag3: (originalFile as any)?.tag3,
@@ -345,6 +368,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     tag7: (originalFile as any)?.tag7,
   })
 
+  /**
+   * Creates an UploadError from an exception
+   */
   const createErrorFromException = (error: unknown, defaultMessage: string): UploadError => {
     if (error instanceof KnowledgeUploadError) {
       return {
@@ -392,13 +418,15 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
       try {
-        // For large files (>50MB), use multipart upload
         if (file.size > UPLOAD_CONFIG.LARGE_FILE_THRESHOLD) {
           presignedData = presignedOverride ?? (await getPresignedData(file, timeoutMs, controller))
           return await uploadFileInChunks(file, presignedData, timeoutMs, fileIndex)
         }
 
-        // For all other files, use server-side upload
+        if (presignedOverride?.directUploadSupported && presignedOverride.presignedUrl) {
+          return await uploadFileDirectly(file, presignedOverride, timeoutMs, controller, fileIndex)
+        }
+
         return await uploadFileThroughAPI(file, timeoutMs)
       } finally {
         clearTimeout(timeoutId)
@@ -408,7 +436,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       const isNetwork = isNetworkError(error)
 
       if (retryCount < UPLOAD_CONFIG.MAX_RETRIES) {
-        const delay = UPLOAD_CONFIG.RETRY_DELAY_MS * UPLOAD_CONFIG.RETRY_BACKOFF ** retryCount // More aggressive exponential backoff (@Web)
+        const delay = UPLOAD_CONFIG.RETRY_DELAY_MS * UPLOAD_CONFIG.RETRY_BACKOFF ** retryCount
         if (isTimeout || isNetwork) {
           logger.warn(
             `Upload failed (${isTimeout ? 'timeout' : 'network'}), retrying in ${delay / 1000}s...`,
@@ -482,12 +510,10 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       outerController.signal.addEventListener('abort', abortHandler)
 
-      // Track upload progress
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable && fileIndex !== undefined && !isCompleted) {
           const percentComplete = Math.round((event.loaded / event.total) * 100)
           setUploadProgress((prev) => {
-            // Only update if this file is still uploading
             if (prev.fileStatuses?.[fileIndex]?.status === 'uploading') {
               return {
                 ...prev,
@@ -555,7 +581,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       xhr.addEventListener('abort', abortHandler)
 
-      // Start the upload
       xhr.open('PUT', presignedData.presignedUrl)
 
       // Set headers
@@ -585,7 +610,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     const startTime = getHighResTime()
 
     try {
-      // Step 1: Initiate multipart upload
       const initiateResponse = await fetch('/api/files/multipart?action=initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -603,12 +627,10 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       const { uploadId, key } = await initiateResponse.json()
       logger.info(`Initiated multipart upload with ID: ${uploadId}`)
 
-      // Step 2: Calculate parts
       const chunkSize = UPLOAD_CONFIG.CHUNK_SIZE
       const numParts = Math.ceil(file.size / chunkSize)
       const partNumbers = Array.from({ length: numParts }, (_, i) => i + 1)
 
-      // Step 3: Get presigned URLs for all parts
       const partUrlsResponse = await fetch('/api/files/multipart?action=get-part-urls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -620,7 +642,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       })
 
       if (!partUrlsResponse.ok) {
-        // Abort the multipart upload if we can't get URLs
         await fetch('/api/files/multipart?action=abort', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -631,7 +652,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       const { presignedUrls } = await partUrlsResponse.json()
 
-      // Step 4: Upload parts in parallel (batch them to avoid overwhelming the browser)
       const uploadedParts: Array<{ ETag: string; PartNumber: number }> = []
 
       const controller = new AbortController()
@@ -705,7 +725,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         clearTimeout(multipartTimeoutId)
       }
 
-      // Step 5: Complete multipart upload
       const completeResponse = await fetch('/api/files/multipart?action=complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -743,7 +762,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         sizeMB: formatMegabytes(file.size),
         durationMs: formatDurationSeconds(durationMs),
       })
-      // Fall back to direct upload if multipart fails
       return uploadFileDirectly(file, presignedData, timeoutMs, new AbortController(), fileIndex)
     }
   }
@@ -775,7 +793,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         try {
           errorData = await uploadResponse.json()
         } catch {
-          // Ignore JSON parsing errors
+          errorData = null
         }
 
         throw new DirectUploadError(
@@ -808,13 +826,12 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
   }
 
   /**
-   * Upload files using batch presigned URLs (works for both S3 and Azure Blob)
+   * Uploads files in batches using presigned URLs
    */
   const uploadFilesInBatches = async (files: File[]): Promise<UploadedFile[]> => {
     const results: UploadedFile[] = []
     const failedFiles: Array<{ file: File; error: Error }> = []
 
-    // Initialize file statuses
     const fileStatuses: FileUploadStatus[] = files.map((file) => ({
       fileName: file.name,
       fileSize: file.size,
@@ -963,6 +980,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     }
   }
 
+  /**
+   * Main upload function that handles file uploads and document processing
+   */
   const uploadFiles = async (
     files: File[],
     knowledgeBaseId: string,
@@ -988,7 +1008,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       const processPayload = {
         documents: uploadedFiles.map((file) => ({
           ...file,
-          // Tags are already included in the file object from createUploadedFile
         })),
         processingOptions: {
           chunkSize: processingOptions.chunkSize || 1024,
@@ -1013,7 +1032,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         try {
           errorData = await processResponse.json()
         } catch {
-          // Ignore JSON parsing errors
+          errorData = null
         }
 
         logger.error('Document processing failed:', {
@@ -1072,9 +1091,12 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     }
   }
 
-  const clearError = () => {
+  /**
+   * Clears the current upload error
+   */
+  const clearError = useCallback(() => {
     setUploadError(null)
-  }
+  }, [])
 
   return {
     isUploading,

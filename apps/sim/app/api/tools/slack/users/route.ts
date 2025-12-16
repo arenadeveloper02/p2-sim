@@ -32,11 +32,10 @@ export async function POST(request: Request) {
     }
 
     let accessToken: string
-    let isBotToken = false
+    const isBotToken = credential.startsWith('xoxb-')
 
-    if (credential.startsWith('xoxb-')) {
+    if (isBotToken) {
       accessToken = credential
-      isBotToken = true
       logger.info('Using direct bot token for Slack API')
     } else {
       const authz = await authorizeCredentialUse(request as any, {
@@ -65,28 +64,17 @@ export async function POST(request: Request) {
         )
       }
       accessToken = resolvedToken
+      logger.info('Using OAuth token for Slack API')
     }
 
-    let data
-    try {
-      data = await fetchSlackUsers(accessToken)
-      logger.info('Successfully fetched Slack users')
-    } catch (error) {
-      logger.error('Slack API error:', error)
-      return NextResponse.json(
-        { error: `Slack API error: ${(error as Error).message}` },
-        { status: 400 }
-      )
-    }
+    const data = await fetchSlackUsers(accessToken)
 
-    // Filter to active users and format the response
     const users = (data.members || [])
       .filter((user: SlackUser) => !user.deleted && !user.is_bot)
       .map((user: SlackUser) => ({
         id: user.id,
         name: user.name,
-        realName:
-          user.real_name || user.profile?.real_name || user.profile?.display_name || user.name,
+        real_name: user.real_name || user.name,
         displayName:
           user.profile?.display_name || user.profile?.real_name || user.real_name || user.name,
       }))
@@ -94,40 +82,69 @@ export async function POST(request: Request) {
     logger.info(`Successfully fetched ${users.length} Slack users`, {
       total: data.members?.length || 0,
       active: users.length,
-      tokenType: isBotToken ? 'bot' : 'oauth',
+      tokenType: isBotToken ? 'bot_token' : 'oauth',
     })
-
     return NextResponse.json({ users })
   } catch (error) {
-    logger.error('Error in Slack users API:', error)
+    logger.error('Error processing Slack users request:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: (error as Error).message },
+      { error: 'Failed to retrieve Slack users', details: (error as Error).message },
       { status: 500 }
     )
   }
 }
 
 async function fetchSlackUsers(accessToken: string) {
-  const url = new URL('https://slack.com/api/users.list')
-  url.searchParams.append('limit', '1000')
+  const allMembers: SlackUser[] = []
+  let cursor: string | undefined = undefined
+  const limit = 200
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  do {
+    const url = new URL('https://slack.com/api/users.list')
+    url.searchParams.append('limit', String(limit))
+    if (cursor) {
+      url.searchParams.append('cursor', cursor)
+    }
 
-  if (!response.ok) {
-    throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Slack API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Failed to fetch users')
+    }
+
+    // Accumulate members from this page
+    if (data.members && Array.isArray(data.members)) {
+      allMembers.push(...data.members)
+    }
+
+    // Check if there are more pages
+    cursor = data.response_metadata?.next_cursor
+    if (cursor && cursor.trim() === '') {
+      cursor = undefined
+    }
+
+    logger.info(`Fetched ${data.members?.length || 0} users (total so far: ${allMembers.length})`, {
+      hasMore: !!cursor,
+    })
+  } while (cursor)
+
+  logger.info(`Completed fetching all Slack users: ${allMembers.length} total`)
+
+  // Return data in the same format as before, but with all members
+  return {
+    ok: true,
+    members: allMembers,
   }
-
-  const data = await response.json()
-
-  if (!data.ok) {
-    throw new Error(data.error || 'Failed to fetch users')
-  }
-
-  return data
 }

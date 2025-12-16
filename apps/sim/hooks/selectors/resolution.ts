@@ -15,6 +15,8 @@ export interface SelectorResolutionArgs {
   planId?: string
   teamId?: string
   knowledgeBaseId?: string
+  siteId?: string
+  collectionId?: string
 }
 
 const defaultContext: SelectorContext = {}
@@ -30,6 +32,8 @@ export function resolveSelectorForSubBlock(
       return resolveFolderSelector(subBlock, args)
     case 'channel-selector':
       return resolveChannelSelector(subBlock, args)
+    case 'user-selector':
+      return resolveUserSelector(subBlock, args)
     case 'project-selector':
       return resolveProjectSelector(subBlock, args)
     case 'document-selector':
@@ -52,6 +56,8 @@ function buildBaseContext(
     planId: args.planId,
     teamId: args.teamId,
     knowledgeBaseId: args.knowledgeBaseId,
+    siteId: args.siteId,
+    collectionId: args.collectionId,
     ...extra,
   }
 }
@@ -106,6 +112,14 @@ function resolveFileSelector(
     }
     case 'sharepoint':
       return { key: 'sharepoint.sites', context, allowSearch: true }
+    case 'webflow':
+      if (subBlock.id === 'collectionId') {
+        return { key: 'webflow.collections', context, allowSearch: false }
+      }
+      if (subBlock.id === 'itemId') {
+        return { key: 'webflow.items', context, allowSearch: true }
+      }
+      return { key: null, context, allowSearch: true }
     default:
       return { key: null, context, allowSearch: true }
   }
@@ -145,6 +159,21 @@ function resolveChannelSelector(
   }
 }
 
+function resolveUserSelector(
+  subBlock: SubBlockConfig,
+  args: SelectorResolutionArgs
+): SelectorResolution {
+  const serviceId = subBlock.serviceId
+  if (serviceId !== 'slack') {
+    return { key: null, context: buildBaseContext(args), allowSearch: true }
+  }
+  return {
+    key: 'slack.users',
+    context: buildBaseContext(args),
+    allowSearch: true,
+  }
+}
+
 function resolveProjectSelector(
   subBlock: SubBlockConfig,
   args: SelectorResolutionArgs
@@ -159,6 +188,8 @@ function resolveProjectSelector(
     }
     case 'jira':
       return { key: 'jira.projects', context, allowSearch: true }
+    case 'webflow':
+      return { key: 'webflow.sites', context, allowSearch: false }
     default:
       return { key: null, context, allowSearch: true }
   }

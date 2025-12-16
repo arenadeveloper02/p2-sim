@@ -31,6 +31,7 @@ import {
   SalesforceIcon,
   ShopifyIcon,
   SlackIcon,
+  SpotifyIcon,
   // SupabaseIcon,
   TrelloIcon,
   WealthboxIcon,
@@ -70,6 +71,7 @@ export type OAuthProvider =
   | 'shopify'
   | 'zoom'
   | 'wordpress'
+  | 'spotify'
   | string
 
 export type OAuthService =
@@ -111,6 +113,8 @@ export type OAuthService =
   | 'shopify'
   | 'zoom'
   | 'wordpress'
+  | 'spotify'
+
 export interface OAuthProviderConfig {
   id: OAuthProvider
   name: string
@@ -633,6 +637,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'groups:history',
           'chat:write',
           'chat:write.public',
+          'im:write',
+          'im:history',
+          'im:read',
           'users:read',
           'files:write',
           'files:read',
@@ -819,8 +826,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'business-intelligence',
           'forms',
           'files',
-          'hubdb',
-          'transactional-email',
           'record_images.signed_urls.read',
           'crm.objects.products.read',
           'integration-sync',
@@ -852,8 +857,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'crm.schemas.contacts.read',
           'cms.domains.read',
           'cms.domains.write',
-          'cms.functions.read',
-          'cms.functions.write',
           'media_bridge.read',
           'media_bridge.write',
           'settings.billing.write',
@@ -874,22 +877,14 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'conversations.write',
           'crm.schemas.quotes.read',
           'crm.schemas.line_items.read',
-          'collector.graphql_schema.read',
-          'collector.graphql_query.execute',
-          'analytics.behavioral_events.send',
           'account-info.security.read',
           'crm.export',
-          'cms.performance.read',
           'integrations.zoom-app.playbooks.read',
           'settings.currencies.read',
           'settings.currencies.write',
           'external_integrations.forms.access',
-          'business_units_view.read',
           'crm.objects.goals.read',
           'ctas.read',
-          'behavioral_events.event_definitions.read_write',
-          'marketing-email',
-          'crm.dealsplits.read_write',
           'crm.objects.subscriptions.read',
           'crm.schemas.subscriptions.read',
           'crm.schemas.commercepayments.read',
@@ -916,8 +911,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'marketing.campaigns.revenue.read',
           'automation.sequences.enrollments.write',
           'automation.sequences.read',
-          'communication_preferences.statuses.batch.read',
-          'communication_preferences.statuses.batch.write',
           'cms.membership.access_groups.read',
           'cms.membership.access_groups.write',
           'crm.objects.courses.read',
@@ -1020,6 +1013,41 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
     },
     defaultService: 'wordpress',
+  },
+  spotify: {
+    id: 'spotify',
+    name: 'Spotify',
+    icon: (props) => SpotifyIcon(props),
+    services: {
+      spotify: {
+        id: 'spotify',
+        name: 'Spotify',
+        description: 'Search music, manage playlists, control playback, and access your library.',
+        providerId: 'spotify',
+        icon: (props) => SpotifyIcon(props),
+        baseProviderIcon: (props) => SpotifyIcon(props),
+        scopes: [
+          'user-read-private',
+          'user-read-email',
+          'user-library-read',
+          'user-library-modify',
+          'playlist-read-private',
+          'playlist-read-collaborative',
+          'playlist-modify-public',
+          'playlist-modify-private',
+          'user-read-playback-state',
+          'user-modify-playback-state',
+          'user-read-currently-playing',
+          'user-read-recently-played',
+          'user-top-read',
+          'user-follow-read',
+          'user-follow-modify',
+          'user-read-playback-position',
+          'ugc-image-upload',
+        ],
+      },
+    },
+    defaultService: 'spotify',
   },
 }
 
@@ -1597,6 +1625,19 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
+    case 'spotify': {
+      const { clientId, clientSecret } = getCredentials(
+        env.SPOTIFY_CLIENT_ID,
+        env.SPOTIFY_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://accounts.spotify.com/api/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: true,
         supportsRefreshTokenRotation: false,
       }
     }

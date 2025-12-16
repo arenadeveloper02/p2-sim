@@ -45,7 +45,6 @@ export async function getUserKnowledgeBaseAccess(
     .where(
       and(
         isNull(userKnowledgeBase.deletedAt),
-        eq(userKnowledgeBase.userIdRef, userId),
         workspaceId ? eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId) : undefined
       )
     )
@@ -59,7 +58,7 @@ export async function getUserKnowledgeBaseAccess(
       userKnowledgeBase.createdAt,
       userKnowledgeBase.updatedAt
     )
-    .orderBy(userKnowledgeBase.createdAt)
+    .orderBy(userKnowledgeBase.knowledgeBaseNameRef)
 
   logger.info(
     `[${requestId}] Retrieved ${results.length} knowledge base access entries for user ${userId}`
