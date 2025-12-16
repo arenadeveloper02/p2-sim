@@ -109,15 +109,23 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Check if identifier is available
-      const existingIdentifier = await db
+      // Check if identifier is already in use by an active chat
+      const existingChat = await db
         .select()
         .from(chat)
         .where(eq(chat.identifier, identifier))
         .limit(1)
 
-      if (existingIdentifier.length > 0) {
-        return createErrorResponse('Identifier already in use', 400)
+      if (existingChat.length > 0) {
+        const existing = existingChat[0]
+        // If chat is active, identifier is already in use
+        if (existing.isActive) {
+          return createErrorResponse('Identifier already in use', 400)
+        }
+        // If chat is inactive, we'll update it instead of creating a new one
+        logger.info(
+          `Found inactive chat with identifier ${identifier}, will update instead of creating new`
+        )
       }
 
       // Check if user has permission to create chat for this workflow
@@ -151,20 +159,6 @@ export async function POST(request: NextRequest) {
         encryptedPassword = encrypted
       }
 
-      // Create the chat deployment
-      const id = uuidv4()
-
-      // Log the values we're inserting
-      logger.info('Creating chat deployment with values:', {
-        workflowId,
-        identifier,
-        title,
-        authType,
-        hasPassword: !!encryptedPassword,
-        emailCount: allowedEmails?.length || 0,
-        outputConfigsCount: outputConfigs.length,
-      })
-
       // Merge customizations with the additional fields
       const mergedCustomizations = {
         ...(customizations || {}),
@@ -172,24 +166,77 @@ export async function POST(request: NextRequest) {
         welcomeMessage: customizations?.welcomeMessage || 'Hi there! How can I help you today?',
       }
 
-      await db.insert(chat).values({
-        id,
-        workflowId,
-        userId: session.user.id,
-        identifier,
-        title,
-        description: description || '',
-        remarks: remarks || '',
-        department: department || '',
-        customizations: mergedCustomizations,
-        isActive: true,
-        authType,
-        password: encryptedPassword,
-        allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
-        outputConfigs,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      // Determine chat ID - use existing if updating, generate new if creating
+      let chatId: string
+
+      // If inactive chat exists, update it; otherwise create new
+      if (existingChat.length > 0 && !existingChat[0].isActive) {
+        const existing = existingChat[0]
+        chatId = existing.id
+
+        logger.info('Updating inactive chat deployment with values:', {
+          chatId,
+          workflowId,
+          identifier,
+          title,
+          authType,
+          hasPassword: !!encryptedPassword,
+          emailCount: allowedEmails?.length || 0,
+          outputConfigsCount: outputConfigs.length,
+        })
+
+        await db
+          .update(chat)
+          .set({
+            workflowId,
+            userId: session.user.id,
+            identifier,
+            title,
+            description: description || '',
+            remarks: remarks || '',
+            department: department || '',
+            customizations: mergedCustomizations,
+            isActive: true,
+            authType,
+            password: encryptedPassword,
+            allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
+            outputConfigs,
+            updatedAt: new Date(),
+          })
+          .where(eq(chat.id, chatId))
+      } else {
+        // Create the chat deployment
+        chatId = uuidv4()
+
+        logger.info('Creating chat deployment with values:', {
+          workflowId,
+          identifier,
+          title,
+          authType,
+          hasPassword: !!encryptedPassword,
+          emailCount: allowedEmails?.length || 0,
+          outputConfigsCount: outputConfigs.length,
+        })
+
+        await db.insert(chat).values({
+          id: chatId,
+          workflowId,
+          userId: session.user.id,
+          identifier,
+          title,
+          description: description || '',
+          remarks: remarks || '',
+          department: department || '',
+          customizations: mergedCustomizations,
+          isActive: true,
+          authType,
+          password: encryptedPassword,
+          allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
+          outputConfigs,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+      }
 
       // Return successful response with chat URL
       // Generate chat URL using path-based routing instead of subdomains
@@ -219,7 +266,7 @@ export async function POST(request: NextRequest) {
       logger.info(`Chat "${title}" deployed successfully at ${chatUrl}`)
 
       return createSuccessResponse({
-        id,
+        id: chatId,
         chatUrl,
         message: 'Chat deployment created successfully',
       })

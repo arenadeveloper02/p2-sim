@@ -168,8 +168,8 @@ export async function DELETE(
         .set({ isDeployed: false, deployedAt: null })
         .where(eq(workflow.id, id))
 
-      // Also deactivate any chat deployments linked to this workflow
-      await tx.update(chat).set({ isActive: false }).where(eq(chat.workflowId, id))
+      // Delete any chat deployments linked to this workflow
+      await tx.delete(chat).where(eq(chat.workflowId, id))
     })
 
     logger.info(`[${requestId}] Workflow undeployed successfully: ${id}`)
