@@ -344,7 +344,7 @@ export function LogsToolbar({
 
           {/* View mode toggle */}
           <div
-            className='flex h-[32px] cursor-pointer items-center rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] p-[2px]'
+            className='flex h-[32px] cursor-pointer items-center rounded-[6px] border border-[var(--border)] bg-[var(--surface-5)] p-[2px]'
             onClick={() => onViewModeChange(isDashboardView ? 'logs' : 'dashboard')}
           >
             <Button

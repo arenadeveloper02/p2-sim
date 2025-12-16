@@ -493,8 +493,8 @@ export default function Logs() {
                           key={log.id}
                           ref={isSelected ? selectedRowRef : null}
                           className={cn(
-                            'relative flex h-[44px] cursor-pointer items-center px-[24px] hover:bg-[var(--c-2A2A2A)]',
-                            isSelected && 'bg-[var(--c-2A2A2A)]'
+                            'relative flex h-[44px] cursor-pointer items-center px-[24px] hover:bg-[var(--surface-9)]',
+                            isSelected && 'bg-[var(--surface-9)]'
                           )}
                           onClick={() => handleLogClick(log)}
                         >

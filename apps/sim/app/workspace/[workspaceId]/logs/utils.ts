@@ -35,7 +35,7 @@ export function hexToBackground(hex: string): string {
   const r = Number.parseInt(hex.slice(1, 3), 16)
   const g = Number.parseInt(hex.slice(3, 5), 16)
   const b = Number.parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r}, ${g}, ${b}, 0.2)`
+  return `rgba(${r}, ${g}, ${b}, 0.7)`
 }
 
 /**
@@ -133,7 +133,7 @@ export const TriggerBadge = React.memo(({ trigger }: TriggerBadgeProps) => {
     )
   }
 
-  const textColor = lightenColor(metadata.color, 65)
+  const textColor = lightenColor(metadata.color, 100)
 
   return React.createElement(
     'div',
