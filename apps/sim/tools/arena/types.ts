@@ -60,6 +60,20 @@ export interface SearchTaskQueryParams {
   }
 }
 
+export type ArenaSaveSummaryParams = {
+  operation: string
+  'save-summary-client': {
+    clientId: string
+    name: string
+  }
+  'save-summary-text': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaSaveSummaryResponse extends ToolResponse {}
+
 export interface Task {
   errors: string | null
   errorMessage: string | null

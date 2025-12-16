@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Database, HelpCircle, Layout, Plus, Search, Settings , ArrowLeft} from 'lucide-react'
+import { ArrowDown, ArrowLeft, Database, Layout, Plus, Search, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
