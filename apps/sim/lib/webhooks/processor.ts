@@ -3,7 +3,7 @@ import { tasks } from '@trigger.dev/sdk'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { env, isTruthy } from '@/lib/core/config/env'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { createLogger } from '@/lib/logs/console/logger'
 import { convertSquareBracketsToTwiML } from '@/lib/webhooks/utils'
@@ -494,12 +494,17 @@ export async function verifyProviderAuth(
 /**
  * Run preprocessing checks for webhook execution
  * This replaces the old checkRateLimits and checkUsageLimits functions
+ *
+ * @param isTestMode - If true, skips deployment check (for test webhooks that run on live/draft state)
  */
 export async function checkWebhookPreprocessing(
   foundWorkflow: any,
   foundWebhook: any,
-  requestId: string
+  requestId: string,
+  options?: { isTestMode?: boolean }
 ): Promise<NextResponse | null> {
+  const { isTestMode = false } = options || {}
+
   try {
     const executionId = uuidv4()
 
@@ -510,7 +515,7 @@ export async function checkWebhookPreprocessing(
       executionId,
       requestId,
       checkRateLimit: true, // Webhooks need rate limiting
-      checkDeployment: true, // Webhooks require deployed workflows
+      checkDeployment: !isTestMode, // Test webhooks skip deployment check (run on live state)
       workspaceId: foundWorkflow.workspaceId,
     })
 
@@ -702,9 +707,7 @@ export async function queueWebhookExecution(
       ...(credentialId ? { credentialId } : {}),
     }
 
-    const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
-
-    if (useTrigger) {
+    if (isTriggerDevEnabled) {
       const handle = await tasks.trigger('webhook-execution', payload)
       logger.info(
         `[${options.requestId}] Queued ${options.testMode ? 'TEST ' : ''}webhook execution task ${

@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { validate as uuidValidate, v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { env, isTruthy } from '@/lib/core/config/env'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -236,9 +236,8 @@ type AsyncExecutionParams = {
  */
 async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextResponse> {
   const { requestId, workflowId, userId, input, triggerType } = params
-  const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
 
-  if (!useTrigger) {
+  if (!isTriggerDevEnabled) {
     logger.warn(`[${requestId}] Async mode requested but TRIGGER_DEV_ENABLED is false`)
     return NextResponse.json(
       { error: 'Async execution is not enabled. Set TRIGGER_DEV_ENABLED=true to use async mode.' },
@@ -395,8 +394,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       triggerType: loggingTriggerType,
       executionId,
       requestId,
-      checkRateLimit: false, // Manual executions bypass rate limits
-      checkDeployment: !shouldUseDraftState, // Check deployment unless using draft
+      checkDeployment: !shouldUseDraftState,
       loggingSession,
     })
 
@@ -431,6 +429,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       edges: any[]
       loops: Record<string, any>
       parallels: Record<string, any>
+      deploymentVersionId?: string
     } | null = null
 
     let processedInput = input
@@ -445,6 +444,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           edges: workflowData.edges,
           loops: workflowData.loops || {},
           parallels: workflowData.parallels || {},
+          deploymentVersionId:
+            !shouldUseDraftState && 'deploymentVersionId' in workflowData
+              ? (workflowData.deploymentVersionId as string)
+              : undefined,
         }
 
         const serializedWorkflow = new Serializer().serializeWorkflow(

@@ -129,8 +129,7 @@ export function generateStructuredData() {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: 'Arena',
-    description:
-      `Arena\'s AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`,
+    description: `Arena\'s AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`,
     url: getBaseUrl(),
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web Browser',

@@ -18,14 +18,16 @@ import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import {
   getEmailSubject,
-  renderInvitationEmail,
   renderOTPEmail,
   renderPasswordResetEmail,
 } from '@/components/emails/render-email'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import { handleNewUser } from '@/lib/billing/core/usage'
-import { syncSubscriptionUsageLimits } from '@/lib/billing/organization'
+import {
+  ensureOrganizationForTeamSubscription,
+  syncSubscriptionUsageLimits,
+} from '@/lib/billing/organization'
 import { getPlans } from '@/lib/billing/plans'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
 import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
@@ -39,13 +41,19 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
 } from '@/lib/billing/webhooks/subscription'
-import { env, isTruthy } from '@/lib/core/config/env'
-import { isBillingEnabled, isEmailVerificationEnabled } from '@/lib/core/config/environment'
+import { env } from '@/lib/core/config/env'
+import {
+  isAuthDisabled,
+  isBillingEnabled,
+  isEmailVerificationEnabled,
+  isRegistrationDisabled,
+} from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
 import { SSO_TRUSTED_PROVIDERS } from './sso/constants'
 
 const logger = createLogger('Auth')
@@ -101,6 +109,44 @@ export const auth = betterAuth({
     },
     account: {
       create: {
+        before: async (account) => {
+          const existing = await db.query.account.findFirst({
+            where: and(
+              eq(schema.account.userId, account.userId),
+              eq(schema.account.providerId, account.providerId),
+              eq(schema.account.accountId, account.accountId)
+            ),
+          })
+
+          if (existing) {
+            logger.warn(
+              '[databaseHooks.account.create.before] Duplicate account detected, updating existing',
+              {
+                existingId: existing.id,
+                userId: account.userId,
+                providerId: account.providerId,
+                accountId: account.accountId,
+              }
+            )
+
+            await db
+              .update(schema.account)
+              .set({
+                accessToken: account.accessToken,
+                refreshToken: account.refreshToken,
+                idToken: account.idToken,
+                accessTokenExpiresAt: account.accessTokenExpiresAt,
+                refreshTokenExpiresAt: account.refreshTokenExpiresAt,
+                scope: account.scope,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.account.id, existing.id))
+
+            return false
+          }
+
+          return { data: account }
+        },
         after: async (account) => {
           // Salesforce doesn't return expires_in in its token response (unlike other OAuth providers).
           // We set a default 2-hour expiration so token refresh logic works correctly.
@@ -185,6 +231,7 @@ export const auth = betterAuth({
         'pipedrive',
         'hubspot',
         'linkedin',
+        'spotify',
 
         // Common SSO provider patterns
         ...SSO_TRUSTED_PROVIDERS,
@@ -232,7 +279,7 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
-      if (ctx.path.startsWith('/sign-up') && isTruthy(env.DISABLE_REGISTRATION))
+      if (ctx.path.startsWith('/sign-up') && isRegistrationDisabled)
         throw new Error('Registration is disabled, please contact your admin.')
 
       if (
@@ -1709,6 +1756,9 @@ export const auth = betterAuth({
             'groups:history',
             'chat:write',
             'chat:write.public',
+            'im:write',
+            'im:history',
+            'im:read',
             'users:read',
             'files:write',
             'files:read',
@@ -1917,6 +1967,72 @@ export const auth = betterAuth({
           },
         },
 
+        // Spotify provider
+        {
+          providerId: 'spotify',
+          clientId: env.SPOTIFY_CLIENT_ID as string,
+          clientSecret: env.SPOTIFY_CLIENT_SECRET as string,
+          authorizationUrl: 'https://accounts.spotify.com/authorize',
+          tokenUrl: 'https://accounts.spotify.com/api/token',
+          userInfoUrl: 'https://api.spotify.com/v1/me',
+          scopes: [
+            'user-read-private',
+            'user-read-email',
+            'user-library-read',
+            'user-library-modify',
+            'playlist-read-private',
+            'playlist-read-collaborative',
+            'playlist-modify-public',
+            'playlist-modify-private',
+            'user-read-playback-state',
+            'user-modify-playback-state',
+            'user-read-currently-playing',
+            'user-read-recently-played',
+            'user-top-read',
+            'user-follow-read',
+            'user-follow-modify',
+            'user-read-playback-position',
+            'ugc-image-upload',
+          ],
+          responseType: 'code',
+          authentication: 'basic',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/spotify`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Spotify user profile')
+
+              const response = await fetch('https://api.spotify.com/v1/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Failed to fetch Spotify user info', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const profile = await response.json()
+
+              return {
+                id: profile.id,
+                name: profile.display_name || 'Spotify User',
+                email: profile.email || `${profile.id}@spotify.user`,
+                emailVerified: true,
+                image: profile.images?.[0]?.url || undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            } catch (error) {
+              logger.error('Error in Spotify getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
         // WordPress.com provider
         {
           providerId: 'wordpress',
@@ -2027,11 +2143,14 @@ export const auth = betterAuth({
                   status: subscription.status,
                 })
 
-                await handleSubscriptionCreated(subscription)
+                const resolvedSubscription =
+                  await ensureOrganizationForTeamSubscription(subscription)
 
-                await syncSubscriptionUsageLimits(subscription)
+                await handleSubscriptionCreated(resolvedSubscription)
 
-                await sendPlanWelcomeEmail(subscription)
+                await syncSubscriptionUsageLimits(resolvedSubscription)
+
+                await sendPlanWelcomeEmail(resolvedSubscription)
               },
               onSubscriptionUpdate: async ({
                 event,
@@ -2046,40 +2165,42 @@ export const auth = betterAuth({
                   plan: subscription.plan,
                 })
 
+                const resolvedSubscription =
+                  await ensureOrganizationForTeamSubscription(subscription)
+
                 try {
-                  await syncSubscriptionUsageLimits(subscription)
+                  await syncSubscriptionUsageLimits(resolvedSubscription)
                 } catch (error) {
                   logger.error('[onSubscriptionUpdate] Failed to sync usage limits', {
-                    subscriptionId: subscription.id,
-                    referenceId: subscription.referenceId,
+                    subscriptionId: resolvedSubscription.id,
+                    referenceId: resolvedSubscription.referenceId,
                     error,
                   })
                 }
 
-                // Sync seat count from Stripe subscription quantity for team plans
-                if (subscription.plan === 'team') {
+                if (resolvedSubscription.plan === 'team') {
                   try {
                     const stripeSubscription = event.data.object as Stripe.Subscription
                     const quantity = stripeSubscription.items?.data?.[0]?.quantity || 1
 
                     const result = await syncSeatsFromStripeQuantity(
-                      subscription.id,
-                      subscription.seats,
+                      resolvedSubscription.id,
+                      resolvedSubscription.seats ?? null,
                       quantity
                     )
 
                     if (result.synced) {
                       logger.info('[onSubscriptionUpdate] Synced seat count from Stripe', {
-                        subscriptionId: subscription.id,
-                        referenceId: subscription.referenceId,
+                        subscriptionId: resolvedSubscription.id,
+                        referenceId: resolvedSubscription.referenceId,
                         previousSeats: result.previousSeats,
                         newSeats: result.newSeats,
                       })
                     }
                   } catch (error) {
                     logger.error('[onSubscriptionUpdate] Failed to sync seat count', {
-                      subscriptionId: subscription.id,
-                      referenceId: subscription.referenceId,
+                      subscriptionId: resolvedSubscription.id,
+                      referenceId: resolvedSubscription.referenceId,
                       error,
                     })
                   }
@@ -2099,14 +2220,6 @@ export const auth = betterAuth({
 
                 try {
                   await handleSubscriptionDeleted(subscription)
-
-                  // Reset usage limits to free tier
-                  await syncSubscriptionUsageLimits(subscription)
-
-                  logger.info('[onSubscriptionDeleted] Reset usage limits to free tier', {
-                    subscriptionId: subscription.id,
-                    referenceId: subscription.referenceId,
-                  })
                 } catch (error) {
                   logger.error('[onSubscriptionDeleted] Failed to handle subscription deletion', {
                     subscriptionId: subscription.id,
@@ -2184,79 +2297,6 @@ export const auth = betterAuth({
 
               return hasTeamPlan
             },
-            // Set a fixed membership limit of 50, but the actual limit will be enforced in the invitation flow
-            membershipLimit: 50,
-            // Validate seat limits before sending invitations
-            beforeInvite: async ({ organization }: { organization: { id: string } }) => {
-              const subscriptions = await db
-                .select()
-                .from(schema.subscription)
-                .where(
-                  and(
-                    eq(schema.subscription.referenceId, organization.id),
-                    eq(schema.subscription.status, 'active')
-                  )
-                )
-
-              const teamOrEnterpriseSubscription = subscriptions.find(
-                (sub) => sub.plan === 'team' || sub.plan === 'enterprise'
-              )
-
-              if (!teamOrEnterpriseSubscription) {
-                throw new Error('No active team or enterprise subscription for this organization')
-              }
-
-              const members = await db
-                .select()
-                .from(schema.member)
-                .where(eq(schema.member.organizationId, organization.id))
-
-              const pendingInvites = await db
-                .select()
-                .from(schema.invitation)
-                .where(
-                  and(
-                    eq(schema.invitation.organizationId, organization.id),
-                    eq(schema.invitation.status, 'pending')
-                  )
-                )
-
-              const totalCount = members.length + pendingInvites.length
-              const seatLimit = teamOrEnterpriseSubscription.seats || 1
-
-              if (totalCount >= seatLimit) {
-                throw new Error(`Organization has reached its seat limit of ${seatLimit}`)
-              }
-            },
-            sendInvitationEmail: async (data: any) => {
-              try {
-                const { invitation, organization, inviter } = data
-
-                const inviteUrl = `${getBaseUrl()}/invite/${invitation.id}`
-                const inviterName = inviter.user?.name || 'A team member'
-
-                const html = await renderInvitationEmail(
-                  inviterName,
-                  organization.name,
-                  inviteUrl,
-                  invitation.email
-                )
-
-                const result = await sendEmail({
-                  to: invitation.email,
-                  subject: `${inviterName} has invited you to join ${organization.name} on Sim`,
-                  html,
-                  from: getFromEmailAddress(),
-                  emailType: 'transactional',
-                })
-
-                if (!result.success) {
-                  logger.error('Failed to send organization invitation email:', result.message)
-                }
-              } catch (error) {
-                logger.error('Error sending invitation email', { error })
-              }
-            },
             organizationCreation: {
               afterCreate: async ({ organization, user }) => {
                 logger.info('[organizationCreation.afterCreate] Organization created', {
@@ -2278,6 +2318,11 @@ export const auth = betterAuth({
 })
 
 export async function getSession() {
+  if (isAuthDisabled) {
+    await ensureAnonymousUserExists()
+    return createAnonymousSession()
+  }
+
   const hdrs = await headers()
   return await auth.api.getSession({
     headers: hdrs,

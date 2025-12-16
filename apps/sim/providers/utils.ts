@@ -1,5 +1,5 @@
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { createLogger } from '@/lib/logs/console/logger'
 import { anthropicProvider } from '@/providers/anthropic'
 import { azureOpenAIProvider } from '@/providers/azure-openai'
@@ -652,14 +652,20 @@ export function getApiKey(
     userProvidedKey && !userProvidedKey.includes('{{') && !userProvidedKey.includes('}}')
   const hasUserKey = !!isResolvedKey
 
-  // Ollama models don't require API keys - they run locally
+  // Ollama and vLLM models don't require API keys
   const isOllamaModel =
     provider === 'ollama' || useProvidersStore.getState().providers.ollama.models.includes(model)
   if (isOllamaModel) {
     return 'empty' // Ollama uses 'empty' as a placeholder API key
   }
 
-  // Use server key rotation for all OpenAI models, Anthropic's Claude models, Google's Gemini models, SambaNova models, and xAI models on the hosted platform
+  const isVllmModel =
+    provider === 'vllm' || useProvidersStore.getState().providers.vllm.models.includes(model)
+  if (isVllmModel) {
+    return userProvidedKey || 'empty' // vLLM uses 'empty' as a placeholder if no key provided
+  }
+
+  // Use server key rotation for all OpenAI models, Anthropic's Claude models, and Google's Gemini models on the hosted platform
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGeminiModel = provider === 'google'
@@ -1083,10 +1089,21 @@ export function prepareToolExecution(
   toolParams: Record<string, any>
   executionParams: Record<string, any>
 } {
+  // Filter out empty/null/undefined values from user params
+  // so that cleared fields don't override LLM-generated values
+  const filteredUserParams: Record<string, any> = {}
+  if (tool.params) {
+    for (const [key, value] of Object.entries(tool.params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        filteredUserParams[key] = value
+      }
+    }
+  }
+
   // User-provided params take precedence over LLM-generated params
   const toolParams = {
     ...llmArgs,
-    ...tool.params,
+    ...filteredUserParams,
   }
 
   // Add system parameters for execution

@@ -1,9 +1,7 @@
 /**
  * Execution timeout constants
  *
- * These constants define the timeout values for code execution.
- * - DEFAULT_EXECUTION_TIMEOUT_MS: The default timeout for executing user code (3 minutes)
- * - MAX_EXECUTION_DURATION: The maximum duration for the API route (adds 30s buffer for overhead)
+ * DEFAULT_EXECUTION_TIMEOUT_MS: The default timeout for executing user code (10 minutes)
  */
 
 export const DEFAULT_EXECUTION_TIMEOUT_MS = 600000 // 10 minutes (600 seconds)

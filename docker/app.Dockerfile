@@ -1,9 +1,7 @@
 # ========================================
-# Base Stage (Bun)
+# Base Stage: Debian-based Bun
 # ========================================
-FROM oven/bun:1.3.3 AS base
-
-WORKDIR /app
+FROM oven/bun:1.3.3-slim AS base
 
 # ========================================
 # Dependencies Stage
@@ -11,17 +9,23 @@ WORKDIR /app
 FROM base AS deps
 WORKDIR /app
 
-# Install turbo globally
-RUN bun install -g turbo
+# Install Node.js 22 for isolated-vm compilation (requires node-gyp and V8)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock turbo.json ./
 RUN mkdir -p apps packages/db
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 
-# Install workspace deps (cached)
-RUN bun install --omit dev --ignore-scripts
-
+# Install turbo globally, then dependencies, then rebuild isolated-vm for Node.js
+RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
+    bun install -g turbo && \
+    HUSKY=0 bun install --omit=dev --ignore-scripts && \
+    cd $(readlink -f node_modules/isolated-vm) && npx node-gyp rebuild --release && cd /app
 
 # ========================================
 # Builder Stage (Next.js build)
@@ -50,7 +54,8 @@ COPY packages ./packages
 
 # Required for standalone build
 WORKDIR /app/apps/sim
-RUN bun install sharp
+RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
+    HUSKY=0 bun install sharp
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \
@@ -125,14 +130,31 @@ RUN groupadd -g 1001 nodejs && \
 # ========================================
 # Copy build artifacts from builder
 # ========================================
+# Install Node.js 22 (for isolated-vm worker), Python, and other runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv bash ffmpeg curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production
+
+# Create non-root user and group
+RUN groupadd -g 1001 nodejs && \
+    useradd -u 1001 -g nodejs nextjs
+
+# Copy application artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/static ./apps/sim/.next/static
 
+# Copy isolated-vm native module (compiled for Node.js in deps stage)
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
 
-# ========================================
-# Copy Guardrails files
-# ========================================
+# Copy the isolated-vm worker script
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs
+
+# Guardrails setup (files need to be owned by nextjs for runtime)
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/setup.sh ./apps/sim/lib/guardrails/setup.sh
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/requirements.txt ./apps/sim/lib/guardrails/requirements.txt
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/validate_pii.py ./apps/sim/lib/guardrails/validate_pii.py

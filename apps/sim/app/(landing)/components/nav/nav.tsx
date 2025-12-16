@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { GithubIcon } from '@/components/icons'
 import { useBrandConfig } from '@/lib/branding/branding'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { createLogger } from '@/lib/logs/console/logger'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -135,6 +135,7 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
               priority
               loading='eager'
               quality={100}
+              unoptimized
             />
           ) : (
             <Image

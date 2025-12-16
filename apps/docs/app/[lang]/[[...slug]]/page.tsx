@@ -1,3 +1,4 @@
+import type React from 'react'
 import { findNeighbour } from 'fumadocs-core/page-tree'
 import defaultMdxComponents from 'fumadocs-ui/mdx'
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
@@ -6,17 +7,19 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageNavigationArrows } from '@/components/docs-layout/page-navigation-arrows'
 import { TOCFooter } from '@/components/docs-layout/toc-footer'
+import { LLMCopyButton } from '@/components/page-actions'
 import { StructuredData } from '@/components/structured-data'
 import { CodeBlock } from '@/components/ui/code-block'
-import { CopyPageButton } from '@/components/ui/copy-page-button'
-import { source } from '@/lib/source'
+import { Heading } from '@/components/ui/heading'
+import { type PageData, source } from '@/lib/source'
 
 export default async function Page(props: { params: Promise<{ slug?: string[]; lang: string }> }) {
   const params = await props.params
   const page = source.getPage(params.slug, params.lang)
   if (!page) notFound()
 
-  const MDX = page.data.body
+  const data = page.data as PageData
+  const MDX = data.body
   const baseUrl = 'https://docs.sim.ai'
 
   const pageTreeRecord = source.pageTree as Record<string, any>
@@ -50,7 +53,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
 
       if (index === urlParts.length - 1) {
         breadcrumbs.push({
-          name: page.data.title,
+          name: data.title,
           url: `${baseUrl}${page.url}`,
         })
       } else {
@@ -167,15 +170,15 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
   return (
     <>
       <StructuredData
-        title={page.data.title}
-        description={page.data.description || ''}
+        title={data.title}
+        description={data.description || ''}
         url={`${baseUrl}${page.url}`}
         lang={params.lang}
         breadcrumb={breadcrumbs}
       />
       <DocsPage
-        toc={page.data.toc}
-        full={page.data.full}
+        toc={data.toc}
+        full={data.full}
         breadcrumb={{
           enabled: false,
         }}
@@ -202,18 +205,36 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
         <div className='relative mt-6 sm:mt-0'>
           <div className='absolute top-1 right-0 flex items-center gap-2'>
             <div className='hidden sm:flex'>
-              <CopyPageButton markdownUrl={`${page.url}.mdx`} />
+              <LLMCopyButton markdownUrl={`${page.url}.mdx`} />
             </div>
             <PageNavigationArrows previous={neighbours?.previous} next={neighbours?.next} />
           </div>
-          <DocsTitle>{page.data.title}</DocsTitle>
-          <DocsDescription>{page.data.description}</DocsDescription>
+          <DocsTitle>{data.title}</DocsTitle>
+          <DocsDescription>{data.description}</DocsDescription>
         </div>
         <DocsBody>
           <MDX
             components={{
               ...defaultMdxComponents,
               CodeBlock,
+              h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h1' {...props} />
+              ),
+              h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h2' {...props} />
+              ),
+              h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h3' {...props} />
+              ),
+              h4: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h4' {...props} />
+              ),
+              h5: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h5' {...props} />
+              ),
+              h6: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
+                <Heading as='h6' {...props} />
+              ),
             }}
           />
         </DocsBody>
@@ -233,13 +254,17 @@ export async function generateMetadata(props: {
   const page = source.getPage(params.slug, params.lang)
   if (!page) notFound()
 
+  const data = page.data as PageData
   const baseUrl = 'https://docs.sim.ai'
   const fullUrl = `${baseUrl}${page.url}`
 
+  const description = data.description || ''
+  const ogImageUrl = `${baseUrl}/api/og?title=${encodeURIComponent(data.title)}&category=DOCUMENTATION${description ? `&description=${encodeURIComponent(description)}` : ''}`
+
   return {
-    title: page.data.title,
+    title: data.title,
     description:
-      page.data.description || 'Sim visual workflow builder for AI applications documentation',
+      data.description || 'Sim visual workflow builder for AI applications documentation',
     keywords: [
       'AI workflow builder',
       'visual workflow editor',
@@ -248,16 +273,16 @@ export async function generateMetadata(props: {
       'AI agents',
       'no-code AI',
       'drag and drop workflows',
-      page.data.title?.toLowerCase().split(' '),
+      data.title?.toLowerCase().split(' '),
     ]
       .flat()
       .filter(Boolean),
     authors: [{ name: 'Sim Team' }],
     category: 'Developer Tools',
     openGraph: {
-      title: page.data.title,
+      title: data.title,
       description:
-        page.data.description || 'Sim visual workflow builder for AI applications documentation',
+        data.description || 'Sim visual workflow builder for AI applications documentation',
       url: fullUrl,
       siteName: 'Sim Documentation',
       type: 'article',
@@ -265,12 +290,23 @@ export async function generateMetadata(props: {
       alternateLocale: ['en', 'es', 'fr', 'de', 'ja', 'zh']
         .filter((lang) => lang !== params.lang)
         .map((lang) => (lang === 'en' ? 'en_US' : `${lang}_${lang.toUpperCase()}`)),
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: data.title,
+        },
+      ],
     },
     twitter: {
-      card: 'summary',
-      title: page.data.title,
+      card: 'summary_large_image',
+      title: data.title,
       description:
-        page.data.description || 'Sim visual workflow builder for AI applications documentation',
+        data.description || 'Sim visual workflow builder for AI applications documentation',
+      images: [ogImageUrl],
+      creator: '@simdotai',
+      site: '@simdotai',
     },
     robots: {
       index: true,
