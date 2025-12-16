@@ -407,7 +407,7 @@ export async function createLLMToolSchema(
     const isUserProvided =
       paramValue !== undefined && paramValue !== null && paramValue !== '' && !isVarRef // Variable references are NOT user-provided values
 
-    // Skip parameters that user has already provided
+    // Skip parameters that user has already provided (with actual values, not variable references)
     if (isUserProvided) {
       continue
     }
@@ -625,6 +625,7 @@ export function filterSchemaForLLM(
   const filteredRequired = [...(originalSchema.required || [])]
 
   // Remove user-provided parameters from the schema
+  // But keep parameters that use variable references (they're resolved at runtime)
   Object.keys(userProvidedParams).forEach((paramKey) => {
     const paramValue = userProvidedParams[paramKey]
 
