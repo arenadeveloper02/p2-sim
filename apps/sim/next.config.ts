@@ -89,6 +89,7 @@ const nextConfig: NextConfig = {
     'ssh2',
     '@browserbasehq/stagehand',
     'ws',
+    'isolated-vm',
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],

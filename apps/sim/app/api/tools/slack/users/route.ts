@@ -32,11 +32,10 @@ export async function POST(request: Request) {
     }
 
     let accessToken: string
-    let isBotToken = false
+    const isBotToken = credential.startsWith('xoxb-')
 
-    if (credential.startsWith('xoxb-')) {
+    if (isBotToken) {
       accessToken = credential
-      isBotToken = true
       logger.info('Using direct bot token for Slack API')
     } else {
       const authz = await authorizeCredentialUse(request as any, {
@@ -65,28 +64,17 @@ export async function POST(request: Request) {
         )
       }
       accessToken = resolvedToken
+      logger.info('Using OAuth token for Slack API')
     }
 
-    let data
-    try {
-      data = await fetchSlackUsers(accessToken)
-      logger.info('Successfully fetched Slack users')
-    } catch (error) {
-      logger.error('Slack API error:', error)
-      return NextResponse.json(
-        { error: `Slack API error: ${(error as Error).message}` },
-        { status: 400 }
-      )
-    }
+    const data = await fetchSlackUsers(accessToken)
 
-    // Filter to active users and format the response
     const users = (data.members || [])
       .filter((user: SlackUser) => !user.deleted && !user.is_bot)
       .map((user: SlackUser) => ({
         id: user.id,
         name: user.name,
-        realName:
-          user.real_name || user.profile?.real_name || user.profile?.display_name || user.name,
+        real_name: user.real_name || user.name,
         displayName:
           user.profile?.display_name || user.profile?.real_name || user.real_name || user.name,
       }))
@@ -94,14 +82,13 @@ export async function POST(request: Request) {
     logger.info(`Successfully fetched ${users.length} Slack users`, {
       total: data.members?.length || 0,
       active: users.length,
-      tokenType: isBotToken ? 'bot' : 'oauth',
+      tokenType: isBotToken ? 'bot_token' : 'oauth',
     })
-
     return NextResponse.json({ users })
   } catch (error) {
-    logger.error('Error in Slack users API:', error)
+    logger.error('Error processing Slack users request:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: (error as Error).message },
+      { error: 'Failed to retrieve Slack users', details: (error as Error).message },
       { status: 500 }
     )
   }
@@ -109,7 +96,7 @@ export async function POST(request: Request) {
 
 async function fetchSlackUsers(accessToken: string) {
   const url = new URL('https://slack.com/api/users.list')
-  url.searchParams.append('limit', '1000')
+  url.searchParams.append('limit', '200')
 
   const response = await fetch(url.toString(), {
     method: 'GET',

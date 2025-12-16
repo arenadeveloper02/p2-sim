@@ -96,6 +96,7 @@ export type SubBlockType =
 export const SELECTOR_TYPES_HYDRATION_REQUIRED: SubBlockType[] = [
   'oauth-input',
   'channel-selector',
+  'user-selector',
   'file-selector',
   'folder-selector',
   'project-selector',
