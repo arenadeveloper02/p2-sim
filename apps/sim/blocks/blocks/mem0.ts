@@ -34,6 +34,17 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
       required: true,
     },
     {
+      id: 'conversationId',
+      title: 'Conversation ID',
+      type: 'short-input',
+      placeholder: 'Enter conversation identifier (optional)',
+      condition: {
+        field: 'operation',
+        value: 'add',
+      },
+      required: false,
+    },
+    {
       id: 'messages',
       title: 'Messages',
       type: 'code',
@@ -92,6 +103,10 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
       type: 'short-input',
       placeholder: 'Enter your Mem0 API key',
       password: true,
+      condition: {
+        field: 'operation',
+        value: ['search', 'get'],
+      },
       required: true,
     },
     {
@@ -128,8 +143,8 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
         // Create detailed error information for any missing required fields
         const errors: string[] = []
 
-        // Validate required API key for all operations
-        if (!params.apiKey) {
+        // Validate required API key for search and get operations only
+        if ((params.operation === 'search' || params.operation === 'get') && !params.apiKey) {
           errors.push('API Key is required')
         }
 
@@ -169,12 +184,14 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
           throw new Error(`Mem0 Block Error: ${errors.join(', ')}`)
         }
 
-        const result: Record<string, any> = {
-          apiKey: params.apiKey,
-        }
+        const result: Record<string, any> = {}
+
+        // Add API key only if provided (for search/get operations)
+        if (params.apiKey) result.apiKey = params.apiKey
 
         // Add any identifiers that are present
         if (params.userId) result.userId = params.userId
+        if (params.conversationId) result.conversationId = params.conversationId
 
         // Add version if specified
         if (params.version) result.version = params.version
@@ -268,6 +285,7 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
     operation: { type: 'string', description: 'Operation to perform' },
     apiKey: { type: 'string', description: 'Mem0 API key' },
     userId: { type: 'string', description: 'User identifier' },
+    conversationId: { type: 'string', description: 'Conversation identifier' },
     version: { type: 'string', description: 'API version' },
     messages: { type: 'json', description: 'Message data array' },
     query: { type: 'string', description: 'Search query' },

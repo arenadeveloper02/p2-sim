@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import type { ToolConfig } from '@/tools/types'
 
 // Add Memories Tool
@@ -20,19 +21,13 @@ export const mem0AddMemoriesTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'Array of message objects with role and content',
     },
-    apiKey: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Your Mem0 API key',
-    },
   },
 
   request: {
-    url: 'https://api.mem0.ai/v1/memories/',
+    url: 'https://dev-agent.thearena.ai/mem/memories',
     method: 'POST',
-    headers: (params) => ({
-      Authorization: `Token ${params.apiKey}`,
+    headers: () => ({
+      accept: 'application/json',
       'Content-Type': 'application/json',
     }),
     body: (params) => {
@@ -57,11 +52,38 @@ export const mem0AddMemoriesTool: ToolConfig = {
         }
       }
 
-      // Prepare request body
+      // Get context parameters
+      const chatId = params._context?.chatId || 'default'
+      const conversationId = params.conversationId || params._context?.conversationId
+      const infer = params.infer !== undefined ? params.infer : false
+      const memoryType = (params.memoryType || 'conversation') as 'conversation' | 'fact'
+      const blockId = params.blockId || params._context?.blockId
+
+      // Build metadata
+      const timestamp = new Date().toISOString()
+      const memoryConversationId = infer ? conversationId || 'conv_123' : chatId
+
+      const metadata: Record<string, any> = {
+        memory_type: memoryType,
+        conversation_id: memoryConversationId,
+        timestamp: timestamp,
+      }
+
+      // Add blockId to metadata if provided
+      if (blockId) {
+        metadata.block_id = blockId
+      }
+
+      if (infer === false) {
+        metadata.executionId = uuidv4()
+      }
+
+      // Prepare request body matching memory-api.ts format
       const body: Record<string, any> = {
         messages: messagesArray,
-        version: 'v2',
         user_id: params.userId,
+        infer: infer,
+        metadata: metadata,
       }
 
       return body
