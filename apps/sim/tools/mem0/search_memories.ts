@@ -21,6 +21,12 @@ export const mem0SearchMemoriesTool: ToolConfig<any, Mem0Response> = {
       visibility: 'user-or-llm',
       description: 'Search query to find relevant memories',
     },
+    conversationId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Conversation ID to filter search results',
+    },
     limit: {
       type: 'number',
       required: false,
@@ -28,29 +34,33 @@ export const mem0SearchMemoriesTool: ToolConfig<any, Mem0Response> = {
       visibility: 'user-only',
       description: 'Maximum number of results to return',
     },
-    apiKey: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Your Mem0 API key',
-    },
   },
 
   request: {
-    url: 'https://api.mem0.ai/v2/memories/search/',
+    url: 'https://dev-agent.thearena.ai/mem/search',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
+      accept: 'application/json',
       'Content-Type': 'application/json',
-      Authorization: `Token ${params.apiKey}`,
+      Host: '100.20.15.243:8000',
     }),
     body: (params) => {
-      // Create the request body with the format that the curl test confirms works
+      // Build filters object - include conversationId if provided
+      const filters: Record<string, any> = {}
+
+      if (params.conversationId) {
+        filters.conversation_id = params.conversationId
+      }
+
+      // Create the request body matching searchMemoryAPI format
       const body: Record<string, any> = {
-        query: params.query || 'test',
-        filters: {
-          user_id: params.userId,
-        },
-        top_k: Number(params.limit || 10),
+        query: params.query,
+        user_id: params.userId,
+      }
+
+      // Add filters if we have any
+      if (Object.keys(filters).length > 0) {
+        body.filters = filters
       }
 
       return body

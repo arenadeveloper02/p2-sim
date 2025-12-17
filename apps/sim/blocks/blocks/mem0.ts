@@ -57,6 +57,17 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
       required: true,
     },
     {
+      id: 'conversationId',
+      title: 'Conversation ID',
+      type: 'short-input',
+      placeholder: 'Enter conversation identifier (optional)',
+      condition: {
+        field: 'operation',
+        value: 'search',
+      },
+      required: false,
+    },
+    {
       id: 'query',
       title: 'Search Query',
       type: 'long-input',
@@ -105,9 +116,9 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
       password: true,
       condition: {
         field: 'operation',
-        value: ['search', 'get'],
+        value: [],
       },
-      required: true,
+      required: false,
     },
     {
       id: 'limit',
@@ -142,11 +153,6 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
       params: (params: Record<string, any>) => {
         // Create detailed error information for any missing required fields
         const errors: string[] = []
-
-        // Validate required API key for search and get operations only
-        if ((params.operation === 'search' || params.operation === 'get') && !params.apiKey) {
-          errors.push('API Key is required')
-        }
 
         // For search operation, validate required fields
         if (params.operation === 'search') {
@@ -254,6 +260,10 @@ export const Mem0Block: BlockConfig<Mem0Response> = {
             } else {
               errors.push('Search requires a query parameter')
               throw new Error('Mem0 Block Error: Search requires a query parameter')
+            }
+
+            if (params.conversationId) {
+              result.conversationId = params.conversationId
             }
 
             // Include limit if specified
