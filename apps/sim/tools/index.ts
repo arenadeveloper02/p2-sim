@@ -340,7 +340,29 @@ export async function executeTool(
     // Internal routes are automatically detected by checking if URL starts with /api/
     const endpointUrl =
       typeof tool.request.url === 'function' ? tool.request.url(contextParams) : tool.request.url
-    const isInternalRoute = endpointUrl.startsWith('/api/')
+
+    // Check if the URL function returned an error response
+    if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
+      const errorResponse = endpointUrl._errorResponse
+      const endTime = new Date()
+      const endTimeISO = endTime.toISOString()
+      const duration = endTime.getTime() - startTime.getTime()
+      return {
+        success: false,
+        output: errorResponse.data || {},
+        error:
+          errorResponse.data?.error?.message ||
+          errorResponse.data?.message ||
+          'Tool execution failed',
+        timing: {
+          startTime: startTimeISO,
+          endTime: endTimeISO,
+          duration,
+        },
+      }
+    }
+
+    const isInternalRoute = typeof endpointUrl === 'string' && endpointUrl.startsWith('/api/')
 
     if (isInternalRoute || skipProxy) {
       const result = await handleInternalRequest(toolId, tool, contextParams)
@@ -573,8 +595,21 @@ async function handleInternalRequest(
     const endpointUrl =
       typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
 
+    // Check if the URL function returned an error response
+    if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
+      const errorResponse = endpointUrl._errorResponse
+      return {
+        success: false,
+        output: errorResponse.data || {},
+        error:
+          errorResponse.data?.error?.message ||
+          errorResponse.data?.message ||
+          'Tool execution failed',
+      }
+    }
+
     const fullUrlObj = new URL(endpointUrl, baseUrl)
-    const isInternalRoute = endpointUrl.startsWith('/api/')
+    const isInternalRoute = typeof endpointUrl === 'string' && endpointUrl.startsWith('/api/')
 
     if (isInternalRoute) {
       const workflowId = params._context?.workflowId
