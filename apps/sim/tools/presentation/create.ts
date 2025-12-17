@@ -75,7 +75,6 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
       }
     },
     body: (params: PresentationCreateParams) => {
-      debugger
       // Validate slides_markdown if provided
       if (params.slides_markdown !== undefined) {
         // Parse if it's a string
@@ -145,16 +144,10 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
       const estimatedSize = Math.floor((unpaddedLen * 3) / 4)
 
       presentationFile = {
-        content: base64Url, // base64Url string passed through as-is
-        fileType: mimeType,
-        mimetype: mimeType, // Add mimetype at top level for Google Drive uploadFile compatibility
+        data: base64Url, // base64 string - matches ToolFileData interface
+        mimeType: mimeType, // matches ToolFileData interface
         size: estimatedSize,
         name: filename,
-        binary: true,
-        metadata: {
-          filename,
-          mimetype: mimeType,
-        },
       }
     }
 
