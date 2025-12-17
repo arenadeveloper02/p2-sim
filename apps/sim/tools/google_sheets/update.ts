@@ -82,6 +82,37 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
     body: (params) => {
       let processedValues: any = params.values || []
 
+      // First, handle array-of-objects input (e.g. [{"A1":"B1"},{"A1":"B2"}])
+      // Convert it into a 2D array of scalar values that Sheets expects.
+      if (Array.isArray(processedValues) && processedValues.length > 0) {
+        const firstRow = processedValues[0]
+        if (firstRow && typeof firstRow === 'object' && !Array.isArray(firstRow)) {
+          const allKeys = new Set<string>()
+          processedValues.forEach((obj: any) => {
+            if (obj && typeof obj === 'object') {
+              Object.keys(obj).forEach((key) => allKeys.add(key))
+            }
+          })
+          const headers = Array.from(allKeys)
+
+          const rows = processedValues.map((obj: any) => {
+            if (!obj || typeof obj !== 'object') {
+              return Array(headers.length).fill('')
+            }
+            return headers.map((key) => {
+              const value = obj[key]
+              if (value !== null && typeof value === 'object') {
+                return JSON.stringify(value)
+              }
+              return value === undefined ? '' : value
+            })
+          })
+
+          // Only data rows, no headers
+          processedValues = rows
+        }
+      }
+
       // Minimal shape enforcement: Google requires a 2D array
       if (!Array.isArray(processedValues)) {
         processedValues = [[processedValues]]
@@ -89,38 +120,6 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
         processedValues = (processedValues as any[]).map((row: any) =>
           Array.isArray(row) ? row : [row]
         )
-      }
-
-      // Handle array of objects (existing behavior)
-      if (
-        Array.isArray(processedValues) &&
-        processedValues.length > 0 &&
-        typeof processedValues[0] === 'object' &&
-        !Array.isArray(processedValues[0])
-      ) {
-        const allKeys = new Set<string>()
-        processedValues.forEach((obj: any) => {
-          if (obj && typeof obj === 'object') {
-            Object.keys(obj).forEach((key) => allKeys.add(key))
-          }
-        })
-        const headers = Array.from(allKeys)
-
-        const rows = processedValues.map((obj: any) => {
-          if (!obj || typeof obj !== 'object') {
-            return Array(headers.length).fill('')
-          }
-          return headers.map((key) => {
-            const value = obj[key]
-            if (value !== null && typeof value === 'object') {
-              return JSON.stringify(value)
-            }
-            return value === undefined ? '' : value
-          })
-        })
-
-        // Only add data rows, not headers
-        processedValues = rows
       }
 
       const body: Record<string, any> = {
