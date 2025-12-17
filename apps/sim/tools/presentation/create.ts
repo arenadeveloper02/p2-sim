@@ -47,6 +47,20 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
       visibility: 'user-or-llm',
       description: 'Presentation content',
     },
+    slides_markdown: {
+      type: 'array',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Array of markdown strings for each slide. Bypasses outline generation and uses your markdown directly. Auto-sets slide count to array length.',
+    },
+    instructions: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Custom guidance for AI generation. Influences outline generation, layout selection, and slide content. Examples: "Focus on ROI", "Use bullet points", "Keep slides concise"',
+    },
   },
 
   request: {
@@ -61,6 +75,44 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
       }
     },
     body: (params: PresentationCreateParams) => {
+      debugger
+      // Validate slides_markdown if provided
+      if (params.slides_markdown !== undefined) {
+        // Parse if it's a string
+        let slidesArray = params.slides_markdown
+        if (typeof params.slides_markdown === 'string') {
+          try {
+            slidesArray = JSON.parse(params.slides_markdown)
+          } catch (error) {
+            throw new Error(
+              'slides_markdown must be a valid JSON array. Example: ["slide 1", "slide 2"]'
+            )
+          }
+        }
+
+        // Validate it's an array
+        if (!Array.isArray(slidesArray)) {
+          throw new Error('slides_markdown must be an array of strings')
+        }
+
+        // Validate all elements are strings
+        if (!slidesArray.every((item) => typeof item === 'string')) {
+          throw new Error('All slides in slides_markdown must be strings')
+        }
+
+        // Use the validated array and auto-set numberOfSlides
+        return {
+          operation: params.operation,
+          numberOfSlides: slidesArray.length, // Auto-set to array length
+          tone: params.tone,
+          verbosity: params.verbosity,
+          template: params.template,
+          content: params.content,
+          slides_markdown: slidesArray,
+          instructions: params.instructions,
+        }
+      }
+
       return {
         operation: params.operation,
         numberOfSlides: params.numberOfSlides,
@@ -68,6 +120,7 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
         verbosity: params.verbosity,
         template: params.template,
         content: params.content,
+        instructions: params.instructions,
       }
     },
   },
