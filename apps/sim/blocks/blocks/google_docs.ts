@@ -105,16 +105,8 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       title: 'Content',
       type: 'long-input',
       placeholder: 'Enter document content',
-      condition: { field: 'operation', value: 'write' },
+      condition: { field: 'operation', value: ['create', 'write'] },
       required: true,
-    },
-    // Content Field for create operation
-    {
-      id: 'content',
-      title: 'Content',
-      type: 'long-input',
-      placeholder: 'Enter document content',
-      condition: { field: 'operation', value: 'create' },
     },
   ],
   tools: {
