@@ -32,6 +32,7 @@ export interface ParsedBingQuery {
   }
   filters?: any[]
   aggregation?: string
+  campaignFilter?: string // Filter to specific campaign name
 }
 
 export interface BingAdsReportRequest {

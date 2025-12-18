@@ -5,6 +5,8 @@ export const BING_ADS_OAUTH_URL = 'https://login.microsoftonline.com/common/oaut
 // Position2 Inc. Customer ID
 export const POSITION2_CUSTOMER_ID = 'C000736328'
 
+export const BING_ADS_DEFAULT_CUSTOMER_ID = '12187584'
+
 // Default date range in days
 export const DEFAULT_DATE_RANGE_DAYS = 7
 
@@ -37,7 +39,7 @@ export const BING_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   discoverlocal: { id: 'F120QD4Q', name: 'DiscoverLocal.net' },
   factuia: { id: 'F113ZYXE', name: 'Factuia.com' },
   findanswerstoday: { id: 'F119YZNS', name: 'FindAnswersToday.com' },
-  gentle_dental: { id: 'F12086M4', name: 'Gentle Dental' },
+  gentle_dental: { id: '151000820', name: 'Gentle Dental' },
   healthatoz: { id: 'F118679G', name: 'HealthAtoZ.net Bing' },
   hunter_fans: { id: 'F120FD4H', name: 'Hunter Fans' },
   infosavant: { id: 'F113NE34', name: 'InfoSavant.net' },

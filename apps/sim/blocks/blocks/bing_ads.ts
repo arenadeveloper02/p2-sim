@@ -30,7 +30,7 @@ const BING_ADS_ACCOUNTS = {
   discoverlocal: { id: 'F120QD4Q', name: 'DiscoverLocal.net' },
   factuia: { id: 'F113ZYXE', name: 'Factuia.com' },
   findanswerstoday: { id: 'F119YZNS', name: 'FindAnswersToday.com' },
-  gentle_dental: { id: 'F12086M4', name: 'Gentle Dental' },
+  gentle_dental: { id: '151000820', name: 'Gentle Dental' },
   healthatoz: { id: 'F118679G', name: 'HealthAtoZ.net Bing' },
   hunter_fans: { id: 'F120FD4H', name: 'Hunter Fans' },
   infosavant: { id: 'F113NE34', name: 'InfoSavant.net' },
