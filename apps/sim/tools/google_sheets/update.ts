@@ -82,6 +82,67 @@ export const updateTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsUpdateRe
     body: (params) => {
       let processedValues: any = params.values || []
 
+      // Handle case where values might be a string (potentially JSON string)
+      if (typeof processedValues === 'string') {
+        const trimmed = processedValues.trim()
+        if (trimmed) {
+          try {
+            // Try to parse it as JSON
+            processedValues = JSON.parse(trimmed)
+          } catch (_error) {
+            // If the input contains literal newlines causing JSON parse to fail,
+            // try a more robust approach
+            try {
+              // Replace literal newlines with escaped newlines for JSON parsing
+              const sanitizedInput = trimmed
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t')
+
+              // Try to parse again with sanitized input
+              processedValues = JSON.parse(sanitizedInput)
+            } catch (_secondError) {
+              // If all parsing attempts fail, wrap as a single cell value
+              processedValues = [[processedValues]]
+            }
+          }
+        } else {
+          // Empty string should result in empty array
+          processedValues = []
+        }
+      }
+
+      // First, handle array-of-objects input (e.g. [{"A1":"B1"},{"A1":"B2"}])
+      // Convert it into a 2D array of scalar values that Sheets expects.
+      if (Array.isArray(processedValues) && processedValues.length > 0) {
+        const firstRow = processedValues[0]
+        if (firstRow && typeof firstRow === 'object' && !Array.isArray(firstRow)) {
+          const allKeys = new Set<string>()
+          processedValues.forEach((obj: any) => {
+            if (obj && typeof obj === 'object') {
+              Object.keys(obj).forEach((key) => allKeys.add(key))
+            }
+          })
+          const headers = Array.from(allKeys)
+
+          const rows = processedValues.map((obj: any) => {
+            if (!obj || typeof obj !== 'object') {
+              return Array(headers.length).fill('')
+            }
+            return headers.map((key) => {
+              const value = obj[key]
+              if (value !== null && typeof value === 'object') {
+                return JSON.stringify(value)
+              }
+              return value === undefined ? '' : value
+            })
+          })
+
+          // Only data rows, no headers
+          processedValues = rows
+        }
+      }
+
       // Minimal shape enforcement: Google requires a 2D array
       if (!Array.isArray(processedValues)) {
         processedValues = [[processedValues]]

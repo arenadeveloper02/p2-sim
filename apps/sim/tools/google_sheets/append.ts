@@ -95,25 +95,31 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
 
       // Handle case where values might be a string (potentially JSON string)
       if (typeof processedValues === 'string') {
-        try {
-          // Try to parse it as JSON
-          processedValues = JSON.parse(processedValues)
-        } catch (_error) {
-          // If the input contains literal newlines causing JSON parse to fail,
-          // try a more robust approach
+        const trimmed = processedValues.trim()
+        if (trimmed) {
           try {
-            // Replace literal newlines with escaped newlines for JSON parsing
-            const sanitizedInput = (processedValues as string)
-              .replace(/\n/g, '\\n')
-              .replace(/\r/g, '\\r')
-              .replace(/\t/g, '\\t')
+            // Try to parse it as JSON
+            processedValues = JSON.parse(trimmed)
+          } catch (_error) {
+            // If the input contains literal newlines causing JSON parse to fail,
+            // try a more robust approach
+            try {
+              // Replace literal newlines with escaped newlines for JSON parsing
+              const sanitizedInput = trimmed
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t')
 
-            // Try to parse again with sanitized input
-            processedValues = JSON.parse(sanitizedInput)
-          } catch (_secondError) {
-            // If all parsing attempts fail, wrap as a single cell value
-            processedValues = [[processedValues]]
+              // Try to parse again with sanitized input
+              processedValues = JSON.parse(sanitizedInput)
+            } catch (_secondError) {
+              // If all parsing attempts fail, wrap as a single cell value
+              processedValues = [[processedValues]]
+            }
           }
+        } else {
+          // Empty string should result in empty array
+          processedValues = []
         }
       }
 
