@@ -20,13 +20,13 @@ const logger = createLogger('Tools')
  * Maximum request body size in bytes before we warn/error about size limits.
  * Next.js 16 has a default middleware/proxy body limit of 10MB.
  */
-const MAX_REQUEST_BODY_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
+const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024 // 10MB
 
 /**
  * User-friendly error message for body size limit exceeded
  */
 const BODY_SIZE_LIMIT_ERROR_MESSAGE =
-  'Request body size limit exceeded (10MB). The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks.'
+  'Request body size limit exceeded (100MB). The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks.'
 
 /**
  * Validates request body size and throws a user-friendly error if exceeded
@@ -340,7 +340,29 @@ export async function executeTool(
     // Internal routes are automatically detected by checking if URL starts with /api/
     const endpointUrl =
       typeof tool.request.url === 'function' ? tool.request.url(contextParams) : tool.request.url
-    const isInternalRoute = endpointUrl.startsWith('/api/')
+
+    // Check if the URL function returned an error response
+    if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
+      const errorResponse = endpointUrl._errorResponse
+      const endTime = new Date()
+      const endTimeISO = endTime.toISOString()
+      const duration = endTime.getTime() - startTime.getTime()
+      return {
+        success: false,
+        output: errorResponse.data || {},
+        error:
+          errorResponse.data?.error?.message ||
+          errorResponse.data?.message ||
+          'Tool execution failed',
+        timing: {
+          startTime: startTimeISO,
+          endTime: endTimeISO,
+          duration,
+        },
+      }
+    }
+
+    const isInternalRoute = typeof endpointUrl === 'string' && endpointUrl.startsWith('/api/')
 
     if (isInternalRoute || skipProxy) {
       const result = await handleInternalRequest(toolId, tool, contextParams)
@@ -573,8 +595,21 @@ async function handleInternalRequest(
     const endpointUrl =
       typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
 
+    // Check if the URL function returned an error response
+    if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
+      const errorResponse = endpointUrl._errorResponse
+      return {
+        success: false,
+        output: errorResponse.data || {},
+        error:
+          errorResponse.data?.error?.message ||
+          errorResponse.data?.message ||
+          'Tool execution failed',
+      }
+    }
+
     const fullUrlObj = new URL(endpointUrl, baseUrl)
-    const isInternalRoute = endpointUrl.startsWith('/api/')
+    const isInternalRoute = typeof endpointUrl === 'string' && endpointUrl.startsWith('/api/')
 
     if (isInternalRoute) {
       const workflowId = params._context?.workflowId

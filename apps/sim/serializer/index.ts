@@ -403,7 +403,23 @@ export class Serializer {
     // Second pass: filter by mode and conditions
     Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
       // Find the corresponding subblock config to check its mode and condition
-      const subBlockConfig = blockConfig.subBlocks.find((config) => config.id === id)
+      // If multiple configs have the same id (e.g., conditional fields), find the one whose condition matches
+      let subBlockConfig = blockConfig.subBlocks.find((config) => config.id === id)
+
+      // If multiple configs share the same id, find the one whose condition is met
+      if (subBlockConfig) {
+        const matchingConfigs = blockConfig.subBlocks.filter((config) => config.id === id)
+        if (matchingConfigs.length > 1) {
+          // Find the config whose condition matches the current values
+          const matchingConfig = matchingConfigs.find((config) => {
+            if (!config.condition) return true // No condition means always visible
+            return evaluateCondition(config.condition, allValues)
+          })
+          if (matchingConfig) {
+            subBlockConfig = matchingConfig
+          }
+        }
+      }
 
       // Include field if it matches current mode OR if it's the starter inputFormat with values
       const hasStarterInputFormatValues =

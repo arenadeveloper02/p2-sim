@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 
 async function fetchSlackUsers(accessToken: string) {
   const allMembers: SlackUser[] = []
-  let cursor: string | undefined = undefined
+  let cursor: string | undefined
   const limit = 200
 
   do {
