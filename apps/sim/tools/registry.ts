@@ -42,7 +42,7 @@ import {
   apolloTaskCreateTool,
   apolloTaskSearchTool,
 } from '@/tools/apollo'
-import { arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
+import { arenaCreateTask, arenaGetMeetings, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -1385,6 +1385,7 @@ import {
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   arena_create_task: arenaCreateTask,
+  arena_get_meetings: arenaGetMeetings,
   arena_search_task: arenaSearchTask,
   arena_save_summary: arenaSaveSummary,
   arxiv_search: arxivSearchTool,

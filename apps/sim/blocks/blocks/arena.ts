@@ -27,6 +27,10 @@ export const ArenaBlock: BlockConfig = {
           id: 'arena_search_task',
         },
         {
+          label: 'Get Meeting',
+          id: 'arena_get_meetings',
+        },
+        {
           label: 'Save Summary',
           id: 'arena_save_summary',
         },
@@ -226,6 +230,32 @@ export const ArenaBlock: BlockConfig = {
       condition: { field: 'operation', value: 'arena_search_task' },
     },
 
+    //get meeting blocks
+    {
+      id: 'meeting-client',
+      title: 'Client',
+      type: 'arena-client-selector',
+      required: true,
+      placeholder: 'Enter client name',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
+    {
+      id: 'meeting-page-size',
+      title: 'Page Size',
+      type: 'short-input',
+      required: false,
+      placeholder: '50',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
+
     //save summary blocks
     {
       id: 'save-summary-client',
@@ -260,7 +290,7 @@ export const ArenaBlock: BlockConfig = {
     output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
-    access: ['arena_create_task', 'arena_save_summary'],
+    access: ['arena_create_task', 'arena_get_meetings', 'arena_save_summary'],
     config: {
       tool: (params) => {
         switch (params.operation) {
@@ -270,6 +300,8 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_create_task'
           case 'arena_search_task':
             return 'arena_search_task'
+          case 'arena_get_meetings':
+            return 'arena_get_meetings'
           case 'arena_save_summary':
             return 'arena_save_summary'
           default:

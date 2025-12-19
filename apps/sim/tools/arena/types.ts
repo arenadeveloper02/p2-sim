@@ -74,6 +74,20 @@ export type ArenaSaveSummaryParams = {
 
 export interface ArenaSaveSummaryResponse extends ToolResponse {}
 
+export type ArenaGetMeetingsParams = {
+  operation: string
+  'meeting-client': {
+    clientId: string
+    name: string
+  }
+  'meeting-page-size'?: number
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaGetMeetingsResponse extends ToolResponse {}
+
 export interface Task {
   errors: string | null
   errorMessage: string | null
