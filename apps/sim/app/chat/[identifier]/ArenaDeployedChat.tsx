@@ -12,6 +12,11 @@ import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
+  deployedChatPromptSentEvent,
+  deployedChatThreadSelectedEvent,
+  deployedNewChatEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import {
   ChatErrorState,
   ChatInput,
   ChatLoadingState,
@@ -165,6 +170,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
+
+  const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -419,6 +426,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const data = await response.json()
 
       setChatConfig(data)
+      if (data?.department) {
+        setChatDepartment(data.department)
+      }
 
       if (data?.customizations?.welcomeMessage) {
         setMessages([
@@ -629,6 +639,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           outputConfigs: chatConfig?.outputConfigs,
         }
       )
+      deployedChatPromptSentEvent({
+        'Prompt Content': messageToSend,
+        'Prompt Type': isVoiceInput ? `Voice` : `Text`,
+        'Conversation ID': conversationId,
+        'Attachment Used': files && files.length > 0 ? 'True' : 'False',
+      })
     } catch (error: any) {
       // Clear timeout in case of error
       clearTimeout(timeoutId)
@@ -940,8 +956,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         return welcome ? [welcome] : []
       })
       updateUrlChatId(chatId)
+
+      deployedChatThreadSelectedEvent({
+        Department: chatDepartment,
+        'Agent Name': chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat',
+        'Agent ID': identifier,
+        'Conversation(chat) ID': chatId,
+      })
     },
-    [currentChatId]
+    [currentChatId, chatConfig?.customizations?.headerText, chatConfig?.title, chatDepartment]
   )
 
   const handleNewChat = useCallback(() => {
@@ -961,6 +984,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     if (hasCustomFields) {
       setIsInputModalOpen(true)
     }
+
+    deployedNewChatEvent({
+      Department: chatDepartment,
+      'Agent Name': chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat',
+      'Agent ID': identifier,
+      'Conversation(chat) ID': id,
+    })
   }, [updateUrlChatId, chatConfig?.inputFormat])
 
   if (isAutoLoginInProgress) {

@@ -23,6 +23,26 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 
 const logger = createLogger('ChatIdentifierAPI')
 
+// Agent department mapping
+const agentDepartments = [
+  { value: 'creative', label: 'Creative' },
+  { value: 'ma', label: 'MA' },
+  { value: 'ppc', label: 'PPC' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'waas', label: 'WAAS' },
+  { value: 'hr', label: 'HR' },
+] as const
+
+const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
+  (acc, dept) => {
+    acc[dept.value] = dept.label
+    return acc
+  },
+  {} as Record<string, string>
+)
+
 const chatFileSchema = z.object({
   name: z.string().min(1, 'File name is required'),
   type: z.string().min(1, 'File type is required'),
@@ -650,6 +670,7 @@ export async function GET(
         password: chat.password,
         allowedEmails: chat.allowedEmails,
         outputConfigs: chat.outputConfigs,
+        department: chat.department,
       })
       .from(chat)
       .where(eq(chat.identifier, identifier))
@@ -706,6 +727,10 @@ export async function GET(
      * Ensures inputFormat is never missing from successful responses
      */
     const buildChatConfigResponse = () => {
+      const departmentValue = deployment.department ?? null
+      const departmentLabel =
+        departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
+
       return createSuccessResponse({
         id: deployment.id,
         title: deployment.title,
@@ -714,6 +739,7 @@ export async function GET(
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
         inputFormat, // Always included in successful responses
+        department: departmentLabel, // Department in label format
       })
     }
 

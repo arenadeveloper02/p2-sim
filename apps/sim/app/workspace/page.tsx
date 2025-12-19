@@ -19,11 +19,9 @@ export default function WorkspacePage() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
 
-
   useEffect(() => {
     fetchUserProfileSetPeopleMP()
   }, [])
-
 
   useEffect(() => {
     const redirectToFirstWorkspace = async () => {

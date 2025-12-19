@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
+import { copilotPromptSentEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   AttachedFilesDisplay,
   ContextPills,
@@ -321,6 +322,16 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
           }))
 
         onSubmit(trimmedMessage, fileAttachmentsForApi, contextManagement.selectedContexts as any)
+
+        copilotPromptSentEvent({
+          Mode: mode === 'ask' ? 'Ask about workflow' : 'Build Workflow',
+          Model: selectedModel,
+          'Prompt Type':
+            fileAttachments && fileAttachments?.attachedFiles?.length > 0
+              ? 'Text + Attachment'
+              : 'Text',
+          Prompting: 'Typed',
+        })
 
         const shouldClearInput = clearOnSubmit && !options.preserveInput && !overrideMessage
         if (shouldClearInput) {

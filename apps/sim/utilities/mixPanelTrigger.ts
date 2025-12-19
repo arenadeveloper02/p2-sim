@@ -7,7 +7,7 @@ import { env } from '@/lib/core/config/env'
  * @returns Mixpanel token string or undefined
  */
 const getMixpanelToken = () => {
-    return env.NEXT_PUBLIC_MIX_PANEL_TOKEN || process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN
+  return env.NEXT_PUBLIC_MIX_PANEL_TOKEN || process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN
 }
 
 // Initialize mixpanel only if we have a valid token and we're in the browser
@@ -127,11 +127,7 @@ export const setPeople = async ({
   }
 }
 
-export const trackMp = async (
-  PageName?: string,
-  eventName?: string,
-  properties?: any
-) => {
+export const trackMp = async (PageName?: string, eventName?: string, properties?: any) => {
   if (!mixpanel || typeof window === 'undefined' || !eventName) {
     return
   }

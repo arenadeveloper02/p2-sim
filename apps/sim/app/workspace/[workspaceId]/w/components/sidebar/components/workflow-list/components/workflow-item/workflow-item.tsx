@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import clsx from 'clsx'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
@@ -217,6 +218,12 @@ export function WorkflowItem({ workflow, active, level, onWorkflowClick }: Workf
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.stopPropagation()
+
+      selectWorkflowEvent({
+        'Workflow Name': workflow?.name,
+        'Workflow ID': workflow?.id,
+        'Workflow LP Source': 'Workflow List',
+      })
 
       if (shouldPreventClickRef.current || isEditing) {
         e.preventDefault()

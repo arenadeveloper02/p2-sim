@@ -7,6 +7,7 @@ import {
   extractWorkflowsFromFiles,
   extractWorkflowsFromZip,
 } from '@/lib/workflows/operations/import-export'
+import { importWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { folderKeys, useCreateFolder } from '@/hooks/queries/folders'
 import { useCreateWorkflow, workflowKeys } from '@/hooks/queries/workflows'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
@@ -97,6 +98,26 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
       }
 
       logger.info(`Imported workflow: ${workflowName}`)
+
+      // Fetch workspace name and trigger Mixpanel event
+      try {
+        const workspaceResponse = await fetch(`/api/workspaces/${workspaceId}`)
+        if (workspaceResponse?.ok) {
+          const workspaceData = await workspaceResponse.json()
+          // API returns { workspace: { name, ... } }
+          const workspaceName = workspaceData.workspace?.name || 'Unknown Workspace'
+
+          importWorkflowEvent({
+            'Workspace Name': workspaceName,
+            'Workspace ID': workspaceId,
+            'Workflow Name': workflowName,
+            'Workflow ID': newWorkflowId,
+          })
+        }
+      } catch (error) {
+        logger.warn('Failed to fetch workspace name for Mixpanel event:', error)
+      }
+
       return newWorkflowId
     },
     [createWorkflowMutation, workspaceId]

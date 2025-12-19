@@ -17,6 +17,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { inviteWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { API_ENDPOINTS } from '@/stores/constants'
 import type { PermissionType, UserPermissions } from './components'
@@ -562,6 +563,13 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
               })
 
               const data = await response.json()
+              if (session?.user?.email) {
+                inviteWorkspaceEvent({
+                  Access: permissionType,
+                  'Inviter(Email ID)': session?.user?.email,
+                  'Receiver(Email ID)': email,
+                })
+              }
 
               if (!response.ok) {
                 if (!invalidEmails.includes(email)) {

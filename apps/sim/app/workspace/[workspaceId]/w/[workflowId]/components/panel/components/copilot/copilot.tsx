@@ -22,6 +22,7 @@ import {
 } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
 import { createLogger } from '@/lib/logs/console/logger'
+import { copilotNewChatEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   CopilotMessage,
   PlanModeSection,
@@ -110,6 +111,8 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
     setSelectedModel,
     loadAutoAllowedTools,
   } = useCopilotStore()
+
+  const selectedModel = useCopilotStore.getState().selectedModel
 
   // Initialize copilot
   const { isInitialized } = useCopilotInitialization({
@@ -252,6 +255,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
     setTimeout(() => {
       userInputRef.current?.focus()
     }, 100)
+    copilotNewChatEvent({})
   }, [createNewChat])
 
   /**
@@ -499,7 +503,11 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
                   />
                 </div>
                 <div className='flex-shrink-0 pt-[8px]'>
-                  <Welcome onQuestionClick={handleSubmit} mode={mode} />
+                  <Welcome
+                    onQuestionClick={handleSubmit}
+                    mode={mode}
+                    selectedModel={selectedModel}
+                  />
                 </div>
               </div>
             ) : (

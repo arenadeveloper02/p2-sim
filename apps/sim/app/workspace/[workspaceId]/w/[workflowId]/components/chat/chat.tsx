@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, ArrowDownToLine, ArrowUp, MoreVertical, Paperclip, X } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -25,6 +26,10 @@ import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import {
+  workflowChatAddInputEvent,
+  workflowChatMsgSentEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import {
   ChatMessage,
   OutputSelect,
   StartBlockInputModal,
@@ -38,6 +43,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { getChatPosition, useChatStore } from '@/stores/chat/store'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useOperationQueue } from '@/stores/operation-queue/store'
@@ -185,10 +191,15 @@ interface StartInputFormatField {
  * position across sessions using the floating chat store.
  */
 export function Chat() {
+  const params = useParams()
+  const workspaceId = params.workspaceId as string
   const { activeWorkflowId } = useWorkflowRegistry()
   const blocks = useWorkflowStore((state) => state.blocks)
   const triggerWorkflowUpdate = useWorkflowStore((state) => state.triggerUpdate)
   const setSubBlockValue = useSubBlockStore((state) => state.setValue)
+  const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
+  const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
   // Chat state (UI and messages from unified store)
   const {
@@ -690,6 +701,18 @@ export function Chat() {
     const conversationId = getConversationId(activeWorkflowId)
 
     try {
+      workflowChatMsgSentEvent({
+        'Message Content': sentMessage,
+        'Message Type':
+          chatFiles?.length > 0 && sentMessage
+            ? 'Text + Attachment'
+            : chatFiles?.length > 0 && !sentMessage
+              ? 'Attachment'
+              : 'Text',
+        'Message ID': conversationId,
+        'Workspace Name': workspaceName,
+        'Workspace ID': workspaceId,
+      })
       // Process file attachments
       const attachmentsWithData = await processFileAttachments(chatFiles)
 
@@ -1036,6 +1059,10 @@ export function Chat() {
               onMouseDown={(e) => {
                 e.stopPropagation()
                 handleConfigureStartInputs()
+                workflowChatAddInputEvent({
+                  'Workspace Name': workspaceName,
+                  'Workspace ID': workspaceId,
+                })
               }}
             >
               <span className='whitespace-nowrap text-[12px]'>Add inputs</span>
@@ -1050,6 +1077,8 @@ export function Chat() {
             placeholder='Select outputs'
             align='end'
             maxHeight={180}
+            workspaceName={workspaceName}
+            workspaceId={workspaceId}
           />
         </div>
 

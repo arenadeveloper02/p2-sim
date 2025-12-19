@@ -14,6 +14,7 @@ import {
   extractFieldsFromSchema,
   parseResponseFormatSafely,
 } from '@/lib/core/utils/response-format'
+import { workflowChatSelectOutputEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getBlock } from '@/blocks'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -23,6 +24,10 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
  * Props for the OutputSelect component
  */
 interface OutputSelectProps {
+  /** The workspace name */
+  workspaceName: string
+  /** The workspace ID */
+  workspaceId: string
   /** The workflow ID to fetch outputs from */
   workflowId: string | null
   /** Array of currently selected output IDs or labels */
@@ -57,6 +62,8 @@ interface OutputSelectProps {
  * @returns The OutputSelect component
  */
 export function OutputSelect({
+  workspaceName,
+  workspaceId,
   workflowId,
   selectedOutputs = [],
   onOutputSelect,
@@ -409,6 +416,10 @@ export function OutputSelect({
               if (disabled || workflowOutputs.length === 0) return
               e.stopPropagation()
               setOpen((prev) => !prev)
+              workflowChatSelectOutputEvent({
+                'Workspace Name': workspaceName,
+                'Workspace ID': workspaceId,
+              })
             }}
           >
             <span className='whitespace-nowrap text-[12px]'>{selectedOutputsDisplayText}</span>

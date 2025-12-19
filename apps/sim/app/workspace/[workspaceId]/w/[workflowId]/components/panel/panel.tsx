@@ -24,6 +24,11 @@ import {
 } from '@/components/emcn'
 import { VariableIcon } from '@/components/icons'
 import { createLogger } from '@/lib/logs/console/logger'
+import {
+  openWorkflowChatEvent,
+  workflowClickMoreOptionsEvent,
+  workflowTabSwitchEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -40,6 +45,7 @@ import {
 import { Variables } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/variables/variables'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
 import { usePanelStore } from '@/stores/panel/store'
 import type { PanelTab } from '@/stores/panel/types'
@@ -160,6 +166,9 @@ export function Panel() {
     hydration.phase === 'state-loading'
   const { getJson } = useWorkflowJsonStore()
   const { blocks } = useWorkflowStore()
+  const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
+  const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
   // Delete workflow hook
   const { isDeleting, handleDeleteWorkflow } = useDeleteWorkflow({
@@ -231,6 +240,9 @@ export function Panel() {
    */
   const handleTabClick = (tab: PanelTab) => {
     setActiveTab(tab)
+    workflowTabSwitchEvent({
+      'Workflow Tabs': tab?.charAt(0).toUpperCase() + tab?.slice(1),
+    })
   }
 
   /**
@@ -276,6 +288,9 @@ export function Panel() {
       logger.error('Auto layout error:', error)
     } finally {
       setIsAutoLayouting(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Auto Layout',
+      })
     }
   }, [isExecuting, userPermissions.canEdit, isAutoLayouting, activeWorkflowId])
 
@@ -305,6 +320,9 @@ export function Panel() {
     } finally {
       setIsExporting(false)
       setIsMenuOpen(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Export',
+      })
     }
   }, [currentWorkflow, activeWorkflowId, getJson, downloadFile])
 
@@ -327,6 +345,9 @@ export function Panel() {
     } finally {
       setIsDuplicating(false)
       setIsMenuOpen(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Duplicate Workflow',
+      })
     }
   }, [
     activeWorkflowId,
@@ -439,7 +460,14 @@ export function Panel() {
                     <span>Auto layout</span>
                   </PopoverItem>
                   {
-                    <PopoverItem onClick={() => setVariablesOpen(!isVariablesOpen)}>
+                    <PopoverItem
+                      onClick={() => {
+                        setVariablesOpen(!isVariablesOpen)
+                        workflowClickMoreOptionsEvent({
+                          Options: 'Variables',
+                        })
+                      }}
+                    >
                       <VariableIcon className='h-3 w-3' />
                       <span>Variables</span>
                     </PopoverItem>
@@ -470,6 +498,9 @@ export function Panel() {
                     onClick={() => {
                       setIsMenuOpen(false)
                       setIsDeleteModalOpen(true)
+                      workflowClickMoreOptionsEvent({
+                        Options: 'Delete Workflow',
+                      })
                     }}
                     disabled={!userPermissions.canEdit || Object.keys(workflows).length <= 1}
                   >
@@ -481,7 +512,13 @@ export function Panel() {
               <Button
                 className='h-[32px] w-[32px]'
                 variant={isChatOpen ? 'active' : 'default'}
-                onClick={() => setIsChatOpen(!isChatOpen)}
+                onClick={() => {
+                  setIsChatOpen(!isChatOpen)
+                  openWorkflowChatEvent({
+                    'Workspace Name': workspaceName,
+                    'Workspace ID': workspaceId,
+                  })
+                }}
               >
                 <BubbleChatPreview />
               </Button>

@@ -8,6 +8,7 @@ import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -253,6 +254,10 @@ export function Sidebar() {
   const handleCreateWorkflow = useCallback(async () => {
     const workflowId = await createWorkflow()
     if (workflowId) {
+      createWorkflowEvent({
+        'Workspace Name': activeWorkspace?.name || '',
+        'Workspace ID': activeWorkspace?.id || '',
+      })
       window.dispatchEvent(
         new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: workflowId } })
       )
