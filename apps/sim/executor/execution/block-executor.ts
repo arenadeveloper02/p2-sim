@@ -504,7 +504,10 @@ export class BlockExecutor {
       executorStream,
       streamingExec,
       blockId,
-      responseFormat
+      responseFormat,
+      ctx,
+      block,
+      resolvedInputs
     )
 
     const clientConsumption = (async () => {
@@ -547,7 +550,10 @@ export class BlockExecutor {
     stream: ReadableStream,
     streamingExec: { execution: any },
     blockId: string,
-    responseFormat: any
+    responseFormat: any,
+    ctx?: ExecutionContext,
+    block?: SerializedBlock,
+    resolvedInputs?: Record<string, any>
   ): Promise<void> {
     const reader = stream.getReader()
     const decoder = new TextDecoder()
@@ -588,12 +594,50 @@ export class BlockExecutor {
           cost: executionOutput.cost,
           model: executionOutput.model,
         }
-        return
+        // For response format, content might be in the parsed object
+        fullContent = parsed.content || fullContent
       } catch (error) {
         logger.warn('Failed to parse streamed content for response format', { blockId, error })
       }
+    } else {
+      executionOutput.content = fullContent
     }
 
-    executionOutput.content = fullContent
+    // Persist assistant message to memory if this is an agent block with memory enabled
+    if (
+      ctx &&
+      block &&
+      resolvedInputs &&
+      block.metadata?.id === BlockType.AGENT &&
+      resolvedInputs.memoryType &&
+      resolvedInputs.memoryType !== 'none' &&
+      fullContent &&
+      typeof fullContent === 'string'
+    ) {
+      try {
+        const { memoryService } = await import('@/executor/handlers/agent/memory')
+        const { Message } = await import('@/executor/handlers/agent/types')
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: fullContent,
+        }
+
+        await memoryService.persistMemoryMessage(ctx, resolvedInputs, assistantMessage, blockId)
+
+        logger.debug('Persisted assistant response to memory from stream consumption', {
+          workflowId: ctx.workflowId,
+          memoryType: resolvedInputs.memoryType,
+          conversationId: resolvedInputs.conversationId,
+          contentLength: fullContent.length,
+        })
+      } catch (error) {
+        logger.error('Failed to persist assistant message to memory after stream consumption', {
+          blockId,
+          error,
+        })
+        // Don't throw - memory persistence failure shouldn't break workflow execution
+      }
+    }
   }
 }
