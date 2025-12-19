@@ -89,6 +89,11 @@ export const account = pgTable(
       table.accountId,
       table.providerId
     ),
+    uniqueUserProviderAccount: uniqueIndex('account_user_provider_account_unique').on(
+      table.userId,
+      table.providerId,
+      table.accountId
+    ),
   })
 )
 
@@ -289,6 +294,10 @@ export const workflowExecutionLogs = pgTable(
     stateSnapshotId: text('state_snapshot_id')
       .notNull()
       .references(() => workflowExecutionSnapshots.id),
+    deploymentVersionId: text('deployment_version_id').references(
+      () => workflowDeploymentVersion.id,
+      { onDelete: 'set null' }
+    ),
 
     level: text('level').notNull(), // 'info', 'error'
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
@@ -312,6 +321,9 @@ export const workflowExecutionLogs = pgTable(
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
     stateSnapshotIdIdx: index('workflow_execution_logs_state_snapshot_id_idx').on(
       table.stateSnapshotId
+    ),
+    deploymentVersionIdIdx: index('workflow_execution_logs_deployment_version_id_idx').on(
+      table.deploymentVersionId
     ),
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
@@ -616,24 +628,6 @@ export const apiKey = pgTable(
   })
 )
 
-export const marketplace = pgTable('marketplace', {
-  id: text('id').primaryKey(),
-  workflowId: text('workflow_id')
-    .notNull()
-    .references(() => workflow.id, { onDelete: 'cascade' }),
-  state: json('state').notNull(),
-  name: text('name').notNull(),
-  description: text('description'),
-  authorId: text('author_id')
-    .notNull()
-    .references(() => user.id),
-  authorName: text('author_name').notNull(),
-  views: integer('views').notNull().default(0),
-  category: text('category'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
-
 export const billingBlockedReasonEnum = pgEnum('billing_blocked_reason', [
   'payment_failed',
   'dispute',
@@ -725,15 +719,11 @@ export const subscription = pgTable(
   })
 )
 
-export const userRateLimits = pgTable('user_rate_limits', {
-  referenceId: text('reference_id').primaryKey(), // Can be userId or organizationId for pooling
-  syncApiRequests: integer('sync_api_requests').notNull().default(0), // Sync API requests counter
-  asyncApiRequests: integer('async_api_requests').notNull().default(0), // Async API requests counter
-  apiEndpointRequests: integer('api_endpoint_requests').notNull().default(0), // External API endpoint requests counter
-  windowStart: timestamp('window_start').notNull().defaultNow(),
-  lastRequestAt: timestamp('last_request_at').notNull().defaultNow(),
-  isRateLimited: boolean('is_rate_limited').notNull().default(false),
-  rateLimitResetAt: timestamp('rate_limit_reset_at'),
+export const rateLimitBucket = pgTable('rate_limit_bucket', {
+  key: text('key').primaryKey(),
+  tokens: decimal('tokens').notNull(),
+  lastRefillAt: timestamp('last_refill_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
 export const chat = pgTable(

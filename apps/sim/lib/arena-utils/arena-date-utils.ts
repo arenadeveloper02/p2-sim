@@ -127,12 +127,24 @@ export const getNextMonth = (): DateRangeWithTimestamps => {
   }
 }
 
-// Yesterday
-export const getYesterday = (): string => {
+// Yesterday (9:00 → 18:00)
+export const getYesterday = (): DateRangeWithTimestamps => {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+
   const yesterday = addDays(today, -1)
-  return toStartOfDayString(yesterday)
+  const startDate = new Date(yesterday)
+  startDate.setHours(9, 0, 0, 0)
+
+  const endDate = new Date(yesterday)
+  endDate.setHours(18, 0, 0, 0)
+
+  return {
+    startDate: toStartOfDayString(startDate),
+    startTimeStamp: startDate.getTime(),
+    endDate: toStartOfDayString(endDate),
+    endTimeStamp: endDate.getTime(),
+  }
 }
 
 // Tomorrow (9:00 → 18:00)

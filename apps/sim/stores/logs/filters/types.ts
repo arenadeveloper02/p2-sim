@@ -100,6 +100,8 @@ export interface WorkflowLog {
   id: string
   workflowId: string
   executionId?: string | null
+  deploymentVersion?: number | null
+  deploymentVersionName?: string | null
   level: string
   duration: string | null
   trigger: string | null
@@ -163,7 +165,7 @@ export type TimeRange =
   | 'Past 14 days'
   | 'Past 30 days'
   | 'All time'
-export type LogLevel = 'error' | 'info' | 'all'
+export type LogLevel = 'error' | 'info' | 'running' | 'pending' | 'all'
 export type TriggerType = 'chat' | 'api' | 'webhook' | 'manual' | 'schedule' | 'all' | string
 
 export interface FilterState {

@@ -25,6 +25,7 @@ export interface SessionStartParams {
   isExternalChat?: boolean
   chatId?: string
   initialInput?: string
+  deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
 }
 
 export interface SessionCompleteParams {
@@ -84,6 +85,7 @@ export class LoggingSession {
       isExternalChat,
       chatId,
       initialInput,
+      deploymentVersionId,
     } = params
 
     try {
@@ -117,6 +119,7 @@ export class LoggingSession {
           isExternalChat,
           chatId,
           initialInput,
+          deploymentVersionId,
         })
 
         if (this.requestId) {
@@ -205,9 +208,16 @@ export class LoggingSession {
         logger.debug(`[${this.requestId}] Completed logging for execution ${this.executionId}`)
       }
     } catch (error) {
-      if (this.requestId) {
-        logger.error(`[${this.requestId}] Failed to complete logging:`, error)
-      }
+      // Always log completion failures with full details - these should not be silent
+      logger.error(`Failed to complete logging for execution ${this.executionId}:`, {
+        requestId: this.requestId,
+        workflowId: this.workflowId,
+        executionId: this.executionId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      })
+      // Rethrow so safeComplete can decide what to do
+      throw error
     }
   }
 
@@ -277,12 +287,21 @@ export class LoggingSession {
       }
 
       if (this.requestId) {
-        logger.debug(`[${this.requestId}] Completed logging for execution ${this.executionId}`)
+        logger.debug(
+          `[${this.requestId}] Completed error logging for execution ${this.executionId}`
+        )
       }
     } catch (enhancedError) {
-      if (this.requestId) {
-        logger.error(`[${this.requestId}] Failed to complete logging:`, enhancedError)
-      }
+      // Always log completion failures with full details
+      logger.error(`Failed to complete error logging for execution ${this.executionId}:`, {
+        requestId: this.requestId,
+        workflowId: this.workflowId,
+        executionId: this.executionId,
+        error: enhancedError instanceof Error ? enhancedError.message : String(enhancedError),
+        stack: enhancedError instanceof Error ? enhancedError.stack : undefined,
+      })
+      // Rethrow so safeCompleteWithError can decide what to do
+      throw enhancedError
     }
   }
 
@@ -300,7 +319,16 @@ export class LoggingSession {
 
       // Fallback: create a minimal logging session without full workflow state
       try {
-        const { userId, workspaceId, variables, triggerData } = params
+        const {
+          userId,
+          workspaceId,
+          variables,
+          triggerData,
+          isExternalChat,
+          chatId,
+          initialInput,
+          deploymentVersionId,
+        } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.environment = createEnvironmentObject(
           this.workflowId,
@@ -327,6 +355,7 @@ export class LoggingSession {
           isExternalChat,
           chatId,
           initialInput,
+          deploymentVersionId,
         })
 
         if (this.requestId) {
@@ -348,9 +377,10 @@ export class LoggingSession {
     try {
       await this.complete(params)
     } catch (error) {
-      if (this.requestId) {
-        logger.error(`[${this.requestId}] Logging completion failed:`, error)
-      }
+      // Error already logged in complete(), log a summary here
+      logger.warn(
+        `[${this.requestId || 'unknown'}] Logging completion failed for execution ${this.executionId} - execution data not persisted`
+      )
     }
   }
 
@@ -358,9 +388,10 @@ export class LoggingSession {
     try {
       await this.completeWithError(error)
     } catch (enhancedError) {
-      if (this.requestId) {
-        logger.error(`[${this.requestId}] Logging error completion failed:`, enhancedError)
-      }
+      // Error already logged in completeWithError(), log a summary here
+      logger.warn(
+        `[${this.requestId || 'unknown'}] Error logging completion failed for execution ${this.executionId} - execution data not persisted`
+      )
     }
   }
 }

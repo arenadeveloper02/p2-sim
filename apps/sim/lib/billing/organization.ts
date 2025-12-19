@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import * as schema from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
+import { getPlanPricing } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { createLogger } from '@/lib/logs/console/logger'
 
@@ -75,9 +76,6 @@ async function createOrganizationWithOwner(
   return newOrg.id
 }
 
-/**
- * Create organization for team/enterprise plan upgrade
- */
 export async function createOrganizationForTeamPlan(
   userId: string,
   userName?: string,
@@ -85,13 +83,11 @@ export async function createOrganizationForTeamPlan(
   organizationSlug?: string
 ): Promise<string> {
   try {
-    // Check if user already owns an organization
     const existingOrgId = await getUserOwnedOrganization(userId)
     if (existingOrgId) {
       return existingOrgId
     }
 
-    // Create new organization (same naming for both team and enterprise)
     const organizationName = userName || `${userEmail || 'User'}'s Team`
     const slug = organizationSlug || `${userId}-team-${Date.now()}`
 
@@ -114,6 +110,84 @@ export async function createOrganizationForTeamPlan(
     })
     throw error
   }
+}
+
+export async function ensureOrganizationForTeamSubscription(
+  subscription: SubscriptionData
+): Promise<SubscriptionData> {
+  if (subscription.plan !== 'team') {
+    return subscription
+  }
+
+  if (subscription.referenceId.startsWith('org_')) {
+    return subscription
+  }
+
+  const userId = subscription.referenceId
+
+  logger.info('Creating organization for team subscription', {
+    subscriptionId: subscription.id,
+    userId,
+  })
+
+  const existingMembership = await db
+    .select({
+      id: schema.member.id,
+      organizationId: schema.member.organizationId,
+      role: schema.member.role,
+    })
+    .from(schema.member)
+    .where(eq(schema.member.userId, userId))
+    .limit(1)
+
+  if (existingMembership.length > 0) {
+    const membership = existingMembership[0]
+    if (membership.role === 'owner' || membership.role === 'admin') {
+      logger.info('User already owns/admins an org, using it', {
+        userId,
+        organizationId: membership.organizationId,
+      })
+
+      await db
+        .update(schema.subscription)
+        .set({ referenceId: membership.organizationId })
+        .where(eq(schema.subscription.id, subscription.id))
+
+      return { ...subscription, referenceId: membership.organizationId }
+    }
+
+    logger.error('User is member of org but not owner/admin - cannot create team subscription', {
+      userId,
+      existingOrgId: membership.organizationId,
+      subscriptionId: subscription.id,
+    })
+    throw new Error('User is already member of another organization')
+  }
+
+  const [userData] = await db
+    .select({ name: schema.user.name, email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1)
+
+  const orgId = await createOrganizationForTeamPlan(
+    userId,
+    userData?.name || undefined,
+    userData?.email || undefined
+  )
+
+  await db
+    .update(schema.subscription)
+    .set({ referenceId: orgId })
+    .where(eq(schema.subscription.id, subscription.id))
+
+  logger.info('Created organization and updated subscription referenceId', {
+    subscriptionId: subscription.id,
+    userId,
+    organizationId: orgId,
+  })
+
+  return { ...subscription, referenceId: orgId }
 }
 
 /**
@@ -145,11 +219,52 @@ export async function syncSubscriptionUsageLimits(subscription: SubscriptionData
         plan: subscription.plan,
       })
     } else {
-      // Organization subscription - sync usage limits for all members
+      // Organization subscription - set org usage limit and sync member limits
+      const organizationId = subscription.referenceId
+
+      // Set orgUsageLimit for team plans (enterprise is set via webhook with custom pricing)
+      if (subscription.plan === 'team') {
+        const { basePrice } = getPlanPricing(subscription.plan)
+        const seats = subscription.seats ?? 1
+        const orgLimit = seats * basePrice
+
+        // Only set if not already set or if updating to a higher value based on seats
+        const orgData = await db
+          .select({ orgUsageLimit: schema.organization.orgUsageLimit })
+          .from(schema.organization)
+          .where(eq(schema.organization.id, organizationId))
+          .limit(1)
+
+        const currentLimit =
+          orgData.length > 0 && orgData[0].orgUsageLimit
+            ? Number.parseFloat(orgData[0].orgUsageLimit)
+            : 0
+
+        // Update if no limit set, or if new seat-based minimum is higher
+        if (currentLimit < orgLimit) {
+          await db
+            .update(schema.organization)
+            .set({
+              orgUsageLimit: orgLimit.toFixed(2),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.organization.id, organizationId))
+
+          logger.info('Set organization usage limit for team plan', {
+            organizationId,
+            seats,
+            basePrice,
+            orgLimit,
+            previousLimit: currentLimit,
+          })
+        }
+      }
+
+      // Sync usage limits for all members
       const members = await db
         .select({ userId: schema.member.userId })
         .from(schema.member)
-        .where(eq(schema.member.organizationId, subscription.referenceId))
+        .where(eq(schema.member.organizationId, organizationId))
 
       if (members.length > 0) {
         for (const member of members) {
@@ -158,7 +273,7 @@ export async function syncSubscriptionUsageLimits(subscription: SubscriptionData
           } catch (memberError) {
             logger.error('Failed to sync usage limits for organization member', {
               userId: member.userId,
-              organizationId: subscription.referenceId,
+              organizationId,
               subscriptionId: subscription.id,
               error: memberError,
             })
@@ -166,7 +281,7 @@ export async function syncSubscriptionUsageLimits(subscription: SubscriptionData
         }
 
         logger.info('Synced usage limits for organization members', {
-          organizationId: subscription.referenceId,
+          organizationId,
           memberCount: members.length,
           subscriptionId: subscription.id,
           plan: subscription.plan,

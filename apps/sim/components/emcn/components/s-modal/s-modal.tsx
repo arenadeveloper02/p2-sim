@@ -74,7 +74,7 @@ const SModalContent = React.forwardRef<
         className={cn(
           ANIMATION_CLASSES,
           CONTENT_ANIMATION_CLASSES,
-          'fixed top-[50%] left-[50%] z-[500] flex h-[620px] w-[760px] translate-x-[-50%] translate-y-[-50%] flex-row rounded-[8px] border bg-[var(--bg)] shadow-sm duration-200',
+          'fixed top-[50%] left-[50%] z-[500] flex h-[min(70vh,720px)] max-h-[800px] min-h-[520px] w-[min(60vw,900px)] min-w-[680px] max-w-[1000px] translate-x-[-50%] translate-y-[-50%] flex-row rounded-[8px] border bg-[var(--bg)] shadow-sm duration-200',
           className
         )}
         style={style}
@@ -102,11 +102,15 @@ const SModalContent = React.forwardRef<
 SModalContent.displayName = 'SModalContent'
 
 /**
- * Sidebar container.
+ * Sidebar container with scrollable content.
  */
 const SModalSidebar = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('flex w-[166px] flex-col py-[12px]', className)} {...props} />
+    <div
+      ref={ref}
+      className={cn('flex min-h-0 w-[166px] flex-col overflow-y-auto py-[12px]', className)}
+      {...props}
+    />
   )
 )
 

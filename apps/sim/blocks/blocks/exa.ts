@@ -1,5 +1,5 @@
 import { ExaAIIcon } from '@/components/icons'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { ExaResponse } from '@/tools/exa/types'

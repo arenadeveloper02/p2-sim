@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
 import {
-  ChannelSelectorInput,
   CheckboxList,
   Code,
   ComboBox,
@@ -32,6 +31,7 @@ import {
   ResponseFormat,
   ScheduleSave,
   ShortInput,
+  SlackSelectorInput,
   SliderInput,
   Switch,
   Table,
@@ -164,6 +164,7 @@ const renderLabel = (
     isWandEnabled: boolean
     isPreview: boolean
     isStreaming: boolean
+    disabled: boolean
     onSearchClick: () => void
     onSearchBlur: () => void
     onSearchChange: (value: string) => void
@@ -182,6 +183,7 @@ const renderLabel = (
     isWandEnabled,
     isPreview,
     isStreaming,
+    disabled,
     onSearchClick,
     onSearchBlur,
     onSearchChange,
@@ -215,12 +217,12 @@ const renderLabel = (
       </div>
 
       {/* Wand inline prompt */}
-      {isWandEnabled && !isPreview && (
-        <div className='flex items-center pr-[4px]'>
+      {isWandEnabled && !isPreview && !disabled && (
+        <div className='flex min-w-0 flex-1 items-center justify-end pr-[4px]'>
           {!isSearchActive ? (
             <Button
               variant='ghost'
-              className='h-[12px] w-[12px] p-0 hover:bg-transparent'
+              className='h-[12px] w-[12px] flex-shrink-0 p-0 hover:bg-transparent'
               aria-label='Generate with AI'
               onClick={onSearchClick}
             >
@@ -242,7 +244,7 @@ const renderLabel = (
               }}
               disabled={isStreaming}
               className={cn(
-                'h-[12px] w-full max-w-[200px] border-none bg-transparent py-0 pr-[2px] text-right font-medium text-[12px] text-[var(--text-primary)] leading-[14px] placeholder:text-[var(--text-muted)] focus:outline-none',
+                'h-[12px] w-full min-w-[100px] border-none bg-transparent py-0 pr-[2px] text-right font-medium text-[12px] text-[var(--text-primary)] leading-[14px] placeholder:text-[var(--text-muted)] focus:outline-none',
                 isStreaming && 'text-muted-foreground'
               )}
               placeholder='Describe...'
@@ -737,8 +739,9 @@ function SubBlockComponent({
         )
 
       case 'channel-selector':
+      case 'user-selector':
         return (
-          <ChannelSelectorInput
+          <SlackSelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
@@ -909,6 +912,7 @@ function SubBlockComponent({
           isWandEnabled,
           isPreview,
           isStreaming: wandControlRef.current?.isWandStreaming ?? false,
+          disabled: isDisabled,
           onSearchClick: handleSearchClick,
           onSearchBlur: handleSearchBlur,
           onSearchChange: handleSearchChange,

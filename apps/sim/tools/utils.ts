@@ -49,6 +49,16 @@ export async function formatRequestParams(
   // Process URL
   const url = typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
 
+  // Check if the URL function returned an error response
+  // This should be handled upstream, but we check here to prevent crashes
+  if (url && typeof url === 'object' && '_errorResponse' in url) {
+    throw new Error(
+      url._errorResponse?.data?.error?.message ||
+        url._errorResponse?.data?.message ||
+        'Tool request validation failed'
+    )
+  }
+
   // Process method
   const method =
     typeof tool.request.method === 'function'
