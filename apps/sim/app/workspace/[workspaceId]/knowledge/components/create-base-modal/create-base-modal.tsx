@@ -21,6 +21,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { createLogger } from '@/lib/logs/console/logger'
 import { formatFileSize, validateKnowledgeBaseFile } from '@/lib/uploads/utils/file-utils'
 import { ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { createKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
 import type { KnowledgeBaseData } from '@/stores/knowledge/store'
 
@@ -245,6 +246,21 @@ export function CreateBaseModal({
     setIsSubmitting(true)
     setSubmitStatus(null)
 
+    // Extract document types from uploaded files
+    const getFileExtension = (filename: string) => {
+      const parts = filename.split('.')
+      return parts.length > 1 ? parts[parts.length - 1].toUpperCase() : ''
+    }
+
+    const documentTypes =
+      files.length > 0
+        ? [...new Set(files.map((file) => getFileExtension(file.name)))].filter(Boolean).join(', ')
+        : ''
+
+    createKnowledgeBaseEvent({
+      'Knowledge Base Name': data.name,
+      'Document Type': documentTypes,
+    })
     try {
       const knowledgeBasePayload = {
         name: data.name,

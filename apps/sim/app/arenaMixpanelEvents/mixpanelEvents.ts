@@ -206,6 +206,24 @@ export const openKnowledgeBasePageEvent = (props: any): Promise<void> => {
   })
 }
 
+export const clickKnowledgeBaseEvent = (props: any): Promise<void> => {
+  return trackMp('Knowledge Base', `Click knowledge base_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const createKnowledgeBaseEvent = (props: any): Promise<void> => {
+  return trackMp('Knowledge Base', `Create knowledge base_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const uploadKBDocumentsEvent = (props: any): Promise<void> => {
+  return trackMp('Knowledge Base', `Upload document to KB`, {
+    ...props,
+  })
+}
+
 export const openSettingsPageEvent = (props: any): Promise<void> => {
   return trackMp('Settings', `Open settings_Manage Agents`, {
     ...props,
