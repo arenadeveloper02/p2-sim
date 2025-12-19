@@ -556,7 +556,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       const payload: any = {
         input: completeInput.input,
-        conversationId: completeInput.conversationId,
+        //conversationId: completeInput.conversationId,
+        conversationId: currentChatId,
         chatId: currentChatId,
         // Always include startBlockInputs if there are any custom fields in inputFormat
         // This ensures all Start Block fields are passed to execution, even if empty
