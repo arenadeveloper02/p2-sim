@@ -28,6 +28,7 @@ import { getSubscriptionStatus } from '@/lib/billing/client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { getUserRole } from '@/lib/workspaces/organization'
+import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   ApiKeys,
   Copilot,
@@ -271,6 +272,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     if (!isBillingEnabled && (activeSection === 'subscription' || activeSection === 'team')) {
       setActiveSection('general')
     }
+    settingsPageTabSwitchEvent({
+      Tabs: activeSection?.charAt(0).toUpperCase() + activeSection?.slice(1) || '',
+    })
   }, [activeSection])
 
   // Prefetch functions for React Query

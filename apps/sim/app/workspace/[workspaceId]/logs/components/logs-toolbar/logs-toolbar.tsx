@@ -16,6 +16,11 @@ import {
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
+import {
+  logsFilterDropDown,
+  logsPageTabSwitchEvent,
+  logsRefreshEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getBlock } from '@/blocks/registry'
 import { useFolderStore } from '@/stores/folders/store'
 import { useFilterStore } from '@/stores/logs/filters/store'
@@ -196,6 +201,10 @@ export function LogsToolbar({
 
   const handleStatusChange = useCallback(
     (values: string[]) => {
+      logsFilterDropDown({
+        Dropdown: 'Status',
+        Values: values.join(','),
+      })
       if (values.length === 0) {
         setLevel('all')
       } else {
@@ -321,7 +330,14 @@ export function LogsToolbar({
               <Button
                 variant='default'
                 className={cn('h-[32px] w-[32px] rounded-[6px] p-0', isRefreshing && 'opacity-50')}
-                onClick={isRefreshing ? undefined : onRefresh}
+                onClick={
+                  isRefreshing
+                    ? undefined
+                    : () => {
+                        logsRefreshEvent({})
+                        onRefresh()
+                      }
+                }
               >
                 {isRefreshing ? (
                   <Loader2 className='h-[14px] w-[14px] animate-spin' />
@@ -345,7 +361,12 @@ export function LogsToolbar({
           {/* View mode toggle */}
           <div
             className='flex h-[32px] cursor-pointer items-center rounded-[6px] border border-[var(--border)] bg-[var(--surface-5)] p-[2px]'
-            onClick={() => onViewModeChange(isDashboardView ? 'logs' : 'dashboard')}
+            onClick={() => {
+              logsPageTabSwitchEvent({
+                Tabs: isDashboardView ? 'Logs' : 'Dashboard',
+              })
+              onViewModeChange(isDashboardView ? 'logs' : 'dashboard')
+            }}
           >
             <Button
               variant={!isDashboardView ? 'active' : 'ghost'}
@@ -404,7 +425,13 @@ export function LogsToolbar({
             options={workflowOptions}
             multiSelect
             multiSelectValues={workflowIds}
-            onMultiSelectChange={setWorkflowIds}
+            onMultiSelectChange={(values) => {
+              logsFilterDropDown({
+                Dropdown: 'Workflow',
+                Values: values.join(','),
+              })
+              setWorkflowIds(values)
+            }}
             placeholder='Workflow'
             overlayContent={
               <span className='flex items-center gap-[6px] truncate text-[var(--text-primary)]'>
@@ -431,7 +458,13 @@ export function LogsToolbar({
             options={folderOptions}
             multiSelect
             multiSelectValues={folderIds}
-            onMultiSelectChange={setFolderIds}
+            onMultiSelectChange={(values) => {
+              logsFilterDropDown({
+                Dropdown: 'Folder',
+                Values: values.join(','),
+              })
+              setFolderIds(values)
+            }}
             placeholder='Folder'
             overlayContent={
               <span className='truncate text-[var(--text-primary)]'>{folderDisplayLabel}</span>
@@ -450,7 +483,13 @@ export function LogsToolbar({
             options={triggerOptions}
             multiSelect
             multiSelectValues={triggers}
-            onMultiSelectChange={setTriggers}
+            onMultiSelectChange={(values) => {
+              logsFilterDropDown({
+                Dropdown: 'Trigger',
+                Values: values.join(','),
+              })
+              setTriggers(values)
+            }}
             placeholder='Trigger'
             overlayContent={
               <span className='truncate text-[var(--text-primary)]'>{triggerDisplayLabel}</span>
@@ -468,7 +507,13 @@ export function LogsToolbar({
           <Combobox
             options={TIME_RANGE_OPTIONS as unknown as ComboboxOption[]}
             value={timeRange}
-            onChange={(val) => setTimeRange(val as typeof timeRange)}
+            onChange={(val) => {
+              logsFilterDropDown({
+                Dropdown: 'Time',
+                Values: val,
+              })
+              setTimeRange(val as typeof timeRange)
+            }}
             placeholder='Time'
             overlayContent={
               <span className='truncate text-[var(--text-primary)]'>{timeDisplayLabel}</span>

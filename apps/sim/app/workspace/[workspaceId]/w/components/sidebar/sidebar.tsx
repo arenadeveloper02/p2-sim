@@ -8,7 +8,13 @@ import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
-import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import {
+  createWorkflowEvent,
+  openKnowledgeBasePageEvent,
+  openLogsPageEvent,
+  openSettingsPageEvent,
+  openTemplatesPageEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -645,7 +651,12 @@ export function Sidebar() {
                         type='button'
                         data-item-id={item.id}
                         className={`${baseClasses} ${activeClasses}`}
-                        onClick={item.onClick}
+                        onClick={() => {
+                          item?.onClick?.()
+                          if (item.id === 'settings') {
+                            openSettingsPageEvent({})
+                          }
+                        }}
                       >
                         {content}
                       </button>
@@ -658,6 +669,17 @@ export function Sidebar() {
                       href={item.href!}
                       data-item-id={item.id}
                       className={`${baseClasses} ${activeClasses}`}
+                      onClick={() => {
+                        if (item.id === 'logs') {
+                          openLogsPageEvent({})
+                        }
+                        if (item.id === 'templates') {
+                          openTemplatesPageEvent({})
+                        }
+                        if (item.id === 'knowledge-base') {
+                          openKnowledgeBasePageEvent({})
+                        }
+                      }}
                     >
                       {content}
                     </Link>

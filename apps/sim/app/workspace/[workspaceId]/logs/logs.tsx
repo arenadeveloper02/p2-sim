@@ -7,11 +7,13 @@ import { useParams } from 'next/navigation'
 import { Badge, buttonVariants } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
+import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useFolders } from '@/hooks/queries/folders'
 import { useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useUserPermissionsContext } from '../providers/workspace-permissions-provider'
 import { Dashboard, LogDetails, LogsToolbar, NotificationSettings } from './components'
 import { formatDate, formatDuration, StatusBadge, TriggerBadge } from './utils'
@@ -73,6 +75,7 @@ export default function Logs() {
   const isSearchOpenRef = useRef<boolean>(false)
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
   const userPermissions = useUserPermissionsContext()
+  const workflows = useWorkflowRegistry((state) => state.workflows)
 
   const logFilters = useMemo(
     () => ({
@@ -106,6 +109,53 @@ export default function Logs() {
       setStoreSearchQuery(debouncedSearchQuery)
     }
   }, [debouncedSearchQuery, setStoreSearchQuery])
+
+  // Track search event when search query is applied (after debounce or enter)
+  const prevSearchQueryRef = useRef<string>('')
+  useEffect(() => {
+    if (!isInitialized.current || debouncedSearchQuery === prevSearchQueryRef.current) return
+    if (!debouncedSearchQuery.trim() && !prevSearchQueryRef.current.trim()) return
+
+    prevSearchQueryRef.current = debouncedSearchQuery
+    const parsed = parseQuery(debouncedSearchQuery)
+    const getFilter = (field: string, fallback = '') =>
+      parsed.filters?.find((f) => f.field === field || (field === 'status' && f.field === 'level'))
+        ?.originalValue || fallback
+
+    const textSearch = parsed.textSearch || ''
+    const statusFilter = getFilter('status', level && level !== 'all' ? level : '')
+    const costFilter = getFilter('cost')
+    const dateFilter = getFilter('date', timeRange || '')
+    const durationFilter = getFilter('duration')
+    const triggerFilter = getFilter('trigger', triggers.join(',') || '')
+    const workflowFilter = getFilter('workflow', workflowIds.join(',') || '')
+
+    const hasFilters =
+      statusFilter || costFilter || dateFilter || durationFilter || triggerFilter || workflowFilter
+
+    // Only track if there's a search keyword or filters applied
+    if (!textSearch.trim() && !hasFilters) return
+
+    const firstWorkflowId = workflowIds[0] || workflowFilter.split(',')[0] || ''
+    const workflow = firstWorkflowId ? workflows[firstWorkflowId] : null
+
+    logsPageSearchEvent({
+      'Search keyword': textSearch,
+      Filters:
+        [
+          statusFilter && `Status: ${statusFilter}`,
+          costFilter && `Cost: ${costFilter}`,
+          dateFilter && `Date: ${dateFilter}`,
+          durationFilter && `Duration: ${durationFilter}`,
+          triggerFilter && `Trigger: ${triggerFilter}`,
+          workflowFilter && `Workflow: ${workflowFilter}`,
+        ]
+          .filter(Boolean)
+          .join(', ') || '',
+      'Workflow Name': workflow?.name || '',
+      'Workflow ID': firstWorkflowId,
+    })
+  }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows, isInitialized])
 
   // Track previous log state for efficient change detection
   const prevSelectedLogRef = useRef<WorkflowLog | null>(null)

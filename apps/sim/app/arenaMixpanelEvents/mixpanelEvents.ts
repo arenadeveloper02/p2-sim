@@ -115,3 +115,105 @@ export const workflowChatMsgSentEvent = (props: any): Promise<void> => {
     ...props,
   })
 }
+
+export const workflowDeployCTAEvent = (props: any): Promise<void> => {
+  return trackMp('Manage Agents LP', `Click Deploy CTA`, {
+    ...props,
+  })
+}
+
+export const workflowDeployEvent = (props: any): Promise<void> => {
+  return trackMp('Deploy Worflow Pop-up', `Deploy Workflow`, {
+    ...props,
+  })
+}
+
+export const workflowDeployTabSwitchEvent = (props: any): Promise<void> => {
+  return trackMp('Deploy Worflow Pop-up', `Deploy Workflow tabs Switch`, {
+    ...props,
+  })
+}
+
+export const deleteDeployedWorkflowCTAEvent = (props: any): Promise<void> => {
+  return trackMp('Deploy Worflow Pop-up', `Delete Deployed Worklow CTA`, {
+    ...props,
+  })
+}
+
+export const undeployDeployedWorkflowCTAEvent = (props: any): Promise<void> => {
+  return trackMp('Deploy Worflow Pop-up', `Undeploy CTA`, {
+    ...props,
+  })
+}
+
+export const workflowTestCTAEvent = (props: any): Promise<void> => {
+  return trackMp('Manage Agents LP', `Click Test CTA`, {
+    ...props,
+  })
+}
+
+export const workflowRunCTAEvent = (props: any): Promise<void> => {
+  return trackMp('Manage Agents LP', `Click Run CTA`, {
+    ...props,
+  })
+}
+
+export const openLogsPageEvent = (props: any): Promise<void> => {
+  return trackMp('Logs', `Open Logs_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const logsPageTabSwitchEvent = (props: any): Promise<void> => {
+  return trackMp('Logs', `Switch Tabs-Logs_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const logsPageSearchEvent = (props: any): Promise<void> => {
+  return trackMp('Logs', `Search Logs_Manage agents`, {
+    ...props,
+  })
+}
+
+export const logsRefreshEvent = (props: any): Promise<void> => {
+  return trackMp('Logs', `Click refresh-Logs_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const logsFilterDropDown = (props: any): Promise<void> => {
+  return trackMp('Logs', `Click filter dropdown-Logs_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const openTemplatesPageEvent = (props: any): Promise<void> => {
+  return trackMp('Templates', `Open templates_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const useTemplateEvent = (props: any): Promise<void> => {
+  return trackMp('Templates', `Use template_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const openKnowledgeBasePageEvent = (props: any): Promise<void> => {
+  return trackMp('Knowledge Base', `Open knowledge base_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const openSettingsPageEvent = (props: any): Promise<void> => {
+  return trackMp('Settings', `Open settings_Manage Agents`, {
+    ...props,
+  })
+}
+
+export const settingsPageTabSwitchEvent = (props: any): Promise<void> => {
+  return trackMp('Settings', `Tabs switch-Settings_Manage Agents`, {
+    ...props,
+  })
+}

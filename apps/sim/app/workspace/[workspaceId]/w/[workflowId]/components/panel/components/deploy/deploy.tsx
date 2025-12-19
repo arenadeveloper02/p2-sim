@@ -2,7 +2,9 @@
 
 import { useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { Button, Rocket, Tooltip } from '@/components/emcn'
+import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,
@@ -10,6 +12,7 @@ import {
   useDeployment,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import type { WorkspaceUserPermissions } from '@/hooks/use-user-permissions'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
@@ -25,6 +28,11 @@ interface DeployProps {
  */
 export function Deploy({ activeWorkflowId, userPermissions, className }: DeployProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const params = useParams()
+  const workspaceId = params.workspaceId as string
+  const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
+
   const hydrationPhase = useWorkflowRegistry((state) => state.hydration.phase)
   const isRegistryLoading =
     hydrationPhase === 'idle' ||
@@ -68,12 +76,24 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
    */
   const onDeployClick = useCallback(async () => {
     if (!canDeploy || !activeWorkflowId) return
-
+    workflowDeployCTAEvent({
+      'Workspace Name': workspaceName,
+      'Workspace ID': workspaceId,
+      CTA: changeDetected ? 'Update' : isDeployed ? 'Active' : 'Deploy',
+    })
     const result = await handleDeployClick()
     if (result.shouldOpenModal) {
       setIsModalOpen(true)
     }
-  }, [canDeploy, activeWorkflowId, handleDeployClick])
+  }, [
+    canDeploy,
+    activeWorkflowId,
+    workspaceName,
+    workspaceId,
+    changeDetected,
+    isDeployed,
+    handleDeployClick,
+  ])
 
   const refetchWithErrorHandling = async () => {
     if (!activeWorkflowId) return

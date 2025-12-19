@@ -27,7 +27,9 @@ import { createLogger } from '@/lib/logs/console/logger'
 import {
   openWorkflowChatEvent,
   workflowClickMoreOptionsEvent,
+  workflowRunCTAEvent,
   workflowTabSwitchEvent,
+  workflowTestCTAEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -59,9 +61,11 @@ const logger = createLogger('Panel')
 const RunAgentExternalChat = ({
   workflowId,
   workspaceId,
+  workspaceName,
 }: {
   workflowId: string
   workspaceId: string
+  workspaceName?: string
 }) => {
   const [chatUrl, setChatUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -95,6 +99,10 @@ const RunAgentExternalChat = ({
         setChatUrl(null)
       } finally {
         setIsLoading(false)
+        workflowRunCTAEvent({
+          'Workspace Name': workspaceName || '',
+          'Workspace ID': workspaceId || '',
+        })
       }
     }
 
@@ -207,6 +215,10 @@ export function Panel() {
    * Runs the workflow with usage limit check
    */
   const runWorkflow = useCallback(async () => {
+    workflowTestCTAEvent({
+      'Workspace Name': workspaceName || '',
+      'Workspace ID': workspaceId || '',
+    })
     if (usageExceeded) {
       openSubscriptionSettings()
       return
@@ -540,7 +552,11 @@ export function Panel() {
                 )}
                 Test
               </Button>
-              <RunAgentExternalChat workflowId={activeWorkflowId || ''} workspaceId={workspaceId} />
+              <RunAgentExternalChat
+                workflowId={activeWorkflowId || ''}
+                workspaceId={workspaceId}
+                workspaceName={workspaceName}
+              />
             </div>
           </div>
 

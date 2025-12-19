@@ -18,6 +18,13 @@ import { getEnv } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getInputFormatExample as getInputFormatExampleUtil } from '@/lib/workflows/operations/deployment-utils'
 import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
+import {
+  deleteDeployedWorkflowCTAEvent,
+  undeployDeployedWorkflowCTAEvent,
+  workflowDeployEvent,
+  workflowDeployTabSwitchEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
@@ -75,6 +82,9 @@ export function DeployModal({
     workflowId ? state.workflows[workflowId] : undefined
   )
   const workflowWorkspaceId = workflowMetadata?.workspaceId ?? null
+  const workspaceQuery = useWorkspaceSettings(workflowWorkspaceId || '')
+  const workspaceData = workspaceQuery.data
+  const workspaceName: string = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const [activeTab, setActiveTab] = useState<TabView>('general')
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [apiDeployError, setApiDeployError] = useState<string | null>(null)
@@ -422,6 +432,10 @@ export function DeployModal({
       logger.error('Error undeploying workflow:', { error })
     } finally {
       setIsUndeploying(false)
+      undeployDeployedWorkflowCTAEvent({
+        'Workspace Name': workspaceName,
+        'Workspace ID': workflowWorkspaceId || '',
+      })
     }
   }
 
@@ -504,6 +518,14 @@ export function DeployModal({
   }
 
   const handleChatFormSubmit = () => {
+    workflowDeployEvent({
+      'Workspace Name': workspaceName,
+      'Workspace ID': workflowWorkspaceId || '',
+      'Deploy Workflow Tab': 'Chat',
+      CTA: chatExists ? 'Update' : 'Launch Chat',
+      'Workflow Name': workflowMetadata?.name || '',
+      'Workflow ID': workflowId || '',
+    })
     const form = document.getElementById('chat-deploy-form') as HTMLFormElement
     if (form) {
       const updateTrigger = form.querySelector('[data-update-trigger]') as HTMLButtonElement
@@ -516,6 +538,9 @@ export function DeployModal({
   }
 
   const handleChatDelete = () => {
+    deleteDeployedWorkflowCTAEvent({
+      'Deploy Workflow Tab': 'Chat',
+    })
     const form = document.getElementById('chat-deploy-form') as HTMLFormElement
     if (form) {
       const deleteButton = form.querySelector('[data-delete-trigger]') as HTMLButtonElement
@@ -526,11 +551,22 @@ export function DeployModal({
   }
 
   const handleTemplateFormSubmit = useCallback(() => {
+    workflowDeployEvent({
+      'Workspace Name': workspaceName,
+      'Workspace ID': workflowWorkspaceId || '',
+      'Deploy Workflow Tab': 'Template',
+      CTA: hasExistingTemplate ? 'Update Template' : 'Publish Template',
+      'Workflow Name': workflowMetadata?.name || '',
+      'Workflow ID': workflowId || '',
+    })
     const form = document.getElementById('template-deploy-form') as HTMLFormElement
     form?.requestSubmit()
-  }, [])
+  }, [hasExistingTemplate, workspaceName, workflowWorkspaceId, workflowMetadata?.name, workflowId])
 
   const handleTemplateDelete = useCallback(() => {
+    deleteDeployedWorkflowCTAEvent({
+      'Deploy Workflow Tab': 'Template',
+    })
     const form = document.getElementById('template-deploy-form')
     const deleteTrigger = form?.querySelector('[data-template-delete-trigger]') as HTMLButtonElement
     deleteTrigger?.click()
@@ -544,7 +580,12 @@ export function DeployModal({
 
           <ModalTabs
             value={activeTab}
-            onValueChange={(value) => setActiveTab(value as TabView)}
+            onValueChange={(value) => {
+              workflowDeployTabSwitchEvent({
+                'Deploy Workflow Tab': value?.charAt(0).toUpperCase() + value?.slice(1) || '',
+              })
+              setActiveTab(value as TabView)
+            }}
             className='flex min-h-0 flex-1 flex-col'
           >
             <ModalTabsList activeValue={activeTab}>
