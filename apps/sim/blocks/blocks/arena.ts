@@ -27,7 +27,7 @@ export const ArenaBlock: BlockConfig = {
           id: 'arena_search_task',
         },
         {
-          label: 'Get Meeting',
+          label: 'Fetch Meetings',
           id: 'arena_get_meetings',
         },
         {

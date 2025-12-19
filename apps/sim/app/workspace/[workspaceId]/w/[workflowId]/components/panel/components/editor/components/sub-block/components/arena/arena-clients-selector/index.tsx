@@ -57,7 +57,15 @@ export function ArenaClientsSelector({
       try {
         setClients([])
         const v2Token = await getArenaToken()
+        if (!v2Token) {
+          console.error('No Arena token available')
+          return
+        }
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        if (!arenaBackendBaseUrl) {
+          console.error('Arena backend URL not configured')
+          return
+        }
         const response = await axios.get(
           `${arenaBackendBaseUrl}/list/userservice/getclientbyuser`,
           {
@@ -66,9 +74,38 @@ export function ArenaClientsSelector({
             },
           }
         )
-        setClients(response.data.response || [])
+
+        // Try different possible response structures
+        let clientsData =
+          response.data?.response ||
+          response.data?.data ||
+          response.data?.clientList ||
+          response.data
+
+        // If it's an object with a clients array, try that
+        if (!Array.isArray(clientsData) && typeof clientsData === 'object') {
+          clientsData = clientsData.clients || clientsData.items || []
+        }
+
+        // Ensure it's an array
+        const clientsArray = Array.isArray(clientsData) ? clientsData : []
+
+        // Map to ensure correct structure
+        const formattedClients: Client[] = clientsArray
+          .map((client: any) => ({
+            clientId: client.clientId || client.id || client.sysId || '',
+            name: client.name || client.clientName || '',
+          }))
+          .filter((client: Client) => client.clientId && client.name)
+
+        setClients(formattedClients)
+
+        if (formattedClients.length === 0) {
+          console.warn('No clients found in response:', response.data)
+        }
       } catch (error) {
         console.error('Error fetching clients:', error)
+        setClients([])
       }
     }
 
@@ -80,7 +117,9 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedLabel =
-    clients?.find((cl) => cl.clientId === selectedValue?.clientId)?.name || 'Select client...'
+    (Array.isArray(clients) &&
+      clients.find((cl) => cl.clientId === selectedValue?.clientId)?.name) ||
+    'Select client...'
 
   const handleSelect = (client: Client) => {
     console.log('Selected client:', client)
@@ -112,6 +151,7 @@ export function ArenaClientsSelector({
         <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
           <Command
             filter={(value, search) => {
+              if (!Array.isArray(clients)) return 0
               const client = clients.find((cl) => cl.clientId === value || cl.name === value)
               if (!client) return 0
 
@@ -125,22 +165,23 @@ export function ArenaClientsSelector({
             <CommandList>
               <CommandEmpty>No client found.</CommandEmpty>
               <CommandGroup>
-                {clients.map((client) => (
-                  <CommandItem
-                    key={client.clientId}
-                    value={client.clientId}
-                    onSelect={() => handleSelect(client)}
-                    className='max-w-full whitespace-normal break-words'
-                  >
-                    <span className='max-w-[400px] truncate'>{client.name}</span>
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
+                {Array.isArray(clients) &&
+                  clients.map((client) => (
+                    <CommandItem
+                      key={client.clientId}
+                      value={client.clientId}
+                      onSelect={() => handleSelect(client)}
+                      className='max-w-full whitespace-normal break-words'
+                    >
+                      <span className='max-w-[400px] truncate'>{client.name}</span>
+                      <Check
+                        className={cn(
+                          'ml-auto h-4 w-4',
+                          selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
               </CommandGroup>
             </CommandList>
           </Command>
