@@ -1,3 +1,4 @@
+import { generateRequestId } from '@/lib/core/utils/request'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
@@ -118,6 +119,9 @@ export class Memory {
         workflowId: ctx.workflowId,
         key: memoryKey,
       })
+
+      // Call Mem0 API as add-on (non-blocking) - only send current turn (last user + assistant)
+      await this.callMem0API(ctx, inputs, assistantMessage, blockId, memoryKey)
     } catch (error) {
       logger.error('Failed to persist memory message:', error)
     }
@@ -632,6 +636,132 @@ export class Memory {
     } catch (error) {
       logger.error('Error persisting to memory database:', error)
       throw error
+    }
+  }
+
+  /**
+   * Call Mem0 API to store memories in external service
+   * This is an add-on feature that doesn't block main memory operations
+   * Calls the API twice: once for conversation memory, once for fact memory
+   * Only sends the current turn (last user message + assistant message), not the full history
+   * @param assistantMessage - The assistant message that was just persisted
+   * @param memoryKey - Memory key to fetch the last user message
+   */
+  private async callMem0API(
+    ctx: ExecutionContext,
+    inputs: AgentInputs,
+    assistantMessage: Message,
+    blockId: string,
+    memoryKey: string
+  ): Promise<void> {
+    // Skip if userId is not available (required for Mem0 API)
+    if (!ctx.userId) {
+      logger.debug('Skipping Mem0 API call: userId not available in execution context')
+      return
+    }
+
+    // Skip if conversationId is not available
+    if (!inputs.conversationId) {
+      logger.debug('Skipping Mem0 API call: conversationId not available')
+      return
+    }
+
+    try {
+      // Fetch existing messages to get the last user message
+      const existingMessages = await this.fetchFromMemoryAPI(ctx.workflowId, memoryKey)
+
+      // Find the last user message (the one that corresponds to this assistant response)
+      // We look for the most recent user message before this assistant message
+      let lastUserMessage: Message | null = null
+
+      // Since we just appended the assistant message, it might not be in existingMessages yet
+      // So we look for the last user message in the existing messages
+      for (let i = existingMessages.length - 1; i >= 0; i--) {
+        if (existingMessages[i].role === 'user') {
+          lastUserMessage = existingMessages[i]
+          break
+        }
+      }
+
+      // If no user message found, skip (shouldn't happen, but handle gracefully)
+      if (!lastUserMessage) {
+        logger.debug('Skipping Mem0 API call: no user message found in conversation')
+        return
+      }
+
+      // Only send the current turn: last user message + assistant message
+      const currentTurnMessages: Message[] = [lastUserMessage, assistantMessage]
+
+      // Convert Message[] to the format expected by callMemoryAPI
+      const messagesForAPI = currentTurnMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }))
+
+      // Use executionId as chatId, fallback to workflowId
+      const chatId = ctx.executionId || ctx.workflowId
+
+      const requestId = generateRequestId()
+
+      // Dynamically import callMemoryAPI to avoid circular dependencies
+      const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
+
+      // Call 1: Store as conversation memory (infer: false)
+      try {
+        await callMemoryAPI(
+          requestId,
+          messagesForAPI,
+          ctx.userId,
+          chatId,
+          inputs.conversationId,
+          false, // infer: false
+          'conversation', // memoryType: 'conversation'
+          blockId
+        )
+        logger.debug('Successfully called Mem0 API for conversation memory', {
+          workflowId: ctx.workflowId,
+          conversationId: inputs.conversationId,
+          blockId,
+          messageCount: messagesForAPI.length,
+        })
+      } catch (error) {
+        logger.warn('Failed to call Mem0 API for conversation memory (non-blocking)', {
+          error,
+          workflowId: ctx.workflowId,
+        })
+      }
+
+      // Call 2: Store as fact memory (infer: true)
+      try {
+        await callMemoryAPI(
+          requestId,
+          messagesForAPI,
+          ctx.userId,
+          chatId,
+          inputs.conversationId,
+          true, // infer: true
+          'fact', // memoryType: 'fact'
+          blockId
+        )
+        logger.debug('Successfully called Mem0 API for fact memory', {
+          workflowId: ctx.workflowId,
+          conversationId: inputs.conversationId,
+          blockId,
+          messageCount: messagesForAPI.length,
+        })
+      } catch (error) {
+        logger.warn('Failed to call Mem0 API for fact memory (non-blocking)', {
+          error,
+          workflowId: ctx.workflowId,
+        })
+      }
+    } catch (error) {
+      // Log but don't throw - this is an add-on feature
+      logger.warn('Error in Mem0 API integration (non-blocking)', {
+        error,
+        workflowId: ctx.workflowId,
+        blockId,
+      })
     }
   }
 
