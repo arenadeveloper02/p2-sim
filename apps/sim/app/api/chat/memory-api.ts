@@ -151,3 +151,87 @@ export async function searchMemoryAPI(
     return null
   }
 }
+
+/**
+ * Get memories using the memories API
+ * @param requestId - Request ID for logging
+ * @param userId - Optional user ID
+ * @param runId - Optional run ID
+ * @param agentId - Optional agent ID
+ * @returns Memory results or null if the request fails
+ * @throws Error if none of the required parameters are provided
+ */
+export async function getMemoriesAPI(
+  requestId: string,
+  userId?: string,
+  runId?: string,
+  agentId?: string
+): Promise<any | null> {
+  try {
+    // Validate that at least one parameter is provided
+    if (!userId && !runId && !agentId) {
+      logger.error(`[${requestId}] At least one of userId, runId, or agentId must be provided`)
+      throw new Error('At least one of userId, runId, or agentId must be provided')
+    }
+
+    // Build query parameters
+    const queryParams = new URLSearchParams()
+    if (userId) {
+      queryParams.append('user_id', userId)
+    }
+    if (runId) {
+      queryParams.append('run_id', runId)
+    }
+    if (agentId) {
+      queryParams.append('agent_id', agentId)
+    }
+
+    const url = `${MEMORY_API_BASE_URL}/memories?${queryParams.toString()}`
+
+    logger.debug(`[${requestId}] Calling get memories API`, {
+      userId,
+      runId,
+      agentId,
+      url,
+    })
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error(`[${requestId}] Get memories API request failed`, {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText,
+        userId,
+        runId,
+        agentId,
+      })
+      // Don't throw - return null instead
+      return null
+    }
+
+    const result = await response.json()
+    logger.info(`[${requestId}] Get memories API call successful`, {
+      userId,
+      runId,
+      agentId,
+      hasResult: !!result,
+    })
+
+    return result
+  } catch (error: any) {
+    // Re-throw validation errors
+    if (error.message && error.message.includes('must be provided')) {
+      throw error
+    }
+    logger.error(`[${requestId}] Error calling get memories API:`, error)
+    // Don't throw - return null instead
+    return null
+  }
+}
