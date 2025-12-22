@@ -637,10 +637,28 @@ export class AgentBlockHandler implements BlockHandler {
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
 
-    // 1. Fetch memory history if configured (industry standard: chronological order)
+    // 1. Fetch memory history if configured (using semantic search)
     if (inputs.memoryType && inputs.memoryType !== 'none') {
-      const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs, blockId)
-      messages.push(...memoryMessages)
+      // Extract user prompt for search query
+      let userPrompt: string | undefined
+      if (inputs.userPrompt) {
+        userPrompt =
+          typeof inputs.userPrompt === 'string'
+            ? inputs.userPrompt
+            : JSON.stringify(inputs.userPrompt)
+      } else if (inputs.messages && Array.isArray(inputs.messages)) {
+        const userMsg = inputs.messages.find((m) => m.role === 'user')
+        if (userMsg) {
+          userPrompt = userMsg.content
+        }
+      }
+
+      // Commented out: Chronological memory fetch
+      // const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs, blockId)
+
+      // Use semantic search instead
+      const searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt)
+      messages.push(...searchResults)
     }
 
     // 2. Process legacy memories (backward compatibility - from Memory block)

@@ -93,16 +93,30 @@ export async function searchMemoryAPI(
   requestId: string,
   query: string,
   userId: string,
-  filters?: Record<string, any>
+  filters?: Record<string, any>,
+  runId?: string,
+  agentId?: string
 ): Promise<any | null> {
   try {
     const payload: {
       query: string
       user_id: string
+      run_id?: string
+      agent_id?: string
       filters?: Record<string, any>
     } = {
       query: query,
       user_id: userId,
+    }
+
+    // Add optional run_id if provided
+    if (runId) {
+      payload.run_id = runId
+    }
+
+    // Add optional agent_id if provided
+    if (agentId) {
+      payload.agent_id = agentId
     }
 
     // Add filters if provided
@@ -122,7 +136,6 @@ export async function searchMemoryAPI(
       headers: {
         accept: 'application/json',
         'Content-Type': 'application/json',
-        Host: '100.20.15.243:8000',
       },
       body: JSON.stringify(payload),
     })
@@ -142,6 +155,7 @@ export async function searchMemoryAPI(
     logger.info(`[${requestId}] Memory search API call successful`, {
       query,
       userId,
+      response: result,
     })
 
     return result

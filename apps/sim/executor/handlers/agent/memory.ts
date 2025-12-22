@@ -171,6 +171,150 @@ export class Memory {
   }
 
   /**
+   * Search memories using semantic search API
+   * Replaces chronological memory fetch with semantic search
+   */
+  async searchMemories(
+    ctx: ExecutionContext,
+    inputs: AgentInputs,
+    blockId: string,
+    userPrompt?: string
+  ): Promise<Message[]> {
+    // Skip if userId is not available (required for search API)
+    if (!ctx.userId) {
+      logger.warn('Cannot search memories without userId in execution context')
+      return []
+    }
+
+    try {
+      // Extract query from user prompt
+      const query = userPrompt || ''
+
+      if (!query || query.trim() === '') {
+        logger.debug('No user prompt provided for semantic search, returning empty results')
+        return []
+      }
+
+      // Build filters object with conversationId and blockId
+      const filters: Record<string, any> = {}
+
+      if (inputs.conversationId) {
+        filters.conversation_id = inputs.conversationId
+      }
+
+      if (blockId) {
+        filters.block_id = blockId
+      }
+
+      filters.memory_type = 'conversation'
+
+      const requestId = generateRequestId()
+
+      // Dynamically import searchMemoryAPI to avoid circular dependencies
+      const { searchMemoryAPI } = await import('@/app/api/chat/memory-api')
+
+      // Call search API
+      // run_id and agent_id are not provided (optional and not needed)
+      const searchResults = await searchMemoryAPI(
+        requestId,
+        query,
+        ctx.userId,
+        Object.keys(filters).length > 0 ? filters : undefined
+      )
+
+      if (!searchResults) {
+        logger.debug('No search results returned from memory API')
+        return []
+      }
+
+      // Convert search results to Message[] format
+      const messages = this.convertSearchResultsToMessages(searchResults)
+
+      logger.debug('Successfully retrieved memories from semantic search', {
+        workflowId: ctx.workflowId,
+        userId: ctx.userId,
+        query,
+        results: messages,
+        blockId,
+      })
+
+      return messages
+    } catch (error) {
+      logger.error('Failed to search memories:', error)
+      return []
+    }
+  }
+
+  /**
+   * Convert search API results to Message[] format
+   * Handles different response structures from the search API
+   */
+  private convertSearchResultsToMessages(searchResults: any): Message[] {
+    const messages: Message[] = []
+
+    try {
+      // Handle different possible response structures
+      let results: any[] = []
+
+      if (Array.isArray(searchResults)) {
+        results = searchResults
+      } else if (searchResults.results && Array.isArray(searchResults.results)) {
+        results = searchResults.results
+      } else if (searchResults.memories && Array.isArray(searchResults.memories)) {
+        results = searchResults.memories
+      } else if (searchResults.data && Array.isArray(searchResults.data)) {
+        results = searchResults.data
+      }
+
+      for (const result of results) {
+        // Handle different result structures
+        let memory: any = result
+
+        // If result has a memory field, use that
+        if (result.memory) {
+          memory = result.memory
+        } else if (result.data) {
+          memory = result.data
+        }
+
+        // Extract messages from memory
+        if (memory.messages && Array.isArray(memory.messages)) {
+          // If memory contains messages array
+          for (const msg of memory.messages) {
+            if (msg && typeof msg === 'object' && msg.role && msg.content) {
+              messages.push({
+                role: msg.role as 'system' | 'user' | 'assistant',
+                content: msg.content,
+              })
+            }
+          }
+        } else if (memory.role && memory.content) {
+          // If memory is a single message
+          messages.push({
+            role: memory.role as 'system' | 'user' | 'assistant',
+            content: memory.content,
+          })
+        } else if (memory.content) {
+          // If memory has content but no explicit role, try to infer or default to user
+          messages.push({
+            role: (memory.role || 'user') as 'system' | 'user' | 'assistant',
+            content: memory.content,
+          })
+        }
+      }
+
+      logger.debug('Converted search results to messages', {
+        inputResults: results.length,
+        outputMessages: messages.length,
+      })
+    } catch (error) {
+      logger.error('Error converting search results to messages:', error)
+    }
+
+    return messages
+  }
+
+  /**
    * Build memory key based on conversationId and blockId
    * BlockId provides block-level memory isolation
    */
