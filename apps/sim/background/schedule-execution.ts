@@ -301,6 +301,11 @@ async function runWorkflowExecution({
 
     const mergedStates = mergeSubblockState(blocks)
 
+    const workspaceId = workflowRecord.workspaceId
+    if (!workspaceId) {
+      throw new Error(`Workflow ${payload.workflowId} has no associated workspace`)
+    }
+
     const personalEnvUserId = workflowRecord.userId
 
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
@@ -416,7 +421,7 @@ async function runWorkflowExecution({
 
     await loggingSession.safeStart({
       userId: actorUserId,
-      workspaceId: workflowRecord.workspaceId || '',
+      workspaceId,
       variables: variables || {},
       deploymentVersionId,
     })
@@ -425,7 +430,7 @@ async function runWorkflowExecution({
       requestId,
       executionId,
       workflowId: payload.workflowId,
-      workspaceId: workflowRecord.workspaceId || '',
+      workspaceId,
       userId: actorUserId,
       sessionUserId: undefined,
       workflowUserId: workflowRecord.userId,

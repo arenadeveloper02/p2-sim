@@ -47,6 +47,7 @@ import { generalSettingsKeys, useGeneralSettings } from '@/hooks/queries/general
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
 import { ssoKeys, useSSOProviders } from '@/hooks/queries/sso'
 import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSettingsModalStore } from '@/stores/settings-modal/store'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
@@ -135,6 +136,8 @@ const allNavigationItems: NavigationItem[] = [
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
+  const { initialSection, mcpServerId, clearInitialState } = useSettingsModalStore()
+  const [pendingMcpServerId, setPendingMcpServerId] = useState<string | null>(null)
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const { data: organizationsData } = useOrganizations()
@@ -247,6 +250,24 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   // React Query hook automatically loads and syncs settings
   useGeneralSettings()
+
+  // Apply initial section from store when modal opens
+  useEffect(() => {
+    if (open && initialSection) {
+      setActiveSection(initialSection)
+      if (mcpServerId) {
+        setPendingMcpServerId(mcpServerId)
+      }
+      clearInitialState()
+    }
+  }, [open, initialSection, mcpServerId, clearInitialState])
+
+  // Clear pending server ID when section changes away from MCP
+  useEffect(() => {
+    if (activeSection !== 'mcp') {
+      setPendingMcpServerId(null)
+    }
+  }, [activeSection])
 
   useEffect(() => {
     const handleOpenSettings = (event: CustomEvent<{ tab: SettingsSection }>) => {
@@ -440,7 +461,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
             {activeSection === 'sso' && <SSO />}
             {activeSection === 'copilot' && <Copilot />}
-            {activeSection === 'mcp' && <MCP />}
+            {activeSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
             {activeSection === 'custom-tools' && <CustomTools />}
           </SModalMainBody>
         </SModalMain>

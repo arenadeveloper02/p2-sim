@@ -434,7 +434,31 @@ export function SearchModal({
           }
           break
         case 'workspace':
+          changeWorkspaceEvent({
+            'Workspace Name': item.name,
+            'Workspace ID': item.id,
+            'Workspace LP Source': 'Search',
+          })
+          if (item.isCurrent) {
+            break
+          }
+          if (item.href) {
+            router.push(item.href)
+          }
+          break
         case 'workflow':
+          if (!item.isCurrent && item.href) {
+            router.push(item.href)
+            selectWorkflowEvent({
+              'Workflow Name': item?.name,
+              'Workflow ID': item?.id,
+              'Workflow LP Source': 'Search',
+            })
+            window.dispatchEvent(
+              new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: item.id } })
+            )
+          }
+          break
         case 'page':
         case 'doc':
           if (item.href) {
@@ -442,25 +466,8 @@ export function SearchModal({
               window.open(item.href, '_blank', 'noopener,noreferrer')
             } else {
               router.push(item.href)
-              // Scroll to the workflow in the sidebar after navigation
-              if (item.type === 'workflow') {
-                selectWorkflowEvent({
-                  'Workflow Name': item?.name,
-                  'Workflow ID': item?.id,
-                  'Workflow LP Source': 'Search',
-                })
-                window.dispatchEvent(
-                  new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: item.id } })
-                )
-              }
             }
-            if (item?.type === 'workspace') {
-              changeWorkspaceEvent({
-                'Workspace Name': item.name,
-                'Workspace ID': item.id,
-                'Workspace LP Source': 'Search',
-              })
-            }
+          
           }
           break
       }

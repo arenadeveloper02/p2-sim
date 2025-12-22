@@ -487,6 +487,7 @@ import {
   jiraDeleteWorklogTool,
   jiraGetAttachmentsTool,
   jiraGetCommentsTool,
+  jiraGetUsersTool,
   jiraGetWorklogsTool,
   jiraRemoveWatcherTool,
   jiraRetrieveTool,
@@ -985,6 +986,12 @@ import {
   updateProjectTool,
 } from '@/tools/sentry'
 import { serperSearchTool } from '@/tools/serper'
+import {
+  servicenowCreateRecordTool,
+  servicenowDeleteRecordTool,
+  servicenowReadRecordTool,
+  servicenowUpdateRecordTool,
+} from '@/tools/servicenow'
 import {
   sftpDeleteTool,
   sftpDownloadTool,
@@ -1504,6 +1511,7 @@ export const tools: Record<string, ToolConfig> = {
   jira_delete_issue_link: jiraDeleteIssueLinkTool,
   jira_add_watcher: jiraAddWatcherTool,
   jira_remove_watcher: jiraRemoveWatcherTool,
+  jira_get_users: jiraGetUsersTool,
   kalshi_get_markets: kalshiGetMarketsTool,
   kalshi_get_market: kalshiGetMarketTool,
   kalshi_get_events: kalshiGetEventsTool,
@@ -1553,6 +1561,10 @@ export const tools: Record<string, ToolConfig> = {
   github_latest_commit: githubLatestCommitTool,
   spyfu_request: spyfuRequestTool,
   serper_search: serperSearchTool,
+  servicenow_create_record: servicenowCreateRecordTool,
+  servicenow_read_record: servicenowReadRecordTool,
+  servicenow_update_record: servicenowUpdateRecordTool,
+  servicenow_delete_record: servicenowDeleteRecordTool,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
   tavily_crawl: tavilyCrawlTool,

@@ -148,6 +148,9 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
             ) {
               redactedEntry.output = redactApiKeys(redactedEntry.output)
             }
+            if (redactedEntry.input && typeof redactedEntry.input === 'object') {
+              redactedEntry.input = redactApiKeys(redactedEntry.input)
+            }
 
             // Truncate large base64 image data to prevent localStorage quota issues
             redactedEntry = {
