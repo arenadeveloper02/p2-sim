@@ -219,7 +219,13 @@ export const createKnowledgeBaseEvent = (props: any): Promise<void> => {
 }
 
 export const uploadKBDocumentsEvent = (props: any): Promise<void> => {
-  return trackMp('Knowledge Base', `Upload document to KB`, {
+  return trackMp('Knowledge Base', `Add document to KB`, {
+    ...props,
+  })
+}
+
+export const addTagsforKBEvent = (props: any): Promise<void> => {
+  return trackMp('Knowledge Base', `Add tags to KB`, {
     ...props,
   })
 }

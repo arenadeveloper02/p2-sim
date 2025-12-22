@@ -228,6 +228,7 @@ export function AddDocumentsModal({
 
     uploadKBDocumentsEvent({
       'Knowledge Base Name': knowledgeBaseName || '',
+      'Knowledge Base ID': knowledgeBaseId,
       'Document Type': documentTypes,
     })
     try {

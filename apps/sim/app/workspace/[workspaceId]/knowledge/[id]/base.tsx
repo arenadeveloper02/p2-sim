@@ -1309,7 +1309,12 @@ export function KnowledgeBase({
         </div>
       </div>
 
-      <BaseTagsModal open={showTagsModal} onOpenChange={setShowTagsModal} knowledgeBaseId={id} />
+      <BaseTagsModal
+        open={showTagsModal}
+        onOpenChange={setShowTagsModal}
+        knowledgeBaseId={id}
+        knowledgeBaseName={knowledgeBaseName}
+      />
 
       <Modal open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <ModalContent size='sm'>

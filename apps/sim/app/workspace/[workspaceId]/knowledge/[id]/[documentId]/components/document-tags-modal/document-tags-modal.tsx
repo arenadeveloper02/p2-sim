@@ -18,6 +18,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { MAX_TAG_SLOTS, TAG_SLOTS, type TagSlot } from '@/lib/knowledge/constants'
 import type { DocumentTag } from '@/lib/knowledge/tags/types'
 import { createLogger } from '@/lib/logs/console/logger'
+import { addTagsforKBEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   type TagDefinition,
   useKnowledgeBaseTagDefinitions,
@@ -32,6 +33,7 @@ interface DocumentTagsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   knowledgeBaseId: string
+  knowledgeBaseName?: string
   documentId: string
   documentData: DocumentData | null
   onDocumentUpdate?: (updates: Record<string, string>) => void
@@ -41,6 +43,7 @@ export function DocumentTagsModal({
   open,
   onOpenChange,
   knowledgeBaseId,
+  knowledgeBaseName,
   documentId,
   documentData,
   onDocumentUpdate,
@@ -286,6 +289,20 @@ export function DocumentTagsModal({
             await saveTagDefinitions([newDefinition])
           }
           await refreshTagDefinitions()
+
+          // Track event when a new tag definition is created
+          addTagsforKBEvent({
+            'Knowledge Base Name': knowledgeBaseName || '',
+            'Knowledge Base ID': knowledgeBaseId,
+            'Tag Name': formData.displayName,
+          })
+        } else if (currentEditingIndex === null) {
+          // Track event when a new tag is added to document (using existing definition)
+          addTagsforKBEvent({
+            'Knowledge Base Name': knowledgeBaseName || '',
+            'Knowledge Base ID': knowledgeBaseId,
+            'Tag Name': formData.displayName,
+          })
         }
       }
 

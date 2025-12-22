@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 import { MAX_TAG_SLOTS } from '@/lib/knowledge/constants'
 import { createLogger } from '@/lib/logs/console/logger'
+import { addTagsforKBEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import {
   type TagDefinition,
@@ -80,9 +81,15 @@ interface BaseTagsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   knowledgeBaseId: string
+  knowledgeBaseName?: string
 }
 
-export function BaseTagsModal({ open, onOpenChange, knowledgeBaseId }: BaseTagsModalProps) {
+export function BaseTagsModal({
+  open,
+  onOpenChange,
+  knowledgeBaseId,
+  knowledgeBaseName,
+}: BaseTagsModalProps) {
   const { tagDefinitions: kbTagDefinitions, fetchTagDefinitions: refreshTagDefinitions } =
     useKnowledgeBaseTagDefinitions(knowledgeBaseId)
 
@@ -207,6 +214,12 @@ export function BaseTagsModal({ open, onOpenChange, knowledgeBaseId }: BaseTagsM
       }
 
       await Promise.all([refreshTagDefinitions(), fetchTagUsage()])
+
+      addTagsforKBEvent({
+        'Knowledge Base Name': knowledgeBaseName || '',
+        'Knowledge Base ID': knowledgeBaseId,
+        'Tag Name': newTagDefinition.displayName,
+      })
 
       setCreateTagForm({
         displayName: '',
