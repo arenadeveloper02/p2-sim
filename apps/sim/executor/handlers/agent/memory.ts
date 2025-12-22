@@ -706,7 +706,7 @@ export class Memory {
       // Dynamically import callMemoryAPI to avoid circular dependencies
       const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
 
-      // Call 1: Store as conversation memory (infer: false)
+      // Call 1: Store as fact memory (infer: true)
       try {
         await callMemoryAPI(
           requestId,
@@ -714,8 +714,8 @@ export class Memory {
           ctx.userId,
           chatId,
           inputs.conversationId,
-          false, // infer: false
-          'conversation', // memoryType: 'conversation'
+          true, // infer: false
+          'fact', // memoryType: 'conversation'
           blockId
         )
         logger.debug('Successfully called Mem0 API for conversation memory', {
@@ -731,7 +731,7 @@ export class Memory {
         })
       }
 
-      // Call 2: Store as fact memory (infer: true)
+      // Call 2: Store as conversation memory (infer: false)
       try {
         await callMemoryAPI(
           requestId,
@@ -739,8 +739,8 @@ export class Memory {
           ctx.userId,
           chatId,
           inputs.conversationId,
-          true, // infer: true
-          'fact', // memoryType: 'fact'
+          false, // infer: true
+          'conversation', // memoryType: 'fact'
           blockId
         )
         logger.debug('Successfully called Mem0 API for fact memory', {
