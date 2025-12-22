@@ -35,6 +35,7 @@ import { GitLabBlock } from '@/blocks/blocks/gitlab'
 import { GmailBlock } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
+import { FyersBlock } from '@/blocks/blocks/fyers'
 import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
@@ -181,6 +182,7 @@ export const registry: Record<string, BlockConfig> = {
   gitlab: GitLabBlock,
   gmail: GmailBlock,
   google_ads: GoogleAdsBlock,
+  fyers: FyersBlock,
   grafana: GrafanaBlock,
   guardrails: GuardrailsBlock,
   google_calendar: GoogleCalendarBlock,
