@@ -803,58 +803,59 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
       },
-      {
-        id: 'gemini-1.5-pro',
-        pricing: {
-          input: 1.25,
-          cachedInput: 0.625,
-          output: 5.0,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-      },
-      {
-        id: 'gemini-1.5-flash',
-        pricing: {
-          input: 0.075,
-          cachedInput: 0.0375,
-          output: 0.3,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-      },
-      {
-        id: 'gemini-1.5-flash-8b',
-        pricing: {
-          input: 0.0375,
-          cachedInput: 0.01875,
-          output: 0.15,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-      },
-      {
-        id: 'gemini-1.0-pro',
-        pricing: {
-          input: 0.5,
-          cachedInput: 0.25,
-          output: 1.5,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-      },
+      // Retired models (as of September 24, 2025) - commented out to prevent 404 errors
+      // {
+      //   id: 'gemini-1.5-pro',
+      //   pricing: {
+      //     input: 1.25,
+      //     cachedInput: 0.625,
+      //     output: 5.0,
+      //     updatedAt: '2025-06-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      // },
+      // {
+      //   id: 'gemini-1.5-flash',
+      //   pricing: {
+      //     input: 0.075,
+      //     cachedInput: 0.0375,
+      //     output: 0.3,
+      //     updatedAt: '2025-06-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      // },
+      // {
+      //   id: 'gemini-1.5-flash-8b',
+      //   pricing: {
+      //     input: 0.0375,
+      //     cachedInput: 0.01875,
+      //     output: 0.15,
+      //     updatedAt: '2025-06-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      // },
+      // {
+      //   id: 'gemini-1.0-pro',
+      //   pricing: {
+      //     input: 0.5,
+      //     cachedInput: 0.25,
+      //     output: 1.5,
+      //     updatedAt: '2025-06-17',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      // },
       {
         id: 'gemini-2.0-flash-lite',
         pricing: {

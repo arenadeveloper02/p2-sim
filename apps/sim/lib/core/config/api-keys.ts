@@ -11,6 +11,7 @@ export function getRotatingApiKey(provider: string): string {
     provider !== 'openai' &&
     provider !== 'anthropic' &&
     provider !== 'google' &&
+    provider !== 'vertex' &&
     provider !== 'xai' &&
     provider !== 'sambanova'
   ) {
@@ -32,7 +33,8 @@ export function getRotatingApiKey(provider: string): string {
     if (env.SAMBANOVA_API_KEY_1) keys.push(env.SAMBANOVA_API_KEY_1)
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
-  } else if (provider === 'google') {
+  } else if (provider === 'google' || provider === 'vertex') {
+    // Vertex AI uses the same Google API key
     keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
   } else if (provider === 'xai') {
     if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
@@ -42,7 +44,7 @@ export function getRotatingApiKey(provider: string): string {
   }
 
   if (keys.length === 0) {
-    if (provider === 'google') {
+    if (provider === 'google' || provider === 'vertex') {
       throw new Error(
         `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
       )
