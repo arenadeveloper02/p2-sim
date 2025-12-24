@@ -58,7 +58,7 @@ const VectorSearchSchema = z
       .optional()
       .nullable()
       .transform((val) => val || undefined),
-      rerank: z
+    rerank: z
       .object({
         enabled: z.boolean().optional().default(true),
         model: z.string().optional(),

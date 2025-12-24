@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat, deployedChat, workflowExecutionLogs, workflow } from '@sim/db/schema'
+import { chat, deployedChat, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'

@@ -467,7 +467,6 @@ export function SearchModal({
             } else {
               router.push(item.href)
             }
-          
           }
           break
       }

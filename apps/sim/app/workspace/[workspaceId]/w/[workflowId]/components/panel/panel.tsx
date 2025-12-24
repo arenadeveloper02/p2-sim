@@ -99,10 +99,6 @@ const RunAgentExternalChat = ({
         setChatUrl(null)
       } finally {
         setIsLoading(false)
-        workflowRunCTAEvent({
-          'Workspace Name': workspaceName || '',
-          'Workspace ID': workspaceId || '',
-        })
       }
     }
 
@@ -114,7 +110,15 @@ const RunAgentExternalChat = ({
   }
 
   return (
-    <Link href={chatUrl}>
+    <Link
+      href={chatUrl}
+      onClick={() =>
+        workflowRunCTAEvent({
+          'Workspace Name': workspaceName || '',
+          'Workspace ID': workspaceId || '',
+        })
+      }
+    >
       <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'primary'}>
         <Zap className='h-[11.5px] w-[11.5px] fill-current' />
         Run

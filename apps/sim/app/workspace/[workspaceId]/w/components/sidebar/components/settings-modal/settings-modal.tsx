@@ -236,8 +236,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handleSectionChange = useCallback(
     (sectionId: SettingsSection) => {
+      settingsPageTabSwitchEvent({
+        Tabs: sectionId?.charAt(0).toUpperCase() + sectionId?.slice(1) || '',
+      })
       if (sectionId === activeSection) return
-
       if (activeSection === 'environment' && environmentBeforeLeaveHandler.current) {
         environmentBeforeLeaveHandler.current(() => setActiveSection(sectionId))
         return
@@ -293,9 +295,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     if (!isBillingEnabled && (activeSection === 'subscription' || activeSection === 'team')) {
       setActiveSection('general')
     }
-    settingsPageTabSwitchEvent({
-      Tabs: activeSection?.charAt(0).toUpperCase() + activeSection?.slice(1) || '',
-    })
   }, [activeSection])
 
   // Prefetch functions for React Query
