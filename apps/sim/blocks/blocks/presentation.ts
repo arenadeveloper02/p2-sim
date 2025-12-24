@@ -55,7 +55,10 @@ export const PresentationBlock: BlockConfig<PresentationResponse> = {
       id: 'template',
       title: 'Templates',
       type: 'dropdown',
-      options: [{ label: 'Position2', id: 'position2' }],
+      options: [
+        { label: 'Position2', id: 'position2' },
+        { label: 'Persona Template', id: 'persona-templates' },
+      ],
       value: () => 'position2',
       condition: { field: 'operation', value: 'create' },
     },
@@ -64,6 +67,24 @@ export const PresentationBlock: BlockConfig<PresentationResponse> = {
       title: 'Content',
       type: 'long-input',
       placeholder: 'Enter presentation content',
+      condition: { field: 'operation', value: 'create' },
+    },
+    {
+      id: 'slides_markdown',
+      title: 'Slides Markdown',
+      type: 'long-input',
+      placeholder: 'Enter slides markdown as JSON array: ["slide 1 content", "slide 2 content"]',
+      description:
+        'Pre-provide markdown content for each slide (bypasses outline generation). Array of strings in JSON format. Auto-sets slide count.',
+      condition: { field: 'operation', value: 'create' },
+    },
+    {
+      id: 'instructions',
+      title: 'Instructions',
+      type: 'long-input',
+      placeholder: 'Enter instructions for the presentation.',
+      description:
+        'Custom guidance for AI generation. Influences style, content focus, and formatting. Examples: "Emphasize security features", "Use professional tone", "Include metrics"',
       condition: { field: 'operation', value: 'create' },
     },
   ],
@@ -82,11 +103,24 @@ export const PresentationBlock: BlockConfig<PresentationResponse> = {
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    numberOfSlides: { type: 'number', description: 'Number of slides to create' },
+    numberOfSlides: {
+      type: 'number',
+      description: 'Number of slides to create (auto-set if slides_markdown is provided)',
+    },
     tone: { type: 'string', description: 'Tone of the presentation' },
     verbosity: { type: 'string', description: 'Verbosity level of the presentation' },
     template: { type: 'string', description: 'Presentation template' },
-    content: { type: 'string', description: 'Presentation content' },
+    content: { type: 'string', description: 'Presentation content/topic' },
+    slides_markdown: {
+      type: 'array',
+      description:
+        'Pre-provide markdown content for each slide. Bypasses outline generation. Auto-sets slide count.',
+    },
+    instructions: {
+      type: 'string',
+      description:
+        'Custom guidance for AI generation (style, content focus, formatting). Applied during outline, layout, and content generation.',
+    },
   },
   outputs: {
     presentationFile: { type: 'json', description: 'Presentation file' },

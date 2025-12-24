@@ -170,7 +170,25 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       params: (params) => {
         const { credential, values, spreadsheetId, manualSpreadsheetId, ...rest } = params
 
-        const parsedValues = values ? JSON.parse(values as string) : undefined
+        // Handle values consistently for write / update / append:
+        // - If it's already an array/object (e.g. passed from another block), use as-is
+        // - If it's a non-empty string, try to JSON.parse it (same pattern you use for write)
+        // - If it's empty/undefined, leave as undefined and let the tool's required validation handle it
+        let parsedValues: unknown
+        if (Array.isArray(values) || (values && typeof values === 'object')) {
+          parsedValues = values
+        } else if (typeof values === 'string') {
+          const trimmed = values.trim()
+          if (trimmed) {
+            try {
+              parsedValues = JSON.parse(trimmed)
+            } catch (error) {
+              throw new Error(
+                'Values must be valid JSON (e.g. [["A","B"],["C","D"]] or [{"A":"B"},{"A":"B"}]).'
+              )
+            }
+          }
+        }
 
         const effectiveSpreadsheetId = (spreadsheetId || manualSpreadsheetId || '').trim()
 

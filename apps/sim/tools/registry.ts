@@ -952,7 +952,6 @@ import {
 } from '@/tools/salesforce'
 import { searchTool } from '@/tools/search'
 import { semrushQueryTool } from '@/tools/semrush'
-import { sqsSendTool } from '@/tools/sqs'
 import {
   sendGridAddContactsToListTool,
   sendGridAddContactTool,
@@ -1122,6 +1121,7 @@ import {
   spotifyUpdatePlaylistTool,
 } from '@/tools/spotify'
 import { spyfuRequestTool } from '@/tools/spyfu'
+import { sqsSendTool } from '@/tools/sqs'
 import {
   sshCheckCommandExistsTool,
   sshCheckFileExistsTool,

@@ -14,13 +14,13 @@ import {
   PopoverTrigger,
   Tooltip,
 } from '@/components/emcn'
+import { useSession } from '@/lib/auth/auth-client'
+import { env } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal/invite-modal'
-import { useSession } from '@/lib/auth/auth-client'
-import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('WorkspaceHeader')
 
@@ -147,36 +147,36 @@ export function WorkspaceHeader({
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const capturedWorkspaceRef = useRef<{ id: string; name: string } | null>(null)
 
- /**
+  /**
    * Check if current user is a platform admin
    */
- const isPlatformAdmin = (() => {
-  if (!session?.user?.email) return false
+  const isPlatformAdmin = (() => {
+    if (!session?.user?.email) return false
 
-  const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
-  if (!adminEmailsEnv) return false
+    const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
+    if (!adminEmailsEnv) return false
 
-  // Parse admin emails (can be array, JSON string array, or comma-separated string)
-  let adminEmails: string[] = []
+    // Parse admin emails (can be array, JSON string array, or comma-separated string)
+    let adminEmails: string[] = []
 
-  if (Array.isArray(adminEmailsEnv)) {
-    adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
-  } else if (typeof adminEmailsEnv === 'string') {
-    const emailsStr = adminEmailsEnv as string
-    // Try to parse as JSON array first
-    try {
-      const parsed = JSON.parse(emailsStr)
-      if (Array.isArray(parsed)) {
-        adminEmails = parsed.map((email: string) => email.toLowerCase())
+    if (Array.isArray(adminEmailsEnv)) {
+      adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
+    } else if (typeof adminEmailsEnv === 'string') {
+      const emailsStr = adminEmailsEnv as string
+      // Try to parse as JSON array first
+      try {
+        const parsed = JSON.parse(emailsStr)
+        if (Array.isArray(parsed)) {
+          adminEmails = parsed.map((email: string) => email.toLowerCase())
+        }
+      } catch {
+        // Fallback to comma-separated string
+        adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
       }
-    } catch {
-      // Fallback to comma-separated string
-      adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
     }
-  }
 
-  return adminEmails.includes(session.user.email.toLowerCase())
-})()
+    return adminEmails.includes(session.user.email.toLowerCase())
+  })()
 
   // Client-only rendering for Popover to prevent Radix ID hydration mismatch
   const [isMounted, setIsMounted] = useState(false)
@@ -373,29 +373,31 @@ export function WorkspaceHeader({
                           </p>
                         </Tooltip.Content>
                       </Tooltip.Root>
-                      {isPlatformAdmin && (<Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <Button
-                            variant='ghost'
-                            type='button'
-                            aria-label='Create workspace'
-                            className='!p-[3px]'
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              await onCreateWorkspace()
-                              setIsWorkspaceMenuOpen(false)
-                            }}
-                            disabled={isCreatingWorkspace}
-                          >
-                            <Plus className='h-[14px] w-[14px]' />
-                          </Button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content className='py-[2.5px]'>
-                          <p>
-                            {isCreatingWorkspace ? 'Creating workspace...' : 'Create workspace'}
-                          </p>
-                        </Tooltip.Content>
-                      </Tooltip.Root>)}
+                      {isPlatformAdmin && (
+                        <Tooltip.Root>
+                          <Tooltip.Trigger asChild>
+                            <Button
+                              variant='ghost'
+                              type='button'
+                              aria-label='Create workspace'
+                              className='!p-[3px]'
+                              onClick={async (e) => {
+                                e.stopPropagation()
+                                await onCreateWorkspace()
+                                setIsWorkspaceMenuOpen(false)
+                              }}
+                              disabled={isCreatingWorkspace}
+                            >
+                              <Plus className='h-[14px] w-[14px]' />
+                            </Button>
+                          </Tooltip.Trigger>
+                          <Tooltip.Content className='py-[2.5px]'>
+                            <p>
+                              {isCreatingWorkspace ? 'Creating workspace...' : 'Create workspace'}
+                            </p>
+                          </Tooltip.Content>
+                        </Tooltip.Root>
+                      )}
                     </div>
                   </div>
                   <div className='max-h-[200px] overflow-y-auto'>
