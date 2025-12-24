@@ -330,7 +330,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
             fileAttachments && fileAttachments?.attachedFiles?.length > 0
               ? 'Text + Attachment'
               : 'Text',
-          Prompting: 'Typed',
+          Prompting: 'Type',
         })
 
         const shouldClearInput = clearOnSubmit && !options.preserveInput && !overrideMessage

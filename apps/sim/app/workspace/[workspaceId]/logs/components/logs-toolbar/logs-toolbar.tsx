@@ -201,9 +201,12 @@ export function LogsToolbar({
 
   const handleStatusChange = useCallback(
     (values: string[]) => {
+      const statusLabels = values
+        .map((val) => statusOptions.find((s) => s.value === val)?.label || val)
+        .join(',')
       logsFilterDropDown({
         Dropdown: 'Status',
-        Values: values.join(','),
+        Values: statusLabels,
       })
       if (values.length === 0) {
         setLevel('all')
@@ -211,7 +214,7 @@ export function LogsToolbar({
         setLevel(values.join(',') as any)
       }
     },
-    [setLevel]
+    [setLevel, statusOptions]
   )
 
   const statusDisplayLabel = useMemo(() => {
@@ -426,9 +429,12 @@ export function LogsToolbar({
             multiSelect
             multiSelectValues={workflowIds}
             onMultiSelectChange={(values) => {
+              const workflowNames = values
+                .map((id) => workflows.find((w) => w.id === id)?.name || id)
+                .join(',')
               logsFilterDropDown({
                 Dropdown: 'Workflow',
-                Values: values.join(','),
+                Values: workflowNames,
               })
               setWorkflowIds(values)
             }}
@@ -459,9 +465,12 @@ export function LogsToolbar({
             multiSelect
             multiSelectValues={folderIds}
             onMultiSelectChange={(values) => {
+              const folderNames = values
+                .map((id) => folderList.find((f) => f.id === id)?.name || id)
+                .join(',')
               logsFilterDropDown({
                 Dropdown: 'Folder',
-                Values: values.join(','),
+                Values: folderNames,
               })
               setFolderIds(values)
             }}
@@ -484,9 +493,12 @@ export function LogsToolbar({
             multiSelect
             multiSelectValues={triggers}
             onMultiSelectChange={(values) => {
+              const triggerLabels = values
+                .map((val) => triggerOptions.find((t) => t.value === val)?.label || val)
+                .join(',')
               logsFilterDropDown({
                 Dropdown: 'Trigger',
-                Values: values.join(','),
+                Values: triggerLabels,
               })
               setTriggers(values)
             }}

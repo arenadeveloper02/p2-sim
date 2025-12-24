@@ -136,9 +136,6 @@ export default function Logs() {
     // Only track if there's a search keyword or filters applied
     if (!textSearch.trim() && !hasFilters) return
 
-    const firstWorkflowId = workflowIds[0] || workflowFilter.split(',')[0] || ''
-    const workflow = firstWorkflowId ? workflows[firstWorkflowId] : null
-
     logsPageSearchEvent({
       'Search keyword': textSearch,
       Filters:
@@ -152,8 +149,6 @@ export default function Logs() {
         ]
           .filter(Boolean)
           .join(', ') || '',
-      'Workflow Name': workflow?.name || '',
-      'Workflow ID': firstWorkflowId,
     })
   }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows, isInitialized])
 
