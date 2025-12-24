@@ -267,39 +267,51 @@ export class Memory {
       }
 
       for (const result of results) {
-        // Handle different result structures
-        let memory: any = result
-
-        // If result has a memory field, use that
-        if (result.memory) {
-          memory = result.memory
-        } else if (result.data) {
-          memory = result.data
-        }
-
-        // Extract messages from memory
-        if (memory.messages && Array.isArray(memory.messages)) {
-          // If memory contains messages array
-          for (const msg of memory.messages) {
-            if (msg && typeof msg === 'object' && msg.role && msg.content) {
+        // The search API returns results with structure:
+        // { id, memory (content string), role, metadata, score, ... }
+        if (result && typeof result === 'object') {
+          // Check if result has memory (content) and role fields directly
+          if (result.memory && typeof result.memory === 'string' && result.role) {
+            // Direct structure: { memory: "content", role: "user|assistant" }
+            messages.push({
+              role: result.role as 'system' | 'user' | 'assistant',
+              content: result.memory,
+            })
+          } else if (result.content && result.role) {
+            // Alternative structure: { content: "text", role: "user|assistant" }
+            messages.push({
+              role: result.role as 'system' | 'user' | 'assistant',
+              content: result.content,
+            })
+          } else if (result.messages && Array.isArray(result.messages)) {
+            // If result contains messages array
+            for (const msg of result.messages) {
+              if (msg && typeof msg === 'object' && msg.role && msg.content) {
+                messages.push({
+                  role: msg.role as 'system' | 'user' | 'assistant',
+                  content: msg.content,
+                })
+              }
+            }
+          } else if (result.memory && typeof result.memory === 'object') {
+            // If memory is an object, check for nested structure
+            const memory = result.memory
+            if (memory.messages && Array.isArray(memory.messages)) {
+              for (const msg of memory.messages) {
+                if (msg && typeof msg === 'object' && msg.role && msg.content) {
+                  messages.push({
+                    role: msg.role as 'system' | 'user' | 'assistant',
+                    content: msg.content,
+                  })
+                }
+              }
+            } else if (memory.role && memory.content) {
               messages.push({
-                role: msg.role as 'system' | 'user' | 'assistant',
-                content: msg.content,
+                role: memory.role as 'system' | 'user' | 'assistant',
+                content: memory.content,
               })
             }
           }
-        } else if (memory.role && memory.content) {
-          // If memory is a single message
-          messages.push({
-            role: memory.role as 'system' | 'user' | 'assistant',
-            content: memory.content,
-          })
-        } else if (memory.content) {
-          // If memory has content but no explicit role, try to infer or default to user
-          messages.push({
-            role: (memory.role || 'user') as 'system' | 'user' | 'assistant',
-            content: memory.content,
-          })
         }
       }
 

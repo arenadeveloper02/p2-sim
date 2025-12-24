@@ -20,7 +20,8 @@ export async function callMemoryAPI(
 ): Promise<void> {
   try {
     const timestamp = new Date().toISOString()
-    const memoryConversationId = infer ? conversationId || 'conv_123' : chatId
+    // Always use conversationId if provided, otherwise fallback based on infer flag
+    const memoryConversationId = conversationId || (infer ? 'conv_123' : chatId)
 
     const metadata: Record<string, any> = {
       memory_type: memoryType,
@@ -126,7 +127,7 @@ export async function searchMemoryAPI(
 
     logger.debug(`[${requestId}] Calling memory search API`, {
       query,
-      userId,
+      user_id: userId,
       hasFilters: !!filters,
       filters,
     })
