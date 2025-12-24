@@ -8,6 +8,13 @@ import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import {
+  createWorkflowEvent,
+  openKnowledgeBasePageEvent,
+  openLogsPageEvent,
+  openSettingsPageEvent,
+  openTemplatesPageEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -32,6 +39,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useFolderStore } from '@/stores/folders/store'
 import { useSearchModalStore } from '@/stores/search-modal/store'
+import { useSettingsModalStore } from '@/stores/settings-modal/store'
 import { MIN_SIDEBAR_WIDTH, useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
@@ -88,7 +96,11 @@ export function Sidebar() {
 
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const {
+    isOpen: isSettingsModalOpen,
+    openModal: openSettingsModal,
+    closeModal: closeSettingsModal,
+  } = useSettingsModalStore()
 
   /** Listens for external events to open help modal */
   useEffect(() => {
@@ -219,7 +231,7 @@ export function Sidebar() {
         id: 'settings',
         label: 'Settings',
         icon: Settings,
-        onClick: () => setIsSettingsModalOpen(true),
+        onClick: () => openSettingsModal(),
       },
     ],
     [workspaceId]
@@ -253,6 +265,10 @@ export function Sidebar() {
   const handleCreateWorkflow = useCallback(async () => {
     const workflowId = await createWorkflow()
     if (workflowId) {
+      createWorkflowEvent({
+        'Workspace Name': activeWorkspace?.name || '',
+        'Workspace ID': activeWorkspace?.id || '',
+      })
       window.dispatchEvent(
         new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: workflowId } })
       )
@@ -640,7 +656,12 @@ export function Sidebar() {
                         type='button'
                         data-item-id={item.id}
                         className={`${baseClasses} ${activeClasses}`}
-                        onClick={item.onClick}
+                        onClick={() => {
+                          item?.onClick?.()
+                          if (item.id === 'settings') {
+                            openSettingsPageEvent({})
+                          }
+                        }}
                       >
                         {content}
                       </button>
@@ -653,6 +674,17 @@ export function Sidebar() {
                       href={item.href!}
                       data-item-id={item.id}
                       className={`${baseClasses} ${activeClasses}`}
+                      onClick={() => {
+                        if (item.id === 'logs') {
+                          openLogsPageEvent({})
+                        }
+                        if (item.id === 'templates') {
+                          openTemplatesPageEvent({})
+                        }
+                        if (item.id === 'knowledge-base') {
+                          openKnowledgeBasePageEvent({})
+                        }
+                      }}
                     >
                       {content}
                     </Link>
@@ -686,7 +718,10 @@ export function Sidebar() {
 
       {/* Footer Navigation Modals */}
       <HelpModal open={isHelpModalOpen} onOpenChange={setIsHelpModalOpen} />
-      <SettingsModal open={isSettingsModalOpen} onOpenChange={setIsSettingsModalOpen} />
+      <SettingsModal
+        open={isSettingsModalOpen}
+        onOpenChange={(open) => (open ? openSettingsModal() : closeSettingsModal())}
+      />
 
       {/* Hidden file input for workspace import */}
       <input

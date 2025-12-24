@@ -234,6 +234,7 @@ export function Knowledge() {
                       description={displayData.description}
                       createdAt={displayData.createdAt}
                       updatedAt={displayData.updatedAt}
+                      searchQuery={searchQuery}
                     />
                   )
                 })

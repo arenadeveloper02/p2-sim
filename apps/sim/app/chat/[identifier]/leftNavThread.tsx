@@ -2,6 +2,7 @@
 import { ArrowLeft, CirclePlus, MessageSquareText, RefreshCw } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
+import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
 interface ThreadRecord {
   chatId: string
@@ -160,6 +161,7 @@ const LeftNavThread = ({
           variant='outline'
           className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
           onClick={() => {
+            deployedChatExitEvent({})
             const exitUrl = getExitUrl()
             window.location.replace(exitUrl)
           }}

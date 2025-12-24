@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/components/emcn'
+import { copilotPromptSentEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
 /**
  * Props for the CopilotWelcome component
@@ -10,6 +11,8 @@ interface WelcomeProps {
   onQuestionClick?: (question: string) => void
   /** Current copilot mode ('ask' for Q&A, 'plan' for planning, 'build' for workflow building) */
   mode?: 'ask' | 'build' | 'plan'
+  /** Current selected model */
+  selectedModel?: string
 }
 
 /**
@@ -19,7 +22,11 @@ interface WelcomeProps {
  * @param props - Component props
  * @returns Welcome screen UI
  */
-export function Welcome({ onQuestionClick, mode = 'ask' }: WelcomeProps) {
+export function Welcome({
+  onQuestionClick,
+  mode = 'ask',
+  selectedModel = 'claude-4.5-opus',
+}: WelcomeProps) {
   const capabilities =
     mode === 'build'
       ? [
@@ -59,7 +66,15 @@ export function Welcome({ onQuestionClick, mode = 'ask' }: WelcomeProps) {
           <Button
             key={idx}
             variant='active'
-            onClick={() => onQuestionClick?.(question)}
+            onClick={() => {
+              onQuestionClick?.(question)
+              copilotPromptSentEvent({
+                Mode: mode === 'ask' ? 'Ask about workflow' : 'Build Workflow',
+                Model: selectedModel,
+                'Prompt Type': 'Text',
+                Prompting: 'Default',
+              })
+            }}
             className='w-full justify-start'
           >
             <div className='flex flex-col items-start'>

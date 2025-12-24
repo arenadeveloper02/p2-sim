@@ -1152,6 +1152,7 @@ export function Document({
         open={showTagsModal}
         onOpenChange={setShowTagsModal}
         knowledgeBaseId={knowledgeBaseId}
+        knowledgeBaseName={knowledgeBaseName}
         documentId={documentId}
         documentData={documentData}
         onDocumentUpdate={handleDocumentTagsUpdate}

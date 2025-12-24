@@ -65,7 +65,6 @@ export const KnowledgeBlock: BlockConfig = {
       type: 'knowledge-tag-filters',
       placeholder: 'Add tag filters',
       condition: { field: 'operation', value: 'search' },
-      mode: 'advanced',
     },
     {
       id: 'documentId',

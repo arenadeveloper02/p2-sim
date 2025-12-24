@@ -17,6 +17,7 @@ import {
   getTriggersForSidebar,
   hasTriggerCapability,
 } from '@/lib/workflows/triggers/trigger-utils'
+import { selectBlockEvent, selectTriggerEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   calculateTriggerHeights,
   useToolbarItemInteractions,
@@ -553,8 +554,20 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         bgColor: trigger.bgColor,
                         iconElement: iconElement as HTMLElement | null,
                       })
+                      selectTriggerEvent({
+                        'Element Name': trigger.name,
+                        'Element Type': 'Trigger',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                      })
                     }}
-                    onClick={() => handleItemClick(trigger.type, isTriggerCapable)}
+                    onClick={() => {
+                      handleItemClick(trigger.type, isTriggerCapable)
+                      selectTriggerEvent({
+                        'Element Name': trigger.name,
+                        'Element Type': 'Trigger',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                      })
+                    }}
                     className={clsx(
                       'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
                       'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
@@ -565,6 +578,11 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         event.preventDefault()
                         event.stopPropagation()
                         handleItemClick(trigger.type, isTriggerCapable)
+                        selectTriggerEvent({
+                          'Element Name': trigger.name,
+                          'Element Type': 'Trigger',
+                          Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                        })
                       }
                     }}
                   >
@@ -638,12 +656,24 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         bgColor: block.bgColor ?? '#666666',
                         iconElement: iconElement as HTMLElement | null,
                       })
+                      selectBlockEvent({
+                        'Element Name': block.name,
+                        'Element Type': 'Block',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                      })
                     }}
                     onDragEnd={() => {
                       // Always clear the flag at the end of a toolbar drag
                       document.body.classList.remove('sim-drag-subflow')
                     }}
-                    onClick={() => handleItemClick(block.type, false)}
+                    onClick={() => {
+                      handleItemClick(block.type, false)
+                      selectBlockEvent({
+                        'Element Name': block.name,
+                        'Element Type': 'Block',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                      })
+                    }}
                     className={clsx(
                       'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
                       'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
@@ -654,6 +684,11 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         event.preventDefault()
                         event.stopPropagation()
                         handleItemClick(block.type, false)
+                        selectBlockEvent({
+                          'Element Name': block.name,
+                          'Element Type': 'Block',
+                          Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                        })
                       }
                     }}
                   >

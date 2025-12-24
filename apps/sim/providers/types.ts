@@ -5,6 +5,7 @@ export type ProviderId =
   | 'azure-openai'
   | 'anthropic'
   | 'google'
+  | 'vertex'
   | 'deepseek'
   | 'xai'
   | 'cerebras'
@@ -164,6 +165,9 @@ export interface ProviderRequest {
   // Azure OpenAI specific parameters
   azureEndpoint?: string
   azureApiVersion?: string
+  // Vertex AI specific parameters
+  vertexProject?: string
+  vertexLocation?: string
   // GPT-5 specific parameters
   reasoningEffort?: string
   verbosity?: string

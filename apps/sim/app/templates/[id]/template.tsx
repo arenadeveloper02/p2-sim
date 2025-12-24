@@ -36,6 +36,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
+import { useTemplateEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
 import { getBlock } from '@/blocks/registry'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
@@ -388,6 +389,12 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
   }
 
   const handleUseTemplate = () => {
+    useTemplateEvent({
+      'Template Name': template?.name || '',
+      'Template ID': template?.id || '',
+      'Workspace Name': workspaceId ? workspaces.find((ws) => ws.id === workspaceId)?.name : '',
+      'Workspace ID': workspaceId || '',
+    })
     if (!currentUserId) {
       const callbackUrl =
         isWorkspaceContext && workspaceId

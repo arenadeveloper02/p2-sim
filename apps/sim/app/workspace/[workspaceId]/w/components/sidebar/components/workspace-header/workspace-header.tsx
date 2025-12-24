@@ -17,6 +17,7 @@ import {
 import { useSession } from '@/lib/auth/auth-client'
 import { env } from '@/lib/core/config/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
@@ -450,7 +451,14 @@ export function WorkspaceHeader({
                         ) : (
                           <PopoverItem
                             active={workspace.id === workspaceId}
-                            onClick={() => onWorkspaceSwitch(workspace)}
+                            onClick={() => {
+                              changeWorkspaceEvent({
+                                'Workspace Name': workspace.name,
+                                'Workspace ID': workspace.id,
+                                'Workspace LP Source': 'Dropdown',
+                              })
+                              onWorkspaceSwitch(workspace)
+                            }}
                             onContextMenu={(e) => handleContextMenu(e, workspace)}
                           >
                             <span className='min-w-0 flex-1 truncate'>{workspace.name}</span>

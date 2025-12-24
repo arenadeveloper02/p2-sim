@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat, deployedChat, workflowExecutionLogs } from '@sim/db/schema'
+import { chat, deployedChat, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
@@ -22,6 +22,26 @@ import {
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
+
+// Agent department mapping
+const agentDepartments = [
+  { value: 'creative', label: 'Creative' },
+  { value: 'ma', label: 'MA' },
+  { value: 'ppc', label: 'PPC' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'waas', label: 'WAAS' },
+  { value: 'hr', label: 'HR' },
+] as const
+
+const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
+  (acc, dept) => {
+    acc[dept.value] = dept.label
+    return acc
+  },
+  {} as Record<string, string>
+)
 
 const chatFileSchema = z.object({
   name: z.string().min(1, 'File name is required'),
@@ -102,6 +122,21 @@ export async function POST(
     if (!deployment.isActive) {
       logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
 
+      const [workflowRecord] = await db
+        .select({ workspaceId: workflow.workspaceId })
+        .from(workflow)
+        .where(eq(workflow.id, deployment.workflowId))
+        .limit(1)
+
+      const workspaceId = workflowRecord?.workspaceId
+      if (!workspaceId) {
+        logger.warn(`[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`)
+        return addCorsHeaders(
+          createErrorResponse('This chat is currently unavailable', 403),
+          request
+        )
+      }
+
       const executionId = randomUUID()
       const loggingSession = new LoggingSession(
         deployment.workflowId,
@@ -112,7 +147,7 @@ export async function POST(
 
       await loggingSession.safeStart({
         userId: deployment.userId,
-        workspaceId: '', // Will be resolved if needed
+        workspaceId,
         variables: {},
       })
 
@@ -331,7 +366,14 @@ export async function POST(
 
     const { actorUserId, workflowRecord } = preprocessResult
     const workspaceOwnerId = actorUserId!
-    const workspaceId = workflowRecord?.workspaceId || ''
+    const workspaceId = workflowRecord?.workspaceId
+    if (!workspaceId) {
+      logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
+      return addCorsHeaders(
+        createErrorResponse('Workflow has no associated workspace', 500),
+        request
+      )
+    }
 
     // Start logging session with chat metadata
     await loggingSession.safeStart({
@@ -650,6 +692,7 @@ export async function GET(
         password: chat.password,
         allowedEmails: chat.allowedEmails,
         outputConfigs: chat.outputConfigs,
+        department: chat.department,
       })
       .from(chat)
       .where(eq(chat.identifier, identifier))
@@ -706,6 +749,10 @@ export async function GET(
      * Ensures inputFormat is never missing from successful responses
      */
     const buildChatConfigResponse = () => {
+      const departmentValue = deployment.department ?? null
+      const departmentLabel =
+        departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
+
       return createSuccessResponse({
         id: deployment.id,
         title: deployment.title,
@@ -714,6 +761,7 @@ export async function GET(
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
         inputFormat, // Always included in successful responses
+        department: departmentLabel, // Department in label format
       })
     }
 

@@ -24,6 +24,13 @@ import {
 } from '@/components/emcn'
 import { VariableIcon } from '@/components/icons'
 import { createLogger } from '@/lib/logs/console/logger'
+import {
+  openWorkflowChatEvent,
+  workflowClickMoreOptionsEvent,
+  workflowRunCTAEvent,
+  workflowTabSwitchEvent,
+  workflowTestCTAEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -40,6 +47,7 @@ import {
 import { Variables } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/variables/variables'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
 import { usePanelStore } from '@/stores/panel/store'
 import type { PanelTab } from '@/stores/panel/types'
@@ -53,9 +61,11 @@ const logger = createLogger('Panel')
 const RunAgentExternalChat = ({
   workflowId,
   workspaceId,
+  workspaceName,
 }: {
   workflowId: string
   workspaceId: string
+  workspaceName?: string
 }) => {
   const [chatUrl, setChatUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -100,7 +110,15 @@ const RunAgentExternalChat = ({
   }
 
   return (
-    <Link href={chatUrl}>
+    <Link
+      href={chatUrl}
+      onClick={() =>
+        workflowRunCTAEvent({
+          'Workspace Name': workspaceName || '',
+          'Workspace ID': workspaceId || '',
+        })
+      }
+    >
       <Button className='h-[32px] w-[61.5px] gap-[8px]' variant={'primary'}>
         <Zap className='h-[11.5px] w-[11.5px] fill-current' />
         Run
@@ -160,6 +178,9 @@ export function Panel() {
     hydration.phase === 'state-loading'
   const { getJson } = useWorkflowJsonStore()
   const { blocks } = useWorkflowStore()
+  const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
+  const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
   // Delete workflow hook
   const { isDeleting, handleDeleteWorkflow } = useDeleteWorkflow({
@@ -198,6 +219,10 @@ export function Panel() {
    * Runs the workflow with usage limit check
    */
   const runWorkflow = useCallback(async () => {
+    workflowTestCTAEvent({
+      'Workspace Name': workspaceName || '',
+      'Workspace ID': workspaceId || '',
+    })
     if (usageExceeded) {
       openSubscriptionSettings()
       return
@@ -231,6 +256,9 @@ export function Panel() {
    */
   const handleTabClick = (tab: PanelTab) => {
     setActiveTab(tab)
+    workflowTabSwitchEvent({
+      'Workflow Tabs': tab?.charAt(0).toUpperCase() + tab?.slice(1),
+    })
   }
 
   /**
@@ -276,6 +304,9 @@ export function Panel() {
       logger.error('Auto layout error:', error)
     } finally {
       setIsAutoLayouting(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Auto Layout',
+      })
     }
   }, [isExecuting, userPermissions.canEdit, isAutoLayouting, activeWorkflowId])
 
@@ -305,6 +336,9 @@ export function Panel() {
     } finally {
       setIsExporting(false)
       setIsMenuOpen(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Export',
+      })
     }
   }, [currentWorkflow, activeWorkflowId, getJson, downloadFile])
 
@@ -327,6 +361,9 @@ export function Panel() {
     } finally {
       setIsDuplicating(false)
       setIsMenuOpen(false)
+      workflowClickMoreOptionsEvent({
+        Options: 'Duplicate Workflow',
+      })
     }
   }, [
     activeWorkflowId,
@@ -439,7 +476,14 @@ export function Panel() {
                     <span>Auto layout</span>
                   </PopoverItem>
                   {
-                    <PopoverItem onClick={() => setVariablesOpen(!isVariablesOpen)}>
+                    <PopoverItem
+                      onClick={() => {
+                        setVariablesOpen(!isVariablesOpen)
+                        workflowClickMoreOptionsEvent({
+                          Options: 'Variables',
+                        })
+                      }}
+                    >
                       <VariableIcon className='h-3 w-3' />
                       <span>Variables</span>
                     </PopoverItem>
@@ -470,6 +514,9 @@ export function Panel() {
                     onClick={() => {
                       setIsMenuOpen(false)
                       setIsDeleteModalOpen(true)
+                      workflowClickMoreOptionsEvent({
+                        Options: 'Delete Workflow',
+                      })
                     }}
                     disabled={!userPermissions.canEdit || Object.keys(workflows).length <= 1}
                   >
@@ -481,7 +528,13 @@ export function Panel() {
               <Button
                 className='h-[32px] w-[32px]'
                 variant={isChatOpen ? 'active' : 'default'}
-                onClick={() => setIsChatOpen(!isChatOpen)}
+                onClick={() => {
+                  setIsChatOpen(!isChatOpen)
+                  openWorkflowChatEvent({
+                    'Workspace Name': workspaceName,
+                    'Workspace ID': workspaceId,
+                  })
+                }}
               >
                 <BubbleChatPreview />
               </Button>
@@ -503,7 +556,11 @@ export function Panel() {
                 )}
                 Test
               </Button>
-              <RunAgentExternalChat workflowId={activeWorkflowId || ''} workspaceId={workspaceId} />
+              <RunAgentExternalChat
+                workflowId={activeWorkflowId || ''}
+                workspaceId={workspaceId}
+                workspaceName={workspaceName}
+              />
             </div>
           </div>
 

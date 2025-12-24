@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Badge, DocumentAttachment, Tooltip } from '@/components/emcn'
+import { clickKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
 interface BaseCardProps {
   id?: string
@@ -11,6 +12,7 @@ interface BaseCardProps {
   description: string
   createdAt?: string
   updatedAt?: string
+  searchQuery?: string
 }
 
 /**
@@ -109,7 +111,14 @@ export function BaseCardSkeletonGrid({ count = 8 }: { count?: number }) {
 /**
  * Knowledge base card component displaying overview information
  */
-export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCardProps) {
+export function BaseCard({
+  id,
+  title,
+  docCount,
+  description,
+  updatedAt,
+  searchQuery,
+}: BaseCardProps) {
   const params = useParams()
   const workspaceId = params?.workspaceId as string
 
@@ -121,7 +130,18 @@ export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCa
   const shortId = id ? `kb-${id.slice(0, 8)}` : ''
 
   return (
-    <Link href={href} prefetch={true} className='h-full'>
+    <Link
+      href={href}
+      prefetch={true}
+      className='h-full'
+      onClick={() => {
+        clickKnowledgeBaseEvent({
+          'Knowledge Base Name': title || '',
+          'Knowledge Base ID': id || '',
+          ...(searchQuery && { 'Search keyword': searchQuery || '' }),
+        })
+      }}
+    >
       <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
         <div className='flex items-center justify-between gap-[8px]'>
           <h3 className='min-w-0 flex-1 truncate text-[14px] text-[var(--text-primary)]'>
