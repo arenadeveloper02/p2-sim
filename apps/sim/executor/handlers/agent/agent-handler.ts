@@ -40,7 +40,103 @@ export class AgentBlockHandler implements BlockHandler {
     const providerId = getProviderFromModel(model)
     const formattedTools = await this.formatTools(ctx, inputs.tools || [])
     const streamingConfig = this.getStreamingConfig(ctx, block)
+
+    // Log initial systemPrompt and userPrompt
+    logger.debug('Agent block execution started', {
+      blockId: block.id,
+      workflowId: ctx.workflowId,
+      hasSystemPrompt: !!inputs.systemPrompt,
+      systemPrompt: inputs.systemPrompt,
+      hasUserPrompt: !!inputs.userPrompt,
+      userPrompt:
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : inputs.userPrompt
+            ? JSON.stringify(inputs.userPrompt)
+            : undefined,
+      hasMessages: !!inputs.messages && inputs.messages.length > 0,
+      messageCount: inputs.messages?.length || 0,
+      memoryType: inputs.memoryType,
+    })
+
+    // Get fact memories and add to system prompt if memory is enabled
+    if (inputs.memoryType && inputs.memoryType !== 'none') {
+      // Extract user prompt for fact memory search
+      let userPrompt: string | undefined
+      if (inputs.userPrompt) {
+        userPrompt =
+          typeof inputs.userPrompt === 'string'
+            ? inputs.userPrompt
+            : JSON.stringify(inputs.userPrompt)
+      } else if (inputs.messages && Array.isArray(inputs.messages)) {
+        const userMsg = inputs.messages.find((m) => m.role === 'user')
+        if (userMsg) {
+          userPrompt = userMsg.content
+        }
+      }
+
+      // Get fact memories (isConversation: false)
+      const factMemories = await memoryService.searchMemories(
+        ctx,
+        inputs,
+        block.id,
+        userPrompt,
+        false
+      )
+
+      // Format fact memories and add to system prompt
+      if (factMemories && factMemories.length > 0) {
+        const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+
+        const factMemoriesPrompt = `Consider these user preferences when you are giving user response -\n${factMemoriesText}`
+
+        // Append to existing system prompt or create new one
+        if (inputs.systemPrompt) {
+          inputs.systemPrompt = `${inputs.systemPrompt}\n\n${factMemoriesPrompt}`
+        } else {
+          inputs.systemPrompt = factMemoriesPrompt
+        }
+
+        logger.debug('Added fact memories to system prompt', {
+          factMemoryCount: factMemories.length,
+          blockId: block.id,
+          updatedSystemPrompt: inputs.systemPrompt,
+        })
+      }
+    }
+
+    // Log systemPrompt and userPrompt after fact memories processing
+    logger.debug('Agent block prompts after fact memory processing', {
+      blockId: block.id,
+      hasSystemPrompt: !!inputs.systemPrompt,
+      systemPrompt: inputs.systemPrompt,
+      hasUserPrompt: !!inputs.userPrompt,
+      userPrompt:
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : inputs.userPrompt
+            ? JSON.stringify(inputs.userPrompt)
+            : undefined,
+    })
+
     const messages = await this.buildMessages(ctx, inputs, block.id)
+
+    // Log final messages array summary
+    if (messages && messages.length > 0) {
+      const systemMessages = messages.filter((m) => m.role === 'system')
+      const userMessages = messages.filter((m) => m.role === 'user')
+      const assistantMessages = messages.filter((m) => m.role === 'assistant')
+
+      logger.debug('Agent block messages built', {
+        blockId: block.id,
+        totalMessages: messages.length,
+        systemMessageCount: systemMessages.length,
+        userMessageCount: userMessages.length,
+        assistantMessageCount: assistantMessages.length,
+        firstSystemPrompt: systemMessages[0]?.content,
+        lastUserPrompt: userMessages[userMessages.length - 1]?.content,
+      })
+    }
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -657,7 +753,13 @@ export class AgentBlockHandler implements BlockHandler {
       // const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs, blockId)
 
       // Use semantic search instead
-      const searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt)
+      const searchResults = await memoryService.searchMemories(
+        ctx,
+        inputs,
+        blockId,
+        userPrompt,
+        true
+      )
       messages.push(...searchResults)
     }
 

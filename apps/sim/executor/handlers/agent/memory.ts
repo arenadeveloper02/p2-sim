@@ -178,7 +178,8 @@ export class Memory {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     blockId: string,
-    userPrompt?: string
+    userPrompt?: string,
+    isConversation?: boolean
   ): Promise<Message[]> {
     // Skip if userId is not available (required for search API)
     if (!ctx.userId) {
@@ -206,7 +207,11 @@ export class Memory {
         filters.block_id = blockId
       }
 
-      filters.memory_type = 'conversation'
+      if (isConversation === true) {
+        filters.memory_type = 'conversation'
+      } else {
+        filters.memory_type = 'fact'
+      }
 
       const requestId = generateRequestId()
 
