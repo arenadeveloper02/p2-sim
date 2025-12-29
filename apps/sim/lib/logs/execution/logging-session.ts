@@ -169,7 +169,8 @@ export class LoggingSession {
       return
     }
 
-    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } = params
+    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } =
+      params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])

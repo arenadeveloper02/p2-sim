@@ -3,8 +3,8 @@
 import { useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { Button, Tooltip } from '@/components/emcn'
+import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,

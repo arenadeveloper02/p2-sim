@@ -339,12 +339,14 @@ export function LogsToolbar({
           <Button
             variant='default'
             className='h-[32px] rounded-[6px] px-[10px]'
-            onClick={isRefreshing
-              ? undefined
-              : () => {
-                  logsRefreshEvent({})
-                  onRefresh()
-                }}
+            onClick={
+              isRefreshing
+                ? undefined
+                : () => {
+                    logsRefreshEvent({})
+                    onRefresh()
+                  }
+            }
             disabled={isRefreshing}
           >
             {isRefreshing ? (

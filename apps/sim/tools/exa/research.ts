@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
-import { createLogger } from '@sim/logger'
 import type { ExaResearchParams, ExaResearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 

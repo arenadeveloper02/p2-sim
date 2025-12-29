@@ -27,14 +27,8 @@ import {
   supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
   updateOllamaModels as updateOllamaModelsInDefinitions,
 } from '@/providers/models'
-import { ollamaProvider } from '@/providers/ollama'
-import { openaiProvider } from '@/providers/openai'
-import { openRouterProvider } from '@/providers/openrouter'
 import { sambanovaProvider } from '@/providers/sambanova'
-import type { ProviderConfig, ProviderId, ProviderToolConfig } from '@/providers/types'
-import { vertexProvider } from '@/providers/vertex'
-import { vllmProvider } from '@/providers/vllm'
-import { xAIProvider } from '@/providers/xai'
+import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
 import { useProvidersStore } from '@/stores/providers/store'
 

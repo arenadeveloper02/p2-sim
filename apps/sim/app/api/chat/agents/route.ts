@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
 import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createLogger } from '@sim/logger'
 
 const logger = createLogger('ChatAgentsAPI')
 

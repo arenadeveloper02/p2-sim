@@ -191,9 +191,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <QueryProvider>
               <SessionProvider>
                 <AutoLoginProvider>
-                  <BrandedLayout>
-                    {children}
-                  </BrandedLayout>
+                  <BrandedLayout>{children}</BrandedLayout>
                 </AutoLoginProvider>
               </SessionProvider>
             </QueryProvider>

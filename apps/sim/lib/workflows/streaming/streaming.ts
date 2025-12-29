@@ -7,8 +7,8 @@ import {
 import { encodeSSE } from '@/lib/core/utils/sse'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
-import { executeWorkflow } from '../executor/execute-workflow'
 import type { ExecutionResult } from '@/executor/types'
+import { executeWorkflow } from '../executor/execute-workflow'
 
 const logger = createLogger('WorkflowStreaming')
 

@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import { client } from '@/lib/auth/auth-client'
-import { createLogger } from '@sim/logger'
 
 const logger = createLogger('AutoLoginProvider')
 

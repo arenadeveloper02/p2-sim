@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import {
   Button,
   Input,
@@ -10,7 +11,6 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
-import { createLogger } from '@sim/logger'
 import { getCustomInputFields } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 

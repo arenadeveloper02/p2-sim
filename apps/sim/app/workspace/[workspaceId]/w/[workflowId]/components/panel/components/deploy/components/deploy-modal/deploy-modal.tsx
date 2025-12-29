@@ -24,8 +24,8 @@ import {
   workflowDeployEvent,
   workflowDeployTabSwitchEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { startsWithUuid } from '@/executor/constants'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'

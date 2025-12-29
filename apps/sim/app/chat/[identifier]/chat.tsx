@@ -1,9 +1,9 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { createLogger } from '@sim/logger'
 import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'

@@ -22,11 +22,7 @@ interface WelcomeProps {
  * @param props - Component props
  * @returns Welcome screen UI
  */
-export function Welcome({
-  onQuestionClick,
-  mode = 'ask',
-  selectedModel,
-}: WelcomeProps) {
+export function Welcome({ onQuestionClick, mode = 'ask', selectedModel }: WelcomeProps) {
   const capabilities =
     mode === 'build'
       ? [

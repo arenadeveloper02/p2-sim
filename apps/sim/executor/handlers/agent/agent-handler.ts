@@ -1006,12 +1006,9 @@ export class AgentBlockHandler implements BlockHandler {
     responseFormat: any,
     providerStartTime: number
   ) {
-  let finalApiKey = this.getApiKey(
-        providerId,
-        model,
-        providerRequest.apiKey,
-        ctx.environmentVariables
-      ) || providerRequest.apiKey
+    let finalApiKey =
+      this.getApiKey(providerId, model, providerRequest.apiKey, ctx.environmentVariables) ||
+      providerRequest.apiKey
 
     if (providerId === 'vertex' && providerRequest.vertexCredential) {
       finalApiKey = await this.resolveVertexCredential(

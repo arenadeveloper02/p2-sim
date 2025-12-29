@@ -222,7 +222,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     isResume?: boolean // If true, merge with existing data instead of replacing
     finalChatOutput?: string // Final chat output based on output_configs
     level?: 'info' | 'error' // Optional override for log level (used in cost-only fallback)
-     status?: 'completed' | 'failed' | 'cancelled'
+    status?: 'completed' | 'failed' | 'cancelled'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
