@@ -242,7 +242,7 @@ export async function getMemoriesAPI(
     return result
   } catch (error: any) {
     // Re-throw validation errors
-    if (error.message && error.message.includes('must be provided')) {
+    if (error.message?.includes('must be provided')) {
       throw error
     }
     logger.error(`[${requestId}] Error calling get memories API:`, error)
