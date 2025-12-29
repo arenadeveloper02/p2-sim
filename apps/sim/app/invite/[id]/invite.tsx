@@ -6,8 +6,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { useBrandConfig } from '@/lib/branding/branding'
 import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { createLogger } from '@sim/logger'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 
 const logger = createLogger('InviteById')

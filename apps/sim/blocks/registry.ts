@@ -11,6 +11,7 @@ import { AsanaBlock } from '@/blocks/blocks/asana'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
+import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock } from '@/blocks/blocks/confluence'
@@ -44,6 +45,7 @@ import { GoogleSheetsBlock } from '@/blocks/blocks/google_sheets'
 import { GoogleSlidesBlock } from '@/blocks/blocks/google_slides'
 import { GoogleVaultBlock } from '@/blocks/blocks/google_vault'
 import { GrafanaBlock } from '@/blocks/blocks/grafana'
+import { GrainBlock } from '@/blocks/blocks/grain'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
@@ -160,6 +162,7 @@ export const registry: Record<string, BlockConfig> = {
   browser_use: BrowserUseBlock,
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,
+  circleback: CirclebackBlock,
   clay: ClayBlock,
   condition: ConditionBlock,
   confluence: ConfluenceBlock,
@@ -182,6 +185,7 @@ export const registry: Record<string, BlockConfig> = {
   gitlab: GitLabBlock,
   gmail: GmailBlock,
   google_ads: GoogleAdsBlock,
+  grain: GrainBlock,
   grafana: GrafanaBlock,
   guardrails: GuardrailsBlock,
   google_calendar: GoogleCalendarBlock,

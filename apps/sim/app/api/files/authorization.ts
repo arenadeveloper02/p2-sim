@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { document, workspaceFile } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq, like, or } from 'drizzle-orm'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import {
@@ -14,6 +14,7 @@ import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
 
@@ -85,9 +86,7 @@ function extractWorkspaceIdFromKey(key: string): string | null {
   const parts = key.split('/')
   const workspaceId = parts[0]
 
-  // Validate UUID format
-  const UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
-  if (workspaceId && UUID_PATTERN.test(workspaceId)) {
+  if (workspaceId && isUuid(workspaceId)) {
     return workspaceId
   }
 

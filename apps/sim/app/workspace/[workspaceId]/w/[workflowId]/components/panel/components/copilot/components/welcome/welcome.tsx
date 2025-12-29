@@ -25,7 +25,7 @@ interface WelcomeProps {
 export function Welcome({
   onQuestionClick,
   mode = 'ask',
-  selectedModel = 'claude-4.5-opus',
+  selectedModel,
 }: WelcomeProps) {
   const capabilities =
     mode === 'build'

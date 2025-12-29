@@ -3,7 +3,7 @@ import { apiKey as apiKeyTable, user, userArenaDetails } from '@sim/db/schema'
 import { eq, isNull, ne, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { createErrorResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('RateLimitAPI')

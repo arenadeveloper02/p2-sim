@@ -3,8 +3,8 @@
 import { useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Button, Rocket, Tooltip } from '@/components/emcn'
 import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { Button, Tooltip } from '@/components/emcn'
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,
@@ -53,8 +53,7 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     isRegistryLoading,
   })
 
-  // Detect changes between current and deployed state
-  const { changeDetected, setChangeDetected } = useChangeDetection({
+  const { changeDetected } = useChangeDetection({
     workflowId: activeWorkflowId,
     deployedState,
     isLoadingDeployedState,
@@ -133,17 +132,15 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
         <Tooltip.Trigger asChild>
           <span>
             <Button
-              className='h-[32px] gap-[8px] px-[10px]'
-              variant='active'
+              className='h-[30px] gap-[6px] px-[10px]'
+              variant={
+                isRegistryLoading ? 'active' : changeDetected || !isDeployed ? 'tertiary' : 'active'
+              }
               onClick={onDeployClick}
-              disabled={isDisabled}
+              disabled={isRegistryLoading || isDisabled}
             >
-              {isDeploying ? (
-                <Loader2 className='h-[13px] w-[13px] animate-spin' />
-              ) : (
-                <Rocket className='h-[13px] w-[13px]' />
-              )}
-              {changeDetected ? 'Update' : isDeployed ? 'Active' : 'Deploy'}
+              {isDeploying && <Loader2 className='h-[13px] w-[13px] animate-spin' />}
+              {changeDetected ? 'Update' : isDeployed ? 'Live' : 'Deploy'}
             </Button>
           </span>
         </Tooltip.Trigger>
@@ -156,7 +153,6 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
         workflowId={activeWorkflowId}
         isDeployed={isDeployed}
         needsRedeployment={changeDetected}
-        setNeedsRedeployment={setChangeDetected}
         deployedState={deployedState!}
         isLoadingDeployedState={isLoadingDeployedState}
         refetchDeployedState={refetchWithErrorHandling}

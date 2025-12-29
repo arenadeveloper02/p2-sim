@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildIntercomUrl, handleIntercomError } from './types'
 
@@ -9,6 +9,10 @@ export interface IntercomCreateTicketParams {
   ticket_type_id: string
   contacts: string
   ticket_attributes: string
+  company_id?: string
+  created_at?: number
+  conversation_to_link_id?: string
+  disable_notifications?: boolean
 }
 
 export interface IntercomCreateTicketResponse {
@@ -42,21 +46,46 @@ export const intercomCreateTicketTool: ToolConfig<
     ticket_type_id: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'The ID of the ticket type',
     },
     contacts: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'JSON array of contact identifiers (e.g., [{"id": "contact_id"}])',
     },
     ticket_attributes: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description:
         'JSON object with ticket attributes including _default_title_ and _default_description_',
+    },
+    company_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Company ID to associate the ticket with',
+    },
+    created_at: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Unix timestamp for when the ticket was created. If not provided, current time is used.',
+    },
+    conversation_to_link_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'ID of an existing conversation to link to this ticket',
+    },
+    disable_notifications: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'When true, suppresses notifications when the ticket is created',
     },
   },
 
@@ -87,6 +116,13 @@ export const intercomCreateTicketTool: ToolConfig<
         throw new Error('ticket_attributes must be a valid JSON object')
       }
 
+      if (params.company_id) ticket.company_id = params.company_id
+      if (params.created_at) ticket.created_at = params.created_at
+      if (params.conversation_to_link_id)
+        ticket.conversation_to_link_id = params.conversation_to_link_id
+      if (params.disable_notifications !== undefined)
+        ticket.disable_notifications = params.disable_notifications
+
       return ticket
     },
   },
@@ -113,15 +149,41 @@ export const intercomCreateTicketTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
+    ticket: {
       type: 'object',
-      description: 'Created ticket data',
+      description: 'Created ticket object',
       properties: {
-        ticket: { type: 'object', description: 'Created ticket object' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
+        id: { type: 'string', description: 'Unique identifier for the ticket' },
+        type: { type: 'string', description: 'Object type (ticket)' },
+        ticket_id: { type: 'string', description: 'Ticket ID' },
+        ticket_type: { type: 'object', description: 'Type of the ticket' },
+        ticket_attributes: { type: 'object', description: 'Attributes of the ticket' },
+        ticket_state: { type: 'string', description: 'State of the ticket' },
+        ticket_state_internal_label: {
+          type: 'string',
+          description: 'Internal label for ticket state',
+        },
+        ticket_state_external_label: {
+          type: 'string',
+          description: 'External label for ticket state',
+        },
+        created_at: { type: 'number', description: 'Unix timestamp when ticket was created' },
+        updated_at: { type: 'number', description: 'Unix timestamp when ticket was last updated' },
+        contacts: { type: 'object', description: 'Contacts associated with the ticket' },
+        admin_assignee_id: { type: 'string', description: 'ID of assigned admin' },
+        team_assignee_id: { type: 'string', description: 'ID of assigned team' },
+        is_shared: { type: 'boolean', description: 'Whether the ticket is shared' },
+        open: { type: 'boolean', description: 'Whether the ticket is open' },
       },
     },
+    metadata: {
+      type: 'object',
+      description: 'Operation metadata',
+      properties: {
+        operation: { type: 'string', description: 'The operation performed (create_ticket)' },
+        ticketId: { type: 'string', description: 'ID of the created ticket' },
+      },
+    },
+    success: { type: 'boolean', description: 'Operation success status' },
   },
 }

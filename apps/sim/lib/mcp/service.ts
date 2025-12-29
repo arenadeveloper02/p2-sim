@@ -4,11 +4,11 @@
 
 import { db } from '@sim/db'
 import { mcpServers } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { isTest } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
-import { createLogger } from '@/lib/logs/console/logger'
 import { McpClient } from '@/lib/mcp/client'
 import {
   createMcpCacheAdapter,
@@ -25,6 +25,8 @@ import type {
   McpTransport,
 } from '@/lib/mcp/types'
 import { MCP_CONSTANTS } from '@/lib/mcp/utils'
+import { REFERENCE } from '@/executor/constants'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 
 const logger = createLogger('McpService')
 
@@ -49,14 +51,17 @@ class McpService {
    * Resolve environment variables in strings
    */
   private resolveEnvVars(value: string, envVars: Record<string, string>): string {
-    const envMatches = value.match(/\{\{([^}]+)\}\}/g)
+    const envVarPattern = createEnvVarPattern()
+    const envMatches = value.match(envVarPattern)
     if (!envMatches) return value
 
     let resolvedValue = value
     const missingVars: string[] = []
 
     for (const match of envMatches) {
-      const envKey = match.slice(2, -2).trim()
+      const envKey = match
+        .slice(REFERENCE.ENV_VAR_START.length, -REFERENCE.ENV_VAR_END.length)
+        .trim()
       const envValue = envVars[envKey]
 
       if (envValue === undefined) {

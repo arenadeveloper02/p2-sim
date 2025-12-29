@@ -10,7 +10,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { getCustomInputFields } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 

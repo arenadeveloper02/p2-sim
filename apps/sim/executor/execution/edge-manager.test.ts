@@ -4,7 +4,7 @@ import type { DAGEdge } from '@/executor/dag/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { EdgeManager } from './edge-manager'
 
-vi.mock('@/lib/logs/console/logger', () => ({
+vi.mock('@sim/logger', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
     error: vi.fn(),
@@ -129,7 +129,7 @@ describe('EdgeManager', () => {
       const output = {
         result: { data: 'test' },
         content: 'Hello world',
-        tokens: { prompt: 10, completion: 20, total: 30 },
+        tokens: { input: 10, output: 20, total: 30 },
       }
 
       const readyNodes = edgeManager.processOutgoingEdges(sourceNode, output)

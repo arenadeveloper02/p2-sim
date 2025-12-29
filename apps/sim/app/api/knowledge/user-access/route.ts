@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getUserKnowledgeBaseAccess } from '@/lib/knowledge/service'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 
 const logger = createLogger('UserKnowledgeAccessAPI')
 

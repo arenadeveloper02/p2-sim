@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 import { useQueryClient } from '@tanstack/react-query'
-import { LogIn, Settings, User, Users, Wrench } from 'lucide-react'
+import { Files, KeySquare, LogIn, Settings, User, Users, Wrench } from 'lucide-react'
 import {
   Card,
   Connections,
@@ -31,6 +31,7 @@ import { getUserRole } from '@/lib/workspaces/organization'
 import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   ApiKeys,
+  BYOK,
   Copilot,
   CustomTools,
   EnvironmentVariables,
@@ -63,6 +64,7 @@ type SettingsSection =
   | 'template-profile'
   | 'integrations'
   | 'apikeys'
+  | 'byok'
   | 'files'
   | 'subscription'
   | 'team'
@@ -115,6 +117,13 @@ const allNavigationItems: NavigationItem[] = [
   { id: 'mcp', label: 'MCPs', icon: McpIcon, section: 'tools' },
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
+  {
+    id: 'byok',
+    label: 'BYOK',
+    icon: KeySquare,
+    section: 'system',
+    requiresHosted: true,
+  },
   // {
   //   id: 'copilot',
   //   label: 'Copilot Keys',
@@ -122,7 +131,7 @@ const allNavigationItems: NavigationItem[] = [
   //   section: 'system',
   //   requiresHosted: true,
   // },
-  // { id: 'files', label: 'Files', icon: Files, section: 'system' },
+  { id: 'files', label: 'Files', icon: Files, section: 'system' },
   {
     id: 'sso',
     label: 'Single Sign-On',
@@ -311,8 +320,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           autoConnect: data.autoConnect ?? true,
           showTrainingControls: data.showTrainingControls ?? false,
           superUserModeEnabled: data.superUserModeEnabled ?? true,
-          // Force dark mode - light mode is temporarily disabled
-          theme: 'dark' as const,
+          theme: data.theme || 'system',
           telemetryEnabled: data.telemetryEnabled ?? true,
           billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
         }
@@ -459,6 +467,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             {isBillingEnabled && activeSection === 'subscription' && <Subscription />}
             {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
             {activeSection === 'sso' && <SSO />}
+            {activeSection === 'byok' && <BYOK />}
             {activeSection === 'copilot' && <Copilot />}
             {activeSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
             {activeSection === 'custom-tools' && <CustomTools />}

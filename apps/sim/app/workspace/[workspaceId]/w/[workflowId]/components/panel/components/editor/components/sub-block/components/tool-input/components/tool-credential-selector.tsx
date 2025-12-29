@@ -4,7 +4,6 @@ import { Button, Combobox } from '@/components/emcn/components'
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
-  getServiceIdFromScopes,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthService,
@@ -45,7 +44,7 @@ interface ToolCredentialSelectorProps {
   provider: OAuthProvider
   requiredScopes?: string[]
   label?: string
-  serviceId?: OAuthService
+  serviceId: OAuthService
   disabled?: boolean
 }
 
@@ -65,15 +64,7 @@ export function ToolCredentialSelector({
 
   const selectedId = value || ''
 
-  const effectiveServiceId = useMemo(
-    () => serviceId || getServiceIdFromScopes(provider, requiredScopes),
-    [provider, requiredScopes, serviceId]
-  )
-
-  const effectiveProviderId = useMemo(
-    () => getProviderIdFromServiceId(effectiveServiceId),
-    [effectiveServiceId]
-  )
+  const effectiveProviderId = useMemo(() => getProviderIdFromServiceId(serviceId), [serviceId])
 
   const {
     data: credentials = [],
@@ -126,7 +117,7 @@ export function ToolCredentialSelector({
     onChange('')
   }, [invalidSelection, onChange])
 
-  useCredentialRefreshTriggers(refetchCredentials, effectiveProviderId, provider)
+  useCredentialRefreshTriggers(refetchCredentials)
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -209,7 +200,7 @@ export function ToolCredentialSelector({
   )
 
   return (
-    <>
+    <div>
       <Combobox
         options={comboboxOptions}
         value={inputValue}
@@ -226,9 +217,20 @@ export function ToolCredentialSelector({
       />
 
       {needsUpdate && (
-        <div className='mt-2 flex items-center justify-between rounded-[6px] border border-amber-300/40 bg-amber-50/60 px-2 py-1 font-medium text-[12px] transition-colors dark:bg-amber-950/10'>
-          <span>Additional permissions required</span>
-          {!isForeign && <Button onClick={() => setShowOAuthModal(true)}>Update access</Button>}
+        <div className='mt-[8px] flex flex-col gap-[4px] rounded-[4px] border bg-[var(--surface-2)] px-[8px] py-[6px]'>
+          <div className='flex items-center font-medium text-[12px]'>
+            <span className='mr-[6px] inline-block h-[6px] w-[6px] rounded-[2px] bg-amber-500' />
+            Additional permissions required
+          </div>
+          {!isForeign && (
+            <Button
+              variant='active'
+              onClick={() => setShowOAuthModal(true)}
+              className='w-full px-[8px] py-[4px] font-medium text-[12px]'
+            >
+              Update access
+            </Button>
+          )}
         </div>
       )}
 
@@ -240,18 +242,14 @@ export function ToolCredentialSelector({
           toolName={getProviderName(provider)}
           requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
           newScopes={missingRequiredScopes}
-          serviceId={effectiveServiceId}
+          serviceId={serviceId}
         />
       )}
-    </>
+    </div>
   )
 }
 
-function useCredentialRefreshTriggers(
-  refetchCredentials: () => Promise<unknown>,
-  effectiveProviderId?: string,
-  provider?: OAuthProvider
-) {
+function useCredentialRefreshTriggers(refetchCredentials: () => Promise<unknown>) {
   useEffect(() => {
     const refresh = () => {
       void refetchCredentials()
@@ -269,26 +267,12 @@ function useCredentialRefreshTriggers(
       }
     }
 
-    const handleCredentialDisconnected = (event: Event) => {
-      const customEvent = event as CustomEvent<{ providerId?: string }>
-      const providerId = customEvent.detail?.providerId
-
-      if (
-        providerId &&
-        (providerId === effectiveProviderId || (provider && providerId.startsWith(provider)))
-      ) {
-        refresh()
-      }
-    }
-
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('pageshow', handlePageShow)
-    window.addEventListener('credential-disconnected', handleCredentialDisconnected)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('pageshow', handlePageShow)
-      window.removeEventListener('credential-disconnected', handleCredentialDisconnected)
     }
-  }, [refetchCredentials, effectiveProviderId, provider])
+  }, [refetchCredentials])
 }

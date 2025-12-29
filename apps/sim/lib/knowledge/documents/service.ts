@@ -1,6 +1,7 @@
 import crypto, { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { document, embedding, knowledgeBase, knowledgeBaseTagDefinitions } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { tasks } from '@trigger.dev/sdk'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
@@ -17,7 +18,6 @@ import {
   validateTagValue,
 } from '@/lib/knowledge/tags/utils'
 import type { ProcessedDocumentTags } from '@/lib/knowledge/types'
-import { createLogger } from '@/lib/logs/console/logger'
 import type { DocumentProcessingPayload } from '@/background/knowledge-processing'
 
 const logger = createLogger('DocumentService')
@@ -334,13 +334,7 @@ export async function processDocumentsWithQueue(
           fileSize: doc.fileSize,
           mimeType: doc.mimeType,
         },
-        processingOptions: {
-          chunkSize: processingOptions.chunkSize || 1024,
-          minCharactersPerChunk: processingOptions.minCharactersPerChunk || 1,
-          recipe: processingOptions.recipe || 'default',
-          lang: processingOptions.lang || 'en',
-          chunkOverlap: processingOptions.chunkOverlap || 200,
-        },
+        processingOptions,
         requestId,
       }))
 
@@ -425,6 +419,7 @@ export async function processDocumentAsync(
       .select({
         userId: knowledgeBase.userId,
         workspaceId: knowledgeBase.workspaceId,
+        chunkingConfig: knowledgeBase.chunkingConfig,
       })
       .from(knowledgeBase)
       .where(eq(knowledgeBase.id, knowledgeBaseId))
@@ -445,15 +440,18 @@ export async function processDocumentAsync(
 
     logger.info(`[${documentId}] Status updated to 'processing', starting document processor`)
 
+    // Use KB's chunkingConfig as fallback if processingOptions not provided
+    const kbConfig = kb[0].chunkingConfig as { maxSize: number; minSize: number; overlap: number }
+
     await withTimeout(
       (async () => {
         const processed = await processDocument(
           docData.fileUrl,
           docData.filename,
           docData.mimeType,
-          processingOptions.chunkSize || 512,
-          processingOptions.chunkOverlap || 200,
-          processingOptions.minCharactersPerChunk || 1,
+          processingOptions.chunkSize ?? kbConfig.maxSize,
+          processingOptions.chunkOverlap ?? kbConfig.overlap,
+          processingOptions.minCharactersPerChunk ?? kbConfig.minSize,
           kb[0].userId,
           kb[0].workspaceId
         )
@@ -486,7 +484,7 @@ export async function processDocumentAsync(
             const batchNum = Math.floor(i / batchSize) + 1
 
             logger.info(`[${documentId}] Processing embedding batch ${batchNum}/${totalBatches}`)
-            const batchEmbeddings = await generateEmbeddings(batch)
+            const batchEmbeddings = await generateEmbeddings(batch, undefined, kb[0].workspaceId)
             embeddings.push(...batchEmbeddings)
           }
         }
@@ -1345,6 +1343,17 @@ export async function retryDocumentProcessing(
   },
   requestId: string
 ): Promise<{ success: boolean; status: string; message: string }> {
+  // Fetch KB's chunkingConfig for retry processing
+  const kb = await db
+    .select({
+      chunkingConfig: knowledgeBase.chunkingConfig,
+    })
+    .from(knowledgeBase)
+    .where(eq(knowledgeBase.id, knowledgeBaseId))
+    .limit(1)
+
+  const kbConfig = kb[0].chunkingConfig as { maxSize: number; minSize: number; overlap: number }
+
   // Clear existing embeddings and reset document state
   await db.transaction(async (tx) => {
     await tx.delete(embedding).where(eq(embedding.documentId, documentId))
@@ -1364,11 +1373,11 @@ export async function retryDocumentProcessing(
   })
 
   const processingOptions = {
-    chunkSize: 512,
-    minCharactersPerChunk: 24,
+    chunkSize: kbConfig.maxSize,
+    minCharactersPerChunk: kbConfig.minSize,
     recipe: 'default',
     lang: 'en',
-    chunkOverlap: 100,
+    chunkOverlap: kbConfig.overlap,
   }
 
   // Start processing in the background

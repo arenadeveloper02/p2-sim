@@ -8,6 +8,7 @@ import {
   useImperativeHandle,
   useState,
 } from 'react'
+import { createLogger } from '@sim/logger'
 import { ArrowUp, AtSign, Image, Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
@@ -15,7 +16,6 @@ import { Badge, Button } from '@/components/emcn'
 import { Textarea } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { copilotPromptSentEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   AttachedFilesDisplay,
@@ -630,7 +630,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
         <div
           ref={setInputContainerRef}
           className={cn(
-            'relative w-full rounded-[4px] border border-[var(--surface-11)] bg-[var(--surface-6)] px-[6px] py-[6px] transition-colors dark:bg-[var(--surface-9)]',
+            'relative w-full rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[6px] py-[6px] transition-colors dark:bg-[var(--surface-5)]',
             fileAttachments.isDragging && 'ring-[1.75px] ring-[var(--brand-secondary)]'
           )}
           onDragEnter={fileAttachments.handleDragEnter}
@@ -771,8 +771,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                   className={cn(
                     'h-[20px] w-[20px] rounded-full p-0 transition-colors',
                     !isAborting
-                      ? 'bg-[#C0C0C0] hover:bg-[#D0D0D0] dark:bg-[#C0C0C0] dark:hover:bg-[#D0D0D0]'
-                      : 'bg-[#C0C0C0] dark:bg-[#C0C0C0]'
+                      ? 'bg-[var(--c-C0C0C0)] hover:bg-[var(--c-D0D0D0)]'
+                      : 'bg-[var(--c-C0C0C0)]'
                   )}
                   title='Stop generation'
                 >
@@ -798,8 +798,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                   className={cn(
                     'h-[22px] w-[22px] rounded-full p-0 transition-colors',
                     canSubmit
-                      ? 'bg-[#C0C0C0] hover:bg-[#D0D0D0] dark:bg-[#C0C0C0] dark:hover:bg-[#D0D0D0]'
-                      : 'bg-[#C0C0C0] dark:bg-[#C0C0C0]'
+                      ? 'bg-[var(--c-C0C0C0)] hover:bg-[var(--c-D0D0D0)]'
+                      : 'bg-[var(--c-C0C0C0)]'
                   )}
                 >
                   {isLoading ? (

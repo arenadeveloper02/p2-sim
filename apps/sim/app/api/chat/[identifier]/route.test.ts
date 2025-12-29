@@ -70,19 +70,6 @@ vi.mock('@/lib/core/utils/request', () => ({
   generateRequestId: vi.fn().mockReturnValue('test-request-id'),
 }))
 
-vi.mock('@/app/api/workflows/[id]/execute/route', () => ({
-  createFilteredResult: vi.fn().mockImplementation((result: any) => ({
-    ...result,
-    logs: undefined,
-    metadata: result.metadata
-      ? {
-          ...result.metadata,
-          workflowConnections: undefined,
-        }
-      : undefined,
-  })),
-}))
-
 describe('Chat Identifier API Route', () => {
   const mockAddCorsHeaders = vi.fn().mockImplementation((response) => response)
   const mockValidateChatAuth = vi.fn().mockResolvedValue({ authorized: true })
@@ -133,7 +120,7 @@ describe('Chat Identifier API Route', () => {
       validateAuthToken: vi.fn().mockReturnValue(true),
     }))
 
-    vi.doMock('@/lib/logs/console/logger', () => ({
+    vi.doMock('@sim/logger', () => ({
       createLogger: vi.fn().mockReturnValue({
         debug: vi.fn(),
         info: vi.fn(),

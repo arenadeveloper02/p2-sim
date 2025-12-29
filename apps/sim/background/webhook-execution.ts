@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
 import { webhook, workflow as workflowTable } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { eq } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { IdempotencyService, webhookIdempotency } from '@/lib/core/idempotency'
 import { processExecutionFiles } from '@/lib/execution/files'
-import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { WebhookAttachmentProcessor } from '@/lib/webhooks/attachment-processor'
@@ -536,10 +536,13 @@ async function executeWebhookJobInternal(
       executedAt: new Date().toISOString(),
       provider: payload.provider,
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+
     logger.error(`[${requestId}] Webhook execution failed`, {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       workflowId: payload.workflowId,
       provider: payload.provider,
     })
@@ -567,10 +570,11 @@ async function executeWebhookJobInternal(
           isTest: payload.testMode === true,
           executionTarget: payload.executionTarget || 'deployed',
         },
-        deploymentVersionId, // Pass if available (undefined for early errors)
+        deploymentVersionId,
       })
 
-      const executionResult = (error?.executionResult as ExecutionResult | undefined) || {
+      const errorWithResult = error as { executionResult?: ExecutionResult }
+      const executionResult = errorWithResult?.executionResult || {
         success: false,
         output: {},
         logs: [],
@@ -581,8 +585,8 @@ async function executeWebhookJobInternal(
         endedAt: new Date().toISOString(),
         totalDurationMs: 0,
         error: {
-          message: error.message || 'Webhook execution failed',
-          stackTrace: error.stack,
+          message: errorMessage || 'Webhook execution failed',
+          stackTrace: errorStack,
         },
         traceSpans,
       })

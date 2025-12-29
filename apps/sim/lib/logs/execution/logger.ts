@@ -6,6 +6,7 @@ import {
   workflow,
   workflowExecutionLogs,
 } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
@@ -19,7 +20,6 @@ import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { filterForDisplay } from '@/lib/core/utils/display-filters'
-import { createLogger } from '@/lib/logs/console/logger'
 import { emitWorkflowExecutionCompleted } from '@/lib/logs/events'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
 import type {
@@ -59,8 +59,12 @@ export class ExecutionLogger implements IExecutionLoggerService {
           output: (merged[model].output || 0) + (costs.output || 0),
           total: (merged[model].total || 0) + (costs.total || 0),
           tokens: {
-            prompt: (merged[model].tokens?.prompt || 0) + (costs.tokens?.prompt || 0),
-            completion: (merged[model].tokens?.completion || 0) + (costs.tokens?.completion || 0),
+            input:
+              (merged[model].tokens?.input || merged[model].tokens?.prompt || 0) +
+              (costs.tokens?.input || costs.tokens?.prompt || 0),
+            output:
+              (merged[model].tokens?.output || merged[model].tokens?.completion || 0) +
+              (costs.tokens?.output || costs.tokens?.completion || 0),
             total: (merged[model].tokens?.total || 0) + (costs.tokens?.total || 0),
           },
         }
@@ -153,6 +157,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         stateSnapshotId: snapshotResult.snapshot.id,
         deploymentVersionId: deploymentVersionId ?? null,
         level: 'info',
+        status: 'running',
         trigger: trigger.type,
         startedAt: startTime,
         endedAt: null,
@@ -207,7 +212,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           input: number
           output: number
           total: number
-          tokens: { prompt: number; completion: number; total: number }
+          tokens: { input: number; output: number; total: number }
         }
       >
     }
@@ -217,6 +222,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     isResume?: boolean // If true, merge with existing data instead of replacing
     finalChatOutput?: string // Final chat output based on output_configs
     level?: 'info' | 'error' // Optional override for log level (used in cost-only fallback)
+     status?: 'completed' | 'failed' | 'cancelled'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -229,6 +235,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       isResume,
       finalChatOutput,
       level: levelOverride,
+      status: statusOverride,
     } = params
 
     logger.debug(`Completing workflow execution ${executionId}`, { isResume })
@@ -258,6 +265,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     })
 
     const level = levelOverride ?? (hasErrors ? 'error' : 'info')
+    const status = statusOverride ?? (hasErrors ? 'failed' : 'completed')
 
     // Extract files from trace spans, final output, and workflow input
     const executionFiles = this.extractFilesFromExecution(traceSpans, finalOutput, workflowInput)
@@ -283,8 +291,12 @@ export class ExecutionLogger implements IExecutionLoggerService {
           input: (existingCost.input || 0) + costSummary.totalInputCost,
           output: (existingCost.output || 0) + costSummary.totalOutputCost,
           tokens: {
-            prompt: (existingCost.tokens?.prompt || 0) + costSummary.totalPromptTokens,
-            completion: (existingCost.tokens?.completion || 0) + costSummary.totalCompletionTokens,
+            input:
+              (existingCost.tokens?.input || existingCost.tokens?.prompt || 0) +
+              costSummary.totalPromptTokens,
+            output:
+              (existingCost.tokens?.output || existingCost.tokens?.completion || 0) +
+              costSummary.totalCompletionTokens,
             total: (existingCost.tokens?.total || 0) + costSummary.totalTokens,
           },
           models: this.mergeCostModels(existingCost.models || {}, costSummary.models),
@@ -294,8 +306,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
           input: costSummary.totalInputCost,
           output: costSummary.totalOutputCost,
           tokens: {
-            prompt: costSummary.totalPromptTokens,
-            completion: costSummary.totalCompletionTokens,
+            input: costSummary.totalPromptTokens,
+            output: costSummary.totalCompletionTokens,
             total: costSummary.totalTokens,
           },
           models: costSummary.models,
@@ -315,15 +327,16 @@ export class ExecutionLogger implements IExecutionLoggerService {
       .update(workflowExecutionLogs)
       .set({
         level,
+        status,
         endedAt: new Date(endedAt),
         totalDurationMs: actualTotalDuration,
         files: mergedFiles.length > 0 ? mergedFiles : null,
         executionData: {
           traceSpans: redactedTraceSpans,
           finalOutput: redactedFinalOutput,
-          tokenBreakdown: {
-            prompt: mergedCost.tokens.prompt,
-            completion: mergedCost.tokens.completion,
+          tokens: {
+            input: mergedCost.tokens.input,
+            output: mergedCost.tokens.output,
             total: mergedCost.tokens.total,
           },
           models: mergedCost.models,
@@ -523,7 +536,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           input: number
           output: number
           total: number
-          tokens: { prompt: number; completion: number; total: number }
+          tokens: { input: number; output: number; total: number }
         }
       >
     },

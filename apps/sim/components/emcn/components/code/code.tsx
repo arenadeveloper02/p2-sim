@@ -89,8 +89,9 @@ function Container({
     <div
       className={cn(
         // Base container styling
-        'group relative min-h-[100px] rounded-[4px] border border-[var(--border-strong)]',
-        'bg-[var(--surface-2)] font-medium font-mono text-sm transition-colors dark:border-[var(--border-strong)] dark:bg-[#1F1F1F]',
+        'group relative min-h-[100px] rounded-[4px] border border-[var(--border-1)]',
+        'bg-[var(--surface-1)] font-medium font-mono text-sm transition-colors',
+        'dark:bg-[#1F1F1F]',
         // Overflow handling for long content
         'overflow-x-auto overflow-y-auto',
         // Streaming state
@@ -609,7 +610,7 @@ const VirtualizedViewerInner = memo(function VirtualizedViewerInner({
     <div
       ref={setRefs}
       className={cn(
-        'code-editor-theme relative rounded-[4px] border border-[var(--border-strong)]',
+        'code-editor-theme relative rounded-[4px] border border-[var(--border-1)]',
         'bg-[var(--surface-1)] font-medium font-mono text-sm',
         'dark:bg-[#1F1F1F]',
         className

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { buildGenerateContentUrl, buildNanoBananaRequestBody } from '@/app/api/google/api-service'
 
 export const runtime = 'nodejs'

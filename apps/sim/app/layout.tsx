@@ -12,7 +12,6 @@ import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
-import { ZoomPrevention } from '@/app/_shell/zoom-prevention'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {
@@ -86,7 +85,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     var panelWidth = panelState && panelState.panelWidth;
                     var maxPanelWidth = window.innerWidth * 0.4;
 
-                    if (panelWidth >= 244 && panelWidth <= maxPanelWidth) {
+                    if (panelWidth >= 260 && panelWidth <= maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
                     } else if (panelWidth > maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', maxPanelWidth + 'px');
@@ -193,7 +192,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <SessionProvider>
                 <AutoLoginProvider>
                   <BrandedLayout>
-                    <ZoomPrevention />
                     {children}
                   </BrandedLayout>
                 </AutoLoginProvider>

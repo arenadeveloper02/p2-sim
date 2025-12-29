@@ -1,10 +1,10 @@
 import crypto from 'crypto'
 import { db } from '@sim/db'
 import { workflow as workflowTable } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { validateSelectorIds } from '@/lib/copilot/validation/selector-validator'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { extractAndPersistCustomTools } from '@/lib/workflows/persistence/custom-tools-persistence'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -12,6 +12,7 @@ import { isValidKey } from '@/lib/workflows/sanitization/key-validation'
 import { validateWorkflowState } from '@/lib/workflows/sanitization/validation'
 import { getAllBlocks, getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
+import { EDGE, normalizeName } from '@/executor/constants'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 
@@ -55,6 +56,8 @@ type SkippedItemType =
   | 'invalid_subblock_field'
   | 'missing_required_params'
   | 'invalid_subflow_parent'
+  | 'nested_subflow_not_allowed'
+  | 'duplicate_block_name'
 
 /**
  * Represents an item that was skipped during operation application
@@ -78,6 +81,21 @@ function logSkippedItem(skippedItems: SkippedItem[], item: SkippedItem): void {
     ...(item.details && { details: item.details }),
   })
   skippedItems.push(item)
+}
+
+/**
+ * Finds an existing block with the same normalized name.
+ */
+function findBlockWithDuplicateNormalizedName(
+  blocks: Record<string, any>,
+  name: string,
+  excludeBlockId: string
+): [string, any] | undefined {
+  const normalizedName = normalizeName(name)
+  return Object.entries(blocks).find(
+    ([blockId, block]: [string, any]) =>
+      blockId !== excludeBlockId && normalizeName(block.name || '') === normalizedName
+  )
 }
 
 /**
@@ -773,10 +791,10 @@ function validateSourceHandleForBlock(
       }
 
     case 'condition': {
-      if (!sourceHandle.startsWith('condition-')) {
+      if (!sourceHandle.startsWith(EDGE.CONDITION_PREFIX)) {
         return {
           valid: false,
-          error: `Invalid source handle "${sourceHandle}" for condition block. Must start with "condition-"`,
+          error: `Invalid source handle "${sourceHandle}" for condition block. Must start with "${EDGE.CONDITION_PREFIX}"`,
         }
       }
 
@@ -792,12 +810,12 @@ function validateSourceHandleForBlock(
     }
 
     case 'router':
-      if (sourceHandle === 'source' || sourceHandle.startsWith('router-')) {
+      if (sourceHandle === 'source' || sourceHandle.startsWith(EDGE.ROUTER_PREFIX)) {
         return { valid: true }
       }
       return {
         valid: false,
-        error: `Invalid source handle "${sourceHandle}" for router block. Valid handles: source, router-{targetId}, error`,
+        error: `Invalid source handle "${sourceHandle}" for router block. Valid handles: source, ${EDGE.ROUTER_PREFIX}{targetId}, error`,
       }
 
     default:
@@ -1387,7 +1405,39 @@ function applyOperationsToWorkflowState(
             block.type = params.type
           }
         }
-        if (params?.name !== undefined) block.name = params.name
+        if (params?.name !== undefined) {
+          if (!normalizeName(params.name)) {
+            logSkippedItem(skippedItems, {
+              type: 'missing_required_params',
+              operationType: 'edit',
+              blockId: block_id,
+              reason: `Cannot rename to empty name`,
+              details: { requestedName: params.name },
+            })
+          } else {
+            const conflictingBlock = findBlockWithDuplicateNormalizedName(
+              modifiedState.blocks,
+              params.name,
+              block_id
+            )
+
+            if (conflictingBlock) {
+              logSkippedItem(skippedItems, {
+                type: 'duplicate_block_name',
+                operationType: 'edit',
+                blockId: block_id,
+                reason: `Cannot rename to "${params.name}" - conflicts with "${conflictingBlock[1].name}"`,
+                details: {
+                  requestedName: params.name,
+                  conflictingBlockId: conflictingBlock[0],
+                  conflictingBlockName: conflictingBlock[1].name,
+                },
+              })
+            } else {
+              block.name = params.name
+            }
+          }
+        }
 
         // Handle trigger mode toggle
         if (typeof params?.triggerMode === 'boolean') {
@@ -1434,6 +1484,17 @@ function applyOperationsToWorkflowState(
                 parentBlockId: block_id,
                 childId,
                 childId_type: typeof childId,
+              })
+              return
+            }
+
+            if (childBlock.type === 'loop' || childBlock.type === 'parallel') {
+              logSkippedItem(skippedItems, {
+                type: 'nested_subflow_not_allowed',
+                operationType: 'edit_nested_node',
+                blockId: childId,
+                reason: `Cannot nest ${childBlock.type} inside ${block.type} - nested subflows are not supported`,
+                details: { parentType: block.type, childType: childBlock.type },
               })
               return
             }
@@ -1571,13 +1632,34 @@ function applyOperationsToWorkflowState(
       }
 
       case 'add': {
-        if (!params?.type || !params?.name) {
+        if (!params?.type || !params?.name || !normalizeName(params.name)) {
           logSkippedItem(skippedItems, {
             type: 'missing_required_params',
             operationType: 'add',
             blockId: block_id,
             reason: `Missing required params (type or name) for adding block "${block_id}"`,
             details: { hasType: !!params?.type, hasName: !!params?.name },
+          })
+          break
+        }
+
+        const conflictingBlock = findBlockWithDuplicateNormalizedName(
+          modifiedState.blocks,
+          params.name,
+          block_id
+        )
+
+        if (conflictingBlock) {
+          logSkippedItem(skippedItems, {
+            type: 'duplicate_block_name',
+            operationType: 'add',
+            blockId: block_id,
+            reason: `Block name "${params.name}" conflicts with existing block "${conflictingBlock[1].name}"`,
+            details: {
+              requestedName: params.name,
+              conflictingBlockId: conflictingBlock[0],
+              conflictingBlockName: conflictingBlock[1].name,
+            },
           })
           break
         }
@@ -1663,6 +1745,17 @@ function applyOperationsToWorkflowState(
               return
             }
 
+            if (childBlock.type === 'loop' || childBlock.type === 'parallel') {
+              logSkippedItem(skippedItems, {
+                type: 'nested_subflow_not_allowed',
+                operationType: 'add_nested_node',
+                blockId: childId,
+                reason: `Cannot nest ${childBlock.type} inside ${params.type} - nested subflows are not supported`,
+                details: { parentType: params.type, childType: childBlock.type },
+              })
+              return
+            }
+
             const childBlockState = createBlockFromParams(
               childId,
               childBlock,
@@ -1729,6 +1822,17 @@ function applyOperationsToWorkflowState(
           break
         }
 
+        if (params.type === 'loop' || params.type === 'parallel') {
+          logSkippedItem(skippedItems, {
+            type: 'nested_subflow_not_allowed',
+            operationType: 'insert_into_subflow',
+            blockId: block_id,
+            reason: `Cannot nest ${params.type} inside ${subflowBlock.type} - nested subflows are not supported`,
+            details: { parentType: subflowBlock.type, childType: params.type },
+          })
+          break
+        }
+
         // Get block configuration
         const blockConfig = getAllBlocks().find((block) => block.type === params.type)
 
@@ -1736,6 +1840,17 @@ function applyOperationsToWorkflowState(
         const existingBlock = modifiedState.blocks[block_id]
 
         if (existingBlock) {
+          if (existingBlock.type === 'loop' || existingBlock.type === 'parallel') {
+            logSkippedItem(skippedItems, {
+              type: 'nested_subflow_not_allowed',
+              operationType: 'insert_into_subflow',
+              blockId: block_id,
+              reason: `Cannot move ${existingBlock.type} into ${subflowBlock.type} - nested subflows are not supported`,
+              details: { parentType: subflowBlock.type, childType: existingBlock.type },
+            })
+            break
+          }
+
           // Moving existing block into subflow - just update parent
           existingBlock.data = {
             ...existingBlock.data,
@@ -1754,7 +1869,7 @@ function applyOperationsToWorkflowState(
             validationErrors.push(...validationResult.errors)
 
             Object.entries(validationResult.validInputs).forEach(([key, value]) => {
-              // Skip runtime subblock IDs (webhookId, triggerPath, testUrl, testUrlExpiresAt, scheduleId)
+              // Skip runtime subblock IDs (webhookId, triggerPath, testUrl, testUrlExpiresAt)
               if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(key)) {
                 return
               }
