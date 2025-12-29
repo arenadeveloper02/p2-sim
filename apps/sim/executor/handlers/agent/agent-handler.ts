@@ -760,7 +760,64 @@ export class AgentBlockHandler implements BlockHandler {
         userPrompt,
         true
       )
-      messages.push(...searchResults)
+
+      // Add search results to user prompt incrementally with token checking
+      if (searchResults && searchResults.length > 0 && userPrompt) {
+        const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
+        const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
+
+        const tokenLimit = getMemoryTokenLimit(inputs.model)
+        const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
+        let currentTokenCount = baseUserPromptTokens
+        let memoryContext = ''
+
+        // Add search results one by one, checking token count
+        for (const memory of searchResults) {
+          const memoryText = `\n\nPrevious conversation:\n${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+          const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+
+          if (currentTokenCount + memoryTokens <= tokenLimit) {
+            memoryContext += memoryText
+            currentTokenCount += memoryTokens
+          } else {
+            logger.debug('Stopped adding memories due to token limit', {
+              blockId,
+              tokenLimit,
+              currentTokens: currentTokenCount,
+              memoryTokens,
+              memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
+              totalMemories: searchResults.length,
+            })
+            break
+          }
+        }
+
+        // Append memory context to user prompt
+        if (memoryContext) {
+          if (inputs.userPrompt) {
+            inputs.userPrompt =
+              typeof inputs.userPrompt === 'string'
+                ? `${inputs.userPrompt}${memoryContext}`
+                : `${JSON.stringify(inputs.userPrompt)}${memoryContext}`
+          } else if (inputs.messages && Array.isArray(inputs.messages)) {
+            const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
+            if (userMsgIndex !== -1) {
+              inputs.messages[userMsgIndex].content += memoryContext
+            }
+          }
+
+          logger.debug('Added search memories to user prompt with token checking', {
+            blockId,
+            tokenLimit,
+            finalTokenCount: currentTokenCount,
+            memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
+            totalMemories: searchResults.length,
+          })
+        }
+      } else if (searchResults && searchResults.length > 0) {
+        // If no user prompt exists, add to messages array as fallback
+        messages.push(...searchResults)
+      }
     }
 
     // 2. Process legacy memories (backward compatibility - from Memory block)
