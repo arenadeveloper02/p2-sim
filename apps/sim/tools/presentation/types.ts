@@ -8,6 +8,8 @@ export type PresentationCreateParams = {
   verbosity: string
   template?: string
   content?: string
+  slides_markdown?: string[] | string
+  instructions?: string
 }
 
 export interface PresentationCreateResponse extends ToolResponse {
