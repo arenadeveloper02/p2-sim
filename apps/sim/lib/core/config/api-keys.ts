@@ -33,7 +33,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
   } else if (provider === 'google') {
-    keys.push('AIzaSyAXMNB13lFQWwBPdYEzLA_EGArrbikUb40')
+    keys.push('AIzaSyCxndsxr5Oe-iDd6pzI3Pr6VgXWl4IDNfg')
   } else if (provider === 'xai') {
     if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
     if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
