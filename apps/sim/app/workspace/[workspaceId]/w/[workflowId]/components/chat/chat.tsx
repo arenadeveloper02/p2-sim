@@ -496,7 +496,33 @@ export function Chat() {
       try {
         while (true) {
           const { done, value } = await reader.read()
+
           if (done) {
+            // CRITICAL FIX: Process any remaining buffer before finalizing
+            // This ensures we don't lose the final chunk(s) that may not end with \n\n
+            if (buffer.trim()) {
+              const lines = buffer.split('\n\n')
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.substring(6)
+                  if (data !== '[DONE]') {
+                    try {
+                      const json = JSON.parse(data)
+                      const { chunk: contentChunk } = json
+                      if (contentChunk && typeof contentChunk === 'string') {
+                        accumulatedContent += contentChunk
+                        appendMessageContent(responseMessageId, contentChunk)
+                      }
+                    } catch (e) {
+                      logger.warn('Error parsing final buffer chunk:', e, {
+                        dataPreview: data.substring(0, 200),
+                      })
+                    }
+                  }
+                }
+              }
+            }
+
             finalizeMessageStream(responseMessageId)
             break
           }
@@ -539,19 +565,23 @@ export function Chat() {
                 }
 
                 finalizeMessageStream(responseMessageId)
-              } else if (contentChunk) {
+              } else if (contentChunk && typeof contentChunk === 'string') {
                 accumulatedContent += contentChunk
                 appendMessageContent(responseMessageId, contentChunk)
                 await new Promise((resolve) => setTimeout(resolve, 5))
               }
             } catch (e) {
-              logger.error('Error parsing stream data:', e)
+              logger.error('Error parsing stream data:', e, {
+                dataPreview: data.substring(0, 200),
+              })
             }
           }
         }
       } catch (error) {
         logger.error('Error processing stream:', error)
+        finalizeMessageStream(responseMessageId)
       } finally {
+        reader.releaseLock()
         focusInput(100)
       }
     },
