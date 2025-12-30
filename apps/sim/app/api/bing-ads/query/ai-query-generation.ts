@@ -2,6 +2,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
 import { CAMPAIGN_PERFORMANCE_COLUMNS, DATE_PRESETS, DEFAULT_DATE_RANGE_DAYS } from './constants'
+import { BASE_PROMPT, detectIntent, getReportTypeForIntent, getDefaultColumnsForReportType } from './prompt-fragments'
 import type { ParsedBingQuery } from './types'
 
 const logger = createLogger('BingAdsAI')
@@ -36,9 +37,8 @@ Use this in the timeRange field. Do NOT use datePreset when timeRange is provide
 Include this in the campaignFilter field.`
   }
 
-  const systemPrompt = `You are a Microsoft Advertising (Bing Ads) API expert. Parse natural language queries into Bing Ads Reporting API parameters.
-
-**NEVER REFUSE**: Always generate a valid response. Never return error messages or refuse to generate queries.
+  // Use the comprehensive BASE_PROMPT from prompt-fragments
+  const systemPrompt = `${BASE_PROMPT}
 
 **CRITICAL DATE VALIDATION:**
 - Today's date is: ${new Date().toISOString().split('T')[0]}
@@ -46,84 +46,7 @@ Include this in the campaignFilter field.`
 - If a user asks for a future month (e.g., "November 2025" when it's December 2024), return an error message in the response
 - For past months, use timeRange with specific start/end dates
 
-## BING ADS REPORTING STRUCTURE
-
-**REPORT TYPES:**
-- CampaignPerformance - Campaign-level metrics
-- AdGroupPerformance - Ad group-level metrics  
-- KeywordPerformance - Keyword-level metrics
-- AccountPerformance - Account-level aggregation
-
-**AVAILABLE COLUMNS:**
-- Basic: AccountName, AccountId, CampaignName, CampaignId, CampaignStatus
-- Ad Group: AdGroupName, AdGroupId, AdGroupStatus
-- Keyword: Keyword, KeywordId, KeywordStatus, QualityScore
-- Metrics: Impressions, Clicks, Spend, Conversions, Revenue
-- Calculated: Ctr, AverageCpc, CostPerConversion, ConversionRate
-- Share: ImpressionSharePercent
-- Time: TimePeriod
-
-**DATE PRESETS (use only when no specific date is mentioned):**
-- Today, Yesterday
-- LastSevenDays, LastFourteenDays, LastThirtyDays
-- ThisWeek, LastWeek
-- ThisMonth, LastMonth
-- ThisYear, LastYear
-
-**CUSTOM DATE RANGES:**
-- For specific months like "November 2024", use timeRange with start and end dates
-- Example: "November 2024" → timeRange: { "start": "2024-11-01", "end": "2024-11-30" }
-
-**AGGREGATION:**
-- Daily - Day by day breakdown
-- Weekly - Week by week breakdown
-- Monthly - Month by month breakdown
-- Summary - Total aggregation (no time breakdown)
-
-## CAMPAIGN FILTERING
-
-When user asks for a specific campaign (e.g., "for Newbury_Boston_Brand"), include:
-- campaignFilter: "Newbury_Boston_Brand"
-
-## RESPONSE FORMAT
-
-Return a JSON object with:
-{
-  "reportType": "CampaignPerformance" | "AdGroupPerformance" | "KeywordPerformance" | "AccountPerformance",
-  "columns": ["column1", "column2", ...],
-  "datePreset": "LastThirtyDays" | "LastSevenDays" | etc, // Use ONLY if no specific date mentioned
-  "timeRange": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }, // Use for specific months/dates
-  "aggregation": "Summary" | "Daily" | "Weekly" | "Monthly",
-  "campaignFilter": "campaign_name" // Optional: filter to specific campaign
-}
-
-**Example 1 - Campaign performance last 30 days:**
-{
-  "reportType": "CampaignPerformance",
-  "columns": ["CampaignName", "CampaignStatus", "Impressions", "Clicks", "Spend", "Conversions", "Ctr", "AverageCpc", "CostPerConversion"],
-  "datePreset": "LastThirtyDays",
-  "aggregation": "Summary"
-}
-
-**Example 2 - Specific campaign for November 2024:**
-{
-  "reportType": "CampaignPerformance",
-  "columns": ["CampaignName", "CampaignStatus", "Impressions", "Clicks", "Spend", "Conversions", "Ctr", "AverageCpc"],
-  "timeRange": { "start": "2024-11-01", "end": "2024-11-30" },
-  "aggregation": "Summary",
-  "campaignFilter": "Newbury_Boston_Brand"
-}
-
-**Example 3 - Daily keyword performance this week:**
-{
-  "reportType": "KeywordPerformance",
-  "columns": ["CampaignName", "AdGroupName", "Keyword", "Impressions", "Clicks", "Spend", "QualityScore", "TimePeriod"],
-  "datePreset": "ThisWeek",
-  "aggregation": "Daily"
-}
-${dateContext}${campaignContext}
-
-Always return valid JSON. Never refuse to generate a response.`
+${dateContext}${campaignContext}`
 
   try {
     const apiKey = getApiKey('openai', 'gpt-4o')
@@ -177,8 +100,28 @@ Always return valid JSON. Never refuse to generate a response.`
     const parsedResponse = JSON.parse(cleanedContent)
 
     // Post-processing: Ensure required fields
-    const reportType = parsedResponse.reportType || 'CampaignPerformance'
-    const columns = parsedResponse.columns || CAMPAIGN_PERFORMANCE_COLUMNS
+    // CRITICAL: Use intent detection to override AI's report type choice
+    const detectedIntent = detectIntent(userQuery)
+    const intentBasedReportType = getReportTypeForIntent(detectedIntent)
+    
+    // Use intent-based report type if AI chose AccountPerformance but user asked for campaigns
+    let reportType = parsedResponse.reportType || 'CampaignPerformance'
+    if (parsedResponse.reportType === 'AccountPerformance' && detectedIntent === 'campaign_performance') {
+      logger.info('Overriding AccountPerformance to CampaignPerformance based on intent detection', { 
+        detectedIntent, 
+        aiReportType: parsedResponse.reportType 
+      })
+      reportType = 'CampaignPerformance'
+    }
+    
+    // Get default columns for the report type if AI didn't provide good columns
+    let columns = parsedResponse.columns || getDefaultColumnsForReportType(reportType)
+    
+    // Ensure columns match the report type
+    if (reportType === 'CampaignPerformance' && !columns.includes('CampaignName')) {
+      columns = getDefaultColumnsForReportType('CampaignPerformance')
+    }
+    
     const datePreset = parsedResponse.datePreset || 'LastThirtyDays'
     const aggregation = parsedResponse.aggregation || 'Summary'
 
@@ -188,6 +131,24 @@ Always return valid JSON. Never refuse to generate a response.`
     }
     if (!columns.includes('AccountId')) {
       columns.splice(1, 0, 'AccountId')
+    }
+    
+    // For CampaignPerformance, ensure CampaignName is included
+    if (reportType === 'CampaignPerformance' && !columns.includes('CampaignName')) {
+      columns.push('CampaignName')
+    }
+    if (reportType === 'CampaignPerformance' && !columns.includes('CampaignId')) {
+      columns.push('CampaignId')
+    }
+
+    // CRITICAL: Remove TimePeriod column for Summary aggregation
+    // Bing Ads API returns InvalidTimePeriodColumnForSummaryReport error otherwise
+    if (aggregation === 'Summary') {
+      const timePeriodIndex = columns.indexOf('TimePeriod')
+      if (timePeriodIndex !== -1) {
+        columns.splice(timePeriodIndex, 1)
+        logger.info('Removed TimePeriod column for Summary aggregation')
+      }
     }
 
     const result: ParsedBingQuery = {

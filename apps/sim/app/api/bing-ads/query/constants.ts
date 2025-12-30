@@ -11,7 +11,7 @@ export const BING_ADS_DEFAULT_CUSTOMER_ID = '12187584'
 export const DEFAULT_DATE_RANGE_DAYS = 7
 
 // Bing Ads accounts mapping
-export const BING_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
+export const BING_ADS_ACCOUNTS: Record<string, { id: string; name: string; customerId?: string }> = {
   position2_inc: { id: 'C000736328', name: 'Position2 Inc.' },
   '247insider': { id: 'F113ZL2Q', name: '247Insider.com' },
   absolute_software: { id: 'X7721510', name: 'Absolute Software' },
@@ -39,7 +39,7 @@ export const BING_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   discoverlocal: { id: 'F120QD4Q', name: 'DiscoverLocal.net' },
   factuia: { id: 'F113ZYXE', name: 'Factuia.com' },
   findanswerstoday: { id: 'F119YZNS', name: 'FindAnswersToday.com' },
-  gentle_dental: { id: '151000820', name: 'Gentle Dental' },
+  gentle_dental: { id: '1510008200', name: 'Gentle Dental' },
   healthatoz: { id: 'F118679G', name: 'HealthAtoZ.net Bing' },
   hunter_fans: { id: 'F120FD4H', name: 'Hunter Fans' },
   infosavant: { id: 'F113NE34', name: 'InfoSavant.net' },
@@ -60,6 +60,7 @@ export const BING_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   sandstone_diagnostics: { id: 'F108DPJE', name: 'Sandstone Diagnostics' },
   seasondeals: { id: 'F1203CJ7', name: 'seasondeals.store' },
   seeknemo_uk: { id: 'F119ZUAP', name: 'SeekNemo.com - UK' },
+  au_eventgroove: { id: '2764923', name: 'AU - Eventgroove Products', customerId: '6716' },
 }
 
 // Available report columns for different report types

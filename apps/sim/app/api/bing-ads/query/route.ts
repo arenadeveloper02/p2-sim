@@ -40,17 +40,23 @@ export async function POST(request: NextRequest) {
     let accountId: string
     let accountName: string
 
+    let customerId: string | undefined
+
     try {
       accountId = getBingAccountId(account)
       accountName = getBingAccountName(account)
+      // Get customerId if available for this account
+      const accountInfo = BING_ADS_ACCOUNTS[account]
+      customerId = accountInfo?.customerId
     } catch (error) {
       // If account key not found, check if it's a direct account ID
-      const accountInfo = Object.values(BING_ADS_ACCOUNTS).find(
-        (acc) => acc.id === account || acc.name === account
+      const accountEntry = Object.entries(BING_ADS_ACCOUNTS).find(
+        ([_, acc]) => acc.id === account || acc.name === account
       )
-      if (accountInfo) {
-        accountId = accountInfo.id
-        accountName = accountInfo.name
+      if (accountEntry) {
+        accountId = accountEntry[1].id
+        accountName = accountEntry[1].name
+        customerId = accountEntry[1].customerId
       } else {
         logger.error('Invalid account', { account, requestId })
         return NextResponse.json(
@@ -65,7 +71,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    logger.info('Account details', { accountId, accountName, requestId })
+    logger.info('Account details', { accountId, accountName, customerId, requestId })
 
     // Parse natural language query with AI
     const parsedQuery = await parseQueryWithAI(query, accountName)
@@ -73,7 +79,7 @@ export async function POST(request: NextRequest) {
     logger.info('AI parsed query', { parsedQuery, requestId })
 
     // Make Bing Ads API request
-    const result = await makeBingAdsRequest(accountId, parsedQuery)
+    const result = await makeBingAdsRequest(accountId, parsedQuery, customerId)
 
     const response: BingAdsResponse = {
       success: true,

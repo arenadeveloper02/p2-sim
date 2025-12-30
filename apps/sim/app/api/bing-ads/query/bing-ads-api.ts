@@ -28,7 +28,7 @@ async function getAccessToken(): Promise<string> {
     client_id: clientId,
     refresh_token: refreshToken,
     grant_type: 'refresh_token',
-    scope: 'https://ads.microsoft.com/.default offline_access',
+    scope: 'https://ads.microsoft.com/msads.manage offline_access',
   }
 
   // Only include client_secret if provided (required for web apps, not for public/native apps)
@@ -75,8 +75,8 @@ async function getCampaignPerformanceReport(params: {
 }): Promise<any> {
   const { accessToken, developerToken, customerId, accountId, parsedQuery } = params
 
-  const submitUrl = 'https://reporting.api.bingads.microsoft.com/Reporting/v13/GenerateReport/Submit'
-  const pollUrl = 'https://reporting.api.bingads.microsoft.com/Reporting/v13/GenerateReport/Poll'
+  const submitUrl = 'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
+  const pollUrl = 'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
 
   // Log the request details for debugging
   logger.info('Submitting Bing Ads report request', {
@@ -143,6 +143,8 @@ async function getCampaignPerformanceReport(params: {
     })
 
     const pollText = await pollResponse.text()
+    logger.info('Poll raw response', { attempt, pollResponseStatus: pollResponse.status, pollTextLength: pollText.length, pollTextPreview: pollText.substring(0, 500) })
+    
     if (!pollResponse.ok) {
       throw new Error(`PollGenerateReport failed (${pollResponse.status}): ${pollText}`)
     }
@@ -150,13 +152,18 @@ async function getCampaignPerformanceReport(params: {
     const status = extractFirstXmlTagValue(pollText, 'Status')
     const reportDownloadUrl = extractFirstXmlTagValue(pollText, 'ReportDownloadUrl')
 
+    logger.info('Poll response parsed', { attempt, status, hasDownloadUrl: !!reportDownloadUrl, reportDownloadUrl: reportDownloadUrl?.substring(0, 150) })
+
     if (status && status.toLowerCase() === 'success') {
       if (!reportDownloadUrl) {
         throw new Error(`Report status is Success but no ReportDownloadUrl found. Response: ${pollText}`)
       }
 
-      const csvText = await downloadReportAsCsvText(reportDownloadUrl)
+      logger.info('Downloading report from URL', { url: reportDownloadUrl })
+      const csvText = await downloadReportAsCsvText(reportDownloadUrl, accessToken)
+      logger.info('Downloaded CSV content', { csvLength: csvText.length, csvPreview: csvText.substring(0, 500) })
       const rows = await parseCsvToRecords(csvText)
+      logger.info('Parsed CSV rows', { rowCount: rows.length, firstRow: rows[0] })
       return buildCampaignPerformanceMetrics(rows, parsedQuery)
     }
 
@@ -260,10 +267,20 @@ function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery
 </ReportRequest>`
 }
 
-async function downloadReportAsCsvText(url: string): Promise<string> {
-  const response = await fetch(url)
+async function downloadReportAsCsvText(url: string, _accessToken?: string): Promise<string> {
+  // The report download URL from Bing Ads is a pre-signed Azure blob URL with SAS token
+  // Do NOT add Authorization header - Azure blob storage uses SAS tokens in the URL itself
+  // Adding Bearer token causes 403 AuthenticationFailed error
+  
+  logger.info('Attempting report download', { urlLength: url.length, urlPreview: url.substring(0, 200) })
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    redirect: 'follow',
+  })
   if (!response.ok) {
     const body = await response.text().catch(() => '')
+    logger.error('Report download failed', { status: response.status, url, body: body.substring(0, 500) })
     throw new Error(`Failed to download report (${response.status}): ${body}`)
   }
 
@@ -284,14 +301,62 @@ async function downloadReportAsCsvText(url: string): Promise<string> {
 
 async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, any>>> {
   try {
+    // Bing Ads CSV has metadata headers before the actual data
+    // Format:
+    // "Report Name: Test"
+    // "Report Time: ..."
+    // ... more metadata ...
+    // "Rows: N"
+    // 
+    // "Column1","Column2",...
+    // "Value1","Value2",...
+    
+    // Find the actual data section by looking for the header row after "Rows:" line
+    const lines = csvText.split('\n')
+    let dataStartIndex = 0
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim()
+      // Look for the "Rows:" line which indicates end of metadata
+      if (line.startsWith('"Rows:') || line.startsWith('Rows:')) {
+        // Skip the empty line after "Rows:" and start from the header row
+        dataStartIndex = i + 2 // Skip "Rows:" line and empty line
+        break
+      }
+    }
+    
+    // If we found metadata, extract only the data portion
+    let dataCsv = csvText
+    if (dataStartIndex > 0 && dataStartIndex < lines.length) {
+      dataCsv = lines.slice(dataStartIndex).join('\n')
+      logger.info('Extracted data CSV from Bing Ads report', { 
+        originalLines: lines.length, 
+        dataStartIndex, 
+        dataLines: lines.length - dataStartIndex,
+        dataCsvPreview: dataCsv.substring(0, 300)
+      })
+    }
+    
     const mod: any = await import('csv-parse/sync')
     const parseSync = mod.parse
-    return parseSync(csvText, {
+    const rows = parseSync(dataCsv, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
       relax_column_count: true,
       relax_quotes: true,
+    })
+    
+    // Remove quotes from column names if they exist
+    // Bing Ads CSV sometimes has quoted column names like "CampaignName"
+    return rows.map((row: Record<string, any>) => {
+      const cleanRow: Record<string, any> = {}
+      for (const [key, value] of Object.entries(row)) {
+        // Remove all quotes from column names (both leading and trailing)
+        const cleanKey = key.replace(/"/g, '').trim()
+        cleanRow[cleanKey] = value
+      }
+      return cleanRow
     })
   } catch (e) {
     throw new Error(
@@ -302,19 +367,28 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
 
 function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parsedQuery: ParsedBingQuery): any {
   const campaignsByName = new Map<string, any>()
+  
+  // For AccountPerformance reports, there's no CampaignName - use AccountName instead
+  const isAccountReport = parsedQuery.reportType === 'AccountPerformance'
 
   for (const row of rows) {
-    const name = String(row.CampaignName || '').trim()
-    if (!name) continue
+    // Use CampaignName for campaign reports, AccountName for account reports
+    const name = isAccountReport 
+      ? String(row.AccountName || '').trim()
+      : String(row.CampaignName || '').trim()
+    
+    // For account reports, if no AccountName, still process the row using a default name
+    if (!name && !isAccountReport) continue
 
     const impressions = toNumber(row.Impressions)
     const clicks = toNumber(row.Clicks)
     const spend = toNumber(row.Spend)
     const conversions = toNumber(row.Conversions)
 
-    const existing = campaignsByName.get(name) || {
-      id: row.CampaignId ? String(row.CampaignId) : undefined,
-      name,
+    const entityName = name || 'Account Total'
+    const existing = campaignsByName.get(entityName) || {
+      id: isAccountReport ? (row.AccountId ? String(row.AccountId) : undefined) : (row.CampaignId ? String(row.CampaignId) : undefined),
+      name: entityName,
       impressions: 0,
       clicks: 0,
       spend: 0,
@@ -326,7 +400,7 @@ function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parse
     existing.spend += spend
     existing.conversions += conversions
 
-    campaignsByName.set(name, existing)
+    campaignsByName.set(entityName, existing)
   }
 
   const campaigns = Array.from(campaignsByName.values()).map((c) => {
@@ -341,16 +415,29 @@ function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parse
     }
   })
 
-  const totals = campaigns.reduce(
-    (acc, c) => {
-      acc.impressions += c.impressions
-      acc.clicks += c.clicks
-      acc.spend += c.spend
-      acc.conversions += c.conversions
-      return acc
-    },
-    { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-  )
+  // If no campaigns found but we have rows, calculate totals directly from rows
+  let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+  
+  if (campaigns.length > 0) {
+    totals = campaigns.reduce(
+      (acc, c) => {
+        acc.impressions += c.impressions
+        acc.clicks += c.clicks
+        acc.spend += c.spend
+        acc.conversions += c.conversions
+        return acc
+      },
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+    )
+  } else if (rows.length > 0) {
+    // Fallback: calculate totals directly from rows
+    for (const row of rows) {
+      totals.impressions += toNumber(row.Impressions)
+      totals.clicks += toNumber(row.Clicks)
+      totals.spend += toNumber(row.Spend)
+      totals.conversions += toNumber(row.Conversions)
+    }
+  }
 
   const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
   const totalAvgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
@@ -374,7 +461,15 @@ function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parse
 function extractFirstXmlTagValue(xml: string, tagName: string): string | null {
   const re = new RegExp(`<${tagName}[^>]*>([^<]*)</${tagName}>`, 'i')
   const match = xml.match(re)
-  return match && match[1] !== undefined ? match[1].trim() : null
+  if (!match || match[1] === undefined) return null
+  // Decode XML entities in the extracted value (important for URLs with & characters)
+  return match[1]
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
 }
 
 function escapeXml(value: string): string {
@@ -402,10 +497,12 @@ function sleep(ms: number): Promise<void> {
  */
 export async function makeBingAdsRequest(
   accountId: string,
-  parsedQuery: ParsedBingQuery
+  parsedQuery: ParsedBingQuery,
+  accountCustomerId?: string
 ): Promise<any> {
   logger.info('Making Bing Ads API request', {
     accountId,
+    accountCustomerId,
     reportType: parsedQuery.reportType,
     datePreset: parsedQuery.datePreset,
     columns: parsedQuery.columns,
@@ -413,8 +510,9 @@ export async function makeBingAdsRequest(
 
   try {
     const developerToken = process.env.BING_ADS_DEVELOPER_TOKEN
+    // Use account-specific customerId if provided, otherwise fall back to env/defaults
     const customerId =
-      process.env.BING_ADS_CUSTOMER_ID || BING_ADS_DEFAULT_CUSTOMER_ID || POSITION2_CUSTOMER_ID
+      accountCustomerId || process.env.BING_ADS_CUSTOMER_ID || BING_ADS_DEFAULT_CUSTOMER_ID || POSITION2_CUSTOMER_ID
 
     if (!developerToken) {
       throw new Error(
@@ -424,94 +522,45 @@ export async function makeBingAdsRequest(
 
     const accessToken = await getAccessToken()
 
-    if (parsedQuery.reportType === 'CampaignPerformance') {
-      try {
-        const report = await getCampaignPerformanceReport({
-          accessToken,
-          developerToken,
-          customerId,
-          accountId,
-          parsedQuery,
-        })
-        return report
-      } catch (reportingError) {
-        logger.warn('Reporting API failed, falling back to Campaign Management API', {
-          error: reportingError instanceof Error ? reportingError.message : 'Unknown error',
-        })
-        // Fall through to Campaign Management API below
-      }
-    }
-
-    // Build the SOAP request for Bing Ads Reporting API
-    const reportRequest = buildReportRequest(accountId, parsedQuery)
-
-    logger.info('Bing Ads report request built', {
-      accountId,
-      reportType: parsedQuery.reportType,
-    })
-
-    // For now, we'll use the REST-based Campaign Management API
-    // The Reporting API requires SOAP, but we can get basic data via REST
-    const apiUrl = `https://campaign.api.bingads.microsoft.com/Api/Advertiser/CampaignManagement/v13/Campaigns`
-
-    // Use Campaign Management API to get campaign data
-    const campaignResponse = await fetch(
-      `https://campaign.api.bingads.microsoft.com/CampaignManagement/v13/Campaigns/QueryByAccountId?accountId=${accountId}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          DeveloperToken: developerToken,
-          CustomerId: customerId,
-          CustomerAccountId: accountId,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          AccountId: accountId,
-        }),
-      }
-    )
-
-    if (!campaignResponse.ok) {
-      const errorText = await campaignResponse.text()
-      logger.error('Bing Ads API request failed', {
-        status: campaignResponse.status,
-        error: errorText,
+    // Use Bing Ads Reporting API (SOAP)
+    try {
+      const report = await getCampaignPerformanceReport({
+        accessToken,
+        developerToken,
+        customerId,
+        accountId,
+        parsedQuery,
+      })
+      return report
+    } catch (reportingError) {
+      logger.error('Bing Ads Reporting API failed', {
+        error: reportingError instanceof Error ? reportingError.message : 'Unknown error',
+        accountId,
       })
 
-      const allowMock = process.env.BING_ADS_USE_MOCK_DATA === 'true'
-      if (allowMock) {
-        logger.warn('Returning mock Bing Ads response because BING_ADS_USE_MOCK_DATA=true')
-        return getMockCampaignData(accountId, parsedQuery)
-      }
-
+      // DO NOT fall back to mock data - show the real error
       throw new Error(
-        `Bing Ads API request failed (${campaignResponse.status}). ${errorText}. Set BING_ADS_USE_MOCK_DATA=true to temporarily use mock data.`
+        `Bing Ads API request failed: ${reportingError instanceof Error ? reportingError.message : 'Unknown error'}`
       )
     }
-
-    const data = await campaignResponse.json()
-
-    logger.info('Bing Ads API request successful', {
-      resultsCount: data.Campaigns?.length || 0,
-    })
-
-    return formatBingAdsResponse(data, parsedQuery)
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     logger.error('Error in Bing Ads API request', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
       accountId,
     })
 
-    // Return structured error response
+    // Return structured error response WITH the error message visible
     return {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
       campaigns: [],
       account_totals: {
         clicks: 0,
         impressions: 0,
         spend: 0,
         conversions: 0,
+        error_details: errorMessage, // Include error in totals for visibility
       },
     }
   }

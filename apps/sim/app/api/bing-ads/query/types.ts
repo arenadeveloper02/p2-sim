@@ -1,3 +1,8 @@
+export interface DateRange {
+  start: string
+  end: string
+}
+
 export interface BingAdsRequest {
   account: string
   query: string
