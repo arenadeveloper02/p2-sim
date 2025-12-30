@@ -9,7 +9,7 @@ const initialState: General = {
   isAutoConnectEnabled: true,
   showTrainingControls: false,
   superUserModeEnabled: true,
-  theme: 'system',
+  theme: 'light',
   telemetryEnabled: true,
   isBillingUsageNotificationsEnabled: true,
   isErrorNotificationsEnabled: true,
