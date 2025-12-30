@@ -538,7 +538,7 @@ export function General({ onOpenChange }: GeneralProps) {
         </div>
       )}
 
-      {!loadingSuperUser && isSuperUser && (
+      {/* {!loadingSuperUser && isSuperUser && (
         <div className='flex items-center justify-between'>
           <Label htmlFor='super-user-mode'>Super admin mode</Label>
           <Switch
@@ -547,9 +547,9 @@ export function General({ onOpenChange }: GeneralProps) {
             onCheckedChange={handleSuperUserModeToggle}
           />
         </div>
-      )}
+      )} */}
 
-      {!isAuthDisabled && (
+      {/* {!isAuthDisabled && (
         <div className='mt-auto flex items-center gap-[8px]'>
           <Button onClick={handleSignOut} variant='active'>
             Sign out
@@ -558,7 +558,7 @@ export function General({ onOpenChange }: GeneralProps) {
             Reset password
           </Button>
         </div>
-      )}
+      )} */}
 
       {/* Password Reset Confirmation Modal */}
       <Modal open={showResetPasswordModal} onOpenChange={setShowResetPasswordModal}>

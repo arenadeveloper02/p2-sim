@@ -117,13 +117,13 @@ const allNavigationItems: NavigationItem[] = [
   { id: 'mcp', label: 'MCPs', icon: McpIcon, section: 'tools' },
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
-  {
-    id: 'byok',
-    label: 'BYOK',
-    icon: KeySquare,
-    section: 'system',
-    requiresHosted: true,
-  },
+  // {
+  //   id: 'byok',
+  //   label: 'BYOK',
+  //   icon: KeySquare,
+  //   section: 'system',
+  //   requiresHosted: true,
+  // },
   // {
   //   id: 'copilot',
   //   label: 'Copilot Keys',
