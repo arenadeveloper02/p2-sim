@@ -1064,6 +1064,42 @@ export const userKnowledgeBase = pgTable(
   })
 )
 
+export const clientKnowledgeBaseMapping = pgTable(
+  'client_knowledge_base_mapping',
+  {
+    id: text('id').primaryKey(),
+    clientName: text('client_name').notNull(),
+    clientId: text('client_id').notNull(),
+    knowledgeBaseId: text('knowledge_base_id')
+      .notNull()
+      .references(() => knowledgeBase.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    // Unique constraint: one mapping per client ID per workspace
+    // Note: NULL workspaceId means global mapping (one per client ID)
+    // PostgreSQL unique indexes treat NULLs as distinct, allowing multiple NULL workspaceIds
+    // Application logic should ensure only one active mapping per client ID
+    clientIdWorkspaceUnique: uniqueIndex('client_kb_mapping_client_id_workspace_unique').on(
+      table.clientId,
+      table.workspaceId
+    ),
+    // Index for lookup by client name
+    clientNameIdx: index('client_kb_mapping_client_name_idx').on(table.clientName),
+    // Index for lookup by client ID
+    clientIdIdx: index('client_kb_mapping_client_id_idx').on(table.clientId),
+    // Index for lookup by KB ID
+    kbIdIdx: index('client_kb_mapping_kb_id_idx').on(table.knowledgeBaseId),
+    // Index for workspace filtering
+    workspaceIdIdx: index('client_kb_mapping_workspace_id_idx').on(table.workspaceId),
+    // Soft delete index
+    deletedAtIdx: index('client_kb_mapping_deleted_at_idx').on(table.deletedAt),
+  })
+)
+
 export const document = pgTable(
   'document',
   {
