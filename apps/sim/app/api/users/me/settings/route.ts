@@ -62,7 +62,8 @@ export async function GET() {
     const userSettings = result[0]
 
     // Convert 'system' theme to 'light' (remove system theme support)
-    const theme = userSettings.theme === 'system' || !userSettings.theme ? 'light' : userSettings.theme
+    const theme =
+      userSettings.theme === 'system' || !userSettings.theme ? 'light' : userSettings.theme
 
     return NextResponse.json(
       {

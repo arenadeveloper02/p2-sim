@@ -35,5 +35,5 @@ export function getThemeFromNextThemes(): 'light' | 'dark' {
   const theme = localStorage.getItem('sim-theme')
   // Convert 'system' to 'light' for backward compatibility
   if (theme === 'system' || !theme) return 'light'
-  return (theme as 'light' | 'dark')
+  return theme as 'light' | 'dark'
 }
