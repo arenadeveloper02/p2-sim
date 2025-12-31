@@ -33,7 +33,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
   } else if (provider === 'google') {
-    keys.push('AIzaSyCxndsxr5Oe-iDd6pzI3Pr6VgXWl4IDNfg')
+    if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
   } else if (provider === 'xai') {
     if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
     if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
@@ -43,9 +43,7 @@ export function getRotatingApiKey(provider: string): string {
 
   if (keys.length === 0) {
     if (provider === 'google') {
-      throw new Error(
-        `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
-      )
+      throw new Error(`No API keys configured for rotation. Please configure GEMINI_API_KEY.`)
     }
 
     throw new Error(

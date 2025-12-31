@@ -40,9 +40,7 @@ vi.mock('@/lib/core/config/env', () => ({
     ANTHROPIC_API_KEY_1: 'test-anthropic-key-1',
     ANTHROPIC_API_KEY_2: 'test-anthropic-key-2',
     ANTHROPIC_API_KEY_3: 'test-anthropic-key-3',
-    GEMINI_API_KEY_1: 'test-gemini-key-1',
-    GEMINI_API_KEY_2: 'test-gemini-key-2',
-    GEMINI_API_KEY_3: 'test-gemini-key-3',
+    GEMINI_API_KEY: 'test-gemini-key',
   },
 }))
 
