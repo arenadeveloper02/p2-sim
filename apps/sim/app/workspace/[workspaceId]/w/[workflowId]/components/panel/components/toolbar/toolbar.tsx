@@ -17,6 +17,7 @@ import {
   getTriggersForSidebar,
   hasTriggerCapability,
 } from '@/lib/workflows/triggers/trigger-utils'
+import { selectBlockEvent, selectTriggerEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   calculateTriggerHeights,
   useToolbarItemInteractions,
@@ -488,7 +489,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
     >
       {/* Header */}
       <div
-        className='flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[4px] bg-[var(--surface-2)] px-[12px] py-[8px] dark:bg-[#2A2A2A]'
+        className='mx-[-1px] flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'
         onClick={handleSearchClick}
       >
         <h2 className='font-medium text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'>
@@ -534,7 +535,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
             Triggers
           </div>
           <div className='flex-1 overflow-y-auto overflow-x-hidden px-[6px]'>
-            <div ref={triggersContentRef} className='space-y-[4px] pb-[8px]'>
+            <div ref={triggersContentRef} className='space-y-[2px] pb-[8px]'>
               {filteredTriggers.map((trigger, index) => {
                 const Icon = trigger.icon
                 const isTriggerCapable = hasTriggerCapability(trigger)
@@ -553,23 +554,40 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         bgColor: trigger.bgColor,
                         iconElement: iconElement as HTMLElement | null,
                       })
+                      selectTriggerEvent({
+                        'Element Name': trigger.name,
+                        'Element Type': 'Trigger',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                      })
                     }}
-                    onClick={() => handleItemClick(trigger.type, isTriggerCapable)}
+                    onClick={() => {
+                      handleItemClick(trigger.type, isTriggerCapable)
+                      selectTriggerEvent({
+                        'Element Name': trigger.name,
+                        'Element Type': 'Trigger',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                      })
+                    }}
                     className={clsx(
-                      'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
-                      'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
-                      'focus-visible:bg-[var(--surface-9)] focus-visible:outline-none'
+                      'group flex h-[28px] items-center gap-[8px] rounded-[8px] px-[6px] text-[14px]',
+                      'cursor-pointer hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover:bg-[var(--surface-5)]',
+                      'focus-visible:bg-[var(--surface-6)] focus-visible:outline-none dark:focus-visible:bg-[var(--surface-5)]'
                     )}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         event.preventDefault()
                         event.stopPropagation()
                         handleItemClick(trigger.type, isTriggerCapable)
+                        selectTriggerEvent({
+                          'Element Name': trigger.name,
+                          'Element Type': 'Trigger',
+                          Source: searchQuery?.trim() ? "Workflow's Search" : "Trigger's List",
+                        })
                       }
                     }}
                   >
                     <div
-                      className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                      className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
                       style={{ background: trigger.bgColor }}
                     >
                       {Icon && (
@@ -577,7 +595,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                           className={clsx(
                             'toolbar-item-icon text-white transition-transform duration-200',
                             'group-hover:scale-110',
-                            '!h-[9px] !w-[9px]'
+                            '!h-[10px] !w-[10px]'
                           )}
                         />
                       )}
@@ -616,7 +634,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
             Blocks
           </div>
           <div className='flex-1 overflow-y-auto overflow-x-hidden px-[6px]'>
-            <div className='space-y-[4px] pb-[8px]'>
+            <div className='space-y-[2px] pb-[8px]'>
               {filteredBlocks.map((block, index) => {
                 const Icon = block.icon
                 return (
@@ -638,27 +656,44 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                         bgColor: block.bgColor ?? '#666666',
                         iconElement: iconElement as HTMLElement | null,
                       })
+                      selectBlockEvent({
+                        'Element Name': block.name,
+                        'Element Type': 'Block',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                      })
                     }}
                     onDragEnd={() => {
                       // Always clear the flag at the end of a toolbar drag
                       document.body.classList.remove('sim-drag-subflow')
                     }}
-                    onClick={() => handleItemClick(block.type, false)}
+                    onClick={() => {
+                      handleItemClick(block.type, false)
+                      selectBlockEvent({
+                        'Element Name': block.name,
+                        'Element Type': 'Block',
+                        Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                      })
+                    }}
                     className={clsx(
-                      'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
-                      'cursor-pointer hover:bg-[var(--surface-9)] active:cursor-grabbing',
-                      'focus-visible:bg-[var(--surface-9)] focus-visible:outline-none'
+                      'group flex h-[28px] items-center gap-[8px] rounded-[8px] px-[6px] text-[14px]',
+                      'cursor-pointer hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover:bg-[var(--surface-5)]',
+                      'focus-visible:bg-[var(--surface-6)] focus-visible:outline-none dark:focus-visible:bg-[var(--surface-5)]'
                     )}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         event.preventDefault()
                         event.stopPropagation()
                         handleItemClick(block.type, false)
+                        selectBlockEvent({
+                          'Element Name': block.name,
+                          'Element Type': 'Block',
+                          Source: searchQuery?.trim() ? "Workflow's Search" : "Block's List",
+                        })
                       }
                     }}
                   >
                     <div
-                      className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+                      className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
                       style={{ background: block.bgColor }}
                     >
                       {Icon && (
@@ -666,7 +701,7 @@ export const Toolbar = forwardRef<ToolbarRef, ToolbarProps>(function Toolbar(
                           className={clsx(
                             'toolbar-item-icon text-white transition-transform duration-200',
                             'group-hover:scale-110',
-                            '!h-[9px] !w-[9px]'
+                            '!h-[10px] !w-[10px]'
                           )}
                         />
                       )}

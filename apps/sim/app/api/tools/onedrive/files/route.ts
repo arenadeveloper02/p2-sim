@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
+import { validateMicrosoftGraphId } from '@/lib/core/security/input-validation'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,12 @@ export async function GET(request: NextRequest) {
     if (!credentialId) {
       logger.warn(`[${requestId}] Missing credential ID`)
       return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
+    }
+
+    const credentialIdValidation = validateMicrosoftGraphId(credentialId, 'credentialId')
+    if (!credentialIdValidation.isValid) {
+      logger.warn(`[${requestId}] Invalid credential ID`, { error: credentialIdValidation.error })
+      return NextResponse.json({ error: credentialIdValidation.error }, { status: 400 })
     }
 
     logger.info(`[${requestId}] Fetching credential`, { credentialId })

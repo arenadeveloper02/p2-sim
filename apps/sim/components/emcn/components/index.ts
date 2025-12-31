@@ -9,8 +9,13 @@ export {
   highlight,
   languages,
 } from './code/code'
-export { Combobox, type ComboboxOption } from './combobox/combobox'
-export { Input } from './input/input'
+export {
+  Combobox,
+  type ComboboxOption,
+  type ComboboxOptionGroup,
+} from './combobox/combobox'
+export { DatePicker, type DatePickerProps, datePickerVariants } from './date-picker/date-picker'
+export { Input, type InputProps, inputVariants } from './input/input'
 export { Label } from './label/label'
 export {
   MODAL_SIZES,
@@ -66,6 +71,7 @@ export {
   SModalSidebarSectionTitle,
   SModalTrigger,
 } from './s-modal/s-modal'
+export { Slider, type SliderProps } from './slider/slider'
 export { Switch } from './switch/switch'
 export { Textarea } from './textarea/textarea'
 export { Tooltip } from './tooltip/tooltip'

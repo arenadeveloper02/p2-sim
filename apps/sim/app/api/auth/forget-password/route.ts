@@ -1,7 +1,8 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
+import { isSameOrigin } from '@/lib/core/utils/validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,15 @@ const forgetPasswordSchema = z.object({
     .email('Please provide a valid email address'),
   redirectTo: z
     .string()
-    .url('Redirect URL must be a valid URL')
     .optional()
     .or(z.literal(''))
-    .transform((val) => (val === '' ? undefined : val)),
+    .transform((val) => (val === '' || val === undefined ? undefined : val))
+    .refine(
+      (val) => val === undefined || (z.string().url().safeParse(val).success && isSameOrigin(val)),
+      {
+        message: 'Redirect URL must be a valid same-origin URL',
+      }
+    ),
 })
 
 export async function POST(request: NextRequest) {

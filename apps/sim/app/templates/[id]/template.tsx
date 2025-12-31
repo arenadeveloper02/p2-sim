@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { formatDistanceToNow } from 'date-fns'
 import {
   ChartNoAxesColumn,
@@ -34,8 +35,8 @@ import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
+import { useTemplateEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
 import { getBlock } from '@/blocks/registry'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
@@ -388,6 +389,12 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
   }
 
   const handleUseTemplate = () => {
+    useTemplateEvent({
+      'Template Name': template?.name || '',
+      'Template ID': template?.id || '',
+      'Workspace Name': workspaceId ? workspaces.find((ws) => ws.id === workspaceId)?.name : '',
+      'Workspace ID': workspaceId || '',
+    })
     if (!currentUserId) {
       const callbackUrl =
         isWorkspaceContext && workspaceId
@@ -732,7 +739,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                 <>
                   {!currentUserId ? (
                     <Button
-                      variant='primary'
+                      variant='tertiary'
                       onClick={() => {
                         const callbackUrl =
                           isWorkspaceContext && workspaceId
@@ -748,7 +755,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                     </Button>
                   ) : isWorkspaceContext ? (
                     <Button
-                      variant='primary'
+                      variant='tertiary'
                       onClick={handleUseTemplate}
                       disabled={isUsing}
                       className='!text-[#FFFFFF] h-[32px] rounded-[6px] px-[12px] text-[14px]'
@@ -832,7 +839,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                 />
               </div>
             ) : (
-              <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--surface-elevated)]'>
+              <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)]'>
                 <User className='h-[14px] w-[14px] text-[var(--text-muted)]' />
               </div>
             )}
@@ -1001,7 +1008,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                       />
                     </div>
                   ) : (
-                    <div className='flex h-[48px] w-[48px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--surface-elevated)]'>
+                    <div className='flex h-[48px] w-[48px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)]'>
                       <User className='h-[24px] w-[24px] text-[var(--text-muted)]' />
                     </div>
                   )}

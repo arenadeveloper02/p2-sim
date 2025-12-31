@@ -5,20 +5,17 @@
 /**
  * Updates the theme in next-themes by dispatching a storage event.
  * This works by updating localStorage and notifying next-themes of the change.
- * @param theme - The theme to apply ('system' | 'light' | 'dark')
+ * @param theme - The desired theme ('light' or 'dark')
  */
-export function syncThemeToNextThemes(theme: 'system' | 'light' | 'dark') {
+export function syncThemeToNextThemes(theme: 'light' | 'dark') {
   if (typeof window === 'undefined') return
 
-  // Use the provided theme, defaulting to 'light' if 'system' is provided
-  const themeToApply = theme === 'system' ? 'light' : theme
-
-  localStorage.setItem('sim-theme', themeToApply)
+  localStorage.setItem('sim-theme', theme)
 
   window.dispatchEvent(
     new StorageEvent('storage', {
       key: 'sim-theme',
-      newValue: themeToApply,
+      newValue: theme,
       oldValue: localStorage.getItem('sim-theme'),
       storageArea: localStorage,
       url: window.location.href,
@@ -27,13 +24,16 @@ export function syncThemeToNextThemes(theme: 'system' | 'light' | 'dark') {
 
   const root = document.documentElement
   root.classList.remove('light', 'dark')
-  root.classList.add(themeToApply)
+  root.classList.add(theme)
 }
 
 /**
  * Gets the current theme from next-themes localStorage
  */
-export function getThemeFromNextThemes(): 'system' | 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'system'
-  return (localStorage.getItem('sim-theme') as 'system' | 'light' | 'dark') || 'system'
+export function getThemeFromNextThemes(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'light'
+  const theme = localStorage.getItem('sim-theme')
+  // Convert 'system' to 'light' for backward compatibility
+  if (theme === 'system' || !theme) return 'light'
+  return theme as 'light' | 'dark'
 }

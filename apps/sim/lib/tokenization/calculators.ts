@@ -2,7 +2,7 @@
  * Cost calculation functions for tokenization
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { createTokenizationError } from '@/lib/tokenization/errors'
 import {
   estimateInputTokens,
@@ -57,8 +57,8 @@ export function calculateStreamingCost(
 
     // Create token usage object
     const tokens: TokenUsage = {
-      prompt: totalPromptTokens,
-      completion: completionTokens,
+      input: totalPromptTokens,
+      output: completionTokens,
       total: totalTokens,
     }
 

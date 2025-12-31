@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -5,7 +6,6 @@ import { getCopilotModel } from '@/lib/copilot/config'
 import { SIM_AGENT_API_URL_DEFAULT } from '@/lib/copilot/constants'
 import type { CopilotProviderConfig } from '@/lib/copilot/types'
 import { env } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('ContextUsageAPI')
 
@@ -65,6 +65,14 @@ export async function POST(req: NextRequest) {
             apiKey: env.AZURE_OPENAI_API_KEY,
             apiVersion: env.AZURE_OPENAI_API_VERSION,
             endpoint: env.AZURE_OPENAI_ENDPOINT,
+          }
+        } else if (providerEnv === 'vertex') {
+          providerConfig = {
+            provider: 'vertex',
+            model: modelToUse,
+            apiKey: env.COPILOT_API_KEY,
+            vertexProject: env.VERTEX_PROJECT,
+            vertexLocation: env.VERTEX_LOCATION,
           }
         } else {
           providerConfig = {

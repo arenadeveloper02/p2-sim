@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 import { generateSmartGAQL } from './ai-query-generation'
 import { GOOGLE_ADS_ACCOUNTS } from './constants'
 import { makeGoogleAdsRequest } from './google-ads-api'

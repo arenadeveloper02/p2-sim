@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Loader2, RotateCcw, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -13,9 +14,9 @@ import {
   ModalHeader,
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { formatFileSize, validateKnowledgeBaseFile } from '@/lib/uploads/utils/file-utils'
 import { ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { uploadKBDocumentsEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
 
 const logger = createLogger('AddDocumentsModal')
@@ -28,6 +29,7 @@ interface AddDocumentsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   knowledgeBaseId: string
+  knowledgeBaseName?: string
   chunkingConfig?: {
     maxSize: number
     minSize: number
@@ -40,6 +42,7 @@ export function AddDocumentsModal({
   open,
   onOpenChange,
   knowledgeBaseId,
+  knowledgeBaseName,
   chunkingConfig,
   onUploadComplete,
 }: AddDocumentsModalProps) {
@@ -212,6 +215,22 @@ export function AddDocumentsModal({
   const handleUpload = async () => {
     if (files.length === 0) return
 
+    // Extract document types from uploaded files
+    const getFileExtension = (filename: string) => {
+      const parts = filename.split('.')
+      return parts.length > 1 ? parts[parts.length - 1].toUpperCase() : ''
+    }
+
+    const documentTypes =
+      files.length > 0
+        ? [...new Set(files.map((file) => getFileExtension(file.name)))].filter(Boolean).join(', ')
+        : ''
+
+    uploadKBDocumentsEvent({
+      'Knowledge Base Name': knowledgeBaseName || '',
+      'Knowledge Base ID': knowledgeBaseId,
+      'Document Type': documentTypes,
+    })
     try {
       await uploadFiles(files, knowledgeBaseId, {
         chunkSize: chunkingConfig?.maxSize || 1024,
@@ -352,7 +371,7 @@ export function AddDocumentsModal({
                 Cancel
               </Button>
               <Button
-                variant='primary'
+                variant='tertiary'
                 type='button'
                 onClick={handleUpload}
                 disabled={files.length === 0 || isUploading}

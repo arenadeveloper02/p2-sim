@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { Code, Tooltip } from '@/components/emcn'
 
@@ -415,7 +417,58 @@ export default function ArenaCopilotMarkdownRenderer({
   return (
     <Tooltip.Provider>
       <div className='copilot-markdown-wrapper max-w-full break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100'>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[
+            rehypeRaw,
+            [
+              rehypeSanitize,
+              {
+                // Allow safe HTML tags for formatting
+                tagNames: [
+                  'br',
+                  'p',
+                  'strong',
+                  'em',
+                  'b',
+                  'i',
+                  'u',
+                  's',
+                  'code',
+                  'pre',
+                  'blockquote',
+                  'hr',
+                  'a',
+                  'img',
+                  'ul',
+                  'ol',
+                  'li',
+                  'h1',
+                  'h2',
+                  'h3',
+                  'h4',
+                  'h5',
+                  'h6',
+                  'table',
+                  'thead',
+                  'tbody',
+                  'tr',
+                  'th',
+                  'td',
+                  'div',
+                  'span',
+                ],
+                // Allow attributes for links and images
+                attributes: {
+                  a: ['href', 'title', 'target', 'rel'],
+                  img: ['src', 'alt', 'title', 'width', 'height'],
+                  '*': ['className', 'id'],
+                },
+              },
+            ],
+          ]}
+          components={markdownComponents}
+        >
           {content}
         </ReactMarkdown>
       </div>

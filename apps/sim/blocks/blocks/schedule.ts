@@ -14,7 +14,6 @@ export const ScheduleBlock: BlockConfig = {
   longDescription:
     'Integrate Schedule into the workflow. Can trigger a workflow on a schedule configuration.',
   bestPractices: `
-  - Search up examples with schedule blocks to understand YAML syntax. 
   - Prefer the custom cron expression input method over the other schedule configuration methods. 
   - Clarify the timezone if the user doesn't specify it.
   `,
@@ -156,26 +155,10 @@ export const ScheduleBlock: BlockConfig = {
     },
 
     {
-      id: 'inputFormat',
-      title: 'Input Format',
-      type: 'input-format',
-      description:
-        'Define input parameters that will be available when the schedule triggers. Use Value to set default values for scheduled executions.',
-      mode: 'trigger',
-    },
-
-    {
-      id: 'scheduleSave',
-      type: 'schedule-save',
+      id: 'scheduleInfo',
+      type: 'schedule-info',
       mode: 'trigger',
       hideFromPreview: true,
-    },
-
-    {
-      id: 'scheduleId',
-      type: 'short-input',
-      hidden: true,
-      mode: 'trigger',
     },
   ],
 

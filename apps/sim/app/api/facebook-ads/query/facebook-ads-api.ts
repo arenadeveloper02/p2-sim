@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { FB_GRAPH_URL } from './constants'
 
 const logger = createLogger('FacebookAdsAPIClient')

@@ -1,7 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { createLogger } from '@/lib/logs/console/logger'
+import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
 import { getBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { getBlock } from '@/blocks'
@@ -9,18 +10,18 @@ import type { SubBlockConfig } from '@/blocks/types'
 import { isAnnotationOnlyBlock } from '@/executor/constants'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import {
-  getUniqueBlockName,
-  mergeSubblockState,
-  normalizeBlockName,
-} from '@/stores/workflows/utils'
+import { getUniqueBlockName, mergeSubblockState, normalizeName } from '@/stores/workflows/utils'
 import type {
   Position,
   SubBlockState,
   WorkflowState,
   WorkflowStore,
 } from '@/stores/workflows/workflow/types'
-import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
+import {
+  generateLoopBlocks,
+  generateParallelBlocks,
+  wouldCreateCycle,
+} from '@/stores/workflows/workflow/utils'
 
 const logger = createLogger('WorkflowStore')
 
@@ -428,6 +429,15 @@ export const useWorkflowStore = create<WorkflowStore>()(
           return
         }
 
+        // Prevent self-connections and cycles
+        if (wouldCreateCycle(get().edges, edge.source, edge.target)) {
+          logger.warn('Prevented edge that would create a cycle', {
+            source: edge.source,
+            target: edge.target,
+          })
+          return
+        }
+
         // Check for duplicate connections
         const isDuplicate = get().edges.some(
           (existingEdge) =>
@@ -582,8 +592,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
         const newId = crypto.randomUUID()
         const offsetPosition = {
-          x: block.position.x + 250,
-          y: block.position.y + 20,
+          x: block.position.x + DEFAULT_DUPLICATE_OFFSET.x,
+          y: block.position.y + DEFAULT_DUPLICATE_OFFSET.y,
         }
 
         const newName = getUniqueBlockName(block.name, get().blocks)
@@ -662,23 +672,21 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const oldBlock = get().blocks[id]
         if (!oldBlock) return { success: false, changedSubblocks: [] }
 
-        // Check for normalized name collisions
-        const normalizedNewName = normalizeBlockName(name)
-        const currentBlocks = get().blocks
+        const normalizedNewName = normalizeName(name)
 
-        // Find any other block with the same normalized name
-        const conflictingBlock = Object.entries(currentBlocks).find(([blockId, block]) => {
-          return (
-            blockId !== id && // Different block
-            block.name && // Has a name
-            normalizeBlockName(block.name) === normalizedNewName // Same normalized name
-          )
-        })
+        if (!normalizedNewName) {
+          logger.error(`Cannot rename block to empty name`)
+          return { success: false, changedSubblocks: [] }
+        }
+
+        const currentBlocks = get().blocks
+        const conflictingBlock = Object.entries(currentBlocks).find(
+          ([blockId, block]) => blockId !== id && normalizeName(block.name) === normalizedNewName
+        )
 
         if (conflictingBlock) {
-          // Don't allow the rename - another block already uses this normalized name
           logger.error(
-            `Cannot rename block to "${name}" - another block "${conflictingBlock[1].name}" already uses the normalized name "${normalizedNewName}"`
+            `Cannot rename block to "${name}" - conflicts with "${conflictingBlock[1].name}"`
           )
           return { success: false, changedSubblocks: [] }
         }
@@ -708,54 +716,62 @@ export const useWorkflowStore = create<WorkflowStore>()(
           const workflowValues = subBlockStore.workflowValues[activeWorkflowId] || {}
           const updatedWorkflowValues = { ...workflowValues }
 
+          // Helper function to recursively update references in any data structure
+          function updateReferences(value: any, regex: RegExp, replacement: string): any {
+            // Handle string values
+            if (typeof value === 'string') {
+              return regex.test(value) ? value.replace(regex, replacement) : value
+            }
+
+            // Handle arrays
+            if (Array.isArray(value)) {
+              return value.map((item) => updateReferences(item, regex, replacement))
+            }
+
+            // Handle objects
+            if (value !== null && typeof value === 'object') {
+              const result = { ...value }
+              for (const key in result) {
+                result[key] = updateReferences(result[key], regex, replacement)
+              }
+              return result
+            }
+
+            // Return unchanged for other types
+            return value
+          }
+
+          const oldBlockName = normalizeName(oldBlock.name)
+          const newBlockName = normalizeName(name)
+          const regex = new RegExp(`<${oldBlockName}\\.`, 'g')
+
           // Loop through blocks
           Object.entries(workflowValues).forEach(([blockId, blockValues]) => {
             if (blockId === id) return // Skip the block being renamed
 
+            let blockHasChanges = false
+            const updatedBlockValues = { ...blockValues }
+
             // Loop through subblocks and update references
             Object.entries(blockValues).forEach(([subBlockId, value]) => {
-              const oldBlockName = oldBlock.name.replace(/\s+/g, '').toLowerCase()
-              const newBlockName = name.replace(/\s+/g, '').toLowerCase()
-              const regex = new RegExp(`<${oldBlockName}\\.`, 'g')
-
               // Use a recursive function to handle all object types
               const updatedValue = updateReferences(value, regex, `<${newBlockName}.`)
 
               // Check if the value actually changed
               if (JSON.stringify(updatedValue) !== JSON.stringify(value)) {
-                updatedWorkflowValues[blockId][subBlockId] = updatedValue
+                updatedBlockValues[subBlockId] = updatedValue
+                blockHasChanges = true
                 changedSubblocks.push({
                   blockId,
                   subBlockId,
                   newValue: updatedValue,
                 })
               }
-
-              // Helper function to recursively update references in any data structure
-              function updateReferences(value: any, regex: RegExp, replacement: string): any {
-                // Handle string values
-                if (typeof value === 'string') {
-                  return regex.test(value) ? value.replace(regex, replacement) : value
-                }
-
-                // Handle arrays
-                if (Array.isArray(value)) {
-                  return value.map((item) => updateReferences(item, regex, replacement))
-                }
-
-                // Handle objects
-                if (value !== null && typeof value === 'object') {
-                  const result = { ...value }
-                  for (const key in result) {
-                    result[key] = updateReferences(result[key], regex, replacement)
-                  }
-                  return result
-                }
-
-                // Return unchanged for other types
-                return value
-              }
             })
+
+            if (blockHasChanges) {
+              updatedWorkflowValues[blockId] = updatedBlockValues
+            }
           })
 
           // Update the subblock store with the new values
@@ -850,7 +866,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
               ...block,
               data: {
                 ...block.data,
-                count: Math.max(1, Math.min(100, count)), // Clamp between 1-100
+                count: Math.max(1, Math.min(1000, count)), // Clamp between 1-1000
               },
             },
           }

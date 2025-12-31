@@ -1,5 +1,6 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -17,7 +18,6 @@ import {
 import { getCredentialsServerTool } from '@/lib/copilot/tools/server/user/get-credentials'
 import type { CopilotProviderConfig } from '@/lib/copilot/types'
 import { env } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
 import { CopilotFiles } from '@/lib/uploads'
 import { createFileContent } from '@/lib/uploads/utils/file-utils'
 import { tools } from '@/tools/registry'
@@ -302,6 +302,14 @@ export async function POST(req: NextRequest) {
           apiKey: env.AZURE_OPENAI_API_KEY,
           apiVersion: 'preview',
           endpoint: env.AZURE_OPENAI_ENDPOINT,
+        }
+      } else if (providerEnv === 'vertex') {
+        providerConfig = {
+          provider: 'vertex',
+          model: modelToUse,
+          apiKey: env.COPILOT_API_KEY,
+          vertexProject: env.VERTEX_PROJECT,
+          vertexLocation: env.VERTEX_LOCATION,
         }
       } else {
         providerConfig = {
@@ -1058,7 +1066,6 @@ export async function GET(req: NextRequest) {
       model: chat.model,
       messages: Array.isArray(chat.messages) ? chat.messages : [],
       messageCount: Array.isArray(chat.messages) ? chat.messages.length : 0,
-      previewYaml: null, // Not needed for chat list
       planArtifact: chat.planArtifact || null,
       config: chat.config || null,
       createdAt: chat.createdAt,

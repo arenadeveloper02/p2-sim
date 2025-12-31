@@ -1,8 +1,9 @@
+import { createLogger } from '@sim/logger'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { parseMcpToolId } from '@/lib/mcp/utils'
+import { isCustomTool, isMcpTool } from '@/executor/constants'
 import type { ExecutionContext } from '@/executor/types'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
@@ -15,6 +16,26 @@ import {
 } from '@/tools/utils'
 
 const logger = createLogger('Tools')
+
+/**
+ * Normalizes a tool ID by stripping resource ID suffix (UUID).
+ * Workflow tools: 'workflow_executor_<uuid>' -> 'workflow_executor'
+ * Knowledge tools: 'knowledge_search_<uuid>' -> 'knowledge_search'
+ */
+function normalizeToolId(toolId: string): string {
+  // Check for workflow_executor_<uuid> pattern
+  if (toolId.startsWith('workflow_executor_') && toolId.length > 'workflow_executor_'.length) {
+    return 'workflow_executor'
+  }
+  // Check for knowledge_<operation>_<uuid> pattern
+  const knowledgeOps = ['knowledge_search', 'knowledge_upload_chunk', 'knowledge_create_document']
+  for (const op of knowledgeOps) {
+    if (toolId.startsWith(`${op}_`) && toolId.length > op.length + 1) {
+      return op
+    }
+  }
+  return toolId
+}
 
 /**
  * Maximum request body size in bytes before we warn/error about size limits.
@@ -107,6 +128,7 @@ const MCP_SYSTEM_PARAMETERS = new Set([
   'workflowVariables',
   'blockData',
   'blockNameMapping',
+  '_toolSchema',
 ])
 
 /**
@@ -185,20 +207,29 @@ export async function executeTool(
   try {
     let tool: ToolConfig | undefined
 
+    // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
+    const normalizedToolId = normalizeToolId(toolId)
+
     // If it's a custom tool, use the async version with workflowId
-    if (toolId.startsWith('custom_')) {
+    if (isCustomTool(normalizedToolId)) {
       const workflowId = params._context?.workflowId
-      tool = await getToolAsync(toolId, workflowId)
+      tool = await getToolAsync(normalizedToolId, workflowId)
       if (!tool) {
-        logger.error(`[${requestId}] Custom tool not found: ${toolId}`)
+        logger.error(`[${requestId}] Custom tool not found: ${normalizedToolId}`)
       }
-    } else if (toolId.startsWith('mcp-')) {
-      return await executeMcpTool(toolId, params, executionContext, requestId, startTimeISO)
+    } else if (isMcpTool(normalizedToolId)) {
+      return await executeMcpTool(
+        normalizedToolId,
+        params,
+        executionContext,
+        requestId,
+        startTimeISO
+      )
     } else {
       // For built-in tools, use the synchronous version
-      tool = getTool(toolId)
+      tool = getTool(normalizedToolId)
       if (!tool) {
-        logger.error(`[${requestId}] Built-in tool not found: ${toolId}`)
+        logger.error(`[${requestId}] Built-in tool not found: ${normalizedToolId}`)
       }
     }
 
@@ -274,10 +305,11 @@ export async function executeTool(
         if (data.idToken) {
           contextParams.idToken = data.idToken
         }
+        if (data.instanceUrl) {
+          contextParams.instanceUrl = data.instanceUrl
+        }
 
-        logger.info(
-          `[${requestId}] Successfully got access token for ${toolId}, length: ${data.accessToken?.length || 0}`
-        )
+        logger.info(`[${requestId}] Successfully got access token for ${toolId}`)
 
         // Preserve credential for downstream transforms while removing it from request payload
         // so we don't leak it to external services.
@@ -620,7 +652,7 @@ async function handleInternalRequest(
 
     const fullUrl = fullUrlObj.toString()
 
-    if (toolId.startsWith('custom_') && tool.request.body) {
+    if (isCustomTool(toolId) && tool.request.body) {
       const requestBody = tool.request.body(params)
       if (
         typeof requestBody === 'object' &&
@@ -781,6 +813,8 @@ async function handleInternalRequest(
                 ? responseData
                 : JSON.stringify(responseData)
               : await response.clone().text(),
+          arrayBuffer: () => response.arrayBuffer(),
+          blob: () => response.blob(),
         } as Response
 
         const data = await tool.transformResponse(mockResponse, params)
@@ -830,6 +864,7 @@ function validateClientSideParams(
   // Internal parameters that should be excluded from validation
   const internalParamSet = new Set([
     '_context',
+    '_toolSchema',
     'workflowId',
     'envVars',
     'workflowVariables',
@@ -1044,12 +1079,20 @@ async function executeMcpTool(
       }
     }
 
-    const requestBody = {
+    // Get tool schema if provided (from agent block's cached schema)
+    const toolSchema = params._toolSchema
+
+    const requestBody: Record<string, any> = {
       serverId,
       toolName,
       arguments: toolArguments,
       workflowId, // Pass workflow context for user resolution
       workspaceId, // Pass workspace context for scoping
+    }
+
+    // Include schema to skip discovery on execution
+    if (toolSchema) {
+      requestBody.toolSchema = toolSchema
     }
 
     const body = JSON.stringify(requestBody)
@@ -1060,6 +1103,7 @@ async function executeMcpTool(
     logger.info(`[${actualRequestId}] Making MCP tool request to ${toolName} on ${serverId}`, {
       hasWorkspaceId: !!workspaceId,
       hasWorkflowId: !!workflowId,
+      hasToolSchema: !!toolSchema,
     })
 
     const response = await fetch(`${baseUrl}/api/mcp/tools/execute`, {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback } from 'react'
+import { createLogger } from '@sim/logger'
 import { Layout, LibraryBig, Search } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
@@ -8,7 +9,7 @@ import { Button } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
 import { getBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
+import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useSearchModalStore } from '@/stores/search-modal/store'
 
 const logger = createLogger('WorkflowCommandList')
@@ -59,6 +60,7 @@ export function CommandList() {
   const params = useParams()
   const router = useRouter()
   const { open: openSearchModal } = useSearchModalStore()
+  const preventZoomRef = usePreventZoom()
 
   const workspaceId = params.workspaceId as string | undefined
 
@@ -172,6 +174,7 @@ export function CommandList() {
 
   return (
     <div
+      ref={preventZoomRef}
       className={cn(
         'pointer-events-none absolute inset-0 mb-[50px] flex items-center justify-center'
       )}
