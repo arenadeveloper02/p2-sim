@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { BookOpen, Check, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
 import { Button, Tooltip } from '@/components/emcn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   ConnectionBlocks,
@@ -137,7 +137,11 @@ export function Editor() {
 
     const trimmedName = editedName.trim()
     if (trimmedName && trimmedName !== currentBlock?.name) {
-      collaborativeUpdateBlockName(currentBlockId, trimmedName)
+      const result = collaborativeUpdateBlockName(currentBlockId, trimmedName)
+      if (!result.success) {
+        // Keep rename mode open on error so user can correct the name
+        return
+      }
     }
     setIsRenaming(false)
   }, [currentBlockId, isRenaming, editedName, currentBlock?.name, collaborativeUpdateBlockName])
@@ -175,9 +179,9 @@ export function Editor() {
   return (
     <div className='flex h-full flex-col'>
       {/* Header */}
-      <div className='flex flex-shrink-0 items-center justify-between rounded-[4px] bg-[var(--surface-2)] px-[12px] py-[8px] dark:bg-[#2A2A2A]'>
+      <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'>
         <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
-          {(blockConfig || isSubflow) && (
+          {(blockConfig || isSubflow) && currentBlock?.type !== 'note' && (
             <div
               className='flex h-[18px] w-[18px] items-center justify-center rounded-[4px]'
               style={{ background: isSubflow ? subflowBgColor : blockConfig?.bgColor }}
@@ -340,7 +344,7 @@ export function Editor() {
                     )
 
                     return (
-                      <div key={stableKey}>
+                      <div key={stableKey} className='subblock-row'>
                         <SubBlock
                           blockId={currentBlockId}
                           config={subBlock}
@@ -351,7 +355,7 @@ export function Editor() {
                           allowExpandInPreview={false}
                         />
                         {index < subBlocks.length - 1 && (
-                          <div className='px-[2px] pt-[16px] pb-[13px]'>
+                          <div className='subblock-divider px-[2px] pt-[16px] pb-[13px]'>
                             <div
                               className='h-[1.25px]'
                               style={{

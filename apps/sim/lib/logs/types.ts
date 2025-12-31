@@ -15,8 +15,8 @@ export interface PricingInfo {
 }
 
 export interface TokenUsage {
-  prompt: number
-  completion: number
+  input: number
+  output: number
   total: number
 }
 
@@ -51,8 +51,11 @@ export interface ExecutionEnvironment {
   workspaceId: string
 }
 
+export const ALL_TRIGGER_TYPES = ['api', 'webhook', 'schedule', 'manual', 'chat'] as const
+export type TriggerType = (typeof ALL_TRIGGER_TYPES)[number]
+
 export interface ExecutionTrigger {
-  type: 'api' | 'webhook' | 'schedule' | 'manual' | 'chat' | string
+  type: TriggerType | string
   source: string
   data?: Record<string, unknown>
   timestamp: string
@@ -99,6 +102,17 @@ export interface WorkflowExecutionLog {
     environment?: ExecutionEnvironment
     trigger?: ExecutionTrigger
     traceSpans?: TraceSpan[]
+    tokens?: { input?: number; output?: number; total?: number }
+    models?: Record<
+      string,
+      {
+        input?: number
+        output?: number
+        total?: number
+        tokens?: { input?: number; output?: number; total?: number }
+      }
+    >
+    finalOutput?: any
     errorDetails?: {
       blockId: string
       blockName: string
@@ -111,14 +125,14 @@ export interface WorkflowExecutionLog {
     input?: number
     output?: number
     total?: number
-    tokens?: { prompt?: number; completion?: number; total?: number }
+    tokens?: { input?: number; output?: number; total?: number }
     models?: Record<
       string,
       {
         input?: number
         output?: number
         total?: number
-        tokens?: { prompt?: number; completion?: number; total?: number }
+        tokens?: { input?: number; output?: number; total?: number }
       }
     >
   }
@@ -331,6 +345,7 @@ export interface SnapshotCreationResult {
 export interface ExecutionLoggerService {
   startWorkflowExecution(params: {
     workflowId: string
+    workspaceId: string
     executionId: string
     trigger: ExecutionTrigger
     environment: ExecutionEnvironment

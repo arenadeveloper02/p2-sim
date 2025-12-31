@@ -1,7 +1,6 @@
-import { useEffect } from 'react'
+import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { syncThemeToNextThemes } from '@/lib/core/utils/theme'
-import { createLogger } from '@/lib/logs/console/logger'
 import { useGeneralStore } from '@/stores/settings/general/store'
 
 const logger = createLogger('GeneralSettingsQuery')
@@ -21,10 +20,11 @@ export interface GeneralSettings {
   autoConnect: boolean
   showTrainingControls: boolean
   superUserModeEnabled: boolean
-  theme: 'light' | 'dark' | 'system'
+  theme: 'light' | 'dark'
   telemetryEnabled: boolean
   billingUsageNotificationsEnabled: boolean
   errorNotificationsEnabled: boolean
+  snapToGridSize: number
 }
 
 /**
@@ -39,26 +39,31 @@ async function fetchGeneralSettings(): Promise<GeneralSettings> {
 
   const { data } = await response.json()
 
+  // Convert 'system' or null/undefined to 'light' (remove system theme support)
+  const theme = data.theme === 'system' || !data.theme ? 'light' : data.theme
+
   return {
     autoConnect: data.autoConnect ?? true,
     showTrainingControls: data.showTrainingControls ?? false,
     superUserModeEnabled: data.superUserModeEnabled ?? true,
-    theme: data.theme || 'light',
+    theme,
     telemetryEnabled: data.telemetryEnabled ?? true,
     billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
     errorNotificationsEnabled: data.errorNotificationsEnabled ?? true,
+    snapToGridSize: data.snapToGridSize ?? 0,
   }
 }
 
 /**
  * Sync React Query cache to Zustand store and next-themes.
  * This ensures the rest of the app (which uses Zustand) stays in sync.
+ * Uses shallow comparison to prevent unnecessary updates and flickering.
  * @param settings - The general settings to sync
  */
 function syncSettingsToZustand(settings: GeneralSettings) {
-  const { setSettings } = useGeneralStore.getState()
+  const store = useGeneralStore.getState()
 
-  setSettings({
+  const newSettings = {
     isAutoConnectEnabled: settings.autoConnect,
     showTrainingControls: settings.showTrainingControls,
     superUserModeEnabled: settings.superUserModeEnabled,
@@ -66,30 +71,35 @@ function syncSettingsToZustand(settings: GeneralSettings) {
     telemetryEnabled: settings.telemetryEnabled,
     isBillingUsageNotificationsEnabled: settings.billingUsageNotificationsEnabled,
     isErrorNotificationsEnabled: settings.errorNotificationsEnabled,
-  })
+    snapToGridSize: settings.snapToGridSize,
+  }
+
+  const hasChanges = Object.entries(newSettings).some(
+    ([key, value]) => store[key as keyof typeof newSettings] !== value
+  )
+
+  if (hasChanges) {
+    store.setSettings(newSettings)
+  }
 
   syncThemeToNextThemes(settings.theme)
 }
 
 /**
  * Hook to fetch general settings.
- * Also syncs to Zustand store to keep the rest of the app in sync.
+ * Syncs to Zustand store only on successful fetch (not on cache updates from mutations).
  */
 export function useGeneralSettings() {
-  const query = useQuery({
+  return useQuery({
     queryKey: generalSettingsKeys.settings(),
-    queryFn: fetchGeneralSettings,
+    queryFn: async () => {
+      const settings = await fetchGeneralSettings()
+      syncSettingsToZustand(settings)
+      return settings
+    },
     staleTime: 60 * 60 * 1000,
     placeholderData: keepPreviousData,
   })
-
-  useEffect(() => {
-    if (query.data) {
-      syncSettingsToZustand(query.data)
-    }
-  }, [query.data])
-
-  return query
 }
 
 /**
@@ -129,8 +139,8 @@ export function useUpdateGeneralSetting() {
           ...previousSettings,
           [key]: value,
         }
-        queryClient.setQueryData<GeneralSettings>(generalSettingsKeys.settings(), newSettings)
 
+        queryClient.setQueryData<GeneralSettings>(generalSettingsKeys.settings(), newSettings)
         syncSettingsToZustand(newSettings)
       }
 
@@ -142,9 +152,6 @@ export function useUpdateGeneralSetting() {
         syncSettingsToZustand(context.previousSettings)
       }
       logger.error('Failed to update setting:', err)
-    },
-    onSuccess: (_data, _variables, _context) => {
-      queryClient.invalidateQueries({ queryKey: generalSettingsKeys.settings() })
     },
   })
 }

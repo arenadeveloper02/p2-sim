@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FigmaToHTMLAI')

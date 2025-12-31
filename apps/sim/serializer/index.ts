@@ -1,8 +1,9 @@
+import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
-import { createLogger } from '@/lib/logs/console/logger'
 import { BlockPathCalculator } from '@/lib/workflows/blocks/block-path-calculator'
 import { getBlock } from '@/blocks'
 import type { SubBlockConfig } from '@/blocks/types'
+import { REFERENCE } from '@/executor/constants'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
@@ -351,7 +352,7 @@ export class Serializer {
       const trimmedValue = responseFormat.trim()
 
       // Check for variable references like <start.input>
-      if (trimmedValue.startsWith('<') && trimmedValue.includes('>')) {
+      if (trimmedValue.startsWith(REFERENCE.START) && trimmedValue.includes(REFERENCE.END)) {
         // Keep variable references as-is
         return trimmedValue
       }
@@ -402,6 +403,7 @@ export class Serializer {
 
     // Second pass: filter by mode and conditions
     Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
+      const matchingConfigs = blockConfig.subBlocks.filter((config) => config.id === id)
       // Find the corresponding subblock config to check its mode and condition
       // If multiple configs have the same id (e.g., conditional fields), find the one whose condition matches
       let subBlockConfig = blockConfig.subBlocks.find((config) => config.id === id)
@@ -433,13 +435,17 @@ export class Serializer {
       const isLegacyAgentField =
         isAgentBlock && ['systemPrompt', 'userPrompt', 'memories'].includes(id)
 
-      // Check if field's condition is met (conditionally-hidden fields should be excluded)
-      const conditionMet = subBlockConfig
-        ? evaluateCondition(subBlockConfig.condition, allValues)
-        : true
+      const anyConditionMet =
+        matchingConfigs.length === 0
+          ? true
+          : matchingConfigs.some(
+              (config) =>
+                shouldIncludeField(config, isAdvancedMode) &&
+                evaluateCondition(config.condition, allValues)
+            )
 
       if (
-        (subBlockConfig && shouldIncludeField(subBlockConfig, isAdvancedMode) && conditionMet) ||
+        (matchingConfigs.length > 0 && anyConditionMet) ||
         hasStarterInputFormatValues ||
         isLegacyAgentField
       ) {
@@ -556,26 +562,26 @@ export class Serializer {
     // Iterate through the tool's parameters, not the block's subBlocks
     Object.entries(currentTool.params || {}).forEach(([paramId, paramConfig]) => {
       if (paramConfig.required && paramConfig.visibility === 'user-only') {
-        const subBlockConfig = blockConfig.subBlocks?.find((sb: any) => sb.id === paramId)
+        const matchingConfigs = blockConfig.subBlocks?.filter((sb: any) => sb.id === paramId) || []
 
         let shouldValidateParam = true
 
-        if (subBlockConfig) {
+        if (matchingConfigs.length > 0) {
           const isAdvancedMode = block.advancedMode ?? false
-          const includedByMode = shouldIncludeField(subBlockConfig, isAdvancedMode)
 
-          // Check visibility condition
-          const includedByCondition = evaluateCondition(subBlockConfig.condition, params)
+          shouldValidateParam = matchingConfigs.some((subBlockConfig: any) => {
+            const includedByMode = shouldIncludeField(subBlockConfig, isAdvancedMode)
 
-          // Check if field is required based on its required condition (if it's a condition object)
-          const isRequired = (() => {
-            if (!subBlockConfig.required) return false
-            if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-            // If required is a condition object, evaluate it
-            return evaluateCondition(subBlockConfig.required, params)
-          })()
+            const includedByCondition = evaluateCondition(subBlockConfig.condition, params)
 
-          shouldValidateParam = includedByMode && includedByCondition && isRequired
+            const isRequired = (() => {
+              if (!subBlockConfig.required) return false
+              if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
+              return evaluateCondition(subBlockConfig.required, params)
+            })()
+
+            return includedByMode && includedByCondition && isRequired
+          })
         }
 
         if (!shouldValidateParam) {
@@ -584,7 +590,12 @@ export class Serializer {
 
         const fieldValue = params[paramId]
         if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
-          const displayName = subBlockConfig?.title || paramId
+          const activeConfig = matchingConfigs.find(
+            (config: any) =>
+              shouldIncludeField(config, block.advancedMode ?? false) &&
+              evaluateCondition(config.condition, params)
+          )
+          const displayName = activeConfig?.title || paramId
           missingFields.push(displayName)
         }
       }
@@ -612,8 +623,6 @@ export class Serializer {
       const accessibleIds = new Set<string>(ancestorIds)
       accessibleIds.add(blockId)
 
-      // Only add starter block if it's actually upstream (already in ancestorIds)
-      // Don't add it just because it exists on the canvas
       if (starterBlock && ancestorIds.includes(starterBlock.id)) {
         accessibleIds.add(starterBlock.id)
       }

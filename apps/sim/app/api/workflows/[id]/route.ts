@@ -1,5 +1,6 @@
 import { db } from '@sim/db'
 import { templates, webhook, workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -8,7 +9,6 @@ import { getSession } from '@/lib/auth'
 import { verifyInternalToken } from '@/lib/auth/internal'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getWorkflowAccessContext, getWorkflowById } from '@/lib/workflows/utils'
 
@@ -226,6 +226,21 @@ export async function DELETE(
         `[${requestId}] User ${userId} denied permission to delete workflow ${workflowId}`
       )
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    // Check if this is the last workflow in the workspace
+    if (workflowData.workspaceId) {
+      const totalWorkflowsInWorkspace = await db
+        .select({ id: workflow.id })
+        .from(workflow)
+        .where(eq(workflow.workspaceId, workflowData.workspaceId))
+
+      if (totalWorkflowsInWorkspace.length <= 1) {
+        return NextResponse.json(
+          { error: 'Cannot delete the only workflow in the workspace' },
+          { status: 400 }
+        )
+      }
     }
 
     // Check if workflow has published templates before deletion

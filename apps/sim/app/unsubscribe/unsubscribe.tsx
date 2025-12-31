@@ -39,7 +39,6 @@ function UnsubscribeContent() {
       return
     }
 
-    // Validate the unsubscribe link
     fetch(
       `/api/users/me/settings/unsubscribe?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`
     )
@@ -81,9 +80,7 @@ function UnsubscribeContent() {
 
       if (result.success) {
         setUnsubscribed(true)
-        // Update the data to reflect the change
         if (data) {
-          // Type-safe property construction with validation
           const validTypes = ['all', 'marketing', 'updates', 'notifications'] as const
           if (validTypes.includes(type)) {
             if (type === 'all') {
@@ -121,7 +118,7 @@ function UnsubscribeContent() {
 
   if (loading) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-background'>
+      <div className='before:-z-50 relative flex min-h-screen items-center justify-center before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
         <Card className='w-full max-w-md border shadow-sm'>
           <CardContent className='flex items-center justify-center p-8'>
             <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
@@ -133,7 +130,7 @@ function UnsubscribeContent() {
 
   if (error) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-background p-4'>
+      <div className='before:-z-50 relative flex min-h-screen items-center justify-center p-4 before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
         <Card className='w-full max-w-md border shadow-sm'>
           <CardHeader className='text-center'>
             <XCircle className='mx-auto mb-2 h-12 w-12 text-red-500' />
@@ -192,10 +189,9 @@ function UnsubscribeContent() {
     )
   }
 
-  // Handle transactional emails
   if (data?.isTransactional) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-background p-4'>
+      <div className='before:-z-50 relative flex min-h-screen items-center justify-center p-4 before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
         <Card className='w-full max-w-md border shadow-sm'>
           <CardHeader className='text-center'>
             <Info className='mx-auto mb-2 h-12 w-12 text-blue-500' />
@@ -247,7 +243,7 @@ function UnsubscribeContent() {
 
   if (unsubscribed) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-background'>
+      <div className='before:-z-50 relative flex min-h-screen items-center justify-center before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
         <Card className='w-full max-w-md border shadow-sm'>
           <CardHeader className='text-center'>
             <CheckCircle className='mx-auto mb-2 h-12 w-12 text-green-500' />
@@ -275,7 +271,7 @@ function UnsubscribeContent() {
   }
 
   return (
-    <div className='flex min-h-screen items-center justify-center bg-background p-4'>
+    <div className='before:-z-50 relative flex min-h-screen items-center justify-center p-4 before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
       <Card className='w-full max-w-md border shadow-sm'>
         <CardHeader className='text-center'>
           <Heart className='mx-auto mb-2 h-12 w-12 text-red-500' />
@@ -298,14 +294,14 @@ function UnsubscribeContent() {
               variant='destructive'
               className='w-full'
             >
-              {processing ? (
-                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-              ) : data?.currentPreferences.unsubscribeAll ? (
+              {data?.currentPreferences.unsubscribeAll ? (
                 <CheckCircle className='mr-2 h-4 w-4' />
               ) : null}
-              {data?.currentPreferences.unsubscribeAll
-                ? 'Unsubscribed from All Emails'
-                : 'Unsubscribe from All Marketing Emails'}
+              {processing
+                ? 'Unsubscribing...'
+                : data?.currentPreferences.unsubscribeAll
+                  ? 'Unsubscribed from All Emails'
+                  : 'Unsubscribe from All Marketing Emails'}
             </Button>
 
             <div className='text-center text-muted-foreground text-sm'>
@@ -395,7 +391,7 @@ export default function Unsubscribe() {
   return (
     <Suspense
       fallback={
-        <div className='flex min-h-screen items-center justify-center bg-background'>
+        <div className='before:-z-50 relative flex min-h-screen items-center justify-center before:pointer-events-none before:fixed before:inset-0 before:bg-white'>
           <Card className='w-full max-w-md border shadow-sm'>
             <CardContent className='flex items-center justify-center p-8'>
               <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />

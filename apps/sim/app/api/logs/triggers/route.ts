@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
-import { permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { permissions, workflowExecutionLogs } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('TriggersAPI')
 
@@ -43,22 +43,16 @@ export async function GET(request: NextRequest) {
         })
         .from(workflowExecutionLogs)
         .innerJoin(
-          workflow,
-          and(
-            eq(workflowExecutionLogs.workflowId, workflow.id),
-            eq(workflow.workspaceId, params.workspaceId)
-          )
-        )
-        .innerJoin(
           permissions,
           and(
             eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workflow.workspaceId),
+            eq(permissions.entityId, workflowExecutionLogs.workspaceId),
             eq(permissions.userId, userId)
           )
         )
         .where(
           and(
+            eq(workflowExecutionLogs.workspaceId, params.workspaceId),
             isNotNull(workflowExecutionLogs.trigger),
             sql`${workflowExecutionLogs.trigger} NOT IN ('api', 'manual', 'webhook', 'chat', 'schedule')`
           )

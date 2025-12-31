@@ -1,7 +1,7 @@
+import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { createLogger } from '@/lib/logs/console/logger'
 import type {
   MoveBlockOperation,
   Operation,
@@ -45,8 +45,9 @@ function getStackKey(workflowId: string, userId: string): string {
 
 /**
  * Custom storage adapter for Zustand's persist middleware.
- * We need this wrapper to gracefully handle 'QuotaExceededError' when localStorage is full.
+ * We need this wrapper to gracefully handle 'QuotaExceededError' when localStorage is full,
  * Without this, the default storage engine would throw and crash the application.
+ * and to properly handle SSR/Node.js environments.
  */
 const safeStorageAdapter = {
   getItem: (name: string): string | null => {

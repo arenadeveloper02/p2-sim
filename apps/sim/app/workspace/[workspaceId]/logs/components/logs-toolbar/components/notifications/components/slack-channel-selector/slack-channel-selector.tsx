@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Hash, Lock } from 'lucide-react'
 import { Combobox, type ComboboxOption } from '@/components/emcn'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('SlackChannelSelector')
 
@@ -104,6 +104,8 @@ export function SlackChannelSelector({
         disabled={disabled || channels.length === 0}
         isLoading={isLoading}
         error={fetchError}
+        searchable
+        searchPlaceholder='Search channels...'
       />
       {selectedChannel && !fetchError && (
         <p className='text-[12px] text-[var(--text-muted)]'>

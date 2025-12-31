@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildIntercomUrl, handleIntercomError } from './types'
 
@@ -8,6 +8,7 @@ export interface IntercomListCompaniesParams {
   accessToken: string
   per_page?: number
   page?: number
+  starting_after?: string
 }
 
 export interface IntercomListCompaniesResponse {
@@ -43,14 +44,20 @@ export const intercomListCompaniesTool: ToolConfig<
     per_page: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Number of results per page',
     },
     page: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Page number',
+    },
+    starting_after: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Cursor for pagination (preferred over page-based pagination)',
     },
   },
 
@@ -61,6 +68,7 @@ export const intercomListCompaniesTool: ToolConfig<
 
       if (params.per_page) queryParams.append('per_page', params.per_page.toString())
       if (params.page) queryParams.append('page', params.page.toString())
+      if (params.starting_after) queryParams.append('starting_after', params.starting_after)
 
       const queryString = queryParams.toString()
       return queryString ? `${url}?${queryString}` : url
@@ -97,16 +105,54 @@ export const intercomListCompaniesTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'List of companies',
-      properties: {
-        companies: { type: 'array', description: 'Array of company objects' },
-        pages: { type: 'object', description: 'Pagination information' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
+    companies: {
+      type: 'array',
+      description: 'Array of company objects',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Unique identifier for the company' },
+          type: { type: 'string', description: 'Object type (company)' },
+          app_id: { type: 'string', description: 'Intercom app ID' },
+          company_id: { type: 'string', description: 'Your unique identifier for the company' },
+          name: { type: 'string', description: 'Name of the company' },
+          website: { type: 'string', description: 'Company website URL' },
+          plan: { type: 'object', description: 'Company plan information' },
+          monthly_spend: { type: 'number', description: 'Monthly revenue from this company' },
+          session_count: { type: 'number', description: 'Number of sessions' },
+          user_count: { type: 'number', description: 'Number of users in the company' },
+          created_at: { type: 'number', description: 'Unix timestamp when company was created' },
+          updated_at: {
+            type: 'number',
+            description: 'Unix timestamp when company was last updated',
+          },
+          custom_attributes: {
+            type: 'object',
+            description: 'Custom attributes set on the company',
+          },
+          tags: { type: 'object', description: 'Tags associated with the company' },
+          segments: { type: 'object', description: 'Segments the company belongs to' },
+        },
       },
     },
+    pages: {
+      type: 'object',
+      description: 'Pagination information',
+      properties: {
+        type: { type: 'string', description: 'Pages type identifier' },
+        page: { type: 'number', description: 'Current page number' },
+        per_page: { type: 'number', description: 'Number of results per page' },
+        total_pages: { type: 'number', description: 'Total number of pages' },
+      },
+    },
+    metadata: {
+      type: 'object',
+      description: 'Operation metadata',
+      properties: {
+        operation: { type: 'string', description: 'The operation performed (list_companies)' },
+        total_count: { type: 'number', description: 'Total number of companies' },
+      },
+    },
+    success: { type: 'boolean', description: 'Operation success status' },
   },
 }

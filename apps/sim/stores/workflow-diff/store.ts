@@ -1,7 +1,7 @@
+import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { getClientTool } from '@/lib/copilot/tools/client/manager'
-import { createLogger } from '@/lib/logs/console/logger'
 import {
   type DiffAnalysis,
   stripWorkflowDiffMarkers,
@@ -499,7 +499,6 @@ export const useWorkflowDiffStore = create<WorkflowDiffState & WorkflowDiffActio
           await enqueueReplaceWorkflowState({
             workflowId: activeWorkflowId,
             state: baselineWorkflow,
-            immediate: true,
           })
 
           // Persist to database

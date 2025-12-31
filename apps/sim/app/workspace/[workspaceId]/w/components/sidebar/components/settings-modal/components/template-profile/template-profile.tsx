@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Camera, Globe, Linkedin, Mail } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Combobox, Input, Textarea } from '@/components/emcn'
 import { AgentIcon, xIcon as XIcon } from '@/components/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/lib/auth/auth-client'
-import { createLogger } from '@/lib/logs/console/logger'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import type { CreatorProfileDetails } from '@/app/_types/creator-profile'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/hooks/use-profile-picture-upload'
@@ -390,11 +390,26 @@ export function TemplateProfile() {
                   disabled={isUploadingProfilePicture}
                 />
               </div>
+              {/* Hidden decoy field to prevent browser autofill */}
+              <input
+                type='text'
+                name='fakeusernameremembered'
+                autoComplete='username'
+                style={{ position: 'absolute', left: '-9999px', opacity: 0, pointerEvents: 'none' }}
+                tabIndex={-1}
+                readOnly
+              />
               <Input
                 placeholder='Name'
                 value={formData.name}
                 onChange={(e) => updateField('name', e.target.value)}
                 className='h-9 flex-1'
+                name='profile_display_name'
+                autoComplete='off'
+                autoCorrect='off'
+                autoCapitalize='off'
+                data-lpignore='true'
+                data-form-type='other'
               />
             </div>
             {uploadError && <p className='text-[12px] text-[var(--text-error)]'>{uploadError}</p>}
@@ -490,8 +505,7 @@ export function TemplateProfile() {
         <Button
           onClick={handleSubmit}
           disabled={saveStatus === 'saving' || !isFormValid}
-          variant='primary'
-          className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
+          variant='tertiary'
         >
           {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
         </Button>

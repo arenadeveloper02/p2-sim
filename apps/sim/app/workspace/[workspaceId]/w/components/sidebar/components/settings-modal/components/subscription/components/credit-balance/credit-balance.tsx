@@ -1,17 +1,19 @@
 'use client'
 
 import { useState } from 'react'
+import { createLogger } from '@sim/logger'
 import {
   Button,
   Input,
+  Label,
   Modal,
+  ModalBody,
   ModalClose,
   ModalContent,
   ModalFooter,
   ModalHeader,
   ModalTrigger,
 } from '@/components/emcn'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('CreditBalance')
 
@@ -23,6 +25,9 @@ interface CreditBalanceProps {
   onPurchaseComplete?: () => void
 }
 
+/**
+ * Displays credit balance with optional purchase modal.
+ */
 export function CreditBalance({
   balance,
   canPurchase,
@@ -90,7 +95,6 @@ export function CreditBalance({
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open)
     if (open) {
-      // Generate new requestId when modal opens - same ID used for entire session
       setRequestId(crypto.randomUUID())
     } else {
       setAmount('')
@@ -102,75 +106,72 @@ export function CreditBalance({
 
   return (
     <div className='flex items-center justify-between'>
-      <div className='flex items-center gap-2'>
-        <span className='text-muted-foreground text-sm'>Credit Balance</span>
-        <span className='font-medium text-sm'>{isLoading ? '...' : `$${balance.toFixed(2)}`}</span>
+      <div className='flex items-center gap-[8px]'>
+        <Label>Credit Balance:</Label>
+        <span className='text-[12px] text-[var(--text-secondary)]'>
+          {isLoading ? '...' : `$${balance.toFixed(2)}`}
+        </span>
       </div>
 
       {canPurchase && (
         <Modal open={isOpen} onOpenChange={handleOpenChange}>
           <ModalTrigger asChild>
-            <Button variant='outline'>Add Credits</Button>
+            <Button variant='active' className='h-[32px] rounded-[6px] text-[12px]'>
+              Add Credits
+            </Button>
           </ModalTrigger>
-          <ModalContent>
+          <ModalContent size='sm'>
             <ModalHeader>Add Credits</ModalHeader>
-            <div className='px-4'>
-              <p className='text-[13px] text-[var(--text-secondary)]'>
-                Credits are used before overage charges. Min $10, max $1,000.
-              </p>
-            </div>
-
-            {success ? (
-              <div className='py-4 text-center'>
-                <p className='text-[14px] text-[var(--text-primary)]'>
+            <ModalBody className='!pb-[16px]'>
+              {success ? (
+                <p className='text-center text-[12px] text-[var(--text-primary)]'>
                   Credits added successfully!
                 </p>
-              </div>
-            ) : (
-              <div className='flex flex-col gap-3 py-2'>
-                <div className='flex flex-col gap-1'>
-                  <label
-                    htmlFor='credit-amount'
-                    className='text-[12px] text-[var(--text-secondary)]'
-                  >
-                    Amount (USD)
-                  </label>
-                  <div className='relative'>
-                    <span className='-translate-y-1/2 absolute top-1/2 left-3 text-[var(--text-secondary)]'>
-                      $
-                    </span>
-                    <Input
-                      id='credit-amount'
-                      type='text'
-                      inputMode='numeric'
-                      value={amount}
-                      onChange={(e) => handleAmountChange(e.target.value)}
-                      placeholder='50'
-                      className='pl-7'
-                      disabled={isPurchasing}
-                    />
+              ) : (
+                <div className='space-y-[12px]'>
+                  <div className='flex flex-col gap-[8px]'>
+                    <Label htmlFor='credit-amount'>Amount (USD)</Label>
+                    <div className='relative'>
+                      <span className='-translate-y-1/2 absolute top-1/2 left-[12px] text-[12px] text-[var(--text-muted)]'>
+                        $
+                      </span>
+                      <Input
+                        id='credit-amount'
+                        type='text'
+                        inputMode='numeric'
+                        value={amount}
+                        onChange={(e) => handleAmountChange(e.target.value)}
+                        placeholder='50'
+                        className='pl-[28px]'
+                        disabled={isPurchasing}
+                      />
+                    </div>
+                    {error && <span className='text-[12px] text-[var(--text-error)]'>{error}</span>}
                   </div>
-                  {error && <span className='text-[11px] text-red-500'>{error}</span>}
-                </div>
 
-                <div className='rounded-[4px] bg-[var(--surface-5)] p-2'>
-                  <p className='text-[11px] text-[var(--text-tertiary)]'>
-                    Credits are non-refundable and don't expire. They'll be applied automatically to
-                    your {entityType === 'organization' ? 'team' : ''} usage.
-                  </p>
+                  <div className='rounded-[6px] bg-[var(--surface-4)] p-[12px]'>
+                    <p className='text-[12px] text-[var(--text-secondary)]'>
+                      Credits are used before overage charges. Min: $10, Max: $1,000.
+                    </p>
+                  </div>
+                  <div className='rounded-[6px] bg-[var(--surface-4)] p-[12px]'>
+                    <p className='text-[12px] text-[var(--text-secondary)]'>
+                      Credits are non-refundable and don't expire. They'll be applied automatically
+                      to your {entityType === 'organization' ? 'team' : ''} usage.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-
+              )}
+            </ModalBody>
             {!success && (
               <ModalFooter>
                 <ModalClose asChild>
-                  <Button variant='ghost' disabled={isPurchasing}>
+                  <Button variant='default' disabled={isPurchasing}>
                     Cancel
                   </Button>
                 </ModalClose>
                 <Button
-                  variant='primary'
+                  variant='tertiary'
                   onClick={handlePurchase}
                   disabled={isPurchasing || !amount}
                 >

@@ -1,13 +1,20 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { ArrowDown, ArrowLeft, Database, Layout, Plus, Search, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button, FolderPlus, Library, Tooltip } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
+import {
+  createWorkflowEvent,
+  openKnowledgeBasePageEvent,
+  openLogsPageEvent,
+  openSettingsPageEvent,
+  openTemplatesPageEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -32,6 +39,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useFolderStore } from '@/stores/folders/store'
 import { useSearchModalStore } from '@/stores/search-modal/store'
+import { useSettingsModalStore } from '@/stores/settings-modal/store'
 import { MIN_SIDEBAR_WIDTH, useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
@@ -88,7 +96,11 @@ export function Sidebar() {
 
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false)
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const {
+    isOpen: isSettingsModalOpen,
+    openModal: openSettingsModal,
+    closeModal: closeSettingsModal,
+  } = useSettingsModalStore()
 
   /** Listens for external events to open help modal */
   useEffect(() => {
@@ -219,7 +231,7 @@ export function Sidebar() {
         id: 'settings',
         label: 'Settings',
         icon: Settings,
-        onClick: () => setIsSettingsModalOpen(true),
+        onClick: () => openSettingsModal(),
       },
     ],
     [workspaceId]
@@ -253,6 +265,10 @@ export function Sidebar() {
   const handleCreateWorkflow = useCallback(async () => {
     const workflowId = await createWorkflow()
     if (workflowId) {
+      createWorkflowEvent({
+        'Workspace Name': activeWorkspace?.name || '',
+        'Workspace ID': activeWorkspace?.id || '',
+      })
       window.dispatchEvent(
         new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: workflowId } })
       )
@@ -449,7 +465,7 @@ export function Sidebar() {
     <>
       {isCollapsed ? (
         /* Floating collapsed header */
-        <div className='fixed top-[14px] left-[10px] z-10 max-w-[232px] rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-[12px] py-[8px]'>
+        <div className='fixed top-[14px] left-[10px] z-10 max-w-[232px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-1)] px-[12px] py-[6px]'>
           <WorkspaceHeader
             activeWorkspace={activeWorkspace}
             workspaceId={workspaceId}
@@ -480,10 +496,10 @@ export function Sidebar() {
             aria-label='Workspace sidebar'
             onClick={handleSidebarClick}
           >
-            <div className='flex h-full flex-col border-[var(--border)] border-r pt-[14px]'>
+            <div className='flex h-full flex-col border-[var(--border)] border-r pt-[12px]'>
               {/* Header */}
               <div>
-                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-gray-500 text-sm hover:cursor-pointer'>
+                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-sm hover:cursor-pointer'>
                   <span
                     onClick={() => {
                       const hostname = window.location.hostname
@@ -491,7 +507,7 @@ export function Sidebar() {
 
                       window.location.href = redirectUrl
                     }}
-                    className='flex items-center justify-start gap-2 text-primary'
+                    className='flex items-center justify-start gap-2'
                   >
                     <ArrowLeft className='h-5 w-5' />
                     <span> Back </span>
@@ -523,7 +539,7 @@ export function Sidebar() {
 
               {/* Search */}
               <div
-                className='mx-[8px] mt-[12px] flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[8px] border border-[var(--border-strong)] bg-transparent px-[8px] py-[7px] dark:border-0 dark:bg-[var(--surface-5)]'
+                className='mx-[8px] mt-[10px] flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[8px] border border-[var(--border)] bg-transparent px-[8px] py-[6px] transition-colors duration-100 hover:border-[var(--border-1)] hover:bg-[var(--surface-6)] dark:bg-[var(--surface-4)] dark:hover:border-[var(--border-1)] dark:hover:bg-[var(--surface-5)]'
                 onClick={() => setIsSearchModalOpen(true)}
               >
                 <div className='flex items-center gap-[6px]'>
@@ -618,8 +634,10 @@ export function Sidebar() {
                   const Icon = item.icon
                   const active = item.href ? pathname?.startsWith(item.href) : false
                   const baseClasses =
-                    'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px] hover:bg-[var(--surface-9)]'
-                  const activeClasses = active ? 'bg-[var(--surface-9)]' : ''
+                    'group flex h-[26px] items-center gap-[8px] rounded-[8px] px-[6px] text-[14px] hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)]'
+                  const activeClasses = active
+                    ? 'bg-[var(--surface-6)] dark:bg-[var(--surface-5)]'
+                    : ''
                   const textClasses = active
                     ? 'text-[var(--text-primary)]'
                     : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'
@@ -640,7 +658,12 @@ export function Sidebar() {
                         type='button'
                         data-item-id={item.id}
                         className={`${baseClasses} ${activeClasses}`}
-                        onClick={item.onClick}
+                        onClick={() => {
+                          item?.onClick?.()
+                          if (item.id === 'settings') {
+                            openSettingsPageEvent({})
+                          }
+                        }}
                       >
                         {content}
                       </button>
@@ -653,6 +676,17 @@ export function Sidebar() {
                       href={item.href!}
                       data-item-id={item.id}
                       className={`${baseClasses} ${activeClasses}`}
+                      onClick={() => {
+                        if (item.id === 'logs') {
+                          openLogsPageEvent({})
+                        }
+                        if (item.id === 'templates') {
+                          openTemplatesPageEvent({})
+                        }
+                        if (item.id === 'knowledge-base') {
+                          openKnowledgeBasePageEvent({})
+                        }
+                      }}
                     >
                       {content}
                     </Link>
@@ -686,7 +720,10 @@ export function Sidebar() {
 
       {/* Footer Navigation Modals */}
       <HelpModal open={isHelpModalOpen} onOpenChange={setIsHelpModalOpen} />
-      <SettingsModal open={isSettingsModalOpen} onOpenChange={setIsSettingsModalOpen} />
+      <SettingsModal
+        open={isSettingsModalOpen}
+        onOpenChange={(open) => (open ? openSettingsModal() : closeSettingsModal())}
+      />
 
       {/* Hidden file input for workspace import */}
       <input

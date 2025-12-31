@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildIntercomUrl, handleIntercomError } from './types'
 
@@ -6,13 +6,15 @@ const logger = createLogger('IntercomCreateMessage')
 
 export interface IntercomCreateMessageParams {
   accessToken: string
-  message_type: string
+  message_type: 'inapp' | 'email'
+  template: 'plain' | 'personal'
   subject?: string
   body: string
   from_type: string
   from_id: string
   to_type: string
   to_id: string
+  created_at?: number
 }
 
 export interface IntercomCreateMessageResponse {
@@ -46,44 +48,58 @@ export const intercomCreateMessageTool: ToolConfig<
     message_type: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'Message type: "inapp" or "email"',
+      visibility: 'user-or-llm',
+      description: 'Message type: "inapp" for in-app messages or "email" for email messages',
+    },
+    template: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description:
+        'Message template style: "plain" for plain text or "personal" for personalized style',
     },
     subject: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'The subject of the message (for email type)',
     },
     body: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'The body of the message',
     },
     from_type: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Sender type: "admin"',
     },
     from_id: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'The ID of the admin sending the message',
     },
     to_type: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Recipient type: "contact"',
     },
     to_id: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'The ID of the contact receiving the message',
+    },
+    created_at: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Unix timestamp for when the message was created. If not provided, current time is used.',
     },
   },
 
@@ -96,8 +112,12 @@ export const intercomCreateMessageTool: ToolConfig<
       'Intercom-Version': '2.14',
     }),
     body: (params) => {
+      // Map "inapp" to "in_app" as required by Intercom API
+      const apiMessageType = params.message_type === 'inapp' ? 'in_app' : params.message_type
+
       const message: any = {
-        message_type: params.message_type,
+        message_type: apiMessageType,
+        template: params.template,
         body: params.body,
         from: {
           type: params.from_type,
@@ -112,6 +132,8 @@ export const intercomCreateMessageTool: ToolConfig<
       if (params.subject && params.message_type === 'email') {
         message.subject = params.subject
       }
+
+      if (params.created_at) message.created_at = params.created_at
 
       return message
     },
@@ -139,15 +161,27 @@ export const intercomCreateMessageTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
+    message: {
       type: 'object',
-      description: 'Created message data',
+      description: 'Created message object',
       properties: {
-        message: { type: 'object', description: 'Created message object' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
+        id: { type: 'string', description: 'Unique identifier for the message' },
+        type: { type: 'string', description: 'Object type (message)' },
+        created_at: { type: 'number', description: 'Unix timestamp when message was created' },
+        body: { type: 'string', description: 'Body of the message' },
+        message_type: { type: 'string', description: 'Type of the message (in_app or email)' },
+        conversation_id: { type: 'string', description: 'ID of the conversation created' },
+        owner: { type: 'object', description: 'Owner of the message' },
       },
     },
+    metadata: {
+      type: 'object',
+      description: 'Operation metadata',
+      properties: {
+        operation: { type: 'string', description: 'The operation performed (create_message)' },
+        messageId: { type: 'string', description: 'ID of the created message' },
+      },
+    },
+    success: { type: 'boolean', description: 'Operation success status' },
   },
 }
