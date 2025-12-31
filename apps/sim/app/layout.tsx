@@ -42,6 +42,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
 
+        {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
+        <script
+          id='theme-initialization'
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var theme = localStorage.getItem('sim-theme');
+                  // Convert 'system' to 'light' and set default to 'light'
+                  if (!theme || theme === 'system') {
+                    localStorage.setItem('sim-theme', 'light');
+                    theme = 'light';
+                  }
+                  // Apply theme class immediately to prevent flash
+                  document.documentElement.classList.remove('light', 'dark');
+                  if (theme === 'light' || theme === 'dark') {
+                    document.documentElement.classList.add(theme);
+                  } else {
+                    document.documentElement.classList.add('light');
+                  }
+                } catch (e) {
+                  // Fallback to light theme
+                  document.documentElement.classList.remove('light', 'dark');
+                  document.documentElement.classList.add('light');
+                }
+              })();
+            `,
+          }}
+        />
+
         {/* Workspace layout dimensions: set CSS vars before hydration to avoid layout jump */}
         <script
           id='workspace-layout-dimensions'

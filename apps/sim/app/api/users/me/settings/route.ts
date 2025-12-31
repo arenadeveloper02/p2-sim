@@ -11,7 +11,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 const logger = createLogger('UserSettingsAPI')
 
 const SettingsSchema = z.object({
-  theme: z.enum(['system', 'light', 'dark']).optional(),
+  theme: z.enum(['light', 'dark']).optional(),
   autoConnect: z.boolean().optional(),
   telemetryEnabled: z.boolean().optional(),
   emailPreferences: z
@@ -61,10 +61,13 @@ export async function GET() {
 
     const userSettings = result[0]
 
+    // Convert 'system' theme to 'light' (remove system theme support)
+    const theme = userSettings.theme === 'system' || !userSettings.theme ? 'light' : userSettings.theme
+
     return NextResponse.json(
       {
         data: {
-          theme: userSettings.theme,
+          theme,
           autoConnect: userSettings.autoConnect,
           telemetryEnabled: userSettings.telemetryEnabled,
           emailPreferences: userSettings.emailPreferences ?? {},

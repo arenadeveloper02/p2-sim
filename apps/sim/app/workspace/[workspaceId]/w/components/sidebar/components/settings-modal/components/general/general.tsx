@@ -286,7 +286,7 @@ export function General({ onOpenChange }: GeneralProps) {
   }
 
   const handleThemeChange = async (value: string) => {
-    await updateSetting.mutateAsync({ key: 'theme', value: value as 'system' | 'light' | 'dark' })
+    await updateSetting.mutateAsync({ key: 'theme', value: value as 'light' | 'dark' })
   }
 
   const handleAutoConnectChange = async (checked: boolean) => {
@@ -464,11 +464,10 @@ export function General({ onOpenChange }: GeneralProps) {
             size='sm'
             align='end'
             dropdownWidth={140}
-            value={settings?.theme}
+            value={settings?.theme || 'light'}
             onChange={handleThemeChange}
             placeholder='Select theme'
             options={[
-              { label: 'System', value: 'system' },
               { label: 'Light', value: 'light' },
               { label: 'Dark', value: 'dark' },
             ]}

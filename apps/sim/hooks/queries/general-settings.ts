@@ -20,7 +20,7 @@ export interface GeneralSettings {
   autoConnect: boolean
   showTrainingControls: boolean
   superUserModeEnabled: boolean
-  theme: 'light' | 'dark' | 'system'
+  theme: 'light' | 'dark'
   telemetryEnabled: boolean
   billingUsageNotificationsEnabled: boolean
   errorNotificationsEnabled: boolean
@@ -39,11 +39,14 @@ async function fetchGeneralSettings(): Promise<GeneralSettings> {
 
   const { data } = await response.json()
 
+  // Convert 'system' or null/undefined to 'light' (remove system theme support)
+  const theme = data.theme === 'system' || !data.theme ? 'light' : data.theme
+
   return {
     autoConnect: data.autoConnect ?? true,
     showTrainingControls: data.showTrainingControls ?? false,
     superUserModeEnabled: data.superUserModeEnabled ?? true,
-    theme: data.theme || 'light',
+    theme,
     telemetryEnabled: data.telemetryEnabled ?? true,
     billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
     errorNotificationsEnabled: data.errorNotificationsEnabled ?? true,

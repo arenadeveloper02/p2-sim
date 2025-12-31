@@ -316,11 +316,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           throw new Error('Failed to fetch general settings')
         }
         const { data } = await response.json()
+        // Convert 'system' theme to 'light' (remove system theme support)
+        const theme = data.theme === 'system' || !data.theme ? 'light' : data.theme
+
         return {
           autoConnect: data.autoConnect ?? true,
           showTrainingControls: data.showTrainingControls ?? false,
           superUserModeEnabled: data.superUserModeEnabled ?? true,
-          theme: data.theme || 'light',
+          theme,
           telemetryEnabled: data.telemetryEnabled ?? true,
           billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
         }

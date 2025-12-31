@@ -2,7 +2,7 @@ export interface General {
   isAutoConnectEnabled: boolean
   showTrainingControls: boolean
   superUserModeEnabled: boolean
-  theme: 'system' | 'light' | 'dark'
+  theme: 'light' | 'dark'
   telemetryEnabled: boolean
   isBillingUsageNotificationsEnabled: boolean
   isErrorNotificationsEnabled: boolean
@@ -15,7 +15,7 @@ export interface GeneralStore extends General {
 }
 
 export type UserSettings = {
-  theme: 'system' | 'light' | 'dark'
+  theme: 'light' | 'dark'
   autoConnect: boolean
   showTrainingControls: boolean
   superUserModeEnabled: boolean
