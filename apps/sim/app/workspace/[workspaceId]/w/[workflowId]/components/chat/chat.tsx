@@ -505,16 +505,24 @@ export function Chat() {
   }, [])
 
   // React to execution cancellation from run button
+  // Only cancel if execution was explicitly cancelled, not just because isExecuting became false
+  // (streaming might still be in progress even if execution state changed)
   useEffect(() => {
-    if (!isExecuting && isStreaming) {
-      const lastMessage = workflowMessages[workflowMessages.length - 1]
-      if (lastMessage?.isStreaming) {
-        streamReaderRef.current?.cancel()
-        streamReaderRef.current = null
-        finalizeMessageStream(lastMessage.id)
-      }
+    // Only cancel if execution was explicitly stopped AND we have a streaming message
+    // Don't cancel just because isExecuting became false - the stream might still be active
+    const lastMessage = workflowMessages[workflowMessages.length - 1]
+    if (lastMessage?.isStreaming && streamReaderRef.current) {
+      // Check if this is an explicit cancellation (user clicked stop)
+      // We'll rely on handleStopStreaming for explicit cancellations
+      // This effect should only handle cleanup when execution truly ends
+      logger.debug('Execution state changed during streaming', {
+        isExecuting,
+        isStreaming,
+        hasStreamReader: !!streamReaderRef.current,
+        messageId: lastMessage.id,
+      })
     }
-  }, [isExecuting, isStreaming, workflowMessages, finalizeMessageStream])
+  }, [isExecuting, isStreaming, workflowMessages])
 
   const handleStopStreaming = useCallback(() => {
     streamReaderRef.current?.cancel()
@@ -535,56 +543,128 @@ export function Chat() {
       const decoder = new TextDecoder()
       let accumulatedContent = ''
       let buffer = ''
+      let receivedFinalEvent = false
+      let finalEventData: ExecutionResult | null = null
+      let chunkCount = 0
 
       try {
         while (true) {
           const { done, value } = await reader.read()
+
           if (done) {
+            // Process any remaining buffer before finalizing
+            if (buffer.trim()) {
+              // Try to process remaining buffer - might contain partial or complete messages
+              const lines = buffer.split('\n\n').filter((line) => line.trim())
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) {
+                  // Try to process as data even without prefix
+                  const trimmed = line.trim()
+                  if (trimmed && trimmed !== '[DONE]') {
+                    try {
+                      const json = JSON.parse(trimmed)
+                      const { event, data: eventData, chunk: contentChunk } = json
+                      if (event === 'final' && eventData) {
+                        receivedFinalEvent = true
+                        finalEventData = eventData as ExecutionResult
+                      } else if (contentChunk && typeof contentChunk === 'string') {
+                        accumulatedContent += contentChunk
+                        appendMessageContent(responseMessageId, contentChunk)
+                        chunkCount++
+                      }
+                    } catch (e) {
+                      // Ignore parse errors
+                    }
+                  }
+                  continue
+                }
+
+                const data = line.substring(6).trim()
+                if (data === '[DONE]' || !data) continue
+
+                try {
+                  const json = JSON.parse(data)
+                  const { event, data: eventData, chunk: contentChunk } = json
+
+                  if (event === 'final' && eventData) {
+                    receivedFinalEvent = true
+                    finalEventData = eventData as ExecutionResult
+                  } else if (contentChunk && typeof contentChunk === 'string') {
+                    accumulatedContent += contentChunk
+                    appendMessageContent(responseMessageId, contentChunk)
+                    chunkCount++
+                  }
+                } catch (e) {
+                  // Ignore parse errors for remaining buffer
+                }
+              }
+            }
+
+            // Handle final event if we received it
+            if (receivedFinalEvent && finalEventData) {
+              const result = finalEventData
+              if ('success' in result && !result.success) {
+                const errorMessage = result.error || 'Workflow execution failed'
+                appendMessageContent(
+                  responseMessageId,
+                  `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
+                )
+              }
+            }
+
+            logger.debug('Finalizing stream', {
+              messageId: responseMessageId,
+              finalAccumulatedLength: accumulatedContent.length,
+              totalChunks: chunkCount,
+            })
+
             finalizeMessageStream(responseMessageId)
             break
           }
 
           const chunk = decoder.decode(value, { stream: true })
+          if (!chunk) continue
+
           buffer += chunk
 
           // Process only complete SSE messages; keep any partial trailing data in buffer
           const separatorIndex = buffer.lastIndexOf('\n\n')
           if (separatorIndex === -1) {
+            // No complete message yet, continue reading
             continue
           }
 
           const processable = buffer.slice(0, separatorIndex)
           buffer = buffer.slice(separatorIndex + 2)
 
-          const lines = processable.split('\n\n')
+          // Split by double newlines to get individual SSE messages
+          const lines = processable.split('\n\n').filter((line) => line.trim())
 
           for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
+            if (!line.startsWith('data: ')) {
+              continue
+            }
 
-            const data = line.substring(6)
-            if (data === '[DONE]') continue
+            const data = line.substring(6).trim()
+            if (data === '[DONE]' || !data) continue
 
             try {
               const json = JSON.parse(data)
-              const { event, data: eventData, chunk: contentChunk } = json
+              const { event, data: eventData, chunk: contentChunk, blockId } = json
 
+              // Handle final event - mark it but continue processing chunks
               if (event === 'final' && eventData) {
-                const result = eventData as ExecutionResult
+                receivedFinalEvent = true
+                finalEventData = eventData as ExecutionResult
+                continue
+              }
 
-                if ('success' in result && !result.success) {
-                  const errorMessage = result.error || 'Workflow execution failed'
-                  appendMessageContent(
-                    responseMessageId,
-                    `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
-                  )
-                  finalizeMessageStream(responseMessageId)
-                  return
-                }
-
-                finalizeMessageStream(responseMessageId)
-              } else if (contentChunk) {
+              // Process content chunks
+              if (contentChunk && typeof contentChunk === 'string') {
                 accumulatedContent += contentChunk
+                chunkCount++
                 appendMessageContent(responseMessageId, contentChunk)
+                // Small delay to prevent UI blocking
                 await new Promise((resolve) => setTimeout(resolve, 5))
               }
             } catch (e) {
@@ -601,6 +681,11 @@ export function Chat() {
         // Only clear ref if it's still our reader (prevents clobbering a new stream)
         if (streamReaderRef.current === reader) {
           streamReaderRef.current = null
+        }
+        try {
+          reader.releaseLock()
+        } catch (e) {
+          // Reader might already be released
         }
         focusInput(100)
       }
