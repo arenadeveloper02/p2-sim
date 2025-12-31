@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('ChatForm')
 

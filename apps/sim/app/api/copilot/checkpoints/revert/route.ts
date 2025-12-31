@@ -1,5 +1,6 @@
 import { db } from '@sim/db'
 import { workflowCheckpoints, workflow as workflowTable } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -10,9 +11,8 @@ import {
   createRequestTracker,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request-helpers'
-import { validateUUID } from '@/lib/core/security/input-validation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
+import { isUuidV4 } from '@/executor/constants'
 
 const logger = createLogger('CheckpointRevertAPI')
 
@@ -87,9 +87,8 @@ export async function POST(request: NextRequest) {
       isDeployed: cleanedState.isDeployed,
     })
 
-    const workflowIdValidation = validateUUID(checkpoint.workflowId, 'workflowId')
-    if (!workflowIdValidation.isValid) {
-      logger.error(`[${tracker.requestId}] Invalid workflow ID: ${workflowIdValidation.error}`)
+    if (!isUuidV4(checkpoint.workflowId)) {
+      logger.error(`[${tracker.requestId}] Invalid workflow ID format`)
       return NextResponse.json({ error: 'Invalid workflow ID format' }, { status: 400 })
     }
 

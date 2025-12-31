@@ -1,7 +1,8 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { env } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
+import { isSensitiveKey, REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { ensureZodObject, normalizeUrl } from '@/app/api/tools/stagehand/utils'
 
 const logger = createLogger('StagehandAgentAPI')
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest) {
 
       if (variablesObject && Object.keys(variablesObject).length > 0) {
         const safeVarKeys = Object.keys(variablesObject).map((key) => {
-          return key.toLowerCase().includes('password') ? `${key}: [REDACTED]` : key
+          return isSensitiveKey(key) ? `${key}: ${REDACTED_MARKER}` : key
         })
         logger.info('Variables available for task', { variables: safeVarKeys })
       }

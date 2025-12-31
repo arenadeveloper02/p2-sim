@@ -12,7 +12,6 @@ import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
-import { ZoomPrevention } from '@/app/_shell/zoom-prevention'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {
@@ -40,6 +39,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type='application/ld+json'
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(structuredData),
+          }}
+        />
+
+        {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
+        <script
+          id='theme-initialization'
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var theme = localStorage.getItem('sim-theme');
+                  // Convert 'system' to 'light' and set default to 'light'
+                  if (!theme || theme === 'system') {
+                    localStorage.setItem('sim-theme', 'light');
+                    theme = 'light';
+                  }
+                  // Apply theme class immediately to prevent flash
+                  document.documentElement.classList.remove('light', 'dark');
+                  if (theme === 'light' || theme === 'dark') {
+                    document.documentElement.classList.add(theme);
+                  } else {
+                    document.documentElement.classList.add('light');
+                  }
+                } catch (e) {
+                  // Fallback to light theme
+                  document.documentElement.classList.remove('light', 'dark');
+                  document.documentElement.classList.add('light');
+                }
+              })();
+            `,
           }}
         />
 
@@ -86,7 +115,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     var panelWidth = panelState && panelState.panelWidth;
                     var maxPanelWidth = window.innerWidth * 0.4;
 
-                    if (panelWidth >= 244 && panelWidth <= maxPanelWidth) {
+                    if (panelWidth >= 260 && panelWidth <= maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
                     } else if (panelWidth > maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', maxPanelWidth + 'px');
@@ -192,10 +221,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <QueryProvider>
               <SessionProvider>
                 <AutoLoginProvider>
-                  <BrandedLayout>
-                    <ZoomPrevention />
-                    {children}
-                  </BrandedLayout>
+                  <BrandedLayout>{children}</BrandedLayout>
                 </AutoLoginProvider>
               </SessionProvider>
             </QueryProvider>

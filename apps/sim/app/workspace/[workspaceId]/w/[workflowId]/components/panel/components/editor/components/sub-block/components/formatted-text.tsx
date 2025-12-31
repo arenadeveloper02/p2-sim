@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { splitReferenceSegment } from '@/lib/workflows/sanitization/references'
 import { REFERENCE } from '@/executor/constants'
 import { createCombinedPattern } from '@/executor/utils/reference-validation'
-import { normalizeBlockName } from '@/stores/workflows/utils'
+import { normalizeName } from '@/stores/workflows/utils'
 
 export interface HighlightContext {
   accessiblePrefixes?: Set<string>
@@ -31,7 +31,7 @@ export function formatDisplayText(text: string, context?: HighlightContext): Rea
 
     const inner = reference.slice(1, -1)
     const [prefix] = inner.split('.')
-    const normalizedPrefix = normalizeBlockName(prefix)
+    const normalizedPrefix = normalizeName(prefix)
 
     if (SYSTEM_PREFIXES.has(normalizedPrefix)) {
       return true
@@ -67,7 +67,7 @@ export function formatDisplayText(text: string, context?: HighlightContext): Rea
 
     if (matchText.startsWith(REFERENCE.ENV_VAR_START)) {
       nodes.push(
-        <span key={key++} className='text-[#34B5FF]'>
+        <span key={key++} className='text-[var(--brand-secondary)]'>
           {matchText}
         </span>
       )
@@ -77,7 +77,7 @@ export function formatDisplayText(text: string, context?: HighlightContext): Rea
       if (split && shouldHighlightReference(split.reference)) {
         pushPlainText(split.leading)
         nodes.push(
-          <span key={key++} className='text-[#34B5FF]'>
+          <span key={key++} className='text-[var(--brand-secondary)]'>
             {split.reference}
           </span>
         )

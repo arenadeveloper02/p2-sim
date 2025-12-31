@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
-import { createLogger } from '@/lib/logs/console/logger'
 import type { ExtractParams, ExtractResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 

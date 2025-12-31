@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Plus, Search, Share2, Undo2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -15,7 +16,7 @@ import {
 } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
 import { Input, Skeleton } from '@/components/ui'
-import { createLogger } from '@/lib/logs/console/logger'
+import { isValidEnvVarName } from '@/executor/constants'
 import {
   usePersonalEnvironment,
   useRemoveWorkspaceEnvironment,
@@ -28,9 +29,6 @@ import {
 const logger = createLogger('EnvironmentVariables')
 
 const GRID_COLS = 'grid grid-cols-[minmax(0,1fr)_8px_minmax(0,1fr)_auto] items-center'
-const ENV_VAR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-const PRIMARY_BUTTON_STYLES =
-  '!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
 
 const generateRowId = (() => {
   let counter = 0
@@ -50,6 +48,17 @@ interface UIEnvironmentVariable {
   key: string
   value: string
   id?: number
+}
+
+/**
+ * Validates an environment variable key.
+ * Returns an error message if invalid, undefined if valid.
+ */
+function validateEnvVarKey(key: string): string | undefined {
+  if (!key) return undefined
+  if (key.includes(' ')) return 'Spaces are not allowed'
+  if (!isValidEnvVarName(key)) return 'Only letters, numbers, and underscores allowed'
+  return undefined
 }
 
 interface EnvironmentVariablesProps {
@@ -222,6 +231,10 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
     return envVars.some((envVar) => !!envVar.key && Object.hasOwn(workspaceVars, envVar.key))
   }, [envVars, workspaceVars])
 
+  const hasInvalidKeys = useMemo(() => {
+    return envVars.some((envVar) => !!envVar.key && validateEnvVarKey(envVar.key))
+  }, [envVars])
+
   useEffect(() => {
     hasChangesRef.current = hasChanges
   }, [hasChanges])
@@ -362,7 +375,7 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
     if (equalIndex === -1 || equalIndex === 0) return null
 
     const potentialKey = withoutExport.substring(0, equalIndex).trim()
-    if (!ENV_VAR_PATTERN.test(potentialKey)) return null
+    if (!isValidEnvVarName(potentialKey)) return null
 
     let value = withoutExport.substring(equalIndex + 1)
 
@@ -551,6 +564,7 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
   const renderEnvVarRow = useCallback(
     (envVar: UIEnvironmentVariable, originalIndex: number) => {
       const isConflict = !!envVar.key && Object.hasOwn(workspaceVars, envVar.key)
+      const keyError = validateEnvVarKey(envVar.key)
       const maskedValueStyle =
         focusedValueIndex !== originalIndex && !isConflict
           ? ({ WebkitTextSecurity: 'disc' } as React.CSSProperties)
@@ -571,7 +585,7 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
               spellCheck='false'
               readOnly
               onFocus={(e) => e.target.removeAttribute('readOnly')}
-              className={`h-9 ${isConflict ? conflictClassName : ''}`}
+              className={`h-9 ${isConflict ? conflictClassName : ''} ${keyError ? 'border-[var(--text-error)]' : ''}`}
             />
             <div />
             <EmcnInput
@@ -627,7 +641,12 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
               </Tooltip.Root>
             </div>
           </div>
-          {isConflict && (
+          {keyError && (
+            <div className='col-span-3 mt-[4px] text-[12px] text-[var(--text-error)] leading-tight'>
+              {keyError}
+            </div>
+          )}
+          {isConflict && !keyError && (
             <div className='col-span-3 mt-[4px] text-[12px] text-[var(--text-error)] leading-tight'>
               Workspace variable with the same name overrides this. Rename your personal key to use
               it.
@@ -676,7 +695,7 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
           />
         </div>
         <div className='flex items-center gap-[8px]'>
-          <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border bg-[var(--surface-6)] px-[8px] py-[5px]'>
+          <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border border-[var(--border)] bg-transparent px-[8px] py-[5px] transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover:border-[var(--border-1)] dark:hover:bg-[var(--surface-5)]'>
             <Search
               className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
               strokeWidth={2}
@@ -694,12 +713,7 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
               className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
             />
           </div>
-          <Button
-            onClick={addEnvVar}
-            variant='primary'
-            disabled={isLoading}
-            className={PRIMARY_BUTTON_STYLES}
-          >
+          <Button onClick={addEnvVar} variant='tertiary' disabled={isLoading}>
             <Plus className='mr-[6px] h-[13px] w-[13px]' />
             Add
           </Button>
@@ -707,14 +721,17 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
             <Tooltip.Trigger asChild>
               <Button
                 onClick={handleSave}
-                disabled={isLoading || !hasChanges || hasConflicts}
-                variant='primary'
-                className={`${PRIMARY_BUTTON_STYLES} ${hasConflicts ? 'cursor-not-allowed opacity-50' : ''}`}
+                disabled={isLoading || !hasChanges || hasConflicts || hasInvalidKeys}
+                variant='tertiary'
+                className={`${hasConflicts || hasInvalidKeys ? 'cursor-not-allowed opacity-50' : ''}`}
               >
                 Save
               </Button>
             </Tooltip.Trigger>
             {hasConflicts && <Tooltip.Content>Resolve all conflicts before saving</Tooltip.Content>}
+            {hasInvalidKeys && !hasConflicts && (
+              <Tooltip.Content>Fix invalid variable names before saving</Tooltip.Content>
+            )}
           </Tooltip.Root>
         </div>
 
@@ -808,8 +825,8 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
           <ModalHeader>Unsaved Changes</ModalHeader>
           <ModalBody>
             <p className='text-[12px] text-[var(--text-tertiary)]'>
-              {hasConflicts
-                ? 'You have unsaved changes, but conflicts must be resolved before saving. You can discard your changes to close the modal.'
+              {hasConflicts || hasInvalidKeys
+                ? `You have unsaved changes, but ${hasConflicts ? 'conflicts must be resolved' : 'invalid variable names must be fixed'} before saving. You can discard your changes to close the modal.`
                 : 'You have unsaved changes. Do you want to save them before closing?'}
             </p>
           </ModalBody>
@@ -817,21 +834,25 @@ export function EnvironmentVariables({ registerBeforeLeaveHandler }: Environment
             <Button variant='default' onClick={handleCancel}>
               Discard Changes
             </Button>
-            {hasConflicts ? (
+            {hasConflicts || hasInvalidKeys ? (
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <Button
                     disabled={true}
-                    variant='primary'
+                    variant='tertiary'
                     className='cursor-not-allowed opacity-50'
                   >
                     Save Changes
                   </Button>
                 </Tooltip.Trigger>
-                <Tooltip.Content>Resolve all conflicts before saving</Tooltip.Content>
+                <Tooltip.Content>
+                  {hasConflicts
+                    ? 'Resolve all conflicts before saving'
+                    : 'Fix invalid variable names before saving'}
+                </Tooltip.Content>
               </Tooltip.Root>
             ) : (
-              <Button onClick={handleSave} variant='primary' className={PRIMARY_BUTTON_STYLES}>
+              <Button onClick={handleSave} variant='tertiary'>
                 Save Changes
               </Button>
             )}

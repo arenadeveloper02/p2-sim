@@ -1,5 +1,6 @@
 'use client'
 
+import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { type CopilotChat, sendStreamingMessage } from '@/lib/copilot/api'
@@ -8,6 +9,8 @@ import type {
   ClientToolDisplay,
 } from '@/lib/copilot/tools/client/base-tool'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/base-tool'
+import { GetBlockConfigClientTool } from '@/lib/copilot/tools/client/blocks/get-block-config'
+import { GetBlockOptionsClientTool } from '@/lib/copilot/tools/client/blocks/get-block-options'
 import { GetBlocksAndToolsClientTool } from '@/lib/copilot/tools/client/blocks/get-blocks-and-tools'
 import { GetBlocksMetadataClientTool } from '@/lib/copilot/tools/client/blocks/get-blocks-metadata'
 import { GetTriggerBlocksClientTool } from '@/lib/copilot/tools/client/blocks/get-trigger-blocks'
@@ -32,12 +35,15 @@ import { SearchDocumentationClientTool } from '@/lib/copilot/tools/client/other/
 import { SearchErrorsClientTool } from '@/lib/copilot/tools/client/other/search-errors'
 import { SearchOnlineClientTool } from '@/lib/copilot/tools/client/other/search-online'
 import { SearchPatternsClientTool } from '@/lib/copilot/tools/client/other/search-patterns'
+import { SleepClientTool } from '@/lib/copilot/tools/client/other/sleep'
 import { createExecutionContext, getTool } from '@/lib/copilot/tools/client/registry'
 import { GetCredentialsClientTool } from '@/lib/copilot/tools/client/user/get-credentials'
 import { SetEnvironmentVariablesClientTool } from '@/lib/copilot/tools/client/user/set-environment-variables'
 import { CheckDeploymentStatusClientTool } from '@/lib/copilot/tools/client/workflow/check-deployment-status'
 import { DeployWorkflowClientTool } from '@/lib/copilot/tools/client/workflow/deploy-workflow'
 import { EditWorkflowClientTool } from '@/lib/copilot/tools/client/workflow/edit-workflow'
+import { GetBlockOutputsClientTool } from '@/lib/copilot/tools/client/workflow/get-block-outputs'
+import { GetBlockUpstreamReferencesClientTool } from '@/lib/copilot/tools/client/workflow/get-block-upstream-references'
 import { GetUserWorkflowClientTool } from '@/lib/copilot/tools/client/workflow/get-user-workflow'
 import { GetWorkflowConsoleClientTool } from '@/lib/copilot/tools/client/workflow/get-workflow-console'
 import { GetWorkflowDataClientTool } from '@/lib/copilot/tools/client/workflow/get-workflow-data'
@@ -47,7 +53,8 @@ import { ManageCustomToolClientTool } from '@/lib/copilot/tools/client/workflow/
 import { ManageMcpToolClientTool } from '@/lib/copilot/tools/client/workflow/manage-mcp-tool'
 import { RunWorkflowClientTool } from '@/lib/copilot/tools/client/workflow/run-workflow'
 import { SetGlobalWorkflowVariablesClientTool } from '@/lib/copilot/tools/client/workflow/set-global-workflow-variables'
-import { createLogger } from '@/lib/logs/console/logger'
+import { getQueryClient } from '@/app/_shell/providers/query-provider'
+import { subscriptionKeys } from '@/hooks/queries/subscription'
 import type {
   ChatContext,
   CopilotMessage,
@@ -75,6 +82,8 @@ const CLIENT_TOOL_INSTANTIATORS: Record<string, (id: string) => any> = {
   get_workflow_console: (id) => new GetWorkflowConsoleClientTool(id),
   get_blocks_and_tools: (id) => new GetBlocksAndToolsClientTool(id),
   get_blocks_metadata: (id) => new GetBlocksMetadataClientTool(id),
+  get_block_options: (id) => new GetBlockOptionsClientTool(id),
+  get_block_config: (id) => new GetBlockConfigClientTool(id),
   get_trigger_blocks: (id) => new GetTriggerBlocksClientTool(id),
   search_online: (id) => new SearchOnlineClientTool(id),
   search_documentation: (id) => new SearchDocumentationClientTool(id),
@@ -104,6 +113,9 @@ const CLIENT_TOOL_INSTANTIATORS: Record<string, (id: string) => any> = {
   navigate_ui: (id) => new NavigateUIClientTool(id),
   manage_custom_tool: (id) => new ManageCustomToolClientTool(id),
   manage_mcp_tool: (id) => new ManageMcpToolClientTool(id),
+  sleep: (id) => new SleepClientTool(id),
+  get_block_outputs: (id) => new GetBlockOutputsClientTool(id),
+  get_block_upstream_references: (id) => new GetBlockUpstreamReferencesClientTool(id),
 }
 
 // Read-only static metadata for class-based tools (no instances)
@@ -112,6 +124,8 @@ export const CLASS_TOOL_METADATA: Record<string, BaseClientToolMetadata | undefi
   get_workflow_console: (GetWorkflowConsoleClientTool as any)?.metadata,
   get_blocks_and_tools: (GetBlocksAndToolsClientTool as any)?.metadata,
   get_blocks_metadata: (GetBlocksMetadataClientTool as any)?.metadata,
+  get_block_options: (GetBlockOptionsClientTool as any)?.metadata,
+  get_block_config: (GetBlockConfigClientTool as any)?.metadata,
   get_trigger_blocks: (GetTriggerBlocksClientTool as any)?.metadata,
   search_online: (SearchOnlineClientTool as any)?.metadata,
   search_documentation: (SearchDocumentationClientTool as any)?.metadata,
@@ -141,6 +155,9 @@ export const CLASS_TOOL_METADATA: Record<string, BaseClientToolMetadata | undefi
   navigate_ui: (NavigateUIClientTool as any)?.metadata,
   manage_custom_tool: (ManageCustomToolClientTool as any)?.metadata,
   manage_mcp_tool: (ManageMcpToolClientTool as any)?.metadata,
+  sleep: (SleepClientTool as any)?.metadata,
+  get_block_outputs: (GetBlockOutputsClientTool as any)?.metadata,
+  get_block_upstream_references: (GetBlockUpstreamReferencesClientTool as any)?.metadata,
 }
 
 function ensureClientToolInstance(toolName: string | undefined, toolCallId: string | undefined) {
@@ -530,7 +547,11 @@ function createStreamingMessage(): CopilotMessage {
   }
 }
 
-function createErrorMessage(messageId: string, content: string): CopilotMessage {
+function createErrorMessage(
+  messageId: string,
+  content: string,
+  errorType?: 'usage_limit' | 'unauthorized' | 'forbidden' | 'rate_limit' | 'upgrade_required'
+): CopilotMessage {
   return {
     id: messageId,
     role: 'assistant',
@@ -543,6 +564,7 @@ function createErrorMessage(messageId: string, content: string): CopilotMessage 
         timestamp: Date.now(),
       },
     ],
+    errorType,
   }
 }
 
@@ -2063,23 +2085,35 @@ export const useCopilotStore = create<CopilotStore>()(
 
           // Check for specific status codes and provide custom messages
           let errorContent = result.error || 'Failed to send message'
+          let errorType:
+            | 'usage_limit'
+            | 'unauthorized'
+            | 'forbidden'
+            | 'rate_limit'
+            | 'upgrade_required'
+            | undefined
           if (result.status === 401) {
             errorContent =
               '_Unauthorized request. You need a valid API key to use the copilot. You can get one by going to [sim.ai](https://sim.ai) settings and generating one there._'
+            errorType = 'unauthorized'
           } else if (result.status === 402) {
             errorContent =
-              '_Usage limit exceeded. To continue using this service, upgrade your plan or top up on credits._'
+              '_Usage limit exceeded. To continue using this service, upgrade your plan or increase your usage limit to:_'
+            errorType = 'usage_limit'
           } else if (result.status === 403) {
             errorContent =
               '_Provider config not allowed for non-enterprise users. Please remove the provider config and try again_'
+            errorType = 'forbidden'
           } else if (result.status === 426) {
             errorContent =
               '_Please upgrade to the latest version of the Sim platform to continue using the copilot._'
+            errorType = 'upgrade_required'
           } else if (result.status === 429) {
             errorContent = '_Provider rate limit exceeded. Please try again later._'
+            errorType = 'rate_limit'
           }
 
-          const errorMessage = createErrorMessage(streamingMessage.id, errorContent)
+          const errorMessage = createErrorMessage(streamingMessage.id, errorContent, errorType)
           set((state) => ({
             messages: state.messages.map((m) => (m.id === streamingMessage.id ? errorMessage : m)),
             error: errorContent,
@@ -2256,6 +2290,22 @@ export const useCopilotStore = create<CopilotStore>()(
           ...current,
           state: norm,
           display: resolveToolDisplay(current.name, norm, id, current.params),
+        }
+        set({ toolCallsById: map })
+      } catch {}
+    },
+
+    updateToolCallParams: (toolCallId: string, params: Record<string, any>) => {
+      try {
+        if (!toolCallId) return
+        const map = { ...get().toolCallsById }
+        const current = map[toolCallId]
+        if (!current) return
+        const updatedParams = { ...current.params, ...params }
+        map[toolCallId] = {
+          ...current,
+          params: updatedParams,
+          display: resolveToolDisplay(current.name, current.state, toolCallId, updatedParams),
         }
         set({ toolCallsById: map })
       } catch {}
@@ -2470,14 +2520,6 @@ export const useCopilotStore = create<CopilotStore>()(
       return messageCheckpoints[messageId] || []
     },
 
-    // Preview YAML (stubbed/no-op)
-    setPreviewYaml: async (_yamlContent: string) => {},
-    clearPreviewYaml: async () => {
-      set((state) => ({
-        currentChat: state.currentChat ? { ...state.currentChat, previewYaml: null } : null,
-      }))
-    },
-
     // Handle streaming response
     handleStreamingResponse: async (
       stream: ReadableStream,
@@ -2615,6 +2657,12 @@ export const useCopilotStore = create<CopilotStore>()(
         // Fetch context usage after response completes
         logger.info('[Context Usage] Stream completed, fetching usage')
         await get().fetchContextUsage()
+
+        // Invalidate subscription queries to update usage
+        setTimeout(() => {
+          const queryClient = getQueryClient()
+          queryClient.invalidateQueries({ queryKey: subscriptionKeys.all })
+        }, 1000)
       } finally {
         clearTimeout(timeoutId)
       }
@@ -2629,7 +2677,6 @@ export const useCopilotStore = create<CopilotStore>()(
         model: selectedModel,
         messages: get().messages,
         messageCount: get().messages.length,
-        previewYaml: null,
         planArtifact: streamingPlanContent || null,
         config: {
           mode,
@@ -2786,10 +2833,6 @@ export const useCopilotStore = create<CopilotStore>()(
         }
       }
     },
-
-    // Diff updates are out of scope for minimal store
-    updateDiffStore: async (_yamlContent: string) => {},
-    updateDiffStoreWithWorkflowState: async (_workflowState: any) => {},
 
     setSelectedModel: async (model) => {
       logger.info('[Context Usage] Model changed', { from: get().selectedModel, to: model })

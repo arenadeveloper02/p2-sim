@@ -93,6 +93,7 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
+    '/*': ['./node_modules/sharp/**/*', './node_modules/@img/**/*'],
   },
   webpack: (config, { webpack }) => {
     // Ignore native modules and optional dependencies that shouldn't be bundled

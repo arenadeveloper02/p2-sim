@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { executeProviderRequest } from '@/providers'
 import { resolveProvider } from './ai-provider'
 import { parseAiResponse } from './ai-response'

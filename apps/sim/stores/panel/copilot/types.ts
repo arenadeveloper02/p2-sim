@@ -39,6 +39,7 @@ export interface CopilotMessage {
   >
   fileAttachments?: MessageFileAttachment[]
   contexts?: ChatContext[]
+  errorType?: 'usage_limit' | 'unauthorized' | 'forbidden' | 'rate_limit' | 'upgrade_required'
 }
 
 // Contexts attached to a user message
@@ -178,6 +179,7 @@ export interface CopilotActions {
     toolCallId?: string
   ) => void
   setToolCallState: (toolCall: any, newState: ClientToolCallState, options?: any) => void
+  updateToolCallParams: (toolCallId: string, params: Record<string, any>) => void
   sendDocsMessage: (query: string, options?: { stream?: boolean; topK?: number }) => Promise<void>
   saveChatMessages: (chatId: string) => Promise<void>
 
@@ -185,9 +187,6 @@ export interface CopilotActions {
   loadMessageCheckpoints: (chatId: string) => Promise<void>
   revertToCheckpoint: (checkpointId: string) => Promise<void>
   getCheckpointsForMessage: (messageId: string) => any[]
-
-  setPreviewYaml: (yamlContent: string) => Promise<void>
-  clearPreviewYaml: () => Promise<void>
 
   clearMessages: () => void
   clearError: () => void
@@ -215,8 +214,6 @@ export interface CopilotActions {
     triggerUserMessageId?: string
   ) => Promise<void>
   handleNewChatCreation: (newChatId: string) => Promise<void>
-  updateDiffStore: (yamlContent: string, toolName?: string) => Promise<void>
-  updateDiffStoreWithWorkflowState: (workflowState: any, toolName?: string) => Promise<void>
   executeIntegrationTool: (toolCallId: string) => Promise<void>
   skipIntegrationTool: (toolCallId: string) => void
   loadAutoAllowedTools: () => Promise<void>

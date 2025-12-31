@@ -1,21 +1,29 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
+import { generateRequestId } from '@/lib/core/utils/request'
+import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { executeInIsolatedVM } from '@/lib/execution/isolated-vm'
 import { buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import type { LoopScope } from '@/executor/execution/state'
-import type { BlockStateController } from '@/executor/execution/types'
+import type { BlockStateController, ContextExtensions } from '@/executor/execution/types'
 import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
 import type { LoopConfigWithNodes } from '@/executor/types/loop'
 import { replaceValidReferences } from '@/executor/utils/reference-validation'
 import {
+  addSubflowErrorLog,
   buildSentinelEndId,
   buildSentinelStartId,
   extractBaseBlockId,
+  resolveArrayInput,
+  validateMaxCount,
 } from '@/executor/utils/subflow-utils'
 import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedLoop } from '@/serializer/types'
 
 const logger = createLogger('LoopOrchestrator')
+
+const LOOP_CONDITION_TIMEOUT_MS = 5000
 
 export type LoopRoute = typeof EDGE.LOOP_CONTINUE | typeof EDGE.LOOP_EXIT
 
@@ -28,12 +36,17 @@ export interface LoopContinuationResult {
 
 export class LoopOrchestrator {
   private edgeManager: EdgeManager | null = null
+  private contextExtensions: ContextExtensions | null = null
 
   constructor(
     private dag: DAG,
     private state: BlockStateController,
     private resolver: VariableResolver
   ) {}
+
+  setContextExtensions(contextExtensions: ContextExtensions): void {
+    this.contextExtensions = contextExtensions
+  }
 
   setEdgeManager(edgeManager: EdgeManager): void {
     this.edgeManager = edgeManager
@@ -44,7 +57,6 @@ export class LoopOrchestrator {
     if (!loopConfig) {
       throw new Error(`Loop config not found: ${loopId}`)
     }
-
     const scope: LoopScope = {
       iteration: 0,
       currentIterationOutputs: new Map(),
@@ -54,15 +66,70 @@ export class LoopOrchestrator {
     const loopType = loopConfig.loopType
 
     switch (loopType) {
-      case 'for':
+      case 'for': {
         scope.loopType = 'for'
-        scope.maxIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
+        const requestedIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
+
+        const iterationError = validateMaxCount(
+          requestedIterations,
+          DEFAULTS.MAX_LOOP_ITERATIONS,
+          'For loop iterations'
+        )
+        if (iterationError) {
+          logger.error(iterationError, { loopId, requestedIterations })
+          this.addLoopErrorLog(ctx, loopId, loopType, iterationError, {
+            iterations: requestedIterations,
+          })
+          scope.maxIterations = 0
+          scope.validationError = iterationError
+          scope.condition = buildLoopIndexCondition(0)
+          ctx.loopExecutions?.set(loopId, scope)
+          throw new Error(iterationError)
+        }
+
+        scope.maxIterations = requestedIterations
         scope.condition = buildLoopIndexCondition(scope.maxIterations)
         break
+      }
 
       case 'forEach': {
         scope.loopType = 'forEach'
-        const items = this.resolveForEachItems(ctx, loopConfig.forEachItems)
+        let items: any[]
+        try {
+          items = this.resolveForEachItems(ctx, loopConfig.forEachItems)
+        } catch (error) {
+          const errorMessage = `ForEach loop resolution failed: ${error instanceof Error ? error.message : String(error)}`
+          logger.error(errorMessage, { loopId, forEachItems: loopConfig.forEachItems })
+          this.addLoopErrorLog(ctx, loopId, loopType, errorMessage, {
+            forEachItems: loopConfig.forEachItems,
+          })
+          scope.items = []
+          scope.maxIterations = 0
+          scope.validationError = errorMessage
+          scope.condition = buildLoopIndexCondition(0)
+          ctx.loopExecutions?.set(loopId, scope)
+          throw new Error(errorMessage)
+        }
+
+        const sizeError = validateMaxCount(
+          items.length,
+          DEFAULTS.MAX_FOREACH_ITEMS,
+          'ForEach loop collection size'
+        )
+        if (sizeError) {
+          logger.error(sizeError, { loopId, collectionSize: items.length })
+          this.addLoopErrorLog(ctx, loopId, loopType, sizeError, {
+            forEachItems: loopConfig.forEachItems,
+            collectionSize: items.length,
+          })
+          scope.items = []
+          scope.maxIterations = 0
+          scope.validationError = sizeError
+          scope.condition = buildLoopIndexCondition(0)
+          ctx.loopExecutions?.set(loopId, scope)
+          throw new Error(sizeError)
+        }
+
         scope.items = items
         scope.maxIterations = items.length
         scope.item = items[0]
@@ -75,15 +142,35 @@ export class LoopOrchestrator {
         scope.condition = loopConfig.whileCondition
         break
 
-      case 'doWhile':
+      case 'doWhile': {
         scope.loopType = 'doWhile'
         if (loopConfig.doWhileCondition) {
           scope.condition = loopConfig.doWhileCondition
         } else {
-          scope.maxIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
+          const requestedIterations = loopConfig.iterations || DEFAULTS.MAX_LOOP_ITERATIONS
+
+          const iterationError = validateMaxCount(
+            requestedIterations,
+            DEFAULTS.MAX_LOOP_ITERATIONS,
+            'Do-While loop iterations'
+          )
+          if (iterationError) {
+            logger.error(iterationError, { loopId, requestedIterations })
+            this.addLoopErrorLog(ctx, loopId, loopType, iterationError, {
+              iterations: requestedIterations,
+            })
+            scope.maxIterations = 0
+            scope.validationError = iterationError
+            scope.condition = buildLoopIndexCondition(0)
+            ctx.loopExecutions?.set(loopId, scope)
+            throw new Error(iterationError)
+          }
+
+          scope.maxIterations = requestedIterations
           scope.condition = buildLoopIndexCondition(scope.maxIterations)
         }
         break
+      }
 
       default:
         throw new Error(`Unknown loop type: ${loopType}`)
@@ -94,6 +181,23 @@ export class LoopOrchestrator {
     }
     ctx.loopExecutions.set(loopId, scope)
     return scope
+  }
+
+  private addLoopErrorLog(
+    ctx: ExecutionContext,
+    loopId: string,
+    loopType: string,
+    errorMessage: string,
+    inputData?: any
+  ): void {
+    addSubflowErrorLog(
+      ctx,
+      loopId,
+      'loop',
+      errorMessage,
+      { loopType, ...inputData },
+      this.contextExtensions
+    )
   }
 
   storeLoopNodeOutput(
@@ -112,7 +216,10 @@ export class LoopOrchestrator {
     scope.currentIterationOutputs.set(baseId, output)
   }
 
-  evaluateLoopContinuation(ctx: ExecutionContext, loopId: string): LoopContinuationResult {
+  async evaluateLoopContinuation(
+    ctx: ExecutionContext,
+    loopId: string
+  ): Promise<LoopContinuationResult> {
     const scope = ctx.loopExecutions?.get(loopId)
     if (!scope) {
       logger.error('Loop scope not found during continuation evaluation', { loopId })
@@ -123,8 +230,14 @@ export class LoopOrchestrator {
       }
     }
 
-    // Check for cancellation
-    if (ctx.isCancelled) {
+    const useRedis = isRedisCancellationEnabled() && !!ctx.executionId
+    let isCancelled = false
+    if (useRedis) {
+      isCancelled = await isExecutionCancelled(ctx.executionId!)
+    } else {
+      isCancelled = ctx.abortSignal?.aborted ?? false
+    }
+    if (isCancelled) {
       logger.info('Loop execution cancelled', { loopId, iteration: scope.iteration })
       return this.createExitResult(ctx, loopId, scope)
     }
@@ -140,7 +253,7 @@ export class LoopOrchestrator {
 
     scope.currentIterationOutputs.clear()
 
-    if (!this.evaluateCondition(ctx, scope, scope.iteration + 1)) {
+    if (!(await this.evaluateCondition(ctx, scope, scope.iteration + 1))) {
       return this.createExitResult(ctx, loopId, scope)
     }
 
@@ -173,7 +286,11 @@ export class LoopOrchestrator {
     }
   }
 
-  private evaluateCondition(ctx: ExecutionContext, scope: LoopScope, iteration?: number): boolean {
+  private async evaluateCondition(
+    ctx: ExecutionContext,
+    scope: LoopScope,
+    iteration?: number
+  ): Promise<boolean> {
     if (!scope.condition) {
       logger.warn('No condition defined for loop')
       return false
@@ -184,7 +301,7 @@ export class LoopOrchestrator {
       scope.iteration = iteration
     }
 
-    const result = this.evaluateWhileCondition(ctx, scope.condition, scope)
+    const result = await this.evaluateWhileCondition(ctx, scope.condition, scope)
 
     if (iteration !== undefined) {
       scope.iteration = currentIteration
@@ -223,7 +340,6 @@ export class LoopOrchestrator {
     const loopNodes = loopConfig.nodes
     const allLoopNodeIds = new Set([sentinelStartId, sentinelEndId, ...loopNodes])
 
-    // Clear deactivated edges for loop nodes so error/success edges can be re-evaluated
     if (this.edgeManager) {
       this.edgeManager.clearDeactivatedEdgesForNodes(allLoopNodeIds)
     }
@@ -263,7 +379,7 @@ export class LoopOrchestrator {
    *
    * @returns true if the loop should execute, false if it should be skipped
    */
-  evaluateInitialCondition(ctx: ExecutionContext, loopId: string): boolean {
+  async evaluateInitialCondition(ctx: ExecutionContext, loopId: string): Promise<boolean> {
     const scope = ctx.loopExecutions?.get(loopId)
     if (!scope) {
       logger.warn('Loop scope not found for initial condition evaluation', { loopId })
@@ -300,7 +416,7 @@ export class LoopOrchestrator {
         return false
       }
 
-      const result = this.evaluateWhileCondition(ctx, scope.condition, scope)
+      const result = await this.evaluateWhileCondition(ctx, scope.condition, scope)
       logger.info('While loop initial condition evaluation', {
         loopId,
         condition: scope.condition,
@@ -327,11 +443,11 @@ export class LoopOrchestrator {
     return undefined
   }
 
-  private evaluateWhileCondition(
+  private async evaluateWhileCondition(
     ctx: ExecutionContext,
     condition: string,
     scope: LoopScope
-  ): boolean {
+  ): Promise<boolean> {
     if (!condition) {
       return false
     }
@@ -343,7 +459,6 @@ export class LoopOrchestrator {
         workflowVariables: ctx.workflowVariables,
       })
 
-      // Use generic utility for smart variable reference replacement
       const evaluatedCondition = replaceValidReferences(condition, (match) => {
         const resolved = this.resolver.resolveSingleReference(ctx, '', match, scope)
         logger.info('Resolved variable reference in loop condition', {
@@ -352,11 +467,9 @@ export class LoopOrchestrator {
           resolvedType: typeof resolved,
         })
         if (resolved !== undefined) {
-          // For booleans and numbers, return as-is (no quotes)
           if (typeof resolved === 'boolean' || typeof resolved === 'number') {
             return String(resolved)
           }
-          // For strings that represent booleans, return without quotes
           if (typeof resolved === 'string') {
             const lower = resolved.toLowerCase().trim()
             if (lower === 'true' || lower === 'false') {
@@ -364,13 +477,33 @@ export class LoopOrchestrator {
             }
             return `"${resolved}"`
           }
-          // For other types, stringify them
           return JSON.stringify(resolved)
         }
         return match
       })
 
-      const result = Boolean(new Function(`return (${evaluatedCondition})`)())
+      const requestId = generateRequestId()
+      const code = `return Boolean(${evaluatedCondition})`
+
+      const vmResult = await executeInIsolatedVM({
+        code,
+        params: {},
+        envVars: {},
+        contextVariables: {},
+        timeoutMs: LOOP_CONDITION_TIMEOUT_MS,
+        requestId,
+      })
+
+      if (vmResult.error) {
+        logger.error('Failed to evaluate loop condition', {
+          condition,
+          evaluatedCondition,
+          error: vmResult.error,
+        })
+        return false
+      }
+
+      const result = Boolean(vmResult.result)
 
       logger.info('Loop condition evaluation result', {
         originalCondition: condition,
@@ -386,54 +519,6 @@ export class LoopOrchestrator {
   }
 
   private resolveForEachItems(ctx: ExecutionContext, items: any): any[] {
-    if (Array.isArray(items)) {
-      return items
-    }
-
-    if (typeof items === 'object' && items !== null) {
-      return Object.entries(items)
-    }
-
-    if (typeof items === 'string') {
-      if (items.startsWith('<') && items.endsWith('>')) {
-        const resolved = this.resolver.resolveSingleReference(ctx, '', items)
-        if (Array.isArray(resolved)) {
-          return resolved
-        }
-        return []
-      }
-
-      try {
-        const normalized = items.replace(/'/g, '"')
-        const parsed = JSON.parse(normalized)
-        if (Array.isArray(parsed)) {
-          return parsed
-        }
-        return []
-      } catch (error) {
-        logger.error('Failed to parse forEach items', { items, error })
-        return []
-      }
-    }
-
-    try {
-      const resolved = this.resolver.resolveInputs(ctx, 'loop_foreach_items', { items }).items
-
-      if (Array.isArray(resolved)) {
-        return resolved
-      }
-
-      logger.warn('ForEach items did not resolve to array', {
-        items,
-        resolved,
-      })
-
-      return []
-    } catch (error: any) {
-      logger.error('Error resolving forEach items, returning empty array:', {
-        error: error.message,
-      })
-      return []
-    }
+    return resolveArrayInput(ctx, items, this.resolver)
   }
 }

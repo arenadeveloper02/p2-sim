@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { POSITION2_MANAGER } from './constants'
 
 const logger = createLogger('GoogleAdsAPI')
