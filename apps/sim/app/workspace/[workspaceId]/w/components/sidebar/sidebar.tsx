@@ -499,7 +499,7 @@ export function Sidebar() {
             <div className='flex h-full flex-col border-[var(--border)] border-r pt-[12px]'>
               {/* Header */}
               <div>
-                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-gray-500 text-sm hover:cursor-pointer'>
+                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-sm hover:cursor-pointer'>
                   <span
                     onClick={() => {
                       const hostname = window.location.hostname
@@ -507,7 +507,7 @@ export function Sidebar() {
 
                       window.location.href = redirectUrl
                     }}
-                    className='flex items-center justify-start gap-2 text-primary'
+                    className='flex items-center justify-start gap-2'
                   >
                     <ArrowLeft className='h-5 w-5' />
                     <span> Back </span>
