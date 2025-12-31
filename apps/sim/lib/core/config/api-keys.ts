@@ -33,7 +33,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.SAMBANOVA_API_KEY_1) keys.push(env.SAMBANOVA_API_KEY_1)
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
-  } else if (provider === 'google') {
+  } else if (provider === 'google' || provider === 'vertex') {
     if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
   } else if (provider === 'xai') {
     if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
