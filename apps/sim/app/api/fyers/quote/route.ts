@@ -37,51 +37,79 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    logger.info('Fetching quotes for symbols', { symbols })
+    // Split symbols into batches of 50 (Fyers API limit)
+    const symbolList = symbols.split(',')
+    const BATCH_SIZE = 50
+    const batches = []
 
-    // Call Fyers Quotes API
-    const quotesUrl = `${FYERS_API_BASE}/quotes`
-    const response = await fetch(quotesUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `${appId}:${accessToken}`,
-      },
-      body: JSON.stringify({
-        symbols: symbols,
-      }),
+    for (let i = 0; i < symbolList.length; i += BATCH_SIZE) {
+      batches.push(symbolList.slice(i, i + BATCH_SIZE).join(','))
+    }
+
+    logger.info('Fetching quotes for symbols', {
+      totalSymbols: symbolList.length,
+      batches: batches.length
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error('Fyers API request failed', {
-        status: response.status,
-        error: errorText,
+    // fetchBatch helper
+    const fetchBatch = async (batchSymbols: string) => {
+      const quotesUrl = `${FYERS_API_BASE}/quotes`
+      const response = await fetch(quotesUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `${appId}:${accessToken}`,
+        },
+        body: JSON.stringify({
+          symbols: batchSymbols,
+        }),
       })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Fyers API error: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+
+      // Check for API errors in response body
+      if (data.code !== 200 && data.s !== 'ok') {
+        throw new Error(`Fyers API error: ${data.message || 'Unknown error'}`)
+      }
+
+      return data.d || []
+    }
+
+    // Execute requests in parallel
+    const results = await Promise.allSettled(batches.map(batch => fetchBatch(batch)))
+
+    // Process results
+    let allQuotes: any[] = []
+    const errors: string[] = []
+
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        allQuotes = [...allQuotes, ...result.value]
+      } else {
+        errors.push(result.reason instanceof Error ? result.reason.message : 'Unknown batch error')
+      }
+    })
+
+    if (allQuotes.length === 0 && errors.length > 0) {
+      // If all batches failed, return error
+      logger.error('All Fyers API batches failed', { errors })
       return NextResponse.json(
-        { error: `Fyers API error: ${response.status} - ${errorText}` },
-        { status: response.status }
+        { error: `Requests failed: ${errors.join(', ')}` },
+        { status: 500 }
       )
     }
 
-    const data = await response.json()
-    logger.info('Fyers API response received', {
-      code: data.code,
-      message: data.message,
-      dataLength: data.d?.length || 0,
-    })
-
-    // Check for API errors
-    if (data.code !== 200 && data.s !== 'ok') {
-      logger.error('Fyers API returned error', { code: data.code, message: data.message })
-      return NextResponse.json(
-        { error: `Fyers API error: ${data.message || 'Unknown error'}` },
-        { status: 400 }
-      )
+    if (errors.length > 0) {
+      logger.warn('Some batches failed', { errors })
     }
 
     // Transform Fyers response to our format
-    const quotes = (data.d || []).map((quote: any) => ({
+    const quotes = allQuotes.map((quote: any) => ({
       symbol: quote.n || quote.symbol,
       name: quote.n || quote.symbol,
       exchange: quote.n?.split(':')[0] || 'NSE',
@@ -110,6 +138,7 @@ export async function POST(request: NextRequest) {
       success: true,
       quotes,
       timestamp: new Date().toISOString(),
+      partialErrors: errors.length > 0 ? errors : undefined
     })
   } catch (error) {
     const executionTime = Date.now() - startTime

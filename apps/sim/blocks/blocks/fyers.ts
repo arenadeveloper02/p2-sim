@@ -1,9 +1,23 @@
 import { FyersIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { NIFTY_50_STOCKS } from '@/tools/fyers/types'
+import {
+  NIFTY_50_STOCKS,
+  NIFTY_MIDCAP_100_STOCKS,
+  NIFTY_SMALLCAP_100_STOCKS,
+} from '@/tools/fyers/types'
 
 // Create dropdown options from Nifty 50 stocks
 const stockOptions = NIFTY_50_STOCKS.map((stock) => ({
+  label: stock.name,
+  id: stock.symbol,
+}))
+
+const midcapStockOptions = NIFTY_MIDCAP_100_STOCKS.map((stock) => ({
+  label: stock.name,
+  id: stock.symbol,
+}))
+
+const smallcapStockOptions = NIFTY_SMALLCAP_100_STOCKS.map((stock) => ({
   label: stock.name,
   id: stock.symbol,
 }))
@@ -38,8 +52,12 @@ export const FyersBlock: BlockConfig = {
       type: 'dropdown',
       options: [
         { label: 'Select from Nifty 50', id: 'nifty50' },
+        { label: 'Select from Nifty Midcap', id: 'nifty_midcap' },
+        { label: 'Select from Nifty Smallcap', id: 'nifty_smallcap' },
         { label: 'Enter Custom Symbols', id: 'custom' },
         { label: 'All Nifty 50 Stocks', id: 'all_nifty50' },
+        { label: 'All Nifty Midcap Stocks', id: 'all_nifty_midcap' },
+        { label: 'All Nifty Smallcap Stocks', id: 'all_nifty_smallcap' },
       ],
       value: () => 'nifty50',
       condition: { field: 'operation', value: ['quote', 'historical'] },
@@ -47,13 +65,37 @@ export const FyersBlock: BlockConfig = {
     // Nifty 50 stock selector (multi-select)
     {
       id: 'selectedStocks',
-      title: 'Select Stocks',
+      title: 'Select Stocks (Nifty 50)',
       type: 'dropdown',
       options: stockOptions,
       placeholder: 'Select stocks from Nifty 50...',
       condition: {
         field: 'stockMode',
         value: 'nifty50',
+      },
+    },
+    // Nifty Midcap selector
+    {
+      id: 'selectedMidcapStocks',
+      title: 'Select Stocks (Midcap)',
+      type: 'dropdown',
+      options: midcapStockOptions,
+      placeholder: 'Select stocks from Nifty Midcap...',
+      condition: {
+        field: 'stockMode',
+        value: 'nifty_midcap',
+      },
+    },
+    // Nifty Smallcap selector
+    {
+      id: 'selectedSmallcapStocks',
+      title: 'Select Stocks (Smallcap)',
+      type: 'dropdown',
+      options: smallcapStockOptions,
+      placeholder: 'Select stocks from Nifty Smallcap...',
+      condition: {
+        field: 'stockMode',
+        value: 'nifty_smallcap',
       },
     },
     // Custom symbols input
@@ -159,8 +201,24 @@ export const FyersBlock: BlockConfig = {
           if (params.stockMode === 'all_nifty50') {
             return NIFTY_50_STOCKS.map((s) => s.symbol).join(',')
           }
+          if (params.stockMode === 'all_nifty_midcap') {
+            return NIFTY_MIDCAP_100_STOCKS.map((s) => s.symbol).join(',')
+          }
+          if (params.stockMode === 'all_nifty_smallcap') {
+            return NIFTY_SMALLCAP_100_STOCKS.map((s) => s.symbol).join(',')
+          }
           if (params.stockMode === 'custom' && params.customSymbols) {
             return params.customSymbols
+          }
+          if (params.stockMode === 'nifty_midcap' && params.selectedMidcapStocks) {
+            return Array.isArray(params.selectedMidcapStocks)
+              ? params.selectedMidcapStocks.join(',')
+              : params.selectedMidcapStocks
+          }
+          if (params.stockMode === 'nifty_smallcap' && params.selectedSmallcapStocks) {
+            return Array.isArray(params.selectedSmallcapStocks)
+              ? params.selectedSmallcapStocks.join(',')
+              : params.selectedSmallcapStocks
           }
           if (params.selectedStocks) {
             return Array.isArray(params.selectedStocks)
@@ -232,6 +290,8 @@ export const FyersBlock: BlockConfig = {
     operation: { type: 'string', description: 'Operation to perform' },
     stockMode: { type: 'string', description: 'Stock selection mode' },
     selectedStocks: { type: 'string', description: 'Selected Nifty 50 stocks' },
+    selectedMidcapStocks: { type: 'string', description: 'Selected Nifty Midcap stocks' },
+    selectedSmallcapStocks: { type: 'string', description: 'Selected Nifty Smallcap stocks' },
     customSymbols: { type: 'string', description: 'Custom stock symbols' },
     symbol: { type: 'string', description: 'Single stock symbol for historical data' },
     resolution: { type: 'string', description: 'Candle resolution for historical data' },
