@@ -661,7 +661,7 @@ export function getApiKey(
     } else if (isClaudeModel) {
       envVarName = 'ANTHROPIC_API_KEY'
     } else if (isGeminiModel) {
-      envVarName = 'GEMINI_API_KEY_1'
+      envVarName = 'GEMINI_API_KEY'
     } else if (isSambaNovaModel) {
       envVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
@@ -682,7 +682,7 @@ export function getApiKey(
     } else if (isClaudeModel) {
       serverEnvVarName = 'ANTHROPIC_API_KEY'
     } else if (isGeminiModel) {
-      serverEnvVarName = 'GEMINI_API_KEY_1'
+      serverEnvVarName = 'GEMINI_API_KEY'
     } else if (isSambaNovaModel) {
       serverEnvVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
