@@ -158,6 +158,7 @@ export function ArenaAssigneeSelector({
                       key={assignee.value}
                       value={assignee.value}
                       onSelect={() => handleSelect(assignee)}
+                      style={{ pointerEvents: 'auto' }}
                     >
                       {assignee.label}
                       <Check

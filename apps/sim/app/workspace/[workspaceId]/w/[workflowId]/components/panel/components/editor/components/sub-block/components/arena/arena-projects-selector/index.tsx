@@ -148,6 +148,7 @@ export function ArenaProjectSelector({
                       value={project.sysId}
                       onSelect={() => handleSelect(project)}
                       className='whitespace-normal break-words'
+                      style={{ pointerEvents: 'auto' }}
                     >
                       <span className='flex-1 whitespace-normal break-words'>{project.name}</span>
                       <Check
