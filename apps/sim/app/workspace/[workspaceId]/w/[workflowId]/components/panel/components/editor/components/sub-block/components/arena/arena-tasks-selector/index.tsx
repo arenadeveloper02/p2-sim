@@ -154,6 +154,7 @@ export function ArenaTaskSelector({
                       value={taskId}
                       onSelect={() => handleSelect(task)}
                       className='max-w-full whitespace-normal break-words'
+                      style={{ pointerEvents: 'auto' }}
                     >
                       <span className='whitespace-normal break-words'>{task.name}</span>
                       <Check
