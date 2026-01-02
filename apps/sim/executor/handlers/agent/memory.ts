@@ -8,6 +8,7 @@ import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'
+import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 
 const logger = createLogger('Memory')
@@ -214,10 +215,13 @@ export class Memory {
    * This is an add-on feature that doesn't block main memory operations
    * Calls the API twice: once for conversation memory, once for fact memory
    * Only sends the current turn (last user message + assistant message), not the full history
+   * @param ctx - Execution context
+   * @param inputs - Agent inputs containing conversationId
    * @param assistantMessage - The assistant message that was just persisted
-   * @param memoryKey - Memory key to fetch the last user message
+   * @param blockId - Block ID for metadata
+   * @param memoryKey - Memory key to fetch the last user message (typically conversationId)
    */
-  private async callMem0API(
+  async callMem0API(
     ctx: ExecutionContext,
     inputs: AgentInputs,
     assistantMessage: Message,
@@ -238,7 +242,7 @@ export class Memory {
 
     try {
       // Fetch existing messages to get the last user message
-      const existingMessages = await this.fetchFromMemoryAPI(ctx.workflowId, memoryKey)
+      const existingMessages = await this.fetchFromMemoryAPI(ctx, memoryKey)
 
       // Find the last user message (the one that corresponds to this assistant response)
       // We look for the most recent user message before this assistant message
@@ -284,18 +288,18 @@ export class Memory {
           ctx.userId,
           chatId,
           inputs.conversationId,
-          true, // infer: false
-          'fact', // memoryType: 'conversation'
+          true, // infer: true
+          'fact', // memoryType: 'fact'
           blockId
         )
-        logger.debug('Successfully called Mem0 API for conversation memory', {
+        logger.debug('Successfully called Mem0 API for fact memory', {
           workflowId: ctx.workflowId,
           conversationId: inputs.conversationId,
           blockId,
           messageCount: messagesForAPI.length,
         })
       } catch (error) {
-        logger.warn('Failed to call Mem0 API for conversation memory (non-blocking)', {
+        logger.warn('Failed to call Mem0 API for fact memory (non-blocking)', {
           error,
           workflowId: ctx.workflowId,
         })
@@ -309,18 +313,18 @@ export class Memory {
           ctx.userId,
           chatId,
           inputs.conversationId,
-          false, // infer: true
-          'conversation', // memoryType: 'fact'
+          false, // infer: false
+          'conversation', // memoryType: 'conversation'
           blockId
         )
-        logger.debug('Successfully called Mem0 API for fact memory', {
+        logger.debug('Successfully called Mem0 API for conversation memory', {
           workflowId: ctx.workflowId,
           conversationId: inputs.conversationId,
           blockId,
           messageCount: messagesForAPI.length,
         })
       } catch (error) {
-        logger.warn('Failed to call Mem0 API for fact memory (non-blocking)', {
+        logger.warn('Failed to call Mem0 API for conversation memory (non-blocking)', {
           error,
           workflowId: ctx.workflowId,
         })
@@ -338,16 +342,24 @@ export class Memory {
   /**
    * Fetch messages from memory API
    */
-  private async fetchFromMemoryAPI(workflowId: string, key: string): Promise<Message[]> {
+  private async fetchFromMemoryAPI(ctx: ExecutionContext, key: string): Promise<Message[]> {
     try {
       const isBrowser = typeof window !== 'undefined'
 
       if (!isBrowser) {
-        return await this.fetchFromMemoryDirect(workflowId, key)
+        // Server-side: fetch directly from database
+        if (!ctx.workspaceId) {
+          logger.warn('Cannot fetch memory directly: workspaceId not available')
+          return []
+        }
+        return await this.fetchMemory(ctx.workspaceId, key)
       }
 
+      // Browser-side: fetch via API
       const headers = await buildAuthHeaders()
-      const url = buildAPIUrl(`/api/memory/${encodeURIComponent(key)}`, { workflowId })
+      const url = buildAPIUrl(`/api/memory/${encodeURIComponent(key)}`, {
+        workflowId: ctx.workflowId,
+      })
 
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -384,7 +396,8 @@ export class Memory {
   async appendToMemory(
     ctx: ExecutionContext,
     inputs: AgentInputs,
-    message: Message
+    message: Message,
+    blockId?: string
   ): Promise<void> {
     if (!inputs.memoryType || inputs.memoryType === 'none') {
       return
@@ -403,6 +416,20 @@ export class Memory {
       key,
       role: message.role,
     })
+
+    // Call Mem0 API to store in external service when assistant message is persisted
+    // This stores both the user prompt and assistant response
+    if (message.role === 'assistant') {
+      // Use blockId if provided, otherwise use key (conversationId) as fallback
+      const blockIdForMem0 = blockId || key
+      // Call asynchronously without blocking - this is an add-on feature
+      this.callMem0API(ctx, inputs, message, blockIdForMem0, key).catch((error) => {
+        logger.warn('Failed to call Mem0 API after appending assistant message (non-blocking)', {
+          error,
+          workflowId: ctx.workflowId,
+        })
+      })
+    }
   }
 
   async seedMemory(ctx: ExecutionContext, inputs: AgentInputs, messages: Message[]): Promise<void> {
@@ -448,7 +475,8 @@ export class Memory {
   wrapStreamForPersistence(
     stream: ReadableStream<Uint8Array>,
     ctx: ExecutionContext,
-    inputs: AgentInputs
+    inputs: AgentInputs,
+    blockId?: string
   ): ReadableStream<Uint8Array> {
     let accumulatedContent = ''
     const decoder = new TextDecoder()
@@ -462,10 +490,15 @@ export class Memory {
 
       flush: () => {
         if (accumulatedContent.trim()) {
-          this.appendToMemory(ctx, inputs, {
-            role: 'assistant',
-            content: accumulatedContent,
-          }).catch((error) => logger.error('Failed to persist streaming response:', error))
+          this.appendToMemory(
+            ctx,
+            inputs,
+            {
+              role: 'assistant',
+              content: accumulatedContent,
+            },
+            blockId
+          ).catch((error) => logger.error('Failed to persist streaming response:', error))
         }
       },
     })

@@ -120,20 +120,6 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    // Log systemPrompt and userPrompt after fact memories processing
-    logger.debug('Agent block prompts after fact memory processing', {
-      blockId: block.id,
-      hasSystemPrompt: !!inputs.systemPrompt,
-      systemPrompt: inputs.systemPrompt,
-      hasUserPrompt: !!inputs.userPrompt,
-      userPrompt:
-        typeof inputs.userPrompt === 'string'
-          ? inputs.userPrompt
-          : inputs.userPrompt
-            ? JSON.stringify(inputs.userPrompt)
-            : undefined,
-    })
-
     const messages = await this.buildMessages(ctx, inputs, block.id)
 
     // Log final messages array summary
@@ -141,16 +127,6 @@ export class AgentBlockHandler implements BlockHandler {
       const systemMessages = messages.filter((m) => m.role === 'system')
       const userMessages = messages.filter((m) => m.role === 'user')
       const assistantMessages = messages.filter((m) => m.role === 'assistant')
-
-      logger.debug('Agent block messages built', {
-        blockId: block.id,
-        totalMessages: messages.length,
-        systemMessageCount: systemMessages.length,
-        userMessageCount: userMessages.length,
-        assistantMessageCount: assistantMessages.length,
-        firstSystemPrompt: systemMessages[0]?.content,
-        lastUserPrompt: userMessages[userMessages.length - 1]?.content,
-      })
     }
 
     const providerRequest = this.buildProviderRequest({
@@ -177,14 +153,15 @@ export class AgentBlockHandler implements BlockHandler {
         return this.wrapStreamForMemoryPersistence(
           ctx,
           filteredInputs,
-          result as StreamingExecution
+          result as StreamingExecution,
+          block.id
         )
       }
       return result
     }
 
     if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
-      await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput)
+      await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput, block.id)
     }
 
     return result
@@ -880,7 +857,14 @@ export class AgentBlockHandler implements BlockHandler {
               typeof inputs.userPrompt === 'string'
                 ? `${inputs.userPrompt}${memoryContext}`
                 : `${JSON.stringify(inputs.userPrompt)}${memoryContext}`
+          } else if (conversationMessages.length > 0) {
+            // Modify the user message in conversationMessages directly
+            const userMsg = conversationMessages.find((m) => m.role === 'user')
+            if (userMsg) {
+              userMsg.content += memoryContext
+            }
           } else if (inputs.messages && Array.isArray(inputs.messages)) {
+            // Fallback: modify inputs.messages if conversationMessages is empty
             const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
             if (userMsgIndex !== -1) {
               inputs.messages[userMsgIndex].content += memoryContext
@@ -907,10 +891,17 @@ export class AgentBlockHandler implements BlockHandler {
       messages.push(...this.processMemories(inputs.memories))
     }
 
-    // 4. Add conversation messages from inputs.messages (if not using native memory)
-    // When memory is enabled, these are already seeded/fetched above
-    if (!memoryEnabled && conversationMessages.length > 0) {
+    // 4. Add conversation messages from inputs.messages
+    // When memory is enabled, these may have been modified with memory context above
+    // We need to add them to the messages array so they're sent to the LLM
+    if (conversationMessages.length > 0) {
       messages.push(...conversationMessages)
+      logger.debug('Added conversation messages to messages array', {
+        blockId,
+        conversationMessageCount: conversationMessages.length,
+        totalMessages: messages.length,
+        memoryEnabled,
+      })
     }
 
     // 5. Handle legacy systemPrompt (backward compatibility)
@@ -930,8 +921,18 @@ export class AgentBlockHandler implements BlockHandler {
         const userMessages = messages.filter((m) => m.role === 'user')
         const lastUserMessage = userMessages[userMessages.length - 1]
         if (lastUserMessage) {
-          await memoryService.appendToMemory(ctx, inputs, lastUserMessage)
+          await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
         }
+      }
+    }
+
+    // 6b. Store user messages from inputs.messages to memory when memory is enabled
+    // This ensures user input is stored even when using messages array instead of userPrompt
+    if (memoryEnabled && conversationMessages.length > 0 && !inputs.userPrompt) {
+      const userMessages = conversationMessages.filter((m) => m.role === 'user')
+      const lastUserMessage = userMessages[userMessages.length - 1]
+      if (lastUserMessage) {
+        await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
       }
     }
 
@@ -940,6 +941,29 @@ export class AgentBlockHandler implements BlockHandler {
     if (systemMessages.length > 0) {
       messages.unshift(...systemMessages)
     }
+
+    // Final validation: ensure we have at least one message
+    if (messages.length === 0) {
+      logger.error('No messages built for agent execution', {
+        blockId,
+        hasUserPrompt: !!inputs.userPrompt,
+        hasMessages: !!inputs.messages,
+        messagesLength: inputs.messages?.length || 0,
+        memoryEnabled,
+        conversationMessagesLength: conversationMessages.length,
+      })
+      throw new Error(
+        'No messages to send to LLM. Please provide either userPrompt or messages with at least one user message.'
+      )
+    }
+
+    logger.debug('Final messages array built', {
+      blockId,
+      totalMessages: messages.length,
+      systemMessages: messages.filter((m) => m.role === 'system').length,
+      userMessages: messages.filter((m) => m.role === 'user').length,
+      assistantMessages: messages.filter((m) => m.role === 'assistant').length,
+    })
 
     return messages.length > 0 ? messages : undefined
   }
@@ -1359,10 +1383,11 @@ export class AgentBlockHandler implements BlockHandler {
   private wrapStreamForMemoryPersistence(
     ctx: ExecutionContext,
     inputs: AgentInputs,
-    streamingExec: StreamingExecution
+    streamingExec: StreamingExecution,
+    blockId: string
   ): StreamingExecution {
     return {
-      stream: memoryService.wrapStreamForPersistence(streamingExec.stream, ctx, inputs),
+      stream: memoryService.wrapStreamForPersistence(streamingExec.stream, ctx, inputs, blockId),
       execution: streamingExec.execution,
     }
   }
@@ -1370,7 +1395,8 @@ export class AgentBlockHandler implements BlockHandler {
   private async persistResponseToMemory(
     ctx: ExecutionContext,
     inputs: AgentInputs,
-    result: BlockOutput
+    result: BlockOutput,
+    blockId: string
   ): Promise<void> {
     const content = (result as any)?.content
     if (!content || typeof content !== 'string') {
@@ -1378,10 +1404,11 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     try {
-      await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content })
+      await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content }, blockId)
       logger.debug('Persisted assistant response to memory', {
         workflowId: ctx.workflowId,
         conversationId: inputs.conversationId,
+        blockId,
       })
     } catch (error) {
       logger.error('Failed to persist response to memory:', error)

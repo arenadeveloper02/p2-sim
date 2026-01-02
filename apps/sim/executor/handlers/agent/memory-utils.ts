@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 
 const logger = createLogger('MemoryUtils')
