@@ -550,7 +550,7 @@ export async function rerankSearchResults(
     return results
   }
 
-  const model = rerankConfig?.model || env.KB_RERANK_MODEL_NAME || 'rerank-v3.5'
+  const model = rerankConfig?.model || 'rerank-v3.5'
   const candidateCount = Math.min(results.length, 100)
   const topN = Math.min(rerankConfig?.topN ?? results.length, candidateCount)
 
@@ -589,36 +589,33 @@ export async function rerankSearchResults(
       return results
     }
 
-    // Filter results with relevance_score > 0.1
-    const filteredRerankedItems = rerankedItems.filter(
-      (item: any) => typeof item.relevance_score === 'number' && item.relevance_score > 0.1
-    )
+    // Sort by relevance_score (descending) and take top 10
+    const sortedRerankedItems = rerankedItems
+      .filter((item: any) => typeof item.relevance_score === 'number')
+      .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
+      .slice(0, 10)
 
-    if (filteredRerankedItems.length === 0) {
-      logger.debug('No results with relevance_score > 0.1', { requestId: rerankConfig?.requestId })
+    if (sortedRerankedItems.length === 0) {
+      logger.debug('No results with valid relevance_score', { requestId: rerankConfig?.requestId })
       return []
     }
 
-    // Extract indices from filtered results
+    // Extract indices from sorted results
     const validIndices = new Set<number>()
-    filteredRerankedItems.forEach((item: any) => {
+    sortedRerankedItems.forEach((item: any) => {
       const candidateIndex = typeof item.index === 'number' ? item.index : -1
       if (candidateIndex >= 0 && candidateIndex < candidates.length) {
         validIndices.add(candidateIndex)
       }
     })
-    console.log('validIndices', validIndices)
 
     if (validIndices.size === 0) {
       return []
     }
 
-    // Filter candidates to only include those at valid indices
-    const filteredCandidates = candidates.filter((_, index) => validIndices.has(index))
-    console.log('filteredCandidates', filteredCandidates)
     // Create score map for sorting
     const scoreMap = new Map<string, number>()
-    filteredRerankedItems.forEach((item: any) => {
+    sortedRerankedItems.forEach((item: any) => {
       const candidateIndex = typeof item.index === 'number' ? item.index : -1
       if (candidateIndex >= 0 && candidateIndex < candidates.length) {
         const candidate = candidates[candidateIndex]
@@ -629,14 +626,16 @@ export async function rerankSearchResults(
         }
       }
     })
-    console.log(scoreMap, 'scoreMap')
-    // Sort filtered results by relevance score
-    const rerankedResults = filteredCandidates.sort((a, b) => {
-      const scoreB = scoreMap.get(b.id) ?? Number.NEGATIVE_INFINITY
-      const scoreA = scoreMap.get(a.id) ?? Number.NEGATIVE_INFINITY
-      return scoreB - scoreA
-    })
-    console.log('rerankedResults', rerankedResults)
+
+    // Filter candidates to only include those at valid indices and sort by relevance score
+    const rerankedResults = candidates
+      .filter((_, index) => validIndices.has(index))
+      .sort((a, b) => {
+        const scoreB = scoreMap.get(b.id) ?? Number.NEGATIVE_INFINITY
+        const scoreA = scoreMap.get(a.id) ?? Number.NEGATIVE_INFINITY
+        return scoreB - scoreA
+      })
+
     return rerankedResults.slice(0, topN)
   } catch (error) {
     logger.warn('Failed to rerank knowledge base results', {
