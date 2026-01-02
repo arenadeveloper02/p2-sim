@@ -55,7 +55,103 @@ export class AgentBlockHandler implements BlockHandler {
     const providerId = getProviderFromModel(model)
     const formattedTools = await this.formatTools(ctx, filteredInputs.tools || [])
     const streamingConfig = this.getStreamingConfig(ctx, block)
-    const messages = await this.buildMessages(ctx, filteredInputs)
+
+    // Log initial systemPrompt and userPrompt
+    logger.debug('Agent block execution started', {
+      blockId: block.id,
+      workflowId: ctx.workflowId,
+      hasSystemPrompt: !!inputs.systemPrompt,
+      systemPrompt: inputs.systemPrompt,
+      hasUserPrompt: !!inputs.userPrompt,
+      userPrompt:
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : inputs.userPrompt
+            ? JSON.stringify(inputs.userPrompt)
+            : undefined,
+      hasMessages: !!inputs.messages && inputs.messages.length > 0,
+      messageCount: inputs.messages?.length || 0,
+      memoryType: inputs.memoryType,
+    })
+
+    // Get fact memories and add to system prompt if memory is enabled
+    if (inputs.memoryType && inputs.memoryType !== 'none') {
+      // Extract user prompt for fact memory search
+      let userPrompt: string | undefined
+      if (inputs.userPrompt) {
+        userPrompt =
+          typeof inputs.userPrompt === 'string'
+            ? inputs.userPrompt
+            : JSON.stringify(inputs.userPrompt)
+      } else if (inputs.messages && Array.isArray(inputs.messages)) {
+        const userMsg = inputs.messages.find((m) => m.role === 'user')
+        if (userMsg) {
+          userPrompt = userMsg.content
+        }
+      }
+
+      // Get fact memories (isConversation: false)
+      const factMemories = await memoryService.searchMemories(
+        ctx,
+        inputs,
+        block.id,
+        userPrompt,
+        false
+      )
+
+      // Format fact memories and add to system prompt
+      if (factMemories && factMemories.length > 0) {
+        const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+
+        const factMemoriesPrompt = `Consider these user preferences when you are giving user response -\n${factMemoriesText}`
+
+        // Append to existing system prompt or create new one
+        if (inputs.systemPrompt) {
+          inputs.systemPrompt = `${inputs.systemPrompt}\n\n${factMemoriesPrompt}`
+        } else {
+          inputs.systemPrompt = factMemoriesPrompt
+        }
+
+        logger.debug('Added fact memories to system prompt', {
+          factMemoryCount: factMemories.length,
+          blockId: block.id,
+          updatedSystemPrompt: inputs.systemPrompt,
+        })
+      }
+    }
+
+    // Log systemPrompt and userPrompt after fact memories processing
+    logger.debug('Agent block prompts after fact memory processing', {
+      blockId: block.id,
+      hasSystemPrompt: !!inputs.systemPrompt,
+      systemPrompt: inputs.systemPrompt,
+      hasUserPrompt: !!inputs.userPrompt,
+      userPrompt:
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : inputs.userPrompt
+            ? JSON.stringify(inputs.userPrompt)
+            : undefined,
+    })
+
+    const messages = await this.buildMessages(ctx, inputs, block.id)
+
+    // Log final messages array summary
+    if (messages && messages.length > 0) {
+      const systemMessages = messages.filter((m) => m.role === 'system')
+      const userMessages = messages.filter((m) => m.role === 'user')
+      const assistantMessages = messages.filter((m) => m.role === 'assistant')
+
+      logger.debug('Agent block messages built', {
+        blockId: block.id,
+        totalMessages: messages.length,
+        systemMessageCount: systemMessages.length,
+        userMessageCount: userMessages.length,
+        assistantMessageCount: assistantMessages.length,
+        firstSystemPrompt: systemMessages[0]?.content,
+        lastUserPrompt: userMessages[userMessages.length - 1]?.content,
+      })
+    }
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -707,7 +803,8 @@ export class AgentBlockHandler implements BlockHandler {
 
   private async buildMessages(
     ctx: ExecutionContext,
-    inputs: AgentInputs
+    inputs: AgentInputs,
+    blockId: string
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = inputs.memoryType && inputs.memoryType !== 'none'
@@ -717,33 +814,90 @@ export class AgentBlockHandler implements BlockHandler {
     const systemMessages = inputMessages.filter((m) => m.role === 'system')
     const conversationMessages = inputMessages.filter((m) => m.role !== 'system')
 
-    // 2. Handle native memory: seed on first run, then fetch and append new user input
-    if (memoryEnabled && ctx.workspaceId) {
-      const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs)
-      const hasExisting = memoryMessages.length > 0
+    // 1. Fetch memory history if configured (using semantic search)
+    if (inputs.memoryType && inputs.memoryType !== 'none') {
+      // Extract user prompt for search query
+      let userPrompt: string | undefined
+      if (inputs.userPrompt) {
+        userPrompt =
+          typeof inputs.userPrompt === 'string'
+            ? inputs.userPrompt
+            : JSON.stringify(inputs.userPrompt)
+      } else if (inputs.messages && Array.isArray(inputs.messages)) {
+        const userMsg = inputs.messages.find((m) => m.role === 'user')
+        if (userMsg) {
+          userPrompt = userMsg.content
+        }
+      }
 
-      if (!hasExisting && conversationMessages.length > 0) {
-        const taggedMessages = conversationMessages.map((m) =>
-          m.role === 'user' ? { ...m, executionId: ctx.executionId } : m
-        )
-        await memoryService.seedMemory(ctx, inputs, taggedMessages)
-        messages.push(...taggedMessages)
-      } else {
-        messages.push(...memoryMessages)
+      // Commented out: Chronological memory fetch
+      // const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs, blockId)
 
-        if (hasExisting && conversationMessages.length > 0) {
-          const latestUserFromInput = conversationMessages.filter((m) => m.role === 'user').pop()
-          if (latestUserFromInput) {
-            const userMessageInThisRun = memoryMessages.some(
-              (m) => m.role === 'user' && m.executionId === ctx.executionId
-            )
-            if (!userMessageInThisRun) {
-              const taggedMessage = { ...latestUserFromInput, executionId: ctx.executionId }
-              messages.push(taggedMessage)
-              await memoryService.appendToMemory(ctx, inputs, taggedMessage)
-            }
+      // Use semantic search instead
+      const searchResults = await memoryService.searchMemories(
+        ctx,
+        inputs,
+        blockId,
+        userPrompt,
+        true
+      )
+
+      // Add search results to user prompt incrementally with token checking
+      if (searchResults && searchResults.length > 0 && userPrompt) {
+        const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
+        const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
+
+        const tokenLimit = getMemoryTokenLimit(inputs.model)
+        const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
+        let currentTokenCount = baseUserPromptTokens
+        let memoryContext = ''
+
+        // Add search results one by one, checking token count
+        for (const memory of searchResults) {
+          const memoryText = `\n\nPrevious conversation:\n${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+          const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+
+          if (currentTokenCount + memoryTokens <= tokenLimit) {
+            memoryContext += memoryText
+            currentTokenCount += memoryTokens
+          } else {
+            logger.debug('Stopped adding memories due to token limit', {
+              blockId,
+              tokenLimit,
+              currentTokens: currentTokenCount,
+              memoryTokens,
+              memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
+              totalMemories: searchResults.length,
+            })
+            break
           }
         }
+
+        // Append memory context to user prompt
+        if (memoryContext) {
+          if (inputs.userPrompt) {
+            inputs.userPrompt =
+              typeof inputs.userPrompt === 'string'
+                ? `${inputs.userPrompt}${memoryContext}`
+                : `${JSON.stringify(inputs.userPrompt)}${memoryContext}`
+          } else if (inputs.messages && Array.isArray(inputs.messages)) {
+            const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
+            if (userMsgIndex !== -1) {
+              inputs.messages[userMsgIndex].content += memoryContext
+            }
+          }
+
+          logger.debug('Added search memories to user prompt with token checking', {
+            blockId,
+            tokenLimit,
+            finalTokenCount: currentTokenCount,
+            memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
+            totalMemories: searchResults.length,
+          })
+        }
+      } else if (searchResults && searchResults.length > 0) {
+        // If no user prompt exists, add to messages array as fallback
+        messages.push(...searchResults)
       }
     }
 
