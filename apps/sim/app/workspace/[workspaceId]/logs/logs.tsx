@@ -1,10 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
-import { getStartDateFromTimeRange } from '@/lib/logs/filters'
+import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filters'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import { useFolders } from '@/hooks/queries/folders'
 import { useDashboardLogs, useLogDetail, useLogsList } from '@/hooks/queries/logs'
@@ -30,6 +30,8 @@ export default function Logs() {
     setWorkspaceId,
     initializeFromURL,
     timeRange,
+    startDate,
+    endDate,
     level,
     workflowIds,
     folderIds,
@@ -72,6 +74,8 @@ export default function Logs() {
   const logFilters = useMemo(
     () => ({
       timeRange,
+      startDate,
+      endDate,
       level,
       workflowIds,
       folderIds,
@@ -79,7 +83,7 @@ export default function Logs() {
       searchQuery: debouncedSearchQuery,
       limit: LOGS_PER_PAGE,
     }),
-    [timeRange, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
+    [timeRange, startDate, endDate, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
   )
 
   const logsQuery = useLogsList(workspaceId, logFilters, {
@@ -90,13 +94,15 @@ export default function Logs() {
   const dashboardFilters = useMemo(
     () => ({
       timeRange,
+      startDate,
+      endDate,
       level,
       workflowIds,
       folderIds,
       triggers,
       searchQuery: debouncedSearchQuery,
     }),
-    [timeRange, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
+    [timeRange, startDate, endDate, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
   )
 
   const dashboardLogsQuery = useDashboardLogs(workspaceId, dashboardFilters, {
@@ -261,9 +267,14 @@ export default function Logs() {
       if (workflowIds.length > 0) params.set('workflowIds', workflowIds.join(','))
       if (folderIds.length > 0) params.set('folderIds', folderIds.join(','))
 
-      const startDate = getStartDateFromTimeRange(timeRange)
-      if (startDate) {
-        params.set('startDate', startDate.toISOString())
+      const computedStartDate = getStartDateFromTimeRange(timeRange, startDate)
+      if (computedStartDate) {
+        params.set('startDate', computedStartDate.toISOString())
+      }
+
+      const computedEndDate = getEndDateFromTimeRange(timeRange, endDate)
+      if (computedEndDate) {
+        params.set('endDate', computedEndDate.toISOString())
       }
 
       const parsed = parseQuery(debouncedSearchQuery)
@@ -344,7 +355,7 @@ export default function Logs() {
   return (
     <div className='flex h-full flex-1 flex-col overflow-hidden'>
       <div className='flex flex-1 overflow-hidden'>
-        <div className='flex flex-1 flex-col overflow-auto pt-[28px] pl-[24px]'>
+        <div className='flex flex-1 flex-col overflow-auto bg-white pt-[28px] pl-[24px] dark:bg-[var(--bg)]'>
           <div className='pr-[24px]'>
             <LogsToolbar
               viewMode={viewMode}
@@ -385,9 +396,9 @@ export default function Logs() {
             )}
           >
             {/* Table container */}
-            <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-[var(--surface-1)]'>
+            <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-[var(--surface-2)] dark:bg-[var(--surface-1)]'>
               {/* Table header */}
-              <div className='flex-shrink-0 rounded-t-[6px] bg-[var(--surface-3)] px-[24px] py-[10px]'>
+              <div className='flex-shrink-0 rounded-t-[6px] bg-[var(--surface-3)] px-[24px] py-[10px] dark:bg-[var(--surface-3)]'>
                 <div className='flex items-center'>
                   <span className='w-[8%] min-w-[70px] font-medium text-[12px] text-[var(--text-tertiary)]'>
                     Date
@@ -424,8 +435,7 @@ export default function Logs() {
                   </div>
                 ) : logsQuery.isError ? (
                   <div className='flex h-full items-center justify-center'>
-                    <div className='flex items-center gap-[8px] text-[var(--text-error)]'>
-                      <AlertCircle className='h-[16px] w-[16px]' />
+                    <div className='text-[var(--text-error)]'>
                       <span className='text-[13px]'>
                         Error: {logsQuery.error?.message || 'Failed to load logs'}
                       </span>

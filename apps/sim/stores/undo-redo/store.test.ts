@@ -14,7 +14,6 @@ import {
   createAddBlockEntry,
   createAddEdgeEntry,
   createBlock,
-  createDuplicateBlockEntry,
   createMockStorage,
   createMoveBlockEntry,
   createRemoveBlockEntry,
@@ -23,6 +22,7 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { runWithUndoRedoRecordingSuspended, useUndoRedoStore } from '@/stores/undo-redo/store'
+import type { UpdateParentOperation } from '@/stores/undo-redo/types'
 
 describe('useUndoRedoStore', () => {
   const workflowId = 'wf-test'
@@ -616,62 +616,6 @@ describe('useUndoRedoStore', () => {
     })
   })
 
-  describe('duplicate-block operations', () => {
-    it('should handle duplicate-block operations', () => {
-      const { push, undo, redo, getStackSizes } = useUndoRedoStore.getState()
-
-      const sourceBlock = createBlock({ id: 'source-block' })
-      const duplicatedBlock = createBlock({ id: 'duplicated-block' })
-
-      push(
-        workflowId,
-        userId,
-        createDuplicateBlockEntry('source-block', 'duplicated-block', duplicatedBlock, {
-          workflowId,
-          userId,
-        })
-      )
-
-      expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
-
-      const entry = undo(workflowId, userId)
-      expect(entry?.operation.type).toBe('duplicate-block')
-      expect(entry?.inverse.type).toBe('remove-block')
-      expect(getStackSizes(workflowId, userId).redoSize).toBe(1)
-
-      redo(workflowId, userId)
-      expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
-    })
-
-    it('should store the duplicated block snapshot correctly', () => {
-      const { push, undo } = useUndoRedoStore.getState()
-
-      const duplicatedBlock = createBlock({
-        id: 'duplicated-block',
-        name: 'Duplicated Agent',
-        type: 'agent',
-        position: { x: 200, y: 200 },
-      })
-
-      push(
-        workflowId,
-        userId,
-        createDuplicateBlockEntry('source-block', 'duplicated-block', duplicatedBlock, {
-          workflowId,
-          userId,
-        })
-      )
-
-      const entry = undo(workflowId, userId)
-      expect(entry?.operation.data.duplicatedBlockSnapshot).toMatchObject({
-        id: 'duplicated-block',
-        name: 'Duplicated Agent',
-        type: 'agent',
-        position: { x: 200, y: 200 },
-      })
-    })
-  })
-
   describe('update-parent operations', () => {
     it('should handle update-parent operations', () => {
       const { push, undo, redo, getStackSizes } = useUndoRedoStore.getState()
@@ -716,10 +660,11 @@ describe('useUndoRedoStore', () => {
       )
 
       const entry = undo(workflowId, userId)
-      expect(entry?.inverse.data.oldParentId).toBe('loop-2')
-      expect(entry?.inverse.data.newParentId).toBe('loop-1')
-      expect(entry?.inverse.data.oldPosition).toEqual({ x: 100, y: 100 })
-      expect(entry?.inverse.data.newPosition).toEqual({ x: 0, y: 0 })
+      const inverse = entry?.inverse as UpdateParentOperation
+      expect(inverse.data.oldParentId).toBe('loop-2')
+      expect(inverse.data.newParentId).toBe('loop-1')
+      expect(inverse.data.oldPosition).toEqual({ x: 100, y: 100 })
+      expect(inverse.data.newPosition).toEqual({ x: 0, y: 0 })
     })
   })
 
