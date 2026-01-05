@@ -36,7 +36,7 @@ export function StatusBar({
       const end = new Date(start.getTime() + (segmentDurationMs || 0))
       const rangeLabel = Number.isNaN(start.getTime())
         ? ''
-        : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' })} – ${end.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+        : `${start.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' })}`
       return {
         rangeLabel,
         successLabel: `${segment.successRate.toFixed(1)}%`,
@@ -97,7 +97,7 @@ export function StatusBar({
 
       {hoverIndex !== null && segments[hoverIndex] && (
         <div
-          className={`-translate-x-1/2 pointer-events-none absolute z-20 w-max whitespace-nowrap rounded-[8px] border border-[var(--border-strong)] bg-[var(--surface-1)] px-[8px] py-[6px] text-center text-[11px] shadow-lg ${
+          className={`-translate-x-1/2 pointer-events-none absolute z-20 w-max whitespace-nowrap rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-1)] px-[8px] py-[6px] text-center text-[11px] shadow-lg ${
             preferBelow ? '' : '-translate-y-full'
           }`}
           style={{

@@ -183,7 +183,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'threadTs',
       title: 'Thread Timestamp',
       type: 'short-input',
-      canonicalParamId: 'thread_ts',
       placeholder: 'Reply to thread (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -265,7 +264,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'channelLimit',
       title: 'Channel Limit',
       type: 'short-input',
-      canonicalParamId: 'limit',
       placeholder: '100',
       condition: {
         field: 'operation',
@@ -277,7 +275,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'memberLimit',
       title: 'Member Limit',
       type: 'short-input',
-      canonicalParamId: 'limit',
       placeholder: '100',
       condition: {
         field: 'operation',
@@ -303,7 +300,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'userLimit',
       title: 'User Limit',
       type: 'short-input',
-      canonicalParamId: 'limit',
       placeholder: '100',
       condition: {
         field: 'operation',
@@ -360,7 +356,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'updateTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
-      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -384,7 +379,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'deleteTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
-      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -397,7 +391,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'reactionTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
-      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -409,7 +402,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'emojiName',
       title: 'Emoji Name',
       type: 'short-input',
-      canonicalParamId: 'name',
       placeholder: 'Emoji name without colons (e.g., thumbsup, heart, eyes)',
       condition: {
         field: 'operation',
@@ -558,47 +550,35 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             baseParams.content = content
             break
 
-          case 'read':
-            if (limit) {
-              const parsedLimit = Number.parseInt(limit, 10)
-              baseParams.limit = !Number.isNaN(parsedLimit) ? parsedLimit : 10
-            } else {
-              baseParams.limit = 10
+          case 'read': {
+            const parsedLimit = limit ? Number.parseInt(limit, 10) : 10
+            if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 15) {
+              throw new Error('Message limit must be between 1 and 15')
             }
+            baseParams.limit = parsedLimit
             if (oldest) {
               baseParams.oldest = oldest
             }
             break
+          }
 
-          case 'list_channels':
+          case 'list_channels': {
             baseParams.includePrivate = includePrivate !== 'false'
             baseParams.excludeArchived = true
-            if (channelLimit) {
-              const parsedLimit = Number.parseInt(channelLimit, 10)
-              baseParams.limit = !Number.isNaN(parsedLimit) ? parsedLimit : 100
-            } else {
-              baseParams.limit = 100
-            }
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
             break
+          }
 
-          case 'list_members':
-            if (memberLimit) {
-              const parsedLimit = Number.parseInt(memberLimit, 10)
-              baseParams.limit = !Number.isNaN(parsedLimit) ? parsedLimit : 100
-            } else {
-              baseParams.limit = 100
-            }
+          case 'list_members': {
+            baseParams.limit = memberLimit ? Number.parseInt(memberLimit, 10) : 100
             break
+          }
 
-          case 'list_users':
+          case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
-            if (userLimit) {
-              const parsedLimit = Number.parseInt(userLimit, 10)
-              baseParams.limit = !Number.isNaN(parsedLimit) ? parsedLimit : 100
-            } else {
-              baseParams.limit = 100
-            }
+            baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
             break
+          }
 
           case 'get_user':
             if (!userId) {

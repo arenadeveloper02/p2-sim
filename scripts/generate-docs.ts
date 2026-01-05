@@ -71,7 +71,7 @@ async function generateIconMapping(): Promise<Record<string, string>> {
     console.log('Generating icon mapping from block definitions...')
 
     const iconMapping: Record<string, string> = {}
-    const blockFiles = await glob(`${BLOCKS_PATH}/*.ts`)
+    const blockFiles = (await glob(`${BLOCKS_PATH}/*.ts`)).sort()
 
     for (const blockFile of blockFiles) {
       const fileContent = fs.readFileSync(blockFile, 'utf-8')
@@ -132,6 +132,7 @@ function writeIconMapping(iconMapping: Record<string, string>): void {
 
     // Generate mapping with direct references (no dynamic access for tree shaking)
     const mappingEntries = Object.entries(iconMapping)
+      .sort(([a], [b]) => a.localeCompare(b))
       .map(([blockType, iconName]) => `  ${blockType}: ${iconName},`)
       .join('\n')
 
@@ -472,7 +473,6 @@ function extractToolInfo(
     if (outputsFieldMatch) {
       const outputsContent = outputsFieldMatch[1]
       outputs = parseToolOutputsField(outputsContent)
-      console.log(`Found tool outputs field for ${toolName}:`, Object.keys(outputs))
     }
 
     return {
@@ -837,7 +837,6 @@ function extractManualContent(existingContent: string): Record<string, string> {
     const sectionName = match[1]
     const content = match[2].trim()
     manualSections[sectionName] = content
-    console.log(`Found manual content for section: ${sectionName}`)
   }
 
   return manualSections
@@ -851,13 +850,6 @@ function mergeWithManualContent(
   if (!existingContent || Object.keys(manualSections).length === 0) {
     return generatedMarkdown
   }
-
-  console.log('Merging manual content with generated markdown')
-
-  console.log(`Found ${Object.keys(manualSections).length} manual sections`)
-  Object.keys(manualSections).forEach((section) => {
-    console.log(`  - ${section}: ${manualSections[section].substring(0, 20)}...`)
-  })
 
   let mergedContent = generatedMarkdown
 
@@ -884,7 +876,6 @@ function mergeWithManualContent(
 
       if (match && match.index !== undefined) {
         const insertPosition = match.index + match[0].length
-        console.log(`Inserting ${sectionName} content after position ${insertPosition}`)
         mergedContent = `${mergedContent.slice(0, insertPosition)}\n\n{/* MANUAL-CONTENT-START:${sectionName} */}\n${content}\n{/* MANUAL-CONTENT-END */}\n${mergedContent.slice(insertPosition)}`
       } else {
         console.log(
@@ -944,7 +935,6 @@ async function generateBlockDoc(blockPath: string) {
     let existingContent: string | null = null
     if (fs.existsSync(outputFilePath)) {
       existingContent = fs.readFileSync(outputFilePath, 'utf-8')
-      console.log(`Existing file found for ${blockConfig.type}.mdx, checking for manual content...`)
     }
 
     const manualSections = existingContent ? extractManualContent(existingContent) : {}
@@ -953,14 +943,10 @@ async function generateBlockDoc(blockPath: string) {
 
     let finalContent = markdown
     if (Object.keys(manualSections).length > 0) {
-      console.log(`Found manual content in ${blockConfig.type}.mdx, merging...`)
       finalContent = mergeWithManualContent(markdown, existingContent, manualSections)
-    } else {
-      console.log(`No manual content found in ${blockConfig.type}.mdx`)
     }
 
     fs.writeFileSync(outputFilePath, finalContent)
-    console.log(`Generated documentation for ${blockConfig.type}`)
   } catch (error) {
     console.error(`Error processing ${blockPath}:`, error)
   }
@@ -1165,7 +1151,7 @@ async function generateAllBlockDocs() {
     const iconMapping = await generateIconMapping()
     writeIconMapping(iconMapping)
 
-    const blockFiles = await glob(`${BLOCKS_PATH}/*.ts`)
+    const blockFiles = (await glob(`${BLOCKS_PATH}/*.ts`)).sort()
 
     for (const blockFile of blockFiles) {
       await generateBlockDoc(blockFile)

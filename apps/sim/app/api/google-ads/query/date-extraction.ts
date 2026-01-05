@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { MAX_DAYS_FOR_LAST_N_DAYS, MAX_MONTHS_FOR_LAST_N_MONTHS } from './constants'
 import {
   type DateRange,

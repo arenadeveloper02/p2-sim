@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { useBrandConfig } from '@/lib/branding/branding'
 import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
+import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 
 const logger = createLogger('InviteById')
@@ -187,6 +188,11 @@ export default function Invite() {
     setIsAccepting(true)
 
     if (invitationType === 'workspace') {
+      changeWorkspaceEvent({
+        'Workspace Name': invitationDetails?.data?.workspaceName,
+        'Workspace ID': invitationDetails?.data?.workspaceId,
+        'Workspace LP Source': 'Invitation',
+      })
       window.location.href = `/api/workspaces/invitations/${encodeURIComponent(inviteId)}?token=${encodeURIComponent(token || '')}`
     } else {
       try {

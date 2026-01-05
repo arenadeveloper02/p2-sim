@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 import { useQueryClient } from '@tanstack/react-query'
-import { LogIn, Settings, User, Users, Wrench } from 'lucide-react'
+import { Files, LogIn, Settings, User, Users, Wrench } from 'lucide-react'
 import {
   Card,
   Connections,
@@ -28,8 +28,10 @@ import { getSubscriptionStatus } from '@/lib/billing/client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { getUserRole } from '@/lib/workspaces/organization'
+import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   ApiKeys,
+  BYOK,
   Copilot,
   CustomTools,
   EnvironmentVariables,
@@ -46,6 +48,7 @@ import { generalSettingsKeys, useGeneralSettings } from '@/hooks/queries/general
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
 import { ssoKeys, useSSOProviders } from '@/hooks/queries/sso'
 import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSettingsModalStore } from '@/stores/settings-modal/store'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
@@ -61,6 +64,7 @@ type SettingsSection =
   | 'template-profile'
   | 'integrations'
   | 'apikeys'
+  | 'byok'
   | 'files'
   | 'subscription'
   | 'team'
@@ -114,13 +118,20 @@ const allNavigationItems: NavigationItem[] = [
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
   // {
+  //   id: 'byok',
+  //   label: 'BYOK',
+  //   icon: KeySquare,
+  //   section: 'system',
+  //   requiresHosted: true,
+  // },
+  // {
   //   id: 'copilot',
   //   label: 'Copilot Keys',
   //   icon: HexSimple,
   //   section: 'system',
   //   requiresHosted: true,
   // },
-  // { id: 'files', label: 'Files', icon: Files, section: 'system' },
+  { id: 'files', label: 'Files', icon: Files, section: 'system' },
   {
     id: 'sso',
     label: 'Single Sign-On',
@@ -134,6 +145,8 @@ const allNavigationItems: NavigationItem[] = [
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
+  const { initialSection, mcpServerId, clearInitialState } = useSettingsModalStore()
+  const [pendingMcpServerId, setPendingMcpServerId] = useState<string | null>(null)
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const { data: organizationsData } = useOrganizations()
@@ -232,8 +245,10 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   const handleSectionChange = useCallback(
     (sectionId: SettingsSection) => {
+      settingsPageTabSwitchEvent({
+        Tabs: sectionId?.charAt(0).toUpperCase() + sectionId?.slice(1) || '',
+      })
       if (sectionId === activeSection) return
-
       if (activeSection === 'environment' && environmentBeforeLeaveHandler.current) {
         environmentBeforeLeaveHandler.current(() => setActiveSection(sectionId))
         return
@@ -246,6 +261,24 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   // React Query hook automatically loads and syncs settings
   useGeneralSettings()
+
+  // Apply initial section from store when modal opens
+  useEffect(() => {
+    if (open && initialSection) {
+      setActiveSection(initialSection)
+      if (mcpServerId) {
+        setPendingMcpServerId(mcpServerId)
+      }
+      clearInitialState()
+    }
+  }, [open, initialSection, mcpServerId, clearInitialState])
+
+  // Clear pending server ID when section changes away from MCP
+  useEffect(() => {
+    if (activeSection !== 'mcp') {
+      setPendingMcpServerId(null)
+    }
+  }, [activeSection])
 
   useEffect(() => {
     const handleOpenSettings = (event: CustomEvent<{ tab: SettingsSection }>) => {
@@ -283,12 +316,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           throw new Error('Failed to fetch general settings')
         }
         const { data } = await response.json()
+        // Convert 'system' theme to 'light' (remove system theme support)
+        const theme = data.theme === 'system' || !data.theme ? 'light' : data.theme
+
         return {
           autoConnect: data.autoConnect ?? true,
           showTrainingControls: data.showTrainingControls ?? false,
           superUserModeEnabled: data.superUserModeEnabled ?? true,
-          // Force dark mode - light mode is temporarily disabled
-          theme: 'dark' as const,
+          theme,
           telemetryEnabled: data.telemetryEnabled ?? true,
           billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
         }
@@ -435,8 +470,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             {isBillingEnabled && activeSection === 'subscription' && <Subscription />}
             {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
             {activeSection === 'sso' && <SSO />}
+            {activeSection === 'byok' && <BYOK />}
             {activeSection === 'copilot' && <Copilot />}
-            {activeSection === 'mcp' && <MCP />}
+            {activeSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
             {activeSection === 'custom-tools' && <CustomTools />}
           </SModalMainBody>
         </SModalMain>

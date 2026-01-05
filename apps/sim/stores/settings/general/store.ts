@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import { createLogger } from '@/lib/logs/console/logger'
 import type { General, GeneralStore } from '@/stores/settings/general/types'
 
 const logger = createLogger('GeneralStore')
@@ -9,10 +9,11 @@ const initialState: General = {
   isAutoConnectEnabled: true,
   showTrainingControls: false,
   superUserModeEnabled: true,
-  theme: 'system',
+  theme: 'light',
   telemetryEnabled: true,
   isBillingUsageNotificationsEnabled: true,
   isErrorNotificationsEnabled: true,
+  snapToGridSize: 0,
 }
 
 export const useGeneralStore = create<GeneralStore>()(

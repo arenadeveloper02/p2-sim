@@ -1,6 +1,8 @@
+import { createLogger } from '@sim/logger'
 import OpenAI from 'openai'
-import { createLogger } from '@/lib/logs/console/logger'
+import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions'
 import type { StreamingExecution } from '@/executor/types'
+import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import type {
   ProviderConfig,
@@ -9,35 +11,18 @@ import type {
   TimeSegment,
 } from '@/providers/types'
 import {
+  calculateCost,
   prepareToolExecution,
   prepareToolsWithUsageControl,
-  trackForcedToolUsage,
 } from '@/providers/utils'
+import {
+  checkForForcedToolUsage,
+  createReadableStreamFromXAIStream,
+  createResponseFormatPayload,
+} from '@/providers/xai/utils'
 import { executeTool } from '@/tools'
 
 const logger = createLogger('XAIProvider')
-
-/**
- * Helper to wrap XAI (OpenAI-compatible) streaming into a browser-friendly
- * ReadableStream of raw assistant text chunks.
- */
-function createReadableStreamFromXAIStream(xaiStream: any): ReadableStream {
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of xaiStream) {
-          const content = chunk.choices[0]?.delta?.content || ''
-          if (content) {
-            controller.enqueue(new TextEncoder().encode(content))
-          }
-        }
-        controller.close()
-      } catch (err) {
-        controller.error(err)
-      }
-    },
-  })
-}
 
 export const xAIProvider: ProviderConfig = {
   id: 'xai',
@@ -63,7 +48,7 @@ export const xAIProvider: ProviderConfig = {
       hasTools: !!request.tools?.length,
       toolCount: request.tools?.length || 0,
       hasResponseFormat: !!request.responseFormat,
-      model: request.model || 'grok-3-latest',
+      model: request.model,
       streaming: !!request.stream,
     })
 
@@ -86,8 +71,6 @@ export const xAIProvider: ProviderConfig = {
     if (request.messages) {
       allMessages.push(...request.messages)
     }
-
-    // Set up tools
     const tools = request.tools?.length
       ? request.tools.map((tool) => ({
           type: 'function',
@@ -98,89 +81,66 @@ export const xAIProvider: ProviderConfig = {
           },
         }))
       : undefined
-
-    // Log tools and response format conflict detection
     if (tools?.length && request.responseFormat) {
       logger.warn(
         'XAI Provider - Detected both tools and response format. Using tools first, then response format for final response.'
       )
     }
-
-    // Build the base request payload
     const basePayload: any = {
-      model: request.model || 'grok-3-latest',
+      model: request.model,
       messages: allMessages,
     }
 
     if (request.temperature !== undefined) basePayload.temperature = request.temperature
     if (request.maxTokens !== undefined) basePayload.max_tokens = request.maxTokens
-
-    // Function to create response format configuration
-    const createResponseFormatPayload = (messages: any[] = allMessages) => {
-      const payload = {
-        ...basePayload,
-        messages,
-      }
-
-      if (request.responseFormat) {
-        payload.response_format = {
-          type: 'json_schema',
-          json_schema: {
-            name: request.responseFormat.name || 'structured_response',
-            schema: request.responseFormat.schema || request.responseFormat,
-            strict: request.responseFormat.strict !== false,
-          },
-        }
-      }
-
-      return payload
-    }
-
-    // Handle tools and tool usage control
     let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
     if (tools?.length) {
       preparedTools = prepareToolsWithUsageControl(tools, request.tools, logger, 'xai')
     }
 
-    // EARLY STREAMING: if caller requested streaming and there are no tools to execute,
-    // we can directly stream the completion with response format if needed
     if (request.stream && (!tools || tools.length === 0)) {
       logger.info('XAI Provider - Using direct streaming (no tools)')
 
-      // Start execution timer for the entire provider execution
       const providerStartTime = Date.now()
       const providerStartTimeISO = new Date(providerStartTime).toISOString()
 
-      // Use response format payload if needed, otherwise use base payload
-      const streamingPayload = request.responseFormat
-        ? createResponseFormatPayload()
-        : { ...basePayload, stream: true }
+      const streamingParams: ChatCompletionCreateParamsStreaming = request.responseFormat
+        ? {
+            ...createResponseFormatPayload(basePayload, allMessages, request.responseFormat),
+            stream: true,
+            stream_options: { include_usage: true },
+          }
+        : { ...basePayload, stream: true, stream_options: { include_usage: true } }
 
-      if (!request.responseFormat) {
-        streamingPayload.stream = true
-      } else {
-        streamingPayload.stream = true
-      }
+      const streamResponse = await xai.chat.completions.create(streamingParams)
 
-      const streamResponse = await xai.chat.completions.create(streamingPayload)
-
-      // Start collecting token usage
-      const tokenUsage = {
-        prompt: 0,
-        completion: 0,
-        total: 0,
-      }
-
-      // Create a StreamingExecution response with a readable stream
       const streamingResult = {
-        stream: createReadableStreamFromXAIStream(streamResponse),
+        stream: createReadableStreamFromXAIStream(streamResponse, (content, usage) => {
+          streamingResult.execution.output.content = content
+          streamingResult.execution.output.tokens = {
+            input: usage.prompt_tokens,
+            output: usage.completion_tokens,
+            total: usage.total_tokens,
+          }
+
+          const costResult = calculateCost(
+            request.model,
+            usage.prompt_tokens,
+            usage.completion_tokens
+          )
+          streamingResult.execution.output.cost = {
+            input: costResult.input,
+            output: costResult.output,
+            total: costResult.total,
+          }
+        }),
         execution: {
           success: true,
           output: {
-            content: '', // Will be filled by streaming content in chat component
-            model: request.model || 'grok-3-latest',
-            tokens: tokenUsage,
+            content: '',
+            model: request.model,
+            tokens: { input: 0, output: 0, total: 0 },
             toolCalls: undefined,
             providerTiming: {
               startTime: providerStartTimeISO,
@@ -196,14 +156,9 @@ export const xAIProvider: ProviderConfig = {
                 },
               ],
             },
-            // Estimate token cost
-            cost: {
-              total: 0.0,
-              input: 0.0,
-              output: 0.0,
-            },
+            cost: { input: 0, output: 0, total: 0 },
           },
-          logs: [], // No block logs for direct streaming
+          logs: [],
           metadata: {
             startTime: providerStartTimeISO,
             endTime: new Date().toISOString(),
@@ -213,26 +168,18 @@ export const xAIProvider: ProviderConfig = {
         },
       }
 
-      // Return the streaming execution object
       return streamingResult as StreamingExecution
     }
-
-    // Start execution timer for the entire provider execution
     const providerStartTime = Date.now()
     const providerStartTimeISO = new Date(providerStartTime).toISOString()
 
     try {
-      // Make the initial API request
       const initialCallTime = Date.now()
 
-      // For the initial request with tools, we NEVER include response_format
-      // This is the key fix: tools and response_format cannot be used together with xAI
+      // xAI cannot use tools and response_format together in the same request
       const initialPayload = { ...basePayload }
 
-      // Track the original tool_choice for forced tool tracking
       let originalToolChoice: any
-
-      // Track forced tools and their usage
       const forcedTools = preparedTools?.forcedTools || []
       let usedForcedTools: string[] = []
 
@@ -242,8 +189,11 @@ export const xAIProvider: ProviderConfig = {
         initialPayload.tool_choice = toolChoice
         originalToolChoice = toolChoice
       } else if (request.responseFormat) {
-        // Only add response format if there are no tools
-        const responseFormatPayload = createResponseFormatPayload()
+        const responseFormatPayload = createResponseFormatPayload(
+          basePayload,
+          allMessages,
+          request.responseFormat
+        )
         Object.assign(initialPayload, responseFormatPayload)
       }
 
@@ -252,24 +202,18 @@ export const xAIProvider: ProviderConfig = {
 
       let content = currentResponse.choices[0]?.message?.content || ''
       const tokens = {
-        prompt: currentResponse.usage?.prompt_tokens || 0,
-        completion: currentResponse.usage?.completion_tokens || 0,
+        input: currentResponse.usage?.prompt_tokens || 0,
+        output: currentResponse.usage?.completion_tokens || 0,
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
       const toolResults = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
-      const MAX_ITERATIONS = 10
 
-      // Track if a forced tool has been used
       let hasUsedForcedTool = false
-
-      // Track time spent in model vs tools
       let modelTime = firstResponseTime
       let toolsTime = 0
-
-      // Track each model and tool call segment with timestamps
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
@@ -279,147 +223,149 @@ export const xAIProvider: ProviderConfig = {
           duration: firstResponseTime,
         },
       ]
-
-      // Helper function to check for forced tool usage in responses
-      const checkForForcedToolUsage = (
-        response: any,
-        toolChoice: string | { type: string; function?: { name: string }; name?: string; any?: any }
-      ) => {
-        if (typeof toolChoice === 'object' && response.choices[0]?.message?.tool_calls) {
-          const toolCallsResponse = response.choices[0].message.tool_calls
-          const result = trackForcedToolUsage(
-            toolCallsResponse,
-            toolChoice,
-            logger,
-            'xai',
-            forcedTools,
-            usedForcedTools
-          )
-          hasUsedForcedTool = result.hasUsedForcedTool
-          usedForcedTools = result.usedForcedTools
-        }
-      }
-
-      // Check if a forced tool was used in the first response
       if (originalToolChoice) {
-        checkForForcedToolUsage(currentResponse, originalToolChoice)
+        const result = checkForForcedToolUsage(
+          currentResponse,
+          originalToolChoice,
+          forcedTools,
+          usedForcedTools
+        )
+        hasUsedForcedTool = result.hasUsedForcedTool
+        usedForcedTools = result.usedForcedTools
       }
 
       try {
-        while (iterationCount < MAX_ITERATIONS) {
-          // Check for tool calls
+        while (iterationCount < MAX_TOOL_ITERATIONS) {
+          if (currentResponse.choices[0]?.message?.content) {
+            content = currentResponse.choices[0].message.content
+          }
+
           const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
           if (!toolCallsInResponse || toolCallsInResponse.length === 0) {
             break
           }
 
-          // Track time for tool calls in this batch
           const toolsStartTime = Date.now()
+          const toolExecutionPromises = toolCallsInResponse.map(async (toolCall) => {
+            const toolCallStartTime = Date.now()
+            const toolName = toolCall.function.name
 
-          for (const toolCall of toolCallsInResponse) {
             try {
-              const toolName = toolCall.function.name
               const toolArgs = JSON.parse(toolCall.function.arguments)
-
               const tool = request.tools?.find((t) => t.id === toolName)
+
               if (!tool) {
                 logger.warn('XAI Provider - Tool not found:', { toolName })
-                continue
+                return null
               }
-
-              const toolCallStartTime = Date.now()
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-
               const result = await executeTool(toolName, executionParams, true)
               const toolCallEndTime = Date.now()
-              const toolCallDuration = toolCallEndTime - toolCallStartTime
 
-              // Add to time segments for both success and failure
-              timeSegments.push({
-                type: 'tool',
-                name: toolName,
+              return {
+                toolCall,
+                toolName,
+                toolParams,
+                result,
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
-                duration: toolCallDuration,
-              })
-
-              // Prepare result content for the LLM
-              let resultContent: any
-              if (result.success) {
-                toolResults.push(result.output)
-                resultContent = result.output
-              } else {
-                // Include error information so LLM can respond appropriately
-                resultContent = {
-                  error: true,
-                  message: result.error || 'Tool execution failed',
-                  tool: toolName,
-                }
-
-                logger.warn('XAI Provider - Tool execution failed:', {
-                  toolName,
-                  error: result.error,
-                })
+                duration: toolCallEndTime - toolCallStartTime,
               }
-
-              toolCalls.push({
-                name: toolName,
-                arguments: toolParams,
-                startTime: new Date(toolCallStartTime).toISOString(),
-                endTime: new Date(toolCallEndTime).toISOString(),
-                duration: toolCallDuration,
-                result: resultContent,
-                success: result.success,
-              })
-
-              // Add the tool call and result to messages (both success and failure)
-              currentMessages.push({
-                role: 'assistant',
-                content: null,
-                tool_calls: [
-                  {
-                    id: toolCall.id,
-                    type: 'function',
-                    function: {
-                      name: toolName,
-                      arguments: toolCall.function.arguments,
-                    },
-                  },
-                ],
-              })
-
-              currentMessages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(resultContent),
-              })
             } catch (error) {
+              const toolCallEndTime = Date.now()
               logger.error('XAI Provider - Error processing tool call:', {
                 error: error instanceof Error ? error.message : String(error),
                 toolCall: toolCall.function.name,
               })
+
+              return {
+                toolCall,
+                toolName,
+                toolParams: {},
+                result: {
+                  success: false,
+                  output: undefined,
+                  error: error instanceof Error ? error.message : 'Tool execution failed',
+                },
+                startTime: toolCallStartTime,
+                endTime: toolCallEndTime,
+                duration: toolCallEndTime - toolCallStartTime,
+              }
             }
+          })
+
+          const executionResults = await Promise.allSettled(toolExecutionPromises)
+          currentMessages.push({
+            role: 'assistant',
+            content: null,
+            tool_calls: toolCallsInResponse.map((tc) => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              },
+            })),
+          })
+
+          for (const settledResult of executionResults) {
+            if (settledResult.status === 'rejected' || !settledResult.value) continue
+
+            const { toolCall, toolName, toolParams, result, startTime, endTime, duration } =
+              settledResult.value
+
+            timeSegments.push({
+              type: 'tool',
+              name: toolName,
+              startTime: startTime,
+              endTime: endTime,
+              duration: duration,
+            })
+            let resultContent: any
+            if (result.success) {
+              toolResults.push(result.output)
+              resultContent = result.output
+            } else {
+              resultContent = {
+                error: true,
+                message: result.error || 'Tool execution failed',
+                tool: toolName,
+              }
+              logger.warn('XAI Provider - Tool execution failed:', {
+                toolName,
+                error: result.error,
+              })
+            }
+
+            toolCalls.push({
+              name: toolName,
+              arguments: toolParams,
+              startTime: new Date(startTime).toISOString(),
+              endTime: new Date(endTime).toISOString(),
+              duration: duration,
+              result: resultContent,
+              success: result.success,
+            })
+            currentMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(resultContent),
+            })
           }
 
-          // Calculate tool call time for this iteration
           const thisToolsTime = Date.now() - toolsStartTime
           toolsTime += thisToolsTime
 
-          // After tool calls, create next payload based on whether we need more tools or final response
           let nextPayload: any
-
-          // Update tool_choice based on which forced tools have been used
           if (
             typeof originalToolChoice === 'object' &&
             hasUsedForcedTool &&
             forcedTools.length > 0
           ) {
-            // If we have remaining forced tools, get the next one to force
             const remainingTools = forcedTools.filter((tool) => !usedForcedTools.includes(tool))
 
             if (remainingTools.length > 0) {
-              // Force the next tool - continue with tools, no response format
               nextPayload = {
                 ...basePayload,
                 messages: currentMessages,
@@ -430,9 +376,13 @@ export const xAIProvider: ProviderConfig = {
                 },
               }
             } else {
-              // All forced tools have been used, check if we need response format for final response
               if (request.responseFormat) {
-                nextPayload = createResponseFormatPayload(currentMessages)
+                nextPayload = createResponseFormatPayload(
+                  basePayload,
+                  allMessages,
+                  request.responseFormat,
+                  currentMessages
+                )
               } else {
                 nextPayload = {
                   ...basePayload,
@@ -443,10 +393,13 @@ export const xAIProvider: ProviderConfig = {
               }
             }
           } else {
-            // Normal tool processing - check if this might be the final response
             if (request.responseFormat) {
-              // Use response format for what might be the final response
-              nextPayload = createResponseFormatPayload(currentMessages)
+              nextPayload = createResponseFormatPayload(
+                basePayload,
+                allMessages,
+                request.responseFormat,
+                currentMessages
+              )
             } else {
               nextPayload = {
                 ...basePayload,
@@ -457,20 +410,22 @@ export const xAIProvider: ProviderConfig = {
             }
           }
 
-          // Time the next model call
           const nextModelStartTime = Date.now()
 
           currentResponse = await xai.chat.completions.create(nextPayload)
-
-          // Check if any forced tools were used in this response
           if (nextPayload.tool_choice && typeof nextPayload.tool_choice === 'object') {
-            checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
+            const result = checkForForcedToolUsage(
+              currentResponse,
+              nextPayload.tool_choice,
+              forcedTools,
+              usedForcedTools
+            )
+            hasUsedForcedTool = result.hasUsedForcedTool
+            usedForcedTools = result.usedForcedTools
           }
 
           const nextModelEndTime = Date.now()
           const thisModelTime = nextModelEndTime - nextModelStartTime
-
-          // Add to time segments
           timeSegments.push({
             type: 'model',
             name: `Model response (iteration ${iterationCount + 1})`,
@@ -479,7 +434,6 @@ export const xAIProvider: ProviderConfig = {
             duration: thisModelTime,
           })
 
-          // Add to model time
           modelTime += thisModelTime
 
           if (currentResponse.choices[0]?.message?.content) {
@@ -487,8 +441,8 @@ export const xAIProvider: ProviderConfig = {
           }
 
           if (currentResponse.usage) {
-            tokens.prompt += currentResponse.usage.prompt_tokens || 0
-            tokens.completion += currentResponse.usage.completion_tokens || 0
+            tokens.input += currentResponse.usage.prompt_tokens || 0
+            tokens.output += currentResponse.usage.completion_tokens || 0
             tokens.total += currentResponse.usage.total_tokens || 0
           }
 
@@ -500,20 +454,20 @@ export const xAIProvider: ProviderConfig = {
           iterationCount,
         })
       }
-
-      // After all tool processing complete, if streaming was requested, use streaming for the final response
       if (request.stream) {
-        // For final streaming response, choose between tools (auto) or response_format (never both)
         let finalStreamingPayload: any
 
         if (request.responseFormat) {
-          // Use response format, no tools
           finalStreamingPayload = {
-            ...createResponseFormatPayload(currentMessages),
+            ...createResponseFormatPayload(
+              basePayload,
+              allMessages,
+              request.responseFormat,
+              currentMessages
+            ),
             stream: true,
           }
         } else {
-          // Use tools with auto choice
           finalStreamingPayload = {
             ...basePayload,
             messages: currentMessages,
@@ -523,19 +477,38 @@ export const xAIProvider: ProviderConfig = {
           }
         }
 
-        const streamResponse = await xai.chat.completions.create(finalStreamingPayload)
+        const streamResponse = await xai.chat.completions.create(finalStreamingPayload as any)
 
-        // Create a StreamingExecution response with all collected data
+        const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
+
         const streamingResult = {
-          stream: createReadableStreamFromXAIStream(streamResponse),
+          stream: createReadableStreamFromXAIStream(streamResponse as any, (content, usage) => {
+            streamingResult.execution.output.content = content
+            streamingResult.execution.output.tokens = {
+              input: tokens.input + usage.prompt_tokens,
+              output: tokens.output + usage.completion_tokens,
+              total: tokens.total + usage.total_tokens,
+            }
+
+            const streamCost = calculateCost(
+              request.model,
+              usage.prompt_tokens,
+              usage.completion_tokens
+            )
+            streamingResult.execution.output.cost = {
+              input: accumulatedCost.input + streamCost.input,
+              output: accumulatedCost.output + streamCost.output,
+              total: accumulatedCost.total + streamCost.total,
+            }
+          }),
           execution: {
             success: true,
             output: {
-              content: '', // Will be filled by the callback
-              model: request.model || 'grok-3-latest',
+              content: '',
+              model: request.model,
               tokens: {
-                prompt: tokens.prompt,
-                completion: tokens.completion,
+                input: tokens.input,
+                output: tokens.output,
                 total: tokens.total,
               },
               toolCalls:
@@ -556,12 +529,12 @@ export const xAIProvider: ProviderConfig = {
                 timeSegments: timeSegments,
               },
               cost: {
-                total: (tokens.total || 0) * 0.0001,
-                input: (tokens.prompt || 0) * 0.0001,
-                output: (tokens.completion || 0) * 0.0001,
+                input: accumulatedCost.input,
+                output: accumulatedCost.output,
+                total: accumulatedCost.total,
               },
             },
-            logs: [], // No block logs at provider level
+            logs: [],
             metadata: {
               startTime: providerStartTimeISO,
               endTime: new Date().toISOString(),
@@ -571,11 +544,8 @@ export const xAIProvider: ProviderConfig = {
           },
         }
 
-        // Return the streaming execution object
         return streamingResult as StreamingExecution
       }
-
-      // Calculate overall timing
       const providerEndTime = Date.now()
       const providerEndTimeISO = new Date(providerEndTime).toISOString()
       const totalDuration = providerEndTime - providerStartTime
@@ -606,7 +576,6 @@ export const xAIProvider: ProviderConfig = {
         },
       }
     } catch (error) {
-      // Include timing information even for errors
       const providerEndTime = Date.now()
       const providerEndTimeISO = new Date(providerEndTime).toISOString()
       const totalDuration = providerEndTime - providerStartTime
@@ -618,9 +587,8 @@ export const xAIProvider: ProviderConfig = {
         hasResponseFormat: !!request.responseFormat,
       })
 
-      // Create a new error with timing information
       const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore - Adding timing property to the error
+      // @ts-ignore - Adding timing property to error for debugging
       enhancedError.timing = {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,

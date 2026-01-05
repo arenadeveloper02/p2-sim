@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
 import { DEFAULT_DATE_PRESET, DEFAULT_FIELDS } from './constants'

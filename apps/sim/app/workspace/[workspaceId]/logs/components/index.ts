@@ -3,9 +3,5 @@ export { LogDetails } from './log-details'
 export { FileCards } from './log-details/components/file-download'
 export { FrozenCanvas } from './log-details/components/frozen-canvas'
 export { TraceSpans } from './log-details/components/trace-spans'
-export {
-  AutocompleteSearch,
-  Controls,
-  LogsToolbar,
-  NotificationSettings,
-} from './logs-toolbar'
+export { LogsList } from './logs-list'
+export { AutocompleteSearch, LogsToolbar, NotificationSettings } from './logs-toolbar'

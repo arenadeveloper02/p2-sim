@@ -201,6 +201,7 @@ import {
 } from '@/tools/figma'
 import { fileParseTool } from '@/tools/file'
 import {
+  firecrawlAgentTool,
   firecrawlCrawlTool,
   firecrawlExtractTool,
   firecrawlMapTool,
@@ -373,6 +374,16 @@ import {
   grafanaUpdateAnnotationTool,
   grafanaUpdateDashboardTool,
 } from '@/tools/grafana'
+import {
+  grainCreateHookTool,
+  grainDeleteHookTool,
+  grainGetRecordingTool,
+  grainGetTranscriptTool,
+  grainListHooksTool,
+  grainListMeetingTypesTool,
+  grainListRecordingsTool,
+  grainListTeamsTool,
+} from '@/tools/grain'
 import { guardrailsValidateTool } from '@/tools/guardrails'
 import { httpRequestTool } from '@/tools/http'
 import {
@@ -487,6 +498,7 @@ import {
   jiraDeleteWorklogTool,
   jiraGetAttachmentsTool,
   jiraGetCommentsTool,
+  jiraGetUsersTool,
   jiraGetWorklogsTool,
   jiraRemoveWatcherTool,
   jiraRetrieveTool,
@@ -986,6 +998,12 @@ import {
 } from '@/tools/sentry'
 import { serperSearchTool } from '@/tools/serper'
 import {
+  servicenowCreateRecordTool,
+  servicenowDeleteRecordTool,
+  servicenowReadRecordTool,
+  servicenowUpdateRecordTool,
+} from '@/tools/servicenow'
+import {
   sftpDeleteTool,
   sftpDownloadTool,
   sftpListTool,
@@ -1409,6 +1427,7 @@ export const tools: Record<string, ToolConfig> = {
   firecrawl_crawl: firecrawlCrawlTool,
   firecrawl_map: firecrawlMapTool,
   firecrawl_extract: firecrawlExtractTool,
+  firecrawl_agent: firecrawlAgentTool,
   grafana_get_dashboard: grafanaGetDashboardTool,
   grafana_list_dashboards: grafanaListDashboardsTool,
   grafana_create_dashboard: grafanaCreateDashboardTool,
@@ -1504,6 +1523,7 @@ export const tools: Record<string, ToolConfig> = {
   jira_delete_issue_link: jiraDeleteIssueLinkTool,
   jira_add_watcher: jiraAddWatcherTool,
   jira_remove_watcher: jiraRemoveWatcherTool,
+  jira_get_users: jiraGetUsersTool,
   kalshi_get_markets: kalshiGetMarketsTool,
   kalshi_get_market: kalshiGetMarketTool,
   kalshi_get_events: kalshiGetEventsTool,
@@ -1553,6 +1573,10 @@ export const tools: Record<string, ToolConfig> = {
   github_latest_commit: githubLatestCommitTool,
   spyfu_request: spyfuRequestTool,
   serper_search: serperSearchTool,
+  servicenow_create_record: servicenowCreateRecordTool,
+  servicenow_read_record: servicenowReadRecordTool,
+  servicenow_update_record: servicenowUpdateRecordTool,
+  servicenow_delete_record: servicenowDeleteRecordTool,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
   tavily_crawl: tavilyCrawlTool,
@@ -1762,6 +1786,14 @@ export const tools: Record<string, ToolConfig> = {
   gitlab_create_pipeline: gitlabCreatePipelineTool,
   gitlab_retry_pipeline: gitlabRetryPipelineTool,
   gitlab_cancel_pipeline: gitlabCancelPipelineTool,
+  grain_list_recordings: grainListRecordingsTool,
+  grain_get_recording: grainGetRecordingTool,
+  grain_get_transcript: grainGetTranscriptTool,
+  grain_list_teams: grainListTeamsTool,
+  grain_list_meeting_types: grainListMeetingTypesTool,
+  grain_create_hook: grainCreateHookTool,
+  grain_list_hooks: grainListHooksTool,
+  grain_delete_hook: grainDeleteHookTool,
   elasticsearch_search: elasticsearchSearchTool,
   elasticsearch_index_document: elasticsearchIndexDocumentTool,
   elasticsearch_get_document: elasticsearchGetDocumentTool,

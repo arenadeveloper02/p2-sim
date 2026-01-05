@@ -1,5 +1,5 @@
+import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('OperationQueue')
 
@@ -15,7 +15,6 @@ export interface QueuedOperation {
   retryCount: number
   status: 'pending' | 'processing' | 'confirmed' | 'failed'
   userId: string
-  immediate?: boolean // Flag for immediate processing (skips debouncing)
 }
 
 interface OperationQueueState {

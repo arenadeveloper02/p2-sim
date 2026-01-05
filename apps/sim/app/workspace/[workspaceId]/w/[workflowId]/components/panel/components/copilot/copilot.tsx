@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createLogger } from '@sim/logger'
 import { History, Plus } from 'lucide-react'
 import {
   Button,
@@ -21,7 +22,7 @@ import {
   PopoverTrigger,
 } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
-import { createLogger } from '@/lib/logs/console/logger'
+import { copilotNewChatEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   CopilotMessage,
   PlanModeSection,
@@ -110,6 +111,8 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
     setSelectedModel,
     loadAutoAllowedTools,
   } = useCopilotStore()
+
+  const selectedModel = useCopilotStore.getState().selectedModel
 
   // Initialize copilot
   const { isInitialized } = useCopilotInitialization({
@@ -252,6 +255,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
     setTimeout(() => {
       userInputRef.current?.focus()
     }, 100)
+    copilotNewChatEvent({})
   }, [createNewChat])
 
   /**
@@ -398,7 +402,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
         className='flex h-full flex-col overflow-hidden'
       >
         {/* Header */}
-        <div className='flex flex-shrink-0 items-center justify-between gap-[8px] rounded-[4px] bg-[var(--surface-5)] px-[12px] py-[8px]'>
+        <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-[8px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'>
           <h2 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
             {currentChat?.title || 'New Chat'}
           </h2>
@@ -418,7 +422,7 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
                     <ChatHistorySkeleton />
                   </PopoverScrollArea>
                 ) : groupedChats.length === 0 ? (
-                  <div className='px-[6px] py-[16px] text-center text-[12px] text-[var(--white)]'>
+                  <div className='px-[6px] py-[16px] text-center text-[12px] text-muted-foreground'>
                     No chats yet
                   </div>
                 ) : (
@@ -499,7 +503,11 @@ export const Copilot = forwardRef<CopilotRef, CopilotProps>(({ panelWidth }, ref
                   />
                 </div>
                 <div className='flex-shrink-0 pt-[8px]'>
-                  <Welcome onQuestionClick={handleSubmit} mode={mode} />
+                  <Welcome
+                    onQuestionClick={handleSubmit}
+                    mode={mode}
+                    selectedModel={selectedModel}
+                  />
                 </div>
               </div>
             ) : (

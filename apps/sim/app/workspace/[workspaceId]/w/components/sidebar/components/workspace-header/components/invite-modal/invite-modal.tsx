@@ -1,7 +1,7 @@
 'use client'
 
 import React, { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import {
   Button,
@@ -15,8 +15,8 @@ import {
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { inviteWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { API_ENDPOINTS } from '@/stores/constants'
 import type { PermissionType, UserPermissions } from './components'
@@ -562,6 +562,13 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
               })
 
               const data = await response.json()
+              if (session?.user?.email) {
+                inviteWorkspaceEvent({
+                  Access: permissionType,
+                  'Inviter(Email ID)': session?.user?.email,
+                  'Receiver(Email ID)': email,
+                })
+              }
 
               if (!response.ok) {
                 if (!invalidEmails.includes(email)) {
@@ -724,17 +731,49 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
       <ModalContent className='w-[500px]'>
         <ModalHeader>Invite members to {workspaceName || 'Workspace'}</ModalHeader>
 
-        <form ref={formRef} onSubmit={handleSubmit} className='flex min-h-0 flex-1 flex-col'>
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className='flex min-h-0 flex-1 flex-col'
+          autoComplete='off'
+        >
           <ModalBody>
             <div className='space-y-[12px]'>
               <div>
                 <Label
-                  htmlFor='emails'
+                  htmlFor='invite-field'
                   className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
                 >
                   Email Addresses
                 </Label>
-                <div className='scrollbar-hide flex max-h-32 min-h-9 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--surface-11)] bg-[var(--surface-6)] px-[6px] py-[4px] focus-within:outline-none dark:bg-[var(--surface-9)]'>
+                {/* Hidden decoy fields to prevent browser autofill */}
+                <input
+                  type='text'
+                  name='fakeusernameremembered'
+                  autoComplete='username'
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                  tabIndex={-1}
+                  readOnly
+                />
+                <input
+                  type='email'
+                  name='fakeemailremembered'
+                  autoComplete='email'
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                  tabIndex={-1}
+                  readOnly
+                />
+                <div className='scrollbar-hide flex max-h-32 min-h-9 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[6px] py-[4px] focus-within:outline-none dark:bg-[var(--surface-5)]'>
                   {invalidEmails.map((email, index) => (
                     <EmailTag
                       key={`invalid-${index}`}
@@ -753,7 +792,8 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                     />
                   ))}
                   <Input
-                    id='emails'
+                    id='invite-field'
+                    name='invite_search_field'
                     type='text'
                     value={inputValue}
                     onChange={(e) => {
@@ -779,6 +819,13 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                     )}
                     autoFocus={userPerms.canAdmin}
                     disabled={isSubmitting || !userPerms.canAdmin}
+                    autoComplete='off'
+                    autoCorrect='off'
+                    autoCapitalize='off'
+                    spellCheck={false}
+                    data-lpignore='true'
+                    data-form-type='other'
+                    aria-autocomplete='none'
                   />
                 </div>
               </div>
@@ -826,23 +873,25 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                   onClick={handleSaveChanges}
                   className='h-[32px] gap-[8px] px-[12px] font-medium'
                 >
-                  {isSaving && <Loader2 className='h-4 w-4 animate-spin' />}
-                  Save Changes
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
             )}
 
             <Button
               type='button'
-              variant='primary'
+              variant='tertiary'
               onClick={() => formRef.current?.requestSubmit()}
               disabled={
                 !userPerms.canAdmin || isSubmitting || isSaving || !workspaceId || !hasNewInvites
               }
               className='ml-auto'
             >
-              {isSubmitting && <Loader2 className='h-4 w-4 animate-spin' />}
-              {!userPerms.canAdmin ? 'Admin Access Required' : 'Invite'}
+              {!userPerms.canAdmin
+                ? 'Admin Access Required'
+                : isSubmitting
+                  ? 'Inviting...'
+                  : 'Invite'}
             </Button>
           </ModalFooter>
         </form>
@@ -853,7 +902,7 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
         <ModalContent>
           <ModalHeader>Remove Member</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to remove{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {memberToRemove?.email}
@@ -871,13 +920,11 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='destructive'
               onClick={handleRemoveMemberConfirm}
               disabled={isRemovingMember}
-              className='gap-[8px] bg-[var(--text-error)] text-[13px] text-white hover:bg-[var(--text-error)]'
             >
-              {isRemovingMember && <Loader2 className='mr-1 h-4 w-4 animate-spin' />}
-              Remove Member
+              {isRemovingMember ? 'Removing...' : 'Remove Member'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -888,7 +935,7 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
         <ModalContent className='w-[400px]'>
           <ModalHeader>Cancel Invitation</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to cancel the invitation for{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {invitationToRemove?.email}
@@ -905,13 +952,11 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='destructive'
               onClick={handleRemoveInvitationConfirm}
               disabled={isRemovingInvitation}
-              className='gap-[8px] bg-[var(--text-error)] text-[13px] text-white hover:bg-[var(--text-error)]'
             >
-              {isRemovingInvitation && <Loader2 className='mr-1 h-4 w-4 animate-spin' />}
-              Cancel Invitation
+              {isRemovingInvitation ? 'Cancelling...' : 'Cancel Invitation'}
             </Button>
           </ModalFooter>
         </ModalContent>

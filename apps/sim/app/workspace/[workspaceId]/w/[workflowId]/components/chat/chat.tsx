@@ -1,7 +1,17 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ArrowDownToLine, ArrowUp, MoreVertical, Paperclip, X } from 'lucide-react'
+import { createLogger } from '@sim/logger'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowUp,
+  MoreVertical,
+  Paperclip,
+  Square,
+  X,
+} from 'lucide-react'
+import { useParams } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -20,17 +30,23 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import {
+  workflowChatAddInputEvent,
+  workflowChatMsgSentEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   ChatMessage,
   OutputSelect,
   StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
-import { useScrollManagement } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import {
+  usePreventZoom,
+  useScrollManagement,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   useFloatBoundarySync,
   useFloatDrag,
@@ -38,6 +54,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { getChatPosition, useChatStore } from '@/stores/chat/store'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useOperationQueue } from '@/stores/operation-queue/store'
@@ -185,10 +202,15 @@ interface StartInputFormatField {
  * position across sessions using the floating chat store.
  */
 export function Chat() {
+  const params = useParams()
+  const workspaceId = params.workspaceId as string
   const { activeWorkflowId } = useWorkflowRegistry()
   const blocks = useWorkflowStore((state) => state.blocks)
   const triggerWorkflowUpdate = useWorkflowStore((state) => state.triggerUpdate)
   const setSubBlockValue = useSubBlockStore((state) => state.setValue)
+  const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
+  const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
   // Chat state (UI and messages from unified store)
   const {
@@ -212,7 +234,7 @@ export function Chat() {
 
   const { entries } = useTerminalConsoleStore()
   const { isExecuting } = useExecutionStore()
-  const { handleRunWorkflow } = useWorkflowExecution()
+  const { handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
   const { data: session } = useSession()
   const { addToQueue } = useOperationQueue()
 
@@ -230,6 +252,8 @@ export function Chat() {
   const abortControllerRef = useRef<AbortController | null>(null)
   const hasShownModalRef = useRef<boolean>(false)
   const hasCheckedModalRef = useRef<boolean>(false)
+  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
+  const preventZoomRef = usePreventZoom()
 
   // File upload hook
   const {
@@ -476,9 +500,35 @@ export function Chat() {
   useEffect(() => {
     return () => {
       timeoutRef.current && clearTimeout(timeoutRef.current)
-      abortControllerRef.current?.abort()
+      streamReaderRef.current?.cancel()
     }
   }, [])
+
+  // React to execution cancellation from run button
+  // Only cancel if execution was explicitly cancelled, not just because isExecuting became false
+  // (streaming might still be in progress even if execution state changed)
+  useEffect(() => {
+    // Only cancel if execution was explicitly stopped AND we have a streaming message
+    // Don't cancel just because isExecuting became false - the stream might still be active
+    const lastMessage = workflowMessages[workflowMessages.length - 1]
+    if (lastMessage?.isStreaming && streamReaderRef.current) {
+      // Check if this is an explicit cancellation (user clicked stop)
+      // We'll rely on handleStopStreaming for explicit cancellations
+      // This effect should only handle cleanup when execution truly ends
+      logger.debug('Execution state changed during streaming', {
+        isExecuting,
+        isStreaming,
+        hasStreamReader: !!streamReaderRef.current,
+        messageId: lastMessage.id,
+      })
+    }
+  }, [isExecuting, isStreaming, workflowMessages])
+
+  const handleStopStreaming = useCallback(() => {
+    streamReaderRef.current?.cancel()
+    streamReaderRef.current = null
+    handleCancelExecution()
+  }, [handleCancelExecution])
 
   /**
    * Processes streaming response from workflow execution
@@ -489,59 +539,132 @@ export function Chat() {
   const processStreamingResponse = useCallback(
     async (stream: ReadableStream, responseMessageId: string) => {
       const reader = stream.getReader()
+      streamReaderRef.current = reader
       const decoder = new TextDecoder()
       let accumulatedContent = ''
       let buffer = ''
+      let receivedFinalEvent = false
+      let finalEventData: ExecutionResult | null = null
+      let chunkCount = 0
 
       try {
         while (true) {
           const { done, value } = await reader.read()
+
           if (done) {
+            // Process any remaining buffer before finalizing
+            if (buffer.trim()) {
+              // Try to process remaining buffer - might contain partial or complete messages
+              const lines = buffer.split('\n\n').filter((line) => line.trim())
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) {
+                  // Try to process as data even without prefix
+                  const trimmed = line.trim()
+                  if (trimmed && trimmed !== '[DONE]') {
+                    try {
+                      const json = JSON.parse(trimmed)
+                      const { event, data: eventData, chunk: contentChunk } = json
+                      if (event === 'final' && eventData) {
+                        receivedFinalEvent = true
+                        finalEventData = eventData as ExecutionResult
+                      } else if (contentChunk && typeof contentChunk === 'string') {
+                        accumulatedContent += contentChunk
+                        appendMessageContent(responseMessageId, contentChunk)
+                        chunkCount++
+                      }
+                    } catch (e) {
+                      // Ignore parse errors
+                    }
+                  }
+                  continue
+                }
+
+                const data = line.substring(6).trim()
+                if (data === '[DONE]' || !data) continue
+
+                try {
+                  const json = JSON.parse(data)
+                  const { event, data: eventData, chunk: contentChunk } = json
+
+                  if (event === 'final' && eventData) {
+                    receivedFinalEvent = true
+                    finalEventData = eventData as ExecutionResult
+                  } else if (contentChunk && typeof contentChunk === 'string') {
+                    accumulatedContent += contentChunk
+                    appendMessageContent(responseMessageId, contentChunk)
+                    chunkCount++
+                  }
+                } catch (e) {
+                  // Ignore parse errors for remaining buffer
+                }
+              }
+            }
+
+            // Handle final event if we received it
+            if (receivedFinalEvent && finalEventData) {
+              const result = finalEventData
+              if ('success' in result && !result.success) {
+                const errorMessage = result.error || 'Workflow execution failed'
+                appendMessageContent(
+                  responseMessageId,
+                  `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
+                )
+              }
+            }
+
+            logger.debug('Finalizing stream', {
+              messageId: responseMessageId,
+              finalAccumulatedLength: accumulatedContent.length,
+              totalChunks: chunkCount,
+            })
+
             finalizeMessageStream(responseMessageId)
             break
           }
 
           const chunk = decoder.decode(value, { stream: true })
+          if (!chunk) continue
+
           buffer += chunk
 
           // Process only complete SSE messages; keep any partial trailing data in buffer
           const separatorIndex = buffer.lastIndexOf('\n\n')
           if (separatorIndex === -1) {
+            // No complete message yet, continue reading
             continue
           }
 
           const processable = buffer.slice(0, separatorIndex)
           buffer = buffer.slice(separatorIndex + 2)
 
-          const lines = processable.split('\n\n')
+          // Split by double newlines to get individual SSE messages
+          const lines = processable.split('\n\n').filter((line) => line.trim())
 
           for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
+            if (!line.startsWith('data: ')) {
+              continue
+            }
 
-            const data = line.substring(6)
-            if (data === '[DONE]') continue
+            const data = line.substring(6).trim()
+            if (data === '[DONE]' || !data) continue
 
             try {
               const json = JSON.parse(data)
-              const { event, data: eventData, chunk: contentChunk } = json
+              const { event, data: eventData, chunk: contentChunk, blockId } = json
 
+              // Handle final event - mark it but continue processing chunks
               if (event === 'final' && eventData) {
-                const result = eventData as ExecutionResult
+                receivedFinalEvent = true
+                finalEventData = eventData as ExecutionResult
+                continue
+              }
 
-                if ('success' in result && !result.success) {
-                  const errorMessage = result.error || 'Workflow execution failed'
-                  appendMessageContent(
-                    responseMessageId,
-                    `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
-                  )
-                  finalizeMessageStream(responseMessageId)
-                  return
-                }
-
-                finalizeMessageStream(responseMessageId)
-              } else if (contentChunk) {
+              // Process content chunks
+              if (contentChunk && typeof contentChunk === 'string') {
                 accumulatedContent += contentChunk
+                chunkCount++
                 appendMessageContent(responseMessageId, contentChunk)
+                // Small delay to prevent UI blocking
                 await new Promise((resolve) => setTimeout(resolve, 5))
               }
             } catch (e) {
@@ -550,8 +673,20 @@ export function Chat() {
           }
         }
       } catch (error) {
-        logger.error('Error processing stream:', error)
+        if ((error as Error)?.name !== 'AbortError') {
+          logger.error('Error processing stream:', error)
+        }
+        finalizeMessageStream(responseMessageId)
       } finally {
+        // Only clear ref if it's still our reader (prevents clobbering a new stream)
+        if (streamReaderRef.current === reader) {
+          streamReaderRef.current = null
+        }
+        try {
+          reader.releaseLock()
+        } catch (e) {
+          // Reader might already be released
+        }
         focusInput(100)
       }
     },
@@ -683,13 +818,21 @@ export function Chat() {
     }
     setHistoryIndex(-1)
 
-    // Reset abort controller
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = new AbortController()
-
     const conversationId = getConversationId(activeWorkflowId)
 
     try {
+      workflowChatMsgSentEvent({
+        'Message Content': sentMessage,
+        'Message Type':
+          chatFiles?.length > 0 && sentMessage
+            ? 'Text + Attachment'
+            : chatFiles?.length > 0 && !sentMessage
+              ? 'Attachment'
+              : 'Text',
+        'Message ID': conversationId,
+        'Workspace Name': workspaceName,
+        'Workspace ID': workspaceId,
+      })
       // Process file attachments
       const attachmentsWithData = await processFileAttachments(chatFiles)
 
@@ -988,7 +1131,8 @@ export function Chat() {
 
   return (
     <div
-      className='fixed z-30 flex flex-col overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-[10px] pt-[2px] pb-[8px]'
+      ref={preventZoomRef}
+      className='fixed z-30 flex flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-[10px] pt-[2px] pb-[8px]'
       style={{
         left: `${actualPosition.x}px`,
         top: `${actualPosition.y}px`,
@@ -1036,6 +1180,10 @@ export function Chat() {
               onMouseDown={(e) => {
                 e.stopPropagation()
                 handleConfigureStartInputs()
+                workflowChatAddInputEvent({
+                  'Workspace Name': workspaceName,
+                  'Workspace ID': workspaceId,
+                })
               }}
             >
               <span className='whitespace-nowrap text-[12px]'>Add inputs</span>
@@ -1050,6 +1198,8 @@ export function Chat() {
             placeholder='Select outputs'
             align='end'
             maxHeight={180}
+            workspaceName={workspaceName}
+            workspaceId={workspaceId}
           />
         </div>
 
@@ -1156,8 +1306,8 @@ export function Chat() {
 
           {/* Combined input container */}
           <div
-            className={`rounded-[4px] border bg-[var(--surface-9)] py-0 pr-[6px] pl-[4px] transition-colors ${
-              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--surface-11)]'
+            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${
+              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
             }`}
           >
             {/* File thumbnails */}
@@ -1240,22 +1390,31 @@ export function Chat() {
                   <Paperclip className='!h-3.5 !w-3.5' />
                 </Badge>
 
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={
-                    (!chatMessage.trim() && chatFiles.length === 0) ||
-                    !activeWorkflowId ||
-                    isExecuting
-                  }
-                  className={cn(
-                    'h-[22px] w-[22px] rounded-full p-0 transition-colors',
-                    chatMessage.trim() || chatFiles.length > 0
-                      ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
-                      : '!bg-[var(--c-C0C0C0)]'
-                  )}
-                >
-                  <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
-                </Button>
+                {isStreaming ? (
+                  <Button
+                    onClick={handleStopStreaming}
+                    className='!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)] h-[22px] w-[22px] rounded-full p-0 transition-colors'
+                  >
+                    <Square className='h-2.5 w-2.5 fill-black text-black' />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={
+                      (!chatMessage.trim() && chatFiles.length === 0) ||
+                      !activeWorkflowId ||
+                      isExecuting
+                    }
+                    className={cn(
+                      'h-[22px] w-[22px] rounded-full p-0 transition-colors',
+                      chatMessage.trim() || chatFiles.length > 0
+                        ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
+                        : '!bg-[var(--c-C0C0C0)]'
+                    )}
+                  >
+                    <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
+                  </Button>
+                )}
               </div>
             </div>
 

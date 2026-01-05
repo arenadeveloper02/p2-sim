@@ -1,17 +1,20 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Camera, Check, Pencil } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
   Button,
+  Combobox,
   Label,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Slider,
   Switch,
 } from '@/components/emcn'
 import { Input, Skeleton } from '@/components/ui'
@@ -20,7 +23,6 @@ import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { useBrandConfig } from '@/lib/branding/branding'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/hooks/use-profile-picture-upload'
 import { useGeneralSettings, useUpdateGeneralSetting } from '@/hooks/queries/general-settings'
 import { useUpdateUserProfile, useUserProfile } from '@/hooks/queries/user-profile'
@@ -40,6 +42,62 @@ function getInitials(name: string | undefined | null): string {
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
   }
   return parts[0][0].toUpperCase()
+}
+
+/**
+ * Skeleton component for general settings loading state.
+ * Matches the exact layout structure of the General component.
+ */
+function GeneralSkeleton() {
+  return (
+    <div className='flex h-full flex-col gap-[16px]'>
+      {/* User Info Section */}
+      <div className='flex items-center gap-[12px]'>
+        <Skeleton className='h-9 w-9 rounded-full' />
+        <div className='flex flex-1 flex-col justify-center gap-[1px]'>
+          <div className='flex items-center gap-[8px]'>
+            <Skeleton className='h-5 w-24' />
+            <Skeleton className='h-[10.5px] w-[10.5px]' />
+          </div>
+          <Skeleton className='h-5 w-40' />
+        </div>
+      </div>
+
+      {/* Theme selector row */}
+      <div className='flex items-center justify-between border-b pb-[12px]'>
+        <Skeleton className='h-4 w-12' />
+        <Skeleton className='h-8 w-[100px] rounded-[4px]' />
+      </div>
+
+      {/* Auto-connect row */}
+      <div className='flex items-center justify-between pt-[12px]'>
+        <Skeleton className='h-4 w-36' />
+        <Skeleton className='h-[17px] w-[30px] rounded-full' />
+      </div>
+
+      {/* Error notifications row */}
+      <div className='flex items-center justify-between'>
+        <Skeleton className='h-4 w-40' />
+        <Skeleton className='h-[17px] w-[30px] rounded-full' />
+      </div>
+
+      {/* Telemetry row */}
+      <div className='flex items-center justify-between border-t pt-[12px]'>
+        <Skeleton className='h-4 w-44' />
+        <Skeleton className='h-[17px] w-[30px] rounded-full' />
+      </div>
+
+      {/* Telemetry description */}
+      <Skeleton className='h-[12px] w-full' />
+      <Skeleton className='-mt-2 h-[12px] w-4/5' />
+
+      {/* Action buttons */}
+      <div className='mt-auto flex items-center gap-[8px]'>
+        <Skeleton className='h-8 w-20 rounded-[4px]' />
+        <Skeleton className='h-8 w-28 rounded-[4px]' />
+      </div>
+    </div>
+  )
 }
 
 interface GeneralProps {
@@ -75,6 +133,9 @@ export function General({ onOpenChange }: GeneralProps) {
   const [resetPasswordError, setResetPasswordError] = useState<string | null>(null)
 
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  const [localSnapValue, setLocalSnapValue] = useState<number | null>(null)
+  const snapToGridValue = localSnapValue ?? settings?.snapToGridSize ?? 0
 
   useEffect(() => {
     if (profile?.name) {
@@ -225,13 +286,25 @@ export function General({ onOpenChange }: GeneralProps) {
   }
 
   const handleThemeChange = async (value: string) => {
-    await updateSetting.mutateAsync({ key: 'theme', value: value as 'system' | 'light' | 'dark' })
+    await updateSetting.mutateAsync({ key: 'theme', value: value as 'light' | 'dark' })
   }
 
   const handleAutoConnectChange = async (checked: boolean) => {
     if (checked !== settings?.autoConnect && !updateSetting.isPending) {
       await updateSetting.mutateAsync({ key: 'autoConnect', value: checked })
     }
+  }
+
+  const handleSnapToGridChange = (value: number[]) => {
+    setLocalSnapValue(value[0])
+  }
+
+  const handleSnapToGridCommit = async (value: number[]) => {
+    const newValue = value[0]
+    if (newValue !== settings?.snapToGridSize && !updateSetting.isPending) {
+      await updateSetting.mutateAsync({ key: 'snapToGridSize', value: newValue })
+    }
+    setLocalSnapValue(null)
   }
 
   const handleTrainingControlsChange = async (checked: boolean) => {
@@ -384,25 +457,23 @@ export function General({ onOpenChange }: GeneralProps) {
       </div>
       {uploadError && <p className='text-[13px] text-[var(--text-error)]'>{uploadError}</p>}
 
-      {/* <div className='flex items-center justify-between border-b pb-[12px]'>
+      <div className='flex items-center justify-between border-b pb-[12px]'>
         <Label htmlFor='theme-select'>Theme</Label>
         <div className='w-[100px]'>
           <Combobox
             size='sm'
             align='end'
             dropdownWidth={140}
-            value={settings?.theme}
+            value={settings?.theme || 'light'}
             onChange={handleThemeChange}
-            disabled={updateSetting.isPending}
             placeholder='Select theme'
             options={[
-              { label: 'System', value: 'system' },
               { label: 'Light', value: 'light' },
               { label: 'Dark', value: 'dark' },
             ]}
           />
         </div>
-      </div> */}
+      </div>
 
       <div className='flex items-center justify-between pt-[12px]'>
         <Label htmlFor='auto-connect'>Auto-connect on drop</Label>
@@ -410,8 +481,26 @@ export function General({ onOpenChange }: GeneralProps) {
           id='auto-connect'
           checked={settings?.autoConnect ?? true}
           onCheckedChange={handleAutoConnectChange}
-          disabled={updateSetting.isPending}
         />
+      </div>
+
+      <div className='flex items-center justify-between'>
+        <Label htmlFor='snap-to-grid'>Snap to grid</Label>
+        <div className='flex items-center gap-[12px]'>
+          <span className='w-[32px] text-right text-[12px] text-[var(--text-tertiary)]'>
+            {snapToGridValue === 0 ? 'Off' : `${snapToGridValue}px`}
+          </span>
+          <Slider
+            id='snap-to-grid'
+            value={[snapToGridValue]}
+            onValueChange={handleSnapToGridChange}
+            onValueCommit={handleSnapToGridCommit}
+            min={0}
+            max={50}
+            step={1}
+            className='w-[100px]'
+          />
+        </div>
       </div>
 
       <div className='flex items-center justify-between'>
@@ -420,7 +509,6 @@ export function General({ onOpenChange }: GeneralProps) {
           id='error-notifications'
           checked={settings?.errorNotificationsEnabled ?? true}
           onCheckedChange={handleErrorNotificationsChange}
-          disabled={updateSetting.isPending}
         />
       </div>
 
@@ -430,7 +518,6 @@ export function General({ onOpenChange }: GeneralProps) {
           id='telemetry'
           checked={settings?.telemetryEnabled ?? true}
           onCheckedChange={handleTelemetryToggle}
-          disabled={updateSetting.isPending}
         />
       </div>
 
@@ -446,29 +533,31 @@ export function General({ onOpenChange }: GeneralProps) {
             id='training-controls'
             checked={settings?.showTrainingControls ?? false}
             onCheckedChange={handleTrainingControlsChange}
-            disabled={updateSetting.isPending}
           />
         </div>
       )}
 
-      {!loadingSuperUser && isSuperUser && (
+      {/* {!loadingSuperUser && isSuperUser && (
         <div className='flex items-center justify-between'>
           <Label htmlFor='super-user-mode'>Super admin mode</Label>
           <Switch
             id='super-user-mode'
             checked={settings?.superUserModeEnabled ?? true}
             onCheckedChange={handleSuperUserModeToggle}
-            disabled={updateSetting.isPending}
           />
         </div>
-      )}
+      )} */}
 
-      {!isAuthDisabled && (
+      {/* {!isAuthDisabled && (
         <div className='mt-auto flex items-center gap-[8px]'>
-          <Button onClick={handleSignOut}>Sign out</Button>
-          <Button onClick={() => setShowResetPasswordModal(true)}>Reset password</Button>
+          <Button onClick={handleSignOut} variant='active'>
+            Sign out
+          </Button>
+          <Button onClick={() => setShowResetPasswordModal(true)} variant='active'>
+            Reset password
+          </Button>
         </div>
-      )}
+      )} */}
 
       {/* Password Reset Confirmation Modal */}
       <Modal open={showResetPasswordModal} onOpenChange={setShowResetPasswordModal}>
@@ -492,7 +581,7 @@ export function General({ onOpenChange }: GeneralProps) {
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='tertiary'
               onClick={handleResetPasswordConfirm}
               disabled={isResettingPassword || resetPasswordSuccess}
             >
@@ -505,56 +594,6 @@ export function General({ onOpenChange }: GeneralProps) {
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </div>
-  )
-}
-
-/**
- * Skeleton component for general settings loading state.
- * Matches the exact layout structure of the General component.
- */
-function GeneralSkeleton() {
-  return (
-    <div className='flex h-full flex-col gap-[16px]'>
-      {/* User Info Section */}
-      <div className='flex items-center gap-[12px]'>
-        <Skeleton className='h-9 w-9 rounded-full' />
-        <div className='flex flex-1 flex-col justify-center gap-[1px]'>
-          <div className='flex items-center gap-[8px]'>
-            <Skeleton className='h-5 w-24' />
-            <Skeleton className='h-[10.5px] w-[10.5px]' />
-          </div>
-          <Skeleton className='h-5 w-40' />
-        </div>
-      </div>
-
-      {/* Auto-connect row */}
-      <div className='flex items-center justify-between pt-[12px]'>
-        <Skeleton className='h-4 w-36' />
-        <Skeleton className='h-[17px] w-[30px] rounded-full' />
-      </div>
-
-      {/* Error notifications row */}
-      <div className='flex items-center justify-between'>
-        <Skeleton className='h-4 w-40' />
-        <Skeleton className='h-[17px] w-[30px] rounded-full' />
-      </div>
-
-      {/* Telemetry row */}
-      <div className='flex items-center justify-between border-t pt-[12px]'>
-        <Skeleton className='h-4 w-44' />
-        <Skeleton className='h-[17px] w-[30px] rounded-full' />
-      </div>
-
-      {/* Telemetry description */}
-      <Skeleton className='h-[12px] w-full' />
-      <Skeleton className='-mt-2 h-[12px] w-4/5' />
-
-      {/* Action buttons */}
-      <div className='mt-auto flex items-center gap-[8px]'>
-        <Skeleton className='h-8 w-20 rounded-[4px]' />
-        <Skeleton className='h-8 w-28 rounded-[4px]' />
-      </div>
     </div>
   )
 }

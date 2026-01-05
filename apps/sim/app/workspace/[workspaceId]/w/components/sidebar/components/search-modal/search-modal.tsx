@@ -9,6 +9,11 @@ import { Dialog, DialogPortal, DialogTitle } from '@/components/ui/dialog'
 import { useBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { getTriggersForSidebar, hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
+import {
+  changeWorkspaceEvent,
+  selectTriggerEvent,
+  selectWorkflowEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { searchItems } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-utils'
 import { SIDEBAR_SCROLL_EVENT } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { getAllBlocks } from '@/blocks'
@@ -411,6 +416,12 @@ export function SearchModal({
         case 'trigger':
         case 'tool':
           if (item.blockType) {
+            selectTriggerEvent({
+              'Element Name': item?.name || '',
+              'Element Type':
+                item?.type === 'trigger' ? 'Trigger' : item?.type === 'block' ? 'Block' : 'Tool',
+              Source: 'Universal Search',
+            })
             const enableTriggerMode =
               item.type === 'trigger' && item.config ? hasTriggerCapability(item.config) : false
             const event = new CustomEvent('add-block-from-toolbar', {
@@ -423,7 +434,31 @@ export function SearchModal({
           }
           break
         case 'workspace':
+          changeWorkspaceEvent({
+            'Workspace Name': item.name,
+            'Workspace ID': item.id,
+            'Workspace LP Source': 'Search',
+          })
+          if (item.isCurrent) {
+            break
+          }
+          if (item.href) {
+            router.push(item.href)
+          }
+          break
         case 'workflow':
+          if (!item.isCurrent && item.href) {
+            router.push(item.href)
+            selectWorkflowEvent({
+              'Workflow Name': item?.name,
+              'Workflow ID': item?.id,
+              'Workflow LP Source': 'Search',
+            })
+            window.dispatchEvent(
+              new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: item.id } })
+            )
+          }
+          break
         case 'page':
         case 'doc':
           if (item.href) {
@@ -431,12 +466,6 @@ export function SearchModal({
               window.open(item.href, '_blank', 'noopener,noreferrer')
             } else {
               router.push(item.href)
-              // Scroll to the workflow in the sidebar after navigation
-              if (item.type === 'workflow') {
-                window.dispatchEvent(
-                  new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: item.id } })
-                )
-              }
             }
           }
           break
@@ -508,7 +537,7 @@ export function SearchModal({
           </VisuallyHidden.Root>
 
           {/* Search input container */}
-          <div className='flex items-center gap-[8px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-5)] px-[12px] py-[8px] shadow-sm'>
+          <div className='flex items-center gap-[8px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[8px] shadow-sm'>
             <Search className='h-[15px] w-[15px] flex-shrink-0 text-[var(--text-subtle)]' />
             <input
               type='text'
@@ -616,7 +645,7 @@ export function SearchModal({
               })}
             </div>
           ) : searchQuery ? (
-            <div className='flex items-center justify-center rounded-[10px] bg-[var(--surface-5)] px-[16px] py-[24px] shadow-sm'>
+            <div className='flex items-center justify-center rounded-[10px] bg-[var(--surface-4)] px-[16px] py-[24px] shadow-sm'>
               <p className='text-[15px] text-[var(--text-subtle)]'>
                 No results found for "{searchQuery}"
               </p>

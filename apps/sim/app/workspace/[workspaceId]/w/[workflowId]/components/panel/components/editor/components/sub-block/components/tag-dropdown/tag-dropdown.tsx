@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { RepeatIcon, SplitIcon } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -18,7 +19,6 @@ import {
   extractFieldsFromSchema,
   parseResponseFormatSafely,
 } from '@/lib/core/utils/response-format'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getBlockOutputPaths, getBlockOutputType } from '@/lib/workflows/blocks/block-outputs'
 import { TRIGGER_TYPES } from '@/lib/workflows/triggers/triggers'
 import { KeyboardNavigationHandler } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/components/keyboard-navigation-handler'
@@ -34,6 +34,7 @@ import { useVariablesStore } from '@/stores/panel/variables/store'
 import type { Variable } from '@/stores/panel/variables/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { normalizeName } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 import { getTool } from '@/tools/utils'
@@ -67,10 +68,15 @@ interface TagDropdownProps {
 }
 
 /**
- * Checks if the tag trigger (<) should show the tag dropdown
- * @param text - The full text content
- * @param cursorPosition - Current cursor position
- * @returns Object indicating whether to show the dropdown
+ * Checks if the tag trigger (`<`) should show the tag dropdown.
+ *
+ * @remarks
+ * The dropdown appears when there's an unclosed `<` bracket before the cursor.
+ * A closing `>` bracket after the last `<` will prevent the dropdown from showing.
+ *
+ * @param text - The full text content of the input field
+ * @param cursorPosition - Current cursor position in the text
+ * @returns Object with `show` property indicating whether to display the dropdown
  */
 export const checkTagTrigger = (text: string, cursorPosition: number): { show: boolean } => {
   if (cursorPosition >= 1) {
@@ -85,6 +91,17 @@ export const checkTagTrigger = (text: string, cursorPosition: number): { show: b
   return { show: false }
 }
 
+/**
+ * Extracts the search term for tag filtering from the current input.
+ *
+ * @remarks
+ * Returns the text between the last unclosed `<` and the cursor position,
+ * converted to lowercase for case-insensitive matching.
+ *
+ * @param text - The full text content of the input field
+ * @param cursorPosition - Current cursor position in the text
+ * @returns The search term for filtering tags, or empty string if not in tag context
+ */
 export const getTagSearchTerm = (text: string, cursorPosition: number): string => {
   if (cursorPosition <= 0) {
     return ''
@@ -106,6 +123,9 @@ export const getTagSearchTerm = (text: string, cursorPosition: number): string =
   return textBeforeCursor.slice(lastOpenBracket + 1).toLowerCase()
 }
 
+/**
+ * Color constants for block type icons in the tag dropdown.
+ */
 const BLOCK_COLORS = {
   VARIABLE: '#2F8BFF',
   DEFAULT: '#2F55FF',
@@ -113,23 +133,12 @@ const BLOCK_COLORS = {
   PARALLEL: '#FEE12B',
 } as const
 
+/**
+ * Prefix constants for special tag types.
+ */
 const TAG_PREFIXES = {
   VARIABLE: 'variable.',
 } as const
-
-/**
- * Normalizes a block name by removing spaces and converting to lowercase
- */
-const normalizeBlockName = (blockName: string): string => {
-  return blockName.replace(/\s+/g, '').toLowerCase()
-}
-
-/**
- * Normalizes a variable name by removing spaces
- */
-const normalizeVariableName = (variableName: string): string => {
-  return variableName.replace(/\s+/g, '')
-}
 
 /**
  * Ensures the root tag is present in the tags array
@@ -141,14 +150,29 @@ const ensureRootTag = (tags: string[], rootTag: string): string[] => {
 }
 
 /**
- * Gets a subblock value from the store
+ * Gets a subblock value from the store.
+ *
+ * @param blockId - The block identifier
+ * @param property - The property name to retrieve
+ * @returns The value from the subblock store
  */
 const getSubBlockValue = (blockId: string, property: string): any => {
   return useSubBlockStore.getState().getValue(blockId, property)
 }
 
 /**
- * Gets the output type for a specific path in a block's outputs
+ * Gets the output type for a specific path in a block's outputs.
+ *
+ * @remarks
+ * Handles special cases for trigger blocks, starter blocks with chat mode,
+ * and tool-based operations.
+ *
+ * @param block - The block state
+ * @param blockConfig - The block configuration, or null
+ * @param blockId - The block identifier
+ * @param outputPath - The dot-separated path to the output field
+ * @param mergedSubBlocksOverride - Optional override for subblock values
+ * @returns The type of the output field (e.g., 'string', 'array', 'any')
  */
 const getOutputTypeForPath = (
   block: BlockState,
@@ -194,7 +218,15 @@ const getOutputTypeForPath = (
 }
 
 /**
- * Recursively generates all output paths from an outputs schema
+ * Recursively generates all output paths from an outputs schema.
+ *
+ * @remarks
+ * Traverses nested objects and arrays to build dot-separated paths
+ * for all leaf values in the schema.
+ *
+ * @param outputs - The outputs schema object
+ * @param prefix - Current path prefix for recursion
+ * @returns Array of dot-separated paths to all output fields
  */
 const generateOutputPaths = (outputs: Record<string, any>, prefix = ''): string[] => {
   const paths: string[] = []
@@ -243,7 +275,15 @@ const generateOutputPaths = (outputs: Record<string, any>, prefix = ''): string[
 }
 
 /**
- * Recursively generates all output paths with their types from an outputs schema
+ * Recursively generates all output paths with their types from an outputs schema.
+ *
+ * @remarks
+ * Similar to generateOutputPaths but also captures the type information
+ * for each path, useful for displaying type hints in the UI.
+ *
+ * @param outputs - The outputs schema object
+ * @param prefix - Current path prefix for recursion
+ * @returns Array of objects containing path and type for each output field
  */
 const generateOutputPathsWithTypes = (
   outputs: Record<string, any>,
@@ -282,7 +322,11 @@ const generateOutputPathsWithTypes = (
 }
 
 /**
- * Generates output paths for a tool-based block
+ * Generates output paths for a tool-based block.
+ *
+ * @param blockConfig - The block configuration containing tools config
+ * @param operation - The selected operation for the tool
+ * @returns Array of output paths for the tool, or empty array on error
  */
 const generateToolOutputPaths = (blockConfig: BlockConfig, operation: string): string[] => {
   if (!blockConfig?.tools?.config?.tool) return []
@@ -302,7 +346,12 @@ const generateToolOutputPaths = (blockConfig: BlockConfig, operation: string): s
 }
 
 /**
- * Gets the output type for a specific path in a tool's outputs
+ * Gets the output type for a specific path in a tool's outputs.
+ *
+ * @param blockConfig - The block configuration containing tools config
+ * @param operation - The selected operation for the tool
+ * @param path - The dot-separated path to the output field
+ * @returns The type of the output field, or 'any' if not found
  */
 const getToolOutputType = (blockConfig: BlockConfig, operation: string, path: string): string => {
   if (!blockConfig?.tools?.config?.tool) return 'any'
@@ -324,7 +373,16 @@ const getToolOutputType = (blockConfig: BlockConfig, operation: string, path: st
 }
 
 /**
- * Calculates the viewport position of the caret in a textarea/input
+ * Calculates the viewport position of the caret in a textarea/input.
+ *
+ * @remarks
+ * Creates a hidden mirror div with identical styling to measure the
+ * precise position of the caret for popover anchoring.
+ *
+ * @param element - The textarea or input element
+ * @param caretPosition - The character position of the caret
+ * @param text - The text content of the element
+ * @returns Object with `left` and `top` viewport coordinates
  */
 const getCaretViewportPosition = (
   element: HTMLTextAreaElement | HTMLInputElement,
@@ -374,7 +432,15 @@ const getCaretViewportPosition = (
 }
 
 /**
- * Renders a tag icon with background color - can use either a React icon component or a letter
+ * Renders a tag icon with background color.
+ *
+ * @remarks
+ * Supports either a React icon component or a single letter string
+ * for flexible icon display in the tag dropdown.
+ *
+ * @param icon - Either a letter string or a Lucide icon component
+ * @param color - Background color for the icon container
+ * @returns A styled icon element
  */
 const TagIcon: React.FC<{
   icon: string | React.ComponentType<{ className?: string }>
@@ -385,18 +451,29 @@ const TagIcon: React.FC<{
     style={{ background: color }}
   >
     {typeof icon === 'string' ? (
-      <span className='font-bold text-[10px] text-white'>{icon}</span>
+      <span className='!text-white font-bold text-[10px]'>{icon}</span>
     ) : (
       (() => {
         const IconComponent = icon
-        return <IconComponent className='h-[9px] w-[9px] text-white' />
+        return <IconComponent className='!text-white size-[9px]' />
       })()
     )}
   </div>
 )
 
 /**
- * Wrapper for PopoverBackButton that handles parent tag navigation
+ * Wrapper for PopoverBackButton that handles parent tag navigation.
+ *
+ * @remarks
+ * Extends the base PopoverBackButton to support selecting the parent tag
+ * when navigating back from a nested folder view.
+ *
+ * @param selectedIndex - Currently selected item index
+ * @param setSelectedIndex - Callback to update selection
+ * @param flatTagList - Flat list of all available tags
+ * @param nestedBlockTagGroups - Groups of nested block tags
+ * @param itemRefs - Refs to item DOM elements for scrolling
+ * @returns The back button component with parent tag support
  */
 const TagDropdownBackButton: React.FC<{
   selectedIndex: number
@@ -445,8 +522,26 @@ const TagDropdownBackButton: React.FC<{
 }
 
 /**
- * TagDropdown component that displays available tags (variables and block outputs)
- * for selection in input fields. Uses the Popover component system for consistent styling.
+ * TagDropdown component that displays available tags for selection in input fields.
+ *
+ * @remarks
+ * Displays variables and block outputs that can be referenced in workflow inputs.
+ * Uses the Popover component system for consistent styling and positioning.
+ * Supports keyboard navigation, search filtering, and nested folder views.
+ *
+ * @example
+ * ```tsx
+ * <TagDropdown
+ *   visible={showDropdown}
+ *   onSelect={handleTagSelect}
+ *   blockId={currentBlockId}
+ *   activeSourceBlockId={null}
+ *   inputValue={inputText}
+ *   cursorPosition={cursor}
+ *   onClose={() => setShowDropdown(false)}
+ *   inputRef={textareaRef}
+ * />
+ * ```
  */
 export const TagDropdown: React.FC<TagDropdownProps> = ({
   visible,
@@ -521,7 +616,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         if (sourceBlock.type === 'loop' || sourceBlock.type === 'parallel') {
           const mockConfig = { outputs: { results: 'array' } }
           const blockName = sourceBlock.name || sourceBlock.type
-          const normalizedBlockName = normalizeBlockName(blockName)
+          const normalizedBlockName = normalizeName(blockName)
 
           const outputPaths = generateOutputPaths(mockConfig.outputs)
           const blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
@@ -542,7 +637,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       }
 
       const blockName = sourceBlock.name || sourceBlock.type
-      const normalizedBlockName = normalizeBlockName(blockName)
+      const normalizedBlockName = normalizeName(blockName)
 
       const mergedSubBlocks = getMergedSubBlocks(activeSourceBlockId)
       const responseFormatValue = mergedSubBlocks?.responseFormat?.value
@@ -735,12 +830,12 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     )
 
     const variableTags = validVariables.map(
-      (variable: Variable) => `${TAG_PREFIXES.VARIABLE}${normalizeVariableName(variable.name)}`
+      (variable: Variable) => `${TAG_PREFIXES.VARIABLE}${normalizeName(variable.name)}`
     )
 
     const variableInfoMap = validVariables.reduce(
       (acc, variable) => {
-        const tagName = `${TAG_PREFIXES.VARIABLE}${normalizeVariableName(variable.name)}`
+        const tagName = `${TAG_PREFIXES.VARIABLE}${normalizeName(variable.name)}`
         acc[tagName] = {
           type: variable.type,
           id: variable.id,
@@ -844,8 +939,13 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       if (!accessibleBlock) continue
 
       // Skip the current block - blocks cannot reference their own outputs
-      // Exception: approval blocks can reference their own outputs
-      if (accessibleBlockId === blockId && accessibleBlock.type !== 'approval') continue
+      // Exception: approval and human_in_the_loop blocks can reference their own outputs
+      if (
+        accessibleBlockId === blockId &&
+        accessibleBlock.type !== 'approval' &&
+        accessibleBlock.type !== 'human_in_the_loop'
+      )
+        continue
 
       const blockConfig = getBlock(accessibleBlock.type)
 
@@ -860,7 +960,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
           const mockConfig = { outputs: { results: 'array' } }
           const blockName = accessibleBlock.name || accessibleBlock.type
-          const normalizedBlockName = normalizeBlockName(blockName)
+          const normalizedBlockName = normalizeName(blockName)
 
           const outputPaths = generateOutputPaths(mockConfig.outputs)
           let blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
@@ -880,7 +980,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       }
 
       const blockName = accessibleBlock.name || accessibleBlock.type
-      const normalizedBlockName = normalizeBlockName(blockName)
+      const normalizedBlockName = normalizeName(blockName)
 
       const mergedSubBlocks = getMergedSubBlocks(accessibleBlockId)
       const responseFormatValue = mergedSubBlocks?.responseFormat?.value
@@ -972,6 +1072,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             const allTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
             blockTags = isSelfReference ? allTags.filter((tag) => tag.endsWith('.url')) : allTags
           }
+        } else if (accessibleBlock.type === 'human_in_the_loop') {
+          blockTags = [`${normalizedBlockName}.url`]
         } else {
           const operationValue =
             mergedSubBlocks?.operation?.value ?? getSubBlockValue(accessibleBlockId, 'operation')
@@ -1121,6 +1223,10 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         }
       })
 
+      directTags.forEach((directTag) => {
+        nestedTags.push(directTag)
+      })
+
       Object.entries(groupedTags).forEach(([parent, children]) => {
         const firstChildTag = children[0]?.fullTag
         if (firstChildTag) {
@@ -1141,10 +1247,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         }
       })
 
-      directTags.forEach((directTag) => {
-        nestedTags.push(directTag)
-      })
-
       return {
         ...group,
         nestedTags,
@@ -1160,7 +1262,17 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     })
 
     nestedBlockTagGroups.forEach((group) => {
+      const normalizedBlockName = normalizeName(group.blockName)
+      const rootTagFromTags = group.tags.find((tag) => tag === normalizedBlockName)
+      const rootTag = rootTagFromTags || normalizedBlockName
+
+      list.push({ tag: rootTag, group })
+
       group.nestedTags.forEach((nestedTag) => {
+        if (nestedTag.fullTag === rootTag) {
+          return
+        }
+
         if (nestedTag.parentTag) {
           list.push({ tag: nestedTag.parentTag, group })
         }
@@ -1178,7 +1290,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     return list
   }, [variableTags, nestedBlockTagGroups])
 
-  // Auto-scroll selected item into view
   useEffect(() => {
     if (!visible || selectedIndex < 0) return
 
@@ -1214,31 +1325,25 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
       let processedTag = tag
 
-      // Check if this is a file property and add [0] automatically
-      // Only include user-accessible fields (matches UserFile interface)
-      const fileProperties = ['id', 'name', 'url', 'size', 'type']
       const parts = tag.split('.')
-      if (parts.length >= 2 && fileProperties.includes(parts[parts.length - 1])) {
-        const fieldName = parts[parts.length - 2]
+      if (parts.length >= 3 && blockGroup) {
+        const arrayFieldName = parts[1]
+        const block = useWorkflowStore.getState().blocks[blockGroup.blockId]
+        const blockConfig = block ? (getBlock(block.type) ?? null) : null
+        const mergedSubBlocks = getMergedSubBlocks(blockGroup.blockId)
 
-        if (blockGroup) {
-          const block = useWorkflowStore.getState().blocks[blockGroup.blockId]
-          const blockConfig = block ? (getBlock(block.type) ?? null) : null
-          const mergedSubBlocks = getMergedSubBlocks(blockGroup.blockId)
+        const fieldType = getOutputTypeForPath(
+          block,
+          blockConfig,
+          blockGroup.blockId,
+          arrayFieldName,
+          mergedSubBlocks
+        )
 
-          const fieldType = getOutputTypeForPath(
-            block,
-            blockConfig,
-            blockGroup.blockId,
-            fieldName,
-            mergedSubBlocks
-          )
-
-          if (fieldType === 'files') {
-            const blockAndField = parts.slice(0, -1).join('.')
-            const property = parts[parts.length - 1]
-            processedTag = `${blockAndField}[0].${property}`
-          }
+        if (fieldType === 'files' || fieldType === 'array') {
+          const blockName = parts[0]
+          const remainingPath = parts.slice(2).join('.')
+          processedTag = `${blockName}.${arrayFieldName}[0].${remainingPath}`
         }
       }
 
@@ -1307,7 +1412,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
   if (!visible || tags.length === 0 || flatTagList.length === 0) return null
 
-  // Calculate caret position for proper anchoring
   const inputElement = inputRef?.current
   let caretViewport = { left: 0, top: 0 }
   let side: 'top' | 'bottom' = 'bottom'
@@ -1369,7 +1473,12 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             <>
               {variableTags.length > 0 && (
                 <>
-                  <PopoverSection>Variables</PopoverSection>
+                  <PopoverSection rootOnly>
+                    <div className='flex items-center gap-[6px]'>
+                      <TagIcon icon='V' color={BLOCK_COLORS.VARIABLE} />
+                      Variables
+                    </div>
+                  </PopoverSection>
                   {variableTags.map((tag: string) => {
                     const variableInfo = variableInfoMap?.[tag] || null
                     const globalIndex = flatTagList.findIndex((item) => item.tag === tag)
@@ -1393,14 +1502,13 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                           }
                         }}
                       >
-                        <TagIcon icon='V' color={BLOCK_COLORS.VARIABLE} />
-                        <span className='flex-1 truncate'>
+                        <span className='flex-1 truncate text-[var(--text-primary)]'>
                           {tag.startsWith(TAG_PREFIXES.VARIABLE)
                             ? tag.substring(TAG_PREFIXES.VARIABLE.length)
                             : tag}
                         </span>
                         {variableInfo && (
-                          <span className='ml-auto text-[10px] text-[var(--white)]/60'>
+                          <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
                             {variableInfo.type}
                           </span>
                         )}
@@ -1420,7 +1528,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                   blockColor = BLOCK_COLORS.PARALLEL
                 }
 
-                // Use actual block icon if available, otherwise fall back to special icons for loop/parallel or first letter
                 let tagIcon: string | React.ComponentType<{ className?: string }> = group.blockName
                   .charAt(0)
                   .toUpperCase()
@@ -1432,10 +1539,41 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                   tagIcon = SplitIcon
                 }
 
+                const normalizedBlockName = normalizeName(group.blockName)
+                const rootTagFromTags = group.tags.find((tag) => tag === normalizedBlockName)
+                const rootTag = rootTagFromTags || normalizedBlockName
+
+                const rootTagGlobalIndex = flatTagList.findIndex((item) => item.tag === rootTag)
+
                 return (
                   <div key={group.blockId}>
-                    <PopoverSection rootOnly>{group.blockName}</PopoverSection>
+                    <PopoverItem
+                      rootOnly
+                      active={rootTagGlobalIndex === selectedIndex && rootTagGlobalIndex >= 0}
+                      onMouseEnter={() => {
+                        if (rootTagGlobalIndex >= 0) setSelectedIndex(rootTagGlobalIndex)
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleTagSelect(rootTag, group)
+                      }}
+                      ref={(el) => {
+                        if (el && rootTagGlobalIndex >= 0) {
+                          itemRefs.current.set(rootTagGlobalIndex, el)
+                        }
+                      }}
+                    >
+                      <TagIcon icon={tagIcon} color={blockColor} />
+                      <span className='flex-1 truncate font-medium text-[var(--text-primary)]'>
+                        {group.blockName}
+                      </span>
+                    </PopoverItem>
                     {group.nestedTags.map((nestedTag) => {
+                      if (nestedTag.fullTag === rootTag) {
+                        return null
+                      }
+
                       const hasChildren = nestedTag.children && nestedTag.children.length > 0
 
                       if (hasChildren) {
@@ -1450,7 +1588,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                             key={folderId}
                             id={folderId}
                             title={nestedTag.display}
-                            icon={<TagIcon icon={tagIcon} color={blockColor} />}
                             active={parentGlobalIndex === selectedIndex && parentGlobalIndex >= 0}
                             onSelect={() => {
                               if (nestedTag.parentTag) {
@@ -1513,10 +1650,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                                     }
                                   }}
                                 >
-                                  <TagIcon icon={tagIcon} color={blockColor} />
-                                  <span className='flex-1 truncate'>{child.display}</span>
+                                  <span className='flex-1 truncate text-[var(--text-primary)]'>
+                                    {child.display}
+                                  </span>
                                   {childType && childType !== 'any' && (
-                                    <span className='ml-auto text-[10px] text-[var(--white)]/60'>
+                                    <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
                                       {childType}
                                     </span>
                                   )}
@@ -1527,26 +1665,21 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                         )
                       }
 
-                      // Direct tag (no children)
                       const globalIndex = nestedTag.fullTag
                         ? flatTagList.findIndex((item) => item.tag === nestedTag.fullTag)
                         : -1
 
                       let tagDescription = ''
-                      let displayIcon = tagIcon
 
                       if (
                         (group.blockType === 'loop' || group.blockType === 'parallel') &&
                         !nestedTag.key.includes('.')
                       ) {
                         if (nestedTag.key === 'index') {
-                          displayIcon = '#'
                           tagDescription = 'number'
                         } else if (nestedTag.key === 'currentItem') {
-                          displayIcon = 'i'
                           tagDescription = 'any'
                         } else if (nestedTag.key === 'items') {
-                          displayIcon = 'I'
                           tagDescription = 'array'
                         }
                       } else if (nestedTag.fullTag) {
@@ -1589,10 +1722,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                             }
                           }}
                         >
-                          <TagIcon icon={displayIcon} color={blockColor} />
-                          <span className='flex-1 truncate'>{nestedTag.display}</span>
+                          <span className='flex-1 truncate text-[var(--text-primary)]'>
+                            {nestedTag.display}
+                          </span>
                           {tagDescription && tagDescription !== 'any' && (
-                            <span className='ml-auto text-[10px] text-[var(--white)]/60'>
+                            <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
                               {tagDescription}
                             </span>
                           )}

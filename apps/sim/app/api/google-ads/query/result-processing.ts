@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { MICROS_PER_DOLLAR } from './constants'
 import type { Campaign, ProcessedResults } from './types'
 

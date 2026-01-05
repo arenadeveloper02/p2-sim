@@ -1,6 +1,6 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { VariableManager } from '@/lib/workflows/variables/variable-manager'
-import { isReference, parseReferencePath, REFERENCE } from '@/executor/constants'
+import { isReference, normalizeName, parseReferencePath, REFERENCE } from '@/executor/constants'
 import {
   navigatePath,
   type ResolutionContext,
@@ -32,12 +32,17 @@ export class WorkflowResolver implements Resolver {
     }
 
     const [_, variableName, ...pathParts] = parts
+    const normalizedRefName = normalizeName(variableName)
 
     const workflowVars = context.executionContext.workflowVariables || this.workflowVariables
 
     for (const varObj of Object.values(workflowVars)) {
       const v = varObj as any
-      if (v && (v.name === variableName || v.id === variableName)) {
+      if (!v) continue
+
+      // Match by normalized name or exact ID
+      const normalizedVarName = v.name ? normalizeName(v.name) : ''
+      if (normalizedVarName === normalizedRefName || v.id === variableName) {
         const normalizedType = (v.type === 'string' ? 'plain' : v.type) || 'plain'
         let value: any
         try {

@@ -2,7 +2,7 @@
  * Utility functions for tokenization
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import {
   LLM_BLOCK_TYPES,
   MAX_PREVIEW_LENGTH,
@@ -57,7 +57,7 @@ export function isTokenizableBlockType(blockType?: string): boolean {
  */
 export function hasRealTokenData(tokens?: TokenUsage): boolean {
   if (!tokens) return false
-  return tokens.total > 0 || tokens.prompt > 0 || tokens.completion > 0
+  return tokens.total > 0 || tokens.input > 0 || tokens.output > 0
 }
 
 /**

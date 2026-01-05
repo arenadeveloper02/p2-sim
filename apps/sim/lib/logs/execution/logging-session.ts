@@ -1,10 +1,11 @@
+import { createLogger } from '@sim/logger'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import { createLogger } from '@/lib/logs/console/logger'
 import { executionLogger } from '@/lib/logs/execution/logger'
 import {
   calculateCostSummary,
   createEnvironmentObject,
   createTriggerObject,
+  loadDeployedWorkflowStateForLogging,
   loadWorkflowStateForExecution,
 } from '@/lib/logs/execution/logging-factory'
 import type {
@@ -32,7 +33,7 @@ export interface SessionCompleteParams {
   endedAt?: string
   totalDurationMs?: number
   finalOutput?: any
-  traceSpans?: any[]
+  traceSpans?: TraceSpan[]
   workflowInput?: any
   finalChatOutput?: string
 }
@@ -44,6 +45,12 @@ export interface SessionErrorCompleteParams {
     message?: string
     stackTrace?: string
   }
+  traceSpans?: TraceSpan[]
+}
+
+export interface SessionCancelledParams {
+  endedAt?: string
+  totalDurationMs?: number
   traceSpans?: TraceSpan[]
 }
 
@@ -62,6 +69,7 @@ export class LoggingSession {
     chatId?: string
     initialInput?: string
   }
+  private completed = false
 
   constructor(
     workflowId: string,
@@ -97,7 +105,11 @@ export class LoggingSession {
         workspaceId,
         variables
       )
-      this.workflowState = await loadWorkflowStateForExecution(this.workflowId)
+      // Use deployed state if deploymentVersionId is provided (non-manual execution)
+      // Otherwise fall back to loading from normalized tables (manual/draft execution)
+      this.workflowState = deploymentVersionId
+        ? await loadDeployedWorkflowStateForLogging(this.workflowId)
+        : await loadWorkflowStateForExecution(this.workflowId)
 
       // Store chat metadata for later use
       this.chatMetadata = {
@@ -111,6 +123,7 @@ export class LoggingSession {
       if (!skipLogCreation) {
         await executionLogger.startWorkflowExecution({
           workflowId: this.workflowId,
+          workspaceId: workspaceId || '',
           executionId: this.executionId,
           trigger: this.trigger,
           environment: this.environment,
@@ -146,13 +159,16 @@ export class LoggingSession {
    * Note: Logging now works through trace spans only, no direct executor integration needed
    */
   setupExecutor(executor: any): void {
-    // No longer setting logger on executor - trace spans handle everything
     if (this.requestId) {
       logger.debug(`[${this.requestId}] Logging session ready for execution ${this.executionId}`)
     }
   }
 
   async complete(params: SessionCompleteParams = {}): Promise<void> {
+    if (this.completed) {
+      return
+    }
+
     const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } =
       params
 
@@ -172,6 +188,8 @@ export class LoggingSession {
         isResume: this.isResume,
         finalChatOutput,
       })
+
+      this.completed = true
 
       // Track workflow execution outcome
       if (traceSpans && traceSpans.length > 0) {
@@ -222,6 +240,10 @@ export class LoggingSession {
   }
 
   async completeWithError(params: SessionErrorCompleteParams = {}): Promise<void> {
+    if (this.completed) {
+      return
+    }
+
     try {
       const { endedAt, totalDurationMs, error, traceSpans } = params
 
@@ -270,6 +292,8 @@ export class LoggingSession {
         traceSpans: spans,
       })
 
+      this.completed = true
+
       // Track workflow execution error outcome
       try {
         const { trackPlatformEvent } = await import('@/lib/core/telemetry')
@@ -305,7 +329,75 @@ export class LoggingSession {
     }
   }
 
-  async safeStart(params: SessionStartParams = {}): Promise<boolean> {
+  async completeWithCancellation(params: SessionCancelledParams = {}): Promise<void> {
+    if (this.completed) {
+      return
+    }
+
+    try {
+      const { endedAt, totalDurationMs, traceSpans } = params
+
+      const endTime = endedAt ? new Date(endedAt) : new Date()
+      const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
+
+      const costSummary = traceSpans?.length
+        ? calculateCostSummary(traceSpans)
+        : {
+            totalCost: BASE_EXECUTION_CHARGE,
+            totalInputCost: 0,
+            totalOutputCost: 0,
+            totalTokens: 0,
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            baseExecutionCharge: BASE_EXECUTION_CHARGE,
+            modelCost: 0,
+            models: {},
+          }
+
+      await executionLogger.completeWorkflowExecution({
+        executionId: this.executionId,
+        endedAt: endTime.toISOString(),
+        totalDurationMs: Math.max(1, durationMs),
+        costSummary,
+        finalOutput: { cancelled: true },
+        traceSpans: traceSpans || [],
+        status: 'cancelled',
+      })
+
+      this.completed = true
+
+      try {
+        const { trackPlatformEvent } = await import('@/lib/core/telemetry')
+        trackPlatformEvent('platform.workflow.executed', {
+          'workflow.id': this.workflowId,
+          'execution.duration_ms': Math.max(1, durationMs),
+          'execution.status': 'cancelled',
+          'execution.trigger': this.triggerType,
+          'execution.blocks_executed': traceSpans?.length || 0,
+          'execution.has_errors': false,
+        })
+      } catch (_e) {
+        // Silently fail
+      }
+
+      if (this.requestId) {
+        logger.debug(
+          `[${this.requestId}] Completed cancelled logging for execution ${this.executionId}`
+        )
+      }
+    } catch (cancelError) {
+      logger.error(`Failed to complete cancelled logging for execution ${this.executionId}:`, {
+        requestId: this.requestId,
+        workflowId: this.workflowId,
+        executionId: this.executionId,
+        error: cancelError instanceof Error ? cancelError.message : String(cancelError),
+        stack: cancelError instanceof Error ? cancelError.stack : undefined,
+      })
+      throw cancelError
+    }
+  }
+
+  async safeStart(params: SessionStartParams): Promise<boolean> {
     try {
       await this.start(params)
       return true
@@ -337,7 +429,7 @@ export class LoggingSession {
           workspaceId,
           variables
         )
-        // Minimal workflow state when normalized data is unavailable
+        // Minimal workflow state when normalized/deployed data is unavailable
         this.workflowState = {
           blocks: {},
           edges: [],
@@ -347,6 +439,7 @@ export class LoggingSession {
 
         await executionLogger.startWorkflowExecution({
           workflowId: this.workflowId,
+          workspaceId: workspaceId || '',
           executionId: this.executionId,
           trigger: this.trigger,
           environment: this.environment,
@@ -377,20 +470,114 @@ export class LoggingSession {
     try {
       await this.complete(params)
     } catch (error) {
-      // Error already logged in complete(), log a summary here
+      const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(
-        `[${this.requestId || 'unknown'}] Logging completion failed for execution ${this.executionId} - execution data not persisted`
+        `[${this.requestId || 'unknown'}] Complete failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
       )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params.traceSpans,
+        endedAt: params.endedAt,
+        totalDurationMs: params.totalDurationMs,
+        errorMessage: `Failed to store trace spans: ${errorMsg}`,
+        isError: false,
+      })
     }
   }
 
-  async safeCompleteWithError(error?: SessionErrorCompleteParams): Promise<void> {
+  async safeCompleteWithError(params?: SessionErrorCompleteParams): Promise<void> {
     try {
-      await this.completeWithError(error)
-    } catch (enhancedError) {
-      // Error already logged in completeWithError(), log a summary here
+      await this.completeWithError(params)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(
-        `[${this.requestId || 'unknown'}] Error logging completion failed for execution ${this.executionId} - execution data not persisted`
+        `[${this.requestId || 'unknown'}] CompleteWithError failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage:
+          params?.error?.message || `Execution failed to store trace spans: ${errorMsg}`,
+        isError: true,
+        status: 'failed',
+      })
+    }
+  }
+
+  async safeCompleteWithCancellation(params?: SessionCancelledParams): Promise<void> {
+    try {
+      await this.completeWithCancellation(params)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(
+        `[${this.requestId || 'unknown'}] CompleteWithCancellation failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage: 'Execution was cancelled',
+        isError: false,
+        status: 'cancelled',
+      })
+    }
+  }
+
+  private async completeWithCostOnlyLog(params: {
+    traceSpans?: TraceSpan[]
+    endedAt?: string
+    totalDurationMs?: number
+    errorMessage: string
+    isError: boolean
+    status?: 'completed' | 'failed' | 'cancelled'
+  }): Promise<void> {
+    if (this.completed) {
+      return
+    }
+
+    logger.warn(
+      `[${this.requestId || 'unknown'}] Logging completion failed for execution ${this.executionId} - attempting cost-only fallback`
+    )
+
+    try {
+      const costSummary = params.traceSpans?.length
+        ? calculateCostSummary(params.traceSpans)
+        : {
+            totalCost: BASE_EXECUTION_CHARGE,
+            totalInputCost: 0,
+            totalOutputCost: 0,
+            totalTokens: 0,
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            baseExecutionCharge: BASE_EXECUTION_CHARGE,
+            modelCost: 0,
+            models: {},
+          }
+
+      await executionLogger.completeWorkflowExecution({
+        executionId: this.executionId,
+        endedAt: params.endedAt || new Date().toISOString(),
+        totalDurationMs: params.totalDurationMs || 0,
+        costSummary,
+        finalOutput: { _fallback: true, error: params.errorMessage },
+        traceSpans: [],
+        isResume: this.isResume,
+        level: params.isError ? 'error' : 'info',
+        status: params.status,
+      })
+
+      this.completed = true
+
+      logger.info(
+        `[${this.requestId || 'unknown'}] Cost-only fallback succeeded for execution ${this.executionId}`
+      )
+    } catch (fallbackError) {
+      logger.error(
+        `[${this.requestId || 'unknown'}] Cost-only fallback also failed for execution ${this.executionId}:`,
+        { error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) }
       )
     }
   }

@@ -1,8 +1,8 @@
 import { readFile } from 'fs/promises'
+import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { createLogger } from '@/lib/logs/console/logger'
 import { CopilotFiles, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -38,14 +38,13 @@ export async function GET(
     const cloudKey = isCloudPath ? path.slice(1).join('/') : fullPath
 
     const contextParam = request.nextUrl.searchParams.get('context')
-    const legacyBucketType = request.nextUrl.searchParams.get('bucket')
 
     const context = contextParam || (isCloudPath ? inferContextFromKey(cloudKey) : undefined)
 
-    if (context === 'profile-pictures') {
-      logger.info('Serving public profile picture:', { cloudKey })
+    if (context === 'profile-pictures' || context === 'og-images') {
+      logger.info(`Serving public ${context}:`, { cloudKey })
       if (isUsingCloudStorage() || isCloudPath) {
-        return await handleCloudProxyPublic(cloudKey, context, legacyBucketType)
+        return await handleCloudProxyPublic(cloudKey, context)
       }
       return await handleLocalFilePublic(fullPath)
     }
@@ -182,8 +181,7 @@ async function handleCloudProxy(
 
 async function handleCloudProxyPublic(
   cloudKey: string,
-  context: StorageContext,
-  legacyBucketType?: string | null
+  context: StorageContext
 ): Promise<NextResponse> {
   try {
     let fileBuffer: Buffer

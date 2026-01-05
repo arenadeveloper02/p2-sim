@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { isReference, parseReferencePath, REFERENCE } from '@/executor/constants'
 import { extractBaseBlockId, extractBranchIndex } from '@/executor/utils/subflow-utils'
 import {
@@ -117,7 +117,7 @@ export class ParallelResolver implements Resolver {
     // String handling
     if (typeof rawItems === 'string') {
       // Skip references - they should be resolved by the variable resolver
-      if (rawItems.startsWith('<')) {
+      if (rawItems.startsWith(REFERENCE.START)) {
         return []
       }
 

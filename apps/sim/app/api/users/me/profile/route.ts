@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
-import { user } from '@sim/db/schema'
+import { user, userArenaDetails } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('UpdateUserProfileAPI')
 
@@ -120,12 +120,22 @@ export async function GET() {
       .where(eq(user.id, userId))
       .limit(1)
 
+    // here need to join the user_arena_table to get user type and department based on user_arena_table.user_id_ref and userRecord.id
+    const [userArenaRecord] = await db
+      .select({
+        userType: userArenaDetails.userType,
+        department: userArenaDetails.department,
+      })
+      .from(userArenaDetails)
+      .where(eq(userArenaDetails.userIdRef, userId))
+      .limit(1)
+
     if (!userRecord) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     return NextResponse.json({
-      user: userRecord,
+      user: { ...userRecord, ...(userArenaRecord ? userArenaRecord : {}) },
     })
   } catch (error: any) {
     logger.error(`[${requestId}] Profile fetch error`, error)
