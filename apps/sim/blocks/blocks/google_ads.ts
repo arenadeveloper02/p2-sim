@@ -65,7 +65,7 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
         label: account.name,
         id: key,
-        value: account.id,
+        value: key,
       })),
       placeholder: 'Select account...',
       required: true,
