@@ -466,6 +466,7 @@ function SubBlockComponent({
               previewValue={previewValue}
               disabled={isDisabled}
               multiSelect={config.multiSelect}
+              selectAllOption={config.selectAllOption}
               fetchOptions={config.fetchOptions}
               dependsOn={config.dependsOn}
             />

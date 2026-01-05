@@ -9,6 +9,7 @@ import { mistralProvider } from '@/providers/mistral'
 import { ollamaProvider } from '@/providers/ollama'
 import { openaiProvider } from '@/providers/openai'
 import { openRouterProvider } from '@/providers/openrouter'
+import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderConfig, ProviderId } from '@/providers/types'
 import { vertexProvider } from '@/providers/vertex'
 import { vllmProvider } from '@/providers/vllm'
@@ -30,6 +31,7 @@ const providerRegistry: Record<ProviderId, ProviderConfig> = {
   'azure-openai': azureOpenAIProvider,
   openrouter: openRouterProvider,
   ollama: ollamaProvider,
+  sambanova: sambanovaProvider,
 }
 
 export async function getProviderExecutor(
