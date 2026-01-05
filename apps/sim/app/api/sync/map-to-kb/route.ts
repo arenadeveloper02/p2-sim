@@ -1,13 +1,13 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { clientKnowledgeBaseMapping, knowledgeBase } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createSingleDocument } from '@/lib/knowledge/documents/service'
 import { getKnowledgeBases } from '@/lib/knowledge/service'
-import { createLogger } from '@/lib/logs/console/logger'
 import { checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 
 const logger = createLogger('MapToKBAPI')
@@ -260,22 +260,9 @@ export async function POST(req: NextRequest) {
       : `${documentName}${fileExtension}`
 
     // Process document tags if provided
-    // Automatically add clientId and clientName as tags if not already present
-    const tagsWithClient = documentTags ? [...documentTags] : []
-
-    // Add clientId tag if not already present
-    if (!tagsWithClient.some((tag) => tag.tagName === 'clientId')) {
-      tagsWithClient.push({ tagName: 'clientId', tagValue: clientId })
-    }
-
-    // Add clientName tag if not already present
-    if (!tagsWithClient.some((tag) => tag.tagName === 'clientName')) {
-      tagsWithClient.push({ tagName: 'clientName', tagValue: clientName })
-    }
-
     let documentTagsData: string | undefined
-    if (tagsWithClient.length > 0) {
-      documentTagsData = JSON.stringify(tagsWithClient)
+    if (documentTags && documentTags.length > 0) {
+      documentTagsData = JSON.stringify(documentTags)
     }
 
     // Create document in KB
