@@ -177,6 +177,18 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
 Note: For "keyword performance where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $2.50 = 2,500,000, $10 = 10,000,000, $25 = 25,000,000. Always use LIMIT 1000 for comprehensive results.
 
+**Keyword Status - Added/None (Primary Status):**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons, ad_group_criterion.approval_status FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' ORDER BY campaign.name, ad_group.name LIMIT 1000
+Note: primary_status shows Added/None status: ELIGIBLE = Added (active), NOT_ELIGIBLE = None, PAUSED = Paused, PENDING = Pending review. primary_status_reasons explains why keyword is not eligible. approval_status shows policy approval.
+
+**Keyword Status - Only Eligible/Added Keywords:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND ad_group_criterion.primary_status = 'ELIGIBLE' ORDER BY metrics.cost_micros DESC LIMIT 1000
+Note: Shows only keywords with "Added" status (ELIGIBLE = actively serving).
+
+**Keyword Status - Not Eligible/None Keywords:**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.primary_status = 'NOT_ELIGIBLE' ORDER BY campaign.name, ad_group.name LIMIT 1000
+Note: Shows keywords with "None" status (NOT_ELIGIBLE = not serving). primary_status_reasons explains why.
+
 **Campaign Performance with Dynamic Cost Filter:**
 SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
 Note: For "campaign performance where cost > $X", use same micros conversion. Works for any dollar amount mentioned by user.
@@ -212,6 +224,10 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+
+**Search Terms / SQR with Dynamic Cost Filter (Cost > $1):**
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
+Note: For "search terms where cost > $X" or "SQR with cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $2 = 2,000,000, $5 = 5,000,000. Always use LIMIT 1000 for comprehensive results. Include ad_group.id and ad_group.name for context.
 
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
@@ -516,11 +532,13 @@ When analyzing sitelinks for issues, you MUST present data in TWO separate table
 
 const searchTermsFragment: FragmentBuilder = () =>
   `
-**SEARCH QUERY REPORTS:**
-- Use search_term_view with campaign.id, campaign.name, campaign.status, search_term_view.search_term.
-- Include metrics: metrics.clicks, metrics.cost_micros, metrics.conversions (add others when useful).
+**SEARCH QUERY REPORTS (SQR):**
+- Use search_term_view with campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term.
+- Include metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
-- ORDER results by spend or conversions (cost_micros or conversions) and respect any LIMIT requested by the user.
+- ORDER results by spend (cost_micros DESC) and use LIMIT 1000 for comprehensive results.
+- **COST FILTERING**: For "SQR where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $0.50 = 500,000.
+- **CRITICAL**: Always use metrics.cost_micros > [amount_in_micros] for cost filtering, NOT metrics.cost_micros > [dollars].
 `.trim()
 
 const demographicsFragment: FragmentBuilder = () =>
