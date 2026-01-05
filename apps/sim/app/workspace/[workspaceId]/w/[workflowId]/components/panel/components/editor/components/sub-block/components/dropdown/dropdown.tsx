@@ -39,6 +39,8 @@ interface DropdownProps {
   placeholder?: string
   /** Enable multi-select mode */
   multiSelect?: boolean
+  /** Show "Select All" option for multi-select */
+  selectAllOption?: boolean
   /** Async function to fetch options dynamically */
   fetchOptions?: (
     blockId: string,
@@ -68,6 +70,7 @@ export function Dropdown({
   disabled,
   placeholder = 'Select an option...',
   multiSelect = false,
+  selectAllOption = false,
   fetchOptions,
   dependsOn,
 }: DropdownProps) {
@@ -297,14 +300,23 @@ export function Dropdown({
 
   /**
    * Handles multi-select changes
+   * When selectAllOption is enabled and empty array is passed, select all available options
    */
   const handleMultiSelectChange = useCallback(
     (selectedValues: string[]) => {
       if (!isPreview && !disabled) {
-        setStoreValue(selectedValues)
+        // If selectAllOption is enabled and empty array is passed, select all options
+        if (selectAllOption && multiSelect && selectedValues.length === 0) {
+          const allOptionIds = availableOptions.map((opt) =>
+            typeof opt === 'string' ? opt : opt.id
+          )
+          setStoreValue(allOptionIds)
+        } else {
+          setStoreValue(selectedValues)
+        }
       }
     },
-    [isPreview, disabled, setStoreValue]
+    [isPreview, disabled, setStoreValue, selectAllOption, multiSelect, availableOptions]
   )
 
   /**
@@ -390,6 +402,8 @@ export function Dropdown({
       }}
       overlayContent={multiSelectOverlay}
       multiSelect={multiSelect}
+      showAllOption={selectAllOption && multiSelect}
+      allOptionLabel='Select All'
       isLoading={isLoadingOptions}
       error={fetchError}
       searchable={isSearchable}
