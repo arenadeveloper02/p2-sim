@@ -10,6 +10,16 @@ export interface GoogleDriveFile {
   createdTime?: string
   modifiedTime?: string
   parents?: string[]
+  owners?: Array<{ displayName?: string; emailAddress?: string }>
+  driveId?: string
+  isGoogleWorkspaceFile?: boolean
+  fileType?: string
+  content?: string
+  contentEncoding?: string
+  pageCount?: number
+  sheetCount?: number
+  contentSource?: string
+  extractionMethod?: string
 }
 
 export interface GoogleDriveListResponse extends ToolResponse {
@@ -58,8 +68,21 @@ export interface GoogleDriveToolParams {
   exportMimeType?: string
 }
 
+export interface GoogleDriveSearchParams {
+  accessToken: string
+  prompt: string
+  pageSize?: number
+  pageToken?: string
+}
+
 export type GoogleDriveResponse =
   | GoogleDriveUploadResponse
   | GoogleDriveGetContentResponse
   | GoogleDriveDownloadResponse
   | GoogleDriveListResponse
+
+export interface GoogleDriveSearchResponse extends ToolResponse {
+  output: {
+    files: GoogleDriveFile[]
+  }
+}

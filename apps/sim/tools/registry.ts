@@ -313,6 +313,7 @@ import {
   googleDriveDownloadTool,
   googleDriveGetContentTool,
   googleDriveListTool,
+  googleDriveSearchTool,
   googleDriveUploadTool,
 } from '@/tools/google_drive'
 import { googleFormsGetResponsesTool } from '@/tools/google_form'
@@ -1844,6 +1845,7 @@ export const tools: Record<string, ToolConfig> = {
   reddit_subscribe: redditSubscribeTool,
   google_drive_get_content: googleDriveGetContentTool,
   google_drive_list: googleDriveListTool,
+  google_drive_search: googleDriveSearchTool,
   google_drive_upload: googleDriveUploadTool,
   google_drive_download: googleDriveDownloadTool,
   google_drive_create_folder: googleDriveCreateFolderTool,
