@@ -82,9 +82,9 @@ export class Memory {
         filters.conversation_id = inputs.conversationId
       }
 
-      if (blockId) {
-        filters.block_id = blockId
-      }
+      // if (blockId) {
+      //   filters.block_id = blockId
+      // }
 
       if (isConversation === true) {
         filters.memory_type = 'conversation'
