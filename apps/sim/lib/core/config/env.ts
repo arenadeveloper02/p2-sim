@@ -60,6 +60,7 @@ export const env = createEnv({
     EMAIL_VERIFICATION_ENABLED:            z.boolean().optional(),                 // Enable email verification for user registration and login (defaults to false)
     RESEND_API_KEY:                        z.string().min(1).optional(),           // Resend API key for transactional emails
     FROM_EMAIL_ADDRESS:                    z.string().min(1).optional(),           // Complete from address (e.g., "Sim <noreply@domain.com>" or "noreply@domain.com")
+    PERSONAL_EMAIL_FROM:                   z.string().min(1).optional(),           // From address for personalized emails
     EMAIL_DOMAIN:                          z.string().min(1).optional(),           // Domain for sending emails (fallback when FROM_EMAIL_ADDRESS not set)
     AZURE_ACS_CONNECTION_STRING:           z.string().optional(),                  // Azure Communication Services connection string
 
@@ -173,9 +174,9 @@ export const env = createEnv({
     KB_CONFIG_RETRY_FACTOR:                z.number().optional().default(2),       // Retry backoff factor
     KB_CONFIG_MIN_TIMEOUT:                 z.number().optional().default(1000),    // Min timeout in ms
     KB_CONFIG_MAX_TIMEOUT:                 z.number().optional().default(10000),   // Max timeout in ms
-    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(20),      // Queue concurrency limit
-    KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(20),      // Processing batch size
-    KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(100),     // Delay between batches in ms
+    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(50),      // Concurrent embedding API calls
+    KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(2000),    // Chunks to process per embedding batch
+    KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(0),       // Delay between batches in ms (0 for max speed)
     KB_CONFIG_DELAY_BETWEEN_DOCUMENTS:     z.number().optional().default(50),      // Delay between documents in ms
 
     // Real-time Communication
