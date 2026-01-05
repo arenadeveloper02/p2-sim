@@ -110,14 +110,40 @@ export const auth = betterAuth({
     account: {
       create: {
         before: async (account) => {
-          // Only one credential per (userId, providerId) is allowed
-          // If user reconnects (even with a different external account), replace the existing one
-          const existing = await db.query.account.findFirst({
-            where: and(
-              eq(schema.account.userId, account.userId),
-              eq(schema.account.providerId, account.providerId)
-            ),
-          })
+          // Google services that support multiple accounts per user
+          // Each Google account has a unique accountId (sub claim), allowing multiple connections
+          const googleMultiAccountProviders = [
+            'google-drive',
+            'google-docs',
+            'google-sheets',
+            'google-slides',
+            'google-calendar',
+            'google-email',
+          ]
+          const supportsMultipleAccounts = googleMultiAccountProviders.includes(account.providerId)
+
+          let existing
+          if (supportsMultipleAccounts) {
+            // For Google services: check for existing account by (userId, providerId, accountId)
+            // This allows multiple Google accounts (different accountId) while preventing duplicates
+            // If the same Google account reconnects (same accountId), update the existing record
+            existing = await db.query.account.findFirst({
+              where: and(
+                eq(schema.account.userId, account.userId),
+                eq(schema.account.providerId, account.providerId),
+                eq(schema.account.accountId, account.accountId)
+              ),
+            })
+          } else {
+            // For other providers: only one credential per (userId, providerId) is allowed
+            // If user reconnects (even with a different external account), replace the existing one
+            existing = await db.query.account.findFirst({
+              where: and(
+                eq(schema.account.userId, account.userId),
+                eq(schema.account.providerId, account.providerId)
+              ),
+            })
+          }
 
           if (existing) {
             let scopeToStore = account.scope

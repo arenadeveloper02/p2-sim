@@ -16,6 +16,7 @@ import {
 import { Input, Skeleton } from '@/components/ui'
 import { cn } from '@/lib/core/utils/cn'
 import { OAUTH_PROVIDERS } from '@/lib/oauth'
+import { supportsMultipleAccounts } from '@/lib/oauth/utils'
 import {
   type ServiceInfo,
   useConnectOAuthService,
@@ -348,13 +349,24 @@ export function Integrations({ onOpenChange, registerCloseHandler }: Integration
                       </div>
 
                       {service.accounts && service.accounts.length > 0 ? (
-                        <Button
-                          variant='ghost'
-                          onClick={() => handleDisconnect(service, service.accounts![0].id)}
-                          disabled={disconnectService.isPending}
-                        >
-                          Disconnect
-                        </Button>
+                        <div className='flex items-center gap-[8px]'>
+                          {supportsMultipleAccounts(service.providerId) && (
+                            <Button
+                              variant='tertiary'
+                              onClick={() => handleConnect(service)}
+                              disabled={connectService.isPending}
+                            >
+                              Add Account
+                            </Button>
+                          )}
+                          <Button
+                            variant='ghost'
+                            onClick={() => handleDisconnect(service, service.accounts![0].id)}
+                            disabled={disconnectService.isPending}
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
                       ) : (
                         <Button
                           variant='tertiary'

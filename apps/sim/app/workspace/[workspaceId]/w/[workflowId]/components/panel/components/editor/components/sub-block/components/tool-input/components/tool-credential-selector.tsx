@@ -9,6 +9,7 @@ import {
   type OAuthService,
   parseProvider,
 } from '@/lib/oauth'
+import { supportsMultipleAccounts } from '@/lib/oauth/utils'
 import { OAuthRequiredModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/oauth-required-modal'
 import { useOAuthCredentialDetail, useOAuthCredentials } from '@/hooks/queries/oauth-credentials'
 import { getMissingRequiredScopes } from '@/hooks/use-oauth-scope-status'
@@ -154,15 +155,23 @@ export function ToolCredentialSelector({
       value: cred.id,
     }))
 
-    if (credentials.length === 0) {
+    // Always show "Add account" option for providers that support multiple accounts
+    // For other providers, only show when no accounts exist
+    const canAddMore = supportsMultipleAccounts(effectiveProviderId || '')
+
+    if (credentials.length === 0 || canAddMore) {
+      const label =
+        credentials.length === 0
+          ? `Connect ${getProviderName(provider)} account`
+          : `Add another ${getProviderName(provider)} account`
       options.push({
-        label: `Connect ${getProviderName(provider)} account`,
+        label,
         value: '__connect_account__',
       })
     }
 
     return options
-  }, [credentials, provider])
+  }, [credentials, provider, effectiveProviderId, getProviderName])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
 
