@@ -300,23 +300,33 @@ export function Dropdown({
 
   /**
    * Handles multi-select changes
-   * When selectAllOption is enabled and empty array is passed, select all available options
+   * When selectAllOption is enabled and empty array is passed, toggle between select all and clear all
    */
   const handleMultiSelectChange = useCallback(
     (selectedValues: string[]) => {
       if (!isPreview && !disabled) {
-        // If selectAllOption is enabled and empty array is passed, select all options
+        // If selectAllOption is enabled and empty array is passed, toggle select all/clear all
         if (selectAllOption && multiSelect && selectedValues.length === 0) {
           const allOptionIds = availableOptions.map((opt) =>
             typeof opt === 'string' ? opt : opt.id
           )
-          setStoreValue(allOptionIds)
+          const currentValues = (storeValue as string[]) || []
+          const allSelected =
+            currentValues.length === allOptionIds.length &&
+            allOptionIds.every((id) => currentValues.includes(id))
+
+          // If all are selected, clear them; otherwise, select all
+          if (allSelected) {
+            setStoreValue([])
+          } else {
+            setStoreValue(allOptionIds)
+          }
         } else {
           setStoreValue(selectedValues)
         }
       }
     },
-    [isPreview, disabled, setStoreValue, selectAllOption, multiSelect, availableOptions]
+    [isPreview, disabled, setStoreValue, selectAllOption, multiSelect, availableOptions, storeValue]
   )
 
   /**

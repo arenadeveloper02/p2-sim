@@ -20,8 +20,14 @@ import type {
   HubSpotGetCampaignRevenueResponse,
   HubSpotGetCampaignSpendParams,
   HubSpotGetCampaignSpendResponse,
+  HubSpotGetEmailParams,
+  HubSpotGetEmailResponse,
+  HubSpotGetEmailStatisticsHistogramParams,
+  HubSpotGetEmailStatisticsHistogramResponse,
   HubSpotListCampaignsParams,
   HubSpotListCampaignsResponse,
+  HubSpotListEmailsParams,
+  HubSpotListEmailsResponse,
 } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -31,7 +37,7 @@ export const buildHeaders = (accessToken: string) => {
   if (!accessToken) {
     throw new Error('Access token is required')
   }
-
+  console.log('accessToken', accessToken)
   return {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
@@ -53,8 +59,11 @@ export async function fetchHubSpotCampaigns(
   if (limitValue) {
     queryParams.append('limit', limitValue)
   }
-  queryParams.append('properties', 'hs_start_date,hs_end_date,hs_color_hex,hs_notes,hs_audience,hs_goal,hs_owner,hs_currency_code,hs_created_by_user_id,hs_campaign_status,hs_object_id,hs_name,hs_utm,hs_budget_items_sum_amount,hs_spend_items_sum_amount')
-  
+  queryParams.append(
+    'properties',
+    'hs_start_date,hs_end_date,hs_color_hex,hs_notes,hs_audience,hs_goal,hs_owner,hs_currency_code,hs_created_by_user_id,hs_campaign_status,hs_object_id,hs_name,hs_utm,hs_budget_items_sum_amount,hs_spend_items_sum_amount'
+  )
+
   const queryString = queryParams.toString()
   const url = queryString ? `${baseUrl}?${queryString}` : baseUrl
 
@@ -72,12 +81,7 @@ export async function fetchHubSpotCampaigns(
   const data = await response.json()
   const campaigns = data.results || []
   return campaigns.map((campaign: any) => {
-    console.log('campaign values', campaign?.properties)
-    
-    const campaignName =
-      campaign?.properties?.hs_name ||
-      campaign?.id ||
-      'Unnamed Campaign'
+    const campaignName = campaign?.properties?.hs_name || campaign?.id || 'Unnamed Campaign'
     return {
       label: String(campaignName),
       id: String(campaign?.id || ''),
@@ -128,7 +132,10 @@ export const hubspotListCampaignsTool: ToolConfig<
       // if (params.after) {
       //   queryParams.append('after', params.after)
       // }
-      queryParams.append('properties', 'hs_start_date,hs_end_date,hs_color_hex,hs_notes,hs_audience,hs_goal,hs_owner,hs_currency_code,hs_created_by_user_id,hs_campaign_status,hs_object_id,hs_name,hs_utm,hs_budget_items_sum_amount,hs_spend_items_sum_amount')
+      queryParams.append(
+        'properties',
+        'hs_start_date,hs_end_date,hs_color_hex,hs_notes,hs_audience,hs_goal,hs_owner,hs_currency_code,hs_created_by_user_id,hs_campaign_status,hs_object_id,hs_name,hs_utm,hs_budget_items_sum_amount,hs_spend_items_sum_amount'
+      )
       const queryString = queryParams.toString()
       console.log('queryString', queryString)
       console.log('baseUrl', baseUrl)
@@ -245,12 +252,12 @@ export const hubspotGetCampaignTool: ToolConfig<
 }
 
 export const hubspotGetCampaignSpendTool: ToolConfig<
-  HubSpotGetCampaignSpendParams,
+  HubSpotGetCampaignSpendParams & { campaignGuid?: string | string[] },
   HubSpotGetCampaignSpendResponse
 > = {
   id: 'hubspot_get_campaign_spend',
   name: 'Get HubSpot Campaign Spend Item',
-  description: 'Retrieve a specific spend item for a campaign',
+  description: 'Retrieve a specific spend item for a campaign or multiple campaigns',
   version: '1.0.0',
   oauth: {
     required: true,
@@ -267,7 +274,7 @@ export const hubspotGetCampaignSpendTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-only',
-      description: 'Campaign GUID',
+      description: 'Campaign GUID or array of Campaign GUIDs',
     },
     spendId: {
       type: 'string',
@@ -277,12 +284,98 @@ export const hubspotGetCampaignSpendTool: ToolConfig<
     },
   },
   request: {
-    url: ({ campaignGuid, spendId }) =>
-      `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(campaignGuid)}/spend/${encodeURIComponent(spendId)}`,
+    url: ({ campaignGuid, spendId }) => {
+      // Handle array case - use first campaign for URL (will be handled in transformResponse)
+      const guid = Array.isArray(campaignGuid) ? campaignGuid[0] : campaignGuid
+      return `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/spend/${encodeURIComponent(spendId)}`
+    },
     method: 'GET',
     headers: ({ accessToken }) => buildHeaders(accessToken),
   },
   transformResponse: async (response: Response, params) => {
+    if (!params) {
+      throw new Error('Missing parameters')
+    }
+
+    // Handle multiple campaigns
+    if (Array.isArray(params.campaignGuid) && params.campaignGuid.length > 1) {
+      const campaignGuids = params.campaignGuid
+      const spendPromises = campaignGuids.map(async (guid) => {
+        try {
+          const url = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/spend/${encodeURIComponent(params.spendId)}`
+          const campaignResponse = await fetch(url, {
+            method: 'GET',
+            headers: buildHeaders(params.accessToken),
+          })
+
+          if (!campaignResponse.ok) {
+            const errorData = await campaignResponse.json().catch(() => ({}))
+            logger.error('HubSpot get campaign spend request failed', {
+              data: errorData,
+              status: campaignResponse.status,
+              campaignGuid: guid,
+              spendId: params.spendId,
+            })
+            return {
+              campaignGuid: guid,
+              spend: null,
+              error:
+                (errorData as { message?: string }).message || 'Failed to retrieve campaign spend',
+            }
+          }
+
+          const data = await campaignResponse.json()
+          return {
+            campaignGuid: guid,
+            spend: data as HubSpotCampaignSpend,
+            error: null,
+          }
+        } catch (error) {
+          logger.error('Error fetching campaign spend', {
+            error,
+            campaignGuid: guid,
+            spendId: params.spendId,
+          })
+          return {
+            campaignGuid: guid,
+            spend: null,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }
+        }
+      })
+
+      const results = await Promise.all(spendPromises)
+      const successfulSpend = results.filter((r) => r.spend !== null)
+      const failedSpend = results.filter((r) => r.spend === null)
+
+      return {
+        success: successfulSpend.length > 0,
+        output: {
+          spend: successfulSpend.map((r) => ({
+            campaignGuid: r.campaignGuid,
+            spend: r.spend,
+          })) as any, // Array of spend items for multiple campaigns
+          errors:
+            failedSpend.length > 0
+              ? failedSpend.map((r) => ({
+                  campaignGuid: r.campaignGuid,
+                  error: r.error,
+                }))
+              : undefined,
+          metadata: {
+            operation: 'get_campaign_spend' as const,
+            campaignGuids: campaignGuids,
+            spendId: params.spendId,
+            totalRequested: campaignGuids.length,
+            totalSuccessful: successfulSpend.length,
+            totalFailed: failedSpend.length,
+          } as any,
+          success: successfulSpend.length > 0,
+        },
+      } as HubSpotGetCampaignSpendResponse
+    }
+
+    // Handle single campaign (original behavior)
     const data: HubSpotCampaignSpend | { message?: string } = await response.json()
 
     if (!response.ok) {
@@ -290,13 +383,17 @@ export const hubspotGetCampaignSpendTool: ToolConfig<
       throw new Error((data as { message?: string }).message || 'Failed to retrieve campaign spend')
     }
 
+    const campaignGuid = Array.isArray(params.campaignGuid)
+      ? params.campaignGuid[0]
+      : params.campaignGuid
+
     return {
       success: true,
       output: {
         spend: data as HubSpotCampaignSpend,
         metadata: {
           operation: 'get_campaign_spend' as const,
-          campaignGuid: params.campaignGuid,
+          campaignGuid: campaignGuid,
           spendId: params.spendId,
         },
         success: true,
@@ -309,7 +406,11 @@ export const hubspotGetCampaignSpendTool: ToolConfig<
       type: 'object',
       description: 'Spend item details',
       properties: {
-        spend: { type: 'object', description: 'Spend item object' },
+        spend: { type: 'object', description: 'Spend item object or array of spend objects' },
+        errors: {
+          type: 'object',
+          description: 'Array of errors for failed campaigns (if multiple)',
+        },
         metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success status' },
       },
@@ -347,7 +448,7 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
     url: ({ campaignGuid }) => {
       // Handle array case - use first campaign for URL (will be handled in transformResponse)
       const guid = Array.isArray(campaignGuid) ? campaignGuid[0] : campaignGuid
-      return `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/metrics`
+      return `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/metrics?metrics=CLICKS&metrics=BOUNCES&metrics=OPENS`
     },
     method: 'GET',
     headers: ({ accessToken }) => buildHeaders(accessToken),
@@ -362,11 +463,13 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
       const campaignGuids = params.campaignGuid
       const metricsPromises = campaignGuids.map(async (guid) => {
         try {
-          const url = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/metrics`
+          const url = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/metrics?metrics=CLICKS&metrics=BOUNCES&metrics=OPENS`
           const campaignResponse = await fetch(url, {
             method: 'GET',
             headers: buildHeaders(params.accessToken),
           })
+
+          console.log('campaign metrics response 1', campaignResponse)
 
           if (!campaignResponse.ok) {
             const errorData = await campaignResponse.json().catch(() => ({}))
@@ -378,11 +481,14 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
             return {
               campaignGuid: guid,
               metrics: null,
-              error: (errorData as { message?: string }).message || 'Failed to retrieve campaign metrics',
+              error:
+                (errorData as { message?: string }).message ||
+                'Failed to retrieve campaign metrics',
             }
           }
 
           const data = await campaignResponse.json()
+          console.log('campaign metrics data', data)
           return {
             campaignGuid: guid,
             metrics: data as HubSpotCampaignMetrics,
@@ -409,10 +515,13 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
             campaignGuid: r.campaignGuid,
             metrics: r.metrics,
           })) as any, // Array of metrics for multiple campaigns
-          errors: failedMetrics.length > 0 ? failedMetrics.map((r) => ({
-            campaignGuid: r.campaignGuid,
-            error: r.error,
-          })) : undefined,
+          errors:
+            failedMetrics.length > 0
+              ? failedMetrics.map((r) => ({
+                  campaignGuid: r.campaignGuid,
+                  error: r.error,
+                }))
+              : undefined,
           metadata: {
             operation: 'get_campaign_metrics' as const,
             campaignGuids: campaignGuids,
@@ -435,7 +544,9 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
       )
     }
 
-    const campaignGuid = Array.isArray(params.campaignGuid) ? params.campaignGuid[0] : params.campaignGuid
+    const campaignGuid = Array.isArray(params.campaignGuid)
+      ? params.campaignGuid[0]
+      : params.campaignGuid
 
     return {
       success: true,
@@ -456,7 +567,10 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
       description: 'Campaign metrics',
       properties: {
         metrics: { type: 'object', description: 'Metrics object or array of metrics objects' },
-        errors: { type: 'object', description: 'Array of errors for failed campaigns (if multiple)' },
+        errors: {
+          type: 'object',
+          description: 'Array of errors for failed campaigns (if multiple)',
+        },
         metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success status' },
       },
@@ -465,12 +579,12 @@ export const hubspotGetCampaignMetricsTool: ToolConfig<
 }
 
 export const hubspotGetCampaignRevenueTool: ToolConfig<
-  HubSpotGetCampaignRevenueParams,
+  HubSpotGetCampaignRevenueParams & { campaignGuid?: string | string[] },
   HubSpotGetCampaignRevenueResponse
 > = {
   id: 'hubspot_get_campaign_revenue',
   name: 'Get HubSpot Campaign Revenue',
-  description: 'Retrieve revenue reports for a campaign',
+  description: 'Retrieve revenue reports for a campaign or multiple campaigns',
   version: '1.0.0',
   oauth: {
     required: true,
@@ -487,16 +601,97 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-only',
-      description: 'Campaign GUID',
+      description: 'Campaign GUID or array of Campaign GUIDs',
     },
   },
   request: {
-    url: ({ campaignGuid }) =>
-      `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(campaignGuid)}/reports/revenue`,
+    url: ({ campaignGuid }) => {
+      // Handle array case - use first campaign for URL (will be handled in transformResponse)
+      const guid = Array.isArray(campaignGuid) ? campaignGuid[0] : campaignGuid
+      return `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+    },
     method: 'GET',
     headers: ({ accessToken }) => buildHeaders(accessToken),
   },
   transformResponse: async (response: Response, params) => {
+    if (!params) {
+      throw new Error('Missing parameters')
+    }
+
+    // Handle multiple campaigns
+    if (Array.isArray(params.campaignGuid) && params.campaignGuid.length > 1) {
+      const campaignGuids = params.campaignGuid
+      const revenuePromises = campaignGuids.map(async (guid) => {
+        try {
+          const url = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+          const campaignResponse = await fetch(url, {
+            method: 'GET',
+            headers: buildHeaders(params.accessToken),
+          })
+
+          if (!campaignResponse.ok) {
+            const errorData = await campaignResponse.json().catch(() => ({}))
+            logger.error('HubSpot get campaign revenue request failed', {
+              data: errorData,
+              status: campaignResponse.status,
+              campaignGuid: guid,
+            })
+            return {
+              campaignGuid: guid,
+              revenue: null,
+              error:
+                (errorData as { message?: string }).message ||
+                'Failed to retrieve campaign revenue',
+            }
+          }
+
+          const data = await campaignResponse.json()
+          return {
+            campaignGuid: guid,
+            revenue: data as HubSpotCampaignRevenue,
+            error: null,
+          }
+        } catch (error) {
+          logger.error('Error fetching campaign revenue', { error, campaignGuid: guid })
+          return {
+            campaignGuid: guid,
+            revenue: null,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }
+        }
+      })
+
+      const results = await Promise.all(revenuePromises)
+      const successfulRevenue = results.filter((r) => r.revenue !== null)
+      const failedRevenue = results.filter((r) => r.revenue === null)
+
+      return {
+        success: successfulRevenue.length > 0,
+        output: {
+          revenue: successfulRevenue.map((r) => ({
+            campaignGuid: r.campaignGuid,
+            revenue: r.revenue,
+          })) as any, // Array of revenue for multiple campaigns
+          errors:
+            failedRevenue.length > 0
+              ? failedRevenue.map((r) => ({
+                  campaignGuid: r.campaignGuid,
+                  error: r.error,
+                }))
+              : undefined,
+          metadata: {
+            operation: 'get_campaign_revenue' as const,
+            campaignGuids: campaignGuids,
+            totalRequested: campaignGuids.length,
+            totalSuccessful: successfulRevenue.length,
+            totalFailed: failedRevenue.length,
+          } as any,
+          success: successfulRevenue.length > 0,
+        },
+      } as HubSpotGetCampaignRevenueResponse
+    }
+
+    // Handle single campaign (original behavior)
     const data: HubSpotCampaignRevenue | { message?: string } = await response.json()
 
     if (!response.ok) {
@@ -506,13 +701,17 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
       )
     }
 
+    const campaignGuid = Array.isArray(params.campaignGuid)
+      ? params.campaignGuid[0]
+      : params.campaignGuid
+
     return {
       success: true,
       output: {
         revenue: data as HubSpotCampaignRevenue,
         metadata: {
           operation: 'get_campaign_revenue' as const,
-          campaignGuid: params.campaignGuid,
+          campaignGuid: campaignGuid,
         },
         success: true,
       },
@@ -524,7 +723,11 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
       type: 'object',
       description: 'Campaign revenue data',
       properties: {
-        revenue: { type: 'object', description: 'Revenue object' },
+        revenue: { type: 'object', description: 'Revenue object or array of revenue objects' },
+        errors: {
+          type: 'object',
+          description: 'Array of errors for failed campaigns (if multiple)',
+        },
         metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success status' },
       },
@@ -887,3 +1090,386 @@ export const hubspotGetCampaignAssetsTool: ToolConfig<
     },
   },
 }
+
+export const hubspotGetEmailStatisticsHistogramTool: ToolConfig<
+  HubSpotGetEmailStatisticsHistogramParams & { emailIds?: string },
+  HubSpotGetEmailStatisticsHistogramResponse
+> = {
+  id: 'hubspot_get_email_statistics_histogram',
+  name: 'Get HubSpot Email Statistics Histogram',
+  description: 'Retrieve aggregated email statistics histogram with specified interval',
+  version: '1.0.0',
+  oauth: {
+    required: true,
+    provider: 'hubspot',
+  },
+  params: {
+    accessToken: {
+      type: 'string',
+      required: true,
+      visibility: 'hidden',
+      description: 'The access token for the HubSpot API',
+    },
+    interval: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description:
+        'The interval to aggregate statistics for (DAY, HOUR, MINUTE, MONTH, QUARTER, QUARTER_HOUR, SECOND, WEEK, YEAR)',
+    },
+    emailIds: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Comma-separated list of email IDs to filter by (numbers only)',
+    },
+    startTimestamp: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'The start timestamp of the time span, in ISO8601 representation',
+    },
+    endTimestamp: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'The end timestamp of the time span, in ISO8601 representation',
+    },
+  },
+  request: {
+    url: (params) => {
+      const baseUrl = 'https://api.hubapi.com/marketing/v3/emails/statistics/histogram'
+      const queryParams = new URLSearchParams()
+
+      queryParams.append('interval', params.interval)
+
+      if (params.emailIds && typeof params.emailIds === 'string') {
+        // Parse comma-separated string and add each emailId as a query parameter
+        const emailIdArray = params.emailIds
+          .split(',')
+          .map((id: string) => id.trim())
+          .filter((id: string) => id !== '' && !Number.isNaN(Number(id)))
+          .map((id: string) => Number(id))
+
+        emailIdArray.forEach((emailId: number) => {
+          queryParams.append('emailIds', String(emailId))
+        })
+      }
+
+      if (params.startTimestamp) {
+        queryParams.append('startTimestamp', params.startTimestamp)
+      }
+
+      if (params.endTimestamp) {
+        queryParams.append('endTimestamp', params.endTimestamp)
+      }
+
+      const queryString = queryParams.toString()
+      return queryString ? `${baseUrl}?${queryString}` : baseUrl
+    },
+    method: 'GET',
+    headers: ({ accessToken }) => buildHeaders(accessToken),
+  },
+  transformResponse: async (response: Response, params) => {
+    if (!params) {
+      throw new Error('Missing parameters')
+    }
+
+    const data = await response.json()
+    if (!response.ok) {
+      logger.error('HubSpot get email statistics histogram request failed', {
+        data,
+        status: response.status,
+      })
+      throw new Error(
+        (data as { message?: string }).message || 'Failed to retrieve email statistics histogram'
+      )
+    }
+
+    const emailIds: number[] | undefined =
+      params.emailIds && typeof params.emailIds === 'string'
+        ? params.emailIds
+            .split(',')
+            .map((id: string) => id.trim())
+            .filter((id: string) => id !== '' && !Number.isNaN(Number(id)))
+            .map((id: string) => Number(id))
+        : undefined
+
+    // The API returns { results: [...], total: number }
+    const histogramData = data.results
+    console.log('email statistics histogram data results', histogramData)
+    return {
+      success: true,
+      output: {
+        histogram: histogramData,
+        metadata: {
+          operation: 'get_email_statistics_histogram' as const,
+          interval: params.interval as any,
+          emailIds,
+          startTimestamp: params.startTimestamp,
+          endTimestamp: params.endTimestamp,
+        },
+        success: true,
+      },
+    }
+  },
+  outputs: {
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Email statistics histogram data',
+      properties: {
+        histogram: { type: 'object', description: 'Histogram data object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success status' },
+      },
+    },
+  },
+}
+
+export const hubspotGetEmailTool: ToolConfig<HubSpotGetEmailParams, HubSpotGetEmailResponse> = {
+  id: 'hubspot_get_email',
+  name: 'Get HubSpot Email',
+  description: 'Retrieve a single email by ID from HubSpot',
+  version: '1.0.0',
+  oauth: {
+    required: true,
+    provider: 'hubspot',
+  },
+  params: {
+    accessToken: {
+      type: 'string',
+      required: true,
+      visibility: 'hidden',
+      description: 'The access token for the HubSpot API',
+    },
+    emailId: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'The ID of the email to retrieve',
+    },
+  },
+  request: {
+    url: (params) => {
+      return `https://api.hubapi.com/marketing/v3/emails/${encodeURIComponent(params.emailId)}`
+    },
+    method: 'GET',
+    headers: ({ accessToken }) => buildHeaders(accessToken),
+  },
+  transformResponse: async (response: Response, params) => {
+    if (!params) {
+      throw new Error('Missing parameters')
+    }
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      logger.error('HubSpot get email request failed', {
+        data,
+        status: response.status,
+        emailId: params.emailId,
+      })
+      throw new Error(
+        (data as { message?: string }).message || 'Failed to retrieve email from HubSpot'
+      )
+    }
+
+    return {
+      success: true,
+      output: {
+        email: data,
+        metadata: {
+          operation: 'get_email' as const,
+          emailId: params.emailId,
+        },
+        success: true,
+      },
+    }
+  },
+  outputs: {
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Email data from HubSpot',
+      properties: {
+        email: { type: 'object', description: 'Email object with all properties' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success status' },
+      },
+    },
+  },
+}
+
+export const hubspotListEmailsTool: ToolConfig<HubSpotListEmailsParams, HubSpotListEmailsResponse> =
+  {
+    id: 'hubspot_list_emails',
+    name: 'List HubSpot Emails',
+    description: 'Retrieve a list of emails from HubSpot with optional filters',
+    version: '1.0.0',
+    oauth: {
+      required: true,
+      provider: 'hubspot',
+    },
+    params: {
+      accessToken: {
+        type: 'string',
+        required: true,
+        visibility: 'hidden',
+        description: 'The access token for the HubSpot API',
+      },
+      archived: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description: 'Specifies whether to return archived emails (true/false). Defaults to false.',
+      },
+      createdAfter: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description:
+          'Only return emails created after the specified time (ISO8601 format, e.g., 2025-12-01)',
+      },
+      createdBefore: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description:
+          'Only return emails created before the specified time (ISO8601 format, e.g., 2025-12-31)',
+      },
+      workflowNames: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description:
+          'Include the names of any workflows associated with the returned emails (true/false)',
+      },
+      includeStats: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description: 'Include statistics with emails (true/false)',
+      },
+      isPublished: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description:
+          'Filter by published/draft emails. All emails will be returned if not present (true/false)',
+      },
+      limit: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description: 'The maximum number of results to return. Default is 10.',
+      },
+      marketingCampaignNames: {
+        type: 'string',
+        required: false,
+        visibility: 'user-only',
+        description: 'Include the names for any associated marketing campaigns (true/false)',
+      },
+    },
+    request: {
+      url: (params) => {
+        const baseUrl = 'https://api.hubapi.com/marketing/v3/emails/'
+        const queryParams = new URLSearchParams()
+
+        if (params.archived !== undefined) {
+          queryParams.append('archived', String(params.archived))
+        }
+
+        if (params.createdAfter) {
+          queryParams.append('createdAfter', params.createdAfter)
+        }
+
+        if (params.createdBefore) {
+          queryParams.append('createdBefore', params.createdBefore)
+        }
+
+        if (params.workflowNames !== undefined) {
+          queryParams.append('workflowNames', String(params.workflowNames))
+        }
+
+        if (params.includeStats !== undefined) {
+          queryParams.append('includeStats', String(params.includeStats))
+        }
+
+        if (params.isPublished !== undefined) {
+          queryParams.append('isPublished', String(params.isPublished))
+        }
+
+        if (params.limit !== undefined) {
+          queryParams.append('limit', String(params.limit))
+        }
+
+        if (params.marketingCampaignNames !== undefined) {
+          queryParams.append('marketingCampaignNames', String(params.marketingCampaignNames))
+        }
+
+        const queryString = queryParams.toString()
+        return queryString ? `${baseUrl}?${queryString}` : baseUrl
+      },
+      method: 'GET',
+      headers: ({ accessToken }) => buildHeaders(accessToken),
+    },
+    transformResponse: async (response: Response, params) => {
+      if (!params) {
+        throw new Error('Missing parameters')
+      }
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        logger.error('HubSpot list emails request failed', {
+          data,
+          status: response.status,
+        })
+        throw new Error(
+          (data as { message?: string }).message || 'Failed to retrieve emails from HubSpot'
+        )
+      }
+
+      // The API returns an object with results array and potentially paging
+      const emails = Array.isArray(data) ? data : (data as { results?: any[] }).results || []
+      const paging = (data as { paging?: Record<string, any> }).paging
+
+      return {
+        success: true,
+        output: {
+          emails,
+          paging,
+          metadata: {
+            operation: 'list_emails' as const,
+            totalReturned: emails.length,
+            archived:
+              params.archived !== undefined && typeof params.archived === 'string'
+                ? params.archived === 'true'
+                : undefined,
+            createdAfter: params.createdAfter,
+            createdBefore: params.createdBefore,
+            isPublished:
+              params.isPublished !== undefined && typeof params.isPublished === 'string'
+                ? params.isPublished === 'true'
+                : undefined,
+            limit: params.limit ? Number(params.limit) : undefined,
+          },
+          success: true,
+        },
+      }
+    },
+    outputs: {
+      success: { type: 'boolean', description: 'Operation success status' },
+      output: {
+        type: 'object',
+        description: 'List of emails from HubSpot',
+        properties: {
+          emails: { type: 'array', description: 'Array of email objects' },
+          paging: { type: 'object', description: 'Pagination information if available' },
+          metadata: { type: 'object', description: 'Operation metadata' },
+          success: { type: 'boolean', description: 'Operation success status' },
+        },
+      },
+    },
+  }
