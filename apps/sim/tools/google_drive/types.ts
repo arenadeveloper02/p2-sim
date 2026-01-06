@@ -20,6 +20,7 @@ export interface GoogleDriveFile {
   sheetCount?: number
   contentSource?: string
   extractionMethod?: string
+  relevantContent?: string[]
 }
 
 export interface GoogleDriveListResponse extends ToolResponse {

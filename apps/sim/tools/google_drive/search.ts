@@ -2,8 +2,41 @@ import { createLogger } from '@sim/logger'
 import type { GoogleDriveSearchParams, GoogleDriveSearchResponse } from '@/tools/google_drive/types'
 import { DEFAULT_EXPORT_FORMATS, GOOGLE_WORKSPACE_MIME_TYPES } from '@/tools/google_drive/utils'
 import type { ToolConfig } from '@/tools/types'
+import { rerankContent } from '@/lib/content/rerank'
+import { TextChunker } from '@/lib/chunkers/text-chunker'
 
 const logger = createLogger('GoogleDriveSearchTool')
+
+/**
+ * Splits content into passages for reranking using the TextChunker strategy.
+ * Uses hierarchical splitting with semantic boundaries (paragraphs, sentences, etc.)
+ */
+async function splitContentIntoPassages(
+  content: string,
+  maxPassageLength = 1000,
+  minPassageLength = 100
+): Promise<string[]> {
+  if (!content || content.trim().length === 0) {
+    return []
+  }
+
+  // Convert character-based maxPassageLength to tokens (1 token ≈ 4 characters)
+  // Use a slightly smaller chunk size to account for token estimation variance
+  const chunkSizeInTokens = Math.floor((maxPassageLength / 4) * 0.9) // 90% to be safe
+
+  // Create chunker with appropriate settings
+  const chunker = new TextChunker({
+    chunkSize: chunkSizeInTokens,
+    chunkOverlap: 0, // No overlap for reranking passages
+    minCharactersPerChunk: minPassageLength,
+  })
+
+  // Chunk the content
+  const chunks = await chunker.chunk(content)
+
+  // Extract text from chunks
+  return chunks.map((chunk) => chunk.text).filter((text) => text.trim().length >= minPassageLength)
+}
 
 /**
  * Parses time window patterns from prompt:
@@ -660,7 +693,59 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
         return fileObj
       })
 
-      const files = await Promise.all(filePromises)
+      let files = await Promise.all(filePromises)
+
+      // For each file with content, split into passages and rerank to extract relevant content
+      const filesWithContent = files.filter((file) => file.content && file.content.trim().length > 0)
+
+      if (filesWithContent.length > 0) {
+        // Process each file individually to extract relevant passages
+        const processedFiles = await Promise.all(
+          filesWithContent.map(async (file) => {
+            try {
+              // Split content into passages using TextChunker
+              const passages = await splitContentIntoPassages(file.content || '', 1000, 100)
+
+              if (passages.length === 0) {
+                return file
+              }
+
+              // Wrap passages in objects for reranking
+              const passageObjects = passages.map((passage) => ({ text: passage }))
+
+              // Rerank passages for this file
+              const rerankedPassageObjects = await rerankContent<{ text: string }>(
+                prompt,
+                passageObjects,
+                (item) => item.text,
+                  {
+                    enabled: true,
+                    topN: Math.min(passages.length, 10), // Get top 10 most relevant passages per file
+                    // maxContentLength: 4000,
+                  }
+              )
+
+              // Extract text from reranked passage objects
+              file.relevantContent = rerankedPassageObjects.map((item) => item.text)
+              return file
+            } catch (error) {
+              logger.warn('Failed to extract relevant content from file', {
+                fileId: file.id,
+                fileName: file.name,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              })
+              // Return file without relevantContent if reranking fails
+              return file
+            }
+          })
+        )
+
+        // Replace files with processed versions
+        files = files.map((file) => {
+          const processed = processedFiles.find((pf) => pf.id === file.id)
+          return processed || file
+        })
+      }
 
       return {
         success: true,
