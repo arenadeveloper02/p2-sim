@@ -46,7 +46,7 @@ export async function fetchKnowledgeBases(workspaceId?: string): Promise<Knowled
 }
 
 /**
- * Fetch knowledge bases that user has access to via user_knowledge_base table only
+ * Fetch knowledge bases that user has access to via workspace permissions
  */
 export async function fetchUserAccessKnowledgeBases(
   workspaceId?: string
@@ -211,7 +211,7 @@ export function useKnowledgeBasesQuery(
 }
 
 /**
- * React Query hook to fetch knowledge bases that user has access to via user_knowledge_base table only
+ * React Query hook to fetch knowledge bases that user has access to via workspace permissions
  */
 export function useUserAccessKnowledgeBasesQuery(
   workspaceId?: string,

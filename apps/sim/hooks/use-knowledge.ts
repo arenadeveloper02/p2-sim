@@ -265,7 +265,7 @@ export function useKnowledgeBasesList(
 }
 
 /**
- * Hook to fetch knowledge bases that user has access to via user_knowledge_base table only
+ * Hook to fetch knowledge bases that user has access to via workspace permissions
  * This is specifically for the knowledge-base-selector component
  */
 export function useUserAccessKnowledgeBases(
