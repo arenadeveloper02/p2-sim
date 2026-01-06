@@ -286,6 +286,7 @@ import {
 } from '@/tools/gitlab'
 import {
   gmailAddLabelTool,
+  gmailAdvancedSearchTool,
   gmailArchiveTool,
   gmailDeleteTool,
   gmailDraftTool,
@@ -1644,6 +1645,7 @@ export const tools: Record<string, ToolConfig> = {
   gmail_send: gmailSendTool,
   gmail_read: gmailReadTool,
   gmail_search: gmailSearchTool,
+  gmail_advanced_search: gmailAdvancedSearchTool,
   gmail_draft: gmailDraftTool,
   gmail_move: gmailMoveTool,
   gmail_mark_read: gmailMarkReadTool,

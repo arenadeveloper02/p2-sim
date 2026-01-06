@@ -27,6 +27,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
         { label: 'Read Email', id: 'read_gmail' },
         { label: 'Draft Email', id: 'draft_gmail' },
         { label: 'Search Email', id: 'search_gmail' },
+        { label: 'Advanced Search', id: 'advanced_search_gmail' },
         { label: 'Move Email', id: 'move_gmail' },
         { label: 'Mark as Read', id: 'mark_read_gmail' },
         { label: 'Mark as Unread', id: 'mark_unread_gmail' },
@@ -206,6 +207,16 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
           value: '',
         },
       },
+      mode: 'basic',
+    },
+    // Manual message ID input (advanced mode)
+    {
+      id: 'manualMessageId',
+      title: 'Message ID',
+      type: 'short-input',
+      placeholder: 'Enter message ID to read (optional)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'read_gmail' },
     },
     // Search Fields
     {
@@ -222,6 +233,29 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       type: 'short-input',
       placeholder: 'Maximum number of results (default: 10)',
       condition: { field: 'operation', value: ['search_gmail', 'read_gmail'] },
+    },
+    // Advanced Search Fields
+    {
+      id: 'advancedSearchQuery',
+      title: 'Search Query',
+      type: 'short-input',
+      placeholder: 'Enter search terms',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      required: true,
+    },
+    {
+      id: 'includeAttachments',
+      title: 'Include Attachments',
+      type: 'switch',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+    },
+    {
+      id: 'advancedMaxResults',
+      title: 'Max Results',
+      type: 'short-input',
+      placeholder: 'Maximum number of results (default: 5)',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      value: () => '5',
     },
     // Move Email Fields
     {
@@ -342,6 +376,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       'gmail_draft',
       'gmail_read',
       'gmail_search',
+      'gmail_advanced_search',
       'gmail_move',
       'gmail_mark_read',
       'gmail_mark_unread',
@@ -360,6 +395,8 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
             return 'gmail_draft'
           case 'search_gmail':
             return 'gmail_search'
+          case 'advanced_search_gmail':
+            return 'gmail_advanced_search'
           case 'read_gmail':
             return 'gmail_read'
           case 'move_gmail':
@@ -387,6 +424,11 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
           credential,
           folder,
           manualFolder,
+          messageId,
+          manualMessageId,
+          advancedSearchQuery,
+          advancedMaxResults,
+          includeAttachments,
           destinationLabel,
           manualDestinationLabel,
           sourceLabel,
@@ -404,6 +446,26 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
 
         if (rest.operation === 'read_gmail') {
           rest.folder = effectiveFolder || 'INBOX'
+          // Handle both basic and advanced mode message ID input
+          const effectiveMessageId = (messageId || manualMessageId || '').trim()
+          if (effectiveMessageId) {
+            rest.messageId = effectiveMessageId
+          }
+        }
+
+        // Handle advanced search operation
+        if (rest.operation === 'advanced_search_gmail') {
+          if (advancedSearchQuery) {
+            rest.query = advancedSearchQuery
+          }
+          if (advancedMaxResults) {
+            rest.maxResults = Number(advancedMaxResults) || 5
+          } else {
+            rest.maxResults = 5
+          }
+          if (includeAttachments !== undefined) {
+            rest.includeAttachments = includeAttachments
+          }
         }
 
         // Handle move operation
@@ -469,12 +531,20 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
     // Read operation inputs
     folder: { type: 'string', description: 'Gmail folder' },
     manualFolder: { type: 'string', description: 'Manual folder name' },
+    messageId: { type: 'string', description: 'Message ID to read (basic mode)' },
+    manualMessageId: { type: 'string', description: 'Message ID to read (advanced mode)' },
     readMessageId: { type: 'string', description: 'Message identifier for reading specific email' },
     unreadOnly: { type: 'boolean', description: 'Unread messages only' },
     includeAttachments: { type: 'boolean', description: 'Include email attachments' },
     // Search operation inputs
     query: { type: 'string', description: 'Search query' },
     maxResults: { type: 'number', description: 'Maximum results' },
+    // Advanced Search operation inputs
+    advancedSearchQuery: { type: 'string', description: 'Advanced search query' },
+    advancedMaxResults: {
+      type: 'string',
+      description: 'Maximum results for advanced search (default: 5)',
+    },
     // Move operation inputs
     moveMessageId: { type: 'string', description: 'Message ID to move' },
     destinationLabel: { type: 'string', description: 'Destination label ID' },
@@ -495,6 +565,10 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
     content: { type: 'string', description: 'Response content' },
     metadata: { type: 'json', description: 'Email metadata' },
     attachments: { type: 'json', description: 'Email attachments array' },
+    results: {
+      type: 'json',
+      description: 'Advanced search results with full content and parsed attachments',
+    },
     // Trigger outputs
     email_id: { type: 'string', description: 'Gmail message ID' },
     thread_id: { type: 'string', description: 'Gmail thread ID' },
