@@ -157,22 +157,15 @@ export function parseProvider(provider: OAuthProvider): ProviderConfig {
 }
 
 /**
- * Google services that support multiple accounts per user.
- * Each Google account has a unique accountId (sub claim), allowing multiple connections.
+ * Services that support multiple accounts per user.
+ * For now, we only allow this for Google Drive.
  */
-const GOOGLE_MULTI_ACCOUNT_PROVIDERS = [
-  'google-drive',
-  'google-docs',
-  'google-sheets',
-  'google-slides',
-  'google-calendar',
-  'google-email',
-] as const
+const MULTI_ACCOUNT_PROVIDERS = ['google-drive'] as const
 
 /**
  * Check if a provider supports multiple accounts per user.
- * Currently, only certain Google services support this feature.
+ * Currently, only Google Drive supports this feature.
  */
 export function supportsMultipleAccounts(providerId: string): boolean {
-  return GOOGLE_MULTI_ACCOUNT_PROVIDERS.includes(providerId as any)
+  return MULTI_ACCOUNT_PROVIDERS.includes(providerId as any)
 }

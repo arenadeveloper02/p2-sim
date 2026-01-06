@@ -110,17 +110,10 @@ export const auth = betterAuth({
     account: {
       create: {
         before: async (account) => {
-          // Google services that support multiple accounts per user
-          // Each Google account has a unique accountId (sub claim), allowing multiple connections
-          const googleMultiAccountProviders = [
-            'google-drive',
-            'google-docs',
-            'google-sheets',
-            'google-slides',
-            'google-calendar',
-            'google-email',
-          ]
-          const supportsMultipleAccounts = googleMultiAccountProviders.includes(account.providerId)
+          // Services that support multiple accounts per user.
+          // For now, we only allow this for Google Drive.
+          const multiAccountProviders = ['google-drive']
+          const supportsMultipleAccounts = multiAccountProviders.includes(account.providerId)
 
           let existing
           if (supportsMultipleAccounts) {
