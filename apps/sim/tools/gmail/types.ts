@@ -35,6 +35,13 @@ export interface GmailSearchParams extends BaseGmailParams {
   maxResults?: number
 }
 
+// Advanced Search operation parameters
+export interface GmailAdvancedSearchParams extends BaseGmailParams {
+  query: string
+  maxResults?: number
+  includeAttachments?: boolean
+}
+
 // Move operation parameters
 export interface GmailMoveParams extends BaseGmailParams {
   messageId: string
@@ -58,6 +65,7 @@ export type GmailToolParams =
   | GmailSendParams
   | GmailReadParams
   | GmailSearchParams
+  | GmailAdvancedSearchParams
   | GmailMoveParams
   | GmailMarkReadParams
   | GmailLabelParams
@@ -129,4 +137,29 @@ export interface GmailAttachment {
   data: Buffer
   mimeType: string
   size: number
+}
+
+// Advanced Search Response
+export interface GmailAdvancedSearchResponse extends ToolResponse {
+  output: {
+    results: Array<{
+      id: string
+      threadId: string
+      subject: string
+      from: string
+      to: string
+      date: string
+      content: string
+      attachments?: Array<{
+        id: string
+        name: string
+        size: number
+        type: string
+        url: string | null
+        key: string | null
+        context: string | null
+        content: string | null
+      }>
+    }>
+  }
 }
