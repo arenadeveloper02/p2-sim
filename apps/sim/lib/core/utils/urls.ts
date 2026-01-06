@@ -1,18 +1,25 @@
 import { getEnv } from '@/lib/core/config/env'
-import { isProd } from '@/lib/core/config/feature-flags'
+import { isDev, isProd } from '@/lib/core/config/feature-flags'
 
 /**
  * Returns the base URL of the application from NEXT_PUBLIC_APP_URL
  * This ensures webhooks, callbacks, and other integrations always use the correct public URL
  * @returns The base URL string (e.g., 'http://localhost:3000' or 'https://example.com')
- * @throws Error if NEXT_PUBLIC_APP_URL is not configured
+ * @throws Error if NEXT_PUBLIC_APP_URL is not configured (except in development where it falls back to localhost)
  */
 export function getBaseUrl(): string {
   const baseUrl = getEnv('NEXT_PUBLIC_APP_URL')
 
   if (!baseUrl) {
+    // In development, provide a fallback to localhost
+    if (isDev) {
+      const port = process.env.PORT || '3000'
+      return `http://localhost:${port}`
+    }
+
     throw new Error(
-      'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly'
+      'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly. ' +
+        'Please set NEXT_PUBLIC_APP_URL in your environment variables (e.g., NEXT_PUBLIC_APP_URL=http://localhost:3000 for development)'
     )
   }
 
