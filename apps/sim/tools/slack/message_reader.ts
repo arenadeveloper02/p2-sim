@@ -57,13 +57,15 @@ export const slackMessageReaderTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Start date for message range (ISO 8601 date string, e.g., "2024-01-01" or "2024-01-01T10:00:00Z")',
+      description:
+        'Start date for message range (ISO 8601 date string, e.g., "2024-01-01" or "2024-01-01T10:00:00Z")',
     },
     to: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'End date for message range (ISO 8601 date string, e.g., "2024-01-31" or "2024-01-31T23:59:59Z")',
+      description:
+        'End date for message range (ISO 8601 date string, e.g., "2024-01-31" or "2024-01-31T23:59:59Z")',
     },
     oldest: {
       type: 'string',

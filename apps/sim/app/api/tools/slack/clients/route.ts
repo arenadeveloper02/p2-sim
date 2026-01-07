@@ -1,7 +1,7 @@
-import { createLogger } from '@sim/logger'
-import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@sim/db'
 import { clientChannelMapping } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
+import { type NextRequest, NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -59,4 +59,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

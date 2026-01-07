@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -13,14 +13,8 @@ const SlackSearchAllSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   highlight: z.boolean().optional().nullable(),
   page: z.coerce.number().int().min(1).optional().nullable(),
-  sort: z
-    .enum(['score', 'timestamp'])
-    .optional()
-    .nullable(),
-  sort_dir: z
-    .enum(['asc', 'desc'])
-    .optional()
-    .nullable(),
+  sort: z.enum(['score', 'timestamp']).optional().nullable(),
+  sort_dir: z.enum(['asc', 'desc']).optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {
@@ -40,9 +34,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    logger.info(`[${requestId}] Authenticated Slack search.all request via ${authResult.authType}`, {
-      userId: authResult.userId,
-    })
+    logger.info(
+      `[${requestId}] Authenticated Slack search.all request via ${authResult.authType}`,
+      {
+        userId: authResult.userId,
+      }
+    )
 
     const body = await request.json()
     const validatedData = SlackSearchAllSchema.parse(body)
@@ -111,7 +108,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: data.error || `Slack API error: ${slackResponse.status} ${slackResponse.statusText}`,
+          error:
+            data.error || `Slack API error: ${slackResponse.status} ${slackResponse.statusText}`,
         },
         { status: 400 }
       )
@@ -144,5 +142,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
-

@@ -64,9 +64,12 @@ export function SlackSelectorInput({
   const effectiveCredential = previewContextValues?.credential ?? connectedCredential
   // Extract clientId from object if it's an object (like Arena client selector)
   const rawClientId = previewContextValues?.clientId ?? clientId
-  const effectiveClientId = typeof rawClientId === 'object' && rawClientId?.clientId
-    ? rawClientId.clientId
-    : (typeof rawClientId === 'string' ? rawClientId : undefined)
+  const effectiveClientId =
+    typeof rawClientId === 'object' && rawClientId?.clientId
+      ? rawClientId.clientId
+      : typeof rawClientId === 'string'
+        ? rawClientId
+        : undefined
   const [_selectedValue, setSelectedValue] = useState<string | null>(null)
 
   const serviceId = subBlock.serviceId || ''

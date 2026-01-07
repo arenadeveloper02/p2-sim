@@ -10,6 +10,7 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
+  DateInput,
   DocumentSelector,
   DocumentTagEntry,
   Dropdown,
@@ -37,7 +38,6 @@ import {
   Table,
   Text,
   TimeInput,
-  DateInput,
   ToolInput,
   TriggerSave,
   VariablesInput,
@@ -47,11 +47,11 @@ import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import type { SubBlockConfig } from '@/blocks/types'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
-import { SlackClientSelector } from './components/slack-client-selector/slack-client-selector'
 import { ArenaGroupSelector } from './components/arena/arena-group-selector'
 import { ArenaProjectSelector } from './components/arena/arena-projects-selector'
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { SlackClientSelector } from './components/slack-client-selector/slack-client-selector'
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs

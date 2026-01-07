@@ -382,8 +382,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       title: 'Search Query',
       type: 'long-input',
       canonicalParamId: 'query',
-      placeholder:
-        'messages in:#alerts after:2024-12-01 before:2024-12-05',
+      placeholder: 'messages in:#alerts after:2024-12-01 before:2024-12-05',
       condition: {
         field: 'operation',
         value: 'search_all',
@@ -615,9 +614,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         } = params
 
         // Extract clientId from object if it's an object (like Arena client selector)
-        const clientId = typeof rawClientId === 'object' && rawClientId?.clientId
-          ? rawClientId.clientId
-          : (typeof rawClientId === 'string' ? rawClientId : undefined)
+        const clientId =
+          typeof rawClientId === 'object' && rawClientId?.clientId
+            ? rawClientId.clientId
+            : typeof rawClientId === 'string'
+              ? rawClientId
+              : undefined
 
         const isDM = destinationType === 'dm'
         const effectiveChannel = (channel || manualChannel || '').trim()
@@ -703,7 +705,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
 
           case 'search_all': {
             let query = (searchQuery || '').trim()
-            
+
             // Extract channel name from clientChannel (could be string or object with id/label)
             let channelName: string | undefined
             if (clientChannel) {
@@ -725,7 +727,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
                 // Check if query already has an "in:" clause
                 const inPattern = /in:\S+/g
                 const hasInClause = inPattern.test(query)
-                
+
                 if (hasInClause) {
                   // Replace existing in: clause with the selected channel name
                   query = query.replace(inPattern, `in:${channelNameClean}`)
@@ -849,8 +851,16 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },
-    from: { type: 'string', description: 'Start date for message range (ISO 8601 format, e.g., "2024-01-01" or "2024-01-01T10:00:00Z")' },
-    to: { type: 'string', description: 'End date for message range (ISO 8601 format, e.g., "2024-01-31" or "2024-01-31T23:59:59Z")' },
+    from: {
+      type: 'string',
+      description:
+        'Start date for message range (ISO 8601 format, e.g., "2024-01-01" or "2024-01-01T10:00:00Z")',
+    },
+    to: {
+      type: 'string',
+      description:
+        'End date for message range (ISO 8601 format, e.g., "2024-01-31" or "2024-01-31T23:59:59Z")',
+    },
     oldest: { type: 'string', description: 'Oldest timestamp (deprecated, use "from" instead)' },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
@@ -878,8 +888,14 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     searchQuery: { type: 'string', description: 'Search query string for search all operation' },
     searchHighlight: { type: 'string', description: 'Highlight matches: default, true, or false' },
     searchPage: { type: 'string', description: 'Page number for search results (1-based)' },
-    searchSort: { type: 'string', description: 'Sort field for search results (score or timestamp)' },
-    searchSortDir: { type: 'string', description: 'Sort direction for search results (desc or asc)' },
+    searchSort: {
+      type: 'string',
+      description: 'Sort field for search results (score or timestamp)',
+    },
+    searchSortDir: {
+      type: 'string',
+      description: 'Sort direction for search results (desc or asc)',
+    },
   },
   outputs: {
     // slack_message outputs (send operation)
@@ -963,7 +979,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     },
     fileTexts: {
       type: 'string',
-      description: 'Combined text from all file matches (titles, names, comments) in search results',
+      description:
+        'Combined text from all file matches (titles, names, comments) in search results',
       condition: {
         field: 'operation',
         value: 'search_all',

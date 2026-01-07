@@ -142,5 +142,3 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
     }
   },
 }
-
-

@@ -154,7 +154,7 @@ function resolveChannelSelector(
   if (serviceId !== 'slack') {
     return { key: null, context: buildBaseContext(args), allowSearch: true }
   }
-  
+
   // If clientId is provided and this is the clientChannel field, use client channels selector
   if (args.clientId && subBlock.id === 'clientChannel') {
     return {
@@ -163,7 +163,7 @@ function resolveChannelSelector(
       allowSearch: true,
     }
   }
-  
+
   return {
     key: 'slack.channels',
     context: buildBaseContext(args),
