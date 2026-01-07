@@ -1,8 +1,8 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 import { processSingleFileToUserFile } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import {
@@ -97,35 +97,48 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Process file - handle both UserFile (with key) and raw file data (with content)
+    // Process file - handle both UserFile (with key) and raw file data (with data)
     const fileData = validatedData.file
     let fileBuffer: Buffer
     let requestedMimeType: string
     let finalFileName: string
 
-    // Check if file has base64 content (from presentation tool or similar)
-    if (fileData && typeof fileData === 'object' && 'content' in fileData && fileData.content) {
-      // Handle raw file data with base64 content
-      logger.info(`[${requestId}] Processing file with base64 content`, {
+    // Check if file has raw data property (ToolFileData format)
+    const hasRawFileData =
+      fileData && typeof fileData === 'object' && 'data' in fileData && fileData.data
+
+    if (hasRawFileData) {
+      // Handle raw file data (Buffer or base64 string)
+      logger.info(`[${requestId}] Processing file with raw data`, {
         fileName: fileData.name || validatedData.fileName,
+        dataType: Buffer.isBuffer(fileData.data) ? 'Buffer' : 'string',
       })
 
       try {
-        let base64Data = fileData.content
+        // Handle Buffer or base64 string
+        if (Buffer.isBuffer(fileData.data)) {
+          fileBuffer = fileData.data
+          logger.info(`[${requestId}] Using Buffer directly`)
+        } else if (typeof fileData.data === 'string') {
+          let base64Data = fileData.data
 
-        // Convert base64url to base64 if needed
-        if (base64Data && (base64Data.includes('-') || base64Data.includes('_'))) {
-          base64Data = base64Data.replace(/-/g, '+').replace(/_/g, '/')
-          logger.info(`[${requestId}] Converted base64url to base64`)
+          // Convert base64url to base64 if needed
+          if (base64Data.includes('-') || base64Data.includes('_')) {
+            base64Data = base64Data.replace(/-/g, '+').replace(/_/g, '/')
+            logger.info(`[${requestId}] Converted base64url to base64`)
+          }
+
+          fileBuffer = Buffer.from(base64Data, 'base64')
+          logger.info(`[${requestId}] Decoded base64 to Buffer`)
+        } else {
+          throw new Error('File data must be a Buffer or base64 string')
         }
-
-        fileBuffer = Buffer.from(base64Data, 'base64')
 
         if (fileBuffer.length === 0) {
           return NextResponse.json(
             {
               success: false,
-              error: 'File content is empty after decoding',
+              error: 'File data is empty',
             },
             { status: 400 }
           )
@@ -133,25 +146,22 @@ export async function POST(request: NextRequest) {
 
         // Determine MIME type - prioritize provided mimeType, then file metadata
         requestedMimeType =
-          validatedData.mimeType ||
-          fileData.fileType ||
-          fileData.mimetype ||
-          'application/octet-stream'
+          validatedData.mimeType || fileData.mimeType || 'application/octet-stream'
 
-        // Prefer user-entered fileName when provided; fall back to file's own name, then a default
-        finalFileName = validatedData.fileName || fileData.name || 'presentation.pptx'
+        // Prefer user-entered fileName when provided; fall back to file's own name
+        finalFileName = validatedData.fileName || fileData.name || 'file'
 
-        logger.info(`[${requestId}] Decoded file content`, {
+        logger.info(`[${requestId}] Processed raw file data`, {
           size: fileBuffer.length,
           fileName: finalFileName,
           mimeType: requestedMimeType,
         })
       } catch (error) {
-        logger.error(`[${requestId}] Failed to decode file content:`, error)
+        logger.error(`[${requestId}] Failed to process file data:`, error)
         return NextResponse.json(
           {
             success: false,
-            error: `Failed to decode file content: ${error instanceof Error ? error.message : 'Invalid base64 data'}`,
+            error: `Failed to process file data: ${error instanceof Error ? error.message : 'Invalid data format'}`,
           },
           { status: 400 }
         )

@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { getProviderFromModel } from '@/providers/utils'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
@@ -13,6 +13,9 @@ interface LLMChatParams {
   maxTokens?: number
   azureEndpoint?: string
   azureApiVersion?: string
+  vertexProject?: string
+  vertexLocation?: string
+  vertexCredential?: string
 }
 
 interface LLMChatResponse extends ToolResponse {
@@ -77,6 +80,24 @@ export const llmChatTool: ToolConfig<LLMChatParams, LLMChatResponse> = {
       visibility: 'hidden',
       description: 'Azure OpenAI API version',
     },
+    vertexProject: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Google Cloud project ID for Vertex AI',
+    },
+    vertexLocation: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Google Cloud location for Vertex AI (defaults to us-central1)',
+    },
+    vertexCredential: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Google Cloud OAuth credential ID for Vertex AI',
+    },
   },
 
   request: {
@@ -98,6 +119,9 @@ export const llmChatTool: ToolConfig<LLMChatParams, LLMChatResponse> = {
         maxTokens: params.maxTokens,
         azureEndpoint: params.azureEndpoint,
         azureApiVersion: params.azureApiVersion,
+        vertexProject: params.vertexProject,
+        vertexLocation: params.vertexLocation,
+        vertexCredential: params.vertexCredential,
       }
     },
   },

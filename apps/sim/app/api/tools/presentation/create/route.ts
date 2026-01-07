@@ -5,14 +5,26 @@ const PRESENTATION_API_BASE_URL = env.PRESENTATION_API_BASE_URL
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json()
-    const { operation, numberOfSlides, tone, verbosity, template, content } = data
+    const {
+      operation,
+      numberOfSlides,
+      tone,
+      verbosity,
+      template,
+      content,
+      slides_markdown,
+      instructions,
+    } = data
 
     // Validate required parameters
     if (!operation) {
       return NextResponse.json({ error: 'Missing required field: operation' }, { status: 400 })
     }
-    if (!numberOfSlides) {
-      return NextResponse.json({ error: 'Missing required field: numberOfSlides' }, { status: 400 })
+    if (!numberOfSlides && !slides_markdown) {
+      return NextResponse.json(
+        { error: 'Missing required field: numberOfSlides (or provide slides_markdown)' },
+        { status: 400 }
+      )
     }
     if (!tone) {
       return NextResponse.json({ error: 'Missing required field: tone' }, { status: 400 })
@@ -22,10 +34,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 1: Generate presentation
-    const generatePayload = {
+    const generatePayload: Record<string, any> = {
       content: content || '',
-      n_slides:
-        typeof numberOfSlides === 'string' ? Number.parseInt(numberOfSlides, 10) : numberOfSlides,
+      n_slides: slides_markdown
+        ? slides_markdown.length
+        : typeof numberOfSlides === 'string'
+          ? Number.parseInt(numberOfSlides, 10)
+          : numberOfSlides,
       language: 'English',
       template: template || 'position2-test',
       tone: tone,
@@ -34,8 +49,13 @@ export async function POST(req: NextRequest) {
       include_table_of_contents: true,
       web_search: true,
       export_as: 'pptx',
-      instructions: '',
+      instructions: instructions || '',
       trigger_webhook: false,
+    }
+
+    // Add slides_markdown if provided
+    if (slides_markdown) {
+      generatePayload.slides_markdown = slides_markdown
     }
 
     const generateResponse = await fetch(

@@ -1,5 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createLogger } from '@/lib/logs/console/logger'
+import { sanitizeFileName } from '@/executor/constants'
 import '@/lib/uploads/core/setup.server'
 import { getSession } from '@/lib/auth'
 import type { StorageContext } from '@/lib/uploads/config'
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
         logger.info(`Uploading knowledge-base file: ${originalName}`)
 
         const timestamp = Date.now()
-        const safeFileName = originalName.replace(/\s+/g, '-')
+        const safeFileName = sanitizeFileName(originalName)
         const storageKey = `kb/${timestamp}-${safeFileName}`
 
         const metadata: Record<string, string> = {
@@ -268,9 +269,8 @@ export async function POST(request: NextRequest) {
 
         logger.info(`Uploading ${context} file: ${originalName}`)
 
-        // Generate storage key with context prefix and timestamp to ensure uniqueness
         const timestamp = Date.now()
-        const safeFileName = originalName.replace(/\s+/g, '-')
+        const safeFileName = sanitizeFileName(originalName)
         const storageKey = `${context}/${timestamp}-${safeFileName}`
 
         const metadata: Record<string, string> = {

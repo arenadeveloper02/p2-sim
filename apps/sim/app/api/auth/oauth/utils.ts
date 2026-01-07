@@ -1,9 +1,9 @@
 import { db } from '@sim/db'
 import { account, workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
-import { createLogger } from '@/lib/logs/console/logger'
-import { refreshOAuthToken } from '@/lib/oauth/oauth'
+import { refreshOAuthToken } from '@/lib/oauth'
 
 const logger = createLogger('OAuthUtilsAPI')
 
@@ -18,6 +18,7 @@ interface AccountInsertData {
   updatedAt: Date
   refreshToken?: string
   idToken?: string
+  accessTokenExpiresAt?: Date
 }
 
 /**
@@ -103,6 +104,7 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
       accessToken: account.accessToken,
       refreshToken: account.refreshToken,
       accessTokenExpiresAt: account.accessTokenExpiresAt,
+      idToken: account.idToken,
     })
     .from(account)
     .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))

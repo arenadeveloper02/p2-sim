@@ -11,7 +11,6 @@ export interface WorkflowExecutionItem {
 }
 
 export function WorkflowsList({
-  executions,
   filteredExecutions,
   expandedWorkflowId,
   onToggleWorkflow,
@@ -20,7 +19,6 @@ export function WorkflowsList({
   searchQuery,
   segmentDurationMs,
 }: {
-  executions: WorkflowExecutionItem[]
   filteredExecutions: WorkflowExecutionItem[]
   expandedWorkflowId: string | null
   onToggleWorkflow: (workflowId: string) => void
@@ -68,8 +66,8 @@ export function WorkflowsList({
                 <div
                   key={workflow.workflowId}
                   className={cn(
-                    'flex h-[44px] cursor-pointer items-center gap-[16px] px-[24px] hover:bg-[var(--c-2A2A2A)]',
-                    isSelected && 'bg-[var(--c-2A2A2A)]'
+                    'flex h-[44px] cursor-pointer items-center gap-[16px] px-[24px] hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-4)]',
+                    isSelected && 'bg-[var(--surface-6)] dark:bg-[var(--surface-4)]'
                   )}
                   onClick={() => onToggleWorkflow(workflow.workflowId)}
                 >

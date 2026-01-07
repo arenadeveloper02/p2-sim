@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { Badge, DocumentAttachment, Tooltip } from '@/components/emcn'
+import { clickKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
 interface BaseCardProps {
   id?: string
@@ -11,6 +12,7 @@ interface BaseCardProps {
   description: string
   createdAt?: string
   updatedAt?: string
+  searchQuery?: string
 }
 
 /**
@@ -69,24 +71,24 @@ export function BaseCardSkeleton() {
   return (
     <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
       <div className='flex items-center justify-between gap-[8px]'>
-        <div className='h-[17px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-9)]' />
-        <div className='h-[22px] w-[90px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
+        <div className='h-[17px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
+        <div className='h-[22px] w-[90px] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
       </div>
 
       <div className='flex flex-1 flex-col gap-[8px]'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-[6px]'>
-            <div className='h-[12px] w-[12px] animate-pulse rounded-[2px] bg-[var(--surface-9)]' />
-            <div className='h-[15px] w-[45px] animate-pulse rounded-[4px] bg-[var(--surface-9)]' />
+            <div className='h-[12px] w-[12px] animate-pulse rounded-[2px] bg-[var(--surface-5)]' />
+            <div className='h-[15px] w-[45px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
           </div>
-          <div className='h-[15px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
+          <div className='h-[15px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
         </div>
 
         <div className='h-0 w-full border-[var(--divider)] border-t' />
 
         <div className='flex h-[36px] flex-col gap-[6px]'>
-          <div className='h-[15px] w-full animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
-          <div className='h-[15px] w-[75%] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
+          <div className='h-[15px] w-full animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
+          <div className='h-[15px] w-[75%] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
         </div>
       </div>
     </div>
@@ -109,7 +111,14 @@ export function BaseCardSkeletonGrid({ count = 8 }: { count?: number }) {
 /**
  * Knowledge base card component displaying overview information
  */
-export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCardProps) {
+export function BaseCard({
+  id,
+  title,
+  docCount,
+  description,
+  updatedAt,
+  searchQuery,
+}: BaseCardProps) {
   const params = useParams()
   const workspaceId = params?.workspaceId as string
 
@@ -121,10 +130,21 @@ export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCa
   const shortId = id ? `kb-${id.slice(0, 8)}` : ''
 
   return (
-    <Link href={href} prefetch={true} className='h-full'>
+    <Link
+      href={href}
+      prefetch={true}
+      className='h-full'
+      onClick={() => {
+        clickKnowledgeBaseEvent({
+          'Knowledge Base Name': title || '',
+          'Knowledge Base ID': id || '',
+          ...(searchQuery && { 'Search keyword': searchQuery || '' }),
+        })
+      }}
+    >
       <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
         <div className='flex items-center justify-between gap-[8px]'>
-          <h3 className='min-w-0 flex-1 truncate text-[14px] text-[var(--text-primary)]'>
+          <h3 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
             {title}
           </h3>
           {shortId && <Badge className='flex-shrink-0 rounded-[4px] text-[12px]'>{shortId}</Badge>}
@@ -139,7 +159,7 @@ export function BaseCard({ id, title, docCount, description, updatedAt }: BaseCa
             {updatedAt && (
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
-                  <span className='text-[12px] text-[var(--text-muted)]'>
+                  <span className='text-[12px] text-[var(--text-tertiary)]'>
                     last updated: {formatRelativeTime(updatedAt)}
                   </span>
                 </Tooltip.Trigger>

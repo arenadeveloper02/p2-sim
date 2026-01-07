@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
-import { createLogger } from '@/lib/logs/console/logger'
-import type { ProvidersStore } from '@/stores/providers/types'
+import type { OpenRouterModelInfo, ProvidersStore } from '@/stores/providers/types'
 
 const logger = createLogger('ProvidersStore')
 
@@ -12,6 +12,7 @@ export const useProvidersStore = create<ProvidersStore>((set, get) => ({
     openrouter: { models: [], isLoading: false },
     sambanova: { models: [], isLoading: false },
   },
+  openRouterModelInfo: {},
 
   setProviderModels: (provider, models) => {
     logger.info(`Updated ${provider} models`, { count: models.length })
@@ -38,7 +39,22 @@ export const useProvidersStore = create<ProvidersStore>((set, get) => ({
     }))
   },
 
+  setOpenRouterModelInfo: (modelInfo: Record<string, OpenRouterModelInfo>) => {
+    const structuredOutputCount = Object.values(modelInfo).filter(
+      (m) => m.supportsStructuredOutputs
+    ).length
+    logger.info('Updated OpenRouter model info', {
+      count: Object.keys(modelInfo).length,
+      withStructuredOutputs: structuredOutputCount,
+    })
+    set({ openRouterModelInfo: modelInfo })
+  },
+
   getProvider: (provider) => {
     return get().providers[provider]
+  },
+
+  getOpenRouterModelInfo: (modelId: string) => {
+    return get().openRouterModelInfo[modelId]
   },
 }))

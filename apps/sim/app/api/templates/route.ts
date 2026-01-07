@@ -1,6 +1,5 @@
 import { db } from '@sim/db'
 import {
-  member,
   templateCreators,
   templateStars,
   templates,
@@ -8,13 +7,13 @@ import {
   workflow,
   workflowDeploymentVersion,
 } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
 import {
   extractRequiredCredentials,
   sanitizeCredentials,
@@ -204,51 +203,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
 
-    // Validate creator profile - required for all templates
-    const creatorProfile = await db
-      .select()
-      .from(templateCreators)
-      .where(eq(templateCreators.id, data.creatorId))
-      .limit(1)
+    const { verifyCreatorPermission } = await import('@/lib/templates/permissions')
+    const { hasPermission, error: permissionError } = await verifyCreatorPermission(
+      session.user.id,
+      data.creatorId,
+      'member'
+    )
 
-    if (creatorProfile.length === 0) {
-      logger.warn(`[${requestId}] Creator profile not found: ${data.creatorId}`)
-      return NextResponse.json({ error: 'Creator profile not found' }, { status: 404 })
+    if (!hasPermission) {
+      logger.warn(`[${requestId}] User cannot use creator profile: ${data.creatorId}`)
+      return NextResponse.json({ error: permissionError || 'Access denied' }, { status: 403 })
     }
 
-    const creator = creatorProfile[0]
-
-    // Verify user has permission to use this creator profile
-    if (creator.referenceType === 'user') {
-      if (creator.referenceId !== session.user.id) {
-        logger.warn(`[${requestId}] User cannot use creator profile: ${data.creatorId}`)
-        return NextResponse.json(
-          { error: 'You do not have permission to use this creator profile' },
-          { status: 403 }
-        )
-      }
-    } else if (creator.referenceType === 'organization') {
-      // Verify user is a member of the organization
-      const membership = await db
-        .select()
-        .from(member)
-        .where(
-          and(eq(member.userId, session.user.id), eq(member.organizationId, creator.referenceId))
-        )
-        .limit(1)
-
-      if (membership.length === 0) {
-        logger.warn(
-          `[${requestId}] User not a member of organization for creator: ${data.creatorId}`
-        )
-        return NextResponse.json(
-          { error: 'You must be a member of the organization to use its creator profile' },
-          { status: 403 }
-        )
-      }
-    }
-
-    // Create the template
     const templateId = uuidv4()
     const now = new Date()
 

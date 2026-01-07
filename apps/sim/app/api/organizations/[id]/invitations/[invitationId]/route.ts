@@ -11,12 +11,12 @@ import {
   type WorkspaceInvitationStatus,
   workspaceInvitation,
 } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('OrganizationInvitation')
 
@@ -28,7 +28,7 @@ const updateInvitationSchema = z.object({
 
 // Get invitation details
 export async function GET(
-  _req: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string; invitationId: string }> }
 ) {
   const { id: organizationId, invitationId } = await params

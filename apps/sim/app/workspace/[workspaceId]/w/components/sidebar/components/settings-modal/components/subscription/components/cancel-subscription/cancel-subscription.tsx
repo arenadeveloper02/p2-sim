@@ -1,17 +1,36 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
+import {
+  Button,
+  Label,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from '@/components/emcn'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client/utils'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const logger = createLogger('CancelSubscription')
+
+interface SubscriptionCancelParams {
+  returnUrl: string
+  referenceId: string
+  subscriptionId?: string
+}
+
+interface SubscriptionRestoreParams {
+  referenceId: string
+  subscriptionId?: string
+}
 
 interface CancelSubscriptionProps {
   subscription: {
@@ -25,6 +44,9 @@ interface CancelSubscriptionProps {
   }
 }
 
+/**
+ * Manages subscription cancellation and restoration.
+ */
 export function CancelSubscription({ subscription, subscriptionData }: CancelSubscriptionProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -38,7 +60,6 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
   const activeOrganization = orgsData?.activeOrganization
   const currentSubscriptionStatus = getSubscriptionStatus(subData?.data)
 
-  // Clear error after 3 seconds
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
@@ -48,7 +69,6 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
     }
   }, [error])
 
-  // Don't show for free plans
   if (!subscription.isPaid) {
     return null
   }
@@ -68,7 +88,6 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
 
       if (subscriptionStatus.isTeam && activeOrgId) {
         referenceId = activeOrgId
-        // Get subscription ID for team/enterprise
         subscriptionId = subData?.data?.id
       }
 
@@ -85,13 +104,10 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
 
       const returnUrl = getBaseUrl() + window.location.pathname.split('/w/')[0]
 
-      const cancelParams: any = {
+      const cancelParams: SubscriptionCancelParams = {
         returnUrl,
         referenceId,
-      }
-
-      if (subscriptionId) {
-        cancelParams.subscriptionId = subscriptionId
+        ...(subscriptionId && { subscriptionId }),
       }
 
       const result = await betterAuthSubscription.cancel(cancelParams)
@@ -102,14 +118,15 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
       } else {
         logger.info('Redirecting to Stripe Billing Portal for cancellation')
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to cancel subscription'
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to cancel subscription'
       setError(errorMessage)
-      logger.error('Failed to cancel subscription', { error })
+      logger.error('Failed to cancel subscription', { error: err })
     } finally {
       setIsLoading(false)
     }
   }
+
   const handleKeep = async () => {
     if (!session?.user?.id) return
 
@@ -134,26 +151,23 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
           // subscriptionId = orgSubscription?.id
           subscriptionId = subData?.data?.id
         } else {
-          // For personal subscriptions, use user ID and let better-auth find the subscription
           referenceId = session.user.id
           subscriptionId = undefined
         }
 
         logger.info('Restoring subscription', { referenceId, subscriptionId })
 
-        // Build restore params - only include subscriptionId if we have one (team/enterprise)
-        const restoreParams: any = { referenceId }
-        if (subscriptionId) {
-          restoreParams.subscriptionId = subscriptionId
+        const restoreParams: SubscriptionRestoreParams = {
+          referenceId,
+          ...(subscriptionId && { subscriptionId }),
         }
 
         const result = await betterAuthSubscription.restore(restoreParams)
 
         logger.info('Subscription restored successfully', result)
       }
-      // Invalidate queries to refresh data
-      await queryClient.invalidateQueries({ queryKey: subscriptionKeys.user() })
-      // await refresh()
+
+      await queryClient.invalidateQueries({ queryKey: subscriptionKeys.all })
       if (activeOrgId) {
         await queryClient.invalidateQueries({ queryKey: organizationKeys.detail(activeOrgId) })
         await queryClient.invalidateQueries({ queryKey: organizationKeys.billing(activeOrgId) })
@@ -161,14 +175,15 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
       }
 
       setIsDialogOpen(false)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to restore subscription'
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to restore subscription'
       setError(errorMessage)
-      logger.error('Failed to restore subscription', { error })
+      logger.error('Failed to restore subscription', { error: err })
     } finally {
       setIsLoading(false)
     }
   }
+
   const getPeriodEndDate = () => {
     return subscriptionData?.periodEnd || null
   }
@@ -177,10 +192,8 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
     if (!date) return 'end of current billing period'
 
     try {
-      // Ensure we have a valid Date object
       const dateObj = date instanceof Date ? date : new Date(date)
 
-      // Check if the date is valid
       if (Number.isNaN(dateObj.getTime())) {
         return 'end of current billing period'
       }
@@ -190,36 +203,32 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
         month: 'long',
         day: 'numeric',
       }).format(dateObj)
-    } catch (error) {
-      console.warn('Invalid date in cancel subscription:', date, error)
+    } catch (err) {
+      logger.warn('Invalid date in cancel subscription', { date, error: err })
       return 'end of current billing period'
     }
   }
 
   const periodEndDate = getPeriodEndDate()
-
-  // Check if subscription is set to cancel at period end
   const isCancelAtPeriodEnd = subscriptionData?.cancelAtPeriodEnd === true
 
   return (
     <>
       <div className='flex items-center justify-between'>
-        <div>
-          <span className='font-medium text-[13px]'>
-            {isCancelAtPeriodEnd ? 'Restore Subscription' : 'Manage Subscription'}
-          </span>
+        <div className='flex flex-col gap-[2px]'>
+          <Label>{isCancelAtPeriodEnd ? 'Restore Subscription' : 'Manage Subscription'}</Label>
           {isCancelAtPeriodEnd && (
-            <p className='mt-1 text-[var(--text-muted)] text-xs'>
+            <span className='text-[12px] text-[var(--text-muted)]'>
               You'll keep access until {formatDate(periodEndDate)}
-            </p>
+            </span>
           )}
         </div>
         <Button
-          variant='outline'
+          variant='active'
           onClick={() => setIsDialogOpen(true)}
           disabled={isLoading}
           className={cn(
-            'h-8 rounded-[8px] font-medium text-xs',
+            'h-[32px] rounded-[6px] text-[12px]',
             error && 'border-[var(--text-error)] text-[var(--text-error)]'
           )}
         >
@@ -228,12 +237,12 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
       </div>
 
       <Modal open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <ModalContent className='w-[400px]'>
+        <ModalContent size='sm'>
           <ModalHeader>
             {isCancelAtPeriodEnd ? 'Restore' : 'Cancel'} {subscription.plan} Subscription
           </ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               {isCancelAtPeriodEnd
                 ? 'Your subscription is set to cancel at the end of the billing period. Would you like to keep your subscription active?'
                 : `You'll be redirected to Stripe to manage your subscription. You'll keep access until ${formatDate(
@@ -245,13 +254,13 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
             </p>
 
             {!isCancelAtPeriodEnd && (
-              <div className='mt-3'>
-                <div className='rounded-[8px] bg-[var(--surface-3)] p-3 text-sm'>
-                  <ul className='space-y-1 text-[var(--text-muted)] text-xs'>
-                    <li>• Keep all features until {formatDate(periodEndDate)}</li>
-                    <li>• No more charges</li>
-                    <li>• Data preserved</li>
-                    <li>• Can reactivate anytime</li>
+              <div className='mt-[12px]'>
+                <div className='rounded-[6px] bg-[var(--surface-4)] p-[12px]'>
+                  <ul className='space-y-[4px] text-[12px] text-[var(--text-secondary)]'>
+                    <li>- Keep all features until {formatDate(periodEndDate)}</li>
+                    <li>- No more charges</li>
+                    <li>- Data preserved</li>
+                    <li>- Can reactivate anytime</li>
                   </ul>
                 </div>
               </div>
@@ -266,30 +275,15 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
               {isCancelAtPeriodEnd ? 'Cancel' : 'Keep Subscription'}
             </Button>
 
-            {(() => {
-              const subscriptionStatus = currentSubscriptionStatus
-              // const subscriptionStatus = getSubscriptionStatus()
-              if (subscriptionStatus.isPaid && isCancelAtPeriodEnd) {
-                return (
-                  <Button
-                    onClick={handleKeep}
-                    className='h-[32px] bg-green-500 px-[12px] text-white hover:bg-green-600 dark:bg-green-500 dark:hover:bg-green-600'
-                    disabled={isLoading}
-                  >
-                    {isLoading ? 'Restoring...' : 'Restore Subscription'}
-                  </Button>
-                )
-              }
-              return (
-                <Button
-                  onClick={handleCancel}
-                  className='h-[32px] bg-[var(--text-error)] px-[12px] text-[var(--white)] hover:bg-[var(--text-error)] hover:text-[var(--white)] dark:bg-[var(--text-error)] dark:text-[var(--white)] hover:dark:bg-[var(--text-error)] dark:hover:text-[var(--white)]'
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Redirecting...' : 'Continue'}
-                </Button>
-              )
-            })()}
+            {currentSubscriptionStatus.isPaid && isCancelAtPeriodEnd ? (
+              <Button variant='tertiary' onClick={handleKeep} disabled={isLoading}>
+                {isLoading ? 'Restoring...' : 'Restore Subscription'}
+              </Button>
+            ) : (
+              <Button variant='destructive' onClick={handleCancel} disabled={isLoading}>
+                {isLoading ? 'Redirecting...' : 'Continue'}
+              </Button>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>

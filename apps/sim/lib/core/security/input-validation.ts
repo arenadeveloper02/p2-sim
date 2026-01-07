@@ -1,5 +1,5 @@
 import dns from 'dns/promises'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 
 const logger = createLogger('InputValidation')
 
@@ -172,46 +172,6 @@ export function validatePathSegment(
 }
 
 /**
- * Validates a UUID (v4 format)
- *
- * @param value - The UUID to validate
- * @param paramName - Name of the parameter for error messages
- * @returns ValidationResult
- *
- * @example
- * ```typescript
- * const result = validateUUID(workflowId, 'workflowId')
- * if (!result.isValid) {
- *   return NextResponse.json({ error: result.error }, { status: 400 })
- * }
- * ```
- */
-export function validateUUID(
-  value: string | null | undefined,
-  paramName = 'UUID'
-): ValidationResult {
-  if (value === null || value === undefined || value === '') {
-    return {
-      isValid: false,
-      error: `${paramName} is required`,
-    }
-  }
-
-  // UUID v4 pattern
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-  if (!uuidPattern.test(value)) {
-    logger.warn('Invalid UUID format', { paramName, value: value.substring(0, 50) })
-    return {
-      isValid: false,
-      error: `${paramName} must be a valid UUID`,
-    }
-  }
-
-  return { isValid: true, sanitized: value.toLowerCase() }
-}
-
-/**
  * Validates an alphanumeric ID (letters, numbers, hyphens, underscores only)
  *
  * @param value - The ID to validate
@@ -230,7 +190,7 @@ export function validateUUID(
 export function validateAlphanumericId(
   value: string | null | undefined,
   paramName = 'ID',
-  maxLength = 100
+  maxLength = 1000
 ): ValidationResult {
   return validatePathSegment(value, {
     paramName,
@@ -554,29 +514,6 @@ export function validateFileExtension(
   }
 
   return { isValid: true, sanitized: normalizedExt }
-}
-
-/**
- * Sanitizes a string for safe logging (removes potential sensitive data patterns)
- *
- * @param value - The value to sanitize
- * @param maxLength - Maximum length to return (default: 100)
- * @returns Sanitized string safe for logging
- */
-export function sanitizeForLogging(value: string, maxLength = 100): string {
-  if (!value) return ''
-
-  // Truncate long values
-  let sanitized = value.substring(0, maxLength)
-
-  // Mask common sensitive patterns
-  sanitized = sanitized
-    .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED]')
-    .replace(/password['":\s]*['"]\w+['"]/gi, 'password: "[REDACTED]"')
-    .replace(/token['":\s]*['"]\w+['"]/gi, 'token: "[REDACTED]"')
-    .replace(/api[_-]?key['":\s]*['"]\w+['"]/gi, 'api_key: "[REDACTED]"')
-
-  return sanitized
 }
 
 /**
@@ -957,4 +894,113 @@ export function createPinnedUrl(originalUrl: string, resolvedIP: string): string
   const parsed = new URL(originalUrl)
   const port = parsed.port ? `:${parsed.port}` : ''
   return `${parsed.protocol}//${resolvedIP}${port}${parsed.pathname}${parsed.search}`
+}
+
+/**
+ * Validates a Google Calendar ID
+ *
+ * Google Calendar IDs can be:
+ * - "primary" (literal string for the user's primary calendar)
+ * - Email addresses (for user calendars)
+ * - Alphanumeric strings with hyphens, underscores, and dots (for other calendars)
+ *
+ * This validator allows these legitimate formats while blocking path traversal and injection attempts.
+ *
+ * @param value - The calendar ID to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns ValidationResult
+ *
+ * @example
+ * ```typescript
+ * const result = validateGoogleCalendarId(calendarId, 'calendarId')
+ * if (!result.isValid) {
+ *   return NextResponse.json({ error: result.error }, { status: 400 })
+ * }
+ * ```
+ */
+export function validateGoogleCalendarId(
+  value: string | null | undefined,
+  paramName = 'calendarId'
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value === 'primary') {
+    return { isValid: true, sanitized: value }
+  }
+
+  const pathTraversalPatterns = [
+    '../',
+    '..\\',
+    '%2e%2e%2f',
+    '%2e%2e/',
+    '..%2f',
+    '%2e%2e%5c',
+    '%2e%2e\\',
+    '..%5c',
+    '%252e%252e%252f',
+  ]
+
+  const lowerValue = value.toLowerCase()
+  for (const pattern of pathTraversalPatterns) {
+    if (lowerValue.includes(pattern)) {
+      logger.warn('Path traversal attempt in Google Calendar ID', {
+        paramName,
+        value: value.substring(0, 100),
+      })
+      return {
+        isValid: false,
+        error: `${paramName} contains invalid path traversal sequence`,
+      }
+    }
+  }
+
+  if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
+    logger.warn('Control characters in Google Calendar ID', { paramName })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid control characters`,
+    }
+  }
+
+  if (value.includes('\n') || value.includes('\r')) {
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid newline characters`,
+    }
+  }
+
+  const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+  if (emailPattern.test(value)) {
+    return { isValid: true, sanitized: value }
+  }
+
+  const calendarIdPattern = /^[a-zA-Z0-9._@%#+-]+$/
+  if (!calendarIdPattern.test(value)) {
+    logger.warn('Invalid Google Calendar ID format', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} format is invalid. Must be "primary", an email address, or an alphanumeric ID`,
+    }
+  }
+
+  if (value.length > 255) {
+    logger.warn('Google Calendar ID exceeds maximum length', {
+      paramName,
+      length: value.length,
+    })
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length of 255 characters`,
+    }
+  }
+
+  return { isValid: true, sanitized: value }
 }

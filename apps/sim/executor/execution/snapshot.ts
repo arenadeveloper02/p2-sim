@@ -5,7 +5,7 @@ export interface ExecutionMetadata {
   requestId: string
   executionId: string
   workflowId: string
-  workspaceId?: string
+  workspaceId: string
   userId: string
   sessionUserId?: string
   workflowUserId?: string
@@ -34,7 +34,6 @@ export interface ExecutionCallbacks {
     blockType: string,
     output: any
   ) => Promise<void>
-  onExecutorCreated?: (executor: any) => void
 }
 
 export interface SerializableExecutionState {

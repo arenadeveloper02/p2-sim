@@ -3,10 +3,11 @@
  * This is the SINGLE source of truth for workflow execution
  */
 
+import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
 import { z } from 'zod'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
-import { createLogger } from '@/lib/logs/console/logger'
+import { clearExecutionCancellation } from '@/lib/execution/cancellation'
 import type { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import {
@@ -16,8 +17,10 @@ import {
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
 import { Executor } from '@/executor'
+import { REFERENCE } from '@/executor/constants'
 import type { ExecutionCallbacks, ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionResult } from '@/executor/types'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { Serializer } from '@/serializer'
 import { mergeSubblockState } from '@/stores/workflows/server-utils'
 
@@ -30,6 +33,11 @@ export interface ExecuteWorkflowCoreOptions {
   callbacks: ExecutionCallbacks
   loggingSession: LoggingSession
   skipLogCreation?: boolean // For resume executions - reuse existing log entry
+  /**
+   * AbortSignal for cancellation support.
+   * When aborted (e.g., client disconnects from SSE), execution stops gracefully.
+   */
+  abortSignal?: AbortSignal
 }
 
 function parseVariableValueByType(value: any, type: string): any {
@@ -96,13 +104,16 @@ function parseVariableValueByType(value: any, type: string): any {
 export async function executeWorkflowCore(
   options: ExecuteWorkflowCoreOptions
 ): Promise<ExecutionResult> {
-  const { snapshot, callbacks, loggingSession, skipLogCreation } = options
+  const { snapshot, callbacks, loggingSession, skipLogCreation, abortSignal } = options
   const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
-  const { onBlockStart, onBlockComplete, onStream, onExecutorCreated } = callbacks
+  const { onBlockStart, onBlockComplete, onStream } = callbacks
 
   const providedWorkspaceId = metadata.workspaceId
+  if (!providedWorkspaceId) {
+    throw new Error(`Execution metadata missing workspaceId for workflow ${workflowId}`)
+  }
 
   let processedInput = input || {}
 
@@ -182,9 +193,7 @@ export async function executeWorkflowCore(
         'ANTHROPIC_API_KEY_1',
         'ANTHROPIC_API_KEY_2',
         'ANTHROPIC_API_KEY_3',
-        'GEMINI_API_KEY_1',
-        'GEMINI_API_KEY_2',
-        'GEMINI_API_KEY_3',
+        'GEMINI_API_KEY',
         'SAMBANOVA_API_KEY',
         'SAMBANOVA_API_KEY_1',
         'SAMBANOVA_API_KEY_2',
@@ -263,8 +272,8 @@ export async function executeWorkflowCore(
       userId,
       workspaceId: providedWorkspaceId,
       variables,
-      skipLogCreation, // Skip if resuming an existing execution
-      deploymentVersionId, // Only set for deployed executions
+      skipLogCreation,
+      deploymentVersionId,
     })
 
     // Process block states with env var substitution using pre-decrypted values
@@ -274,11 +283,19 @@ export async function executeWorkflowCore(
           (subAcc, [key, subBlock]) => {
             let value = subBlock.value
 
-            if (typeof value === 'string' && value.includes('{{') && value.includes('}}')) {
-              const matches = value.match(/{{([^}]+)}}/g)
+            if (
+              typeof value === 'string' &&
+              value.includes(REFERENCE.ENV_VAR_START) &&
+              value.includes(REFERENCE.ENV_VAR_END)
+            ) {
+              const envVarPattern = createEnvVarPattern()
+              const matches = value.match(envVarPattern)
               if (matches) {
                 for (const match of matches) {
-                  const varName = match.slice(2, -2)
+                  const varName = match.slice(
+                    REFERENCE.ENV_VAR_START.length,
+                    -REFERENCE.ENV_VAR_END.length
+                  )
                   const decryptedValue = decryptedEnvVars[varName]
                   if (decryptedValue !== undefined) {
                     value = (value as string).replace(match, decryptedValue)
@@ -302,7 +319,7 @@ export async function executeWorkflowCore(
       (acc, [blockId, blockState]) => {
         if (blockState.responseFormat && typeof blockState.responseFormat === 'string') {
           const responseFormatValue = blockState.responseFormat.trim()
-          if (responseFormatValue && !responseFormatValue.startsWith('<')) {
+          if (responseFormatValue && !responseFormatValue.startsWith(REFERENCE.START)) {
             try {
               acc[blockId] = {
                 ...blockState,
@@ -400,6 +417,7 @@ export async function executeWorkflowCore(
       dagIncomingEdges: snapshot.state?.dagIncomingEdges,
       snapshotState: snapshot.state,
       metadata,
+      abortSignal,
     }
 
     const executorInstance = new Executor({
@@ -423,10 +441,6 @@ export async function executeWorkflowCore(
       }
     }
 
-    if (onExecutorCreated) {
-      onExecutorCreated(executorInstance)
-    }
-
     const result = (await executorInstance.execute(
       workflowId,
       resolvedTriggerBlockId
@@ -440,7 +454,32 @@ export async function executeWorkflowCore(
       await updateWorkflowRunCounts(workflowId)
     }
 
-    // Complete logging session
+    if (result.status === 'cancelled') {
+      await loggingSession.safeCompleteWithCancellation({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: totalDuration || 0,
+        traceSpans: traceSpans || [],
+      })
+
+      await clearExecutionCancellation(executionId)
+
+      logger.info(`[${requestId}] Workflow execution cancelled`, {
+        duration: result.metadata?.duration,
+      })
+
+      return result
+    }
+
+    if (result.status === 'paused') {
+      await clearExecutionCancellation(executionId)
+
+      logger.info(`[${requestId}] Workflow execution paused`, {
+        duration: result.metadata?.duration,
+      })
+
+      return result
+    }
+
     await loggingSession.safeComplete({
       endedAt: new Date().toISOString(),
       totalDurationMs: totalDuration || 0,
@@ -448,6 +487,8 @@ export async function executeWorkflowCore(
       traceSpans: traceSpans || [],
       workflowInput: processedInput,
     })
+
+    await clearExecutionCancellation(executionId)
 
     logger.info(`[${requestId}] Workflow execution completed`, {
       success: result.success,
@@ -458,7 +499,6 @@ export async function executeWorkflowCore(
   } catch (error: any) {
     logger.error(`[${requestId}] Execution failed:`, error)
 
-    // Extract execution result from error if available
     const executionResult = (error as any)?.executionResult
     const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
 
@@ -471,6 +511,8 @@ export async function executeWorkflowCore(
       },
       traceSpans,
     })
+
+    await clearExecutionCancellation(executionId)
 
     throw error
   }

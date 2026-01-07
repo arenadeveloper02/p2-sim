@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import {
   AlertCircle,
   ChevronDown,
@@ -20,7 +21,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -131,8 +131,8 @@ function formatExecutionData(executionData: any) {
       : null,
     tokens: tokens
       ? {
-          prompt: tokens.prompt || 0,
-          completion: tokens.completion || 0,
+          input: tokens.input || tokens.prompt || 0,
+          output: tokens.output || tokens.completion || 0,
           total: tokens.total || 0,
         }
       : null,
@@ -347,12 +347,12 @@ function PinnedLogs({
             </h4>
             <div className='space-y-[4px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-3)] p-[12px] text-[13px]'>
               <div className='flex justify-between text-[var(--text-primary)]'>
-                <span>Prompt:</span>
-                <span>{formatted.tokens.prompt}</span>
+                <span>Input:</span>
+                <span>{formatted.tokens.input}</span>
               </div>
               <div className='flex justify-between text-[var(--text-primary)]'>
-                <span>Completion:</span>
-                <span>{formatted.tokens.completion}</span>
+                <span>Output:</span>
+                <span>{formatted.tokens.output}</span>
               </div>
               <div className='flex justify-between border-[var(--border)] border-t pt-[4px] font-medium text-[var(--text-primary)]'>
                 <span>Total:</span>
@@ -498,8 +498,8 @@ export function FrozenCanvas({
               total: null,
             },
             tokens: span.tokens || {
-              prompt: null,
-              completion: null,
+              input: null,
+              output: null,
               total: null,
             },
             modelUsed: span.model || null,

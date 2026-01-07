@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -8,7 +9,6 @@ import {
   retryDocumentProcessing,
   updateDocument,
 } from '@/lib/knowledge/documents/service'
-import { createLogger } from '@/lib/logs/console/logger'
 import { checkDocumentAccess, checkDocumentWriteAccess } from '@/app/api/knowledge/utils'
 
 const logger = createLogger('DocumentByIdAPI')
@@ -23,7 +23,7 @@ const UpdateDocumentSchema = z.object({
   processingError: z.string().optional(),
   markFailedDueToTimeout: z.boolean().optional(),
   retryProcessing: z.boolean().optional(),
-  // Tag fields
+  // Text tag fields
   tag1: z.string().optional(),
   tag2: z.string().optional(),
   tag3: z.string().optional(),
@@ -31,6 +31,19 @@ const UpdateDocumentSchema = z.object({
   tag5: z.string().optional(),
   tag6: z.string().optional(),
   tag7: z.string().optional(),
+  // Number tag fields
+  number1: z.string().optional(),
+  number2: z.string().optional(),
+  number3: z.string().optional(),
+  number4: z.string().optional(),
+  number5: z.string().optional(),
+  // Date tag fields
+  date1: z.string().optional(),
+  date2: z.string().optional(),
+  // Boolean tag fields
+  boolean1: z.string().optional(),
+  boolean2: z.string().optional(),
+  boolean3: z.string().optional(),
 })
 
 export async function GET(

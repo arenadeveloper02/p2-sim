@@ -7,9 +7,9 @@ import {
 } from '@/lib/workflows/sanitization/references'
 import { checkTagTrigger } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
+import { normalizeName, REFERENCE } from '@/executor/constants'
 import { createEnvVarPattern, createReferencePattern } from '@/executor/utils/reference-validation'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import { normalizeBlockName } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
@@ -26,7 +26,7 @@ const SUBFLOW_CONFIG = {
     },
     typeKey: 'loopType' as const,
     storeKey: 'loops' as const,
-    maxIterations: 100,
+    maxIterations: 1000,
     configKeys: {
       iterations: 'iterations' as const,
       items: 'forEachItems' as const,
@@ -89,7 +89,7 @@ export function useSubflowEditor(currentBlock: BlockState | null, currentBlockId
    */
   const shouldHighlightReference = useCallback(
     (part: string): boolean => {
-      if (!part.startsWith('<') || !part.endsWith('>')) {
+      if (!part.startsWith(REFERENCE.START) || !part.endsWith(REFERENCE.END)) {
         return false
       }
 
@@ -108,9 +108,9 @@ export function useSubflowEditor(currentBlock: BlockState | null, currentBlockId
         return true
       }
 
-      const inner = reference.slice(1, -1)
-      const [prefix] = inner.split('.')
-      const normalizedPrefix = normalizeBlockName(prefix)
+      const inner = reference.slice(REFERENCE.START.length, -REFERENCE.END.length)
+      const [prefix] = inner.split(REFERENCE.PATH_DELIMITER)
+      const normalizedPrefix = normalizeName(prefix)
 
       if (SYSTEM_REFERENCE_PREFIXES.has(normalizedPrefix)) {
         return true
@@ -156,13 +156,13 @@ export function useSubflowEditor(currentBlock: BlockState | null, currentBlockId
         if (type === 'env') {
           highlightedCode = highlightedCode.replace(
             placeholder,
-            `<span class="text-blue-500">${original}</span>`
+            `<span style="color: var(--brand-secondary);">${original}</span>`
           )
         } else {
           const escaped = original.replace(/</g, '&lt;').replace(/>/g, '&gt;')
           highlightedCode = highlightedCode.replace(
             placeholder,
-            `<span class="text-blue-500">${escaped}</span>`
+            `<span style="color: var(--brand-secondary);">${escaped}</span>`
           )
         }
       })
