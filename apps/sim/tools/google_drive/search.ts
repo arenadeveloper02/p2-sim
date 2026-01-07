@@ -761,7 +761,7 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
 
               // Extract text from reranked passage objects
               file.relevantContent = rerankedPassageObjects.map((item) => item.text)
-              file.content=''
+              file.content = ''
               return file
             } catch (error) {
               logger.warn('Failed to extract relevant content from file', {
