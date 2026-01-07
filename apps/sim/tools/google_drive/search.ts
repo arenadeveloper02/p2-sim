@@ -210,6 +210,31 @@ function extractKeywords(prompt: string): string[] {
     'after',
     'before',
     'folder',
+    'give',
+    'get',
+    'list',
+    'lists',
+    'which',
+    'are',
+    'is',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'available',
+    'availability',
+    'what',
+    'where',
+    'when',
+    'who',
+    'how',
   ])
 
   const tokens = prompt.match(/[A-Za-z0-9\-_]+/g) || []
@@ -501,10 +526,17 @@ function buildDriveQuery(prompt: string, folderId?: string | null): string {
   }
 
   // Add keyword filters (name and fullText search)
+  // Use OR logic between keywords to be less restrictive
+  // Files matching any of the keywords will be returned
   const keywords = extractKeywords(prompt)
-  for (const kw of keywords) {
-    const safe = kw.replace(/'/g, "\\'")
-    parts.push(`(name contains '${safe}' or fullText contains '${safe}')`)
+  if (keywords.length > 0) {
+    const keywordConditions = keywords.map((kw) => {
+      const safe = kw.replace(/'/g, "\\'")
+      return `(name contains '${safe}' or fullText contains '${safe}')`
+    })
+    // Use OR logic: file must match at least one keyword
+    // This is less restrictive than AND logic which requires all keywords
+    parts.push(`(${keywordConditions.join(' or ')})`)
   }
 
   return parts.join(' and ')
@@ -696,7 +728,9 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
       let files = await Promise.all(filePromises)
 
       // For each file with content, split into passages and rerank to extract relevant content
-      const filesWithContent = files.filter((file) => file.content && file.content.trim().length > 0)
+      const filesWithContent = files.filter(
+        (file) => file.content && file.content.trim().length > 0
+      )
 
       if (filesWithContent.length > 0) {
         // Process each file individually to extract relevant passages
@@ -718,11 +752,11 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
                 prompt,
                 passageObjects,
                 (item) => item.text,
-                  {
-                    enabled: true,
-                    topN: Math.min(passages.length, 10), // Get top 10 most relevant passages per file
-                    // maxContentLength: 4000,
-                  }
+                {
+                  enabled: true,
+                  topN: Math.min(passages.length, 10), // Get top 10 most relevant passages per file
+                  // maxContentLength: 4000,
+                }
               )
 
               // Extract text from reranked passage objects

@@ -176,8 +176,7 @@ export async function rerankContent<T extends RerankableItem>(
     sortedRerankedItems.forEach((item: any) => {
       const candidateIndex = typeof item.index === 'number' ? item.index : -1
       if (candidateIndex >= 0 && candidateIndex < validCandidates.length) {
-        const relevanceScore =
-          typeof item.relevance_score === 'number' ? item.relevance_score : 0
+        const relevanceScore = typeof item.relevance_score === 'number' ? item.relevance_score : 0
         scoreMap.set(candidateIndex, relevanceScore)
       }
     })
@@ -202,4 +201,3 @@ export async function rerankContent<T extends RerankableItem>(
     return items
   }
 }
-
