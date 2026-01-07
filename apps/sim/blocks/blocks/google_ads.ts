@@ -58,6 +58,7 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
   bgColor: '#4285f4',
   icon: GoogleIcon,
   subBlocks: [
+    // Google Ads Account (basic mode - dropdown)
     {
       id: 'accounts',
       title: 'Google Ads Account',
@@ -69,6 +70,17 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       })),
       placeholder: 'Select account...',
       required: true,
+      mode: 'basic',
+    },
+    // Google Ads Account (advanced mode - text input)
+    {
+      id: 'accountsAdvanced',
+      title: 'Google Ads Account',
+      type: 'short-input',
+      canonicalParamId: 'accounts',
+      placeholder: 'Enter account key (e.g., ami, heartland)',
+      required: true,
+      mode: 'advanced',
     },
     {
       id: 'question',
