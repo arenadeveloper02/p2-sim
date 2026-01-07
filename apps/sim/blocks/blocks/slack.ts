@@ -132,7 +132,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       mode: 'both',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
+        value: ['list_channels', 'list_users', 'get_user', 'search_all', 'read'],
         not: true,
         and: {
           field: 'destinationType',
