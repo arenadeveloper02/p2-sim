@@ -20,8 +20,10 @@ const SlackReadMessagesSchema = z
       .max(15, 'Limit cannot exceed 15')
       .optional()
       .nullable(),
-    oldest: z.string().optional().nullable(),
-    latest: z.string().optional().nullable(),
+    from: z.string().optional().nullable(), // Date string (will be converted to epoch timestamp)
+    to: z.string().optional().nullable(), // Date string (will be converted to epoch timestamp)
+    oldest: z.string().optional().nullable(), // Unix timestamp (deprecated, use 'from' instead)
+    latest: z.string().optional().nullable(), // Unix timestamp (deprecated, use 'to' instead)
   })
   .refine((data) => data.channel || data.userId, {
     message: 'Either channel or userId is required',
@@ -54,15 +56,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = SlackReadMessagesSchema.parse(body)
 
+    const token = validatedData.accessToken.trim()
+
+    if (!token) {
+      logger.warn(`[${requestId}] Missing Slack access token`)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Slack access token is required. Provide accessToken in the request body.',
+        },
+        { status: 400 }
+      )
+    }
+
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
       logger.info(`[${requestId}] Opening DM channel for user: ${validatedData.userId}`)
-      channel = await openDMChannel(
-        validatedData.accessToken,
-        validatedData.userId,
-        requestId,
-        logger
-      )
+      channel = await openDMChannel(token, validatedData.userId, requestId, logger)
     }
 
     const url = new URL('https://slack.com/api/conversations.history')
@@ -70,11 +80,43 @@ export async function POST(request: NextRequest) {
     const limit = validatedData.limit ?? 10
     url.searchParams.append('limit', String(limit))
 
-    if (validatedData.oldest) {
-      url.searchParams.append('oldest', validatedData.oldest)
+    // Convert date strings to epoch timestamps if provided
+    let oldest: string | undefined = validatedData.oldest ?? undefined
+    let latest: string | undefined = validatedData.latest ?? undefined
+
+    if (validatedData.from) {
+      const fromDate = new Date(validatedData.from)
+      if (Number.isNaN(fromDate.getTime())) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid "from" date format: ${validatedData.from}. Use ISO 8601 format (e.g., "2024-01-01" or "2024-01-01T10:00:00Z")`,
+          },
+          { status: 400 }
+        )
+      }
+      oldest = String(Math.floor(fromDate.getTime() / 1000))
     }
-    if (validatedData.latest) {
-      url.searchParams.append('latest', validatedData.latest)
+
+    if (validatedData.to) {
+      const toDate = new Date(validatedData.to)
+      if (Number.isNaN(toDate.getTime())) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid "to" date format: ${validatedData.to}. Use ISO 8601 format (e.g., "2024-01-31" or "2024-01-31T23:59:59Z")`,
+          },
+          { status: 400 }
+        )
+      }
+      latest = String(Math.floor(toDate.getTime() / 1000))
+    }
+
+    if (oldest) {
+      url.searchParams.append('oldest', oldest)
+    }
+    if (latest) {
+      url.searchParams.append('latest', latest)
     }
 
     logger.info(`[${requestId}] Reading Slack messages`, {
@@ -86,7 +128,7 @@ export async function POST(request: NextRequest) {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${validatedData.accessToken}`,
+        Authorization: `Bearer ${token}`,
       },
     })
 

@@ -4,6 +4,7 @@ import type { QueryKey } from '@tanstack/react-query'
 export type SelectorKey =
   | 'slack.channels'
   | 'slack.users'
+  | 'slack.client_channels'
   | 'gmail.labels'
   | 'outlook.folders'
   | 'google.calendar'
@@ -49,6 +50,7 @@ export interface SelectorContext {
   fileId?: string
   siteId?: string
   collectionId?: string
+  clientId?: string
 }
 
 export interface SelectorQueryArgs {

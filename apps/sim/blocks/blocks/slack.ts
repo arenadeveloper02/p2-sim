@@ -26,6 +26,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Send Message', id: 'send' },
         { label: 'Create Canvas', id: 'canvas' },
         { label: 'Read Messages', id: 'read' },
+        { label: 'Search All', id: 'search_all' },
         { label: 'List Channels', id: 'list_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
@@ -113,7 +114,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       condition: {
         field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user'],
+        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
         not: true,
         and: {
           field: 'destinationType',
@@ -128,10 +129,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
-      mode: 'advanced',
+      mode: 'both',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user'],
+        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
         not: true,
         and: {
           field: 'destinationType',
@@ -245,6 +246,28 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         value: 'read',
       },
     },
+    {
+      id: 'from',
+      title: 'From Date',
+      type: 'date-input',
+      placeholder: 'Select start date',
+      canonicalParamId: 'from',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'to',
+      title: 'To Date',
+      type: 'date-input',
+      placeholder: 'Select end date',
+      canonicalParamId: 'to',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
     // List Channels specific fields
     {
       id: 'includePrivate',
@@ -326,6 +349,98 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       condition: {
         field: 'operation',
         value: 'read',
+      },
+    },
+    // Search All specific fields
+    {
+      id: 'clientId',
+      title: 'Client',
+      type: 'slack-client-selector',
+      placeholder: 'Select client',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      required: false,
+    },
+    {
+      id: 'clientChannel',
+      title: 'Channel',
+      type: 'channel-selector',
+      canonicalParamId: 'channelId',
+      serviceId: 'slack',
+      placeholder: 'Select channel',
+      mode: 'basic',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      dependsOn: ['clientId'],
+    },
+    {
+      id: 'searchQuery',
+      title: 'Search Query',
+      type: 'long-input',
+      canonicalParamId: 'query',
+      placeholder:
+        'messages in:#alerts after:2024-12-01 before:2024-12-05',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      required: true,
+    },
+    {
+      id: 'searchHighlight',
+      title: 'Highlight Matches',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (true)', id: 'default' },
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      placeholder: 'Default (true)',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'searchPage',
+      title: 'Page',
+      type: 'short-input',
+      placeholder: '1',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'searchSort',
+      title: 'Sort By',
+      type: 'dropdown',
+      options: [
+        { label: 'Score (default)', id: 'score' },
+        { label: 'Timestamp', id: 'timestamp' },
+      ],
+      placeholder: 'score',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'searchSortDir',
+      title: 'Sort Direction',
+      type: 'dropdown',
+      options: [
+        { label: 'Descending (default)', id: 'desc' },
+        { label: 'Ascending', id: 'asc' },
+      ],
+      placeholder: 'desc',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
       },
     },
     // Download File specific fields
@@ -416,6 +531,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       'slack_message',
       'slack_canvas',
       'slack_message_reader',
+      'slack_search_all',
       'slack_list_channels',
       'slack_list_members',
       'slack_list_users',
@@ -434,6 +550,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             return 'slack_canvas'
           case 'read':
             return 'slack_message_reader'
+          case 'search_all':
+            return 'slack_search_all'
           case 'list_channels':
             return 'slack_list_channels'
           case 'list_members':
@@ -469,6 +587,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           title,
           content,
           limit,
+          from,
+          to,
           oldest,
           attachmentFiles,
           files,
@@ -484,14 +604,26 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           includeDeleted,
           userLimit,
           userId,
+          searchQuery,
+          searchHighlight,
+          searchPage,
+          searchSort,
+          searchSortDir,
+          clientId: rawClientId,
+          clientChannel,
           ...rest
         } = params
+
+        // Extract clientId from object if it's an object (like Arena client selector)
+        const clientId = typeof rawClientId === 'object' && rawClientId?.clientId
+          ? rawClientId.clientId
+          : (typeof rawClientId === 'string' ? rawClientId : undefined)
 
         const isDM = destinationType === 'dm'
         const effectiveChannel = (channel || manualChannel || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
 
-        const noChannelOperations = ['list_channels', 'list_users', 'get_user']
+        const noChannelOperations = ['list_channels', 'list_users', 'get_user', 'search_all']
         const dmSupportedOperations = ['send', 'read']
 
         if (isDM && dmSupportedOperations.includes(operation)) {
@@ -556,8 +688,83 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               throw new Error('Message limit must be between 1 and 15')
             }
             baseParams.limit = parsedLimit
-            if (oldest) {
+            if (from) {
+              baseParams.from = from
+            }
+            if (to) {
+              baseParams.to = to
+            }
+            // Support legacy oldest parameter for backward compatibility
+            if (oldest && !from) {
               baseParams.oldest = oldest
+            }
+            break
+          }
+
+          case 'search_all': {
+            let query = (searchQuery || '').trim()
+            
+            // Extract channel name from clientChannel (could be string or object with id/label)
+            let channelName: string | undefined
+            if (clientChannel) {
+              if (typeof clientChannel === 'object') {
+                // If object, use label (channel name) or fallback to id
+                channelName = clientChannel.label || clientChannel.name || clientChannel.id
+              } else if (typeof clientChannel === 'string') {
+                // If string, treat as channel ID - we'll need to look up the name
+                // For now, use the string as-is (assuming it might be a name)
+                channelName = clientChannel.trim()
+              }
+            }
+
+            // If channel is selected, ensure it's included in the query with channel name
+            if (channelName) {
+              // Remove # prefix if present (from slack.channels selector format)
+              const channelNameClean = channelName.replace(/^#/, '').trim()
+              if (channelNameClean) {
+                // Check if query already has an "in:" clause
+                const inPattern = /in:\S+/g
+                const hasInClause = inPattern.test(query)
+                
+                if (hasInClause) {
+                  // Replace existing in: clause with the selected channel name
+                  query = query.replace(inPattern, `in:${channelNameClean}`)
+                } else {
+                  // Prepend in: clause with channel name if not present
+                  query = `in:${channelNameClean} ${query}`
+                }
+              }
+            }
+
+            // If no query provided but channel is selected, create a basic query
+            if (!query.trim() && channelName) {
+              const channelNameClean = channelName.replace(/^#/, '').trim()
+              query = `in:${channelNameClean}`
+            }
+
+            if (!query.trim()) {
+              throw new Error('Search query is required for search all operation')
+            }
+
+            baseParams.query = query.trim()
+
+            if (searchHighlight && searchHighlight !== 'default') {
+              baseParams.highlight = searchHighlight === 'true'
+            }
+
+            if (searchPage) {
+              const parsedPage = Number.parseInt(searchPage, 10)
+              if (!Number.isNaN(parsedPage) && parsedPage > 0) {
+                baseParams.page = parsedPage
+              }
+            }
+
+            if (searchSort) {
+              baseParams.sort = searchSort
+            }
+
+            if (searchSortDir) {
+              baseParams.sort_dir = searchSortDir
             }
             break
           }
@@ -642,7 +849,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },
-    oldest: { type: 'string', description: 'Oldest timestamp' },
+    from: { type: 'string', description: 'Start date for message range (ISO 8601 format, e.g., "2024-01-01" or "2024-01-01T10:00:00Z")' },
+    to: { type: 'string', description: 'End date for message range (ISO 8601 format, e.g., "2024-01-31" or "2024-01-31T23:59:59Z")' },
+    oldest: { type: 'string', description: 'Oldest timestamp (deprecated, use "from" instead)' },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
     // Update/Delete/React operation inputs
@@ -665,6 +874,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
     // Get User inputs
     userId: { type: 'string', description: 'User ID to look up' },
+    // Search All inputs
+    searchQuery: { type: 'string', description: 'Search query string for search all operation' },
+    searchHighlight: { type: 'string', description: 'Highlight matches: default, true, or false' },
+    searchPage: { type: 'string', description: 'Page number for search results (1-based)' },
+    searchSort: { type: 'string', description: 'Sort field for search results (score or timestamp)' },
+    searchSortDir: { type: 'string', description: 'Sort direction for search results (desc or asc)' },
   },
   outputs: {
     // slack_message outputs (send operation)
@@ -727,6 +942,40 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     file: {
       type: 'json',
       description: 'Downloaded file stored in execution files',
+    },
+
+    // slack_search_all outputs (search_all operation)
+    text: {
+      type: 'string',
+      description: 'Combined text extracted from all search results (messages, files, and posts)',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    messageTexts: {
+      type: 'string',
+      description: 'Combined text from all message matches in search results',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    fileTexts: {
+      type: 'string',
+      description: 'Combined text from all file matches (titles, names, comments) in search results',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    postTexts: {
+      type: 'string',
+      description: 'Combined text from all post matches in search results',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
     },
 
     // slack_update_message outputs (update operation)

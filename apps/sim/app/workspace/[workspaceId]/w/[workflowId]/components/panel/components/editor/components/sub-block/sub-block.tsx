@@ -37,6 +37,7 @@ import {
   Table,
   Text,
   TimeInput,
+  DateInput,
   ToolInput,
   TriggerSave,
   VariablesInput,
@@ -46,6 +47,7 @@ import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import type { SubBlockConfig } from '@/blocks/types'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
+import { SlackClientSelector } from './components/slack-client-selector/slack-client-selector'
 import { ArenaGroupSelector } from './components/arena/arena-group-selector'
 import { ArenaProjectSelector } from './components/arena/arena-projects-selector'
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
@@ -635,6 +637,18 @@ function SubBlockComponent({
           />
         )
 
+      case 'date-input':
+        return (
+          <DateInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isPreview={isPreview}
+            previewValue={previewValue as any}
+            disabled={isDisabled}
+          />
+        )
+
       case 'file-upload':
         return (
           <FileUpload
@@ -870,6 +884,17 @@ function SubBlockComponent({
       case 'arena-client-selector':
         return (
           <ArenaClientsSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'slack-client-selector':
+        return (
+          <SlackClientSelector
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}

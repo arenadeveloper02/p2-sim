@@ -791,6 +791,32 @@ const registry: Record<SelectorKey, SelectorDefinition> = {
       }))
     },
   },
+  'slack.client_channels': {
+    key: 'slack.client_channels',
+    staleTime: SELECTOR_STALE,
+    getQueryKey: ({ context }: SelectorQueryArgs) => [
+      'selectors',
+      'slack.client_channels',
+      context.clientId ?? 'none',
+    ],
+    enabled: ({ context }) => Boolean(context.clientId),
+    fetchList: async ({ context }: SelectorQueryArgs) => {
+      if (!context.clientId) {
+        return []
+      }
+      const body = JSON.stringify({
+        clientId: context.clientId,
+      })
+      const data = await fetchJson<{ channels: { id: string; label: string }[] }>(
+        '/api/tools/slack/client-channels',
+        {
+          method: 'POST',
+          body,
+        }
+      )
+      return data.channels || []
+    },
+  },
 }
 
 export function getSelectorDefinition(key: SelectorKey): SelectorDefinition {

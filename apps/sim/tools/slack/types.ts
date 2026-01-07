@@ -25,8 +25,10 @@ export interface SlackMessageReaderParams extends SlackBaseParams {
   channel?: string
   userId?: string
   limit?: number
-  oldest?: string
-  latest?: string
+  from?: string // Date string (will be converted to epoch timestamp as 'oldest')
+  to?: string // Date string (will be converted to epoch timestamp as 'latest')
+  oldest?: string // Deprecated: use 'from' instead
+  latest?: string // Deprecated: use 'to' instead
 }
 
 export interface SlackDownloadParams extends SlackBaseParams {
@@ -69,6 +71,14 @@ export interface SlackListUsersParams extends SlackBaseParams {
 
 export interface SlackGetUserParams extends SlackBaseParams {
   userId: string
+}
+
+export interface SlackSearchAllParams extends SlackBaseParams {
+  query: string
+  highlight?: boolean
+  page?: number
+  sort?: 'score' | 'timestamp'
+  sort_dir?: 'asc' | 'desc'
 }
 
 export interface SlackMessageResponse extends ToolResponse {
@@ -305,6 +315,16 @@ export interface SlackGetUserResponse extends ToolResponse {
   }
 }
 
+export interface SlackSearchAllResponse extends ToolResponse {
+  output: {
+    query: string
+    files: any
+    messages: any
+    posts: any
+    raw: any
+  }
+}
+
 export type SlackResponse =
   | SlackCanvasResponse
   | SlackMessageReaderResponse
@@ -317,3 +337,4 @@ export type SlackResponse =
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
+  | SlackSearchAllResponse

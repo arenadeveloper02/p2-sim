@@ -57,15 +57,22 @@ export function SlackSelectorInput({
   const [authMethod] = useSubBlockValue(blockId, 'authMethod')
   const [botToken] = useSubBlockValue(blockId, 'botToken')
   const [connectedCredential] = useSubBlockValue(blockId, 'credential')
+  const [clientId] = useSubBlockValue(blockId, 'clientId')
 
   const effectiveAuthMethod = previewContextValues?.authMethod ?? authMethod
   const effectiveBotToken = previewContextValues?.botToken ?? botToken
   const effectiveCredential = previewContextValues?.credential ?? connectedCredential
+  // Extract clientId from object if it's an object (like Arena client selector)
+  const rawClientId = previewContextValues?.clientId ?? clientId
+  const effectiveClientId = typeof rawClientId === 'object' && rawClientId?.clientId
+    ? rawClientId.clientId
+    : (typeof rawClientId === 'string' ? rawClientId : undefined)
   const [_selectedValue, setSelectedValue] = useState<string | null>(null)
 
   const serviceId = subBlock.serviceId || ''
   const effectiveProviderId = useMemo(() => getProviderIdFromServiceId(serviceId), [serviceId])
   const isSlack = serviceId === 'slack'
+  const isClientChannel = subBlock.id === 'clientChannel'
 
   const { finalDisabled, dependsOn } = useDependsOnGate(blockId, subBlock, {
     disabled,
@@ -94,12 +101,21 @@ export function SlackSelectorInput({
   const missingCredential = !credential || credential.trim().length === 0
   const shouldForceDisable = requiresCredential && (missingCredential || isForeignCredential)
 
+  // Determine selector key based on whether this is a client channel selector
+  const selectorKey = useMemo(() => {
+    if (isClientChannel && effectiveClientId) {
+      return 'slack.client_channels' as SelectorKey
+    }
+    return config.selectorKey
+  }, [isClientChannel, effectiveClientId, config.selectorKey])
+
   const context: SelectorContext = useMemo(
     () => ({
       credentialId: credential,
       workflowId: workflowIdFromUrl,
+      ...(isClientChannel && effectiveClientId ? { clientId: effectiveClientId as string } : {}),
     }),
-    [credential, workflowIdFromUrl]
+    [credential, workflowIdFromUrl, isClientChannel, effectiveClientId]
   )
 
   if (!isSlack) {
@@ -127,7 +143,7 @@ export function SlackSelectorInput({
           <SelectorCombobox
             blockId={blockId}
             subBlock={subBlock}
-            selectorKey={config.selectorKey}
+            selectorKey={selectorKey}
             selectorContext={context}
             disabled={finalDisabled || shouldForceDisable || isForeignCredential}
             isPreview={isPreview}

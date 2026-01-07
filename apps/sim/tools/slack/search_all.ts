@@ -1,0 +1,146 @@
+import type { SlackSearchAllParams, SlackSearchAllResponse } from '@/tools/slack/types'
+import type { ToolConfig } from '@/tools/types'
+
+export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAllResponse> = {
+  id: 'slack_search_all',
+  name: 'Slack Search All',
+  description:
+    'Search across messages, files, and posts in Slack using the search.all API with optional sorting and pagination.',
+  version: '1.0.0',
+
+  oauth: {
+    required: true,
+    provider: 'slack',
+  },
+
+  params: {
+    authMethod: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Authentication method: oauth or bot_token',
+    },
+    botToken: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Bot token for Custom Bot',
+    },
+    accessToken: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'OAuth access token or bot token for Slack API',
+    },
+    query: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description:
+        'Search query string (e.g., "messages in:#alerts after:2024-12-01 before:2024-12-05"). Supports Slack search syntax.',
+    },
+    highlight: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Whether to enable match highlighting in results (default: true).',
+    },
+    page: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Page number for paginated results (1-based).',
+    },
+    sort: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Sort field. Default: score. Example: timestamp.',
+    },
+    sort_dir: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Sort direction. Allowed values: desc, asc. Default: desc.',
+    },
+  },
+
+  request: {
+    url: '/api/tools/slack/search-all',
+    method: 'POST',
+    headers: () => ({
+      'Content-Type': 'application/json',
+    }),
+    body: (params: SlackSearchAllParams) => ({
+      accessToken: params.accessToken || params.botToken,
+      query: params.query,
+      highlight: params.highlight,
+      page: params.page,
+      sort: params.sort,
+      sort_dir: params.sort_dir,
+    }),
+  },
+
+  transformResponse: async (response: Response) => {
+    const data = await response.json()
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to perform Slack search.all')
+    }
+
+    // Extract text from messages, files, and posts
+    const messageTexts: string[] = []
+    const fileTexts: string[] = []
+    const postTexts: string[] = []
+
+    // Extract text from message matches
+    if (data.output?.messages?.matches) {
+      for (const match of data.output.messages.matches) {
+        if (match.text) {
+          messageTexts.push(match.text)
+        }
+      }
+    }
+
+    // Extract text from file matches (title, name, or initial_comment)
+    if (data.output?.files?.matches) {
+      for (const match of data.output.files.matches) {
+        if (match.title) {
+          fileTexts.push(match.title)
+        } else if (match.name) {
+          fileTexts.push(match.name)
+        }
+        if (match.initial_comment?.comment) {
+          fileTexts.push(match.initial_comment.comment)
+        }
+      }
+    }
+
+    // Extract text from post matches
+    if (data.output?.posts?.matches) {
+      for (const match of data.output.posts.matches) {
+        if (match.text) {
+          postTexts.push(match.text)
+        }
+      }
+    }
+
+    // Combine all text
+    const allTexts = [...messageTexts, ...fileTexts, ...postTexts]
+    const combinedText = allTexts.join('\n\n')
+
+    return {
+      success: true,
+      output: {
+        ...data.output,
+        // Add extracted text fields
+        text: combinedText,
+        messageTexts: messageTexts.join('\n\n'),
+        fileTexts: fileTexts.join('\n\n'),
+        postTexts: postTexts.join('\n\n'),
+      },
+    }
+  },
+}
+
+

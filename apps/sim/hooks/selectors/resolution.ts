@@ -17,6 +17,7 @@ export interface SelectorResolutionArgs {
   knowledgeBaseId?: string
   siteId?: string
   collectionId?: string
+  clientId?: string
 }
 
 const defaultContext: SelectorContext = {}
@@ -58,6 +59,7 @@ function buildBaseContext(
     knowledgeBaseId: args.knowledgeBaseId,
     siteId: args.siteId,
     collectionId: args.collectionId,
+    clientId: args.clientId,
     ...extra,
   }
 }
@@ -152,6 +154,16 @@ function resolveChannelSelector(
   if (serviceId !== 'slack') {
     return { key: null, context: buildBaseContext(args), allowSearch: true }
   }
+  
+  // If clientId is provided and this is the clientChannel field, use client channels selector
+  if (args.clientId && subBlock.id === 'clientChannel') {
+    return {
+      key: 'slack.client_channels',
+      context: buildBaseContext(args, { clientId: args.clientId }),
+      allowSearch: true,
+    }
+  }
+  
   return {
     key: 'slack.channels',
     context: buildBaseContext(args),

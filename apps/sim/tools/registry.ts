@@ -1058,6 +1058,7 @@ import {
   slackListUsersTool,
   slackMessageReaderTool,
   slackMessageTool,
+  slackSearchAllTool,
   slackUpdateMessageTool,
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
@@ -1573,6 +1574,7 @@ export const tools: Record<string, ToolConfig> = {
   slack_update_message: slackUpdateMessageTool,
   slack_delete_message: slackDeleteMessageTool,
   slack_add_reaction: slackAddReactionTool,
+  slack_search_all: slackSearchAllTool,
   github_repo_info: githubRepoInfoTool,
   github_latest_commit: githubLatestCommitTool,
   spyfu_request: spyfuRequestTool,
