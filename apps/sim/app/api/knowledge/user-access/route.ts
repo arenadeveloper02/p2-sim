@@ -8,7 +8,8 @@ const logger = createLogger('UserKnowledgeAccessAPI')
 
 /**
  * GET /api/knowledge/user-access
- * Get knowledge bases that user has access to via user_knowledge_base table only
+ * Get knowledge bases that user has access to via workspace permissions
+ * Returns all knowledge bases from all workspaces the user has access to
  * Returns minimal data with defaults for missing fields
  */
 export async function GET(req: NextRequest) {
