@@ -1,9 +1,10 @@
 import { createLogger } from '@sim/logger'
+import { TextChunker } from '@/lib/chunkers/text-chunker'
+import { rerankContent } from '@/lib/content/rerank'
 import type { GoogleDriveSearchParams, GoogleDriveSearchResponse } from '@/tools/google_drive/types'
 import { DEFAULT_EXPORT_FORMATS, GOOGLE_WORKSPACE_MIME_TYPES } from '@/tools/google_drive/utils'
 import type { ToolConfig } from '@/tools/types'
-import { rerankContent } from '@/lib/content/rerank'
-import { TextChunker } from '@/lib/chunkers/text-chunker'
+import { buildDriveQueryWithAI } from './ai-query-generation'
 
 const logger = createLogger('GoogleDriveSearchTool')
 
@@ -502,45 +503,47 @@ async function extractFileContent(
 
 /**
  * Builds a Google Drive query string from parsed prompt components
+ *
+ * COMMENTED OUT: Replaced with AI-based query generation using Claude
  */
-function buildDriveQuery(prompt: string, folderId?: string | null): string {
-  const parts: string[] = ['trashed=false']
+// function buildDriveQuery(prompt: string, folderId?: string | null): string {
+//   const parts: string[] = ['trashed=false']
 
-  // Add MIME type filters
-  const mimes = detectMimeTypes(prompt)
-  if (mimes.length > 0) {
-    const mimeExpr = mimes.map((m) => `mimeType='${m}'`).join(' or ')
-    parts.push(`(${mimeExpr})`)
-  }
+//   // Add MIME type filters
+//   const mimes = detectMimeTypes(prompt)
+//   if (mimes.length > 0) {
+//     const mimeExpr = mimes.map((m) => `mimeType='${m}'`).join(' or ')
+//     parts.push(`(${mimeExpr})`)
+//   }
 
-  // Add time window filters
-  const [startIso, endIso] = parseTimeWindow(prompt)
-  if (startIso && endIso) {
-    parts.push(`modifiedTime >= '${startIso}'`)
-    parts.push(`modifiedTime <= '${endIso}'`)
-  }
+//   // Add time window filters
+//   const [startIso, endIso] = parseTimeWindow(prompt)
+//   if (startIso && endIso) {
+//     parts.push(`modifiedTime >= '${startIso}'`)
+//     parts.push(`modifiedTime <= '${endIso}'`)
+//   }
 
-  // Add folder filter
-  if (folderId) {
-    parts.push(`'${folderId}' in parents`)
-  }
+//   // Add folder filter
+//   if (folderId) {
+//     parts.push(`'${folderId}' in parents`)
+//   }
 
-  // Add keyword filters (name and fullText search)
-  // Use OR logic between keywords to be less restrictive
-  // Files matching any of the keywords will be returned
-  const keywords = extractKeywords(prompt)
-  if (keywords.length > 0) {
-    const keywordConditions = keywords.map((kw) => {
-      const safe = kw.replace(/'/g, "\\'")
-      return `(name contains '${safe}' or fullText contains '${safe}')`
-    })
-    // Use OR logic: file must match at least one keyword
-    // This is less restrictive than AND logic which requires all keywords
-    parts.push(`(${keywordConditions.join(' and ')})`)
-  }
+//   // Add keyword filters (name and fullText search)
+//   // Use OR logic between keywords to be less restrictive
+//   // Files matching any of the keywords will be returned
+//   const keywords = extractKeywords(prompt)
+//   if (keywords.length > 0) {
+//     const keywordConditions = keywords.map((kw) => {
+//       const safe = kw.replace(/'/g, "\\'")
+//       return `(name contains '${safe}' or fullText contains '${safe}')`
+//     })
+//     // Use OR logic: file must match at least one keyword
+//     // This is less restrictive than AND logic which requires all keywords
+//     parts.push(`(${keywordConditions.join(' and ')})`)
+//   }
 
-  return parts.join(' and ')
-}
+//   return parts.join(' and ')
+// }
 
 export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchResponse> = {
   id: 'google_drive_search',
@@ -611,8 +614,8 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
       }
     }
 
-    // Build the query string
-    const query = buildDriveQuery(prompt, folderId)
+    // Build the query string using AI
+    const query = await buildDriveQueryWithAI(prompt, folderId)
 
     logger.info('Built Drive query from prompt', { prompt, query, folderName, folderId })
 
