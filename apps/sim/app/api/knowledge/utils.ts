@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { document, embedding, knowledgeBase, userKnowledgeBase } from '@sim/db/schema'
+import { document, embedding, knowledgeBase, workspace } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
@@ -162,33 +162,29 @@ export async function checkKnowledgeBaseAccess(
 
   const kbData = kb[0]
 
-  // Case 1: User owns the knowledge base directly
-  if (kbData.userId === userId) {
-    return { hasAccess: true, knowledgeBase: kbData }
-  }
-
-  // Case 2: Knowledge base belongs to a workspace the user has permissions for
+  // Case 1: Knowledge base belongs to a workspace - check workspace access
   if (kbData.workspaceId) {
+    // Check if user is workspace owner (owners have full access to all KBs in workspace)
+    const workspaceData = await db
+      .select({ ownerId: workspace.ownerId })
+      .from(workspace)
+      .where(eq(workspace.id, kbData.workspaceId))
+      .limit(1)
+
+    if (workspaceData.length > 0 && workspaceData[0].ownerId === userId) {
+      return { hasAccess: true, knowledgeBase: kbData }
+    }
+
+    // Check if user has permissions
     const userPermission = await getUserEntityPermissions(userId, 'workspace', kbData.workspaceId)
     if (userPermission !== null) {
       return { hasAccess: true, knowledgeBase: kbData }
     }
   }
 
-  // Case 3: User has direct access through user_knowledge_base table
-  const userKbAccess = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        eq(userKnowledgeBase.userIdRef, userId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-    .limit(1)
-
-  if (userKbAccess.length > 0) {
+  // Case 2: Legacy knowledge base without workspace - check direct ownership
+  // This handles KBs created before workspace feature
+  if (kbData.userId === userId) {
     return { hasAccess: true, knowledgeBase: kbData }
   }
 
@@ -199,8 +195,7 @@ export async function checkKnowledgeBaseAccess(
  * Check if a user has write access to a knowledge base
  * Write access is granted if:
  * 1. User owns the knowledge base directly, OR
- * 2. User has write or admin permissions on the knowledge base's workspace, OR
- * 3. User has explicit access through user_knowledge_base table
+ * 2. User has write or admin permissions on the knowledge base's workspace
  */
 export async function checkKnowledgeBaseWriteAccess(
   knowledgeBaseId: string,
@@ -222,33 +217,29 @@ export async function checkKnowledgeBaseWriteAccess(
 
   const kbData = kb[0]
 
-  // Case 1: User owns the knowledge base directly
-  if (kbData.userId === userId) {
-    return { hasAccess: true, knowledgeBase: kbData }
-  }
-
-  // Case 2: Knowledge base belongs to a workspace and user has write/admin permissions
+  // Case 1: Knowledge base belongs to a workspace - check workspace write access
   if (kbData.workspaceId) {
+    // Check if user is workspace owner (owners have full write access to all KBs in workspace)
+    const workspaceData = await db
+      .select({ ownerId: workspace.ownerId })
+      .from(workspace)
+      .where(eq(workspace.id, kbData.workspaceId))
+      .limit(1)
+
+    if (workspaceData.length > 0 && workspaceData[0].ownerId === userId) {
+      return { hasAccess: true, knowledgeBase: kbData }
+    }
+
+    // Check if user has write/admin permissions
     const userPermission = await getUserEntityPermissions(userId, 'workspace', kbData.workspaceId)
     if (userPermission === 'write' || userPermission === 'admin') {
       return { hasAccess: true, knowledgeBase: kbData }
     }
   }
 
-  // Case 3: User has direct access through user_knowledge_base table
-  const userKbAccess = await db
-    .select()
-    .from(userKnowledgeBase)
-    .where(
-      and(
-        eq(userKnowledgeBase.knowledgeBaseIdRef, knowledgeBaseId),
-        eq(userKnowledgeBase.userIdRef, userId),
-        isNull(userKnowledgeBase.deletedAt)
-      )
-    )
-    .limit(1)
-
-  if (userKbAccess.length > 0) {
+  // Case 2: Legacy knowledge base without workspace - check direct ownership
+  // This handles KBs created before workspace feature
+  if (kbData.userId === userId) {
     return { hasAccess: true, knowledgeBase: kbData }
   }
 

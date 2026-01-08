@@ -25,6 +25,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         { label: 'Upload File', id: 'upload' },
         { label: 'Download File', id: 'download' },
         { label: 'List Files', id: 'list' },
+        { label: 'Search Files', id: 'search' },
       ],
       value: () => 'create_folder',
     },
@@ -36,6 +37,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       required: true,
       serviceId: 'google-drive',
       requiredScopes: [
+        'https://www.googleapis.com/auth/drive.metadata.readonly',
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
       ],
@@ -297,6 +299,23 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       placeholder: 'Optional: Override the filename',
       condition: { field: 'operation', value: 'download' },
     },
+    // Search Files Fields
+    {
+      id: 'prompt',
+      title: 'Search Prompt',
+      type: 'long-input',
+      placeholder:
+        'Enter a natural language search prompt (e.g., "find PDF invoices last month", "search slides Q4 strategy in folder Marketing")',
+      condition: { field: 'operation', value: 'search' },
+      required: true,
+    },
+    {
+      id: 'pageSize',
+      title: 'Results Per Page',
+      type: 'short-input',
+      placeholder: 'Number of results (default: 20, max: 1000)',
+      condition: { field: 'operation', value: 'search' },
+    },
   ],
   tools: {
     access: [
@@ -304,6 +323,7 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
       'google_drive_create_folder',
       'google_drive_download',
       'google_drive_list',
+      'google_drive_search',
     ],
     config: {
       tool: (params) => {
@@ -317,6 +337,8 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
             return 'google_drive_download'
           case 'list':
             return 'google_drive_list'
+          case 'search':
+            return 'google_drive_search'
           default:
             throw new Error(`Invalid Google Drive operation: ${params.operation}`)
         }
@@ -329,8 +351,18 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
           fileSelector,
           manualFileId,
           mimeType,
+          operation,
           ...rest
         } = params
+
+        // For search operation, return prompt and pageSize
+        if (operation === 'search') {
+          return {
+            credential,
+            prompt: rest.prompt as string,
+            pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
+          }
+        }
 
         // Use folderSelector if provided, otherwise use manualFolderId
         const effectiveFolderId = (folderSelector || manualFolderId || '').trim()
@@ -365,6 +397,8 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
     manualFolderId: { type: 'string', description: 'Manual folder identifier' },
     query: { type: 'string', description: 'Search query' },
     pageSize: { type: 'number', description: 'Results per page' },
+    // Search operation inputs
+    prompt: { type: 'string', description: 'Natural language search prompt' },
   },
   outputs: {
     file: { type: 'json', description: 'File data' },
