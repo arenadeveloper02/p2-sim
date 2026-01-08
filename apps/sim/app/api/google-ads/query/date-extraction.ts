@@ -29,6 +29,48 @@ export function extractDateRanges(input: string): Array<DateRange> {
   const dateRanges: Array<DateRange> = []
   const lower = input.toLowerCase().trim()
 
+  // DEBUG: Log the input to see what we're actually receiving
+  logger.info('🔍 DATE EXTRACTION INPUT:', { input, lower })
+
+  // ============================================
+  // PRIORITY 0: COMPARISON QUERIES - MUST BE FIRST!
+  // Match "and then" pattern with 4 dates
+  // ============================================
+  const numericComparisonPattern =
+    /(?:from\s+)?(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})/i
+  const numericComparisonMatch = input.match(numericComparisonPattern)
+  
+  logger.info('🔍 COMPARISON PATTERN MATCH:', { matched: !!numericComparisonMatch, pattern: numericComparisonPattern.source })
+
+  if (numericComparisonMatch) {
+    // First range (comparison/prior week)
+    const month1 = numericComparisonMatch[1].padStart(2, '0')
+    const day1 = numericComparisonMatch[2].padStart(2, '0')
+    const year1 = numericComparisonMatch[3]
+    const month2 = numericComparisonMatch[4].padStart(2, '0')
+    const day2 = numericComparisonMatch[5].padStart(2, '0')
+    const year2 = numericComparisonMatch[6]
+    dateRanges.push({
+      start: `${year1}-${month1}-${day1}`,
+      end: `${year2}-${month2}-${day2}`,
+    })
+
+    // Second range (main/current week)
+    const month3 = numericComparisonMatch[7].padStart(2, '0')
+    const day3 = numericComparisonMatch[8].padStart(2, '0')
+    const year3 = numericComparisonMatch[9]
+    const month4 = numericComparisonMatch[10].padStart(2, '0')
+    const day4 = numericComparisonMatch[11].padStart(2, '0')
+    const year4 = numericComparisonMatch[12]
+    dateRanges.push({
+      start: `${year3}-${month3}-${day3}`,
+      end: `${year4}-${month4}-${day4}`,
+    })
+
+    logger.info('PRIORITY 0: Extracted comparison date ranges with "and then"', { dateRanges })
+    return dateRanges
+  }
+
   // ============================================
   // PRIORITY 1: Single-day queries (early return)
   // ============================================
