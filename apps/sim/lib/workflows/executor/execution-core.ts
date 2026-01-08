@@ -268,22 +268,17 @@ export async function executeWorkflowCore(
       ...serverEnvVars, // Server vars override user/workspace vars
     }
 
-    let initialInput: string | undefined
-    if (triggerType === 'chat') {
-      const rawInput = input || {}
-      if (typeof rawInput === 'string') {
-        initialInput = rawInput
-      } else if (typeof rawInput === 'object') {
-        // Common patterns for chat input
-        if ('message' in rawInput && typeof rawInput.message === 'string') {
-          initialInput = rawInput.message
-        } else if ('input' in rawInput && typeof rawInput.input === 'string') {
-          initialInput = rawInput.input
-        } else {
-          initialInput = JSON.stringify(rawInput)
-        }
-      }
-    }
+    // Extract conversationId from input if available (for chat workflows)
+    const conversationId =
+      typeof input === 'object' && input !== null && 'conversationId' in input
+        ? input.conversationId
+        : undefined
+
+    // Extract initial input for chat workflows
+    const initialInput =
+      triggerType === 'chat' && typeof input === 'object' && input !== null && 'input' in input
+        ? input.input
+        : undefined
 
     await loggingSession.safeStart({
       userId,
@@ -291,6 +286,7 @@ export async function executeWorkflowCore(
       variables,
       skipLogCreation,
       deploymentVersionId,
+      conversationId,
       initialInput,
     })
 

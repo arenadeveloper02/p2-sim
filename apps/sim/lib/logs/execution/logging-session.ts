@@ -68,6 +68,7 @@ export class LoggingSession {
     userId?: string
     isExternalChat?: boolean
     chatId?: string
+    conversationId?: string
     initialInput?: string
   }
   private completed = false
@@ -93,6 +94,7 @@ export class LoggingSession {
       skipLogCreation,
       isExternalChat,
       chatId,
+      conversationId,
       initialInput,
       deploymentVersionId,
     } = params
