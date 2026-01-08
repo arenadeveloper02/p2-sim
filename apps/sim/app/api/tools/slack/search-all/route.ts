@@ -47,7 +47,35 @@ export async function POST(request: NextRequest) {
     )
 
     const body = await request.json()
+    
+    logger.info(`[${requestId}] Raw request body received:`, {
+      hasAccessToken: !!body.accessToken,
+      accessTokenPrefix: body.accessToken?.substring(0, 10) || 'none',
+      accessTokenLength: body.accessToken?.length || 0,
+      hasCredential: !!body.credential,
+      credentialValue: body.credential?.substring(0, 20) || 'none',
+      hasBotToken: !!body.botToken,
+      botTokenPrefix: body.botToken?.substring(0, 10) || 'none',
+      query: body.query?.substring(0, 50) || 'none',
+    })
+    
     const validatedData = SlackSearchAllSchema.parse(body)
+
+    logger.info(`[${requestId}] After validation:`, {
+      hasAccessToken: !!validatedData.accessToken,
+      accessTokenPrefix: validatedData.accessToken?.substring(0, 10) || 'none',
+      accessTokenType: validatedData.accessToken
+        ? validatedData.accessToken.startsWith('xoxb-')
+          ? 'bot'
+          : validatedData.accessToken.startsWith('xoxp-')
+            ? 'user'
+            : validatedData.accessToken.startsWith('xoxa-')
+              ? 'app'
+              : 'unknown'
+        : 'none',
+      hasCredential: !!validatedData.credential,
+      hasBotToken: !!validatedData.botToken,
+    })
 
     // Resolve token: search.all requires user token (OAuth), not bot token
     // The tool execution system may have already resolved the credential to accessToken
@@ -103,11 +131,24 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         )
       }
-      const resolvedToken = await refreshAccessTokenIfNeeded(
+      // For Slack, try to get user token first (stored in idToken field)
+      const { getSlackUserToken } = await import('@/app/api/auth/oauth/utils')
+      let resolvedToken = await getSlackUserToken(
         credentialId,
         authz.credentialOwnerUserId,
         requestId
       )
+
+      // If no user token, fall back to regular token refresh (bot token)
+      if (!resolvedToken || !resolvedToken.startsWith('xoxp-')) {
+        const { refreshAccessTokenIfNeeded } = await import('@/app/api/auth/oauth/utils')
+        resolvedToken = await refreshAccessTokenIfNeeded(
+          credentialId,
+          authz.credentialOwnerUserId,
+          requestId
+        )
+      }
+
       if (!resolvedToken) {
         logger.error(`[${requestId}] Failed to get access token`, {
           credentialId,
@@ -122,14 +163,31 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         )
       }
+      
+      logger.info(`[${requestId}] Token resolved from credential:`, {
+        credentialId,
+        tokenPrefix: resolvedToken.substring(0, 10),
+        tokenType: resolvedToken.startsWith('xoxb-')
+          ? 'bot'
+          : resolvedToken.startsWith('xoxp-')
+            ? 'user'
+            : resolvedToken.startsWith('xoxa-')
+              ? 'app'
+              : 'unknown',
+        tokenLength: resolvedToken.length,
+      })
+      
       // Verify resolved token is not a bot token
       if (resolvedToken.startsWith('xoxb-')) {
-        logger.warn(`[${requestId}] Resolved token is a bot token - search.all requires user token`)
+        logger.warn(`[${requestId}] Resolved token is a bot token - search.all requires user token`, {
+          credentialId,
+          tokenPrefix: resolvedToken.substring(0, 10),
+        })
         return NextResponse.json(
           {
             success: false,
             error:
-              'The credential resolves to a bot token, but search.all API requires a user token (OAuth). Please use OAuth authentication.',
+              'The credential resolves to a bot token, but search.all API requires a user token (OAuth). Please reconnect your Slack account to get a user token.',
           },
           { status: 400 }
         )

@@ -71,18 +71,34 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: SlackSearchAllParams) => ({
-      // Pass credential ID if available, otherwise pass accessToken/botToken
-      // The route will resolve credential to OAuth token (search.all requires user token)
-      credential: params.accessToken, // accessToken might be credential ID from tool execution
-      accessToken: params.accessToken, // Keep for backward compatibility
-      botToken: params.botToken,
-      query: params.query,
-      highlight: params.highlight,
-      page: params.page,
-      sort: params.sort,
-      sort_dir: params.sort_dir,
-    }),
+    body: (params: SlackSearchAllParams) => {
+      // Check if accessToken is a bot token (search.all requires user token)
+      if (params.accessToken?.startsWith('xoxb-')) {
+        throw new Error(
+          'search.all API requires a user token (OAuth), not a bot token. Please connect your Slack account using OAuth authentication instead of a bot token.'
+        )
+      }
+
+      // Check if botToken is provided (search.all doesn't support bot tokens)
+      if (params.botToken) {
+        throw new Error(
+          'search.all API requires a user token (OAuth), not a bot token. Please use OAuth authentication.'
+        )
+      }
+
+      return {
+        // Pass credential ID if available, otherwise pass accessToken
+        // The route will resolve credential to OAuth token (search.all requires user token)
+        credential: params.accessToken, // accessToken might be credential ID from tool execution
+        accessToken: params.accessToken, // Keep for backward compatibility
+        botToken: params.botToken,
+        query: params.query,
+        highlight: params.highlight,
+        page: params.page,
+        sort: params.sort,
+        sort_dir: params.sort_dir,
+      }
+    },
   },
 
   transformResponse: async (response: Response) => {

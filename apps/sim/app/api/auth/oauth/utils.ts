@@ -192,6 +192,34 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
  * @param requestId Request ID for log correlation
  * @returns The valid access token or null if refresh fails
  */
+/**
+ * Get user token for Slack (stored in idToken field)
+ * Falls back to accessToken (bot token) if user token not available
+ */
+export async function getSlackUserToken(
+  credentialId: string,
+  userId: string,
+  requestId: string
+): Promise<string | null> {
+  const credential = await getCredential(requestId, credentialId, userId)
+
+  if (!credential) {
+    return null
+  }
+
+  // For Slack, user token is stored in idToken field
+  if (credential.providerId === 'slack' && credential.idToken) {
+    // Verify it's a user token (starts with xoxp-)
+    if (credential.idToken.startsWith('xoxp-')) {
+      logger.info(`[${requestId}] Using Slack user token from idToken field`)
+      return credential.idToken
+    }
+  }
+
+  // Fallback to accessToken (bot token) if user token not available
+  return credential.accessToken
+}
+
 export async function refreshAccessTokenIfNeeded(
   credentialId: string,
   userId: string,

@@ -124,6 +124,24 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       },
     },
     {
+      id: 'manualChannel',
+      title: 'Channel ID',
+      type: 'short-input',
+      canonicalParamId: 'channel',
+      placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
+        not: true,
+        and: {
+          field: 'destinationType',
+          value: 'dm',
+          not: true,
+        },
+      },
+    },
+    {
       id: 'dmUserId',
       title: 'User',
       type: 'user-selector',
@@ -561,6 +579,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           operation,
           destinationType,
           channel,
+          manualChannel,
           dmUserId,
           manualDmUserId,
           text,
@@ -616,7 +635,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           })
         }
 
-        const effectiveChannel = (channel || '').trim()
+        const effectiveChannel = (channel || manualChannel || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
 
         // Debug: Log what we calculated

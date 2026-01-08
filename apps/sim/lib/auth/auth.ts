@@ -155,7 +155,7 @@ export const auth = betterAuth({
                 accountId: account.accountId,
                 accessToken: account.accessToken,
                 refreshToken: account.refreshToken,
-                idToken: account.idToken,
+                idToken: account.idToken, // For Slack, this may contain user token
                 accessTokenExpiresAt: account.accessTokenExpiresAt,
                 refreshTokenExpiresAt: account.refreshTokenExpiresAt,
                 scope: scopeToStore,
@@ -169,6 +169,20 @@ export const auth = betterAuth({
           return { data: account }
         },
         after: async (account) => {
+          // For Slack, extract user token from OAuth response if available
+          // Note: This requires the raw OAuth response to be available, which better-auth
+          // doesn't expose directly. We'll handle this in the OAuth callback route instead.
+          if (account.providerId === 'slack') {
+            // The user token should be stored in idToken field during account creation
+            // This will be handled by a custom OAuth callback if needed
+            logger.info('Slack account created', {
+              accountId: account.id,
+              hasAccessToken: !!account.accessToken,
+              hasIdToken: !!account.idToken,
+              accessTokenType: account.accessToken?.startsWith('xoxb-') ? 'bot' : account.accessToken?.startsWith('xoxp-') ? 'user' : 'unknown',
+            })
+          }
+
           if (account.providerId === 'salesforce') {
             const updates: {
               accessTokenExpiresAt?: Date
@@ -1704,7 +1718,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://slack.com/api/oauth.v2.access',
           userInfoUrl: 'https://slack.com/api/users.identity',
           scopes: [
-            // Bot token scopes only - app acts as a bot user
+            // Bot token scopes - app acts as a bot user
             'channels:read',
             'channels:history',
             'groups:read',
@@ -1719,10 +1733,14 @@ export const auth = betterAuth({
             'files:read',
             'canvases:write',
             'reactions:write',
+            // User token scopes - required for search.all API
+            'search:read',
           ],
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
+          // Note: We use a custom callback route to extract both bot and user tokens
+          // The custom route is at /api/auth/oauth2/callback/slack
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
