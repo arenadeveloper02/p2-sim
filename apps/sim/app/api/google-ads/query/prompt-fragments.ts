@@ -47,6 +47,7 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
 - search_term_view (search query reports) + campaign.id + campaign.status required
+- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
@@ -89,7 +90,7 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 - Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
 **SEGMENT COMPATIBILITY RULES:**
-- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, ad_group_ad, geographic_view, gender_view
+- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, campaign_search_term_view, ad_group_ad, geographic_view, gender_view
 - segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion
 - **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
 - Asset queries show structure (what exists), not performance (how it performed)
@@ -186,6 +187,10 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 **Search Terms:**
 SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 
+**Performance Max Search Terms:**
+SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
+Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data
+
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
 
@@ -219,7 +224,8 @@ Note: When user asks for ads in a specific ad group, ALWAYS add ad_group.name LI
 - Search: campaign.advertising_channel_type = 'SEARCH'
 - Brand: campaign.name LIKE '%Brand%'
 - Non-Brand: campaign.name NOT LIKE '%Brand%'
-- PMax: campaign.advertising_channel_type = 'MULTI_CHANNEL'
+- PMax: campaign.advertising_channel_type = 'PERFORMANCE_MAX'
+- For PMax search terms: Use campaign_search_term_view (not search_term_view)
 
 AdvertisingChannelTypeEnum.AdvertisingChannelType
 UNSPECIFIED → Not specified.
@@ -444,9 +450,11 @@ When analyzing sitelinks for issues, you MUST present data in TWO separate table
 const searchTermsFragment: FragmentBuilder = () =>
   `
 **SEARCH QUERY REPORTS:**
-- Use search_term_view with campaign.id, campaign.name, campaign.status, search_term_view.search_term.
+- Use search_term_view with campaign.id, campaign.name, campaign.status, search_term_view.search_term for regular Search campaigns.
+- Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data.
 - Include metrics: metrics.clicks, metrics.cost_micros, metrics.conversions (add others when useful).
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
+- For Performance Max search terms: Add campaign.advertising_channel_type = 'PERFORMANCE_MAX' filter.
 - ORDER results by spend or conversions (cost_micros or conversions) and respect any LIMIT requested by the user.
 `.trim()
 
