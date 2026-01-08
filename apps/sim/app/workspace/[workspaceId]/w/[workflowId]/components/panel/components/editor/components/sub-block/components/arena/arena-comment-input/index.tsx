@@ -295,10 +295,35 @@ export function ArenaCommentInput({
       
       const baseValueString = baseValue?.toString() ?? ''
       
-      if (baseValueString !== htmlContent) {
-        setHtmlContent(baseValueString)
-        setLocalContent(baseValueString)
-        setDisplayText(htmlToDisplayText(baseValueString))
+      // Only update if the value has actually changed
+      if (baseValueString !== htmlContent && baseValueString !== '') {
+        // Check if it's HTML (contains mention tags) or plain text
+        const isHtml = baseValueString.includes('<a class="mention"') || baseValueString.includes("class='mention'")
+        
+        if (isHtml) {
+          // It's HTML, store it as-is and convert to display text
+          setHtmlContent(baseValueString)
+          setLocalContent(baseValueString)
+          setDisplayText(htmlToDisplayText(baseValueString))
+        } else {
+          // It's plain text, convert to HTML if we have users loaded
+          if (mentionsMap.current.size > 0 && baseValueString.includes('@')) {
+            const convertedHtml = textToHtml(baseValueString, mentionsMap.current)
+            setHtmlContent(convertedHtml)
+            setLocalContent(convertedHtml)
+            setDisplayText(baseValueString)
+            // Persist the converted HTML
+            if (!isPreview && !disabled) {
+              persistSubBlockValueRef.current(convertedHtml)
+            }
+          } else {
+            // No users loaded yet or no mentions, store as plain text wrapped in <p> tags
+            const plainHtml = baseValueString.split('\n').map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`).join('')
+            setHtmlContent(plainHtml)
+            setLocalContent(plainHtml)
+            setDisplayText(baseValueString)
+          }
+        }
       }
     }
   }, [isPreview, previewValue, propValue, ctrl.valueString, wandHook.isStreaming])
@@ -363,7 +388,7 @@ export function ArenaCommentInput({
         }
       }
     }
-  }, [users.length]) // Re-run when users are loaded
+  }, [users.length, displayText]) // Re-run when users are loaded or display text changes
 
   // Handle text change and detect @ mentions
   const handleTextChange = React.useCallback(
@@ -438,9 +463,12 @@ export function ArenaCommentInput({
       setHtmlContent(newHtml)
       setLocalContent(newHtml)
 
-      // Update value - ensure HTML is persisted
+      // Update value - ensure HTML is persisted immediately
       if (!isPreview && !disabled) {
-        persistSubBlockValueRef.current(newHtml)
+        // Use setTimeout to ensure state updates are complete before persisting
+        setTimeout(() => {
+          persistSubBlockValueRef.current(newHtml)
+        }, 0)
       }
 
       setShowMentionMenu(false)

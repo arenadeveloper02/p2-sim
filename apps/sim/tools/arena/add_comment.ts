@@ -95,8 +95,24 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       const clientNote = Boolean(params['comment-client-note'])
 
       // Extract user mentioned IDs from HTML content
-      const commentText = params['comment-text']
+      const commentText = params['comment-text'] || ''
       const userMentionedIds = extractMentionedUserIds(commentText)
+      
+      // Debug logging to help identify issues
+      if (commentText && commentText.includes('@') && userMentionedIds.length === 0) {
+        const hasMentionTag = commentText.includes('class="mention"') || commentText.includes("class='mention'")
+        const hasDataUserId = commentText.includes('data-user-id')
+        
+        if (hasMentionTag || hasDataUserId) {
+          console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
+            commentTextLength: commentText.length,
+            commentTextPreview: commentText.substring(0, 300),
+            hasMentionClass: hasMentionTag,
+            hasDataUserId: hasDataUserId,
+            extractedIds: userMentionedIds,
+          })
+        }
+      }
 
       const body: Record<string, any> = {
         workflowId: params._context.workflowId,
