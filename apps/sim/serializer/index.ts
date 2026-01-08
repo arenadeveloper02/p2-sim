@@ -444,8 +444,6 @@ export class Serializer {
                 evaluateCondition(config.condition, allValues)
             )
 
-
-
       if (
         (matchingConfigs.length > 0 && anyConditionMet) ||
         hasStarterInputFormatValues ||
@@ -488,13 +486,13 @@ export class Serializer {
         }
       }
     })
-    
+
     // Debug logging for channel canonical group
-    if (block.type === 'slack' && canonicalGroups['channel']) {
+    if (block.type === 'slack' && canonicalGroups.channel) {
       console.log('[Serializer] Channel canonical group before consolidation:')
-      console.log('  group:', JSON.stringify(canonicalGroups['channel'], null, 2))
-      console.log('  params[channel]:', params['channel'])
-      console.log('  params[manualChannel]:', params['manualChannel'])
+      console.log('  group:', JSON.stringify(canonicalGroups.channel, null, 2))
+      console.log('  params[channel]:', params.channel)
+      console.log('  params[manualChannel]:', params.manualChannel)
     }
 
     Object.entries(canonicalGroups).forEach(([canonicalKey, group]) => {
@@ -515,12 +513,22 @@ export class Serializer {
         console.log('  advancedIds:', advancedIds)
         console.log('  advancedVal:', advancedVal)
         console.log('  isAdvancedMode:', isAdvancedMode)
-        console.log('  params before consolidation:', JSON.stringify(Object.keys(params).reduce((acc, k) => {
-          if (k === 'channel' || k === 'manualChannel') {
-            acc[k] = params[k]
-          }
-          return acc
-        }, {} as Record<string, any>), null, 2))
+        console.log(
+          '  params before consolidation:',
+          JSON.stringify(
+            Object.keys(params).reduce(
+              (acc, k) => {
+                if (k === 'channel' || k === 'manualChannel') {
+                  acc[k] = params[k]
+                }
+                return acc
+              },
+              {} as Record<string, any>
+            ),
+            null,
+            2
+          )
+        )
       }
 
       let chosen: any
@@ -540,18 +548,28 @@ export class Serializer {
       })
       if (chosen !== undefined) params[canonicalKey] = chosen
       else delete params[canonicalKey]
-      
+
       // Debug logging after consolidation
       if (block.type === 'slack' && canonicalKey === 'channel') {
         console.log('[Serializer] After canonical param consolidation:')
         console.log('  chosen:', chosen)
         console.log('  params[channel]:', params[canonicalKey])
-        console.log('  params after consolidation:', JSON.stringify(Object.keys(params).reduce((acc, k) => {
-          if (k === 'channel' || k === 'manualChannel') {
-            acc[k] = params[k]
-          }
-          return acc
-        }, {} as Record<string, any>), null, 2))
+        console.log(
+          '  params after consolidation:',
+          JSON.stringify(
+            Object.keys(params).reduce(
+              (acc, k) => {
+                if (k === 'channel' || k === 'manualChannel') {
+                  acc[k] = params[k]
+                }
+                return acc
+              },
+              {} as Record<string, any>
+            ),
+            null,
+            2
+          )
+        )
       }
     })
 

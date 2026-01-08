@@ -322,6 +322,10 @@ export interface SlackSearchAllResponse extends ToolResponse {
     messages: any
     posts: any
     raw: any
+    text?: string // Combined text from all search results
+    messageTexts?: string // Text from messages only
+    fileTexts?: string // Text from files only
+    postTexts?: string // Text from posts only
   }
 }
 

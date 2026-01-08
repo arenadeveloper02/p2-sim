@@ -603,7 +603,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               : undefined
 
         const isDM = destinationType === 'dm'
-        
+
         // Debug: Log what we're receiving
         if (operation === 'read') {
           console.log('[Slack Block Params] Channel values:', {
@@ -615,10 +615,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             isDM,
           })
         }
-        
+
         const effectiveChannel = (channel || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
-        
+
         // Debug: Log what we calculated
         if (operation === 'read') {
           console.log('[Slack Block Params] Calculated values:', {
@@ -648,7 +648,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         } else if (effectiveChannel) {
           baseParams.channel = effectiveChannel
         }
-        
+
         // Debug: Log what we're sending
         if (operation === 'read') {
           console.log('[Slack Block Params] Final baseParams:', {

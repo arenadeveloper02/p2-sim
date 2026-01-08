@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
@@ -67,8 +67,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if accessToken is a bot token
-    if (validatedData.accessToken && validatedData.accessToken.startsWith('xoxb-')) {
-      logger.warn(`[${requestId}] Bot token detected in accessToken - search.all requires user token`)
+    if (validatedData.accessToken?.startsWith('xoxb-')) {
+      logger.warn(
+        `[${requestId}] Bot token detected in accessToken - search.all requires user token`
+      )
       return NextResponse.json(
         {
           success: false,
@@ -80,7 +82,11 @@ export async function POST(request: NextRequest) {
     }
 
     // If credential ID is provided (not a token), resolve it to get OAuth token
-    const credentialId = validatedData.credential || (validatedData.accessToken && !validatedData.accessToken.startsWith('xox') ? validatedData.accessToken : null)
+    const credentialId =
+      validatedData.credential ||
+      (validatedData.accessToken && !validatedData.accessToken.startsWith('xox')
+        ? validatedData.accessToken
+        : null)
     if (credentialId) {
       // This is a credential ID, not a token - resolve it
       const authz = await authorizeCredentialUse(request as any, {
@@ -129,8 +135,10 @@ export async function POST(request: NextRequest) {
         )
       }
       accessToken = resolvedToken
-      logger.info(`[${requestId}] Using OAuth token for Slack search.all (resolved from credential)`)
-    } else if (validatedData.accessToken && validatedData.accessToken.startsWith('xoxp-')) {
+      logger.info(
+        `[${requestId}] Using OAuth token for Slack search.all (resolved from credential)`
+      )
+    } else if (validatedData.accessToken?.startsWith('xoxp-')) {
       // Direct user token provided (OAuth user token)
       accessToken = validatedData.accessToken.trim()
       logger.info(`[${requestId}] Using provided user token for Slack search.all`)
@@ -138,7 +146,13 @@ export async function POST(request: NextRequest) {
       logger.warn(`[${requestId}] Missing valid access token or credential for search.all`, {
         hasAccessToken: !!validatedData.accessToken,
         hasCredential: !!validatedData.credential,
-        accessTokenType: validatedData.accessToken ? (validatedData.accessToken.startsWith('xoxb-') ? 'bot' : validatedData.accessToken.startsWith('xoxp-') ? 'user' : 'unknown') : 'none',
+        accessTokenType: validatedData.accessToken
+          ? validatedData.accessToken.startsWith('xoxb-')
+            ? 'bot'
+            : validatedData.accessToken.startsWith('xoxp-')
+              ? 'user'
+              : 'unknown'
+          : 'none',
       })
       return NextResponse.json(
         {
@@ -155,7 +169,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Slack access token is required. Provide credential or OAuth accessToken in the request body.',
+          error:
+            'Slack access token is required. Provide credential or OAuth accessToken in the request body.',
         },
         { status: 400 }
       )

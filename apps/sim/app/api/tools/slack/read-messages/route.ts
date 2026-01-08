@@ -56,7 +56,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = SlackReadMessagesSchema.parse(body)
 
-
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
       logger.info(`[${requestId}] Opening DM channel for user: ${validatedData.userId}`)
@@ -178,8 +177,7 @@ export async function POST(request: NextRequest) {
         const isPrivate = channelInfo?.is_private
         const isMember = channelInfo?.is_member
 
-        let errorMessage =
-          'Bot is not in the channel or lacks permissions to read messages.'
+        let errorMessage = 'Bot is not in the channel or lacks permissions to read messages.'
         let suggestion = ''
 
         if (isPrivate && !isMember) {
@@ -189,15 +187,18 @@ export async function POST(request: NextRequest) {
         } else if (isPrivate && isMember) {
           errorMessage =
             'Bot is in the channel but may be missing required scopes. Please reconnect your Slack account with groups:history scope.'
-          suggestion = 'The bot appears to be in the channel but lacks groups:history permission for private channels.'
+          suggestion =
+            'The bot appears to be in the channel but lacks groups:history permission for private channels.'
         } else if (!isPrivate && !isMember) {
           errorMessage =
             'Bot is not in this public channel. Please invite the bot by typing: /invite @Sim Studio'
-          suggestion = 'Even public channels may require bot invitation depending on workspace settings.'
+          suggestion =
+            'Even public channels may require bot invitation depending on workspace settings.'
         } else {
           errorMessage =
             'Bot appears to be in the channel but is missing required scopes. Please reconnect your Slack account with channels:history scope.'
-          suggestion = 'If the bot is already in the channel, this is likely a scope issue. Reconnect with channels:history and groups:history scopes.'
+          suggestion =
+            'If the bot is already in the channel, this is likely a scope issue. Reconnect with channels:history and groups:history scopes.'
         }
 
         logger.warn(`[${requestId}] not_in_channel error details:`, {
