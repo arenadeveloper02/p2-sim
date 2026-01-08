@@ -536,7 +536,7 @@ function buildDriveQuery(prompt: string, folderId?: string | null): string {
     })
     // Use OR logic: file must match at least one keyword
     // This is less restrictive than AND logic which requires all keywords
-    parts.push(`(${keywordConditions.join(' or ')})`)
+    parts.push(`(${keywordConditions.join(' and ')})`)
   }
 
   return parts.join(' and ')
