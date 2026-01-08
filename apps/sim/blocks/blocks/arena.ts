@@ -30,6 +30,10 @@ export const ArenaBlock: BlockConfig = {
           label: 'Save Summary',
           id: 'arena_save_summary',
         },
+        {
+          label: 'Comments',
+          id: 'arena_comments',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -251,6 +255,79 @@ export const ArenaBlock: BlockConfig = {
         value: ['arena_save_summary'],
       },
     },
+
+    //comments blocks
+    {
+      id: 'comment-client',
+      title: 'Client',
+      type: 'arena-client-selector',
+      required: true,
+      placeholder: 'Enter client name',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-project',
+      title: 'Project',
+      type: 'arena-project-selector',
+      required: true,
+      placeholder: 'Enter project name',
+      dependsOn: ['operation', 'comment-client'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-group',
+      title: 'Group',
+      type: 'arena-group-selector',
+      required: true,
+      placeholder: 'Enter group name',
+      dependsOn: ['operation', 'comment-client', 'comment-project'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-task',
+      title: 'Task',
+      type: 'arena-task-selector',
+      required: true,
+      placeholder: 'Enter task name',
+      dependsOn: ['operation', 'comment-project'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-client-note',
+      title: 'Client Note',
+      type: 'switch',
+      required: false,
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-text',
+      title: 'Comments',
+      type: 'long-input',
+      required: true,
+      placeholder: 'Enter comments',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
@@ -260,7 +337,7 @@ export const ArenaBlock: BlockConfig = {
     output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
-    access: ['arena_create_task', 'arena_save_summary'],
+    access: ['arena_create_task', 'arena_save_summary', 'arena_comments'],
     config: {
       tool: (params) => {
         switch (params.operation) {
@@ -272,6 +349,8 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_search_task'
           case 'arena_save_summary':
             return 'arena_save_summary'
+          case 'arena_comments':
+            return 'arena_comments'
           default:
             throw new Error(`Invalid Arena operation: ${params.operation}`)
         }

@@ -49,7 +49,9 @@ export function ArenaTaskSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
+  // Determine the project key based on the task subBlockId
+  const projectKey = subBlockId === 'comment-task' ? 'comment-project' : 'task-project'
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
   const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
