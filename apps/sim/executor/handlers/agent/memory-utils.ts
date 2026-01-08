@@ -10,7 +10,7 @@ const logger = createLogger('MemoryUtils')
  * - Response generation
  * - Other messages in the conversation
  */
-const MEMORY_TOKEN_BUFFER_RATIO = 0.8 // Use 80% of context window for memory (20% buffer)
+const MEMORY_TOKEN_BUFFER_RATIO = 0.6 // Use 60% of context window for memory (20% buffer)
 
 /**
  * Default token limit when model context window is unknown

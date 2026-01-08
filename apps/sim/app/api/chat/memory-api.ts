@@ -105,6 +105,7 @@ export async function searchMemoryAPI(
       run_id?: string
       agent_id?: string
       filters?: Record<string, any>
+      limit?: number
     } = {
       query: query,
       user_id: userId,
@@ -124,6 +125,8 @@ export async function searchMemoryAPI(
     if (filters && Object.keys(filters).length > 0) {
       payload.filters = filters
     }
+
+    payload.limit = 5
 
     logger.debug(`[${requestId}] Calling memory search API`, {
       query,

@@ -57,22 +57,7 @@ export class AgentBlockHandler implements BlockHandler {
     const streamingConfig = this.getStreamingConfig(ctx, block)
 
     // Log initial systemPrompt and userPrompt
-    logger.debug('Agent block execution started', {
-      blockId: block.id,
-      workflowId: ctx.workflowId,
-      hasSystemPrompt: !!inputs.systemPrompt,
-      systemPrompt: inputs.systemPrompt,
-      hasUserPrompt: !!inputs.userPrompt,
-      userPrompt:
-        typeof inputs.userPrompt === 'string'
-          ? inputs.userPrompt
-          : inputs.userPrompt
-            ? JSON.stringify(inputs.userPrompt)
-            : undefined,
-      hasMessages: !!inputs.messages && inputs.messages.length > 0,
-      messageCount: inputs.messages?.length || 0,
-      memoryType: inputs.memoryType,
-    })
+    logger.debug('Agent block execution started')
 
     // Get fact memories and add to system prompt if memory is enabled
     if (inputs.memoryType && inputs.memoryType !== 'none') {
@@ -121,13 +106,6 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     const messages = await this.buildMessages(ctx, inputs, block.id)
-
-    // Log final messages array summary
-    if (messages && messages.length > 0) {
-      const systemMessages = messages.filter((m) => m.role === 'system')
-      const userMessages = messages.filter((m) => m.role === 'user')
-      const assistantMessages = messages.filter((m) => m.role === 'assistant')
-    }
 
     const providerRequest = this.buildProviderRequest({
       ctx,
