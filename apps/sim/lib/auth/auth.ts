@@ -1737,8 +1737,9 @@ export const auth = betterAuth({
             'files:read',
             'canvases:write',
             'reactions:write',
-            // User token scopes - required for search.all API
-            'search:read',
+            // Note: search.all API requires user token, which is obtained from authed_user.access_token
+            // in the OAuth response. No additional scope is needed - the user token is automatically
+            // provided when the app is installed with bot scopes.
           ],
           responseType: 'code',
           accessType: 'offline',
