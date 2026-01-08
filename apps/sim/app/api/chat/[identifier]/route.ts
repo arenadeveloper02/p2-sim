@@ -1,12 +1,12 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat } from '@sim/db/schema'
+import { chat, workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
-import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
 import {
@@ -94,6 +94,21 @@ export async function POST(
     if (!deployment.isActive) {
       logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
 
+      const [workflowRecord] = await db
+        .select({ workspaceId: workflow.workspaceId })
+        .from(workflow)
+        .where(eq(workflow.id, deployment.workflowId))
+        .limit(1)
+
+      const workspaceId = workflowRecord?.workspaceId
+      if (!workspaceId) {
+        logger.warn(`[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`)
+        return addCorsHeaders(
+          createErrorResponse('This chat is currently unavailable', 403),
+          request
+        )
+      }
+
       const executionId = randomUUID()
       const loggingSession = new LoggingSession(
         deployment.workflowId,
@@ -104,7 +119,7 @@ export async function POST(
 
       await loggingSession.safeStart({
         userId: deployment.userId,
-        workspaceId: '', // Will be resolved if needed
+        workspaceId,
         variables: {},
       })
 
@@ -132,7 +147,7 @@ export async function POST(
     if ((password || email) && !input) {
       const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
 
-      setChatAuthCookie(response, deployment.id, deployment.authType)
+      setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
 
       return response
     }
@@ -169,7 +184,14 @@ export async function POST(
 
     const { actorUserId, workflowRecord } = preprocessResult
     const workspaceOwnerId = actorUserId!
-    const workspaceId = workflowRecord?.workspaceId || ''
+    const workspaceId = workflowRecord?.workspaceId
+    if (!workspaceId) {
+      logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
+      return addCorsHeaders(
+        createErrorResponse('Workflow has no associated workspace', 500),
+        request
+      )
+    }
 
     try {
       const selectedOutputs: string[] = []
@@ -184,7 +206,6 @@ export async function POST(
 
       const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
       const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
-      const { createFilteredResult } = await import('@/app/api/workflows/[id]/execute/route')
 
       const workflowInput: any = { input, conversationId }
       if (files && Array.isArray(files) && files.length > 0) {
@@ -245,7 +266,6 @@ export async function POST(
           isSecureMode: true,
           workflowTriggerType: 'chat',
         },
-        createFilteredResult,
         executionId,
       })
 
@@ -315,7 +335,7 @@ export async function GET(
     if (
       deployment.authType !== 'public' &&
       authCookie &&
-      validateAuthToken(authCookie.value, deployment.id)
+      validateAuthToken(authCookie.value, deployment.id, deployment.password)
     ) {
       return addCorsHeaders(
         createSuccessResponse({

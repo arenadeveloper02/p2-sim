@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next'
 import { env, getEnv, isTruthy } from './lib/core/config/env'
-import { isDev, isHosted } from './lib/core/config/environment'
+import { isDev, isHosted } from './lib/core/config/feature-flags'
 import { getMainCSPPolicy, getWorkflowExecutionCSPPolicy } from './lib/core/security/csp'
 
 const nextConfig: NextConfig = {
@@ -79,7 +79,13 @@ const nextConfig: NextConfig = {
     'pino',
     'pino-pretty',
     'thread-stream',
+    'ws',
+    'isolated-vm',
   ],
+  outputFileTracingIncludes: {
+    '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
+    '/*': ['./node_modules/sharp/**/*', './node_modules/@img/**/*'],
+  },
   experimental: {
     optimizeCss: true,
     turbopackSourceMaps: false,

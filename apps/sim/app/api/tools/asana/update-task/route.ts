@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
-import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,14 +99,12 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({
       success: true,
-      output: {
-        ts: new Date().toISOString(),
-        gid: task.gid,
-        name: task.name,
-        notes: task.notes || '',
-        completed: task.completed || false,
-        modified_at: task.modified_at,
-      },
+      ts: new Date().toISOString(),
+      gid: task.gid,
+      name: task.name,
+      notes: task.notes || '',
+      completed: task.completed || false,
+      modified_at: task.modified_at,
     })
   } catch (error: any) {
     logger.error('Error updating Asana task:', {

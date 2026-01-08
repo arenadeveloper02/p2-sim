@@ -89,7 +89,7 @@ function Container({
     <div
       className={cn(
         // Base container styling
-        'group relative min-h-[100px] rounded-[4px] border border-[var(--border-strong)]',
+        'group relative min-h-[100px] rounded-[4px] border border-[var(--border-1)]',
         'bg-[var(--surface-1)] font-medium font-mono text-sm transition-colors',
         'dark:bg-[#1F1F1F]',
         // Overflow handling for long content
@@ -291,7 +291,7 @@ function CodeRow({ index, style, ...props }: RowComponentProps<CodeRowProps>) {
   const line = lines[index]
 
   return (
-    <div style={style} className='flex' data-row-index={index}>
+    <div style={style} className={cn('flex', wrapText && 'overflow-hidden')} data-row-index={index}>
       {showGutter && (
         <div
           className='flex-shrink-0 select-none pr-0.5 text-right text-[var(--text-muted)] text-xs tabular-nums leading-[21px] dark:text-[#a8a8a8]'
@@ -303,7 +303,7 @@ function CodeRow({ index, style, ...props }: RowComponentProps<CodeRowProps>) {
       <pre
         className={cn(
           'm-0 flex-1 pr-2 pl-2 font-mono text-[13px] text-[var(--text-primary)] leading-[21px] dark:text-[#eeeeee]',
-          wrapText ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
+          wrapText ? 'min-w-0 whitespace-pre-wrap break-words' : 'whitespace-pre'
         )}
         dangerouslySetInnerHTML={{ __html: line.html || '&nbsp;' }}
       />
@@ -610,7 +610,7 @@ const VirtualizedViewerInner = memo(function VirtualizedViewerInner({
     <div
       ref={setRefs}
       className={cn(
-        'code-editor-theme relative rounded-[4px] border border-[var(--border-strong)]',
+        'code-editor-theme relative rounded-[4px] border border-[var(--border-1)]',
         'bg-[var(--surface-1)] font-medium font-mono text-sm',
         'dark:bg-[#1F1F1F]',
         className
@@ -625,7 +625,7 @@ const VirtualizedViewerInner = memo(function VirtualizedViewerInner({
         rowComponent={CodeRow}
         rowProps={rowProps}
         overscanCount={5}
-        className='overflow-x-auto'
+        className={wrapText ? 'overflow-x-hidden' : 'overflow-x-auto'}
       />
     </div>
   )

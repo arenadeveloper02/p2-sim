@@ -1,14 +1,18 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronUp, X } from 'lucide-react'
 import { Button, Eye } from '@/components/emcn'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { FileCards, FrozenCanvas, TraceSpans } from '@/app/workspace/[workspaceId]/logs/components'
 import { useLogDetailsResize } from '@/app/workspace/[workspaceId]/logs/hooks'
-import type { LogStatus } from '@/app/workspace/[workspaceId]/logs/utils'
-import { formatDate, StatusBadge, TriggerBadge } from '@/app/workspace/[workspaceId]/logs/utils'
+import {
+  formatDate,
+  getDisplayStatus,
+  StatusBadge,
+  TriggerBadge,
+} from '@/app/workspace/[workspaceId]/logs/utils'
 import { formatCost } from '@/providers/utils'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 import { useLogDetailsUIStore } from '@/stores/logs/store'
@@ -36,7 +40,7 @@ interface LogDetailsProps {
  * @param props - Component props
  * @returns Log details sidebar component
  */
-export function LogDetails({
+export const LogDetails = memo(function LogDetails({
   log,
   isOpen,
   onClose,
@@ -95,16 +99,12 @@ export function LogDetails({
     navigateFunction()
   }
 
-  const formattedTimestamp = log ? formatDate(log.createdAt) : null
+  const formattedTimestamp = useMemo(
+    () => (log ? formatDate(log.createdAt) : null),
+    [log?.createdAt]
+  )
 
-  const logStatus: LogStatus = useMemo(() => {
-    if (!log) return 'info'
-    const baseLevel = (log.level || 'info').toLowerCase()
-    const isError = baseLevel === 'error'
-    const isPending = !isError && log.hasPendingPause === true
-    const isRunning = !isError && !isPending && log.duration === null
-    return isError ? 'error' : isPending ? 'pending' : isRunning ? 'running' : 'info'
-  }, [log])
+  const logStatus = useMemo(() => getDisplayStatus(log?.status), [log?.status])
 
   return (
     <>
@@ -140,7 +140,7 @@ export function LogDetails({
                   disabled={!hasPrev}
                   aria-label='Previous log'
                 >
-                  <ChevronUp className='h-[14px] w-[14px] rotate-180' />
+                  <ChevronUp className='h-[14px] w-[14px]' />
                 </Button>
                 <Button
                   variant='ghost'
@@ -149,7 +149,7 @@ export function LogDetails({
                   disabled={!hasNext}
                   aria-label='Next log'
                 >
-                  <ChevronUp className='h-[14px] w-[14px]' />
+                  <ChevronUp className='h-[14px] w-[14px] rotate-180' />
                 </Button>
                 <Button variant='ghost' className='!p-[4px]' onClick={onClose} aria-label='Close'>
                   <X className='h-[14px] w-[14px]' />
@@ -209,7 +209,7 @@ export function LogDetails({
                 )}
 
                 {/* Details Section */}
-                <div className='flex flex-col'>
+                <div className='flex min-w-0 flex-col overflow-hidden'>
                   {/* Level */}
                   <div className='flex h-[48px] items-center justify-between border-[var(--border)] border-b p-[8px]'>
                     <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
@@ -233,14 +233,30 @@ export function LogDetails({
                   </div>
 
                   {/* Duration */}
-                  <div className='flex h-[48px] items-center justify-between p-[8px]'>
+                  <div
+                    className={`flex h-[48px] items-center justify-between border-b p-[8px] ${log.deploymentVersion ? 'border-[var(--border)]' : 'border-transparent'}`}
+                  >
                     <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
                       Duration
                     </span>
-                    <span className='font-medium text-[14px] text-[var(--text-secondary)]'>
+                    <span className='font-medium text-[13px] text-[var(--text-secondary)]'>
                       {log.duration || '—'}
                     </span>
                   </div>
+
+                  {/* Version */}
+                  {log.deploymentVersion && (
+                    <div className='flex h-[48px] items-center gap-[8px] p-[8px]'>
+                      <span className='flex-shrink-0 font-medium text-[12px] text-[var(--text-tertiary)]'>
+                        Version
+                      </span>
+                      <div className='flex w-0 flex-1 justify-end'>
+                        <span className='max-w-full truncate rounded-[6px] bg-[#14291B] px-[9px] py-[2px] font-medium text-[#86EFAC] text-[12px]'>
+                          {log.deploymentVersionName || `v${log.deploymentVersion}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Workflow State */}
@@ -251,7 +267,7 @@ export function LogDetails({
                     </span>
                     <button
                       onClick={() => setIsFrozenCanvasOpen(true)}
-                      className='flex items-center justify-between rounded-[6px] bg-[var(--surface-1)] px-[10px] py-[8px] transition-colors hover:bg-[var(--c-2A2A2A)]'
+                      className='flex items-center justify-between rounded-[6px] bg-[var(--surface-1)] px-[10px] py-[8px] transition-colors hover:bg-[var(--surface-4)]'
                     >
                       <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
                         View Snapshot
@@ -325,8 +341,8 @@ export function LogDetails({
                             Tokens:
                           </span>
                           <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
-                            {log.cost?.tokens?.prompt || 0} in / {log.cost?.tokens?.completion || 0}{' '}
-                            out
+                            {log.cost?.tokens?.input || log.cost?.tokens?.prompt || 0} in /{' '}
+                            {log.cost?.tokens?.output || log.cost?.tokens?.completion || 0} out
                           </span>
                         </div>
                       </div>
@@ -358,4 +374,4 @@ export function LogDetails({
       </div>
     </>
   )
-}
+})

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import {
   Button,
   Combobox,
@@ -16,7 +16,8 @@ import {
 } from '@/components/emcn'
 import { Skeleton, TagInput } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
-import { createLogger } from '@/lib/logs/console/logger'
+import { cn } from '@/lib/core/utils/cn'
+import { captureAndUploadOGImage, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/lib/og'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
 import {
   useCreateTemplate,
@@ -24,6 +25,7 @@ import {
   useTemplateByWorkflow,
   useUpdateTemplate,
 } from '@/hooks/queries/templates'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('TemplateDeploy')
@@ -78,6 +80,9 @@ export function TemplateDeploy({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [creatorOptions, setCreatorOptions] = useState<CreatorOption[]>([])
   const [loadingCreators, setLoadingCreators] = useState(false)
+  const [isCapturing, setIsCapturing] = useState(false)
+  const previewContainerRef = useRef<HTMLDivElement>(null)
+  const ogCaptureRef = useRef<HTMLDivElement>(null)
 
   const [formData, setFormData] = useState<TemplateFormData>(initialFormData)
 
@@ -87,7 +92,11 @@ export function TemplateDeploy({
   const deleteMutation = useDeleteTemplate()
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending
-  const isFormValid = formData.name.trim().length > 0 && formData.name.length <= 100
+  const isFormValid =
+    formData.name.trim().length > 0 &&
+    formData.name.length <= 100 &&
+    formData.tagline.length <= 200 &&
+    formData.creatorId.length > 0
 
   const updateField = <K extends keyof TemplateFormData>(field: K, value: TemplateFormData[K]) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -199,9 +208,11 @@ export function TemplateDeploy({
           tagline: formData.tagline.trim(),
           about: formData.about.trim(),
         },
-        creatorId: formData.creatorId || undefined,
+        creatorId: formData.creatorId,
         tags: formData.tags,
       }
+
+      let templateId: string
 
       if (existingTemplate) {
         await updateMutation.mutateAsync({
@@ -211,11 +222,32 @@ export function TemplateDeploy({
             updateState: true,
           },
         })
+        templateId = existingTemplate.id
       } else {
-        await createMutation.mutateAsync({ ...templateData, workflowId })
+        const result = await createMutation.mutateAsync({ ...templateData, workflowId })
+        templateId = result.id
       }
 
       logger.info(`Template ${existingTemplate ? 'updated' : 'created'} successfully`)
+
+      setIsCapturing(true)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(async () => {
+          try {
+            if (ogCaptureRef.current) {
+              const ogUrl = await captureAndUploadOGImage(ogCaptureRef.current, templateId)
+              if (ogUrl) {
+                logger.info(`OG image uploaded for template ${templateId}: ${ogUrl}`)
+              }
+            }
+          } catch (ogError) {
+            logger.warn('Failed to capture/upload OG image:', ogError)
+          } finally {
+            setIsCapturing(false)
+          }
+        })
+      })
+
       onDeploymentComplete?.()
     } catch (error) {
       logger.error('Failed to save template:', error)
@@ -270,6 +302,7 @@ export function TemplateDeploy({
               Live Template
             </Label>
             <div
+              ref={previewContainerRef}
               className='[&_*]:!cursor-default relative h-[260px] w-full cursor-default overflow-hidden rounded-[4px] border border-[var(--border)]'
               onWheelCapture={(e) => {
                 if (e.ctrlKey || e.metaKey) return
@@ -283,7 +316,7 @@ export function TemplateDeploy({
 
         <div>
           <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-            Name
+            Name <span className='text-[var(--text-error)]'>*</span>
           </Label>
           <Input
             placeholder='Deep Research Agent'
@@ -302,6 +335,7 @@ export function TemplateDeploy({
             value={formData.tagline}
             onChange={(e) => updateField('tagline', e.target.value)}
             disabled={isSubmitting}
+            className={cn(formData.tagline.length > 200 && 'border-[var(--text-error)]')}
           />
         </div>
 
@@ -320,29 +354,34 @@ export function TemplateDeploy({
 
         <div>
           <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-            Creator
+            Creator <span className='text-[var(--text-error)]'>*</span>
           </Label>
           {creatorOptions.length === 0 && !loadingCreators ? (
-            <Button
-              type='button'
-              variant='primary'
-              onClick={() => {
-                try {
-                  const event = new CustomEvent('open-settings', {
-                    detail: { tab: 'template-profile' },
-                  })
-                  window.dispatchEvent(event)
-                  logger.info('Opened Settings modal at template-profile section')
-                } catch (error) {
-                  logger.error('Failed to open Settings modal for template profile', {
-                    error,
-                  })
-                }
-              }}
-              className='gap-[8px]'
-            >
-              <span>Create Template Profile</span>
-            </Button>
+            <div className='space-y-[8px]'>
+              <p className='text-[12px] text-[var(--text-tertiary)]'>
+                A creator profile is required to publish templates.
+              </p>
+              <Button
+                type='button'
+                variant='tertiary'
+                onClick={() => {
+                  try {
+                    const event = new CustomEvent('open-settings', {
+                      detail: { tab: 'template-profile' },
+                    })
+                    window.dispatchEvent(event)
+                    logger.info('Opened Settings modal at template-profile section')
+                  } catch (error) {
+                    logger.error('Failed to open Settings modal for template profile', {
+                      error,
+                    })
+                  }
+                }}
+                className='gap-[8px]'
+              >
+                <span>Create Template Profile</span>
+              </Button>
+            </div>
           ) : (
             <Combobox
               options={creatorOptions.map((option) => ({
@@ -385,7 +424,7 @@ export function TemplateDeploy({
         <ModalContent size='sm'>
           <ModalHeader>Delete Template</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to delete this template?{' '}
               <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
             </p>
@@ -395,26 +434,73 @@ export function TemplateDeploy({
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='destructive'
               onClick={handleDelete}
               disabled={deleteMutation.isPending}
-              className='bg-[var(--text-error)] text-[13px] text-white hover:bg-[var(--text-error)]'
             >
-              {deleteMutation.isPending ? (
-                <>
-                  <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* Hidden container for OG image capture */}
+      {isCapturing && <OGCaptureContainer ref={ogCaptureRef} />}
     </div>
   )
 }
+
+/**
+ * Hidden container for OG image capture.
+ * Lazy-rendered only when capturing - gets workflow state from store on mount.
+ */
+const OGCaptureContainer = forwardRef<HTMLDivElement>((_, ref) => {
+  const blocks = useWorkflowStore((state) => state.blocks)
+  const edges = useWorkflowStore((state) => state.edges)
+  const loops = useWorkflowStore((state) => state.loops)
+  const parallels = useWorkflowStore((state) => state.parallels)
+
+  if (!blocks || Object.keys(blocks).length === 0) {
+    return null
+  }
+
+  const workflowState: WorkflowState = {
+    blocks,
+    edges: edges ?? [],
+    loops: loops ?? {},
+    parallels: parallels ?? {},
+    lastSaved: Date.now(),
+  }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'absolute',
+        left: '-9999px',
+        top: '-9999px',
+        width: OG_IMAGE_WIDTH,
+        height: OG_IMAGE_HEIGHT,
+        backgroundColor: '#0c0c0c',
+        overflow: 'hidden',
+      }}
+      aria-hidden='true'
+    >
+      <WorkflowPreview
+        workflowState={workflowState}
+        showSubBlocks={false}
+        height='100%'
+        width='100%'
+        isPannable={false}
+        defaultZoom={0.8}
+        fitPadding={0.2}
+        lightweight
+      />
+    </div>
+  )
+})
+
+OGCaptureContainer.displayName = 'OGCaptureContainer'
 
 interface TemplatePreviewContentProps {
   existingTemplate:

@@ -1,9 +1,10 @@
 import { db, workflow, workflowDeploymentVersion } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
+import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -86,6 +87,14 @@ export async function POST(
       .update(workflow)
       .set({ lastSynced: new Date(), updatedAt: new Date() })
       .where(eq(workflow.id, id))
+
+    // Sync MCP tools with the reverted version's parameter schema
+    await syncMcpToolsForWorkflow({
+      workflowId: id,
+      requestId,
+      state: deployedState,
+      context: 'revert',
+    })
 
     try {
       const socketServerUrl = env.SOCKET_SERVER_URL || 'http://localhost:3002'

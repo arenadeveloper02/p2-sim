@@ -19,7 +19,6 @@ export async function createMySQLConnection(config: MySQLConnectionConfig) {
   }
 
   if (config.ssl === 'disabled') {
-    // Don't set ssl property at all to disable SSL
   } else if (config.ssl === 'required') {
     connectionConfig.ssl = { rejectUnauthorized: true }
   } else if (config.ssl === 'preferred') {
@@ -53,42 +52,6 @@ export async function executeQuery(
 
 export function validateQuery(query: string): { isValid: boolean; error?: string } {
   const trimmedQuery = query.trim().toLowerCase()
-
-  const dangerousPatterns = [
-    /drop\s+database/i,
-    /drop\s+schema/i,
-    /drop\s+user/i,
-    /create\s+user/i,
-    /grant\s+/i,
-    /revoke\s+/i,
-    /alter\s+user/i,
-    /set\s+global/i,
-    /set\s+session/i,
-    /load\s+data/i,
-    /into\s+outfile/i,
-    /into\s+dumpfile/i,
-    /load_file\s*\(/i,
-    /system\s+/i,
-    /exec\s+/i,
-    /execute\s+immediate/i,
-    /xp_cmdshell/i,
-    /sp_configure/i,
-    /information_schema\.tables/i,
-    /mysql\.user/i,
-    /mysql\.db/i,
-    /mysql\.host/i,
-    /performance_schema/i,
-    /sys\./i,
-  ]
-
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(query)) {
-      return {
-        isValid: false,
-        error: `Query contains potentially dangerous operation: ${pattern.source}`,
-      }
-    }
-  }
 
   const allowedStatements = /^(select|insert|update|delete|with|show|describe|explain)\s+/i
   if (!allowedStatements.test(trimmedQuery)) {
@@ -135,15 +98,45 @@ export function buildDeleteQuery(table: string, where: string) {
   return { query, values: [] }
 }
 
+/**
+ * Validates a WHERE clause to prevent SQL injection attacks
+ * @param where - The WHERE clause string to validate
+ * @throws {Error} If the WHERE clause contains potentially dangerous patterns
+ */
 function validateWhereClause(where: string): void {
   const dangerousPatterns = [
+    // DDL and DML injection via stacked queries
     /;\s*(drop|delete|insert|update|create|alter|grant|revoke)/i,
-    /union\s+select/i,
+    // Union-based injection
+    /union\s+(all\s+)?select/i,
+    // File operations
     /into\s+outfile/i,
-    /load_file/i,
+    /into\s+dumpfile/i,
+    /load_file\s*\(/i,
+    // Comment-based injection (can truncate query)
     /--/,
     /\/\*/,
     /\*\//,
+    // Tautologies - always true/false conditions using backreferences
+    // Matches OR 'x'='x' or OR x=x (same value both sides) but NOT OR col='value'
+    /\bor\s+(['"]?)(\w+)\1\s*=\s*\1\2\1/i,
+    /\bor\s+true\b/i,
+    /\bor\s+false\b/i,
+    // AND tautologies (less common but still used in attacks)
+    /\band\s+(['"]?)(\w+)\1\s*=\s*\1\2\1/i,
+    /\band\s+true\b/i,
+    /\band\s+false\b/i,
+    // Time-based blind injection
+    /\bsleep\s*\(/i,
+    /\bbenchmark\s*\(/i,
+    /\bwaitfor\s+delay/i,
+    // Stacked queries (any statement after semicolon)
+    /;\s*\w+/,
+    // Information schema queries
+    /information_schema/i,
+    /mysql\./i,
+    // System functions and procedures
+    /\bxp_cmdshell/i,
   ]
 
   for (const pattern of dangerousPatterns) {

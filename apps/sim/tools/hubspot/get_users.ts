@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { HubSpotGetUsersParams, HubSpotGetUsersResponse } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -79,21 +79,8 @@ export const hubspotGetUsersTool: ToolConfig<HubSpotGetUsersParams, HubSpotGetUs
   },
 
   outputs: {
+    users: { type: 'array', description: 'Array of HubSpot user objects' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Users data',
-      properties: {
-        users: {
-          type: 'array',
-          description: 'Array of user objects',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Operation metadata',
-        },
-        success: { type: 'boolean', description: 'Operation success status' },
-      },
-    },
   },
 }

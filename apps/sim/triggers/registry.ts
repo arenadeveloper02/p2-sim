@@ -5,6 +5,11 @@ import {
   calendlyRoutingFormSubmittedTrigger,
   calendlyWebhookTrigger,
 } from '@/triggers/calendly'
+import {
+  circlebackMeetingCompletedTrigger,
+  circlebackMeetingNotesTrigger,
+  circlebackWebhookTrigger,
+} from '@/triggers/circleback'
 import { genericWebhookTrigger } from '@/triggers/generic'
 import {
   githubIssueClosedTrigger,
@@ -22,6 +27,14 @@ import {
 } from '@/triggers/github'
 import { gmailPollingTrigger } from '@/triggers/gmail'
 import { googleFormsWebhookTrigger } from '@/triggers/googleforms'
+import {
+  grainHighlightCreatedTrigger,
+  grainHighlightUpdatedTrigger,
+  grainRecordingCreatedTrigger,
+  grainRecordingUpdatedTrigger,
+  grainStoryCreatedTrigger,
+  grainWebhookTrigger,
+} from '@/triggers/grain'
 import {
   hubspotCompanyCreatedTrigger,
   hubspotCompanyDeletedTrigger,
@@ -42,6 +55,7 @@ import {
   hubspotTicketDeletedTrigger,
   hubspotTicketPropertyChangedTrigger,
 } from '@/triggers/hubspot'
+import { imapPollingTrigger } from '@/triggers/imap'
 import {
   jiraIssueCommentedTrigger,
   jiraIssueCreatedTrigger,
@@ -108,6 +122,15 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   github_release_published: githubReleasePublishedTrigger,
   github_workflow_run: githubWorkflowRunTrigger,
   gmail_poller: gmailPollingTrigger,
+  grain_webhook: grainWebhookTrigger,
+  grain_recording_created: grainRecordingCreatedTrigger,
+  grain_recording_updated: grainRecordingUpdatedTrigger,
+  grain_highlight_created: grainHighlightCreatedTrigger,
+  grain_highlight_updated: grainHighlightUpdatedTrigger,
+  grain_story_created: grainStoryCreatedTrigger,
+  circleback_meeting_completed: circlebackMeetingCompletedTrigger,
+  circleback_meeting_notes: circlebackMeetingNotesTrigger,
+  circleback_webhook: circlebackWebhookTrigger,
   jira_webhook: jiraWebhookTrigger,
   jira_issue_created: jiraIssueCreatedTrigger,
   jira_issue_updated: jiraIssueUpdatedTrigger,
@@ -161,4 +184,5 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   hubspot_ticket_created: hubspotTicketCreatedTrigger,
   hubspot_ticket_deleted: hubspotTicketDeletedTrigger,
   hubspot_ticket_property_changed: hubspotTicketPropertyChangedTrigger,
+  imap_poller: imapPollingTrigger,
 }

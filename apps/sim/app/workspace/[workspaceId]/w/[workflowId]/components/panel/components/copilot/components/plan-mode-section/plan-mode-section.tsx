@@ -26,18 +26,17 @@
 
 import * as React from 'react'
 import { Check, GripHorizontal, Pencil, X } from 'lucide-react'
-import { Button } from '@/components/emcn'
+import { Button, Textarea } from '@/components/emcn'
 import { Trash } from '@/components/emcn/icons/trash'
-import { Textarea } from '@/components/ui'
 import { cn } from '@/lib/core/utils/cn'
 import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/markdown-renderer'
 
 /**
  * Shared border and background styles
  */
-const SURFACE_5 = 'bg-[var(--surface-5)]'
-const SURFACE_9 = 'bg-[var(--surface-9)]'
-const BORDER_STRONG = 'border-[var(--border-strong)]'
+const SURFACE_5 = 'bg-[var(--surface-4)]'
+const SURFACE_9 = 'bg-[var(--surface-5)]'
+const BORDER_STRONG = 'border-[var(--border-1)]'
 
 export interface PlanModeSectionProps {
   /**
@@ -184,7 +183,7 @@ const PlanModeSection: React.FC<PlanModeSectionProps> = ({
       style={{ height: `${height}px` }}
     >
       {/* Header with build/edit/save/clear buttons */}
-      <div className='flex flex-shrink-0 items-center justify-between border-[var(--border-strong)] border-b py-[6px] pr-[2px] pl-[12px]'>
+      <div className='flex flex-shrink-0 items-center justify-between border-[var(--border-1)] border-b py-[6px] pr-[2px] pl-[12px]'>
         <span className='font-[500] text-[11px] text-[var(--text-secondary)] uppercase tracking-wide'>
           Workflow Plan
         </span>
@@ -265,7 +264,7 @@ const PlanModeSection: React.FC<PlanModeSectionProps> = ({
         className={cn(
           'group flex h-[20px] w-full cursor-ns-resize items-center justify-center border-t',
           BORDER_STRONG,
-          'transition-colors hover:bg-[var(--surface-9)]',
+          'transition-colors hover:bg-[var(--surface-5)]',
           isResizing && SURFACE_9
         )}
         onMouseDown={handleResizeStart}

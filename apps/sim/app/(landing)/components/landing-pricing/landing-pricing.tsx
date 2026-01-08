@@ -1,6 +1,8 @@
 'use client'
 
+import type { ComponentType, SVGProps } from 'react'
 import { useState } from 'react'
+import { createLogger } from '@sim/logger'
 import type { LucideIcon } from 'lucide-react'
 import {
   ArrowRight,
@@ -13,7 +15,6 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import {
   ENTERPRISE_PLAN_FEATURES,
@@ -24,7 +25,7 @@ import {
 const logger = createLogger('LandingPricing')
 
 interface PricingFeature {
-  icon: LucideIcon
+  icon: LucideIcon | ComponentType<SVGProps<SVGSVGElement>>
   text: string
 }
 
@@ -41,7 +42,7 @@ interface PricingTier {
  * Free plan features with consistent icons
  */
 const FREE_PLAN_FEATURES: PricingFeature[] = [
-  { icon: DollarSign, text: '$10 usage limit' },
+  { icon: DollarSign, text: '$20 usage limit' },
   { icon: HardDrive, text: '5GB file storage' },
   { icon: Workflow, text: 'Public template access' },
   { icon: Database, text: 'Limited log retention' },

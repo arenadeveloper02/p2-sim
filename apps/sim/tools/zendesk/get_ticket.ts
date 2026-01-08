@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildZendeskUrl, handleZendeskError } from './types'
 
@@ -90,15 +90,7 @@ export const zendeskGetTicketTool: ToolConfig<ZendeskGetTicketParams, ZendeskGet
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Ticket data',
-      properties: {
-        ticket: { type: 'object', description: 'Ticket object' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
-      },
-    },
+    ticket: { type: 'object', description: 'Ticket object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

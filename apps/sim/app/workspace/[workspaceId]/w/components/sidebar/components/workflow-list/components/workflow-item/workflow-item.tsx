@@ -14,6 +14,7 @@ import {
   useItemRename,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
+  useCanDelete,
   useDeleteWorkflow,
   useDuplicateWorkflow,
   useExportWorkflow,
@@ -44,10 +45,14 @@ export function WorkflowItem({ workflow, active, level, onWorkflowClick }: Workf
   const userPermissions = useUserPermissionsContext()
   const isSelected = selectedWorkflows.has(workflow.id)
 
+  // Can delete check hook
+  const { canDeleteWorkflows } = useCanDelete({ workspaceId })
+
   // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [workflowIdsToDelete, setWorkflowIdsToDelete] = useState<string[]>([])
   const [deleteModalNames, setDeleteModalNames] = useState<string | string[]>('')
+  const [canDeleteCaptured, setCanDeleteCaptured] = useState(true)
 
   // Presence avatars state
   const [hasAvatars, setHasAvatars] = useState(false)
@@ -172,10 +177,13 @@ export function WorkflowItem({ workflow, active, level, onWorkflowClick }: Workf
         workflowNames: workflowNames.length > 1 ? workflowNames : workflowNames[0],
       }
 
+      // Check if the captured selection can be deleted
+      setCanDeleteCaptured(canDeleteWorkflows(workflowIds))
+
       // If already selected with multiple selections, keep all selections
       handleContextMenuBase(e)
     },
-    [workflow.id, workflows, handleContextMenuBase]
+    [workflow.id, workflows, handleContextMenuBase, canDeleteWorkflows]
   )
 
   // Rename hook
@@ -242,9 +250,13 @@ export function WorkflowItem({ workflow, active, level, onWorkflowClick }: Workf
         href={`/workspace/${workspaceId}/w/${workflow.id}`}
         data-item-id={workflow.id}
         className={clsx(
-          'group flex h-[25px] items-center gap-[8px] rounded-[8px] px-[5.5px] text-[14px]',
-          active ? 'bg-[var(--surface-9)]' : 'hover:bg-[var(--surface-9)]',
-          isSelected && selectedWorkflows.size > 1 && !active ? 'bg-[var(--surface-9)]' : '',
+          'group flex h-[26px] items-center gap-[8px] rounded-[8px] px-[6px] text-[14px]',
+          active
+            ? 'bg-[var(--surface-6)] dark:bg-[var(--surface-5)]'
+            : 'hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)]',
+          isSelected && selectedWorkflows.size > 1 && !active
+            ? 'bg-[var(--surface-6)] dark:bg-[var(--surface-5)]'
+            : '',
           isDragging ? 'opacity-50' : ''
         )}
         draggable={!isEditing}
@@ -319,7 +331,7 @@ export function WorkflowItem({ workflow, active, level, onWorkflowClick }: Workf
         disableRename={!userPermissions.canEdit}
         disableDuplicate={!userPermissions.canEdit}
         disableExport={!userPermissions.canEdit}
-        disableDelete={!userPermissions.canEdit}
+        disableDelete={!userPermissions.canEdit || !canDeleteCaptured}
       />
 
       {/* Delete Confirmation Modal */}

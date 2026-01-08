@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
+import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
+import { knowledgeKeys } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('KnowledgeUpload')
 
@@ -50,7 +53,6 @@ export interface ProcessingOptions {
 }
 
 export interface UseKnowledgeUploadOptions {
-  onUploadComplete?: (uploadedFiles: UploadedFile[]) => void
   onError?: (error: UploadError) => void
   workspaceId?: string
 }
@@ -142,6 +144,17 @@ const calculateThroughputMbps = (bytes: number, durationMs: number) => {
  * Formats duration from milliseconds to seconds
  */
 const formatDurationSeconds = (durationMs: number) => Number((durationMs / 1000).toFixed(2))
+
+/**
+ * Gets the content type for a file, falling back to extension-based lookup if browser doesn't provide one
+ */
+const getFileContentType = (file: File): string => {
+  if (file.type?.trim()) {
+    return file.type
+  }
+  const extension = getFileExtension(file.name)
+  return getMimeTypeFromExtension(extension)
+}
 
 /**
  * Runs async operations with concurrency limit
@@ -280,7 +293,7 @@ const getPresignedData = async (
       },
       body: JSON.stringify({
         fileName: file.name,
-        contentType: file.type,
+        contentType: getFileContentType(file),
         fileSize: file.size,
       }),
       signal: localController.signal,
@@ -325,6 +338,7 @@ const getPresignedData = async (
  * Hook for managing file uploads to knowledge bases
  */
 export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
+  const queryClient = useQueryClient()
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
     stage: 'idle',
@@ -409,6 +423,10 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         if (file.size > UPLOAD_CONFIG.LARGE_FILE_THRESHOLD) {
           presignedData = presignedOverride ?? (await getPresignedData(file, timeoutMs, controller))
           return await uploadFileInChunks(file, presignedData, timeoutMs, fileIndex)
+        }
+
+        if (presignedOverride?.directUploadSupported && presignedOverride.presignedUrl) {
+          return await uploadFileDirectly(file, presignedOverride, timeoutMs, controller, fileIndex)
         }
 
         return await uploadFileThroughAPI(file, timeoutMs)
@@ -498,7 +516,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         if (event.lengthComputable && fileIndex !== undefined && !isCompleted) {
           const percentComplete = Math.round((event.loaded / event.total) * 100)
           setUploadProgress((prev) => {
-            // Only update if this file is still uploading
             if (prev.fileStatuses?.[fileIndex]?.status === 'uploading') {
               return {
                 ...prev,
@@ -529,7 +546,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
               throughputMbps: calculateThroughputMbps(file.size, durationMs),
               status: xhr.status,
             })
-            resolve(createUploadedFile(file.name, fullFileUrl, file.size, file.type, file))
+            resolve(
+              createUploadedFile(file.name, fullFileUrl, file.size, getFileContentType(file), file)
+            )
           } else {
             logger.error('S3 PUT request failed', {
               status: xhr.status,
@@ -597,7 +616,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileName: file.name,
-          contentType: file.type,
+          contentType: getFileContentType(file),
           fileSize: file.size,
         }),
       })
@@ -624,7 +643,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
       })
 
       if (!partUrlsResponse.ok) {
-        // Abort the multipart upload if we can't get URLs
         await fetch('/api/files/multipart?action=abort', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -736,7 +754,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       const fullFileUrl = path.startsWith('http') ? path : `${window.location.origin}${path}`
 
-      return createUploadedFile(file.name, fullFileUrl, file.size, file.type, file)
+      return createUploadedFile(file.name, fullFileUrl, file.size, getFileContentType(file), file)
     } catch (error) {
       logger.error(`Multipart upload failed for ${file.name}:`, error)
       const durationMs = getHighResTime() - startTime
@@ -800,7 +818,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         file.name,
         filePath.startsWith('http') ? filePath : `${window.location.origin}${filePath}`,
         file.size,
-        file.type,
+        getFileContentType(file),
         file
       )
     } finally {
@@ -808,9 +826,6 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
     }
   }
 
-  /**
-   * Upload files using batch presigned URLs (works for both S3 and Azure Blob)
-   */
   /**
    * Uploads files in batches using presigned URLs
    */
@@ -855,7 +870,7 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
         const batchRequest = {
           files: batchFiles.map((file) => ({
             fileName: file.name,
-            contentType: file.type,
+            contentType: getFileContentType(file),
             fileSize: file.size,
           })),
         }
@@ -1058,7 +1073,9 @@ export function useKnowledgeUpload(options: UseKnowledgeUploadOptions = {}) {
 
       logger.info(`Successfully started processing ${uploadedFiles.length} documents`)
 
-      options.onUploadComplete?.(uploadedFiles)
+      await queryClient.invalidateQueries({
+        queryKey: knowledgeKeys.detail(knowledgeBaseId),
+      })
 
       return uploadedFiles
     } catch (err) {

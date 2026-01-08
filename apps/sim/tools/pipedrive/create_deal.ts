@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type {
   PipedriveCreateDealParams,
   PipedriveCreateDealResponse,
@@ -132,21 +132,8 @@ export const pipedriveCreateDealTool: ToolConfig<
   },
 
   outputs: {
+    deal: { type: 'object', description: 'The created deal object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Created deal details',
-      properties: {
-        deal: {
-          type: 'object',
-          description: 'The created deal object',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Operation metadata',
-        },
-        success: { type: 'boolean', description: 'Operation success status' },
-      },
-    },
   },
 }

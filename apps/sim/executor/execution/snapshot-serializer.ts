@@ -1,9 +1,6 @@
 import type { DAG } from '@/executor/dag/builder'
-import {
-  type ExecutionMetadata,
-  ExecutionSnapshot,
-  type SerializableExecutionState,
-} from '@/executor/execution/snapshot'
+import { ExecutionSnapshot } from '@/executor/execution/snapshot'
+import type { ExecutionMetadata, SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionContext, SerializedSnapshot } from '@/executor/types'
 
 function mapFromEntries<T>(map?: Map<string, T>): Record<string, T> | undefined {
@@ -94,12 +91,19 @@ export function serializePauseSnapshot(
     dagIncomingEdges,
   }
 
+  const workspaceId = metadataFromContext?.workspaceId ?? context.workspaceId
+  if (!workspaceId) {
+    throw new Error(
+      `Cannot serialize pause snapshot: missing workspaceId for workflow ${context.workflowId}`
+    )
+  }
+
   const executionMetadata: ExecutionMetadata = {
     requestId:
       metadataFromContext?.requestId ?? context.executionId ?? context.workflowId ?? 'unknown',
     executionId: context.executionId ?? 'unknown',
     workflowId: context.workflowId,
-    workspaceId: context.workspaceId,
+    workspaceId,
     userId: metadataFromContext?.userId ?? '',
     sessionUserId: metadataFromContext?.sessionUserId,
     workflowUserId: metadataFromContext?.workflowUserId,

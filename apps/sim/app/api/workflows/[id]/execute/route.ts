@@ -1,15 +1,16 @@
+import { createLogger } from '@sim/logger'
 import { tasks } from '@trigger.dev/sdk'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validate as uuidValidate, v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { env, isTruthy } from '@/lib/core/config/env'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { markExecutionCancelled } from '@/lib/execution/cancellation'
 import { processInputFileFields } from '@/lib/execution/files'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
-import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { type ExecutionEvent, encodeSSEEvent } from '@/lib/workflows/executor/execution-events'
@@ -21,16 +22,18 @@ import {
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
 import { createHttpResponseFromBlock, workflowHasResponseBlock } from '@/lib/workflows/utils'
 import type { WorkflowExecutionPayload } from '@/background/workflow-execution'
-import { type ExecutionMetadata, ExecutionSnapshot } from '@/executor/execution/snapshot'
+import { normalizeName } from '@/executor/constants'
+import { ExecutionSnapshot } from '@/executor/execution/snapshot'
+import type { ExecutionMetadata, IterationContext } from '@/executor/execution/types'
 import type { StreamingExecution } from '@/executor/types'
 import { Serializer } from '@/serializer'
-import type { SubflowType } from '@/stores/workflows/workflow/types'
+import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
 
 const logger = createLogger('WorkflowExecuteAPI')
 
 const ExecuteWorkflowSchema = z.object({
   selectedOutputs: z.array(z.string()).optional().default([]),
-  triggerType: z.enum(['api', 'webhook', 'schedule', 'manual', 'chat']).optional(),
+  triggerType: z.enum(CORE_TRIGGER_TYPES).optional(),
   stream: z.boolean().optional(),
   useDraftState: z.boolean().optional(),
   input: z.any().optional(),
@@ -47,126 +50,6 @@ const ExecuteWorkflowSchema = z.object({
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-/**
- * Execute workflow with streaming support - used by chat and other streaming endpoints
- *
- * This function assumes preprocessing has already been completed.
- * Callers must run preprocessExecution() first to validate workflow, check usage limits,
- * and resolve actor before calling this function.
- *
- * This is a wrapper function that:
- * - Supports streaming callbacks (onStream, onBlockComplete)
- * - Returns ExecutionResult instead of NextResponse
- * - Handles pause/resume logic
- *
- * Used by:
- * - Chat execution (/api/chat/[identifier]/route.ts)
- * - Streaming responses (lib/workflows/streaming.ts)
- */
-export async function executeWorkflow(
-  workflow: any,
-  requestId: string,
-  input: any | undefined,
-  actorUserId: string,
-  streamConfig?: {
-    enabled: boolean
-    selectedOutputs?: string[]
-    isSecureMode?: boolean
-    workflowTriggerType?: 'api' | 'chat'
-    onStream?: (streamingExec: any) => Promise<void>
-    onBlockComplete?: (blockId: string, output: any) => Promise<void>
-    skipLoggingComplete?: boolean
-  },
-  providedExecutionId?: string
-): Promise<any> {
-  const workflowId = workflow.id
-  const executionId = providedExecutionId || uuidv4()
-  const triggerType = streamConfig?.workflowTriggerType || 'api'
-  const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
-
-  try {
-    const metadata: ExecutionMetadata = {
-      requestId,
-      executionId,
-      workflowId,
-      workspaceId: workflow.workspaceId,
-      userId: actorUserId,
-      workflowUserId: workflow.userId,
-      triggerType,
-      useDraftState: false,
-      startTime: new Date().toISOString(),
-      isClientSession: false,
-    }
-
-    const snapshot = new ExecutionSnapshot(
-      metadata,
-      workflow,
-      input,
-      workflow.variables || {},
-      streamConfig?.selectedOutputs || []
-    )
-
-    const result = await executeWorkflowCore({
-      snapshot,
-      callbacks: {
-        onStream: streamConfig?.onStream,
-        onBlockComplete: streamConfig?.onBlockComplete
-          ? async (blockId: string, _blockName: string, _blockType: string, output: any) => {
-              await streamConfig.onBlockComplete!(blockId, output)
-            }
-          : undefined,
-      },
-      loggingSession,
-    })
-
-    if (result.status === 'paused') {
-      if (!result.snapshotSeed) {
-        logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
-          executionId,
-        })
-      } else {
-        await PauseResumeManager.persistPauseResult({
-          workflowId,
-          executionId,
-          pausePoints: result.pausePoints || [],
-          snapshotSeed: result.snapshotSeed,
-          executorUserId: result.metadata?.userId,
-        })
-      }
-    } else {
-      await PauseResumeManager.processQueuedResumes(executionId)
-    }
-
-    if (streamConfig?.skipLoggingComplete) {
-      return {
-        ...result,
-        _streamingMetadata: {
-          loggingSession,
-          processedInput: input,
-        },
-      }
-    }
-
-    return result
-  } catch (error: any) {
-    logger.error(`[${requestId}] Workflow execution failed:`, error)
-    throw error
-  }
-}
-
-export function createFilteredResult(result: any) {
-  return {
-    ...result,
-    logs: undefined,
-    metadata: result.metadata
-      ? {
-          ...result.metadata,
-          workflowConnections: undefined,
-        }
-      : undefined,
-  }
-}
 
 function resolveOutputIds(
   selectedOutputs: string[] | undefined,
@@ -205,10 +88,9 @@ function resolveOutputIds(
     const blockName = outputId.substring(0, dotIndex)
     const path = outputId.substring(dotIndex + 1)
 
-    const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '')
+    const normalizedBlockName = normalizeName(blockName)
     const block = Object.values(blocks).find((b: any) => {
-      const normalized = (b.name || '').toLowerCase().replace(/\s+/g, '')
-      return normalized === normalizedBlockName
+      return normalizeName(b.name || '') === normalizedBlockName
     })
 
     if (!block) {
@@ -227,7 +109,7 @@ type AsyncExecutionParams = {
   workflowId: string
   userId: string
   input: any
-  triggerType: 'api' | 'webhook' | 'schedule' | 'manual' | 'chat'
+  triggerType: 'api' | 'webhook' | 'schedule' | 'manual' | 'chat' | 'mcp'
 }
 
 /**
@@ -236,9 +118,8 @@ type AsyncExecutionParams = {
  */
 async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextResponse> {
   const { requestId, workflowId, userId, input, triggerType } = params
-  const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
 
-  if (!useTrigger) {
+  if (!isTriggerDevEnabled) {
     logger.warn(`[${requestId}] Async mode requested but TRIGGER_DEV_ENABLED is false`)
     return NextResponse.json(
       { error: 'Async execution is not enabled. Set TRIGGER_DEV_ENABLED=true to use async mode.' },
@@ -371,14 +252,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
 
     const executionId = uuidv4()
-    type LoggingTriggerType = 'api' | 'webhook' | 'schedule' | 'manual' | 'chat'
+    type LoggingTriggerType = 'api' | 'webhook' | 'schedule' | 'manual' | 'chat' | 'mcp'
     let loggingTriggerType: LoggingTriggerType = 'manual'
     if (
       triggerType === 'api' ||
       triggerType === 'chat' ||
       triggerType === 'webhook' ||
       triggerType === 'schedule' ||
-      triggerType === 'manual'
+      triggerType === 'manual' ||
+      triggerType === 'mcp'
     ) {
       loggingTriggerType = triggerType as LoggingTriggerType
     }
@@ -409,10 +291,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const actorUserId = preprocessResult.actorUserId!
     const workflow = preprocessResult.workflowRecord!
 
+    if (!workflow.workspaceId) {
+      logger.error(`[${requestId}] Workflow ${workflowId} has no workspaceId`)
+      return NextResponse.json({ error: 'Workflow has no associated workspace' }, { status: 500 })
+    }
+    const workspaceId = workflow.workspaceId
+
     logger.info(`[${requestId}] Preprocessing passed`, {
       workflowId,
       actorUserId,
-      workspaceId: workflow.workspaceId,
+      workspaceId,
     })
 
     if (isAsyncMode) {
@@ -430,6 +318,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       edges: any[]
       loops: Record<string, any>
       parallels: Record<string, any>
+      deploymentVersionId?: string
+      variables?: Record<string, any>
     } | null = null
 
     let processedInput = input
@@ -439,11 +329,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         : await loadDeployedWorkflowState(workflowId)
 
       if (workflowData) {
+        const deployedVariables =
+          !shouldUseDraftState && 'variables' in workflowData
+            ? (workflowData as any).variables
+            : undefined
+
         cachedWorkflowData = {
           blocks: workflowData.blocks,
           edges: workflowData.edges,
           loops: workflowData.loops || {},
           parallels: workflowData.parallels || {},
+          deploymentVersionId:
+            !shouldUseDraftState && 'deploymentVersionId' in workflowData
+              ? (workflowData.deploymentVersionId as string)
+              : undefined,
+          variables: deployedVariables,
         }
 
         const serializedWorkflow = new Serializer().serializeWorkflow(
@@ -455,7 +355,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         )
 
         const executionContext = {
-          workspaceId: workflow.workspaceId || '',
+          workspaceId,
           workflowId,
           executionId,
         }
@@ -473,7 +373,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       await loggingSession.safeStart({
         userId: actorUserId,
-        workspaceId: workflow.workspaceId || '',
+        workspaceId,
         variables: {},
       })
 
@@ -502,7 +402,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           requestId,
           executionId,
           workflowId,
-          workspaceId: workflow.workspaceId ?? undefined,
+          workspaceId,
           userId: actorUserId,
           sessionUserId: isClientSession ? userId : undefined,
           workflowUserId: workflow.userId,
@@ -513,11 +413,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           workflowStateOverride: effectiveWorkflowStateOverride,
         }
 
+        const executionVariables = cachedWorkflowData?.variables ?? workflow.variables ?? {}
+
         const snapshot = new ExecutionSnapshot(
           metadata,
           workflow,
           processedInput,
-          workflow.variables || {},
+          executionVariables,
           selectedOutputs
         )
 
@@ -579,14 +481,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         selectedOutputs,
         cachedWorkflowData?.blocks || {}
       )
+      const streamVariables = cachedWorkflowData?.variables ?? (workflow as any).variables
+
       const stream = await createStreamingResponse({
         requestId,
         workflow: {
           id: workflow.id,
           userId: actorUserId,
-          workspaceId: workflow.workspaceId,
+          workspaceId,
           isDeployed: workflow.isDeployed,
-          variables: (workflow as any).variables,
+          variables: streamVariables,
         },
         input: processedInput,
         executingUserId: actorUserId,
@@ -595,7 +499,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           isSecureMode: false,
           workflowTriggerType: triggerType === 'chat' ? 'chat' : 'api',
         },
-        createFilteredResult,
         executionId,
       })
 
@@ -606,7 +509,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const encoder = new TextEncoder()
-    let executorInstance: any = null
+    const abortController = new AbortController()
     let isStreamClosed = false
 
     const stream = new ReadableStream<Uint8Array>({
@@ -638,11 +541,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             blockId: string,
             blockName: string,
             blockType: string,
-            iterationContext?: {
-              iterationCurrent: number
-              iterationTotal: number
-              iterationType: SubflowType
-            }
+            iterationContext?: IterationContext
           ) => {
             logger.info(`[${requestId}] 🔷 onBlockStart called:`, { blockId, blockName, blockType })
             sendEvent({
@@ -668,11 +567,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             blockName: string,
             blockType: string,
             callbackData: any,
-            iterationContext?: {
-              iterationCurrent: number
-              iterationTotal: number
-              iterationType: SubflowType
-            }
+            iterationContext?: IterationContext
           ) => {
             const hasError = callbackData.output?.error
 
@@ -732,14 +627,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
           const onStream = async (streamingExec: StreamingExecution) => {
             const blockId = (streamingExec.execution as any).blockId
+
             const reader = streamingExec.stream.getReader()
             const decoder = new TextDecoder()
+            let chunkCount = 0
 
             try {
               while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
 
+                chunkCount++
                 const chunk = decoder.decode(value, { stream: true })
                 sendEvent({
                   type: 'stream:chunk',
@@ -770,7 +668,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             requestId,
             executionId,
             workflowId,
-            workspaceId: workflow.workspaceId ?? undefined,
+            workspaceId,
             userId: actorUserId,
             sessionUserId: isClientSession ? userId : undefined,
             workflowUserId: workflow.userId,
@@ -781,11 +679,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             workflowStateOverride: effectiveWorkflowStateOverride,
           }
 
+          const sseExecutionVariables = cachedWorkflowData?.variables ?? workflow.variables ?? {}
+
           const snapshot = new ExecutionSnapshot(
             metadata,
             workflow,
             processedInput,
-            workflow.variables || {},
+            sseExecutionVariables,
             selectedOutputs
           )
 
@@ -795,11 +695,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               onBlockStart,
               onBlockComplete,
               onStream,
-              onExecutorCreated: (executor) => {
-                executorInstance = executor
-              },
             },
             loggingSession,
+            abortSignal: abortController.signal,
           })
 
           if (result.status === 'paused') {
@@ -807,20 +705,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
                 executionId,
               })
+              await loggingSession.markAsFailed('Missing snapshot seed for paused execution')
             } else {
-              await PauseResumeManager.persistPauseResult({
-                workflowId,
-                executionId,
-                pausePoints: result.pausePoints || [],
-                snapshotSeed: result.snapshotSeed,
-                executorUserId: result.metadata?.userId,
-              })
+              try {
+                await PauseResumeManager.persistPauseResult({
+                  workflowId,
+                  executionId,
+                  pausePoints: result.pausePoints || [],
+                  snapshotSeed: result.snapshotSeed,
+                  executorUserId: result.metadata?.userId,
+                })
+              } catch (pauseError) {
+                logger.error(`[${requestId}] Failed to persist pause result`, {
+                  executionId,
+                  error: pauseError instanceof Error ? pauseError.message : String(pauseError),
+                })
+                await loggingSession.markAsFailed(
+                  `Failed to persist pause state: ${pauseError instanceof Error ? pauseError.message : String(pauseError)}`
+                )
+              }
             }
           } else {
             await PauseResumeManager.processQueuedResumes(executionId)
           }
 
-          if (result.error === 'Workflow execution was cancelled') {
+          if (result.status === 'cancelled') {
             logger.info(`[${requestId}] Workflow execution was cancelled`)
             sendEvent({
               type: 'execution:cancelled',
@@ -876,11 +785,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
       cancel() {
         isStreamClosed = true
-        logger.info(`[${requestId}] Client aborted SSE stream, cancelling executor`)
-
-        if (executorInstance && typeof executorInstance.cancel === 'function') {
-          executorInstance.cancel()
-        }
+        logger.info(`[${requestId}] Client aborted SSE stream, signalling cancellation`)
+        abortController.abort()
+        markExecutionCancelled(executionId).catch(() => {})
       },
     })
 

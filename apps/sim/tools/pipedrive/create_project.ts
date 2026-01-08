@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type {
   PipedriveCreateProjectParams,
   PipedriveCreateProjectResponse,
@@ -97,21 +97,8 @@ export const pipedriveCreateProjectTool: ToolConfig<
   },
 
   outputs: {
+    project: { type: 'object', description: 'The created project object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Created project details',
-      properties: {
-        project: {
-          type: 'object',
-          description: 'The created project object',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Operation metadata',
-        },
-        success: { type: 'boolean', description: 'Operation success status' },
-      },
-    },
   },
 }

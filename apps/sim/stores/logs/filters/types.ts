@@ -29,6 +29,8 @@ export interface CostMetadata {
       output: number
       total: number
       tokens?: {
+        input?: number
+        output?: number
         prompt?: number
         completion?: number
         total?: number
@@ -39,6 +41,8 @@ export interface CostMetadata {
   output?: number
   total?: number
   tokens?: {
+    input?: number
+    output?: number
     prompt?: number
     completion?: number
     total?: number
@@ -100,7 +104,10 @@ export interface WorkflowLog {
   id: string
   workflowId: string
   executionId?: string | null
+  deploymentVersion?: number | null
+  deploymentVersionName?: string | null
   level: string
+  status?: string | null
   duration: string | null
   trigger: string | null
   createdAt: string
@@ -163,31 +170,35 @@ export type TimeRange =
   | 'Past 14 days'
   | 'Past 30 days'
   | 'All time'
-export type LogLevel = 'error' | 'info' | 'running' | 'pending' | 'all'
-export type TriggerType = 'chat' | 'api' | 'webhook' | 'manual' | 'schedule' | 'all' | string
+  | 'Custom range'
 
+export type LogLevel = 'error' | 'info' | 'running' | 'pending' | 'all' | (string & {})
+/** Core trigger types for workflow execution */
+export const CORE_TRIGGER_TYPES = ['manual', 'api', 'schedule', 'chat', 'webhook', 'mcp'] as const
+
+export type CoreTriggerType = (typeof CORE_TRIGGER_TYPES)[number]
+
+export type TriggerType = CoreTriggerType | 'all' | (string & {})
+
+/** Filter state for logs and dashboard views */
 export interface FilterState {
-  // Workspace context
   workspaceId: string
-
-  // View mode
   viewMode: 'logs' | 'dashboard'
-
-  // Filter states
   timeRange: TimeRange
+  startDate?: string
+  endDate?: string
   level: LogLevel
   workflowIds: string[]
   folderIds: string[]
   searchQuery: string
   triggers: TriggerType[]
+  isInitializing: boolean
 
-  // Internal state
-  _isInitializing: boolean
-
-  // Actions
   setWorkspaceId: (workspaceId: string) => void
   setViewMode: (viewMode: 'logs' | 'dashboard') => void
   setTimeRange: (timeRange: TimeRange) => void
+  setDateRange: (startDate: string | undefined, endDate: string | undefined) => void
+  clearDateRange: () => void
   setLevel: (level: LogLevel) => void
   setWorkflowIds: (workflowIds: string[]) => void
   toggleWorkflowId: (workflowId: string) => void
@@ -196,8 +207,7 @@ export interface FilterState {
   setSearchQuery: (query: string) => void
   setTriggers: (triggers: TriggerType[]) => void
   toggleTrigger: (trigger: TriggerType) => void
-
-  // URL synchronization methods
   initializeFromURL: () => void
   syncWithURL: () => void
+  resetFilters: () => void
 }

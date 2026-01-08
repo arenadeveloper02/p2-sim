@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildZendeskUrl, handleZendeskError } from './types'
 
@@ -92,15 +92,7 @@ export const zendeskGetOrganizationTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Organization data',
-      properties: {
-        organization: { type: 'object', description: 'Organization object' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
-      },
-    },
+    organization: { type: 'object', description: 'Organization object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

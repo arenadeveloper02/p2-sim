@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type {
   PipedriveGetPipelinesParams,
   PipedriveGetPipelinesResponse,
@@ -99,21 +99,8 @@ export const pipedriveGetPipelinesTool: ToolConfig<
   },
 
   outputs: {
+    pipelines: { type: 'array', description: 'Array of pipeline objects from Pipedrive' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Pipelines data',
-      properties: {
-        pipelines: {
-          type: 'array',
-          description: 'Array of pipeline objects from Pipedrive',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Operation metadata',
-        },
-        success: { type: 'boolean', description: 'Operation success status' },
-      },
-    },
   },
 }

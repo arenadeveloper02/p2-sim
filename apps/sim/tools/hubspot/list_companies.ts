@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type {
   HubSpotListCompaniesParams,
   HubSpotListCompaniesResponse,
@@ -112,25 +112,9 @@ export const hubspotListCompaniesTool: ToolConfig<
   },
 
   outputs: {
+    companies: { type: 'array', description: 'Array of HubSpot company objects' },
+    paging: { type: 'object', description: 'Pagination information' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Companies data',
-      properties: {
-        companies: {
-          type: 'array',
-          description: 'Array of company objects',
-        },
-        paging: {
-          type: 'object',
-          description: 'Pagination information',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Operation metadata',
-        },
-        success: { type: 'boolean', description: 'Operation success status' },
-      },
-    },
   },
 }

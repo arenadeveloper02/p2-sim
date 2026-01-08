@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getBlock } from '@/blocks'
 import { populateTriggerFieldsFromConfig } from '@/hooks/use-trigger-config-aggregation'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -14,6 +14,7 @@ interface UseWebhookManagementProps {
   blockId: string
   triggerId?: string
   isPreview?: boolean
+  useWebhookUrl?: boolean
 }
 
 interface WebhookManagementState {
@@ -90,6 +91,7 @@ export function useWebhookManagement({
   blockId,
   triggerId,
   isPreview = false,
+  useWebhookUrl = false,
 }: UseWebhookManagementProps): WebhookManagementState {
   const params = useParams()
   const workflowId = params.workflowId as string
@@ -204,9 +206,10 @@ export function useWebhookManagement({
         })
       }
     }
-
-    loadWebhookOrGenerateUrl()
-  }, [isPreview, triggerId, workflowId, blockId])
+    if (useWebhookUrl) {
+      loadWebhookOrGenerateUrl()
+    }
+  }, [isPreview, triggerId, workflowId, blockId, useWebhookUrl])
 
   const createWebhook = async (
     effectiveTriggerId: string | undefined,

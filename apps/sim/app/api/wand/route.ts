@@ -1,13 +1,17 @@
 import { db } from '@sim/db'
 import { userStats, workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import OpenAI, { AzureOpenAI } from 'openai'
+import { getBYOKKey } from '@/lib/api-key/byok'
+import { getSession } from '@/lib/auth'
+import { logModelUsage } from '@/lib/billing/core/usage-log'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { env } from '@/lib/core/config/env'
-import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/environment'
+import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
+import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 import { getModelPricing } from '@/providers/utils'
 
 export const dynamic = 'force-dynamic'
@@ -66,13 +70,14 @@ function safeStringify(value: unknown): string {
 }
 
 async function updateUserStatsForWand(
-  workflowId: string,
+  userId: string,
   usage: {
     prompt_tokens?: number
     completion_tokens?: number
     total_tokens?: number
   },
-  requestId: string
+  requestId: string,
+  isBYOK = false
 ): Promise<void> {
   if (!isBillingEnabled) {
     logger.debug(`[${requestId}] Billing is disabled, skipping wand usage cost update`)
@@ -85,39 +90,28 @@ async function updateUserStatsForWand(
   }
 
   try {
-    const [workflowRecord] = await db
-      .select({ userId: workflow.userId })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    if (!workflowRecord?.userId) {
-      logger.warn(
-        `[${requestId}] No user found for workflow ${workflowId}, cannot update user stats`
-      )
-      return
-    }
-
-    const userId = workflowRecord.userId
     const totalTokens = usage.total_tokens || 0
     const promptTokens = usage.prompt_tokens || 0
     const completionTokens = usage.completion_tokens || 0
 
     const modelName = useWandAzure ? wandModelName : 'gpt-4o'
-    const pricing = getModelPricing(modelName)
+    let costToStore = 0
 
-    const costMultiplier = getCostMultiplier()
-    let modelCost = 0
+    if (!isBYOK) {
+      const pricing = getModelPricing(modelName)
+      const costMultiplier = getCostMultiplier()
+      let modelCost = 0
 
-    if (pricing) {
-      const inputCost = (promptTokens / 1000000) * pricing.input
-      const outputCost = (completionTokens / 1000000) * pricing.output
-      modelCost = inputCost + outputCost
-    } else {
-      modelCost = (promptTokens / 1000000) * 0.005 + (completionTokens / 1000000) * 0.015
+      if (pricing) {
+        const inputCost = (promptTokens / 1000000) * pricing.input
+        const outputCost = (completionTokens / 1000000) * pricing.output
+        modelCost = inputCost + outputCost
+      } else {
+        modelCost = (promptTokens / 1000000) * 0.005 + (completionTokens / 1000000) * 0.015
+      }
+
+      costToStore = modelCost * costMultiplier
     }
-
-    const costToStore = modelCost * costMultiplier
 
     await db
       .update(userStats)
@@ -133,9 +127,18 @@ async function updateUserStatsForWand(
       userId,
       tokensUsed: totalTokens,
       costAdded: costToStore,
+      isBYOK,
     })
 
-    // Check if user has hit overage threshold and bill incrementally
+    await logModelUsage({
+      userId,
+      source: 'wand',
+      model: modelName,
+      inputTokens: promptTokens,
+      outputTokens: completionTokens,
+      cost: costToStore,
+    })
+
     await checkAndBillOverageThreshold(userId)
   } catch (error) {
     logger.error(`[${requestId}] Failed to update user stats for wand usage`, error)
@@ -146,12 +149,10 @@ export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
   logger.info(`[${requestId}] Received wand generation request`)
 
-  if (!client) {
-    logger.error(`[${requestId}] AI client not initialized. Missing API key.`)
-    return NextResponse.json(
-      { success: false, error: 'Wand generation service is not configured.' },
-      { status: 503 }
-    )
+  const session = await getSession()
+  if (!session?.user?.id) {
+    logger.warn(`[${requestId}] Unauthorized wand generation attempt`)
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
@@ -164,6 +165,60 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Missing required field: prompt.' },
         { status: 400 }
+      )
+    }
+
+    let workspaceId: string | null = null
+    if (workflowId) {
+      const [workflowRecord] = await db
+        .select({ workspaceId: workflow.workspaceId, userId: workflow.userId })
+        .from(workflow)
+        .where(eq(workflow.id, workflowId))
+        .limit(1)
+
+      if (!workflowRecord) {
+        logger.warn(`[${requestId}] Workflow not found: ${workflowId}`)
+        return NextResponse.json({ success: false, error: 'Workflow not found' }, { status: 404 })
+      }
+
+      workspaceId = workflowRecord.workspaceId
+
+      if (workflowRecord.workspaceId) {
+        const permission = await verifyWorkspaceMembership(
+          session.user.id,
+          workflowRecord.workspaceId
+        )
+        if (!permission || (permission !== 'admin' && permission !== 'write')) {
+          logger.warn(
+            `[${requestId}] User ${session.user.id} does not have write access to workspace for workflow ${workflowId}`
+          )
+          return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
+        }
+      } else if (workflowRecord.userId !== session.user.id) {
+        logger.warn(`[${requestId}] User ${session.user.id} does not own workflow ${workflowId}`)
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 })
+      }
+    }
+
+    let isBYOK = false
+    let activeClient = client
+    let byokApiKey: string | null = null
+
+    if (workspaceId && !useWandAzure) {
+      const byokResult = await getBYOKKey(workspaceId, 'openai')
+      if (byokResult) {
+        isBYOK = true
+        byokApiKey = byokResult.apiKey
+        activeClient = new OpenAI({ apiKey: byokResult.apiKey })
+        logger.info(`[${requestId}] Using BYOK OpenAI key for wand generation`)
+      }
+    }
+
+    if (!activeClient) {
+      logger.error(`[${requestId}] AI client not initialized. Missing API key.`)
+      return NextResponse.json(
+        { success: false, error: 'Wand generation service is not configured.' },
+        { status: 503 }
       )
     }
 
@@ -209,7 +264,7 @@ export async function POST(req: NextRequest) {
         if (useWandAzure) {
           headers['api-key'] = azureApiKey!
         } else {
-          headers.Authorization = `Bearer ${openaiApiKey}`
+          headers.Authorization = `Bearer ${byokApiKey || openaiApiKey}`
         }
 
         logger.debug(`[${requestId}] Making streaming request to: ${apiUrl}`)
@@ -276,6 +331,11 @@ export async function POST(req: NextRequest) {
 
                     if (data === '[DONE]') {
                       logger.info(`[${requestId}] Received [DONE] signal`)
+
+                      if (finalUsage) {
+                        await updateUserStatsForWand(session.user.id, finalUsage, requestId, isBYOK)
+                      }
+
                       controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`)
                       )
@@ -304,10 +364,6 @@ export async function POST(req: NextRequest) {
                           `[${requestId}] Received usage data: ${JSON.stringify(parsed.usage)}`
                         )
                       }
-
-                      if (chunkCount % 10 === 0) {
-                        logger.debug(`[${requestId}] Processed ${chunkCount} chunks`)
-                      }
                     } catch (parseError) {
                       logger.debug(
                         `[${requestId}] Skipped non-JSON line: ${data.substring(0, 100)}`
@@ -315,12 +371,6 @@ export async function POST(req: NextRequest) {
                     }
                   }
                 }
-              }
-
-              logger.info(`[${requestId}] Wand generation streaming completed successfully`)
-
-              if (finalUsage && workflowId) {
-                await updateUserStatsForWand(workflowId, finalUsage, requestId)
               }
             } catch (streamError: any) {
               logger.error(`[${requestId}] Streaming error`, {
@@ -368,7 +418,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const completion = await client.chat.completions.create({
+    const completion = await activeClient.chat.completions.create({
       model: useWandAzure ? wandModelName : 'gpt-4o',
       messages: messages,
       temperature: 0.3,
@@ -389,8 +439,8 @@ export async function POST(req: NextRequest) {
 
     logger.info(`[${requestId}] Wand generation successful`)
 
-    if (completion.usage && workflowId) {
-      await updateUserStatsForWand(workflowId, completion.usage, requestId)
+    if (completion.usage) {
+      await updateUserStatsForWand(session.user.id, completion.usage, requestId, isBYOK)
     }
 
     return NextResponse.json({ success: true, content: generatedContent })

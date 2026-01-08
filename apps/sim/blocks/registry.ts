@@ -11,6 +11,7 @@ import { AsanaBlock } from '@/blocks/blocks/asana'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
+import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock } from '@/blocks/blocks/confluence'
@@ -41,17 +42,21 @@ import { GoogleSheetsBlock } from '@/blocks/blocks/google_sheets'
 import { GoogleSlidesBlock } from '@/blocks/blocks/google_slides'
 import { GoogleVaultBlock } from '@/blocks/blocks/google_vault'
 import { GrafanaBlock } from '@/blocks/blocks/grafana'
+import { GrainBlock } from '@/blocks/blocks/grain'
+import { GreptileBlock } from '@/blocks/blocks/greptile'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
 import { HunterBlock } from '@/blocks/blocks/hunter'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
+import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
 import { InputTriggerBlock } from '@/blocks/blocks/input_trigger'
 import { IntercomBlock } from '@/blocks/blocks/intercom'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
+import { JiraServiceManagementBlock } from '@/blocks/blocks/jira_service_management'
 import { KalshiBlock } from '@/blocks/blocks/kalshi'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LinearBlock } from '@/blocks/blocks/linear'
@@ -82,7 +87,6 @@ import { PipedriveBlock } from '@/blocks/blocks/pipedrive'
 import { PolymarketBlock } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
-import { PylonBlock } from '@/blocks/blocks/pylon'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
@@ -97,14 +101,15 @@ import { SearchBlock } from '@/blocks/blocks/search'
 import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
+import { ServiceNowBlock } from '@/blocks/blocks/servicenow'
 import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
+import { SpotifyBlock } from '@/blocks/blocks/spotify'
 import { SSHBlock } from '@/blocks/blocks/ssh'
 import { StagehandBlock } from '@/blocks/blocks/stagehand'
-import { StagehandAgentBlock } from '@/blocks/blocks/stagehand_agent'
 import { StartTriggerBlock } from '@/blocks/blocks/start_trigger'
 import { StarterBlock } from '@/blocks/blocks/starter'
 import { StripeBlock } from '@/blocks/blocks/stripe'
@@ -137,6 +142,7 @@ import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
+import { SQSBlock } from './blocks/sqs'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -153,6 +159,7 @@ export const registry: Record<string, BlockConfig> = {
   browser_use: BrowserUseBlock,
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,
+  circleback: CirclebackBlock,
   clay: ClayBlock,
   condition: ConditionBlock,
   confluence: ConfluenceBlock,
@@ -172,7 +179,9 @@ export const registry: Record<string, BlockConfig> = {
   github: GitHubBlock,
   gitlab: GitLabBlock,
   gmail: GmailBlock,
+  grain: GrainBlock,
   grafana: GrafanaBlock,
+  greptile: GreptileBlock,
   guardrails: GuardrailsBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
@@ -188,11 +197,13 @@ export const registry: Record<string, BlockConfig> = {
   human_in_the_loop: HumanInTheLoopBlock,
   hunter: HunterBlock,
   image_generator: ImageGeneratorBlock,
+  imap: ImapBlock,
   incidentio: IncidentioBlock,
   input_trigger: InputTriggerBlock,
   intercom: IntercomBlock,
   jina: JinaBlock,
   jira: JiraBlock,
+  jira_service_management: JiraServiceManagementBlock,
   kalshi: KalshiBlock,
   knowledge: KnowledgeBlock,
   linear: LinearBlock,
@@ -223,9 +234,9 @@ export const registry: Record<string, BlockConfig> = {
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
-  pylon: PylonBlock,
   qdrant: QdrantBlock,
   rds: RDSBlock,
+  sqs: SQSBlock,
   dynamodb: DynamoDBBlock,
   reddit: RedditBlock,
   resend: ResendBlock,
@@ -238,15 +249,16 @@ export const registry: Record<string, BlockConfig> = {
   search: SearchBlock,
   sendgrid: SendGridBlock,
   sentry: SentryBlock,
+  servicenow: ServiceNowBlock,
   serper: SerperBlock,
   sharepoint: SharepointBlock,
   shopify: ShopifyBlock,
   slack: SlackBlock,
+  spotify: SpotifyBlock,
   smtp: SmtpBlock,
   sftp: SftpBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,
-  stagehand_agent: StagehandAgentBlock,
   starter: StarterBlock,
   start_trigger: StartTriggerBlock,
   stt: SttBlock,

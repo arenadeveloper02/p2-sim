@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 import { useQueryClient } from '@tanstack/react-query'
-import { Files, LogIn, Settings, User, Users, Wrench } from 'lucide-react'
+import { Files, KeySquare, LogIn, Server, Settings, User, Users, Wrench } from 'lucide-react'
 import {
   Card,
   Connections,
@@ -26,10 +26,11 @@ import { McpIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/environment'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { getUserRole } from '@/lib/workspaces/organization'
 import {
   ApiKeys,
+  BYOK,
   Copilot,
   CustomTools,
   EnvironmentVariables,
@@ -40,12 +41,14 @@ import {
   SSO,
   Subscription,
   TeamManagement,
+  WorkflowMcpServers,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components'
 import { TemplateProfile } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components/template-profile/template-profile'
 import { generalSettingsKeys, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
 import { ssoKeys, useSSOProviders } from '@/hooks/queries/sso'
 import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSettingsModalStore } from '@/stores/settings-modal/store'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
@@ -61,6 +64,7 @@ type SettingsSection =
   | 'template-profile'
   | 'integrations'
   | 'apikeys'
+  | 'byok'
   | 'files'
   | 'subscription'
   | 'team'
@@ -68,6 +72,7 @@ type SettingsSection =
   | 'copilot'
   | 'mcp'
   | 'custom-tools'
+  | 'workflow-mcp-servers'
 
 type NavigationSection = 'account' | 'subscription' | 'tools' | 'system'
 
@@ -110,9 +115,17 @@ const allNavigationItems: NavigationItem[] = [
   },
   { id: 'integrations', label: 'Integrations', icon: Connections, section: 'tools' },
   { id: 'custom-tools', label: 'Custom Tools', icon: Wrench, section: 'tools' },
-  { id: 'mcp', label: 'MCPs', icon: McpIcon, section: 'tools' },
+  { id: 'mcp', label: 'MCP Tools', icon: McpIcon, section: 'tools' },
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
+  { id: 'workflow-mcp-servers', label: 'MCP Servers', icon: Server, section: 'system' },
+  {
+    id: 'byok',
+    label: 'BYOK',
+    icon: KeySquare,
+    section: 'system',
+    requiresHosted: true,
+  },
   {
     id: 'copilot',
     label: 'Copilot Keys',
@@ -134,6 +147,8 @@ const allNavigationItems: NavigationItem[] = [
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
+  const { initialSection, mcpServerId, clearInitialState } = useSettingsModalStore()
+  const [pendingMcpServerId, setPendingMcpServerId] = useState<string | null>(null)
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const { data: organizationsData } = useOrganizations()
@@ -247,6 +262,24 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   // React Query hook automatically loads and syncs settings
   useGeneralSettings()
 
+  // Apply initial section from store when modal opens
+  useEffect(() => {
+    if (open && initialSection) {
+      setActiveSection(initialSection)
+      if (mcpServerId) {
+        setPendingMcpServerId(mcpServerId)
+      }
+      clearInitialState()
+    }
+  }, [open, initialSection, mcpServerId, clearInitialState])
+
+  // Clear pending server ID when section changes away from MCP
+  useEffect(() => {
+    if (activeSection !== 'mcp') {
+      setPendingMcpServerId(null)
+    }
+  }, [activeSection])
+
   useEffect(() => {
     const handleOpenSettings = (event: CustomEvent<{ tab: SettingsSection }>) => {
       setActiveSection(event.detail.tab)
@@ -287,8 +320,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           autoConnect: data.autoConnect ?? true,
           showTrainingControls: data.showTrainingControls ?? false,
           superUserModeEnabled: data.superUserModeEnabled ?? true,
-          // Force dark mode - light mode is temporarily disabled
-          theme: 'dark' as const,
+          theme: data.theme || 'system',
           telemetryEnabled: data.telemetryEnabled ?? true,
           billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
         }
@@ -316,16 +348,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       queryKey: organizationKeys.lists(),
       queryFn: async () => {
         const { client } = await import('@/lib/auth/auth-client')
-        const [orgsResponse, activeOrgResponse, billingResponse] = await Promise.all([
+        const [orgsResponse, activeOrgResponse] = await Promise.all([
           client.organization.list(),
           client.organization.getFullOrganization(),
-          fetch('/api/billing?context=user').then((r) => r.json()),
         ])
 
         return {
           organizations: orgsResponse.data || [],
           activeOrganization: activeOrgResponse.data,
-          billingData: billingResponse,
         }
       },
       staleTime: 30 * 1000,
@@ -437,9 +467,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             {isBillingEnabled && activeSection === 'subscription' && <Subscription />}
             {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
             {activeSection === 'sso' && <SSO />}
+            {activeSection === 'byok' && <BYOK />}
             {activeSection === 'copilot' && <Copilot />}
-            {activeSection === 'mcp' && <MCP />}
+            {activeSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
             {activeSection === 'custom-tools' && <CustomTools />}
+            {activeSection === 'workflow-mcp-servers' && <WorkflowMcpServers />}
           </SModalMainBody>
         </SModalMain>
       </SModalContent>

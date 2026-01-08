@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { OUTPUT_PANEL_WIDTH, TERMINAL_HEIGHT } from '@/stores/constants'
 
 /**
  * Display mode type for terminal output.
@@ -20,6 +21,8 @@ interface TerminalState {
   setOutputPanelWidth: (width: number) => void
   openOnRun: boolean
   setOpenOnRun: (open: boolean) => void
+  wrapText: boolean
+  setWrapText: (wrap: boolean) => void
   /**
    * Indicates whether the terminal is currently being resized via mouse drag.
    *
@@ -35,27 +38,9 @@ interface TerminalState {
    * @param isResizing - True while the terminal is being resized.
    */
   setIsResizing: (isResizing: boolean) => void
-  // displayMode: DisplayMode
-  // setDisplayMode: (mode: DisplayMode) => void
   _hasHydrated: boolean
   setHasHydrated: (hasHydrated: boolean) => void
 }
-
-/**
- * Terminal height constraints.
- *
- * @remarks
- * The maximum height is enforced dynamically at 70% of the viewport height
- * inside the resize hook to keep the workflow canvas visible.
- */
-export const MIN_TERMINAL_HEIGHT = 30
-export const DEFAULT_TERMINAL_HEIGHT = 196
-
-/**
- * Output panel width constraints.
- */
-const MIN_OUTPUT_PANEL_WIDTH = 440
-const DEFAULT_OUTPUT_PANEL_WIDTH = 440
 
 /**
  * Default display mode for terminal output.
@@ -65,8 +50,8 @@ const DEFAULT_OUTPUT_PANEL_WIDTH = 440
 export const useTerminalStore = create<TerminalState>()(
   persist(
     (set) => ({
-      terminalHeight: DEFAULT_TERMINAL_HEIGHT,
-      lastExpandedHeight: DEFAULT_TERMINAL_HEIGHT,
+      terminalHeight: TERMINAL_HEIGHT.DEFAULT,
+      lastExpandedHeight: TERMINAL_HEIGHT.DEFAULT,
       isResizing: false,
       /**
        * Updates the terminal height and synchronizes the CSS custom property.
@@ -79,12 +64,12 @@ export const useTerminalStore = create<TerminalState>()(
        * @param height - Desired terminal height in pixels.
        */
       setTerminalHeight: (height) => {
-        const clampedHeight = Math.max(MIN_TERMINAL_HEIGHT, height)
+        const clampedHeight = Math.max(TERMINAL_HEIGHT.MIN, height)
 
         set((state) => ({
           terminalHeight: clampedHeight,
           lastExpandedHeight:
-            clampedHeight > MIN_TERMINAL_HEIGHT ? clampedHeight : state.lastExpandedHeight,
+            clampedHeight > TERMINAL_HEIGHT.MIN ? clampedHeight : state.lastExpandedHeight,
         }))
 
         // Update CSS variable for immediate visual feedback
@@ -100,14 +85,14 @@ export const useTerminalStore = create<TerminalState>()(
       setIsResizing: (isResizing) => {
         set({ isResizing })
       },
-      outputPanelWidth: DEFAULT_OUTPUT_PANEL_WIDTH,
+      outputPanelWidth: OUTPUT_PANEL_WIDTH.DEFAULT,
       /**
        * Updates the output panel width, enforcing the minimum constraint.
        *
        * @param width - Desired width in pixels for the output panel.
        */
       setOutputPanelWidth: (width) => {
-        const clampedWidth = Math.max(MIN_OUTPUT_PANEL_WIDTH, width)
+        const clampedWidth = Math.max(OUTPUT_PANEL_WIDTH.MIN, width)
         set({ outputPanelWidth: clampedWidth })
       },
       openOnRun: true,
@@ -119,10 +104,15 @@ export const useTerminalStore = create<TerminalState>()(
       setOpenOnRun: (open) => {
         set({ openOnRun: open })
       },
-      // displayMode: DEFAULT_DISPLAY_MODE,
-      // setDisplayMode: (mode) => {
-      //   set({ displayMode: mode })
-      // },
+      wrapText: true,
+      /**
+       * Enables or disables text wrapping in the output panel.
+       *
+       * @param wrap - Whether output text should wrap.
+       */
+      setWrapText: (wrap) => {
+        set({ wrapText: wrap })
+      },
       /**
        * Indicates whether the terminal store has finished client-side hydration.
        */

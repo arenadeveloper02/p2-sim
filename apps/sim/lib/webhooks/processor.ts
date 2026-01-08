@@ -1,11 +1,11 @@
 import { db, webhook, workflow } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { tasks } from '@trigger.dev/sdk'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { env, isTruthy } from '@/lib/core/config/env'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
-import { createLogger } from '@/lib/logs/console/logger'
 import { convertSquareBracketsToTwiML } from '@/lib/webhooks/utils'
 import {
   handleSlackChallenge,
@@ -14,6 +14,8 @@ import {
   verifyProviderWebhook,
 } from '@/lib/webhooks/utils.server'
 import { executeWebhookJob } from '@/background/webhook-execution'
+import { REFERENCE } from '@/executor/constants'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 
 const logger = createLogger('WebhookProcessor')
 
@@ -119,6 +121,34 @@ export async function handleProviderChallenges(
   return null
 }
 
+/**
+ * Handle provider-specific reachability tests that occur AFTER webhook lookup.
+ *
+ * @param webhook - The webhook record from the database
+ * @param body - The parsed request body
+ * @param requestId - Request ID for logging
+ * @returns NextResponse if this is a verification request, null to continue normal flow
+ */
+export function handleProviderReachabilityTest(
+  webhook: any,
+  body: any,
+  requestId: string
+): NextResponse | null {
+  const provider = webhook?.provider
+
+  if (provider === 'grain') {
+    const isVerificationRequest = !body || Object.keys(body).length === 0 || !body.type
+    if (isVerificationRequest) {
+      logger.info(
+        `[${requestId}] Grain reachability test detected - returning 200 for webhook verification`
+      )
+      return NextResponse.json({ status: 'ok', message: 'Webhook endpoint verified' })
+    }
+  }
+
+  return null
+}
+
 export async function findWebhookAndWorkflow(
   options: WebhookProcessorOptions
 ): Promise<{ webhook: any; workflow: any } | null> {
@@ -170,12 +200,13 @@ export async function findWebhookAndWorkflow(
  * @returns String with all {{VARIABLE}} references replaced
  */
 function resolveEnvVars(value: string, envVars: Record<string, string>): string {
-  const envMatches = value.match(/\{\{([^}]+)\}\}/g)
+  const envVarPattern = createEnvVarPattern()
+  const envMatches = value.match(envVarPattern)
   if (!envMatches) return value
 
   let resolvedValue = value
   for (const match of envMatches) {
-    const envKey = match.slice(2, -2).trim()
+    const envKey = match.slice(REFERENCE.ENV_VAR_START.length, -REFERENCE.ENV_VAR_END.length).trim()
     const envValue = envVars[envKey]
     if (envValue !== undefined) {
       resolvedValue = resolvedValue.replaceAll(match, envValue)
@@ -391,6 +422,33 @@ export async function verifyProviderAuth(
       }
 
       logger.debug(`[${requestId}] Linear signature verified successfully`)
+    }
+  }
+
+  if (foundWebhook.provider === 'circleback') {
+    const secret = providerConfig.webhookSecret as string | undefined
+
+    if (secret) {
+      const signature = request.headers.get('x-signature')
+
+      if (!signature) {
+        logger.warn(`[${requestId}] Circleback webhook missing signature header`)
+        return new NextResponse('Unauthorized - Missing Circleback signature', { status: 401 })
+      }
+
+      const { validateCirclebackSignature } = await import('@/lib/webhooks/utils.server')
+
+      const isValidSignature = validateCirclebackSignature(secret, signature, rawBody)
+
+      if (!isValidSignature) {
+        logger.warn(`[${requestId}] Circleback signature verification failed`, {
+          signatureLength: signature.length,
+          secretLength: secret.length,
+        })
+        return new NextResponse('Unauthorized - Invalid Circleback signature', { status: 401 })
+      }
+
+      logger.debug(`[${requestId}] Circleback signature verified successfully`)
     }
   }
 
@@ -707,9 +765,7 @@ export async function queueWebhookExecution(
       ...(credentialId ? { credentialId } : {}),
     }
 
-    const useTrigger = isTruthy(env.TRIGGER_DEV_ENABLED)
-
-    if (useTrigger) {
+    if (isTriggerDevEnabled) {
       const handle = await tasks.trigger('webhook-execution', payload)
       logger.info(
         `[${options.requestId}] Queued ${options.testMode ? 'TEST ' : ''}webhook execution task ${

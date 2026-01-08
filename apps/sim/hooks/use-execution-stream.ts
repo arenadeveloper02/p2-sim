@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ExecutionEvent } from '@/lib/workflows/executor/execution-events'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
@@ -76,18 +76,18 @@ export interface ExecuteStreamOptions {
  */
 export function useExecutionStream() {
   const abortControllerRef = useRef<AbortController | null>(null)
+  const currentExecutionRef = useRef<{ workflowId: string; executionId: string } | null>(null)
 
   const execute = useCallback(async (options: ExecuteStreamOptions) => {
     const { workflowId, callbacks = {}, ...payload } = options
 
-    // Cancel any existing execution
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
 
-    // Create new abort controller
     const abortController = new AbortController()
     abortControllerRef.current = abortController
+    currentExecutionRef.current = null
 
     try {
       const response = await fetch(`/api/workflows/${workflowId}/execute`, {
@@ -108,7 +108,11 @@ export function useExecutionStream() {
         throw new Error('No response body')
       }
 
-      // Read SSE stream
+      const executionId = response.headers.get('X-Execution-Id')
+      if (executionId) {
+        currentExecutionRef.current = { workflowId, executionId }
+      }
+
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -121,13 +125,10 @@ export function useExecutionStream() {
             break
           }
 
-          // Decode chunk and add to buffer
           buffer += decoder.decode(value, { stream: true })
 
-          // Process complete SSE messages
           const lines = buffer.split('\n\n')
 
-          // Keep the last incomplete message in the buffer
           buffer = lines.pop() || ''
 
           for (const line of lines) {
@@ -137,7 +138,6 @@ export function useExecutionStream() {
 
             const data = line.substring(6).trim()
 
-            // Check for [DONE] marker
             if (data === '[DONE]') {
               logger.info('Stream completed')
               continue
@@ -146,14 +146,12 @@ export function useExecutionStream() {
             try {
               const event = JSON.parse(data) as ExecutionEvent
 
-              // Log all SSE events for debugging
               logger.info('📡 SSE Event received:', {
                 type: event.type,
                 executionId: event.executionId,
                 data: event.data,
               })
 
-              // Dispatch event to appropriate callback
               switch (event.type) {
                 case 'execution:started':
                   logger.info('🚀 Execution started')
@@ -215,14 +213,23 @@ export function useExecutionStream() {
       throw error
     } finally {
       abortControllerRef.current = null
+      currentExecutionRef.current = null
     }
   }, [])
 
   const cancel = useCallback(() => {
+    const execution = currentExecutionRef.current
+    if (execution) {
+      fetch(`/api/workflows/${execution.workflowId}/executions/${execution.executionId}/cancel`, {
+        method: 'POST',
+      }).catch(() => {})
+    }
+
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
+    currentExecutionRef.current = null
   }, [])
 
   return {

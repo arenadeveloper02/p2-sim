@@ -98,7 +98,12 @@ export const createFormTool: ToolConfig<TypeformCreateFormParams, TypeformCreate
 
     return {
       success: true,
-      output: data,
+      output: {
+        ...data,
+        welcome_screens: data.welcome_screens || [],
+        thankyou_screens: data.thankyou_screens || [],
+        fields: data.fields || [],
+      },
     }
   },
 
@@ -115,37 +120,33 @@ export const createFormTool: ToolConfig<TypeformCreateFormParams, TypeformCreate
       type: 'string',
       description: 'Form type',
     },
-    created_at: {
-      type: 'string',
-      description: 'ISO timestamp of form creation',
-    },
-    last_updated_at: {
-      type: 'string',
-      description: 'ISO timestamp of last update',
-    },
     settings: {
       type: 'object',
-      description: 'Form settings',
+      description: 'Form settings object',
     },
     theme: {
       type: 'object',
-      description: 'Applied theme configuration',
+      description: 'Theme reference',
     },
     workspace: {
       type: 'object',
-      description: 'Workspace information',
+      description: 'Workspace reference',
     },
     fields: {
       type: 'array',
-      description: 'Array of created form fields',
+      description: 'Array of created form fields (empty if none added)',
+    },
+    welcome_screens: {
+      type: 'array',
+      description: 'Array of welcome screens (empty if none configured)',
+    },
+    thankyou_screens: {
+      type: 'array',
+      description: 'Array of thank you screens',
     },
     _links: {
       type: 'object',
-      description: 'Related resource links',
-      properties: {
-        display: { type: 'string', description: 'Public form URL' },
-        responses: { type: 'string', description: 'Responses API endpoint' },
-      },
+      description: 'Related resource links including public form URL',
     },
   },
 }

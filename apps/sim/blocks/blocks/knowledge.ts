@@ -8,7 +8,6 @@ export const KnowledgeBlock: BlockConfig = {
   longDescription:
     'Integrate Knowledge into the workflow. Can search, upload chunks, and create documents.',
   bestPractices: `
-  - Search up examples with knowledge base blocks to understand YAML syntax.
   - Clarify which tags are available for the knowledge base to understand whether to use tag filters on a search.
   `,
   bgColor: '#00B0B0',
@@ -57,7 +56,6 @@ export const KnowledgeBlock: BlockConfig = {
       type: 'knowledge-tag-filters',
       placeholder: 'Add tag filters',
       condition: { field: 'operation', value: 'search' },
-      mode: 'advanced',
     },
     {
       id: 'documentId',

@@ -1,123 +1,18 @@
-import { v4 as uuidv4 } from 'uuid'
-import { createLogger } from '@/lib/logs/console/logger'
-import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
+import { createLogger } from '@sim/logger'
+import { regenerateWorkflowIds } from '@/stores/workflows/utils'
 import type { WorkflowState } from '../workflow/types'
 
 const logger = createLogger('WorkflowJsonImporter')
 
 /**
- * Generate new IDs for all blocks and edges to avoid conflicts
- */
-function regenerateIds(workflowState: WorkflowState): WorkflowState {
-  const { metadata, variables } = workflowState
-  const blockIdMap = new Map<string, string>()
-  const newBlocks: WorkflowState['blocks'] = {}
-
-  // First pass: create new IDs for all blocks
-  Object.entries(workflowState.blocks).forEach(([oldId, block]) => {
-    const newId = uuidv4()
-    blockIdMap.set(oldId, newId)
-    newBlocks[newId] = {
-      ...block,
-      id: newId,
-    }
-  })
-
-  // Second pass: update edges with new block IDs
-  const newEdges = workflowState.edges.map((edge) => ({
-    ...edge,
-    id: uuidv4(), // Generate new edge ID
-    source: blockIdMap.get(edge.source) || edge.source,
-    target: blockIdMap.get(edge.target) || edge.target,
-  }))
-
-  // Third pass: update loops with new block IDs
-  // CRITICAL: Loop IDs must match their block IDs (loops are keyed by their block ID)
-  const newLoops: WorkflowState['loops'] = {}
-  if (workflowState.loops) {
-    Object.entries(workflowState.loops).forEach(([oldLoopId, loop]) => {
-      // Map the loop ID using the block ID mapping (loop ID = block ID)
-      const newLoopId = blockIdMap.get(oldLoopId) || oldLoopId
-      newLoops[newLoopId] = {
-        ...loop,
-        id: newLoopId,
-        nodes: loop.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
-      }
-    })
-  }
-
-  // Fourth pass: update parallels with new block IDs
-  // CRITICAL: Parallel IDs must match their block IDs (parallels are keyed by their block ID)
-  const newParallels: WorkflowState['parallels'] = {}
-  if (workflowState.parallels) {
-    Object.entries(workflowState.parallels).forEach(([oldParallelId, parallel]) => {
-      // Map the parallel ID using the block ID mapping (parallel ID = block ID)
-      const newParallelId = blockIdMap.get(oldParallelId) || oldParallelId
-      newParallels[newParallelId] = {
-        ...parallel,
-        id: newParallelId,
-        nodes: parallel.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
-      }
-    })
-  }
-
-  // Fifth pass: update any block references in subblock values and clear runtime trigger values
-  Object.entries(newBlocks).forEach(([blockId, block]) => {
-    if (block.subBlocks) {
-      Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]) => {
-        if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(subBlockId)) {
-          block.subBlocks[subBlockId] = {
-            ...subBlock,
-            value: null,
-          }
-          return
-        }
-
-        if (subBlock.value && typeof subBlock.value === 'string') {
-          // Replace any block references in the value
-          let updatedValue = subBlock.value
-          blockIdMap.forEach((newId, oldId) => {
-            // Replace references like <blockId.output> with new IDs
-            const regex = new RegExp(`<${oldId}\\.`, 'g')
-            updatedValue = updatedValue.replace(regex, `<${newId}.`)
-          })
-          block.subBlocks[subBlockId] = {
-            ...subBlock,
-            value: updatedValue,
-          }
-        }
-      })
-    }
-
-    // Update parentId references in block.data
-    if (block.data?.parentId) {
-      const newParentId = blockIdMap.get(block.data.parentId)
-      if (newParentId) {
-        block.data.parentId = newParentId
-      } else {
-        // Parent ID not in mapping - this shouldn't happen but log it
-        logger.warn(`Block ${blockId} references unmapped parent ${block.data.parentId}`)
-        // Remove invalid parent reference
-        block.data.parentId = undefined
-        block.data.extent = undefined
-      }
-    }
-  })
-
-  return {
-    blocks: newBlocks,
-    edges: newEdges,
-    loops: newLoops,
-    parallels: newParallels,
-    metadata,
-    variables,
-  }
-}
-
-/**
- * Normalize subblock values by converting empty strings to null.
+ * Normalize subblock values by converting empty strings to null and filtering out invalid subblocks.
  * This provides backwards compatibility for workflows exported before the null sanitization fix,
  * preventing Zod validation errors like "Expected array, received string".
+ *
+ * Also filters out malformed subBlocks that may have been created by bugs in previous exports:
+ * - SubBlocks with key "undefined" (caused by assigning to undefined key)
+ * - SubBlocks missing required fields like `id`
+ * - SubBlocks with `type: "unknown"` (indicates malformed data)
  */
 function normalizeSubblockValues(blocks: Record<string, any>): Record<string, any> {
   const normalizedBlocks: Record<string, any> = {}
@@ -129,6 +24,34 @@ function normalizeSubblockValues(blocks: Record<string, any>): Record<string, an
       const normalizedSubBlocks: Record<string, any> = {}
 
       Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]: [string, any]) => {
+        // Skip subBlocks with invalid keys (literal "undefined" string)
+        if (subBlockId === 'undefined') {
+          logger.warn(`Skipping malformed subBlock with key "undefined" in block ${blockId}`)
+          return
+        }
+
+        // Skip subBlocks that are null or not objects
+        if (!subBlock || typeof subBlock !== 'object') {
+          logger.warn(`Skipping invalid subBlock ${subBlockId} in block ${blockId}: not an object`)
+          return
+        }
+
+        // Skip subBlocks with type "unknown" (malformed data)
+        if (subBlock.type === 'unknown') {
+          logger.warn(
+            `Skipping malformed subBlock ${subBlockId} in block ${blockId}: type is "unknown"`
+          )
+          return
+        }
+
+        // Skip subBlocks missing required id field
+        if (!subBlock.id) {
+          logger.warn(
+            `Skipping malformed subBlock ${subBlockId} in block ${blockId}: missing id field`
+          )
+          return
+        }
+
         const normalizedSubBlock = { ...subBlock }
 
         // Convert empty strings to null for consistency
@@ -260,9 +183,10 @@ export function parseWorkflowJson(
       variables: Array.isArray(workflowData.variables) ? workflowData.variables : undefined,
     }
 
-    // Regenerate IDs if requested (default: true)
     if (regenerateIdsFlag) {
-      const regeneratedState = regenerateIds(workflowState)
+      const { idMap: _, ...regeneratedState } = regenerateWorkflowIds(workflowState, {
+        clearTriggerRuntimeValues: true,
+      })
       workflowState = {
         ...regeneratedState,
         metadata: workflowState.metadata,

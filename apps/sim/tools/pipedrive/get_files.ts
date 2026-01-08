@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { PipedriveGetFilesParams, PipedriveGetFilesResponse } from '@/tools/pipedrive/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -94,21 +94,8 @@ export const pipedriveGetFilesTool: ToolConfig<PipedriveGetFilesParams, Pipedriv
     },
 
     outputs: {
+      files: { type: 'array', description: 'Array of file objects from Pipedrive' },
+      metadata: { type: 'object', description: 'Operation metadata' },
       success: { type: 'boolean', description: 'Operation success status' },
-      output: {
-        type: 'object',
-        description: 'Files data',
-        properties: {
-          files: {
-            type: 'array',
-            description: 'Array of file objects from Pipedrive',
-          },
-          metadata: {
-            type: 'object',
-            description: 'Operation metadata',
-          },
-          success: { type: 'boolean', description: 'Operation success status' },
-        },
-      },
     },
   }

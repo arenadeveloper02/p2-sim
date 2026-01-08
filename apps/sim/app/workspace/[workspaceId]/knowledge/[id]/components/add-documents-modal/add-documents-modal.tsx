@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Loader2, RotateCcw, X } from 'lucide-react'
+import { createLogger } from '@sim/logger'
+import { Loader2, RotateCcw, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
   Button,
@@ -12,9 +13,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { formatFileSize, validateKnowledgeBaseFile } from '@/lib/uploads/utils/file-utils'
 import { ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
@@ -34,7 +33,6 @@ interface AddDocumentsModalProps {
     minSize: number
     overlap: number
   }
-  onUploadComplete?: () => void
 }
 
 export function AddDocumentsModal({
@@ -42,7 +40,6 @@ export function AddDocumentsModal({
   onOpenChange,
   knowledgeBaseId,
   chunkingConfig,
-  onUploadComplete,
 }: AddDocumentsModalProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -53,13 +50,8 @@ export function AddDocumentsModal({
   const [dragCounter, setDragCounter] = useState(0)
   const [retryingIndexes, setRetryingIndexes] = useState<Set<number>>(new Set())
 
-  const { isUploading, uploadProgress, uploadFiles, clearError } = useKnowledgeUpload({
+  const { isUploading, uploadProgress, uploadFiles, uploadError, clearError } = useKnowledgeUpload({
     workspaceId,
-    onUploadComplete: () => {
-      logger.info(`Successfully uploaded ${files.length} files`)
-      onUploadComplete?.()
-      handleClose()
-    },
   })
 
   useEffect(() => {
@@ -220,6 +212,8 @@ export function AddDocumentsModal({
         chunkOverlap: chunkingConfig?.overlap || 200,
         recipe: 'default',
       })
+      logger.info(`Successfully uploaded ${files.length} files`)
+      handleClose()
     } catch (error) {
       logger.error('Error uploading files:', error)
     }
@@ -234,11 +228,7 @@ export function AddDocumentsModal({
           <div className='min-h-0 flex-1 overflow-y-auto'>
             <div className='space-y-[12px]'>
               {fileError && (
-                <Alert variant='destructive'>
-                  <AlertCircle className='h-4 w-4' />
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>{fileError}</AlertDescription>
-                </Alert>
+                <p className='text-[11px] text-[var(--text-error)] leading-tight'>{fileError}</p>
               )}
 
               <div className='flex flex-col gap-[8px]'>
@@ -288,11 +278,11 @@ export function AddDocumentsModal({
                       return (
                         <div
                           key={index}
-                          className='flex items-center gap-2 rounded-[4px] border p-[8px]'
-                        >
-                          {isFailed && !isRetrying && (
-                            <AlertCircle className='h-4 w-4 flex-shrink-0 text-[var(--text-error)]' />
+                          className={cn(
+                            'flex items-center gap-2 rounded-[4px] border p-[8px]',
+                            isFailed && !isRetrying && 'border-[var(--text-error)]'
                           )}
+                        >
                           <span
                             className={cn(
                               'min-w-0 flex-1 truncate text-[12px]',
@@ -306,29 +296,31 @@ export function AddDocumentsModal({
                             {formatFileSize(file.size)}
                           </span>
                           <div className='flex flex-shrink-0 items-center gap-1'>
-                            {isFailed && !isRetrying && (
-                              <Button
-                                type='button'
-                                variant='ghost'
-                                className='h-4 w-4 p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                                onClick={() => handleRetryFile(index)}
-                                disabled={isUploading}
-                              >
-                                <RotateCcw className='h-3.5 w-3.5' />
-                              </Button>
-                            )}
                             {isProcessing ? (
                               <Loader2 className='h-4 w-4 animate-spin text-[var(--text-muted)]' />
                             ) : (
-                              <Button
-                                type='button'
-                                variant='ghost'
-                                className='h-4 w-4 p-0'
-                                onClick={() => removeFile(index)}
-                                disabled={isUploading}
-                              >
-                                <X className='h-3.5 w-3.5' />
-                              </Button>
+                              <>
+                                {isFailed && (
+                                  <Button
+                                    type='button'
+                                    variant='ghost'
+                                    className='h-4 w-4 p-0'
+                                    onClick={() => handleRetryFile(index)}
+                                    disabled={isUploading}
+                                  >
+                                    <RotateCcw className='h-3 w-3' />
+                                  </Button>
+                                )}
+                                <Button
+                                  type='button'
+                                  variant='ghost'
+                                  className='h-4 w-4 p-0'
+                                  onClick={() => removeFile(index)}
+                                  disabled={isUploading}
+                                >
+                                  <X className='h-3.5 w-3.5' />
+                                </Button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -342,23 +334,34 @@ export function AddDocumentsModal({
         </ModalBody>
 
         <ModalFooter>
-          <Button variant='default' onClick={handleClose} type='button' disabled={isUploading}>
-            Cancel
-          </Button>
-          <Button
-            variant='primary'
-            type='button'
-            onClick={handleUpload}
-            disabled={files.length === 0 || isUploading}
-          >
-            {isUploading
-              ? uploadProgress.stage === 'uploading'
-                ? `Uploading ${uploadProgress.filesCompleted}/${uploadProgress.totalFiles}...`
-                : uploadProgress.stage === 'processing'
-                  ? 'Processing...'
-                  : 'Uploading...'
-              : 'Upload'}
-          </Button>
+          <div className='flex w-full items-center justify-between gap-[12px]'>
+            {uploadError ? (
+              <p className='min-w-0 flex-1 truncate text-[11px] text-[var(--text-error)] leading-tight'>
+                {uploadError.message}
+              </p>
+            ) : (
+              <div />
+            )}
+            <div className='flex flex-shrink-0 gap-[8px]'>
+              <Button variant='default' onClick={handleClose} type='button' disabled={isUploading}>
+                Cancel
+              </Button>
+              <Button
+                variant='tertiary'
+                type='button'
+                onClick={handleUpload}
+                disabled={files.length === 0 || isUploading}
+              >
+                {isUploading
+                  ? uploadProgress.stage === 'uploading'
+                    ? `Uploading ${uploadProgress.filesCompleted}/${uploadProgress.totalFiles}...`
+                    : uploadProgress.stage === 'processing'
+                      ? 'Processing...'
+                      : 'Uploading...'
+                  : 'Upload'}
+              </Button>
+            </div>
+          </div>
         </ModalFooter>
       </ModalContent>
     </Modal>

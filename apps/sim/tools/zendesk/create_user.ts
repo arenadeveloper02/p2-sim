@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildZendeskUrl, handleZendeskError } from './types'
 
@@ -163,15 +163,7 @@ export const zendeskCreateUserTool: ToolConfig<ZendeskCreateUserParams, ZendeskC
     },
 
     outputs: {
-      success: { type: 'boolean', description: 'Operation success status' },
-      output: {
-        type: 'object',
-        description: 'Created user data',
-        properties: {
-          user: { type: 'object', description: 'Created user object' },
-          metadata: { type: 'object', description: 'Operation metadata' },
-          success: { type: 'boolean', description: 'Operation success' },
-        },
-      },
+      user: { type: 'object', description: 'Created user object' },
+      metadata: { type: 'object', description: 'Operation metadata' },
     },
   }

@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildZendeskUrl, handleZendeskError } from './types'
 
@@ -121,15 +121,7 @@ export const zendeskMergeTicketsTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Merge job status',
-      properties: {
-        jobStatus: { type: 'object', description: 'Job status object' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
-      },
-    },
+    jobStatus: { type: 'object', description: 'Job status object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

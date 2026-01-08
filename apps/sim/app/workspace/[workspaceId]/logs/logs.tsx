@@ -1,20 +1,30 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ArrowUpRight, Loader2 } from 'lucide-react'
-import Link from 'next/link'
+import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Badge, buttonVariants } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  getEndDateFromTimeRange,
+  getStartDateFromTimeRange,
+  hasActiveFilters,
+} from '@/lib/logs/filters'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import { useFolders } from '@/hooks/queries/folders'
-import { useLogDetail, useLogsList } from '@/hooks/queries/logs'
+import { useDashboardLogs, useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 import { useUserPermissionsContext } from '../providers/workspace-permissions-provider'
-import { Dashboard, LogDetails, LogsToolbar, NotificationSettings } from './components'
-import { formatDate, formatDuration, StatusBadge, TriggerBadge } from './utils'
+import {
+  Dashboard,
+  LogDetails,
+  LogRowContextMenu,
+  LogsList,
+  LogsToolbar,
+  NotificationSettings,
+} from './components'
+import { LOG_COLUMN_ORDER, LOG_COLUMNS } from './utils'
 
 const LOGS_PER_PAGE = 50 as const
 const REFRESH_SPINNER_DURATION_MS = 1000 as const
@@ -32,13 +42,17 @@ export default function Logs() {
     setWorkspaceId,
     initializeFromURL,
     timeRange,
+    startDate,
+    endDate,
     level,
     workflowIds,
     folderIds,
+    setWorkflowIds,
     setSearchQuery: setStoreSearchQuery,
     triggers,
     viewMode,
     setViewMode,
+    resetFilters,
   } = useFilterStore()
 
   useEffect(() => {
@@ -56,27 +70,31 @@ export default function Logs() {
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-  // Sync search query from URL on mount (client-side only)
   useEffect(() => {
     const urlSearch = new URLSearchParams(window.location.search).get('search') || ''
     if (urlSearch && urlSearch !== searchQuery) {
       setSearchQuery(urlSearch)
     }
-    // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [isLive, setIsLive] = useState(false)
   const [isVisuallyRefreshing, setIsVisuallyRefreshing] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
-  const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0)
   const isSearchOpenRef = useRef<boolean>(false)
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
   const userPermissions = useUserPermissionsContext()
 
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const [contextMenuLog, setContextMenuLog] = useState<WorkflowLog | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
   const logFilters = useMemo(
     () => ({
       timeRange,
+      startDate,
+      endDate,
       level,
       workflowIds,
       folderIds,
@@ -84,7 +102,7 @@ export default function Logs() {
       searchQuery: debouncedSearchQuery,
       limit: LOGS_PER_PAGE,
     }),
-    [timeRange, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
+    [timeRange, startDate, endDate, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
   )
 
   const logsQuery = useLogsList(workspaceId, logFilters, {
@@ -92,7 +110,32 @@ export default function Logs() {
     refetchInterval: isLive ? 5000 : false,
   })
 
+  const dashboardFilters = useMemo(
+    () => ({
+      timeRange,
+      startDate,
+      endDate,
+      level,
+      workflowIds,
+      folderIds,
+      triggers,
+      searchQuery: debouncedSearchQuery,
+    }),
+    [timeRange, startDate, endDate, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
+  )
+
+  const dashboardLogsQuery = useDashboardLogs(workspaceId, dashboardFilters, {
+    enabled: Boolean(workspaceId) && isInitialized.current,
+    refetchInterval: isLive ? 5000 : false,
+  })
+
   const logDetailQuery = useLogDetail(selectedLog?.id)
+
+  const mergedSelectedLog = useMemo(() => {
+    if (!selectedLog) return null
+    if (!logDetailQuery.data) return selectedLog
+    return { ...selectedLog, ...logDetailQuery.data }
+  }, [selectedLog, logDetailQuery.data])
 
   const logs = useMemo(() => {
     if (!logsQuery.data?.pages) return []
@@ -107,10 +150,8 @@ export default function Logs() {
     }
   }, [debouncedSearchQuery, setStoreSearchQuery])
 
-  // Track previous log state for efficient change detection
   const prevSelectedLogRef = useRef<WorkflowLog | null>(null)
 
-  // Sync selected log with refreshed data from logs list
   useEffect(() => {
     if (!selectedLog?.id || logs.length === 0) return
 
@@ -119,32 +160,25 @@ export default function Logs() {
 
     const prevLog = prevSelectedLogRef.current
 
-    // Check if status-related fields have changed (e.g., running -> done)
     const hasStatusChange =
       prevLog?.id === updatedLog.id &&
-      (updatedLog.duration !== prevLog.duration ||
-        updatedLog.level !== prevLog.level ||
-        updatedLog.hasPendingPause !== prevLog.hasPendingPause)
+      (updatedLog.duration !== prevLog.duration || updatedLog.status !== prevLog.status)
 
-    // Only update if the log data actually changed
     if (updatedLog !== selectedLog) {
       setSelectedLog(updatedLog)
       prevSelectedLogRef.current = updatedLog
     }
 
-    // Update index in case position changed
     const newIndex = logs.findIndex((l) => l.id === selectedLog.id)
     if (newIndex !== selectedLogIndex) {
       setSelectedLogIndex(newIndex)
     }
 
-    // Refetch log details if status changed to keep details panel in sync
     if (hasStatusChange) {
       logDetailQuery.refetch()
     }
-  }, [logs, selectedLog?.id, selectedLogIndex, logDetailQuery.refetch])
+  }, [logs, selectedLog?.id, selectedLogIndex, logDetailQuery])
 
-  // Refetch log details during live mode
   useEffect(() => {
     if (!isLive || !selectedLog?.id) return
 
@@ -155,20 +189,24 @@ export default function Logs() {
     return () => clearInterval(interval)
   }, [isLive, selectedLog?.id, logDetailQuery])
 
-  const handleLogClick = (log: WorkflowLog) => {
-    // If clicking on the same log that's already selected and sidebar is open, close it
-    if (selectedLog?.id === log.id && isSidebarOpen) {
-      handleCloseSidebar()
-      return
-    }
+  const handleLogClick = useCallback(
+    (log: WorkflowLog) => {
+      if (selectedLog?.id === log.id && isSidebarOpen) {
+        setIsSidebarOpen(false)
+        setSelectedLog(null)
+        setSelectedLogIndex(-1)
+        prevSelectedLogRef.current = null
+        return
+      }
 
-    // Otherwise, select the log and open the sidebar
-    setSelectedLog(log)
-    prevSelectedLogRef.current = log
-    const index = logs.findIndex((l) => l.id === log.id)
-    setSelectedLogIndex(index)
-    setIsSidebarOpen(true)
-  }
+      setSelectedLog(log)
+      prevSelectedLogRef.current = log
+      const index = logs.findIndex((l) => l.id === log.id)
+      setSelectedLogIndex(index)
+      setIsSidebarOpen(true)
+    },
+    [selectedLog?.id, isSidebarOpen, logs]
+  )
 
   const handleNavigateNext = useCallback(() => {
     if (selectedLogIndex < logs.length - 1) {
@@ -190,12 +228,62 @@ export default function Logs() {
     }
   }, [selectedLogIndex, logs])
 
-  const handleCloseSidebar = () => {
+  const handleCloseSidebar = useCallback(() => {
     setIsSidebarOpen(false)
     setSelectedLog(null)
     setSelectedLogIndex(-1)
     prevSelectedLogRef.current = null
-  }
+  }, [])
+
+  const handleLogContextMenu = useCallback((e: React.MouseEvent, log: WorkflowLog) => {
+    e.preventDefault()
+    setContextMenuPosition({ x: e.clientX, y: e.clientY })
+    setContextMenuLog(log)
+    setContextMenuOpen(true)
+  }, [])
+
+  const handleCopyExecutionId = useCallback(() => {
+    if (contextMenuLog?.executionId) {
+      navigator.clipboard.writeText(contextMenuLog.executionId)
+    }
+  }, [contextMenuLog])
+
+  const handleOpenWorkflow = useCallback(() => {
+    const wfId = contextMenuLog?.workflow?.id || contextMenuLog?.workflowId
+    if (wfId) {
+      window.open(`/workspace/${workspaceId}/w/${wfId}`, '_blank')
+    }
+  }, [contextMenuLog, workspaceId])
+
+  const handleToggleWorkflowFilter = useCallback(() => {
+    const wfId = contextMenuLog?.workflow?.id || contextMenuLog?.workflowId
+    if (!wfId) return
+
+    if (workflowIds.length === 1 && workflowIds[0] === wfId) {
+      setWorkflowIds([])
+    } else {
+      setWorkflowIds([wfId])
+    }
+  }, [contextMenuLog, workflowIds, setWorkflowIds])
+
+  const handleClearAllFilters = useCallback(() => {
+    resetFilters()
+    setSearchQuery('')
+  }, [resetFilters, setSearchQuery])
+
+  const contextMenuWorkflowId = contextMenuLog?.workflow?.id || contextMenuLog?.workflowId
+  const isFilteredByThisWorkflow = Boolean(
+    contextMenuWorkflowId && workflowIds.length === 1 && workflowIds[0] === contextMenuWorkflowId
+  )
+
+  const filtersActive = hasActiveFilters({
+    timeRange,
+    level,
+    workflowIds,
+    folderIds,
+    triggers,
+    searchQuery: debouncedSearchQuery,
+  })
 
   useEffect(() => {
     if (selectedRowRef.current) {
@@ -213,8 +301,6 @@ export default function Logs() {
     if (selectedLog?.id) {
       logDetailQuery.refetch()
     }
-    // Also trigger dashboard refresh
-    setDashboardRefreshTrigger((prev) => prev + 1)
   }, [logsQuery, logDetailQuery, selectedLog?.id])
 
   const handleToggleLive = useCallback(() => {
@@ -225,8 +311,6 @@ export default function Logs() {
       setIsVisuallyRefreshing(true)
       setTimeout(() => setIsVisuallyRefreshing(false), REFRESH_SPINNER_DURATION_MS)
       logsQuery.refetch()
-      // Also trigger dashboard refresh
-      setDashboardRefreshTrigger((prev) => prev + 1)
     }
   }, [isLive, logsQuery])
 
@@ -251,6 +335,16 @@ export default function Logs() {
       if (triggers.length > 0) params.set('triggers', triggers.join(','))
       if (workflowIds.length > 0) params.set('workflowIds', workflowIds.join(','))
       if (folderIds.length > 0) params.set('folderIds', folderIds.join(','))
+
+      const computedStartDate = getStartDateFromTimeRange(timeRange, startDate)
+      if (computedStartDate) {
+        params.set('startDate', computedStartDate.toISOString())
+      }
+
+      const computedEndDate = getEndDateFromTimeRange(timeRange, endDate)
+      if (computedEndDate) {
+        params.set('endDate', computedEndDate.toISOString())
+      }
 
       const parsed = parseQuery(debouncedSearchQuery)
       const extra = queryToApiParams(parsed)
@@ -293,62 +387,6 @@ export default function Logs() {
   }, [logsQuery])
 
   useEffect(() => {
-    if (logsQuery.isLoading || !logsQuery.hasNextPage) return
-
-    const scrollContainer = scrollContainerRef.current
-    if (!scrollContainer) return
-
-    const handleScroll = () => {
-      if (!scrollContainer) return
-
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainer
-
-      const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100
-
-      if (scrollPercentage > 60 && !logsQuery.isFetchingNextPage && logsQuery.hasNextPage) {
-        loadMoreLogs()
-      }
-    }
-
-    scrollContainer.addEventListener('scroll', handleScroll)
-
-    return () => {
-      scrollContainer.removeEventListener('scroll', handleScroll)
-    }
-  }, [logsQuery.isLoading, logsQuery.hasNextPage, logsQuery.isFetchingNextPage, loadMoreLogs])
-
-  useEffect(() => {
-    const currentLoaderRef = loaderRef.current
-    const scrollContainer = scrollContainerRef.current
-
-    if (!currentLoaderRef || !scrollContainer || logsQuery.isLoading || !logsQuery.hasNextPage)
-      return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const e = entries[0]
-        if (!e?.isIntersecting) return
-        const { scrollTop, scrollHeight, clientHeight } = scrollContainer
-        const pct = (scrollTop / (scrollHeight - clientHeight)) * 100
-        if (pct > 70 && !logsQuery.isFetchingNextPage) {
-          loadMoreLogs()
-        }
-      },
-      {
-        root: scrollContainer,
-        threshold: 0.1,
-        rootMargin: '200px 0px 0px 0px',
-      }
-    )
-
-    observer.observe(currentLoaderRef)
-
-    return () => {
-      observer.unobserve(currentLoaderRef)
-    }
-  }, [logsQuery.isLoading, logsQuery.hasNextPage, logsQuery.isFetchingNextPage, loadMoreLogs])
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isSearchOpenRef.current) return
       if (logs.length === 0) return
@@ -386,7 +424,7 @@ export default function Logs() {
   return (
     <div className='flex h-full flex-1 flex-col overflow-hidden'>
       <div className='flex flex-1 overflow-hidden'>
-        <div className='flex flex-1 flex-col overflow-auto pt-[28px] pl-[24px]'>
+        <div className='flex flex-1 flex-col overflow-auto bg-white pt-[28px] pl-[24px] dark:bg-[var(--bg)]'>
           <div className='pr-[24px]'>
             <LogsToolbar
               viewMode={viewMode}
@@ -408,215 +446,93 @@ export default function Logs() {
             />
           </div>
 
-          {/* Dashboard view */}
-          {isDashboardView && (
-            <div className='flex min-h-0 flex-1 flex-col pr-[24px]'>
-              <Dashboard isLive={isLive} refreshTrigger={dashboardRefreshTrigger} />
-            </div>
-          )}
+          {/* Dashboard view - uses all logs (non-paginated) for accurate metrics */}
+          <div
+            className={cn('flex min-h-0 flex-1 flex-col pr-[24px]', !isDashboardView && 'hidden')}
+          >
+            <Dashboard
+              logs={dashboardLogsQuery.data ?? []}
+              isLoading={!dashboardLogsQuery.data}
+              error={dashboardLogsQuery.error}
+            />
+          </div>
 
           {/* Main content area with table - only show in logs view */}
-          {!isDashboardView && (
-            <div className='relative mt-[24px] flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px]'>
-              {/* Table container */}
-              <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-[var(--surface-1)]'>
-                {/* Table header */}
-                <div className='flex-shrink-0 rounded-t-[6px] bg-[var(--surface-3)] px-[24px] py-[10px]'>
-                  <div className='flex items-center'>
-                    <span className='w-[8%] min-w-[70px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Date
-                    </span>
-                    <span className='w-[12%] min-w-[90px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Time
-                    </span>
-                    <span className='w-[12%] min-w-[100px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Status
-                    </span>
-                    <span className='w-[22%] min-w-[140px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Workflow
-                    </span>
-                    <span className='w-[12%] min-w-[90px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Cost
-                    </span>
-                    <span className='w-[14%] min-w-[110px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Trigger
-                    </span>
-                    <span className='w-[20%] min-w-[100px] font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Duration
-                    </span>
-                  </div>
-                </div>
-
-                {/* Table body - scrollable */}
-                <div
-                  className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden'
-                  ref={scrollContainerRef}
-                >
-                  {logsQuery.isLoading && !logsQuery.data ? (
-                    <div className='flex h-full items-center justify-center'>
-                      <div className='flex items-center gap-[8px] text-[var(--text-secondary)]'>
-                        <Loader2 className='h-[16px] w-[16px] animate-spin' />
-                        <span className='text-[13px]'>Loading logs...</span>
-                      </div>
-                    </div>
-                  ) : logsQuery.isError ? (
-                    <div className='flex h-full items-center justify-center'>
-                      <div className='flex items-center gap-[8px] text-[var(--text-error)]'>
-                        <AlertCircle className='h-[16px] w-[16px]' />
-                        <span className='text-[13px]'>
-                          Error: {logsQuery.error?.message || 'Failed to load logs'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : logs.length === 0 ? (
-                    <div className='flex h-full items-center justify-center'>
-                      <div className='flex items-center gap-[8px] text-[var(--text-secondary)]'>
-                        <span className='text-[13px]'>No logs found</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {logs.map((log) => {
-                        const formattedDate = formatDate(log.createdAt)
-                        const isSelected = selectedLog?.id === log.id
-                        const baseLevel = (log.level || 'info').toLowerCase()
-                        const isError = baseLevel === 'error'
-                        const isPending = !isError && log.hasPendingPause === true
-                        const isRunning = !isError && !isPending && log.duration === null
-
-                        return (
-                          <div
-                            key={log.id}
-                            ref={isSelected ? selectedRowRef : null}
-                            className={cn(
-                              'relative flex h-[44px] cursor-pointer items-center px-[24px] hover:bg-[var(--c-2A2A2A)]',
-                              isSelected && 'bg-[var(--c-2A2A2A)]'
-                            )}
-                            onClick={() => handleLogClick(log)}
-                          >
-                            <div className='flex flex-1 items-center'>
-                              {/* Date */}
-                              <span className='w-[8%] min-w-[70px] font-medium text-[12px] text-[var(--text-primary)]'>
-                                {formattedDate.compactDate}
-                              </span>
-
-                              {/* Time */}
-                              <span className='w-[12%] min-w-[90px] font-medium text-[12px] text-[var(--text-primary)]'>
-                                {formattedDate.compactTime}
-                              </span>
-
-                              {/* Status */}
-                              <div className='w-[12%] min-w-[100px]'>
-                                <StatusBadge
-                                  status={
-                                    isError
-                                      ? 'error'
-                                      : isPending
-                                        ? 'pending'
-                                        : isRunning
-                                          ? 'running'
-                                          : 'info'
-                                  }
-                                />
-                              </div>
-
-                              {/* Workflow */}
-                              <div className='flex w-[22%] min-w-[140px] items-center gap-[8px] pr-[8px]'>
-                                <div
-                                  className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px]'
-                                  style={{ backgroundColor: log.workflow?.color }}
-                                />
-                                <span className='min-w-0 truncate font-medium text-[12px] text-[var(--text-primary)]'>
-                                  {log.workflow?.name || 'Unknown'}
-                                </span>
-                              </div>
-
-                              {/* Cost */}
-                              <span className='w-[12%] min-w-[90px] font-medium text-[12px] text-[var(--text-primary)]'>
-                                {typeof log.cost?.total === 'number'
-                                  ? `$${log.cost.total.toFixed(4)}`
-                                  : '—'}
-                              </span>
-
-                              {/* Trigger */}
-                              <div className='w-[14%] min-w-[110px]'>
-                                {log.trigger ? (
-                                  <TriggerBadge trigger={log.trigger} />
-                                ) : (
-                                  <span className='font-medium text-[12px] text-[var(--text-primary)]'>
-                                    —
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Duration */}
-                              <div className='w-[20%] min-w-[100px]'>
-                                <Badge
-                                  variant='default'
-                                  className='rounded-[6px] px-[9px] py-[2px] text-[12px]'
-                                >
-                                  {formatDuration(log.duration) || '—'}
-                                </Badge>
-                              </div>
-                            </div>
-
-                            {/* Resume Link */}
-                            {isPending &&
-                              log.executionId &&
-                              (log.workflow?.id || log.workflowId) && (
-                                <Link
-                                  href={`/resume/${log.workflow?.id || log.workflowId}/${log.executionId}`}
-                                  target='_blank'
-                                  rel='noopener noreferrer'
-                                  className={cn(
-                                    buttonVariants({ variant: 'active' }),
-                                    'absolute right-[24px] h-[26px] w-[26px] rounded-[6px] p-0'
-                                  )}
-                                  aria-label='Open resume console'
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <ArrowUpRight className='h-[14px] w-[14px]' />
-                                </Link>
-                              )}
-                          </div>
-                        )
-                      })}
-
-                      {/* Infinite scroll loader */}
-                      {logsQuery.hasNextPage && (
-                        <div className='flex items-center justify-center py-[16px]'>
-                          <div
-                            ref={loaderRef}
-                            className='flex items-center gap-[8px] text-[var(--text-secondary)]'
-                          >
-                            {logsQuery.isFetchingNextPage ? (
-                              <>
-                                <Loader2 className='h-[16px] w-[16px] animate-spin' />
-                                <span className='text-[13px]'>Loading more...</span>
-                              </>
-                            ) : (
-                              <span className='text-[13px]'>Scroll to load more</span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+          <div
+            className={cn(
+              'relative mt-[24px] flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px]',
+              isDashboardView && 'hidden'
+            )}
+          >
+            {/* Table container */}
+            <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[6px] bg-[var(--surface-2)] dark:bg-[var(--surface-1)]'>
+              {/* Table header */}
+              <div className='flex-shrink-0 rounded-t-[6px] bg-[var(--surface-3)] px-[24px] py-[10px] dark:bg-[var(--surface-3)]'>
+                <div className='flex items-center'>
+                  {LOG_COLUMN_ORDER.map((key) => {
+                    const col = LOG_COLUMNS[key]
+                    return (
+                      <span
+                        key={key}
+                        className={`${col.width} ${col.minWidth} font-medium text-[12px] text-[var(--text-tertiary)]`}
+                      >
+                        {col.label}
+                      </span>
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Log Details - rendered inside table container */}
-              <LogDetails
-                log={logDetailQuery.data || selectedLog}
-                isOpen={isSidebarOpen}
-                onClose={handleCloseSidebar}
-                onNavigateNext={handleNavigateNext}
-                onNavigatePrev={handleNavigatePrev}
-                hasNext={selectedLogIndex < logs.length - 1}
-                hasPrev={selectedLogIndex > 0}
-              />
+              {/* Table body - virtualized */}
+              <div className='min-h-0 flex-1 overflow-hidden' ref={scrollContainerRef}>
+                {logsQuery.isLoading && !logsQuery.data ? (
+                  <div className='flex h-full items-center justify-center'>
+                    <div className='flex items-center gap-[8px] text-[var(--text-secondary)]'>
+                      <Loader2 className='h-[16px] w-[16px] animate-spin' />
+                      <span className='text-[13px]'>Loading logs...</span>
+                    </div>
+                  </div>
+                ) : logsQuery.isError ? (
+                  <div className='flex h-full items-center justify-center'>
+                    <div className='text-[var(--text-error)]'>
+                      <span className='text-[13px]'>
+                        Error: {logsQuery.error?.message || 'Failed to load logs'}
+                      </span>
+                    </div>
+                  </div>
+                ) : logs.length === 0 ? (
+                  <div className='flex h-full items-center justify-center'>
+                    <div className='flex items-center gap-[8px] text-[var(--text-secondary)]'>
+                      <span className='text-[13px]'>No logs found</span>
+                    </div>
+                  </div>
+                ) : (
+                  <LogsList
+                    logs={logs}
+                    selectedLogId={selectedLog?.id ?? null}
+                    onLogClick={handleLogClick}
+                    onLogContextMenu={handleLogContextMenu}
+                    selectedRowRef={selectedRowRef}
+                    hasNextPage={logsQuery.hasNextPage ?? false}
+                    isFetchingNextPage={logsQuery.isFetchingNextPage}
+                    onLoadMore={loadMoreLogs}
+                    loaderRef={loaderRef}
+                  />
+                )}
+              </div>
             </div>
-          )}
+
+            {/* Log Details - rendered inside table container */}
+            <LogDetails
+              log={mergedSelectedLog}
+              isOpen={isSidebarOpen}
+              onClose={handleCloseSidebar}
+              onNavigateNext={handleNavigateNext}
+              onNavigatePrev={handleNavigatePrev}
+              hasNext={selectedLogIndex < logs.length - 1}
+              hasPrev={selectedLogIndex > 0}
+            />
+          </div>
         </div>
       </div>
 
@@ -624,6 +540,20 @@ export default function Logs() {
         workspaceId={workspaceId}
         open={isNotificationSettingsOpen}
         onOpenChange={setIsNotificationSettingsOpen}
+      />
+
+      <LogRowContextMenu
+        isOpen={contextMenuOpen}
+        position={contextMenuPosition}
+        menuRef={contextMenuRef}
+        onClose={() => setContextMenuOpen(false)}
+        log={contextMenuLog}
+        onCopyExecutionId={handleCopyExecutionId}
+        onOpenWorkflow={handleOpenWorkflow}
+        onToggleWorkflowFilter={handleToggleWorkflowFilter}
+        onClearAllFilters={handleClearAllFilters}
+        isFilteredByThisWorkflow={isFilteredByThisWorkflow}
+        hasActiveFilters={filtersActive}
       />
     </div>
   )

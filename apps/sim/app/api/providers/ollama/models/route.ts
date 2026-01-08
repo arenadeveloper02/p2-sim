@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
 import type { ModelsObject } from '@/providers/ollama/types'
 
 const logger = createLogger('OllamaModelsAPI')
@@ -45,7 +45,6 @@ export async function GET(request: NextRequest) {
       host: OLLAMA_HOST,
     })
 
-    // Return empty array instead of error to avoid breaking the UI
     return NextResponse.json({ models: [] })
   }
 }

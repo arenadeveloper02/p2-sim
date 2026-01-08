@@ -48,25 +48,9 @@ Typeformからフォームの回答を取得する
 
 | パラメータ | 型 | 説明 |
 | --------- | ---- | ----------- |
-| `total_items` | number | 回答/フォームの総数 |
-| `page_count` | number | 総ページ数 |
-| `items` | json | 回答/フォーム項目の配列 |
-| `id` | string | フォームの一意の識別子 |
-| `title` | string | フォームのタイトル |
-| `type` | string | フォームのタイプ |
-| `created_at` | string | フォーム作成のISOタイムスタンプ |
-| `last_updated_at` | string | 最終更新のISOタイムスタンプ |
-| `settings` | json | フォーム設定オブジェクト |
-| `theme` | json | テーマ設定オブジェクト |
-| `workspace` | json | ワークスペース情報 |
-| `fields` | json | フォームフィールド/質問の配列 |
-| `thankyou_screens` | json | サンキュースクリーンの配列 |
-| `_links` | json | 関連リソースリンク |
-| `deleted` | boolean | フォームが正常に削除されたかどうか |
-| `message` | string | 削除確認メッセージ |
-| `fileUrl` | string | ダウンロードされたファイルのURL |
-| `contentType` | string | ファイルのコンテンツタイプ |
-| `filename` | string | ファイル名 |
+| `total_items` | number | 回答の総数 |
+| `page_count` | number | 利用可能なページの総数 |
+| `items` | array | response_id、submitted_at、answers、およびmetadataを含む回答オブジェクトの配列 |
 
 ### `typeform_files`
 
@@ -127,8 +111,8 @@ Typeformアカウント内のすべてのフォームのリストを取得する
 | パラメータ | 型 | 説明 |
 | --------- | ---- | ----------- |
 | `total_items` | number | アカウント内のフォームの総数 |
-| `page_count` | number | 利用可能な総ページ数 |
-| `items` | array | フォームオブジェクトの配列 |
+| `page_count` | number | 利用可能なページの総数 |
+| `items` | array | id、title、created_at、last_updated_at、settings、theme、および_linksを含むフォームオブジェクトの配列 |
 
 ### `typeform_get_form`
 
@@ -145,14 +129,19 @@ Typeformアカウント内のすべてのフォームのリストを取得する
 
 | パラメータ | 型 | 説明 |
 | --------- | ---- | ----------- |
-| `id` | string | フォームの一意の識別子 |
+| `id` | string | フォームの一意識別子 |
 | `title` | string | フォームのタイトル |
 | `type` | string | フォームのタイプ（form、quizなど） |
-| `created_at` | string | フォーム作成のISOタイムスタンプ |
-| `last_updated_at` | string | 最終更新のISOタイムスタンプ |
-| `settings` | object | 言語、進捗バーなどを含むフォーム設定 |
-| `theme` | object | 色、フォント、デザイン設定を含むテーマ構成 |
-| `workspace` | object | ワークスペース情報 |
+| `settings` | object | 言語、プログレスバーなどを含むフォーム設定 |
+| `theme` | object | テーマ参照 |
+| `workspace` | object | ワークスペース参照 |
+| `fields` | array | フォームフィールド/質問の配列 |
+| `welcome_screens` | array | ウェルカム画面の配列（設定されていない場合は空） |
+| `thankyou_screens` | array | サンキュー画面の配列 |
+| `created_at` | string | フォーム作成タイムスタンプ（ISO 8601形式） |
+| `last_updated_at` | string | フォーム最終更新タイムスタンプ（ISO 8601形式） |
+| `published_at` | string | フォーム公開タイムスタンプ（ISO 8601形式） |
+| `_links` | object | 公開フォームURLを含む関連リソースリンク |
 
 ### `typeform_create_form`
 
@@ -174,16 +163,16 @@ Typeformアカウント内のすべてのフォームのリストを取得する
 
 | パラメータ | 型 | 説明 |
 | --------- | ---- | ----------- |
-| `id` | string | 作成されたフォームの一意の識別子 |
+| `id` | string | 作成されたフォームの一意識別子 |
 | `title` | string | フォームのタイトル |
 | `type` | string | フォームのタイプ |
-| `created_at` | string | フォーム作成のISOタイムスタンプ |
-| `last_updated_at` | string | 最終更新のISOタイムスタンプ |
-| `settings` | object | フォーム設定 |
-| `theme` | object | 適用されたテーマ設定 |
-| `workspace` | object | ワークスペース情報 |
-| `fields` | array | 作成されたフォームフィールドの配列 |
-| `_links` | object | 関連リソースリンク |
+| `settings` | object | フォーム設定オブジェクト |
+| `theme` | object | テーマ参照 |
+| `workspace` | object | ワークスペース参照 |
+| `fields` | array | 作成されたフォームフィールドの配列（追加されていない場合は空） |
+| `welcome_screens` | array | ウェルカム画面の配列（設定されていない場合は空） |
+| `thankyou_screens` | array | サンキュー画面の配列 |
+| `_links` | object | 公開フォームURLを含む関連リソースリンク |
 
 ### `typeform_update_form`
 
@@ -201,17 +190,7 @@ JSON Patchオペレーションを使用して既存のフォームを更新す�
 
 | パラメータ | 型 | 説明 |
 | --------- | ---- | ----------- |
-| `id` | string | 更新されたフォームの一意の識別子 |
-| `title` | string | フォームのタイトル |
-| `type` | string | フォームのタイプ |
-| `created_at` | string | フォーム作成のISOタイムスタンプ |
-| `last_updated_at` | string | 最終更新のISOタイムスタンプ |
-| `settings` | object | フォーム設定 |
-| `theme` | object | テーマ設定 |
-| `workspace` | object | ワークスペース情報 |
-| `fields` | array | フォームフィールドの配列 |
-| `thankyou_screens` | array | サンキュー画面の配列 |
-| `_links` | object | 関連リソースリンク |
+| `message` | string | 成功確認メッセージ |
 
 ### `typeform_delete_form`
 

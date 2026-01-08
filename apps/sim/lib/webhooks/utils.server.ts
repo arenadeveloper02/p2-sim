@@ -1,8 +1,9 @@
 import { db } from '@sim/db'
 import { account, webhook } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createPinnedUrl, validateUrlWithDNS } from '@/lib/core/security/input-validation'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
 const logger = createLogger('WebhookUtils')
@@ -18,7 +19,6 @@ export async function handleWhatsAppVerification(
   challenge: string | null
 ): Promise<NextResponse | null> {
   if (mode && token && challenge) {
-    // This is a WhatsApp verification request
     logger.info(`[${requestId}] WhatsApp verification request received for path: ${path}`)
 
     if (mode !== 'subscribe') {
@@ -26,13 +26,11 @@ export async function handleWhatsAppVerification(
       return new NextResponse('Invalid mode', { status: 400 })
     }
 
-    // Find all active WhatsApp webhooks
     const webhooks = await db
       .select()
       .from(webhook)
       .where(and(eq(webhook.provider, 'whatsapp'), eq(webhook.isActive, true)))
 
-    // Check if any webhook has a matching verification token
     for (const wh of webhooks) {
       const providerConfig = (wh.providerConfig as Record<string, any>) || {}
       const verificationToken = providerConfig.verificationToken
@@ -44,7 +42,6 @@ export async function handleWhatsAppVerification(
 
       if (token === verificationToken) {
         logger.info(`[${requestId}] WhatsApp verification successful for webhook ${wh.id}`)
-        // Return ONLY the challenge as plain text (exactly as WhatsApp expects)
         return new NextResponse(challenge, {
           status: 200,
           headers: {
@@ -73,6 +70,52 @@ export function handleSlackChallenge(body: any): NextResponse | null {
 }
 
 /**
+ * Fetches a URL with DNS pinning to prevent DNS rebinding attacks
+ * @param url - The URL to fetch
+ * @param accessToken - Authorization token (optional for pre-signed URLs)
+ * @param requestId - Request ID for logging
+ * @returns The fetch Response or null if validation fails
+ */
+async function fetchWithDNSPinning(
+  url: string,
+  accessToken: string,
+  requestId: string
+): Promise<Response | null> {
+  try {
+    const urlValidation = await validateUrlWithDNS(url, 'contentUrl')
+    if (!urlValidation.isValid) {
+      logger.warn(`[${requestId}] Invalid content URL: ${urlValidation.error}`, {
+        url: url.substring(0, 100),
+      })
+      return null
+    }
+
+    const pinnedUrl = createPinnedUrl(url, urlValidation.resolvedIP!)
+
+    const headers: Record<string, string> = {
+      Host: urlValidation.originalHostname!,
+    }
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`
+    }
+
+    const response = await fetch(pinnedUrl, {
+      headers,
+      redirect: 'follow',
+    })
+
+    return response
+  } catch (error) {
+    logger.error(`[${requestId}] Error fetching URL with DNS pinning`, {
+      error: error instanceof Error ? error.message : String(error),
+      url: url.substring(0, 100),
+    })
+    return null
+  }
+}
+
+/**
  * Format Microsoft Teams Graph change notification
  */
 async function formatTeamsGraphNotification(
@@ -81,12 +124,15 @@ async function formatTeamsGraphNotification(
   foundWorkflow: any,
   request: NextRequest
 ): Promise<any> {
-  const notification = body.value[0]
+  const notification = body.value?.[0]
+  if (!notification) {
+    logger.warn('Received empty Teams notification body')
+    return null
+  }
   const changeType = notification.changeType || 'created'
   const resource = notification.resource || ''
   const subscriptionId = notification.subscriptionId || ''
 
-  // Extract chatId and messageId from resource path
   let chatId: string | null = null
   let messageId: string | null = null
 
@@ -155,7 +201,6 @@ async function formatTeamsGraphNotification(
     []
   let accessToken: string | null = null
 
-  // Teams chat subscriptions require credentials
   if (!credentialId) {
     logger.error('Missing credentialId for Teams chat subscription', {
       chatId: resolvedChatId,
@@ -166,11 +211,9 @@ async function formatTeamsGraphNotification(
     })
   } else {
     try {
-      // Get userId from credential
       const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
       if (rows.length === 0) {
         logger.error('Teams credential not found', { credentialId, chatId: resolvedChatId })
-        // Continue without message data
       } else {
         const effectiveUserId = rows[0].userId
         accessToken = await refreshAccessTokenIfNeeded(
@@ -203,19 +246,20 @@ async function formatTeamsGraphNotification(
 
                 if (contentUrl.includes('sharepoint.com') || contentUrl.includes('onedrive')) {
                   try {
-                    const directRes = await fetch(contentUrl, {
-                      headers: { Authorization: `Bearer ${accessToken}` },
-                      redirect: 'follow',
-                    })
+                    const directRes = await fetchWithDNSPinning(
+                      contentUrl,
+                      accessToken,
+                      'teams-attachment'
+                    )
 
-                    if (directRes.ok) {
+                    if (directRes?.ok) {
                       const arrayBuffer = await directRes.arrayBuffer()
                       buffer = Buffer.from(arrayBuffer)
                       mimeType =
                         directRes.headers.get('content-type') ||
                         contentTypeHint ||
                         'application/octet-stream'
-                    } else {
+                    } else if (directRes) {
                       const encodedUrl = Buffer.from(contentUrl)
                         .toString('base64')
                         .replace(/\+/g, '-')
@@ -306,9 +350,13 @@ async function formatTeamsGraphNotification(
                       const downloadUrl = metadata['@microsoft.graph.downloadUrl']
 
                       if (downloadUrl) {
-                        const downloadRes = await fetch(downloadUrl)
+                        const downloadRes = await fetchWithDNSPinning(
+                          downloadUrl,
+                          '', // downloadUrl is a pre-signed URL, no auth needed
+                          'teams-onedrive-download'
+                        )
 
-                        if (downloadRes.ok) {
+                        if (downloadRes?.ok) {
                           const arrayBuffer = await downloadRes.arrayBuffer()
                           buffer = Buffer.from(arrayBuffer)
                           mimeType =
@@ -332,10 +380,12 @@ async function formatTeamsGraphNotification(
                   }
                 } else {
                   try {
-                    const ares = await fetch(contentUrl, {
-                      headers: { Authorization: `Bearer ${accessToken}` },
-                    })
-                    if (ares.ok) {
+                    const ares = await fetchWithDNSPinning(
+                      contentUrl,
+                      accessToken,
+                      'teams-attachment-generic'
+                    )
+                    if (ares?.ok) {
                       const arrayBuffer = await ares.arrayBuffer()
                       buffer = Buffer.from(arrayBuffer)
                       mimeType =
@@ -373,7 +423,6 @@ async function formatTeamsGraphNotification(
     }
   }
 
-  // If no message was fetched, return minimal data
   if (!message) {
     logger.warn('No message data available for Teams notification', {
       chatId: resolvedChatId,
@@ -409,8 +458,6 @@ async function formatTeamsGraphNotification(
     }
   }
 
-  // Extract data from message - we know it exists now
-  // body.content is the HTML/text content, summary is a plain text preview (max 280 chars)
   const messageText = message.body?.content || ''
   const from = message.from?.user || {}
   const createdAt = message.createdDateTime || ''
@@ -809,6 +856,39 @@ export async function formatWebhookInput(
         webhook: {
           data: {
             provider: 'rss',
+            path: foundWebhook.path,
+            providerConfig: foundWebhook.providerConfig,
+            payload: body,
+            headers: Object.fromEntries(request.headers.entries()),
+            method: request.method,
+          },
+        },
+        workflowId: foundWorkflow.id,
+      }
+    }
+    return body
+  }
+
+  if (foundWebhook.provider === 'imap') {
+    if (body && typeof body === 'object' && 'email' in body) {
+      const email = body.email as Record<string, any>
+      return {
+        messageId: email?.messageId,
+        subject: email?.subject,
+        from: email?.from,
+        to: email?.to,
+        cc: email?.cc,
+        date: email?.date,
+        bodyText: email?.bodyText,
+        bodyHtml: email?.bodyHtml,
+        mailbox: email?.mailbox,
+        hasAttachments: email?.hasAttachments,
+        attachments: email?.attachments,
+        email,
+        timestamp: body.timestamp,
+        webhook: {
+          data: {
+            provider: 'imap',
             path: foundWebhook.path,
             providerConfig: foundWebhook.providerConfig,
             payload: body,
@@ -1385,6 +1465,63 @@ export async function formatWebhookInput(
     }
   }
 
+  if (foundWebhook.provider === 'circleback') {
+    // Circleback webhook payload - meeting notes, action items, transcript
+    return {
+      // Top-level fields from Circleback payload
+      id: body.id,
+      name: body.name,
+      createdAt: body.createdAt,
+      duration: body.duration,
+      url: body.url,
+      recordingUrl: body.recordingUrl,
+      tags: body.tags || [],
+      icalUid: body.icalUid,
+      attendees: body.attendees || [],
+      notes: body.notes || '',
+      actionItems: body.actionItems || [],
+      transcript: body.transcript || [],
+      insights: body.insights || {},
+
+      // Full meeting object for convenience
+      meeting: body,
+
+      webhook: {
+        data: {
+          provider: 'circleback',
+          path: foundWebhook.path,
+          providerConfig: foundWebhook.providerConfig,
+          payload: body,
+          headers: Object.fromEntries(request.headers.entries()),
+          method: request.method,
+        },
+      },
+      workflowId: foundWorkflow.id,
+    }
+  }
+
+  if (foundWebhook.provider === 'grain') {
+    // Grain webhook payload structure: { type, user_id, data: {...} }
+    return {
+      // Top-level fields from Grain payload
+      type: body.type,
+      user_id: body.user_id,
+      data: body.data || {},
+
+      webhook: {
+        data: {
+          provider: 'grain',
+          path: foundWebhook.path,
+          providerConfig: foundWebhook.providerConfig,
+          payload: body,
+          headers: Object.fromEntries(request.headers.entries()),
+          method: request.method,
+        },
+      },
+      workflowId: foundWorkflow.id,
+    }
+  }
+
   // Generic format for other providers
   return {
     webhook: {
@@ -1528,6 +1665,55 @@ export function validateLinearSignature(secret: string, signature: string, body:
     return result === 0
   } catch (error) {
     logger.error('Error validating Linear signature:', error)
+    return false
+  }
+}
+
+/**
+ * Validates a Circleback webhook request signature using HMAC SHA-256
+ * @param secret - Circleback signing secret (plain text)
+ * @param signature - x-signature header value (hex-encoded HMAC SHA-256 signature)
+ * @param body - Raw request body string
+ * @returns Whether the signature is valid
+ */
+export function validateCirclebackSignature(
+  secret: string,
+  signature: string,
+  body: string
+): boolean {
+  try {
+    if (!secret || !signature || !body) {
+      logger.warn('Circleback signature validation missing required fields', {
+        hasSecret: !!secret,
+        hasSignature: !!signature,
+        hasBody: !!body,
+      })
+      return false
+    }
+
+    const crypto = require('crypto')
+    const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
+
+    logger.debug('Circleback signature comparison', {
+      computedSignature: `${computedHash.substring(0, 10)}...`,
+      providedSignature: `${signature.substring(0, 10)}...`,
+      computedLength: computedHash.length,
+      providedLength: signature.length,
+      match: computedHash === signature,
+    })
+
+    if (computedHash.length !== signature.length) {
+      return false
+    }
+
+    let result = 0
+    for (let i = 0; i < computedHash.length; i++) {
+      result |= computedHash.charCodeAt(i) ^ signature.charCodeAt(i)
+    }
+
+    return result === 0
+  } catch (error) {
+    logger.error('Error validating Circleback signature:', error)
     return false
   }
 }
@@ -2399,6 +2585,54 @@ export async function configureRssPolling(webhookData: any, requestId: string): 
     return true
   } catch (error: any) {
     logger.error(`[${requestId}] Failed to configure RSS polling`, {
+      webhookId: webhookData.id,
+      error: error.message,
+    })
+    return false
+  }
+}
+
+/**
+ * Configure IMAP polling for a webhook
+ */
+export async function configureImapPolling(webhookData: any, requestId: string): Promise<boolean> {
+  const logger = createLogger('ImapWebhookSetup')
+  logger.info(`[${requestId}] Setting up IMAP polling for webhook ${webhookData.id}`)
+
+  try {
+    const providerConfig = (webhookData.providerConfig as Record<string, any>) || {}
+    const now = new Date()
+
+    if (!providerConfig.host || !providerConfig.username || !providerConfig.password) {
+      logger.error(
+        `[${requestId}] Missing required IMAP connection settings for webhook ${webhookData.id}`
+      )
+      return false
+    }
+
+    await db
+      .update(webhook)
+      .set({
+        providerConfig: {
+          ...providerConfig,
+          port: providerConfig.port || '993',
+          secure: providerConfig.secure !== false,
+          rejectUnauthorized: providerConfig.rejectUnauthorized !== false,
+          mailbox: providerConfig.mailbox || 'INBOX',
+          searchCriteria: providerConfig.searchCriteria || 'UNSEEN',
+          markAsRead: providerConfig.markAsRead || false,
+          includeAttachments: providerConfig.includeAttachments !== false,
+          lastCheckedTimestamp: now.toISOString(),
+          setupCompleted: true,
+        },
+        updatedAt: now,
+      })
+      .where(eq(webhook.id, webhookData.id))
+
+    logger.info(`[${requestId}] Successfully configured IMAP polling for webhook ${webhookData.id}`)
+    return true
+  } catch (error: any) {
+    logger.error(`[${requestId}] Failed to configure IMAP polling`, {
       webhookId: webhookData.id,
       error: error.message,
     })

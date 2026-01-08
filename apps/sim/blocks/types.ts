@@ -55,10 +55,11 @@ export type SubBlockType =
   | 'time-input' // Time input
   | 'oauth-input' // OAuth credential selector
   | 'webhook-config' // Webhook configuration
-  | 'schedule-save' // Schedule save button with status display
+  | 'schedule-info' // Schedule status display (next run, last ran, failure badge)
   | 'file-selector' // File selector for Google Drive, etc.
   | 'project-selector' // Project selector for Jira, Discord, etc.
   | 'channel-selector' // Channel selector for Slack, Discord, etc.
+  | 'user-selector' // User selector for Slack, etc.
   | 'folder-selector' // Folder selector for Gmail, etc.
   | 'knowledge-base-selector' // Knowledge base selector
   | 'knowledge-tag-filters' // Multiple tag filters for knowledge bases
@@ -85,6 +86,7 @@ export type SubBlockType =
 export const SELECTOR_TYPES_HYDRATION_REQUIRED: SubBlockType[] = [
   'oauth-input',
   'channel-selector',
+  'user-selector',
   'file-selector',
   'folder-selector',
   'project-selector',
@@ -116,9 +118,33 @@ export type BlockOutput =
   | PrimitiveValueType
   | { [key: string]: PrimitiveValueType | Record<string, any> }
 
+/**
+ * Condition for showing an output field.
+ * Uses the same pattern as SubBlockConfig.condition
+ */
+export interface OutputCondition {
+  field: string
+  value: string | number | boolean | Array<string | number | boolean>
+  not?: boolean
+  and?: {
+    field: string
+    value: string | number | boolean | Array<string | number | boolean> | undefined
+    not?: boolean
+  }
+}
+
 export type OutputFieldDefinition =
   | PrimitiveValueType
-  | { type: PrimitiveValueType; description?: string }
+  | {
+      type: PrimitiveValueType
+      description?: string
+      /**
+       * Optional condition for when this output should be shown.
+       * If not specified, the output is always shown.
+       * Uses the same condition format as subBlocks.
+       */
+      condition?: OutputCondition
+    }
 
 export interface ParamConfig {
   type: ParamType
@@ -238,6 +264,8 @@ export interface SubBlockConfig {
   rows?: number
   // Multi-select functionality
   multiSelect?: boolean
+  // Combobox specific: Enable search input in dropdown
+  searchable?: boolean
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean

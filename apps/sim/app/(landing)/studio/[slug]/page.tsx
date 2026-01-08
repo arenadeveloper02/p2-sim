@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/emcn'
 import { FAQ } from '@/lib/blog/faq'
 import { getAllPostMeta, getPostBySlug, getRelatedPosts } from '@/lib/blog/registry'
 import { buildArticleJsonLd, buildBreadcrumbJsonLd, buildPostMetadata } from '@/lib/blog/seo'
@@ -64,6 +64,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
                 sizes='(max-width: 768px) 100vw, 450px'
                 priority
                 itemProp='image'
+                unoptimized
               />
             </div>
           </div>
@@ -144,6 +145,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
                     className='h-[160px] w-full object-cover'
                     sizes='(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw'
                     loading='lazy'
+                    unoptimized
                   />
                   <div className='p-3'>
                     <div className='mb-1 text-gray-600 text-xs'>

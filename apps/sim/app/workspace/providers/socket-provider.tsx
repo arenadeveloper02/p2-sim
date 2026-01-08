@@ -9,10 +9,10 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { io, type Socket } from 'socket.io-client'
 import { getEnv } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('SocketContext')
 
@@ -160,17 +160,13 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
     initializedRef.current = true
     setIsConnecting(true)
 
-    const initializeSocket = async () => {
+    const initializeSocket = () => {
       try {
-        // Generate initial token for socket authentication
-        const token = await generateSocketToken()
-
         const socketUrl = getEnv('NEXT_PUBLIC_SOCKET_URL') || 'http://localhost:3002'
 
         logger.info('Attempting to connect to Socket.IO server', {
           url: socketUrl,
           userId: user?.id || 'no-user',
-          hasToken: !!token,
           timestamp: new Date().toISOString(),
         })
 

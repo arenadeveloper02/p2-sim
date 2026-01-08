@@ -1,4 +1,5 @@
 import { db, workflow, workflowSchedule } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { eq } from 'drizzle-orm'
@@ -7,7 +8,6 @@ import type { ZodRecord, ZodString } from 'zod'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
-import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
@@ -22,13 +22,15 @@ import {
   getScheduleTimeValues,
   getSubBlockValue,
 } from '@/lib/workflows/schedules/utils'
-import { type ExecutionMetadata, ExecutionSnapshot } from '@/executor/execution/snapshot'
+import { REFERENCE } from '@/executor/constants'
+import { ExecutionSnapshot } from '@/executor/execution/snapshot'
+import type { ExecutionMetadata } from '@/executor/execution/types'
 import type { ExecutionResult } from '@/executor/types'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { mergeSubblockState } from '@/stores/workflows/server-utils'
+import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('TriggerScheduleExecution')
-
-const MAX_CONSECUTIVE_FAILURES = 10
 
 type WorkflowRecord = typeof workflow.$inferSelect
 type WorkflowScheduleUpdate = Partial<typeof workflowSchedule.$inferInsert>
@@ -128,17 +130,25 @@ async function ensureBlockVariablesResolvable(
       await Promise.all(
         Object.values(subBlocks).map(async (subBlock) => {
           const value = subBlock.value
-          if (typeof value !== 'string' || !value.includes('{{') || !value.includes('}}')) {
+          if (
+            typeof value !== 'string' ||
+            !value.includes(REFERENCE.ENV_VAR_START) ||
+            !value.includes(REFERENCE.ENV_VAR_END)
+          ) {
             return
           }
 
-          const matches = value.match(/{{([^}]+)}}/g)
+          const envVarPattern = createEnvVarPattern()
+          const matches = value.match(envVarPattern)
           if (!matches) {
             return
           }
 
           for (const match of matches) {
-            const varName = match.slice(2, -2)
+            const varName = match.slice(
+              REFERENCE.ENV_VAR_START.length,
+              -REFERENCE.ENV_VAR_END.length
+            )
             const encryptedValue = variables[varName]
             if (!encryptedValue) {
               throw new Error(`Environment variable "${varName}" was not found`)
@@ -193,6 +203,7 @@ async function runWorkflowExecution({
     const deployedData = await loadDeployedWorkflowState(payload.workflowId)
 
     const blocks = deployedData.blocks
+    const { deploymentVersionId } = deployedData
     logger.info(`[${requestId}] Loaded deployed workflow ${payload.workflowId}`)
 
     if (payload.blockId) {
@@ -208,11 +219,16 @@ async function runWorkflowExecution({
 
     const mergedStates = mergeSubblockState(blocks)
 
+    const workspaceId = workflowRecord.workspaceId
+    if (!workspaceId) {
+      throw new Error(`Workflow ${payload.workflowId} has no associated workspace`)
+    }
+
     const personalEnvUserId = workflowRecord.userId
 
     const { personalEncrypted, workspaceEncrypted } = await getPersonalAndWorkspaceEnv(
       personalEnvUserId,
-      workflowRecord.workspaceId || undefined
+      workspaceId
     )
 
     const variables = EnvVarsSchema.parse({
@@ -231,15 +247,16 @@ async function runWorkflowExecution({
 
     await loggingSession.safeStart({
       userId: actorUserId,
-      workspaceId: workflowRecord.workspaceId || '',
+      workspaceId,
       variables: variables || {},
+      deploymentVersionId,
     })
 
     const metadata: ExecutionMetadata = {
       requestId,
       executionId,
       workflowId: payload.workflowId,
-      workspaceId: workflowRecord.workspaceId || '',
+      workspaceId,
       userId: actorUserId,
       sessionUserId: undefined,
       workflowUserId: workflowRecord.userId,
@@ -269,14 +286,25 @@ async function runWorkflowExecution({
         logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
           executionId,
         })
+        await loggingSession.markAsFailed('Missing snapshot seed for paused execution')
       } else {
-        await PauseResumeManager.persistPauseResult({
-          workflowId: payload.workflowId,
-          executionId,
-          pausePoints: executionResult.pausePoints || [],
-          snapshotSeed: executionResult.snapshotSeed,
-          executorUserId: executionResult.metadata?.userId,
-        })
+        try {
+          await PauseResumeManager.persistPauseResult({
+            workflowId: payload.workflowId,
+            executionId,
+            pausePoints: executionResult.pausePoints || [],
+            snapshotSeed: executionResult.snapshotSeed,
+            executorUserId: executionResult.metadata?.userId,
+          })
+        } catch (pauseError) {
+          logger.error(`[${requestId}] Failed to persist pause result`, {
+            executionId,
+            error: pauseError instanceof Error ? pauseError.message : String(pauseError),
+          })
+          await loggingSession.markAsFailed(
+            `Failed to persist pause state: ${pauseError instanceof Error ? pauseError.message : String(pauseError)}`
+          )
+        }
       }
     } else {
       await PauseResumeManager.processQueuedResumes(executionId)
@@ -292,30 +320,22 @@ async function runWorkflowExecution({
     }
 
     return { status: 'failure', blocks, executionResult }
-  } catch (earlyError) {
-    logger.error(
-      `[${requestId}] Early failure in scheduled workflow ${payload.workflowId}`,
-      earlyError
-    )
+  } catch (error: unknown) {
+    logger.error(`[${requestId}] Early failure in scheduled workflow ${payload.workflowId}`, error)
 
-    try {
-      const executionResult = (earlyError as any)?.executionResult as ExecutionResult | undefined
-      const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
+    const errorWithResult = error as { executionResult?: ExecutionResult }
+    const executionResult = errorWithResult?.executionResult
+    const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
 
-      await loggingSession.safeCompleteWithError({
-        error: {
-          message: `Schedule execution failed: ${
-            earlyError instanceof Error ? earlyError.message : String(earlyError)
-          }`,
-          stackTrace: earlyError instanceof Error ? earlyError.stack : undefined,
-        },
-        traceSpans,
-      })
-    } catch (loggingError) {
-      logger.error(`[${requestId}] Failed to complete log entry for schedule failure`, loggingError)
-    }
+    await loggingSession.safeCompleteWithError({
+      error: {
+        message: error instanceof Error ? error.message : String(error),
+        stackTrace: error instanceof Error ? error.stack : undefined,
+      },
+      traceSpans,
+    })
 
-    throw earlyError
+    throw error
   }
 }
 
@@ -352,8 +372,7 @@ function calculateNextRunTime(
     return nextDate
   }
 
-  const lastRanAt = schedule.lastRanAt ? new Date(schedule.lastRanAt) : null
-  return calculateNextTime(scheduleType, scheduleValues, lastRanAt)
+  return calculateNextTime(scheduleType, scheduleValues)
 }
 
 export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
@@ -556,6 +575,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
             updatedAt: now,
             nextRunAt,
             failedCount: 0,
+            lastQueuedAt: null,
           },
           requestId,
           `Error updating schedule ${payload.scheduleId} after success`,
@@ -589,8 +609,10 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         `Error updating schedule ${payload.scheduleId} after failure`,
         `Updated schedule ${payload.scheduleId} after failure`
       )
-    } catch (error: any) {
-      if (error?.message?.includes('Service overloaded')) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+
+      if (errorMessage.includes('Service overloaded')) {
         logger.warn(`[${requestId}] Service overloaded, retrying schedule in 5 minutes`)
 
         const retryDelay = 5 * 60 * 1000
@@ -635,7 +657,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         `Updated schedule ${payload.scheduleId} after execution error`
       )
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error(`[${requestId}] Error processing schedule ${payload.scheduleId}`, error)
   }
 }

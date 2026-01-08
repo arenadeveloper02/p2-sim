@@ -1,6 +1,20 @@
+export {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  type AvatarProps,
+  avatarStatusVariants,
+  avatarVariants,
+} from './avatar/avatar'
 export { Badge } from './badge/badge'
 export { Breadcrumb, type BreadcrumbItem, type BreadcrumbProps } from './breadcrumb/breadcrumb'
 export { Button, buttonVariants } from './button/button'
+export {
+  Checkbox,
+  type CheckboxProps,
+  checkboxIconVariants,
+  checkboxVariants,
+} from './checkbox/checkbox'
 export {
   CODE_LINE_HEIGHT_PX,
   Code,
@@ -9,8 +23,13 @@ export {
   highlight,
   languages,
 } from './code/code'
-export { Combobox, type ComboboxOption } from './combobox/combobox'
-export { Input } from './input/input'
+export {
+  Combobox,
+  type ComboboxOption,
+  type ComboboxOptionGroup,
+} from './combobox/combobox'
+export { DatePicker, type DatePickerProps, datePickerVariants } from './date-picker/date-picker'
+export { Input, type InputProps, inputVariants } from './input/input'
 export { Label } from './label/label'
 export {
   MODAL_SIZES,
@@ -38,6 +57,8 @@ export {
   type PopoverBackButtonProps,
   PopoverContent,
   type PopoverContentProps,
+  PopoverDivider,
+  type PopoverDividerProps,
   PopoverFolder,
   type PopoverFolderProps,
   PopoverItem,
@@ -66,6 +87,18 @@ export {
   SModalSidebarSectionTitle,
   SModalTrigger,
 } from './s-modal/s-modal'
+export { Slider, type SliderProps } from './slider/slider'
 export { Switch } from './switch/switch'
+export {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './table/table'
 export { Textarea } from './textarea/textarea'
+export { TimePicker, type TimePickerProps, timePickerVariants } from './time-picker/time-picker'
 export { Tooltip } from './tooltip/tooltip'

@@ -1,12 +1,13 @@
+import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { createLogger } from '@/lib/logs/console/logger'
 import type {
+  BatchAddBlocksOperation,
+  BatchRemoveBlocksOperation,
   MoveBlockOperation,
   Operation,
   OperationEntry,
-  RemoveBlockOperation,
   RemoveEdgeOperation,
   UndoRedoState,
 } from '@/stores/undo-redo/types'
@@ -45,8 +46,9 @@ function getStackKey(workflowId: string, userId: string): string {
 
 /**
  * Custom storage adapter for Zustand's persist middleware.
- * We need this wrapper to gracefully handle 'QuotaExceededError' when localStorage is full.
+ * We need this wrapper to gracefully handle 'QuotaExceededError' when localStorage is full,
  * Without this, the default storage engine would throw and crash the application.
+ * and to properly handle SSR/Node.js environments.
  */
 const safeStorageAdapter = {
   getItem: (name: string): string | null => {
@@ -82,13 +84,13 @@ function isOperationApplicable(
   graph: { blocksById: Record<string, BlockState>; edgesById: Record<string, Edge> }
 ): boolean {
   switch (operation.type) {
-    case 'remove-block': {
-      const op = operation as RemoveBlockOperation
-      return Boolean(graph.blocksById[op.data.blockId])
+    case 'batch-remove-blocks': {
+      const op = operation as BatchRemoveBlocksOperation
+      return op.data.blockSnapshots.every((block) => Boolean(graph.blocksById[block.id]))
     }
-    case 'add-block': {
-      const blockId = operation.data.blockId
-      return !graph.blocksById[blockId]
+    case 'batch-add-blocks': {
+      const op = operation as BatchAddBlocksOperation
+      return op.data.blockSnapshots.every((block) => !graph.blocksById[block.id])
     }
     case 'move-block': {
       const op = operation as MoveBlockOperation
@@ -97,10 +99,6 @@ function isOperationApplicable(
     case 'update-parent': {
       const blockId = operation.data.blockId
       return Boolean(graph.blocksById[blockId])
-    }
-    case 'duplicate-block': {
-      const duplicatedId = operation.data.duplicatedBlockId
-      return Boolean(graph.blocksById[duplicatedId])
     }
     case 'remove-edge': {
       const op = operation as RemoveEdgeOperation

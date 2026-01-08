@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { createLogger } from '@/lib/logs/console/logger'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import type { UserFile } from '@/executor/types'
 import type { VideoRequestBody } from '@/tools/video/types'
@@ -807,18 +807,31 @@ async function generateWithFalAI(
   // Build request body based on model requirements
   const requestBody: any = { prompt }
 
-  // Format duration based on model requirements
-  const formattedDuration = formatDuration(model, duration)
-  if (formattedDuration !== undefined) {
-    requestBody.duration = formattedDuration
-  }
+  // Models that support duration and aspect_ratio parameters
+  const supportsStandardParams = [
+    'kling-2.5-turbo-pro',
+    'kling-2.1-pro',
+    'minimax-hailuo-2.3-pro',
+    'minimax-hailuo-2.3-standard',
+  ]
 
-  if (aspectRatio) {
-    requestBody.aspect_ratio = aspectRatio
-  }
+  // Models that only need prompt (minimal params)
+  const minimalParamModels = ['ltxv-0.9.8', 'wan-2.1', 'veo-3.1', 'sora-2']
 
-  if (resolution) {
-    requestBody.resolution = resolution
+  if (supportsStandardParams.includes(model)) {
+    // Kling and MiniMax models support duration and aspect_ratio
+    const formattedDuration = formatDuration(model, duration)
+    if (formattedDuration !== undefined) {
+      requestBody.duration = formattedDuration
+    }
+
+    if (aspectRatio) {
+      requestBody.aspect_ratio = aspectRatio
+    }
+
+    if (resolution) {
+      requestBody.resolution = resolution
+    }
   }
 
   // MiniMax models support prompt optimizer

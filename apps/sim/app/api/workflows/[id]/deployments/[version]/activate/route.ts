@@ -1,8 +1,8 @@
-import { db, workflow, workflowDeploymentVersion } from '@sim/db'
-import { and, eq } from 'drizzle-orm'
+import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { createLogger } from '@/lib/logs/console/logger'
+import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
+import { activateWorkflowVersion } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -26,46 +26,24 @@ export async function POST(
 
     const versionNum = Number(version)
     if (!Number.isFinite(versionNum)) {
-      return createErrorResponse('Invalid version', 400)
+      return createErrorResponse('Invalid version number', 400)
     }
 
-    const now = new Date()
+    const result = await activateWorkflowVersion({ workflowId: id, version: versionNum })
+    if (!result.success) {
+      return createErrorResponse(result.error || 'Failed to activate deployment', 400)
+    }
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(workflowDeploymentVersion)
-        .set({ isActive: false })
-        .where(
-          and(
-            eq(workflowDeploymentVersion.workflowId, id),
-            eq(workflowDeploymentVersion.isActive, true)
-          )
-        )
+    if (result.state) {
+      await syncMcpToolsForWorkflow({
+        workflowId: id,
+        requestId,
+        state: result.state,
+        context: 'activate',
+      })
+    }
 
-      const updated = await tx
-        .update(workflowDeploymentVersion)
-        .set({ isActive: true })
-        .where(
-          and(
-            eq(workflowDeploymentVersion.workflowId, id),
-            eq(workflowDeploymentVersion.version, versionNum)
-          )
-        )
-        .returning({ id: workflowDeploymentVersion.id })
-
-      if (updated.length === 0) {
-        throw new Error('Deployment version not found')
-      }
-
-      const updateData: Record<string, unknown> = {
-        isDeployed: true,
-        deployedAt: now,
-      }
-
-      await tx.update(workflow).set(updateData).where(eq(workflow.id, id))
-    })
-
-    return createSuccessResponse({ success: true, deployedAt: now })
+    return createSuccessResponse({ success: true, deployedAt: result.deployedAt })
   } catch (error: any) {
     logger.error(`[${requestId}] Error activating deployment for workflow: ${id}`, error)
     return createErrorResponse(error.message || 'Failed to activate deployment', 500)

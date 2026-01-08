@@ -1,18 +1,19 @@
 import { db } from '@sim/db'
 import { workflow, workspaceNotificationSubscription } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
 import { MAX_EMAIL_RECIPIENTS, MAX_WORKFLOW_IDS } from '../constants'
 
 const logger = createLogger('WorkspaceNotificationAPI')
 
 const levelFilterSchema = z.array(z.enum(['info', 'error']))
-const triggerFilterSchema = z.array(z.enum(['api', 'webhook', 'schedule', 'manual', 'chat']))
+const triggerFilterSchema = z.array(z.enum(CORE_TRIGGER_TYPES))
 
 const alertRuleSchema = z.enum([
   'consecutive_failures',

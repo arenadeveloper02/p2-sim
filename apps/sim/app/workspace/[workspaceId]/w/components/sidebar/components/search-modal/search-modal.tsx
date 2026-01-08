@@ -10,6 +10,7 @@ import { useBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { getTriggersForSidebar, hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { searchItems } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-utils'
+import { SIDEBAR_SCROLL_EVENT } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { getAllBlocks } from '@/blocks'
 
 interface SearchModalProps {
@@ -422,7 +423,21 @@ export function SearchModal({
           }
           break
         case 'workspace':
+          if (item.isCurrent) {
+            break
+          }
+          if (item.href) {
+            router.push(item.href)
+          }
+          break
         case 'workflow':
+          if (!item.isCurrent && item.href) {
+            router.push(item.href)
+            window.dispatchEvent(
+              new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: item.id } })
+            )
+          }
+          break
         case 'page':
         case 'doc':
           if (item.href) {
@@ -501,7 +516,7 @@ export function SearchModal({
           </VisuallyHidden.Root>
 
           {/* Search input container */}
-          <div className='flex items-center gap-[8px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-5)] px-[12px] py-[8px] shadow-sm'>
+          <div className='flex items-center gap-[8px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[8px] shadow-sm'>
             <Search className='h-[15px] w-[15px] flex-shrink-0 text-[var(--text-subtle)]' />
             <input
               type='text'
@@ -609,7 +624,7 @@ export function SearchModal({
               })}
             </div>
           ) : searchQuery ? (
-            <div className='flex items-center justify-center rounded-[10px] bg-[var(--surface-5)] px-[16px] py-[24px] shadow-sm'>
+            <div className='flex items-center justify-center rounded-[10px] bg-[var(--surface-4)] px-[16px] py-[24px] shadow-sm'>
               <p className='text-[15px] text-[var(--text-subtle)]'>
                 No results found for "{searchQuery}"
               </p>

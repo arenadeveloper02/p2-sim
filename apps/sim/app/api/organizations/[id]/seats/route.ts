@@ -1,13 +1,13 @@
 import { db } from '@sim/db'
 import { member, organization, subscription } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { getPlanPricing } from '@/lib/billing/core/billing'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
-import { isBillingEnabled } from '@/lib/core/config/environment'
-import { createLogger } from '@/lib/logs/console/logger'
+import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 
 const logger = createLogger('OrganizationSeatsAPI')
 

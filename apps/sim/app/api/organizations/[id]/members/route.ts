@@ -1,14 +1,14 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { invitation, member, organization, user, userStats } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getEmailSubject, renderInvitationEmail } from '@/components/emails/render-email'
+import { getEmailSubject, renderInvitationEmail } from '@/components/emails'
 import { getSession } from '@/lib/auth'
 import { getUserUsageData } from '@/lib/billing/core/usage'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 
@@ -260,8 +260,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const emailHtml = await renderInvitationEmail(
       inviter[0]?.name || 'Someone',
       organizationEntry[0]?.name || 'organization',
-      `${getBaseUrl()}/invite/organization?id=${invitationId}`,
-      normalizedEmail
+      `${getBaseUrl()}/invite/organization?id=${invitationId}`
     )
 
     const emailResult = await sendEmail({

@@ -1,11 +1,12 @@
+import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
-import { createLogger } from '@/lib/logs/console/logger'
 import { McpClient } from '@/lib/mcp/client'
 import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
 import type { McpServerConfig, McpTransport } from '@/lib/mcp/types'
-import { validateMcpServerUrl } from '@/lib/mcp/url-validator'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
+import { REFERENCE } from '@/executor/constants'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 
 const logger = createLogger('McpServerTestAPI')
 
@@ -23,12 +24,13 @@ function isUrlBasedTransport(transport: McpTransport): boolean {
  * Resolve environment variables in strings
  */
 function resolveEnvVars(value: string, envVars: Record<string, string>): string {
-  const envMatches = value.match(/\{\{([^}]+)\}\}/g)
+  const envVarPattern = createEnvVarPattern()
+  const envMatches = value.match(envVarPattern)
   if (!envMatches) return value
 
   let resolvedValue = value
   for (const match of envMatches) {
-    const envKey = match.slice(2, -2).trim()
+    const envKey = match.slice(REFERENCE.ENV_VAR_START.length, -REFERENCE.ENV_VAR_END.length).trim()
     const envValue = envVars[envKey]
 
     if (envValue === undefined) {
@@ -86,24 +88,12 @@ export const POST = withMcpAuth('write')(
         )
       }
 
-      if (isUrlBasedTransport(body.transport)) {
-        if (!body.url) {
-          return createMcpErrorResponse(
-            new Error('URL is required for HTTP-based transports'),
-            'Missing required URL',
-            400
-          )
-        }
-
-        const urlValidation = validateMcpServerUrl(body.url)
-        if (!urlValidation.isValid) {
-          return createMcpErrorResponse(
-            new Error(`Invalid MCP server URL: ${urlValidation.error}`),
-            'Invalid server URL',
-            400
-          )
-        }
-        body.url = urlValidation.normalizedUrl
+      if (isUrlBasedTransport(body.transport) && !body.url) {
+        return createMcpErrorResponse(
+          new Error('URL is required for HTTP-based transports'),
+          'Missing required URL',
+          400
+        )
       }
 
       let resolvedUrl = body.url

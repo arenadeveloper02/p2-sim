@@ -1,4 +1,5 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import dns from 'dns/promises'
+import { createLogger } from '@sim/logger'
 
 const logger = createLogger('InputValidation')
 
@@ -168,46 +169,6 @@ export function validatePathSegment(
   }
 
   return { isValid: true, sanitized: value }
-}
-
-/**
- * Validates a UUID (v4 format)
- *
- * @param value - The UUID to validate
- * @param paramName - Name of the parameter for error messages
- * @returns ValidationResult
- *
- * @example
- * ```typescript
- * const result = validateUUID(workflowId, 'workflowId')
- * if (!result.isValid) {
- *   return NextResponse.json({ error: result.error }, { status: 400 })
- * }
- * ```
- */
-export function validateUUID(
-  value: string | null | undefined,
-  paramName = 'UUID'
-): ValidationResult {
-  if (value === null || value === undefined || value === '') {
-    return {
-      isValid: false,
-      error: `${paramName} is required`,
-    }
-  }
-
-  // UUID v4 pattern
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-  if (!uuidPattern.test(value)) {
-    logger.warn('Invalid UUID format', { paramName, value: value.substring(0, 50) })
-    return {
-      isValid: false,
-      error: `${paramName} must be a valid UUID`,
-    }
-  }
-
-  return { isValid: true, sanitized: value.toLowerCase() }
 }
 
 /**
@@ -556,29 +517,6 @@ export function validateFileExtension(
 }
 
 /**
- * Sanitizes a string for safe logging (removes potential sensitive data patterns)
- *
- * @param value - The value to sanitize
- * @param maxLength - Maximum length to return (default: 100)
- * @returns Sanitized string safe for logging
- */
-export function sanitizeForLogging(value: string, maxLength = 100): string {
-  if (!value) return ''
-
-  // Truncate long values
-  let sanitized = value.substring(0, maxLength)
-
-  // Mask common sensitive patterns
-  sanitized = sanitized
-    .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [REDACTED]')
-    .replace(/password['":\s]*['"]\w+['"]/gi, 'password: "[REDACTED]"')
-    .replace(/token['":\s]*['"]\w+['"]/gi, 'token: "[REDACTED]"')
-    .replace(/api[_-]?key['":\s]*['"]\w+['"]/gi, 'api_key: "[REDACTED]"')
-
-  return sanitized
-}
-
-/**
  * Validates Microsoft Graph API resource IDs
  *
  * Microsoft Graph IDs can be complex - for example, SharePoint site IDs can include:
@@ -849,4 +787,220 @@ export function validateProxyUrl(
   paramName = 'proxyUrl'
 ): ValidationResult {
   return validateExternalUrl(url, paramName)
+}
+
+/**
+ * Checks if an IP address is private or reserved (not routable on the public internet)
+ */
+function isPrivateOrReservedIP(ip: string): boolean {
+  const patterns = [
+    /^127\./, // Loopback
+    /^10\./, // Private Class A
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // Private Class B
+    /^192\.168\./, // Private Class C
+    /^169\.254\./, // Link-local
+    /^0\./, // Current network
+    /^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./, // Carrier-grade NAT
+    /^192\.0\.0\./, // IETF Protocol Assignments
+    /^192\.0\.2\./, // TEST-NET-1
+    /^198\.51\.100\./, // TEST-NET-2
+    /^203\.0\.113\./, // TEST-NET-3
+    /^224\./, // Multicast
+    /^240\./, // Reserved
+    /^255\./, // Broadcast
+    /^::1$/, // IPv6 loopback
+    /^fe80:/i, // IPv6 link-local
+    /^fc00:/i, // IPv6 unique local
+    /^fd00:/i, // IPv6 unique local
+    /^::ffff:(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|169\.254\.)/i, // IPv4-mapped IPv6
+  ]
+  return patterns.some((pattern) => pattern.test(ip))
+}
+
+/**
+ * Result type for async URL validation with resolved IP
+ */
+export interface AsyncValidationResult extends ValidationResult {
+  resolvedIP?: string
+  originalHostname?: string
+}
+
+/**
+ * Validates a URL and resolves its DNS to prevent SSRF via DNS rebinding
+ *
+ * This function:
+ * 1. Performs basic URL validation (protocol, format)
+ * 2. Resolves the hostname to an IP address
+ * 3. Validates the resolved IP is not private/reserved
+ * 4. Returns the resolved IP for use in the actual request
+ *
+ * @param url - The URL to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns AsyncValidationResult with resolved IP for DNS pinning
+ */
+export async function validateUrlWithDNS(
+  url: string | null | undefined,
+  paramName = 'url'
+): Promise<AsyncValidationResult> {
+  const basicValidation = validateExternalUrl(url, paramName)
+  if (!basicValidation.isValid) {
+    return basicValidation
+  }
+
+  const parsedUrl = new URL(url!)
+  const hostname = parsedUrl.hostname
+
+  try {
+    const { address } = await dns.lookup(hostname)
+
+    if (isPrivateOrReservedIP(address)) {
+      logger.warn('URL resolves to blocked IP address', {
+        paramName,
+        hostname,
+        resolvedIP: address,
+      })
+      return {
+        isValid: false,
+        error: `${paramName} resolves to a blocked IP address`,
+      }
+    }
+
+    return {
+      isValid: true,
+      resolvedIP: address,
+      originalHostname: hostname,
+    }
+  } catch (error) {
+    logger.warn('DNS lookup failed for URL', {
+      paramName,
+      hostname,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} hostname could not be resolved`,
+    }
+  }
+}
+
+/**
+ * Creates a fetch URL that uses a resolved IP address to prevent DNS rebinding
+ *
+ * @param originalUrl - The original URL
+ * @param resolvedIP - The resolved IP address to use
+ * @returns The URL with IP substituted for hostname
+ */
+export function createPinnedUrl(originalUrl: string, resolvedIP: string): string {
+  const parsed = new URL(originalUrl)
+  const port = parsed.port ? `:${parsed.port}` : ''
+  return `${parsed.protocol}//${resolvedIP}${port}${parsed.pathname}${parsed.search}`
+}
+
+/**
+ * Validates a Google Calendar ID
+ *
+ * Google Calendar IDs can be:
+ * - "primary" (literal string for the user's primary calendar)
+ * - Email addresses (for user calendars)
+ * - Alphanumeric strings with hyphens, underscores, and dots (for other calendars)
+ *
+ * This validator allows these legitimate formats while blocking path traversal and injection attempts.
+ *
+ * @param value - The calendar ID to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns ValidationResult
+ *
+ * @example
+ * ```typescript
+ * const result = validateGoogleCalendarId(calendarId, 'calendarId')
+ * if (!result.isValid) {
+ *   return NextResponse.json({ error: result.error }, { status: 400 })
+ * }
+ * ```
+ */
+export function validateGoogleCalendarId(
+  value: string | null | undefined,
+  paramName = 'calendarId'
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value === 'primary') {
+    return { isValid: true, sanitized: value }
+  }
+
+  const pathTraversalPatterns = [
+    '../',
+    '..\\',
+    '%2e%2e%2f',
+    '%2e%2e/',
+    '..%2f',
+    '%2e%2e%5c',
+    '%2e%2e\\',
+    '..%5c',
+    '%252e%252e%252f',
+  ]
+
+  const lowerValue = value.toLowerCase()
+  for (const pattern of pathTraversalPatterns) {
+    if (lowerValue.includes(pattern)) {
+      logger.warn('Path traversal attempt in Google Calendar ID', {
+        paramName,
+        value: value.substring(0, 100),
+      })
+      return {
+        isValid: false,
+        error: `${paramName} contains invalid path traversal sequence`,
+      }
+    }
+  }
+
+  if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
+    logger.warn('Control characters in Google Calendar ID', { paramName })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid control characters`,
+    }
+  }
+
+  if (value.includes('\n') || value.includes('\r')) {
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid newline characters`,
+    }
+  }
+
+  const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+  if (emailPattern.test(value)) {
+    return { isValid: true, sanitized: value }
+  }
+
+  const calendarIdPattern = /^[a-zA-Z0-9._@%#+-]+$/
+  if (!calendarIdPattern.test(value)) {
+    logger.warn('Invalid Google Calendar ID format', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} format is invalid. Must be "primary", an email address, or an alphanumeric ID`,
+    }
+  }
+
+  if (value.length > 255) {
+    logger.warn('Google Calendar ID exceeds maximum length', {
+      paramName,
+      length: value.length,
+    })
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length of 255 characters`,
+    }
+  }
+
+  return { isValid: true, sanitized: value }
 }

@@ -1,15 +1,15 @@
 import { db } from '@sim/db'
 import { webhook, workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import Parser from 'rss-parser'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
+import { createPinnedUrl, validateUrlWithDNS } from '@/lib/core/security/input-validation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { createLogger } from '@/lib/logs/console/logger'
+import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('RssPollingService')
-
-const MAX_CONSECUTIVE_FAILURES = 10
 const MAX_GUIDS_TO_TRACK = 100 // Track recent guids to prevent duplicates
 
 interface RssWebhookConfig {
@@ -60,7 +60,7 @@ export interface RssWebhookPayload {
 const parser = new Parser({
   timeout: 30000,
   headers: {
-    'User-Agent': 'SimStudio/1.0 RSS Poller',
+    'User-Agent': 'Sim/1.0 RSS Poller',
   },
 })
 
@@ -156,7 +156,7 @@ export async function pollRssWebhooks() {
         const { feed, items: newItems } = await fetchNewRssItems(config, requestId)
 
         if (!newItems.length) {
-          await updateWebhookConfig(webhookId, config, now.toISOString(), [])
+          await updateWebhookConfig(webhookId, now.toISOString(), [])
           await markWebhookSuccess(webhookId)
           logger.info(`[${requestId}] No new items found for webhook ${webhookId}`)
           successCount++
@@ -172,12 +172,11 @@ export async function pollRssWebhooks() {
           requestId
         )
 
-        // Collect guids from processed items
         const newGuids = newItems
           .map((item) => item.guid || item.link || '')
           .filter((guid) => guid.length > 0)
 
-        await updateWebhookConfig(webhookId, config, now.toISOString(), newGuids)
+        await updateWebhookConfig(webhookId, now.toISOString(), newGuids)
 
         if (itemFailedCount > 0 && processedCount === 0) {
           await markWebhookFailed(webhookId)
@@ -245,15 +244,36 @@ async function fetchNewRssItems(
   try {
     logger.debug(`[${requestId}] Fetching RSS feed: ${config.feedUrl}`)
 
-    // Parse the RSS feed
-    const feed = await parser.parseURL(config.feedUrl)
+    const urlValidation = await validateUrlWithDNS(config.feedUrl, 'feedUrl')
+    if (!urlValidation.isValid) {
+      logger.error(`[${requestId}] Invalid RSS feed URL: ${urlValidation.error}`)
+      throw new Error(`Invalid RSS feed URL: ${urlValidation.error}`)
+    }
+
+    const pinnedUrl = createPinnedUrl(config.feedUrl, urlValidation.resolvedIP!)
+
+    const response = await fetch(pinnedUrl, {
+      headers: {
+        Host: urlValidation.originalHostname!,
+        'User-Agent': 'Sim/1.0 RSS Poller',
+        Accept: 'application/rss+xml, application/xml, text/xml, */*',
+      },
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`)
+    }
+
+    const xmlContent = await response.text()
+
+    const feed = await parser.parseString(xmlContent)
 
     if (!feed.items || !feed.items.length) {
       logger.debug(`[${requestId}] No items in feed`)
       return { feed: feed as RssFeed, items: [] }
     }
 
-    // Filter new items based on timestamp and guids
     const lastCheckedTime = config.lastCheckedTimestamp
       ? new Date(config.lastCheckedTimestamp)
       : null
@@ -262,12 +282,10 @@ async function fetchNewRssItems(
     const newItems = feed.items.filter((item) => {
       const itemGuid = item.guid || item.link || ''
 
-      // Check if we've already seen this item by guid
       if (itemGuid && lastSeenGuids.has(itemGuid)) {
         return false
       }
 
-      // Check if the item is newer than our last check
       if (lastCheckedTime && item.isoDate) {
         const itemDate = new Date(item.isoDate)
         if (itemDate <= lastCheckedTime) {
@@ -278,14 +296,12 @@ async function fetchNewRssItems(
       return true
     })
 
-    // Sort by date, newest first
     newItems.sort((a, b) => {
       const dateA = a.isoDate ? new Date(a.isoDate).getTime() : 0
       const dateB = b.isoDate ? new Date(b.isoDate).getTime() : 0
       return dateB - dateA
     })
 
-    // Limit to 25 items per poll to prevent overwhelming the system
     const limitedItems = newItems.slice(0, 25)
 
     logger.info(
@@ -346,7 +362,7 @@ async function processRssItems(
             headers: {
               'Content-Type': 'application/json',
               'X-Webhook-Secret': webhookData.secret || '',
-              'User-Agent': 'SimStudio/1.0',
+              'User-Agent': 'Sim/1.0',
             },
             body: JSON.stringify(payload),
           })
@@ -383,17 +399,11 @@ async function processRssItems(
   return { processedCount, failedCount }
 }
 
-async function updateWebhookConfig(
-  webhookId: string,
-  _config: RssWebhookConfig,
-  timestamp: string,
-  newGuids: string[]
-) {
+async function updateWebhookConfig(webhookId: string, timestamp: string, newGuids: string[]) {
   try {
     const result = await db.select().from(webhook).where(eq(webhook.id, webhookId))
     const existingConfig = (result[0]?.providerConfig as Record<string, any>) || {}
 
-    // Merge new guids with existing ones, keeping only the most recent
     const existingGuids = existingConfig.lastSeenGuids || []
     const allGuids = [...newGuids, ...existingGuids].slice(0, MAX_GUIDS_TO_TRACK)
 

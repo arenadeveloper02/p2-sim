@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
-import { createLogger } from '@/lib/logs/console/logger'
-import type { ChunkData } from '@/stores/knowledge/store'
+import type { ChunkData } from '@/lib/knowledge/types'
+import { knowledgeKeys } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('DeleteChunkModal')
 
@@ -13,7 +15,6 @@ interface DeleteChunkModalProps {
   documentId: string
   isOpen: boolean
   onClose: () => void
-  onChunkDeleted?: () => void
 }
 
 export function DeleteChunkModal({
@@ -22,8 +23,8 @@ export function DeleteChunkModal({
   documentId,
   isOpen,
   onClose,
-  onChunkDeleted,
 }: DeleteChunkModalProps) {
+  const queryClient = useQueryClient()
   const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDeleteChunk = async () => {
@@ -47,16 +48,17 @@ export function DeleteChunkModal({
 
       if (result.success) {
         logger.info('Chunk deleted successfully:', chunk.id)
-        if (onChunkDeleted) {
-          onChunkDeleted()
-        }
+
+        await queryClient.invalidateQueries({
+          queryKey: knowledgeKeys.detail(knowledgeBaseId),
+        })
+
         onClose()
       } else {
         throw new Error(result.error || 'Failed to delete chunk')
       }
     } catch (err) {
       logger.error('Error deleting chunk:', err)
-      // You might want to show an error state here
     } finally {
       setIsDeleting(false)
     }
@@ -69,7 +71,7 @@ export function DeleteChunkModal({
       <ModalContent size='sm'>
         <ModalHeader>Delete Chunk</ModalHeader>
         <ModalBody>
-          <p className='text-[12px] text-[var(--text-tertiary)]'>
+          <p className='text-[12px] text-[var(--text-secondary)]'>
             Are you sure you want to delete this chunk?{' '}
             <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
           </p>
@@ -78,12 +80,7 @@ export function DeleteChunkModal({
           <Button variant='active' disabled={isDeleting} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant='primary'
-            onClick={handleDeleteChunk}
-            disabled={isDeleting}
-            className='!bg-[var(--text-error)] !text-white hover:!bg-[var(--text-error)]/90'
-          >
+          <Button variant='destructive' onClick={handleDeleteChunk} disabled={isDeleting}>
             {isDeleting ? <>Deleting...</> : <>Delete</>}
           </Button>
         </ModalFooter>

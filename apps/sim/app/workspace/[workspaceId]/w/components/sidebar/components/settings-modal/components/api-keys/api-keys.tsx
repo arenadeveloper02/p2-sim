@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Check, Copy, Info, Plus, Search } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -11,11 +12,11 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Switch,
   Tooltip,
 } from '@/components/emcn'
-import { Input, Skeleton, Switch } from '@/components/ui'
+import { Input, Skeleton } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
-import { createLogger } from '@/lib/logs/console/logger'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   type ApiKey,
@@ -207,7 +208,7 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
     <div className='flex h-full flex-col gap-[16px]'>
       {/* Search Input and Create Button */}
       <div className='flex items-center gap-[8px]'>
-        <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border bg-[var(--surface-6)] px-[8px] py-[5px]'>
+        <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border border-[var(--border)] bg-transparent px-[8px] py-[5px] transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover:border-[var(--border-1)] dark:hover:bg-[var(--surface-5)]'>
           <Search
             className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
             strokeWidth={2}
@@ -229,9 +230,8 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
             setKeyType(defaultKeyType)
             setCreateError(null)
           }}
-          variant='primary'
+          variant='tertiary'
           disabled={createButtonDisabled}
-          className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90 disabled:cursor-not-allowed disabled:opacity-60'
         >
           <Plus className='mr-[6px] h-[13px] w-[13px]' />
           Create
@@ -469,7 +469,7 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
                         if (createError) setCreateError(null)
                       }}
                       disabled={!allowPersonalApiKeys}
-                      className='disabled:cursor-not-allowed disabled:opacity-60'
+                      className={`disabled:cursor-not-allowed disabled:opacity-60 ${keyType === 'personal' ? 'bg-[var(--border-1)] hover:bg-[var(--border-1)] dark:bg-[var(--surface-5)] dark:hover:bg-[var(--border-1)]' : ''}`}
                     >
                       Personal
                     </Button>
@@ -480,6 +480,11 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
                         setKeyType('workspace')
                         if (createError) setCreateError(null)
                       }}
+                      className={
+                        keyType === 'workspace'
+                          ? 'bg-[var(--border-1)] hover:bg-[var(--border-1)] dark:bg-[var(--surface-5)] dark:hover:bg-[var(--border-1)]'
+                          : ''
+                      }
                     >
                       Workspace
                     </Button>
@@ -490,6 +495,20 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
                 <p className='font-medium text-[13px] text-[var(--text-secondary)]'>
                   Enter a name for your API key to help you identify it later.
                 </p>
+                {/* Hidden decoy fields to prevent browser autofill */}
+                <input
+                  type='text'
+                  name='fakeusernameremembered'
+                  autoComplete='username'
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                  tabIndex={-1}
+                  readOnly
+                />
                 <EmcnInput
                   value={newKeyName}
                   onChange={(e) => {
@@ -499,6 +518,12 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
                   placeholder='e.g., Development, Production'
                   className='h-9'
                   autoFocus
+                  name='api_key_label'
+                  autoComplete='off'
+                  autoCorrect='off'
+                  autoCapitalize='off'
+                  data-lpignore='true'
+                  data-form-type='other'
                 />
                 {createError && (
                   <p className='text-[11px] text-[var(--text-error)] leading-tight'>
@@ -522,14 +547,13 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
             </Button>
             <Button
               type='button'
-              variant='primary'
+              variant='tertiary'
               onClick={handleCreateKey}
               disabled={
                 !newKeyName.trim() ||
                 createApiKeyMutation.isPending ||
                 (keyType === 'workspace' && !canManageWorkspaceKeys)
               }
-              className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
             >
               {createApiKeyMutation.isPending ? 'Creating...' : 'Create'}
             </Button>
@@ -588,7 +612,7 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
         <ModalContent className='w-[400px]'>
           <ModalHeader>Delete API key</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Deleting{' '}
               <span className='font-medium text-[var(--text-primary)]'>{deleteKey?.name}</span> will
               immediately revoke access for any integrations using it.{' '}
@@ -607,10 +631,9 @@ export function ApiKeys({ onOpenChange, registerCloseHandler }: ApiKeysProps) {
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='destructive'
               onClick={handleDeleteKey}
               disabled={deleteApiKeyMutation.isPending}
-              className='!bg-[var(--text-error)] !text-white hover:!bg-[var(--text-error)]/90'
             >
               {deleteApiKeyMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>

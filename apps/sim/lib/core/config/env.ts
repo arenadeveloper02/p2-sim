@@ -20,6 +20,7 @@ export const env = createEnv({
     BETTER_AUTH_URL:                       z.string().url(),                       // Base URL for Better Auth service
     BETTER_AUTH_SECRET:                    z.string().min(32),                     // Secret key for Better Auth JWT signing
     DISABLE_REGISTRATION:                  z.boolean().optional(),                 // Flag to disable new user registration
+    DISABLE_AUTH:                          z.boolean().optional(),                 // Bypass authentication entirely (self-hosted only, creates anonymous session)
     ALLOWED_LOGIN_EMAILS:                  z.string().optional(),                  // Comma-separated list of allowed email addresses for login
     ALLOWED_LOGIN_DOMAINS:                 z.string().optional(),                  // Comma-separated list of allowed email domains for login
     ENCRYPTION_KEY:                        z.string().min(32),                     // Key for encrypting sensitive data
@@ -59,6 +60,7 @@ export const env = createEnv({
     EMAIL_VERIFICATION_ENABLED:            z.boolean().optional(),                 // Enable email verification for user registration and login (defaults to false)
     RESEND_API_KEY:                        z.string().min(1).optional(),           // Resend API key for transactional emails
     FROM_EMAIL_ADDRESS:                    z.string().min(1).optional(),           // Complete from address (e.g., "Sim <noreply@domain.com>" or "noreply@domain.com")
+    PERSONAL_EMAIL_FROM:                   z.string().min(1).optional(),           // From address for personalized emails
     EMAIL_DOMAIN:                          z.string().min(1).optional(),           // Domain for sending emails (fallback when FROM_EMAIL_ADDRESS not set)
     AZURE_ACS_CONNECTION_STRING:           z.string().optional(),                  // Azure Communication Services connection string
 
@@ -97,6 +99,10 @@ export const env = createEnv({
     OCR_AZURE_MODEL_NAME:                  z.string().optional(),                  // Azure Mistral OCR model name for document processing
     OCR_AZURE_API_KEY:                     z.string().min(1).optional(),           // Azure Mistral OCR API key
 
+    // Vertex AI Configuration
+    VERTEX_PROJECT:                        z.string().optional(),                  // Google Cloud project ID for Vertex AI
+    VERTEX_LOCATION:                       z.string().optional(),                  // Google Cloud location/region for Vertex AI (defaults to us-central1)
+
     // Monitoring & Analytics
     TELEMETRY_ENDPOINT:                    z.string().url().optional(),            // Custom telemetry/analytics endpoint
     COST_MULTIPLIER:                       z.number().optional(),                  // Multiplier for cost calculations
@@ -133,6 +139,7 @@ export const env = createEnv({
     S3_CHAT_BUCKET_NAME:                   z.string().optional(),                  // S3 bucket for chat logos
     S3_COPILOT_BUCKET_NAME:                z.string().optional(),                  // S3 bucket for copilot files
     S3_PROFILE_PICTURES_BUCKET_NAME:       z.string().optional(),                  // S3 bucket for profile pictures
+    S3_OG_IMAGES_BUCKET_NAME:              z.string().optional(),                  // S3 bucket for OpenGraph images
 
     // Cloud Storage - Azure Blob 
     AZURE_ACCOUNT_NAME:                    z.string().optional(),                  // Azure storage account name
@@ -144,6 +151,7 @@ export const env = createEnv({
     AZURE_STORAGE_CHAT_CONTAINER_NAME:     z.string().optional(),                  // Azure container for chat logos
     AZURE_STORAGE_COPILOT_CONTAINER_NAME:  z.string().optional(),                  // Azure container for copilot files
     AZURE_STORAGE_PROFILE_PICTURES_CONTAINER_NAME: z.string().optional(),          // Azure container for profile pictures
+    AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME: z.string().optional(),                 // Azure container for OpenGraph images
 
     // Data Retention
     FREE_PLAN_LOG_RETENTION_DAYS:          z.string().optional(),                  // Log retention days for free plan users
@@ -166,9 +174,9 @@ export const env = createEnv({
     KB_CONFIG_RETRY_FACTOR:                z.number().optional().default(2),       // Retry backoff factor
     KB_CONFIG_MIN_TIMEOUT:                 z.number().optional().default(1000),    // Min timeout in ms
     KB_CONFIG_MAX_TIMEOUT:                 z.number().optional().default(10000),   // Max timeout in ms
-    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(20),      // Queue concurrency limit
-    KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(20),      // Processing batch size
-    KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(100),     // Delay between batches in ms
+    KB_CONFIG_CONCURRENCY_LIMIT:           z.number().optional().default(50),      // Concurrent embedding API calls
+    KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(2000),    // Chunks to process per embedding batch
+    KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(0),       // Delay between batches in ms (0 for max speed)
     KB_CONFIG_DELAY_BETWEEN_DOCUMENTS:     z.number().optional().default(50),      // Delay between documents in ms
 
     // Real-time Communication
@@ -230,6 +238,8 @@ export const env = createEnv({
     ZOOM_CLIENT_SECRET:                    z.string().optional(),                  // Zoom OAuth client secret
     WORDPRESS_CLIENT_ID:                   z.string().optional(),                  // WordPress.com OAuth client ID
     WORDPRESS_CLIENT_SECRET:               z.string().optional(),                  // WordPress.com OAuth client secret
+    SPOTIFY_CLIENT_ID:                     z.string().optional(),                  // Spotify OAuth client ID
+    SPOTIFY_CLIENT_SECRET:                 z.string().optional(),                  // Spotify OAuth client secret
 
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
@@ -283,13 +293,8 @@ export const env = createEnv({
     
     // Billing
     NEXT_PUBLIC_BILLING_ENABLED:           z.boolean().optional(),                 // Enable billing enforcement and usage tracking (client-side)
-
-    // Google Services - For client-side Google integrations
-    NEXT_PUBLIC_GOOGLE_CLIENT_ID:          z.string().optional(),                  // Google OAuth client ID for browser auth
     
     // Analytics & Tracking
-    NEXT_PUBLIC_GOOGLE_API_KEY:            z.string().optional(),                  // Google API key for client-side API calls
-    NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER:     z.string().optional(),                  // Google project number for Drive picker
     NEXT_PUBLIC_POSTHOG_ENABLED:           z.boolean().optional(),                 // Enable PostHog analytics (client-side)
     NEXT_PUBLIC_POSTHOG_KEY:               z.string().optional(),                  // PostHog project API key
 
@@ -301,7 +306,8 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPPORT_EMAIL:             z.string().email().optional(),          // Custom support email
 
     NEXT_PUBLIC_E2B_ENABLED:               z.string().optional(),
-    NEXT_PUBLIC_COPILOT_TRAINING_ENABLED:  z.string().optional(),                  
+    NEXT_PUBLIC_COPILOT_TRAINING_ENABLED:  z.string().optional(),
+    NEXT_PUBLIC_ENABLE_PLAYGROUND:         z.string().optional(),                  // Enable component playground at /playground                  
     NEXT_PUBLIC_DOCUMENTATION_URL:         z.string().url().optional(),            // Custom documentation URL
     NEXT_PUBLIC_TERMS_URL:                 z.string().url().optional(),            // Custom terms of service URL
     NEXT_PUBLIC_PRIVACY_URL:               z.string().url().optional(),            // Custom privacy policy URL
@@ -328,9 +334,6 @@ export const env = createEnv({
   experimental__runtimeEnv: {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_BILLING_ENABLED: process.env.NEXT_PUBLIC_BILLING_ENABLED,
-    NEXT_PUBLIC_GOOGLE_CLIENT_ID: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-    NEXT_PUBLIC_GOOGLE_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-    NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER: process.env.NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER,
     NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL,
     NEXT_PUBLIC_BRAND_NAME: process.env.NEXT_PUBLIC_BRAND_NAME,
     NEXT_PUBLIC_BRAND_LOGO_URL: process.env.NEXT_PUBLIC_BRAND_LOGO_URL,
@@ -350,6 +353,7 @@ export const env = createEnv({
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: process.env.NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED,
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED: process.env.NEXT_PUBLIC_COPILOT_TRAINING_ENABLED,
+    NEXT_PUBLIC_ENABLE_PLAYGROUND: process.env.NEXT_PUBLIC_ENABLE_PLAYGROUND,
     NEXT_PUBLIC_POSTHOG_ENABLED: process.env.NEXT_PUBLIC_POSTHOG_ENABLED,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NODE_ENV: process.env.NODE_ENV,

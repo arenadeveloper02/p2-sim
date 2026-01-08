@@ -1,13 +1,29 @@
+import type { Edge } from 'reactflow'
+import { v4 as uuidv4 } from 'uuid'
+import { getBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
+import { getBlock } from '@/blocks'
+import { normalizeName } from '@/executor/constants'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import type { BlockState, SubBlockState } from '@/stores/workflows/workflow/types'
+import type {
+  BlockState,
+  Loop,
+  Parallel,
+  Position,
+  SubBlockState,
+  WorkflowState,
+} from '@/stores/workflows/workflow/types'
+import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 
-/**
- * Normalizes a block name for comparison by converting to lowercase and removing spaces
- * @param name - The block name to normalize
- * @returns The normalized name
- */
-export function normalizeBlockName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, '')
+const WEBHOOK_SUBBLOCK_FIELDS = ['webhookId', 'triggerPath']
+
+export { normalizeName }
+
+export interface RegeneratedState {
+  blocks: Record<string, BlockState>
+  edges: Edge[]
+  loops: Record<string, Loop>
+  parallels: Record<string, Parallel>
+  idMap: Map<string, string>
 }
 
 /**
@@ -20,7 +36,7 @@ export function normalizeBlockName(name: string): string {
 export function getUniqueBlockName(baseName: string, existingBlocks: Record<string, any>): string {
   // Special case: Start blocks should always be named "Start" without numbers
   // This applies to both "Start" and "Starter" base names
-  const normalizedBaseName = normalizeBlockName(baseName)
+  const normalizedBaseName = normalizeName(baseName)
   if (normalizedBaseName === 'start' || normalizedBaseName === 'starter') {
     return 'Start'
   }
@@ -28,13 +44,13 @@ export function getUniqueBlockName(baseName: string, existingBlocks: Record<stri
   const baseNameMatch = baseName.match(/^(.*?)(\s+\d+)?$/)
   const namePrefix = baseNameMatch ? baseNameMatch[1].trim() : baseName
 
-  const normalizedBase = normalizeBlockName(namePrefix)
+  const normalizedBase = normalizeName(namePrefix)
 
   const existingNumbers = Object.values(existingBlocks)
     .filter((block) => {
       const blockNameMatch = block.name?.match(/^(.*?)(\s+\d+)?$/)
       const blockPrefix = blockNameMatch ? blockNameMatch[1].trim() : block.name
-      return blockPrefix && normalizeBlockName(blockPrefix) === normalizedBase
+      return blockPrefix && normalizeName(blockPrefix) === normalizedBase
     })
     .map((block) => {
       const match = block.name?.match(/(\d+)$/)
@@ -48,6 +64,166 @@ export function getUniqueBlockName(baseName: string, existingBlocks: Record<stri
   }
 
   return `${namePrefix} ${maxNumber + 1}`
+}
+
+export interface PrepareBlockStateOptions {
+  id: string
+  type: string
+  name: string
+  position: Position
+  data?: Record<string, unknown>
+  parentId?: string
+  extent?: 'parent'
+  triggerMode?: boolean
+}
+
+/**
+ * Prepares a BlockState object from block type and configuration.
+ * Generates subBlocks and outputs from the block registry.
+ */
+export function prepareBlockState(options: PrepareBlockStateOptions): BlockState {
+  const { id, type, name, position, data, parentId, extent, triggerMode = false } = options
+
+  const blockConfig = getBlock(type)
+
+  const blockData: Record<string, unknown> = { ...(data || {}) }
+  if (parentId) blockData.parentId = parentId
+  if (extent) blockData.extent = extent
+
+  if (!blockConfig) {
+    return {
+      id,
+      type,
+      name,
+      position,
+      data: blockData,
+      subBlocks: {},
+      outputs: {},
+      enabled: true,
+      horizontalHandles: true,
+      advancedMode: false,
+      triggerMode,
+      height: 0,
+    }
+  }
+
+  const subBlocks: Record<string, SubBlockState> = {}
+
+  if (blockConfig.subBlocks) {
+    blockConfig.subBlocks.forEach((subBlock) => {
+      let initialValue: unknown = null
+
+      if (typeof subBlock.value === 'function') {
+        try {
+          initialValue = subBlock.value({})
+        } catch {
+          initialValue = null
+        }
+      } else if (subBlock.defaultValue !== undefined) {
+        initialValue = subBlock.defaultValue
+      } else if (subBlock.type === 'input-format') {
+        initialValue = [
+          {
+            id: crypto.randomUUID(),
+            name: '',
+            type: 'string',
+            value: '',
+            collapsed: false,
+          },
+        ]
+      } else if (subBlock.type === 'table') {
+        initialValue = []
+      }
+
+      subBlocks[subBlock.id] = {
+        id: subBlock.id,
+        type: subBlock.type,
+        value: initialValue as SubBlockState['value'],
+      }
+    })
+  }
+
+  const outputs = getBlockOutputs(type, subBlocks, triggerMode)
+
+  return {
+    id,
+    type,
+    name,
+    position,
+    data: blockData,
+    subBlocks,
+    outputs,
+    enabled: true,
+    horizontalHandles: true,
+    advancedMode: false,
+    triggerMode,
+    height: 0,
+  }
+}
+
+export interface PrepareDuplicateBlockStateOptions {
+  sourceBlock: BlockState
+  newId: string
+  newName: string
+  positionOffset: { x: number; y: number }
+  subBlockValues: Record<string, unknown>
+}
+
+/**
+ * Prepares a BlockState for duplicating an existing block.
+ * Copies block structure and subblock values, excluding webhook fields.
+ */
+export function prepareDuplicateBlockState(options: PrepareDuplicateBlockStateOptions): {
+  block: BlockState
+  subBlockValues: Record<string, unknown>
+} {
+  const { sourceBlock, newId, newName, positionOffset, subBlockValues } = options
+
+  const filteredSubBlockValues = Object.fromEntries(
+    Object.entries(subBlockValues).filter(([key]) => !WEBHOOK_SUBBLOCK_FIELDS.includes(key))
+  )
+
+  const mergedSubBlocks: Record<string, SubBlockState> = sourceBlock.subBlocks
+    ? JSON.parse(JSON.stringify(sourceBlock.subBlocks))
+    : {}
+
+  WEBHOOK_SUBBLOCK_FIELDS.forEach((field) => {
+    if (field in mergedSubBlocks) {
+      delete mergedSubBlocks[field]
+    }
+  })
+
+  Object.entries(filteredSubBlockValues).forEach(([subblockId, value]) => {
+    if (mergedSubBlocks[subblockId]) {
+      mergedSubBlocks[subblockId].value = value as SubBlockState['value']
+    } else {
+      mergedSubBlocks[subblockId] = {
+        id: subblockId,
+        type: 'short-input',
+        value: value as SubBlockState['value'],
+      }
+    }
+  })
+
+  const block: BlockState = {
+    id: newId,
+    type: sourceBlock.type,
+    name: newName,
+    position: {
+      x: sourceBlock.position.x + positionOffset.x,
+      y: sourceBlock.position.y + positionOffset.y,
+    },
+    data: sourceBlock.data ? JSON.parse(JSON.stringify(sourceBlock.data)) : {},
+    subBlocks: mergedSubBlocks,
+    outputs: sourceBlock.outputs ? JSON.parse(JSON.stringify(sourceBlock.outputs)) : {},
+    enabled: sourceBlock.enabled ?? true,
+    horizontalHandles: sourceBlock.horizontalHandles ?? true,
+    advancedMode: sourceBlock.advancedMode ?? false,
+    triggerMode: sourceBlock.triggerMode ?? false,
+    height: sourceBlock.height || 0,
+  }
+
+  return { block, subBlockValues: filteredSubBlockValues }
 }
 
 /**
@@ -65,45 +241,34 @@ export function mergeSubblockState(
   const blocksToProcess = blockId ? { [blockId]: blocks[blockId] } : blocks
   const subBlockStore = useSubBlockStore.getState()
 
-  // Get all the values stored in the subblock store for this workflow
   const workflowSubblockValues = workflowId ? subBlockStore.workflowValues[workflowId] || {} : {}
 
   return Object.entries(blocksToProcess).reduce(
     (acc, [id, block]) => {
-      // Skip if block is undefined
       if (!block) {
         return acc
       }
 
-      // Initialize subBlocks if not present
       const blockSubBlocks = block.subBlocks || {}
 
-      // Get stored values for this block
       const blockValues = workflowSubblockValues[id] || {}
 
-      // Create a deep copy of the block's subBlocks to maintain structure
       const mergedSubBlocks = Object.entries(blockSubBlocks).reduce(
         (subAcc, [subBlockId, subBlock]) => {
-          // Skip if subBlock is undefined
           if (!subBlock) {
             return subAcc
           }
 
-          // Get the stored value for this subblock
           let storedValue = null
 
-          // If workflowId is provided, use it to get the value
           if (workflowId) {
-            // Try to get the value from the subblock store for this specific workflow
             if (blockValues[subBlockId] !== undefined) {
               storedValue = blockValues[subBlockId]
             }
           } else {
-            // Fall back to the active workflow if no workflowId is provided
             storedValue = subBlockStore.getValue(id, subBlockId)
           }
 
-          // Create a new subblock object with the same structure but updated value
           subAcc[subBlockId] = {
             ...subBlock,
             value: storedValue !== undefined && storedValue !== null ? storedValue : subBlock.value,
@@ -200,7 +365,24 @@ export async function mergeSubblockStateAsync(
         subBlockEntries.filter((entry): entry is readonly [string, SubBlockState] => entry !== null)
       ) as Record<string, SubBlockState>
 
-      // Return the full block state with updated subBlocks
+      // Add any values that exist in the store but aren't in the block structure
+      // This handles cases where block config has been updated but values still exist
+      // IMPORTANT: This includes runtime subblock IDs like webhookId, triggerPath, etc.
+      if (workflowId) {
+        const workflowValues = subBlockStore.workflowValues[workflowId]
+        const blockValues = workflowValues?.[id] || {}
+        Object.entries(blockValues).forEach(([subBlockId, value]) => {
+          if (!mergedSubBlocks[subBlockId] && value !== null && value !== undefined) {
+            mergedSubBlocks[subBlockId] = {
+              id: subBlockId,
+              type: 'short-input',
+              value: value,
+            }
+          }
+        })
+      }
+
+      // Return the full block state with updated subBlocks (including orphaned values)
       return [
         id,
         {
@@ -211,6 +393,217 @@ export async function mergeSubblockStateAsync(
     })
   )
 
-  // Convert entries back to an object
   return Object.fromEntries(processedBlockEntries) as Record<string, BlockState>
+}
+
+function updateValueReferences(value: unknown, nameMap: Map<string, string>): unknown {
+  if (typeof value === 'string') {
+    let updatedValue = value
+    nameMap.forEach((newName, oldName) => {
+      const regex = new RegExp(`<${oldName}\\.`, 'g')
+      updatedValue = updatedValue.replace(regex, `<${newName}.`)
+    })
+    return updatedValue
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => updateValueReferences(item, nameMap))
+  }
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {}
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = updateValueReferences(val, nameMap)
+    }
+    return result
+  }
+  return value
+}
+
+function updateBlockReferences(
+  blocks: Record<string, BlockState>,
+  idMap: Map<string, string>,
+  nameMap: Map<string, string>,
+  clearTriggerRuntimeValues = false
+): void {
+  Object.entries(blocks).forEach(([_, block]) => {
+    if (block.data?.parentId) {
+      const newParentId = idMap.get(block.data.parentId)
+      if (newParentId) {
+        block.data = { ...block.data, parentId: newParentId }
+      } else {
+        block.data = { ...block.data, parentId: undefined, extent: undefined }
+      }
+    }
+
+    if (block.subBlocks) {
+      Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]) => {
+        if (clearTriggerRuntimeValues && TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(subBlockId)) {
+          block.subBlocks[subBlockId] = { ...subBlock, value: null }
+          return
+        }
+
+        if (subBlock.value !== undefined && subBlock.value !== null) {
+          const updatedValue = updateValueReferences(
+            subBlock.value,
+            nameMap
+          ) as SubBlockState['value']
+          block.subBlocks[subBlockId] = { ...subBlock, value: updatedValue }
+        }
+      })
+    }
+  })
+}
+
+export function regenerateWorkflowIds(
+  workflowState: WorkflowState,
+  options: { clearTriggerRuntimeValues?: boolean } = {}
+): WorkflowState & { idMap: Map<string, string> } {
+  const { clearTriggerRuntimeValues = true } = options
+  const blockIdMap = new Map<string, string>()
+  const nameMap = new Map<string, string>()
+  const newBlocks: Record<string, BlockState> = {}
+
+  Object.entries(workflowState.blocks).forEach(([oldId, block]) => {
+    const newId = uuidv4()
+    blockIdMap.set(oldId, newId)
+    const oldNormalizedName = normalizeName(block.name)
+    nameMap.set(oldNormalizedName, oldNormalizedName)
+    newBlocks[newId] = { ...block, id: newId }
+  })
+
+  const newEdges = workflowState.edges.map((edge) => ({
+    ...edge,
+    id: uuidv4(),
+    source: blockIdMap.get(edge.source) || edge.source,
+    target: blockIdMap.get(edge.target) || edge.target,
+  }))
+
+  const newLoops: Record<string, Loop> = {}
+  if (workflowState.loops) {
+    Object.entries(workflowState.loops).forEach(([oldLoopId, loop]) => {
+      const newLoopId = blockIdMap.get(oldLoopId) || oldLoopId
+      newLoops[newLoopId] = {
+        ...loop,
+        id: newLoopId,
+        nodes: loop.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
+      }
+    })
+  }
+
+  const newParallels: Record<string, Parallel> = {}
+  if (workflowState.parallels) {
+    Object.entries(workflowState.parallels).forEach(([oldParallelId, parallel]) => {
+      const newParallelId = blockIdMap.get(oldParallelId) || oldParallelId
+      newParallels[newParallelId] = {
+        ...parallel,
+        id: newParallelId,
+        nodes: parallel.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
+      }
+    })
+  }
+
+  updateBlockReferences(newBlocks, blockIdMap, nameMap, clearTriggerRuntimeValues)
+
+  return {
+    blocks: newBlocks,
+    edges: newEdges,
+    loops: newLoops,
+    parallels: newParallels,
+    metadata: workflowState.metadata,
+    variables: workflowState.variables,
+    idMap: blockIdMap,
+  }
+}
+
+export function regenerateBlockIds(
+  blocks: Record<string, BlockState>,
+  edges: Edge[],
+  loops: Record<string, Loop>,
+  parallels: Record<string, Parallel>,
+  subBlockValues: Record<string, Record<string, unknown>>,
+  positionOffset: { x: number; y: number },
+  existingBlockNames: Record<string, BlockState>,
+  uniqueNameFn: (name: string, blocks: Record<string, BlockState>) => string
+): RegeneratedState & { subBlockValues: Record<string, Record<string, unknown>> } {
+  const blockIdMap = new Map<string, string>()
+  const nameMap = new Map<string, string>()
+  const newBlocks: Record<string, BlockState> = {}
+  const newSubBlockValues: Record<string, Record<string, unknown>> = {}
+
+  // Track all blocks for name uniqueness (existing + newly processed)
+  const allBlocksForNaming = { ...existingBlockNames }
+
+  Object.entries(blocks).forEach(([oldId, block]) => {
+    const newId = uuidv4()
+    blockIdMap.set(oldId, newId)
+
+    const oldNormalizedName = normalizeName(block.name)
+    const newName = uniqueNameFn(block.name, allBlocksForNaming)
+    const newNormalizedName = normalizeName(newName)
+    nameMap.set(oldNormalizedName, newNormalizedName)
+
+    const isNested = !!block.data?.parentId
+    const newBlock: BlockState = {
+      ...block,
+      id: newId,
+      name: newName,
+      position: isNested
+        ? block.position
+        : {
+            x: block.position.x + positionOffset.x,
+            y: block.position.y + positionOffset.y,
+          },
+    }
+
+    newBlocks[newId] = newBlock
+    // Add to tracking so next block gets unique name
+    allBlocksForNaming[newId] = newBlock
+
+    if (subBlockValues[oldId]) {
+      newSubBlockValues[newId] = JSON.parse(JSON.stringify(subBlockValues[oldId]))
+    }
+  })
+
+  const newEdges = edges.map((edge) => ({
+    ...edge,
+    id: uuidv4(),
+    source: blockIdMap.get(edge.source) || edge.source,
+    target: blockIdMap.get(edge.target) || edge.target,
+  }))
+
+  const newLoops: Record<string, Loop> = {}
+  Object.entries(loops).forEach(([oldLoopId, loop]) => {
+    const newLoopId = blockIdMap.get(oldLoopId) || oldLoopId
+    newLoops[newLoopId] = {
+      ...loop,
+      id: newLoopId,
+      nodes: loop.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
+    }
+  })
+
+  const newParallels: Record<string, Parallel> = {}
+  Object.entries(parallels).forEach(([oldParallelId, parallel]) => {
+    const newParallelId = blockIdMap.get(oldParallelId) || oldParallelId
+    newParallels[newParallelId] = {
+      ...parallel,
+      id: newParallelId,
+      nodes: parallel.nodes.map((nodeId) => blockIdMap.get(nodeId) || nodeId),
+    }
+  })
+
+  updateBlockReferences(newBlocks, blockIdMap, nameMap, false)
+
+  Object.entries(newSubBlockValues).forEach(([_, blockValues]) => {
+    Object.keys(blockValues).forEach((subBlockId) => {
+      blockValues[subBlockId] = updateValueReferences(blockValues[subBlockId], nameMap)
+    })
+  })
+
+  return {
+    blocks: newBlocks,
+    edges: newEdges,
+    loops: newLoops,
+    parallels: newParallels,
+    subBlockValues: newSubBlockValues,
+    idMap: blockIdMap,
+  }
 }

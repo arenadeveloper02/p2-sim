@@ -42,7 +42,7 @@ describe('Chat API Route', () => {
       workflow: { id: 'id', userId: 'userId', isDeployed: 'isDeployed' },
     }))
 
-    vi.doMock('@/lib/logs/console/logger', () => ({
+    vi.doMock('@sim/logger', () => ({
       createLogger: vi.fn().mockReturnValue({
         info: vi.fn(),
         error: vi.fn(),
@@ -249,17 +249,13 @@ describe('Chat API Route', () => {
         }),
       }))
 
-      vi.doMock('@/lib/core/config/env', () => ({
-        env: {
+      vi.doMock('@/lib/core/config/env', async () => {
+        const { createEnvMock } = await import('@sim/testing')
+        return createEnvMock({
           NODE_ENV: 'development',
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
-        },
-        isTruthy: (value: string | boolean | number | undefined) =>
-          typeof value === 'string'
-            ? value.toLowerCase() === 'true' || value === '1'
-            : Boolean(value),
-        getEnv: (variable: string) => process.env[variable],
-      }))
+        })
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -296,15 +292,13 @@ describe('Chat API Route', () => {
         }),
       }))
 
-      vi.doMock('@/lib/core/config/env', () => ({
-        env: {
+      vi.doMock('@/lib/core/config/env', async () => {
+        const { createEnvMock } = await import('@sim/testing')
+        return createEnvMock({
           NODE_ENV: 'development',
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
-        },
-        isTruthy: (value: string | boolean | number | undefined) =>
-          typeof value === 'string' ? value === 'true' || value === '1' : Boolean(value),
-        getEnv: (variable: string) => process.env[variable],
-      }))
+        })
+      })
 
       const validData = {
         workflowId: 'workflow-123',

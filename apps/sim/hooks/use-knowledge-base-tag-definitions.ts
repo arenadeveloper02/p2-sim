@@ -1,14 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import type { TagSlot } from '@/lib/knowledge/constants'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
+import type { AllTagSlot } from '@/lib/knowledge/constants'
 
 const logger = createLogger('useKnowledgeBaseTagDefinitions')
 
 export interface TagDefinition {
   id: string
-  tagSlot: TagSlot
+  tagSlot: AllTagSlot
   displayName: string
   fieldType: string
   createdAt: string
@@ -57,22 +57,6 @@ export function useKnowledgeBaseTagDefinitions(knowledgeBaseId: string | null) {
     }
   }, [knowledgeBaseId])
 
-  const getTagLabel = useCallback(
-    (tagSlot: string): string => {
-      const definition = tagDefinitions.find((def) => def.tagSlot === tagSlot)
-      return definition?.displayName || tagSlot
-    },
-    [tagDefinitions]
-  )
-
-  const getTagDefinition = useCallback(
-    (tagSlot: string): TagDefinition | undefined => {
-      return tagDefinitions.find((def) => def.tagSlot === tagSlot)
-    },
-    [tagDefinitions]
-  )
-
-  // Auto-fetch on mount and when dependencies change
   useEffect(() => {
     fetchTagDefinitions()
   }, [fetchTagDefinitions])
@@ -82,7 +66,5 @@ export function useKnowledgeBaseTagDefinitions(knowledgeBaseId: string | null) {
     isLoading,
     error,
     fetchTagDefinitions,
-    getTagLabel,
-    getTagDefinition,
   }
 }

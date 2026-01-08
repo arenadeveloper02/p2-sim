@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createLogger } from '@/lib/logs/console/logger'
 import { createRdsClient, executeStatement, validateQuery } from '@/app/api/tools/rds/utils'
 
 const logger = createLogger('RDSQueryAPI')
@@ -25,7 +25,6 @@ export async function POST(request: NextRequest) {
 
     logger.info(`[${requestId}] Executing RDS query on ${params.database}`)
 
-    // Validate the query
     const validation = validateQuery(params.query)
     if (!validation.isValid) {
       logger.warn(`[${requestId}] Query validation failed: ${validation.error}`)

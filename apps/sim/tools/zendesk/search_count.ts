@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildZendeskUrl, handleZendeskError } from './types'
 
@@ -99,15 +99,7 @@ export const zendeskSearchCountTool: ToolConfig<
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Search count result',
-      properties: {
-        count: { type: 'number', description: 'Number of matching results' },
-        metadata: { type: 'object', description: 'Operation metadata' },
-        success: { type: 'boolean', description: 'Operation success' },
-      },
-    },
+    count: { type: 'number', description: 'Number of matching results' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

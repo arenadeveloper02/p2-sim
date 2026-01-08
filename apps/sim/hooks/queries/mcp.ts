@@ -1,20 +1,19 @@
+import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createLogger } from '@/lib/logs/console/logger'
+import type { McpServerStatusConfig, McpTool, StoredMcpTool } from '@/lib/mcp/types'
+import { sanitizeForHttp, sanitizeHeaders } from '@/lib/mcp/utils'
 
 const logger = createLogger('McpQueries')
 
-/**
- * Query key factories for MCP-related queries
- */
+export type { McpServerStatusConfig, McpTool, StoredMcpTool }
+
 export const mcpKeys = {
   all: ['mcp'] as const,
   servers: (workspaceId: string) => [...mcpKeys.all, 'servers', workspaceId] as const,
   tools: (workspaceId: string) => [...mcpKeys.all, 'tools', workspaceId] as const,
+  storedTools: (workspaceId: string) => [...mcpKeys.all, 'stored', workspaceId] as const,
 }
 
-/**
- * MCP Server Types
- */
 export interface McpServer {
   id: string
   workspaceId: string
@@ -25,15 +24,20 @@ export interface McpServer {
   headers?: Record<string, string>
   enabled: boolean
   connectionStatus?: 'connected' | 'disconnected' | 'error'
-  lastError?: string
+  lastError?: string | null
+  statusConfig?: McpServerStatusConfig
   toolCount?: number
   lastToolsRefresh?: string
+  lastConnected?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string
 }
 
-export interface McpServerConfig {
+/**
+ * Input for creating/updating an MCP server (distinct from McpServerConfig in types.ts)
+ */
+export interface McpServerInput {
   name: string
   transport: 'streamable-http' | 'stdio'
   url?: string
@@ -42,21 +46,9 @@ export interface McpServerConfig {
   enabled: boolean
 }
 
-export interface McpTool {
-  serverId: string
-  serverName: string
-  name: string
-  description?: string
-  inputSchema?: any
-}
-
-/**
- * Fetch MCP servers for a workspace
- */
 async function fetchMcpServers(workspaceId: string): Promise<McpServer[]> {
   const response = await fetch(`/api/mcp/servers?workspaceId=${workspaceId}`)
 
-  // Treat 404 as "no servers configured" - return empty array
   if (response.status === 404) {
     return []
   }
@@ -70,27 +62,25 @@ async function fetchMcpServers(workspaceId: string): Promise<McpServer[]> {
   return data.data?.servers || []
 }
 
-/**
- * Hook to fetch MCP servers
- */
 export function useMcpServers(workspaceId: string) {
   return useQuery({
     queryKey: mcpKeys.servers(workspaceId),
     queryFn: () => fetchMcpServers(workspaceId),
     enabled: !!workspaceId,
-    retry: false, // Don't retry on 404 (no servers configured)
-    staleTime: 60 * 1000, // 1 minute - servers don't change frequently
+    retry: false,
+    staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
   })
 }
 
-/**
- * Fetch MCP tools for a workspace
- */
-async function fetchMcpTools(workspaceId: string): Promise<McpTool[]> {
-  const response = await fetch(`/api/mcp/tools/discover?workspaceId=${workspaceId}`)
+async function fetchMcpTools(workspaceId: string, forceRefresh = false): Promise<McpTool[]> {
+  const params = new URLSearchParams({ workspaceId })
+  if (forceRefresh) {
+    params.set('refresh', 'true')
+  }
 
-  // Treat 404 as "no tools available" - return empty array
+  const response = await fetch(`/api/mcp/tools/discover?${params.toString()}`)
+
   if (response.status === 404) {
     return []
   }
@@ -104,26 +94,30 @@ async function fetchMcpTools(workspaceId: string): Promise<McpTool[]> {
   return data.data?.tools || []
 }
 
-/**
- * Hook to fetch MCP tools
- */
 export function useMcpToolsQuery(workspaceId: string) {
   return useQuery({
     queryKey: mcpKeys.tools(workspaceId),
     queryFn: () => fetchMcpTools(workspaceId),
     enabled: !!workspaceId,
-    retry: false, // Don't retry on 404 (no tools available)
-    staleTime: 30 * 1000, // 30 seconds - tools can change when servers are added/removed
+    retry: false,
+    staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
   })
 }
 
-/**
- * Create MCP server mutation
- */
+export function useForceRefreshMcpTools() {
+  const queryClient = useQueryClient()
+
+  return async (workspaceId: string) => {
+    const freshTools = await fetchMcpTools(workspaceId, true)
+    queryClient.setQueryData(mcpKeys.tools(workspaceId), freshTools)
+    return freshTools
+  }
+}
+
 interface CreateMcpServerParams {
   workspaceId: string
-  config: McpServerConfig
+  config: McpServerInput
 }
 
 export function useCreateMcpServer() {
@@ -133,10 +127,9 @@ export function useCreateMcpServer() {
     mutationFn: async ({ workspaceId, config }: CreateMcpServerParams) => {
       const serverData = {
         ...config,
+        url: config.url ? sanitizeForHttp(config.url) : config.url,
+        headers: sanitizeHeaders(config.headers),
         workspaceId,
-        id: `mcp-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       }
 
       const response = await fetch('/api/mcp/servers', {
@@ -151,23 +144,59 @@ export function useCreateMcpServer() {
         throw new Error(data.error || 'Failed to create MCP server')
       }
 
-      logger.info(`Created MCP server: ${config.name} in workspace: ${workspaceId}`)
+      const serverId = data.data?.serverId
+      const wasUpdated = data.data?.updated === true
+
+      logger.info(
+        wasUpdated
+          ? `Updated existing MCP server: ${config.name} (ID: ${serverId})`
+          : `Created MCP server: ${config.name} (ID: ${serverId})`
+      )
+
       return {
         ...serverData,
-        connectionStatus: 'disconnected' as const,
-        serverId: data.data?.serverId,
+        id: serverId,
+        connectionStatus: 'connected' as const,
+        serverId,
+        updated: wasUpdated,
       }
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: async (data, variables) => {
+      const freshTools = await fetchMcpTools(variables.workspaceId, true)
+
+      const previousServers = queryClient.getQueryData<McpServer[]>(
+        mcpKeys.servers(variables.workspaceId)
+      )
+      if (previousServers) {
+        const newServer: McpServer = {
+          id: data.id,
+          workspaceId: variables.workspaceId,
+          name: variables.config.name,
+          transport: variables.config.transport,
+          url: variables.config.url,
+          timeout: variables.config.timeout || 30000,
+          headers: variables.config.headers,
+          enabled: variables.config.enabled,
+          connectionStatus: 'connected',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+
+        const serverExists = previousServers.some((s) => s.id === data.id)
+        queryClient.setQueryData<McpServer[]>(
+          mcpKeys.servers(variables.workspaceId),
+          serverExists
+            ? previousServers.map((s) => (s.id === data.id ? { ...s, ...newServer } : s))
+            : [...previousServers, newServer]
+        )
+      }
+
+      queryClient.setQueryData(mcpKeys.tools(variables.workspaceId), freshTools)
       queryClient.invalidateQueries({ queryKey: mcpKeys.servers(variables.workspaceId) })
-      queryClient.invalidateQueries({ queryKey: mcpKeys.tools(variables.workspaceId) })
     },
   })
 }
 
-/**
- * Delete MCP server mutation
- */
 interface DeleteMcpServerParams {
   workspaceId: string
   serverId: string
@@ -201,13 +230,10 @@ export function useDeleteMcpServer() {
   })
 }
 
-/**
- * Update MCP server mutation
- */
 interface UpdateMcpServerParams {
   workspaceId: string
   serverId: string
-  updates: Partial<McpServerConfig>
+  updates: Partial<McpServerInput>
 }
 
 export function useUpdateMcpServer() {
@@ -215,8 +241,26 @@ export function useUpdateMcpServer() {
 
   return useMutation({
     mutationFn: async ({ workspaceId, serverId, updates }: UpdateMcpServerParams) => {
+      const sanitizedUpdates = {
+        ...updates,
+        url: updates.url ? sanitizeForHttp(updates.url) : updates.url,
+        headers: updates.headers ? sanitizeHeaders(updates.headers) : updates.headers,
+      }
+
+      const response = await fetch(`/api/mcp/servers/${serverId}?workspaceId=${workspaceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitizedUpdates),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update MCP server')
+      }
+
       logger.info(`Updated MCP server: ${serverId} in workspace: ${workspaceId}`)
-      return { serverId, updates }
+      return data.data?.server
     },
     onMutate: async ({ workspaceId, serverId, updates }) => {
       await queryClient.cancelQueries({ queryKey: mcpKeys.servers(workspaceId) })
@@ -243,57 +287,75 @@ export function useUpdateMcpServer() {
     },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: mcpKeys.servers(variables.workspaceId) })
+      queryClient.invalidateQueries({ queryKey: mcpKeys.tools(variables.workspaceId) })
     },
   })
 }
 
-/**
- * Test MCP server connection
- */
-export interface McpServerTestParams {
-  name: string
-  transport: 'streamable-http' | 'stdio'
-  url?: string
-  headers?: Record<string, string>
-  timeout: number
+interface RefreshMcpServerParams {
   workspaceId: string
+  serverId: string
 }
 
-export interface McpServerTestResult {
-  success: boolean
-  error?: string
-  tools?: Array<{ name: string; description?: string }>
+export interface RefreshMcpServerResult {
+  status: 'connected' | 'disconnected' | 'error'
+  toolCount: number
+  lastConnected: string | null
+  error: string | null
+  workflowsUpdated: number
+  updatedWorkflowIds: string[]
 }
 
-export function useTestMcpServer() {
+export function useRefreshMcpServer() {
+  const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: async (params: McpServerTestParams): Promise<McpServerTestResult> => {
-      try {
-        const response = await fetch('/api/mcp/test', {
+    mutationFn: async ({
+      workspaceId,
+      serverId,
+    }: RefreshMcpServerParams): Promise<RefreshMcpServerResult> => {
+      const response = await fetch(
+        `/api/mcp/servers/${serverId}/refresh?workspaceId=${workspaceId}`,
+        {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        })
-
-        const data = await response.json()
-
-        if (!response.ok) {
-          return {
-            success: false,
-            error: data.error || 'Failed to test connection',
-          }
         }
+      )
 
-        return {
-          success: true,
-          tools: data.tools || [],
-        }
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Connection test failed',
-        }
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to refresh MCP server')
       }
+
+      logger.info(`Refreshed MCP server: ${serverId}`)
+      return data.data
     },
+    onSuccess: async (_data, variables) => {
+      const freshTools = await fetchMcpTools(variables.workspaceId, true)
+      queryClient.setQueryData(mcpKeys.tools(variables.workspaceId), freshTools)
+      await queryClient.invalidateQueries({ queryKey: mcpKeys.servers(variables.workspaceId) })
+      await queryClient.refetchQueries({ queryKey: mcpKeys.storedTools(variables.workspaceId) })
+    },
+  })
+}
+
+async function fetchStoredMcpTools(workspaceId: string): Promise<StoredMcpTool[]> {
+  const response = await fetch(`/api/mcp/tools/stored?workspaceId=${workspaceId}`)
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to fetch stored MCP tools')
+  }
+
+  const data = await response.json()
+  return data.data?.tools || []
+}
+
+export function useStoredMcpTools(workspaceId: string) {
+  return useQuery({
+    queryKey: mcpKeys.storedTools(workspaceId),
+    queryFn: () => fetchStoredMcpTools(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 60 * 1000,
   })
 }

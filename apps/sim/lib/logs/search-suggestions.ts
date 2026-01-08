@@ -9,6 +9,8 @@ export interface FilterDefinition {
     label: string
     description?: string
   }>
+  acceptsCustomValue?: boolean
+  customValueHint?: string
 }
 
 export interface WorkflowData {
@@ -28,6 +30,20 @@ export interface TriggerData {
   color: string
 }
 
+/**
+ * Generates current date examples for the date filter options.
+ */
+function getDateExamples() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const firstOfMonth = `${year}-${month}-01`
+  const today = `${year}-${month}-${day}`
+  const yearMonth = `${year}-${month}`
+  return { today, firstOfMonth, year: String(year), yearMonth }
+}
+
 export const FILTER_DEFINITIONS: FilterDefinition[] = [
   {
     key: 'level',
@@ -38,8 +54,6 @@ export const FILTER_DEFINITIONS: FilterDefinition[] = [
       { value: 'info', label: 'Info', description: 'Info logs only' },
     ],
   },
-  // Note: Trigger options are now dynamically populated from active logs
-  // Core types are included by default, integration triggers are added from actual log data
   {
     key: 'cost',
     label: 'Cost',
@@ -60,13 +74,24 @@ export const FILTER_DEFINITIONS: FilterDefinition[] = [
     key: 'date',
     label: 'Date',
     description: 'Filter by date range',
-    options: [
-      { value: 'today', label: 'Today', description: "Today's logs" },
-      { value: 'yesterday', label: 'Yesterday', description: "Yesterday's logs" },
-      { value: 'this-week', label: 'This week', description: "This week's logs" },
-      { value: 'last-week', label: 'Last week', description: "Last week's logs" },
-      { value: 'this-month', label: 'This month', description: "This month's logs" },
-    ],
+    options: (() => {
+      const { today, firstOfMonth, year, yearMonth } = getDateExamples()
+      return [
+        { value: 'today', label: 'Today', description: "Today's logs" },
+        { value: 'yesterday', label: 'Yesterday', description: "Yesterday's logs" },
+        { value: 'this-week', label: 'This week', description: "This week's logs" },
+        { value: 'last-week', label: 'Last week', description: "Last week's logs" },
+        { value: 'this-month', label: 'This month', description: "This month's logs" },
+        { value: today, label: 'Specific date', description: 'YYYY-MM-DD' },
+        { value: yearMonth, label: 'Specific month', description: 'YYYY-MM' },
+        { value: year, label: 'Specific year', description: 'YYYY' },
+        {
+          value: `${firstOfMonth}..${today}`,
+          label: 'Date range',
+          description: 'YYYY-MM-DD..YYYY-MM-DD',
+        },
+      ]
+    })(),
   },
   {
     key: 'duration',
@@ -80,14 +105,6 @@ export const FILTER_DEFINITIONS: FilterDefinition[] = [
       { value: '<500ms', label: 'Under 0.5s', description: 'Very fast executions' },
     ],
   },
-]
-
-const CORE_TRIGGERS: TriggerData[] = [
-  { value: 'api', label: 'API', color: '#3b82f6' },
-  { value: 'manual', label: 'Manual', color: '#6b7280' },
-  { value: 'webhook', label: 'Webhook', color: '#f97316' },
-  { value: 'chat', label: 'Chat', color: '#8b5cf6' },
-  { value: 'schedule', label: 'Schedule', color: '#10b981' },
 ]
 
 export class SearchSuggestions {
@@ -116,10 +133,10 @@ export class SearchSuggestions {
   }
 
   /**
-   * Get all triggers (core + integrations)
+   * Get all triggers from registry data
    */
   private getAllTriggers(): TriggerData[] {
-    return [...CORE_TRIGGERS, ...this.triggersData]
+    return this.triggersData
   }
 
   /**
@@ -128,24 +145,20 @@ export class SearchSuggestions {
   getSuggestions(input: string): SuggestionGroup | null {
     const trimmed = input.trim()
 
-    // Empty input → show all filter keys
     if (!trimmed) {
       return this.getFilterKeysList()
     }
 
-    // Input ends with ':' → show values for that key
     if (trimmed.endsWith(':')) {
       const key = trimmed.slice(0, -1)
       return this.getFilterValues(key)
     }
 
-    // Input contains ':' → filter value context
     if (trimmed.includes(':')) {
       const [key, partial] = trimmed.split(':')
       return this.getFilterValues(key, partial)
     }
 
-    // Plain text → multi-section results
     return this.getMultiSectionResults(trimmed)
   }
 
@@ -155,7 +168,6 @@ export class SearchSuggestions {
   private getFilterKeysList(): SuggestionGroup {
     const suggestions: Suggestion[] = []
 
-    // Add all filter keys
     for (const filter of FILTER_DEFINITIONS) {
       suggestions.push({
         id: `filter-key-${filter.key}`,
@@ -166,7 +178,6 @@ export class SearchSuggestions {
       })
     }
 
-    // Add trigger key (always available - core types + integrations)
     suggestions.push({
       id: 'filter-key-trigger',
       value: 'trigger:',
@@ -175,7 +186,6 @@ export class SearchSuggestions {
       category: 'filters',
     })
 
-    // Add workflow and folder keys
     if (this.workflowsData.length > 0) {
       suggestions.push({
         id: 'filter-key-workflow',
@@ -225,7 +235,7 @@ export class SearchSuggestions {
     const filterDef = FILTER_DEFINITIONS.find((f) => f.key === key)
 
     if (filterDef) {
-      const suggestions = filterDef.options
+      const suggestions: Suggestion[] = filterDef.options
         .filter(
           (opt) =>
             !partial ||
@@ -237,8 +247,16 @@ export class SearchSuggestions {
           value: `${key}:${opt.value}`,
           label: opt.label,
           description: opt.description,
-          category: key as any,
+          category: key as Suggestion['category'],
         }))
+
+      // Handle custom date input
+      if (key === 'date' && partial) {
+        const dateSuggestions = this.getDateSuggestions(partial)
+        if (dateSuggestions.length > 0) {
+          suggestions.unshift(...dateSuggestions)
+        }
+      }
 
       return suggestions.length > 0
         ? {
@@ -249,12 +267,10 @@ export class SearchSuggestions {
         : null
     }
 
-    // Trigger filter values (core + integrations)
     if (key === 'trigger') {
       const allTriggers = this.getAllTriggers()
       const suggestions = allTriggers
         .filter((t) => !partial || t.label.toLowerCase().includes(partial.toLowerCase()))
-        .slice(0, 15) // Show more since we have core + integrations
         .map((t) => ({
           id: `filter-value-trigger-${t.value}`,
           value: `trigger:${t.value}`,
@@ -273,11 +289,9 @@ export class SearchSuggestions {
         : null
     }
 
-    // Workflow filter values
     if (key === 'workflow') {
       const suggestions = this.workflowsData
         .filter((w) => !partial || w.name.toLowerCase().includes(partial.toLowerCase()))
-        .slice(0, 8)
         .map((w) => ({
           id: `filter-value-workflow-${w.id}`,
           value: `workflow:"${w.name}"`,
@@ -295,11 +309,9 @@ export class SearchSuggestions {
         : null
     }
 
-    // Folder filter values
     if (key === 'folder') {
       const suggestions = this.foldersData
         .filter((f) => !partial || f.name.toLowerCase().includes(partial.toLowerCase()))
-        .slice(0, 8)
         .map((f) => ({
           id: `filter-value-folder-${f.id}`,
           value: `folder:"${f.name}"`,
@@ -326,7 +338,6 @@ export class SearchSuggestions {
     const sections: Array<{ title: string; suggestions: Suggestion[] }> = []
     const allSuggestions: Suggestion[] = []
 
-    // Show all results option
     const showAllSuggestion: Suggestion = {
       id: 'show-all',
       value: query,
@@ -335,7 +346,6 @@ export class SearchSuggestions {
     }
     allSuggestions.push(showAllSuggestion)
 
-    // Match filter values (e.g., "info" → "Status: Info")
     const matchingFilterValues = this.getMatchingFilterValues(query)
     if (matchingFilterValues.length > 0) {
       sections.push({
@@ -345,7 +355,6 @@ export class SearchSuggestions {
       allSuggestions.push(...matchingFilterValues)
     }
 
-    // Match triggers
     const matchingTriggers = this.getMatchingTriggers(query)
     if (matchingTriggers.length > 0) {
       sections.push({
@@ -355,7 +364,6 @@ export class SearchSuggestions {
       allSuggestions.push(...matchingTriggers)
     }
 
-    // Match workflows
     const matchingWorkflows = this.getMatchingWorkflows(query)
     if (matchingWorkflows.length > 0) {
       sections.push({
@@ -365,7 +373,6 @@ export class SearchSuggestions {
       allSuggestions.push(...matchingWorkflows)
     }
 
-    // Match folders
     const matchingFolders = this.getMatchingFolders(query)
     if (matchingFolders.length > 0) {
       sections.push({
@@ -375,7 +382,6 @@ export class SearchSuggestions {
       allSuggestions.push(...matchingFolders)
     }
 
-    // Add filter keys if no specific matches
     if (
       matchingFilterValues.length === 0 &&
       matchingTriggers.length === 0 &&
@@ -399,6 +405,140 @@ export class SearchSuggestions {
           sections,
         }
       : null
+  }
+
+  /**
+   * Get suggestions for custom date input
+   */
+  private getDateSuggestions(partial: string): Suggestion[] {
+    const suggestions: Suggestion[] = []
+
+    // Pattern for year only: YYYY
+    const yearPattern = /^\d{4}$/
+    // Pattern for month only: YYYY-MM
+    const monthPattern = /^\d{4}-\d{2}$/
+    // Pattern for full date: YYYY-MM-DD
+    const fullDatePattern = /^\d{4}-\d{2}-\d{2}$/
+    // Pattern for partial date being typed
+    const partialDatePattern = /^\d{4}(-\d{0,2})?(-\d{0,2})?$/
+    // Pattern for date range: YYYY-MM-DD..YYYY-MM-DD (complete or partial)
+    const rangePattern = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/
+    const partialRangePattern = /^(\d{4}-\d{2}-\d{2})\.\.?$/
+
+    // Check if it's a complete date range
+    if (rangePattern.test(partial)) {
+      const [startDate, endDate] = partial.split('..')
+      suggestions.push({
+        id: `date-range-${partial}`,
+        value: `date:${partial}`,
+        label: `${this.formatDateLabel(startDate)} to ${this.formatDateLabel(endDate)}`,
+        description: 'Custom date range',
+        category: 'date' as any,
+      })
+      return suggestions
+    }
+
+    // Check if it's a partial date range (has ..)
+    if (partialRangePattern.test(partial)) {
+      const startDate = partial.replace(/\.+$/, '')
+      suggestions.push({
+        id: `date-range-hint-${partial}`,
+        value: `date:${startDate}..`,
+        label: `${this.formatDateLabel(startDate)} to ...`,
+        description: 'Type end date (YYYY-MM-DD)',
+        category: 'date' as any,
+      })
+      return suggestions
+    }
+
+    // Check if it's a year only (YYYY)
+    if (yearPattern.test(partial)) {
+      suggestions.push({
+        id: `date-year-${partial}`,
+        value: `date:${partial}`,
+        label: `Year ${partial}`,
+        description: 'All logs from this year',
+        category: 'date' as any,
+      })
+      return suggestions
+    }
+
+    // Check if it's a month only (YYYY-MM)
+    if (monthPattern.test(partial)) {
+      const [year, month] = partial.split('-')
+      const monthNames = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ]
+      const monthName = monthNames[Number.parseInt(month, 10) - 1] || month
+      suggestions.push({
+        id: `date-month-${partial}`,
+        value: `date:${partial}`,
+        label: `${monthName} ${year}`,
+        description: 'All logs from this month',
+        category: 'date' as any,
+      })
+      return suggestions
+    }
+
+    // Check if it's a complete single date
+    if (fullDatePattern.test(partial)) {
+      const date = new Date(partial)
+      if (!Number.isNaN(date.getTime())) {
+        suggestions.push({
+          id: `date-single-${partial}`,
+          value: `date:${partial}`,
+          label: this.formatDateLabel(partial),
+          description: 'Single date',
+          category: 'date' as any,
+        })
+        // Also suggest starting a range
+        suggestions.push({
+          id: `date-range-start-${partial}`,
+          value: `date:${partial}..`,
+          label: `${this.formatDateLabel(partial)} to ...`,
+          description: 'Start a date range',
+          category: 'date' as any,
+        })
+      }
+      return suggestions
+    }
+
+    // Check if user is typing a date pattern
+    if (partialDatePattern.test(partial) && partial.length >= 4) {
+      suggestions.push({
+        id: 'date-custom-hint',
+        value: `date:${partial}`,
+        label: partial,
+        description: 'Continue typing: YYYY, YYYY-MM, or YYYY-MM-DD',
+        category: 'date' as any,
+      })
+    }
+
+    return suggestions
+  }
+
+  /**
+   * Format a date string for display
+   */
+  private formatDateLabel(dateStr: string): string {
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime())) return dateStr
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
   }
 
   /**

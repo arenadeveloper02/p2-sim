@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { HubSpotGetContactParams, HubSpotGetContactResponse } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -103,21 +103,8 @@ export const hubspotGetContactTool: ToolConfig<HubSpotGetContactParams, HubSpotG
     },
 
     outputs: {
+      contact: { type: 'object', description: 'HubSpot contact object with properties' },
+      metadata: { type: 'object', description: 'Operation metadata' },
       success: { type: 'boolean', description: 'Operation success status' },
-      output: {
-        type: 'object',
-        description: 'Contact data',
-        properties: {
-          contact: {
-            type: 'object',
-            description: 'Contact object with properties',
-          },
-          metadata: {
-            type: 'object',
-            description: 'Operation metadata',
-          },
-          success: { type: 'boolean', description: 'Operation success status' },
-        },
-      },
     },
   }

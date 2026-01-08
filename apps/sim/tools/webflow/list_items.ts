@@ -19,6 +19,12 @@ export const webflowListItemsTool: ToolConfig<WebflowListItemsParams, WebflowLis
       visibility: 'hidden',
       description: 'OAuth access token',
     },
+    siteId: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'ID of the Webflow site',
+    },
     collectionId: {
       type: 'string',
       required: true,
@@ -44,10 +50,10 @@ export const webflowListItemsTool: ToolConfig<WebflowListItemsParams, WebflowLis
       const baseUrl = `https://api.webflow.com/v2/collections/${params.collectionId}/items`
       const queryParams = new URLSearchParams()
 
-      if (params.offset !== undefined) {
+      if (params.offset) {
         queryParams.append('offset', Number(params.offset).toString())
       }
-      if (params.limit !== undefined) {
+      if (params.limit) {
         queryParams.append('limit', Number(params.limit).toString())
       }
 

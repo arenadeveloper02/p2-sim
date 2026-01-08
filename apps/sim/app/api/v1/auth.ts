@@ -1,6 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
-import { createLogger } from '@/lib/logs/console/logger'
+import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
+import { isAuthDisabled } from '@/lib/core/config/feature-flags'
 
 const logger = createLogger('V1Auth')
 
@@ -13,6 +15,14 @@ export interface AuthResult {
 }
 
 export async function authenticateV1Request(request: NextRequest): Promise<AuthResult> {
+  if (isAuthDisabled) {
+    return {
+      authenticated: true,
+      userId: ANONYMOUS_USER_ID,
+      keyType: 'personal',
+    }
+  }
+
   const apiKey = request.headers.get('x-api-key')
 
   if (!apiKey) {

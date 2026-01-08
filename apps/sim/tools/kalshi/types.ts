@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 
 const logger = createLogger('Kalshi')
 
@@ -82,7 +82,7 @@ export interface KalshiEvent {
 // Balance type
 export interface KalshiBalance {
   balance: number // In cents
-  portfolio_value?: number // In cents
+  portfolio_value: number // In cents
 }
 
 // Position type

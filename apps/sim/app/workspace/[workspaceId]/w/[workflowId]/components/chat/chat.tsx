@@ -1,7 +1,16 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ArrowDownToLine, ArrowUp, MoreVertical, Paperclip, X } from 'lucide-react'
+import { createLogger } from '@sim/logger'
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowUp,
+  MoreVertical,
+  Paperclip,
+  Square,
+  X,
+} from 'lucide-react'
 import {
   Badge,
   Button,
@@ -20,7 +29,6 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { createLogger } from '@/lib/logs/console/logger'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
@@ -29,7 +37,10 @@ import {
   OutputSelect,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
-import { useScrollManagement } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import {
+  usePreventZoom,
+  useScrollManagement,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   useFloatBoundarySync,
   useFloatDrag,
@@ -211,7 +222,7 @@ export function Chat() {
 
   const { entries } = useTerminalConsoleStore()
   const { isExecuting } = useExecutionStore()
-  const { handleRunWorkflow } = useWorkflowExecution()
+  const { handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
   const { data: session } = useSession()
   const { addToQueue } = useOperationQueue()
 
@@ -224,7 +235,8 @@ export function Chat() {
   // Refs
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const abortControllerRef = useRef<AbortController | null>(null)
+  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
+  const preventZoomRef = usePreventZoom()
 
   // File upload hook
   const {
@@ -436,9 +448,27 @@ export function Chat() {
   useEffect(() => {
     return () => {
       timeoutRef.current && clearTimeout(timeoutRef.current)
-      abortControllerRef.current?.abort()
+      streamReaderRef.current?.cancel()
     }
   }, [])
+
+  // React to execution cancellation from run button
+  useEffect(() => {
+    if (!isExecuting && isStreaming) {
+      const lastMessage = workflowMessages[workflowMessages.length - 1]
+      if (lastMessage?.isStreaming) {
+        streamReaderRef.current?.cancel()
+        streamReaderRef.current = null
+        finalizeMessageStream(lastMessage.id)
+      }
+    }
+  }, [isExecuting, isStreaming, workflowMessages, finalizeMessageStream])
+
+  const handleStopStreaming = useCallback(() => {
+    streamReaderRef.current?.cancel()
+    streamReaderRef.current = null
+    handleCancelExecution()
+  }, [handleCancelExecution])
 
   /**
    * Processes streaming response from workflow execution
@@ -449,6 +479,7 @@ export function Chat() {
   const processStreamingResponse = useCallback(
     async (stream: ReadableStream, responseMessageId: string) => {
       const reader = stream.getReader()
+      streamReaderRef.current = reader
       const decoder = new TextDecoder()
       let accumulatedContent = ''
       let buffer = ''
@@ -509,8 +540,15 @@ export function Chat() {
           }
         }
       } catch (error) {
-        logger.error('Error processing stream:', error)
+        if ((error as Error)?.name !== 'AbortError') {
+          logger.error('Error processing stream:', error)
+        }
+        finalizeMessageStream(responseMessageId)
       } finally {
+        // Only clear ref if it's still our reader (prevents clobbering a new stream)
+        if (streamReaderRef.current === reader) {
+          streamReaderRef.current = null
+        }
         focusInput(100)
       }
     },
@@ -589,10 +627,6 @@ export function Chat() {
       setPromptHistory((prev) => [...prev, sentMessage])
     }
     setHistoryIndex(-1)
-
-    // Reset abort controller
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = new AbortController()
 
     const conversationId = getConversationId(activeWorkflowId)
 
@@ -784,7 +818,8 @@ export function Chat() {
 
   return (
     <div
-      className='fixed z-30 flex flex-col overflow-hidden rounded-[6px] border border-[var(--border)] bg-[var(--surface-1)] px-[10px] pt-[2px] pb-[8px]'
+      ref={preventZoomRef}
+      className='fixed z-30 flex flex-col overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] px-[10px] pt-[2px] pb-[8px]'
       style={{
         left: `${actualPosition.x}px`,
         top: `${actualPosition.y}px`,
@@ -938,8 +973,8 @@ export function Chat() {
 
           {/* Combined input container */}
           <div
-            className={`rounded-[4px] border bg-[var(--surface-9)] py-0 pr-[6px] pl-[4px] transition-colors ${
-              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--surface-11)]'
+            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${
+              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
             }`}
           >
             {/* File thumbnails */}
@@ -1014,7 +1049,7 @@ export function Chat() {
                   onClick={() => document.getElementById('floating-chat-file-input')?.click()}
                   title='Attach file'
                   className={cn(
-                    '!bg-transparent cursor-pointer rounded-[6px] p-[0px]',
+                    '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
                     (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
                       'cursor-not-allowed opacity-50'
                   )}
@@ -1022,22 +1057,31 @@ export function Chat() {
                   <Paperclip className='!h-3.5 !w-3.5' />
                 </Badge>
 
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={
-                    (!chatMessage.trim() && chatFiles.length === 0) ||
-                    !activeWorkflowId ||
-                    isExecuting
-                  }
-                  className={cn(
-                    'h-[22px] w-[22px] rounded-full p-0 transition-colors',
-                    chatMessage.trim() || chatFiles.length > 0
-                      ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
-                      : '!bg-[var(--c-C0C0C0)]'
-                  )}
-                >
-                  <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
-                </Button>
+                {isStreaming ? (
+                  <Button
+                    onClick={handleStopStreaming}
+                    className='!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)] h-[22px] w-[22px] rounded-full p-0 transition-colors'
+                  >
+                    <Square className='h-2.5 w-2.5 fill-black text-black' />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={
+                      (!chatMessage.trim() && chatFiles.length === 0) ||
+                      !activeWorkflowId ||
+                      isExecuting
+                    }
+                    className={cn(
+                      'h-[22px] w-[22px] rounded-full p-0 transition-colors',
+                      chatMessage.trim() || chatFiles.length > 0
+                        ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
+                        : '!bg-[var(--c-C0C0C0)]'
+                    )}
+                  >
+                    <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
+                  </Button>
+                )}
               </div>
             </div>
 

@@ -122,6 +122,15 @@ export interface ExtractParams {
   scrapeOptions?: ScrapeOptions
 }
 
+export interface AgentParams {
+  apiKey: string
+  prompt: string
+  urls?: string[]
+  schema?: Record<string, any>
+  maxCredits?: number
+  strictConstrainToURLs?: boolean
+}
+
 export interface ScrapeResponse extends ToolResponse {
   output: {
     markdown: string
@@ -163,7 +172,6 @@ export interface SearchResponse extends ToolResponse {
         error?: string
       }
     }>
-    warning?: string
   }
 }
 
@@ -198,11 +206,18 @@ export interface ExtractResponse extends ToolResponse {
     jobId: string
     success: boolean
     data: Record<string, any>
-    sources?: Array<{
-      url: string
-      title?: string
-    }>
-    warning?: string
+  }
+}
+
+export interface AgentResponse extends ToolResponse {
+  output: {
+    jobId: string
+    success: boolean
+    status: string
+    data: Record<string, any>
+    creditsUsed?: number
+    expiresAt?: string
+    sources?: string[]
   }
 }
 
@@ -212,3 +227,4 @@ export type FirecrawlResponse =
   | FirecrawlCrawlResponse
   | MapResponse
   | ExtractResponse
+  | AgentResponse

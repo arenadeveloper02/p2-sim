@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { isReference, parseReferencePath, REFERENCE } from '@/executor/constants'
 import { extractBaseBlockId, extractBranchIndex } from '@/executor/utils/subflow-utils'
 import {
@@ -49,7 +49,10 @@ export class ParallelResolver implements Resolver {
       return undefined
     }
 
-    const distributionItems = this.getDistributionItems(parallelConfig)
+    // First try to get items from the parallel scope (resolved at runtime)
+    // This is the same pattern as LoopResolver reading from loopScope.items
+    const parallelScope = context.executionContext.parallelExecutions?.get(parallelId)
+    const distributionItems = parallelScope?.items ?? this.getDistributionItems(parallelConfig)
 
     let value: any
     switch (property) {
@@ -114,7 +117,7 @@ export class ParallelResolver implements Resolver {
     // String handling
     if (typeof rawItems === 'string') {
       // Skip references - they should be resolved by the variable resolver
-      if (rawItems.startsWith('<')) {
+      if (rawItems.startsWith(REFERENCE.START)) {
         return []
       }
 

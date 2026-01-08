@@ -1,0 +1,157 @@
+'use client'
+
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverDivider,
+  PopoverItem,
+} from '@/components/emcn'
+import type { PaneContextMenuProps } from './types'
+
+/**
+ * Context menu for workflow canvas pane.
+ * Displays canvas-level actions when right-clicking empty space.
+ */
+export function PaneContextMenu({
+  isOpen,
+  position,
+  menuRef,
+  onClose,
+  onUndo,
+  onRedo,
+  onPaste,
+  onAddBlock,
+  onAutoLayout,
+  onOpenLogs,
+  onOpenVariables,
+  onOpenChat,
+  onInvite,
+  hasClipboard = false,
+  disableEdit = false,
+  disableAdmin = false,
+  canUndo = false,
+  canRedo = false,
+}: PaneContextMenuProps) {
+  return (
+    <Popover
+      open={isOpen}
+      onOpenChange={onClose}
+      variant='secondary'
+      size='sm'
+      colorScheme='inverted'
+    >
+      <PopoverAnchor
+        style={{
+          position: 'fixed',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: '1px',
+          height: '1px',
+        }}
+      />
+      <PopoverContent ref={menuRef} align='start' side='bottom' sideOffset={4}>
+        {/* History actions */}
+        <PopoverItem
+          className='group'
+          disabled={disableEdit || !canUndo}
+          onClick={() => {
+            onUndo()
+            onClose()
+          }}
+        >
+          <span>Undo</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⌘Z</span>
+        </PopoverItem>
+        <PopoverItem
+          className='group'
+          disabled={disableEdit || !canRedo}
+          onClick={() => {
+            onRedo()
+            onClose()
+          }}
+        >
+          <span>Redo</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⌘⇧Z</span>
+        </PopoverItem>
+
+        {/* Edit and creation actions */}
+        <PopoverDivider />
+        <PopoverItem
+          className='group'
+          disabled={disableEdit || !hasClipboard}
+          onClick={() => {
+            onPaste()
+            onClose()
+          }}
+        >
+          <span>Paste</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⌘V</span>
+        </PopoverItem>
+        <PopoverItem
+          className='group'
+          disabled={disableEdit}
+          onClick={() => {
+            onAddBlock()
+            onClose()
+          }}
+        >
+          <span>Add Block</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⌘K</span>
+        </PopoverItem>
+        <PopoverItem
+          className='group'
+          disabled={disableEdit}
+          onClick={() => {
+            onAutoLayout()
+            onClose()
+          }}
+        >
+          <span>Auto-layout</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⇧L</span>
+        </PopoverItem>
+
+        {/* Navigation actions */}
+        <PopoverDivider />
+        <PopoverItem
+          className='group'
+          onClick={() => {
+            onOpenLogs()
+            onClose()
+          }}
+        >
+          <span>Open Logs</span>
+          <span className='ml-auto text-[var(--text-tertiary)] group-hover:text-inherit'>⌘L</span>
+        </PopoverItem>
+        <PopoverItem
+          onClick={() => {
+            onOpenVariables()
+            onClose()
+          }}
+        >
+          Variables
+        </PopoverItem>
+        <PopoverItem
+          onClick={() => {
+            onOpenChat()
+            onClose()
+          }}
+        >
+          Open Chat
+        </PopoverItem>
+
+        {/* Admin action */}
+        <PopoverDivider />
+        <PopoverItem
+          disabled={disableAdmin}
+          onClick={() => {
+            onInvite()
+            onClose()
+          }}
+        >
+          Invite to Workspace
+        </PopoverItem>
+      </PopoverContent>
+    </Popover>
+  )
+}

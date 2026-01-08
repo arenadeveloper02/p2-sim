@@ -1,9 +1,11 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { Plus, Search } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
+  Badge,
   Button,
   Input as EmcnInput,
   Modal,
@@ -11,17 +13,28 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Tooltip,
 } from '@/components/emcn'
 import { Input } from '@/components/ui'
-import { createLogger } from '@/lib/logs/console/logger'
+import {
+  getIssueBadgeLabel,
+  getIssueBadgeVariant,
+  getMcpToolIssue,
+  type McpToolIssue,
+} from '@/lib/mcp/tool-validation'
 import { checkEnvVarTrigger } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/env-var-dropdown'
 import {
   useCreateMcpServer,
   useDeleteMcpServer,
+  useForceRefreshMcpTools,
   useMcpServers,
   useMcpToolsQuery,
+  useRefreshMcpServer,
+  useStoredMcpTools,
 } from '@/hooks/queries/mcp'
 import { useMcpServerTest } from '@/hooks/use-mcp-server-test'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { InputFieldType, McpServerFormData, McpServerTestResult } from './components'
 import {
   FormattedInput,
@@ -43,6 +56,9 @@ interface McpServer {
   name?: string
   transport?: string
   url?: string
+  connectionStatus?: 'connected' | 'disconnected' | 'error'
+  lastError?: string | null
+  lastConnected?: string
 }
 
 const logger = createLogger('McpSettings')
@@ -68,11 +84,15 @@ function getTestButtonLabel(
   return 'Test Connection'
 }
 
+interface MCPProps {
+  initialServerId?: string | null
+}
+
 /**
  * MCP Settings component for managing Model Context Protocol servers.
  * Handles server CRUD operations, connection testing, and environment variable integration.
  */
-export function MCP() {
+export function MCP({ initialServerId }: MCPProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
@@ -87,38 +107,53 @@ export function MCP() {
     isLoading: toolsLoading,
     isFetching: toolsFetching,
   } = useMcpToolsQuery(workspaceId)
+  const { data: storedTools = [], refetch: refetchStoredTools } = useStoredMcpTools(workspaceId)
+  const forceRefreshTools = useForceRefreshMcpTools()
   const createServerMutation = useCreateMcpServer()
   const deleteServerMutation = useDeleteMcpServer()
+  const refreshServerMutation = useRefreshMcpServer()
   const { testResult, isTestingConnection, testConnection, clearTestResult } = useMcpServerTest()
 
   const urlInputRef = useRef<HTMLInputElement>(null)
 
-  // Form state
   const [showAddForm, setShowAddForm] = useState(false)
   const [formData, setFormData] = useState<McpServerFormData>(DEFAULT_FORM_DATA)
   const [isAddingServer, setIsAddingServer] = useState(false)
 
-  // Search and filtering state
   const [searchTerm, setSearchTerm] = useState('')
   const [deletingServers, setDeletingServers] = useState<Set<string>>(new Set())
 
-  // Delete confirmation dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [serverToDelete, setServerToDelete] = useState<{ id: string; name: string } | null>(null)
 
-  // Server details view state
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
+  const [refreshingServers, setRefreshingServers] = useState<
+    Record<string, { status: 'refreshing' | 'refreshed'; workflowsUpdated?: number }>
+  >({})
 
-  // Environment variable dropdown state
   const [showEnvVars, setShowEnvVars] = useState(false)
   const [envSearchTerm, setEnvSearchTerm] = useState('')
   const [cursorPosition, setCursorPosition] = useState(0)
   const [activeInputField, setActiveInputField] = useState<InputFieldType | null>(null)
   const [activeHeaderIndex, setActiveHeaderIndex] = useState<number | null>(null)
 
-  // Scroll position state for formatted text overlays
   const [urlScrollLeft, setUrlScrollLeft] = useState(0)
   const [headerScrollLeft, setHeaderScrollLeft] = useState<Record<string, number>>({})
+
+  // Auto-select server when initialServerId is provided
+  useEffect(() => {
+    if (initialServerId && servers.some((s) => s.id === initialServerId)) {
+      setSelectedServerId(initialServerId)
+    }
+  }, [initialServerId, servers])
+
+  // Force refresh tools when entering server detail view to detect stale schemas
+  useEffect(() => {
+    if (selectedServerId) {
+      forceRefreshTools(workspaceId)
+      refetchStoredTools()
+    }
+  }, [selectedServerId, workspaceId, forceRefreshTools, refetchStoredTools])
 
   /**
    * Resets environment variable dropdown state.
@@ -239,6 +274,7 @@ export function MCP() {
 
   /**
    * Adds a new MCP server after validating and testing the connection.
+   * Only creates the server if connection test succeeds.
    */
   const handleAddServer = useCallback(async () => {
     if (!formData.name.trim()) return
@@ -255,13 +291,12 @@ export function MCP() {
         workspaceId,
       }
 
-      // Test connection if not already tested
-      if (!testResult) {
-        const result = await testConnection(serverConfig)
-        if (!result.success) return
-      }
+      const connectionResult = await testConnection(serverConfig)
 
-      if (testResult && !testResult.success) return
+      if (!connectionResult.success) {
+        logger.error('Connection test failed, server not added:', connectionResult.error)
+        return
+      }
 
       await createServerMutation.mutateAsync({
         workspaceId,
@@ -282,15 +317,7 @@ export function MCP() {
     } finally {
       setIsAddingServer(false)
     }
-  }, [
-    formData,
-    testResult,
-    testConnection,
-    createServerMutation,
-    workspaceId,
-    headersToRecord,
-    resetForm,
-  ])
+  }, [formData, testConnection, createServerMutation, workspaceId, headersToRecord, resetForm])
 
   /**
    * Opens the delete confirmation dialog for an MCP server.
@@ -300,9 +327,6 @@ export function MCP() {
     setShowDeleteDialog(true)
   }, [])
 
-  /**
-   * Confirms and executes the server deletion.
-   */
   const confirmDeleteServer = useCallback(async () => {
     if (!serverToDelete) return
 
@@ -397,6 +421,62 @@ export function MCP() {
   }, [])
 
   /**
+   * Refreshes a server's tools by re-discovering them from the MCP server.
+   * Also syncs updated tool schemas to all workflows using those tools.
+   * If the active workflow was updated, reloads its subblock values.
+   */
+  const handleRefreshServer = useCallback(
+    async (serverId: string) => {
+      try {
+        setRefreshingServers((prev) => ({ ...prev, [serverId]: { status: 'refreshing' } }))
+        const result = await refreshServerMutation.mutateAsync({ workspaceId, serverId })
+        logger.info(
+          `Refreshed MCP server: ${serverId}, workflows updated: ${result.workflowsUpdated}`
+        )
+
+        // If the active workflow was updated, reload its subblock values from DB
+        const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+        if (activeWorkflowId && result.updatedWorkflowIds?.includes(activeWorkflowId)) {
+          logger.info(`Active workflow ${activeWorkflowId} was updated, reloading subblock values`)
+          try {
+            const response = await fetch(`/api/workflows/${activeWorkflowId}`)
+            if (response.ok) {
+              const { data: workflowData } = await response.json()
+              if (workflowData?.state?.blocks) {
+                useSubBlockStore
+                  .getState()
+                  .initializeFromWorkflow(activeWorkflowId, workflowData.state.blocks)
+              }
+            }
+          } catch (reloadError) {
+            logger.warn('Failed to reload workflow subblock values:', reloadError)
+          }
+        }
+
+        setRefreshingServers((prev) => ({
+          ...prev,
+          [serverId]: { status: 'refreshed', workflowsUpdated: result.workflowsUpdated },
+        }))
+        setTimeout(() => {
+          setRefreshingServers((prev) => {
+            const newState = { ...prev }
+            delete newState[serverId]
+            return newState
+          })
+        }, 3000)
+      } catch (error) {
+        logger.error('Failed to refresh MCP server:', error)
+        setRefreshingServers((prev) => {
+          const newState = { ...prev }
+          delete newState[serverId]
+          return newState
+        })
+      }
+    },
+    [refreshServerMutation, workspaceId]
+  )
+
+  /**
    * Gets the selected server and its tools for the detail view.
    */
   const selectedServer = useMemo(() => {
@@ -409,15 +489,60 @@ export function MCP() {
 
   const error = toolsError || serversError
   const hasServers = servers && servers.length > 0
-  const showEmptyState = !hasServers && !showAddForm
+  const shouldShowForm = showAddForm || !hasServers
   const showNoResults = searchTerm.trim() && filteredServers.length === 0 && servers.length > 0
 
-  // Form validation state
   const isFormValid = formData.name.trim() && formData.url?.trim()
   const isSubmitDisabled = serversLoading || isAddingServer || !isFormValid
   const testButtonLabel = getTestButtonLabel(testResult, isTestingConnection)
 
-  // Show detail view if a server is selected
+  /**
+   * Gets issues for stored tools that reference a specific server tool.
+   * Returns issues from all workflows that have stored this tool.
+   */
+  const getStoredToolIssues = useCallback(
+    (serverId: string, toolName: string): { issue: McpToolIssue; workflowName: string }[] => {
+      const relevantStoredTools = storedTools.filter(
+        (st) => st.serverId === serverId && st.toolName === toolName
+      )
+
+      const serverStates = servers.map((s) => ({
+        id: s.id,
+        url: s.url,
+        connectionStatus: s.connectionStatus,
+        lastError: s.lastError || undefined,
+      }))
+
+      const discoveredTools = mcpToolsData.map((t) => ({
+        serverId: t.serverId,
+        name: t.name,
+        inputSchema: t.inputSchema,
+      }))
+
+      const issues: { issue: McpToolIssue; workflowName: string }[] = []
+
+      for (const storedTool of relevantStoredTools) {
+        const issue = getMcpToolIssue(
+          {
+            serverId: storedTool.serverId,
+            serverUrl: storedTool.serverUrl,
+            toolName: storedTool.toolName,
+            schema: storedTool.schema,
+          },
+          serverStates,
+          discoveredTools
+        )
+
+        if (issue) {
+          issues.push({ issue, workflowName: storedTool.workflowName })
+        }
+      }
+
+      return issues
+    },
+    [storedTools, servers, mcpToolsData]
+  )
+
   if (selectedServer) {
     const { server, tools } = selectedServer
     const transportLabel = formatTransportLabel(server.transport || 'http')
@@ -443,8 +568,15 @@ export function MCP() {
             {server.url && (
               <div className='flex flex-col gap-[8px]'>
                 <span className='font-medium text-[13px] text-[var(--text-primary)]'>URL</span>
-                <p className='break-all font-mono text-[13px] text-[var(--text-secondary)]'>
-                  {server.url}
+                <p className='break-all text-[14px] text-[var(--text-secondary)]'>{server.url}</p>
+              </div>
+            )}
+
+            {server.connectionStatus === 'error' && (
+              <div className='flex flex-col gap-[8px]'>
+                <span className='font-medium text-[13px] text-[var(--text-primary)]'>Status</span>
+                <p className='text-[14px] text-red-500 dark:text-red-400'>
+                  {server.lastError || 'Unable to connect'}
                 </p>
               </div>
             )}
@@ -457,33 +589,66 @@ export function MCP() {
                 <p className='text-[13px] text-[var(--text-muted)]'>No tools available</p>
               ) : (
                 <div className='flex flex-col gap-[8px]'>
-                  {tools.map((tool) => (
-                    <div
-                      key={tool.name}
-                      className='rounded-[6px] border bg-[var(--surface-3)] px-[10px] py-[8px]'
-                    >
-                      <p className='font-medium text-[13px] text-[var(--text-primary)]'>
-                        {tool.name}
-                      </p>
-                      {tool.description && (
-                        <p className='mt-[4px] text-[13px] text-[var(--text-tertiary)]'>
-                          {tool.description}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                  {tools.map((tool) => {
+                    const issues = getStoredToolIssues(server.id, tool.name)
+                    const affectedWorkflows = issues.map((i) => i.workflowName)
+                    return (
+                      <div
+                        key={tool.name}
+                        className='rounded-[6px] border bg-[var(--surface-3)] px-[10px] py-[8px]'
+                      >
+                        <div className='flex items-center gap-[8px]'>
+                          <p className='font-medium text-[13px] text-[var(--text-primary)]'>
+                            {tool.name}
+                          </p>
+                          {issues.length > 0 && (
+                            <Tooltip.Root>
+                              <Tooltip.Trigger asChild>
+                                <div>
+                                  <Badge
+                                    variant={getIssueBadgeVariant(issues[0].issue)}
+                                    size='sm'
+                                    className='cursor-help'
+                                  >
+                                    {getIssueBadgeLabel(issues[0].issue)}
+                                  </Badge>
+                                </div>
+                              </Tooltip.Trigger>
+                              <Tooltip.Content>
+                                Update in: {affectedWorkflows.join(', ')}
+                              </Tooltip.Content>
+                            </Tooltip.Root>
+                          )}
+                        </div>
+                        {tool.description && (
+                          <p className='mt-[4px] text-[13px] text-[var(--text-tertiary)]'>
+                            {tool.description}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className='mt-auto flex items-center justify-end'>
+        <div className='mt-auto flex items-center justify-between'>
           <Button
-            onClick={handleBackToList}
-            variant='primary'
-            className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
+            onClick={() => handleRefreshServer(server.id)}
+            variant='default'
+            disabled={!!refreshingServers[server.id]}
           >
+            {refreshingServers[server.id]?.status === 'refreshing'
+              ? 'Refreshing...'
+              : refreshingServers[server.id]?.status === 'refreshed'
+                ? refreshingServers[server.id].workflowsUpdated
+                  ? `Synced (${refreshingServers[server.id].workflowsUpdated} workflow${refreshingServers[server.id].workflowsUpdated === 1 ? '' : 's'})`
+                  : 'Refreshed'
+                : 'Refresh Tools'}
+          </Button>
+          <Button onClick={handleBackToList} variant='tertiary'>
             Back
           </Button>
         </div>
@@ -495,7 +660,7 @@ export function MCP() {
     <>
       <div className='flex h-full flex-col gap-[16px]'>
         <div className='flex items-center gap-[8px]'>
-          <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border bg-[var(--surface-6)] px-[8px] py-[5px]'>
+          <div className='flex flex-1 items-center gap-[8px] rounded-[8px] border border-[var(--border)] bg-transparent px-[8px] py-[5px] transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover:border-[var(--border-1)] dark:hover:bg-[var(--surface-5)]'>
             <Search
               className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
               strokeWidth={2}
@@ -509,17 +674,16 @@ export function MCP() {
           </div>
           <Button
             onClick={() => setShowAddForm(!showAddForm)}
-            variant='primary'
+            variant='tertiary'
             disabled={serversLoading}
-            className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
           >
             <Plus className='mr-[6px] h-[13px] w-[13px]' />
             Add
           </Button>
         </div>
 
-        {showAddForm && !serversLoading && (
-          <div className='rounded-[8px] border bg-[var(--surface-3)] p-[10px]'>
+        {shouldShowForm && !serversLoading && (
+          <div className='rounded-[8px] border p-[10px]'>
             <div className='flex flex-col gap-[8px]'>
               <FormField label='Server Name'>
                 <EmcnInput
@@ -603,11 +767,7 @@ export function MCP() {
                   <Button variant='ghost' onClick={handleCancelForm}>
                     Cancel
                   </Button>
-                  <Button
-                    onClick={handleAddServer}
-                    disabled={isSubmitDisabled}
-                    className='!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
-                  >
+                  <Button onClick={handleAddServer} disabled={isSubmitDisabled} variant='tertiary'>
                     {isSubmitDisabled && isFormValid ? 'Adding...' : 'Add Server'}
                   </Button>
                 </div>
@@ -629,10 +789,6 @@ export function MCP() {
               <McpServerSkeleton />
               <McpServerSkeleton />
             </div>
-          ) : showEmptyState ? (
-            <div className='flex h-full items-center justify-center text-[13px] text-[var(--text-muted)]'>
-              Click "Add" above to get started
-            </div>
           ) : (
             <div className='flex flex-col gap-[8px]'>
               {filteredServers.map((server) => {
@@ -647,6 +803,7 @@ export function MCP() {
                     tools={tools}
                     isDeleting={deletingServers.has(server.id)}
                     isLoadingTools={isLoadingTools}
+                    isRefreshing={refreshingServers[server.id]?.status === 'refreshing'}
                     onRemove={() => handleRemoveServer(server.id, server.name || 'this server')}
                     onViewDetails={() => handleViewDetails(server.id)}
                   />
@@ -666,7 +823,7 @@ export function MCP() {
         <ModalContent className='w-[400px]'>
           <ModalHeader>Delete MCP Server</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to delete{' '}
               <span className='font-medium text-[var(--text-primary)]'>{serverToDelete?.name}</span>
               ? <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
@@ -676,11 +833,7 @@ export function MCP() {
             <Button variant='default' onClick={() => setShowDeleteDialog(false)}>
               Cancel
             </Button>
-            <Button
-              variant='primary'
-              onClick={confirmDeleteServer}
-              className='!bg-[var(--text-error)] !text-white hover:!bg-[var(--text-error)]/90'
-            >
+            <Button variant='destructive' onClick={confirmDeleteServer}>
               Delete
             </Button>
           </ModalFooter>

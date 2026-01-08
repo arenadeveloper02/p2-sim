@@ -1,11 +1,13 @@
+import { createLogger } from '@sim/logger'
+import { getBYOKKey } from '@/lib/api-key/byok'
 import { env } from '@/lib/core/config/env'
 import { isRetryableError, retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
-import { createLogger } from '@/lib/logs/console/logger'
 import { batchByTokenLimit, getTotalTokenCount } from '@/lib/tokenization'
 
 const logger = createLogger('EmbeddingUtils')
 
 const MAX_TOKENS_PER_REQUEST = 8000
+const MAX_CONCURRENT_BATCHES = env.KB_CONFIG_CONCURRENCY_LIMIT || 50
 
 export class EmbeddingAPIError extends Error {
   public status: number
@@ -24,40 +26,53 @@ interface EmbeddingConfig {
   modelName: string
 }
 
-function getEmbeddingConfig(embeddingModel = 'text-embedding-3-small'): EmbeddingConfig {
+async function getEmbeddingConfig(
+  embeddingModel = 'text-embedding-3-small',
+  workspaceId?: string | null
+): Promise<EmbeddingConfig> {
   const azureApiKey = env.AZURE_OPENAI_API_KEY
   const azureEndpoint = env.AZURE_OPENAI_ENDPOINT
   const azureApiVersion = env.AZURE_OPENAI_API_VERSION
   const kbModelName = env.KB_OPENAI_MODEL_NAME || embeddingModel
-  const openaiApiKey = env.OPENAI_API_KEY
 
   const useAzure = !!(azureApiKey && azureEndpoint)
 
-  if (!useAzure && !openaiApiKey) {
+  if (useAzure) {
+    return {
+      useAzure: true,
+      apiUrl: `${azureEndpoint}/openai/deployments/${kbModelName}/embeddings?api-version=${azureApiVersion}`,
+      headers: {
+        'api-key': azureApiKey!,
+        'Content-Type': 'application/json',
+      },
+      modelName: kbModelName,
+    }
+  }
+
+  let openaiApiKey = env.OPENAI_API_KEY
+
+  if (workspaceId) {
+    const byokResult = await getBYOKKey(workspaceId, 'openai')
+    if (byokResult) {
+      logger.info('Using workspace BYOK key for OpenAI embeddings')
+      openaiApiKey = byokResult.apiKey
+    }
+  }
+
+  if (!openaiApiKey) {
     throw new Error(
       'Either OPENAI_API_KEY or Azure OpenAI configuration (AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT) must be configured'
     )
   }
 
-  const apiUrl = useAzure
-    ? `${azureEndpoint}/openai/deployments/${kbModelName}/embeddings?api-version=${azureApiVersion}`
-    : 'https://api.openai.com/v1/embeddings'
-
-  const headers: Record<string, string> = useAzure
-    ? {
-        'api-key': azureApiKey!,
-        'Content-Type': 'application/json',
-      }
-    : {
-        Authorization: `Bearer ${openaiApiKey!}`,
-        'Content-Type': 'application/json',
-      }
-
   return {
-    useAzure,
-    apiUrl,
-    headers,
-    modelName: useAzure ? kbModelName : embeddingModel,
+    useAzure: false,
+    apiUrl: 'https://api.openai.com/v1/embeddings',
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    modelName: embeddingModel,
   }
 }
 
@@ -107,14 +122,36 @@ async function callEmbeddingAPI(inputs: string[], config: EmbeddingConfig): Prom
 }
 
 /**
- * Generate embeddings for multiple texts with token-aware batching
- * Uses tiktoken for token counting
+ * Process batches with controlled concurrency
+ */
+async function processWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  processor: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let currentIndex = 0
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (currentIndex < items.length) {
+      const index = currentIndex++
+      results[index] = await processor(items[index], index)
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
+/**
+ * Generate embeddings for multiple texts with token-aware batching and parallel processing
  */
 export async function generateEmbeddings(
   texts: string[],
-  embeddingModel = 'text-embedding-3-small'
+  embeddingModel = 'text-embedding-3-small',
+  workspaceId?: string | null
 ): Promise<number[][]> {
-  const config = getEmbeddingConfig(embeddingModel)
+  const config = await getEmbeddingConfig(embeddingModel, workspaceId)
 
   logger.info(
     `Using ${config.useAzure ? 'Azure OpenAI' : 'OpenAI'} for embeddings generation (${texts.length} texts)`
@@ -123,35 +160,35 @@ export async function generateEmbeddings(
   const batches = batchByTokenLimit(texts, MAX_TOKENS_PER_REQUEST, embeddingModel)
 
   logger.info(
-    `Split ${texts.length} texts into ${batches.length} batches (max ${MAX_TOKENS_PER_REQUEST} tokens per batch)`
+    `Split ${texts.length} texts into ${batches.length} batches (max ${MAX_TOKENS_PER_REQUEST} tokens per batch, ${MAX_CONCURRENT_BATCHES} concurrent)`
   )
 
-  const allEmbeddings: number[][] = []
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]
-    const batchTokenCount = getTotalTokenCount(batch, embeddingModel)
-
-    logger.info(
-      `Processing batch ${i + 1}/${batches.length}: ${batch.length} texts, ${batchTokenCount} tokens`
-    )
-
-    try {
-      const batchEmbeddings = await callEmbeddingAPI(batch, config)
-      allEmbeddings.push(...batchEmbeddings)
+  const batchResults = await processWithConcurrency(
+    batches,
+    MAX_CONCURRENT_BATCHES,
+    async (batch, i) => {
+      const batchTokenCount = getTotalTokenCount(batch, embeddingModel)
 
       logger.info(
-        `Generated ${batchEmbeddings.length} embeddings for batch ${i + 1}/${batches.length}`
+        `Processing batch ${i + 1}/${batches.length}: ${batch.length} texts, ${batchTokenCount} tokens`
       )
-    } catch (error) {
-      logger.error(`Failed to generate embeddings for batch ${i + 1}:`, error)
-      throw error
-    }
 
-    if (i + 1 < batches.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      try {
+        const batchEmbeddings = await callEmbeddingAPI(batch, config)
+
+        logger.info(
+          `Generated ${batchEmbeddings.length} embeddings for batch ${i + 1}/${batches.length}`
+        )
+
+        return batchEmbeddings
+      } catch (error) {
+        logger.error(`Failed to generate embeddings for batch ${i + 1}:`, error)
+        throw error
+      }
     }
-  }
+  )
+
+  const allEmbeddings = batchResults.flat()
 
   logger.info(`Successfully generated ${allEmbeddings.length} embeddings total`)
 
@@ -163,9 +200,10 @@ export async function generateEmbeddings(
  */
 export async function generateSearchEmbedding(
   query: string,
-  embeddingModel = 'text-embedding-3-small'
+  embeddingModel = 'text-embedding-3-small',
+  workspaceId?: string | null
 ): Promise<number[]> {
-  const config = getEmbeddingConfig(embeddingModel)
+  const config = await getEmbeddingConfig(embeddingModel, workspaceId)
 
   logger.info(
     `Using ${config.useAzure ? 'Azure OpenAI' : 'OpenAI'} for search embedding generation`

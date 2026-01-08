@@ -1,15 +1,18 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
+import { DEFAULTS } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { ParallelScope } from '@/executor/execution/state'
-import type { BlockStateWriter } from '@/executor/execution/types'
+import type { BlockStateWriter, ContextExtensions } from '@/executor/execution/types'
 import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
 import type { ParallelConfigWithNodes } from '@/executor/types/parallel'
+import { ParallelExpander } from '@/executor/utils/parallel-expansion'
 import {
-  calculateBranchCount,
-  extractBaseBlockId,
+  addSubflowErrorLog,
   extractBranchIndex,
-  parseDistributionItems,
+  resolveArrayInput,
+  validateMaxCount,
 } from '@/executor/utils/subflow-utils'
+import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedParallel } from '@/serializer/types'
 
 const logger = createLogger('ParallelOrchestrator')
@@ -29,29 +32,160 @@ export interface ParallelAggregationResult {
 }
 
 export class ParallelOrchestrator {
+  private resolver: VariableResolver | null = null
+  private contextExtensions: ContextExtensions | null = null
+  private expander = new ParallelExpander()
+
   constructor(
     private dag: DAG,
     private state: BlockStateWriter
   ) {}
 
+  setResolver(resolver: VariableResolver): void {
+    this.resolver = resolver
+  }
+
+  setContextExtensions(contextExtensions: ContextExtensions): void {
+    this.contextExtensions = contextExtensions
+  }
+
   initializeParallelScope(
     ctx: ExecutionContext,
     parallelId: string,
-    totalBranches: number,
     terminalNodesCount = 1
   ): ParallelScope {
+    const parallelConfig = this.dag.parallelConfigs.get(parallelId)
+    if (!parallelConfig) {
+      throw new Error(`Parallel config not found: ${parallelId}`)
+    }
+
+    let items: any[] | undefined
+    let branchCount: number
+
+    try {
+      const resolved = this.resolveBranchCount(ctx, parallelConfig)
+      branchCount = resolved.branchCount
+      items = resolved.items
+    } catch (error) {
+      const errorMessage = `Parallel Items did not resolve: ${error instanceof Error ? error.message : String(error)}`
+      logger.error(errorMessage, { parallelId, distribution: parallelConfig.distribution })
+      this.addParallelErrorLog(ctx, parallelId, errorMessage, {
+        distribution: parallelConfig.distribution,
+      })
+      this.setErrorScope(ctx, parallelId, errorMessage)
+      throw new Error(errorMessage)
+    }
+
+    const branchError = validateMaxCount(
+      branchCount,
+      DEFAULTS.MAX_PARALLEL_BRANCHES,
+      'Parallel branch count'
+    )
+    if (branchError) {
+      logger.error(branchError, { parallelId, branchCount })
+      this.addParallelErrorLog(ctx, parallelId, branchError, {
+        distribution: parallelConfig.distribution,
+        branchCount,
+      })
+      this.setErrorScope(ctx, parallelId, branchError)
+      throw new Error(branchError)
+    }
+
+    const { entryNodes } = this.expander.expandParallel(this.dag, parallelId, branchCount, items)
+
     const scope: ParallelScope = {
       parallelId,
-      totalBranches,
+      totalBranches: branchCount,
       branchOutputs: new Map(),
       completedCount: 0,
-      totalExpectedNodes: totalBranches * terminalNodesCount,
+      totalExpectedNodes: branchCount * terminalNodesCount,
+      items,
+    }
+
+    if (!ctx.parallelExecutions) {
+      ctx.parallelExecutions = new Map()
+    }
+    ctx.parallelExecutions.set(parallelId, scope)
+
+    const newEntryNodes = entryNodes.filter((nodeId) => !nodeId.endsWith('__branch-0'))
+    if (newEntryNodes.length > 0) {
+      if (!ctx.pendingDynamicNodes) {
+        ctx.pendingDynamicNodes = []
+      }
+      ctx.pendingDynamicNodes.push(...newEntryNodes)
+    }
+
+    logger.info('Parallel scope initialized', {
+      parallelId,
+      branchCount,
+      entryNodeCount: entryNodes.length,
+      newEntryNodes: newEntryNodes.length,
+    })
+
+    return scope
+  }
+
+  private resolveBranchCount(
+    ctx: ExecutionContext,
+    config: SerializedParallel
+  ): { branchCount: number; items?: any[] } {
+    if (config.parallelType === 'count') {
+      return { branchCount: config.count ?? 1 }
+    }
+
+    const items = this.resolveDistributionItems(ctx, config)
+    if (items.length === 0) {
+      return { branchCount: config.count ?? 1 }
+    }
+
+    return { branchCount: items.length, items }
+  }
+
+  private addParallelErrorLog(
+    ctx: ExecutionContext,
+    parallelId: string,
+    errorMessage: string,
+    inputData?: any
+  ): void {
+    addSubflowErrorLog(
+      ctx,
+      parallelId,
+      'parallel',
+      errorMessage,
+      inputData || {},
+      this.contextExtensions
+    )
+  }
+
+  private setErrorScope(ctx: ExecutionContext, parallelId: string, errorMessage: string): void {
+    const scope: ParallelScope = {
+      parallelId,
+      totalBranches: 0,
+      branchOutputs: new Map(),
+      completedCount: 0,
+      totalExpectedNodes: 0,
+      items: [],
+      validationError: errorMessage,
     }
     if (!ctx.parallelExecutions) {
       ctx.parallelExecutions = new Map()
     }
     ctx.parallelExecutions.set(parallelId, scope)
-    return scope
+  }
+
+  private resolveDistributionItems(ctx: ExecutionContext, config: SerializedParallel): any[] {
+    if (config.parallelType === 'count') {
+      return []
+    }
+
+    if (
+      config.distribution === undefined ||
+      config.distribution === null ||
+      config.distribution === ''
+    ) {
+      return []
+    }
+    return resolveArrayInput(ctx, config.distribution, this.resolver)
   }
 
   handleParallelBranchCompletion(
@@ -105,28 +239,25 @@ export class ParallelOrchestrator {
     }
   }
   extractBranchMetadata(nodeId: string): ParallelBranchMetadata | null {
+    const node = this.dag.nodes.get(nodeId)
+    if (!node?.metadata.isParallelBranch) {
+      return null
+    }
+
     const branchIndex = extractBranchIndex(nodeId)
     if (branchIndex === null) {
       return null
     }
 
-    const baseId = extractBaseBlockId(nodeId)
-    const parallelId = this.findParallelIdForNode(baseId)
+    const parallelId = node.metadata.parallelId
     if (!parallelId) {
       return null
     }
-    const parallelConfig = this.dag.parallelConfigs.get(parallelId)
-    if (!parallelConfig) {
-      return null
-    }
-    const { totalBranches, distributionItem } = this.getParallelConfigInfo(
-      parallelConfig,
-      branchIndex
-    )
+
     return {
       branchIndex,
-      branchTotal: totalBranches,
-      distributionItem,
+      branchTotal: node.metadata.branchTotal ?? 1,
+      distributionItem: node.metadata.distributionItem,
       parallelId,
     }
   }
@@ -143,19 +274,5 @@ export class ParallelOrchestrator {
       }
     }
     return undefined
-  }
-
-  private getParallelConfigInfo(
-    parallelConfig: SerializedParallel,
-    branchIndex: number
-  ): { totalBranches: number; distributionItem?: any } {
-    const distributionItems = parseDistributionItems(parallelConfig)
-    const totalBranches = calculateBranchCount(parallelConfig, distributionItems)
-
-    let distributionItem: any
-    if (Array.isArray(distributionItems) && branchIndex < distributionItems.length) {
-      distributionItem = distributionItems[branchIndex]
-    }
-    return { totalBranches, distributionItem }
   }
 }

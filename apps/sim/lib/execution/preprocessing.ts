@@ -1,10 +1,10 @@
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
-import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 
@@ -108,7 +108,7 @@ export interface PreprocessExecutionOptions {
   // Required fields
   workflowId: string
   userId: string // The authenticated user ID
-  triggerType: 'manual' | 'api' | 'webhook' | 'schedule' | 'chat'
+  triggerType: 'manual' | 'api' | 'webhook' | 'schedule' | 'chat' | 'mcp'
   executionId: string
   requestId: string
 
@@ -515,6 +515,15 @@ async function logPreprocessingError(params: {
     errorMessage,
     loggingSession,
   } = params
+
+  if (!workspaceId) {
+    logger.warn(`[${requestId}] Cannot log preprocessing error: no workspaceId available`, {
+      workflowId,
+      executionId,
+      errorMessage,
+    })
+    return
+  }
 
   try {
     const session =

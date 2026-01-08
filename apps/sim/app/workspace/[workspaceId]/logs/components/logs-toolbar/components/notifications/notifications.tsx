@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Plus, X } from 'lucide-react'
+import { createLogger } from '@sim/logger'
+import { Plus, X } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -21,7 +22,6 @@ import {
 import { SlackIcon } from '@/components/icons'
 import { Skeleton } from '@/components/ui'
 import { cn } from '@/lib/core/utils/cn'
-import { createLogger } from '@/lib/logs/console/logger'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import {
   type NotificationSubscription,
@@ -33,17 +33,14 @@ import {
 } from '@/hooks/queries/notifications'
 import { useConnectOAuthService } from '@/hooks/queries/oauth-connections'
 import { useSlackAccounts } from '@/hooks/use-slack-accounts'
+import { CORE_TRIGGER_TYPES, type CoreTriggerType } from '@/stores/logs/filters/types'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { WorkflowSelector } from './components/workflow-selector'
 
 const logger = createLogger('NotificationSettings')
 
-const PRIMARY_BUTTON_STYLES =
-  '!bg-[var(--brand-tertiary-2)] !text-[var(--text-inverse)] hover:!bg-[var(--brand-tertiary-2)]/90'
-
 type NotificationType = 'webhook' | 'email' | 'slack'
 type LogLevel = 'info' | 'error'
-type TriggerType = 'api' | 'webhook' | 'schedule' | 'manual' | 'chat'
 type AlertRule =
   | 'none'
   | 'consecutive_failures'
@@ -84,7 +81,6 @@ interface NotificationSettingsProps {
 }
 
 const LOG_LEVELS: LogLevel[] = ['info', 'error']
-const TRIGGER_TYPES: TriggerType[] = ['api', 'webhook', 'schedule', 'manual', 'chat']
 
 function formatAlertConfigLabel(config: {
   rule: AlertRule
@@ -137,7 +133,7 @@ export function NotificationSettings({
     workflowIds: [] as string[],
     allWorkflows: true,
     levelFilter: ['info', 'error'] as LogLevel[],
-    triggerFilter: ['api', 'webhook', 'schedule', 'manual', 'chat'] as TriggerType[],
+    triggerFilter: [...CORE_TRIGGER_TYPES] as CoreTriggerType[],
     includeFinalOutput: false,
     includeTraceSpans: false,
     includeRateLimits: false,
@@ -189,6 +185,10 @@ export function NotificationSettings({
 
   const hasSubscriptions = filteredSubscriptions.length > 0
 
+  // Compute form visibility synchronously to avoid empty state flash
+  // Show form if user explicitly opened it OR if loading is complete with no subscriptions
+  const displayForm = showForm || (!isLoading && !hasSubscriptions && !editingId)
+
   const getSubscriptionsForTab = useCallback(
     (tab: NotificationType) => {
       return subscriptions.filter((s) => s.notificationType === tab)
@@ -196,18 +196,12 @@ export function NotificationSettings({
     [subscriptions]
   )
 
-  useEffect(() => {
-    if (!isLoading && !hasSubscriptions && !editingId) {
-      setShowForm(true)
-    }
-  }, [isLoading, hasSubscriptions, editingId, activeTab])
-
   const resetForm = useCallback(() => {
     setFormData({
       workflowIds: [],
       allWorkflows: true,
       levelFilter: ['info', 'error'],
-      triggerFilter: ['api', 'webhook', 'schedule', 'manual', 'chat'],
+      triggerFilter: [...CORE_TRIGGER_TYPES],
       includeFinalOutput: false,
       includeTraceSpans: false,
       includeRateLimits: false,
@@ -520,7 +514,7 @@ export function NotificationSettings({
       workflowIds: subscription.workflowIds || [],
       allWorkflows: subscription.allWorkflows,
       levelFilter: subscription.levelFilter as LogLevel[],
-      triggerFilter: subscription.triggerFilter as TriggerType[],
+      triggerFilter: subscription.triggerFilter as CoreTriggerType[],
       includeFinalOutput: subscription.includeFinalOutput,
       includeTraceSpans: subscription.includeTraceSpans,
       includeRateLimits: subscription.includeRateLimits,
@@ -619,10 +613,9 @@ export function NotificationSettings({
 
           <div className='flex flex-shrink-0 items-center gap-[8px]'>
             <Button
-              variant='primary'
+              variant='tertiary'
               onClick={() => handleTest(subscription.id)}
               disabled={testNotification.isPending && testStatus?.id !== subscription.id}
-              className={PRIMARY_BUTTON_STYLES}
             >
               {testStatus?.id === subscription.id
                 ? testStatus.success
@@ -652,12 +645,7 @@ export function NotificationSettings({
     <div className='flex h-full flex-col gap-[16px]'>
       <div className='min-h-0 flex-1 overflow-y-auto'>
         {formErrors.general && (
-          <div className='mb-[16px] rounded-[6px] border border-[var(--text-error)]/30 bg-[var(--text-error)]/10 p-[10px]'>
-            <div className='flex items-start gap-[8px]'>
-              <AlertCircle className='mt-0.5 h-4 w-4 shrink-0 text-[var(--text-error)]' />
-              <p className='text-[12px] text-[var(--text-error)]'>{formErrors.general}</p>
-            </div>
-          </div>
+          <p className='mb-[16px] text-[12px] text-[var(--text-error)]'>{formErrors.general}</p>
         )}
 
         <div className='flex flex-col gap-[16px]'>
@@ -704,7 +692,7 @@ export function NotificationSettings({
           {activeTab === 'email' && (
             <div className='flex flex-col gap-[8px]'>
               <Label className='text-[var(--text-secondary)]'>Email Recipients</Label>
-              <div className='scrollbar-hide flex max-h-32 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--surface-11)] bg-[var(--surface-6)] px-[8px] py-[6px] focus-within:outline-none dark:bg-[var(--surface-9)]'>
+              <div className='scrollbar-hide flex max-h-32 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] py-[6px] focus-within:outline-none dark:bg-[var(--surface-5)]'>
                 {invalidEmails.map((email, index) => (
                   <EmailTag
                     key={`invalid-${index}`}
@@ -768,7 +756,7 @@ export function NotificationSettings({
                   <Combobox
                     options={slackAccounts.map((acc) => ({
                       value: acc.id,
-                      label: acc.accountId,
+                      label: acc.displayName || 'Slack Workspace',
                     }))}
                     value={formData.slackAccountId}
                     onChange={(value) => {
@@ -859,14 +847,14 @@ export function NotificationSettings({
           <div className='flex flex-col gap-[8px]'>
             <Label className='text-[var(--text-secondary)]'>Trigger Type Filters</Label>
             <Combobox
-              options={TRIGGER_TYPES.map((trigger) => ({
+              options={CORE_TRIGGER_TYPES.map((trigger) => ({
                 label: trigger.charAt(0).toUpperCase() + trigger.slice(1),
                 value: trigger,
               }))}
               multiSelect
               multiSelectValues={formData.triggerFilter}
               onMultiSelectChange={(values) => {
-                setFormData({ ...formData, triggerFilter: values as TriggerType[] })
+                setFormData({ ...formData, triggerFilter: values as CoreTriggerType[] })
                 setFormErrors({ ...formErrors, triggerFilter: '' })
               }}
               placeholder='Select trigger types...'
@@ -1220,7 +1208,7 @@ export function NotificationSettings({
   )
 
   const renderTabContent = () => {
-    if (showForm) {
+    if (displayForm) {
       return renderForm()
     }
 
@@ -1289,7 +1277,7 @@ export function NotificationSettings({
           </ModalTabs>
 
           <ModalFooter>
-            {showForm ? (
+            {displayForm ? (
               <>
                 {hasSubscriptions && (
                   <Button
@@ -1303,10 +1291,9 @@ export function NotificationSettings({
                   </Button>
                 )}
                 <Button
-                  variant='primary'
+                  variant='tertiary'
                   onClick={handleSave}
                   disabled={createNotification.isPending || updateNotification.isPending}
-                  className={PRIMARY_BUTTON_STYLES}
                 >
                   {createNotification.isPending || updateNotification.isPending
                     ? editingId
@@ -1323,9 +1310,8 @@ export function NotificationSettings({
                   resetForm()
                   setShowForm(true)
                 }}
-                variant='primary'
+                variant='tertiary'
                 disabled={isLoading}
-                className={PRIMARY_BUTTON_STYLES}
               >
                 <Plus className='mr-[6px] h-[13px] w-[13px]' />
                 Add
@@ -1339,7 +1325,7 @@ export function NotificationSettings({
         <ModalContent className='w-[400px]'>
           <ModalHeader>Delete Notification</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               This will permanently remove the notification and stop all deliveries.{' '}
               <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
             </p>
@@ -1353,10 +1339,9 @@ export function NotificationSettings({
               Cancel
             </Button>
             <Button
-              variant='primary'
+              variant='destructive'
               onClick={handleDelete}
               disabled={deleteNotification.isPending}
-              className='!bg-[var(--text-error)] !text-white hover:!bg-[var(--text-error)]/90'
             >
               {deleteNotification.isPending ? 'Deleting...' : 'Delete'}
             </Button>
@@ -1380,7 +1365,7 @@ function EmailTag({ email, onRemove, isInvalid }: EmailTagProps) {
         'flex w-auto items-center gap-[4px] rounded-[4px] border px-[6px] py-[2px] text-[12px]',
         isInvalid
           ? 'border-[var(--text-error)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] text-[var(--text-error)] dark:bg-[color-mix(in_srgb,var(--text-error)_16%,transparent)]'
-          : 'border-[var(--surface-11)] bg-[var(--surface-5)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          : 'border-[var(--border-1)] bg-[var(--surface-4)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
       )}
     >
       <span className='max-w-[200px] truncate'>{email}</span>

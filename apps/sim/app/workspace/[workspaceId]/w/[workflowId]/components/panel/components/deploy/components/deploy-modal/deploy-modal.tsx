@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import clsx from 'clsx'
+import { createLogger } from '@sim/logger'
 import {
+  Badge,
   Button,
   Modal,
   ModalBody,
@@ -15,15 +16,16 @@ import {
   ModalTabsTrigger,
 } from '@/components/emcn'
 import { getEnv } from '@/lib/core/config/env'
-import { createLogger } from '@/lib/logs/console/logger'
 import { getInputFormatExample as getInputFormatExampleUtil } from '@/lib/workflows/operations/deployment-utils'
 import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
+import { startsWithUuid } from '@/executor/constants'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { ApiDeploy } from './components/api/api'
 import { ChatDeploy, type ExistingChat } from './components/chat/chat'
 import { GeneralDeploy } from './components/general/general'
+import { McpDeploy } from './components/mcp/mcp'
 import { TemplateDeploy } from './components/template/template'
 
 const logger = createLogger('DeployModal')
@@ -34,7 +36,6 @@ interface DeployModalProps {
   workflowId: string | null
   isDeployed: boolean
   needsRedeployment: boolean
-  setNeedsRedeployment: (value: boolean) => void
   deployedState: WorkflowState
   isLoadingDeployedState: boolean
   refetchDeployedState: () => Promise<void>
@@ -49,7 +50,7 @@ interface WorkflowDeploymentInfo {
   needsRedeployment: boolean
 }
 
-type TabView = 'general' | 'api' | 'chat' | 'template'
+type TabView = 'general' | 'api' | 'chat' | 'template' | 'mcp'
 
 export function DeployModal({
   open,
@@ -57,7 +58,6 @@ export function DeployModal({
   workflowId,
   isDeployed: isDeployedProp,
   needsRedeployment,
-  setNeedsRedeployment,
   deployedState,
   isLoadingDeployedState,
   refetchDeployedState,
@@ -87,6 +87,8 @@ export function DeployModal({
   const [showUndeployConfirm, setShowUndeployConfirm] = useState(false)
   const [templateFormValid, setTemplateFormValid] = useState(false)
   const [templateSubmitting, setTemplateSubmitting] = useState(false)
+  const [mcpToolSubmitting, setMcpToolSubmitting] = useState(false)
+  const [mcpToolCanSave, setMcpToolCanSave] = useState(false)
   const [hasExistingTemplate, setHasExistingTemplate] = useState(false)
   const [templateStatus, setTemplateStatus] = useState<{
     status: 'pending' | 'approved' | 'rejected' | null
@@ -228,7 +230,6 @@ export function DeployModal({
 
       setDeploymentStatus(workflowId, isDeployedStatus, deployedAtTime, apiKeyLabel)
 
-      setNeedsRedeployment(false)
       if (workflowId) {
         useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
       }
@@ -289,10 +290,9 @@ export function DeployModal({
     if (!open || selectedStreamingOutputs.length === 0) return
 
     const blocks = Object.values(useWorkflowStore.getState().blocks)
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
     const validOutputs = selectedStreamingOutputs.filter((outputId) => {
-      if (UUID_REGEX.test(outputId)) {
+      if (startsWithUuid(outputId)) {
         const underscoreIndex = outputId.indexOf('_')
         if (underscoreIndex === -1) return false
 
@@ -453,7 +453,6 @@ export function DeployModal({
         getApiKeyLabel(apiKey)
       )
 
-      setNeedsRedeployment(false)
       if (workflowId) {
         useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
       }
@@ -464,6 +463,8 @@ export function DeployModal({
       setDeploymentInfo((prev) => (prev ? { ...prev, needsRedeployment: false } : prev))
     } catch (error: unknown) {
       logger.error('Error redeploying workflow:', { error })
+      const errorMessage = error instanceof Error ? error.message : 'Failed to redeploy workflow'
+      setApiDeployError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -530,6 +531,11 @@ export function DeployModal({
     form?.requestSubmit()
   }, [])
 
+  const handleMcpToolFormSubmit = useCallback(() => {
+    const form = document.getElementById('mcp-deploy-form') as HTMLFormElement
+    form?.requestSubmit()
+  }, [])
+
   const handleTemplateDelete = useCallback(() => {
     const form = document.getElementById('template-deploy-form')
     const deleteTrigger = form?.querySelector('[data-template-delete-trigger]') as HTMLButtonElement
@@ -550,6 +556,7 @@ export function DeployModal({
             <ModalTabsList activeValue={activeTab}>
               <ModalTabsTrigger value='general'>General</ModalTabsTrigger>
               <ModalTabsTrigger value='api'>API</ModalTabsTrigger>
+              <ModalTabsTrigger value='mcp'>MCP</ModalTabsTrigger>
               <ModalTabsTrigger value='chat'>Chat</ModalTabsTrigger>
               <ModalTabsTrigger value='template'>Template</ModalTabsTrigger>
             </ModalTabsList>
@@ -610,6 +617,19 @@ export function DeployModal({
                   />
                 )}
               </ModalTabsContent>
+
+              <ModalTabsContent value='mcp' className='h-full'>
+                {workflowId && (
+                  <McpDeploy
+                    workflowId={workflowId}
+                    workflowName={workflowMetadata?.name || 'Workflow'}
+                    workflowDescription={workflowMetadata?.description}
+                    isDeployed={isDeployed}
+                    onSubmittingChange={setMcpToolSubmitting}
+                    onCanSaveChange={setMcpToolCanSave}
+                  />
+                )}
+              </ModalTabsContent>
             </ModalBody>
           </ModalTabs>
 
@@ -630,7 +650,7 @@ export function DeployModal({
                 {chatExists && (
                   <Button
                     type='button'
-                    variant='default'
+                    variant='destructive'
                     onClick={handleChatDelete}
                     disabled={chatSubmitting}
                   >
@@ -639,7 +659,7 @@ export function DeployModal({
                 )}
                 <Button
                   type='button'
-                  variant='primary'
+                  variant='tertiary'
                   onClick={handleChatFormSubmit}
                   disabled={chatSubmitting || !isChatFormValid}
                 >
@@ -652,6 +672,18 @@ export function DeployModal({
                       : 'Launch Chat'}
                 </Button>
               </div>
+            </ModalFooter>
+          )}
+          {activeTab === 'mcp' && isDeployed && (
+            <ModalFooter className='items-center'>
+              <Button
+                type='button'
+                variant='tertiary'
+                onClick={handleMcpToolFormSubmit}
+                disabled={mcpToolSubmitting || !mcpToolCanSave}
+              >
+                {mcpToolSubmitting ? 'Saving...' : 'Save Tool Schema'}
+              </Button>
             </ModalFooter>
           )}
           {activeTab === 'template' && (
@@ -669,7 +701,7 @@ export function DeployModal({
                 {hasExistingTemplate && (
                   <Button
                     type='button'
-                    variant='default'
+                    variant='destructive'
                     onClick={handleTemplateDelete}
                     disabled={templateSubmitting}
                   >
@@ -678,7 +710,7 @@ export function DeployModal({
                 )}
                 <Button
                   type='button'
-                  variant='primary'
+                  variant='tertiary'
                   onClick={handleTemplateFormSubmit}
                   disabled={templateSubmitting || !templateFormValid}
                 >
@@ -700,7 +732,7 @@ export function DeployModal({
         <ModalContent size='sm'>
           <ModalHeader>Undeploy API</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to undeploy this workflow?{' '}
               <span className='text-[var(--text-error)]'>
                 This will remove the API endpoint and make it unavailable to external users.
@@ -715,12 +747,7 @@ export function DeployModal({
             >
               Cancel
             </Button>
-            <Button
-              variant='primary'
-              onClick={handleUndeploy}
-              disabled={isUndeploying}
-              className='bg-[var(--text-error)] text-[13px] text-white hover:bg-[var(--text-error)]'
-            >
+            <Button variant='destructive' onClick={handleUndeploy} disabled={isUndeploying}>
               {isUndeploying ? 'Undeploying...' : 'Undeploy'}
             </Button>
           </ModalFooter>
@@ -736,29 +763,10 @@ interface StatusBadgeProps {
 
 function StatusBadge({ isWarning }: StatusBadgeProps) {
   const label = isWarning ? 'Update deployment' : 'Live'
-
   return (
-    <div
-      className={clsx(
-        'flex h-[24px] items-center justify-start gap-[8px] rounded-[6px] border px-[9px]',
-        isWarning ? 'border-[#A16207] bg-[#452C0F]' : 'border-[#22703D] bg-[#14291B]'
-      )}
-    >
-      <div
-        className='h-[6px] w-[6px] rounded-[2px]'
-        style={{
-          backgroundColor: isWarning ? '#EAB308' : '#4ADE80',
-        }}
-      />
-      <span
-        className='font-medium text-[11.5px]'
-        style={{
-          color: isWarning ? '#EAB308' : '#86EFAC',
-        }}
-      >
-        {label}
-      </span>
-    </div>
+    <Badge variant={isWarning ? 'amber' : 'green'} size='lg' dot>
+      {label}
+    </Badge>
   )
 }
 
@@ -778,35 +786,10 @@ function TemplateStatusBadge({ status, views, stars }: TemplateStatusBadgeProps)
       : null
 
   return (
-    <div
-      className={clsx(
-        'flex h-[24px] items-center justify-start gap-[8px] rounded-[6px] border px-[9px]',
-        isPending ? 'border-[#A16207] bg-[#452C0F]' : 'border-[#22703D] bg-[#14291B]'
-      )}
-    >
-      <div
-        className='h-[6px] w-[6px] rounded-[2px]'
-        style={{
-          backgroundColor: isPending ? '#EAB308' : '#4ADE80',
-        }}
-      />
-      <span
-        className='font-medium text-[11.5px]'
-        style={{
-          color: isPending ? '#EAB308' : '#86EFAC',
-        }}
-      >
-        {label}
-      </span>
-      {statsText && (
-        <span
-          className='font-medium text-[11.5px]'
-          style={{ color: isPending ? '#EAB308' : '#86EFAC' }}
-        >
-          • {statsText}
-        </span>
-      )}
-    </div>
+    <Badge variant={isPending ? 'amber' : 'green'} size='lg' dot>
+      {label}
+      {statsText && <span>• {statsText}</span>}
+    </Badge>
   )
 }
 
@@ -832,8 +815,8 @@ function GeneralFooter({
   if (!isDeployed) {
     return (
       <ModalFooter>
-        <Button variant='primary' onClick={onDeploy} disabled={isSubmitting}>
-          {isSubmitting ? 'Deploying...' : 'Deploy API'}
+        <Button variant='tertiary' onClick={onDeploy} disabled={isSubmitting}>
+          {isSubmitting ? 'Deploying...' : 'Deploy'}
         </Button>
       </ModalFooter>
     )
@@ -847,7 +830,7 @@ function GeneralFooter({
           {isUndeploying ? 'Undeploying...' : 'Undeploy'}
         </Button>
         {needsRedeployment && (
-          <Button variant='primary' onClick={onRedeploy} disabled={isSubmitting || isUndeploying}>
+          <Button variant='tertiary' onClick={onRedeploy} disabled={isSubmitting || isUndeploying}>
             {isSubmitting ? 'Updating...' : 'Update'}
           </Button>
         )}

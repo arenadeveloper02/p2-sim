@@ -1,4 +1,5 @@
 import { env, getEnv } from '../config/env'
+import { isDev } from '../config/feature-flags'
 
 /**
  * Content Security Policy (CSP) configuration builder
@@ -55,6 +56,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.s3.amazonaws.com',
     'https://s3.amazonaws.com',
     'https://github.com/*',
+    'https://collector.onedollarstats.com',
     ...(env.S3_BUCKET_NAME && env.AWS_REGION
       ? [`https://${env.S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
       : []),
@@ -78,10 +80,16 @@ export const buildTimeCSPDirectives: CSPDirectives = {
   'connect-src': [
     "'self'",
     env.NEXT_PUBLIC_APP_URL || '',
-    env.OLLAMA_URL || 'http://localhost:11434',
-    env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3002',
-    env.NEXT_PUBLIC_SOCKET_URL?.replace('http://', 'ws://').replace('https://', 'wss://') ||
-      'ws://localhost:3002',
+    // Only include localhost fallbacks in development mode
+    ...(env.OLLAMA_URL ? [env.OLLAMA_URL] : isDev ? ['http://localhost:11434'] : []),
+    ...(env.NEXT_PUBLIC_SOCKET_URL
+      ? [
+          env.NEXT_PUBLIC_SOCKET_URL,
+          env.NEXT_PUBLIC_SOCKET_URL.replace('http://', 'ws://').replace('https://', 'wss://'),
+        ]
+      : isDev
+        ? ['http://localhost:3002', 'ws://localhost:3002']
+        : []),
     'https://api.browser-use.com',
     'https://api.exa.ai',
     'https://api.firecrawl.dev',
@@ -127,11 +135,16 @@ export function buildCSPString(directives: CSPDirectives): string {
  * This maintains compatibility with existing inline scripts while fixing Docker env var issues
  */
 export function generateRuntimeCSP(): string {
-  const socketUrl = getEnv('NEXT_PUBLIC_SOCKET_URL') || 'http://localhost:3002'
-  const socketWsUrl =
-    socketUrl.replace('http://', 'ws://').replace('https://', 'wss://') || 'ws://localhost:3002'
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL') || ''
-  const ollamaUrl = getEnv('OLLAMA_URL') || 'http://localhost:11434'
+
+  // Only include localhost URLs in development or when explicitly configured
+  const socketUrl = getEnv('NEXT_PUBLIC_SOCKET_URL') || (isDev ? 'http://localhost:3002' : '')
+  const socketWsUrl = socketUrl
+    ? socketUrl.replace('http://', 'ws://').replace('https://', 'wss://')
+    : isDev
+      ? 'ws://localhost:3002'
+      : ''
+  const ollamaUrl = getEnv('OLLAMA_URL') || (isDev ? 'http://localhost:11434' : '')
 
   const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
   const brandFaviconDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL'))
@@ -153,7 +166,7 @@ export function generateRuntimeCSP(): string {
     default-src 'self';
     script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com;
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-    img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com ${brandLogoDomain} ${brandFaviconDomain};
+    img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com https://*.s3.amazonaws.com https://s3.amazonaws.com https://*.amazonaws.com https://*.blob.core.windows.net https://github.com/* https://collector.onedollarstats.com ${brandLogoDomain} ${brandFaviconDomain};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
     connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com ${dynamicDomainsStr};
