@@ -1,5 +1,6 @@
 import type { ArenaCommentsParams, ArenaCommentsResponse } from '@/tools/arena/types'
 import type { ToolConfig } from '@/tools/types'
+import { extractMentionedUserIds } from './utils'
 
 export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> = {
   id: 'arena_comments',
@@ -93,14 +94,18 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       // If false or undefined, internal=true and showToClient=false
       const clientNote = Boolean(params['comment-client-note'])
 
+      // Extract user mentioned IDs from HTML content
+      const commentText = params['comment-text']
+      const userMentionedIds = extractMentionedUserIds(commentText)
+
       const body: Record<string, any> = {
         workflowId: params._context.workflowId,
         elementId: elementId,
-        value: params['comment-text'],
+        value: commentText,
         projectName: projectName,
         internal: !clientNote,
         showToClient: clientNote,
-        userMentionedIds: [],
+        userMentionedIds: userMentionedIds,
         name: 'pm_project_task',
         chatFor: 'project',
         parentId: '',
