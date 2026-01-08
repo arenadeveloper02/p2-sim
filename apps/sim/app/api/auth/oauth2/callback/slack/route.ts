@@ -107,6 +107,9 @@ export async function GET(request: NextRequest) {
       hasUserToken: !!userToken,
       botTokenPrefix: botToken?.substring(0, 10),
       userTokenPrefix: userToken?.substring(0, 10),
+      authedUserExists: !!tokenData.authed_user,
+      authedUserKeys: tokenData.authed_user ? Object.keys(tokenData.authed_user) : [],
+      fullTokenDataKeys: Object.keys(tokenData),
     })
 
     if (!botToken) {

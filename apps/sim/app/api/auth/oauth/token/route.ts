@@ -81,6 +81,34 @@ export async function POST(request: NextRequest) {
       // Refresh the token if needed
       const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
 
+      // For Slack, prioritize user token (idToken) over bot token (accessToken) if available
+      // This is because some Slack APIs (like search.all) require user tokens
+      let effectiveAccessToken = accessToken
+      if (credential.providerId === 'slack') {
+        logger.info(`[${requestId}] Slack credential token check (POST):`, {
+          hasIdToken: !!credential.idToken,
+          idTokenPrefix: credential.idToken?.substring(0, 10) || 'none',
+          idTokenType: credential.idToken?.startsWith('xoxp-')
+            ? 'user'
+            : credential.idToken?.startsWith('xoxb-')
+              ? 'bot'
+              : 'unknown',
+          hasAccessToken: !!accessToken,
+          accessTokenPrefix: accessToken?.substring(0, 10) || 'none',
+          accessTokenType: accessToken?.startsWith('xoxb-')
+            ? 'bot'
+            : accessToken?.startsWith('xoxp-')
+              ? 'user'
+              : 'unknown',
+        })
+        if (credential.idToken?.startsWith('xoxp-')) {
+          logger.info(`[${requestId}] Using Slack user token from idToken field instead of bot token (POST)`)
+          effectiveAccessToken = credential.idToken
+        } else {
+          logger.warn(`[${requestId}] No user token available for Slack, using bot token (accessToken) (POST)`)
+        }
+      }
+
       let instanceUrl: string | undefined
       if (credential.providerId === 'salesforce' && credential.scope) {
         const instanceMatch = credential.scope.match(SALESFORCE_INSTANCE_URL_REGEX)
@@ -91,7 +119,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(
         {
-          accessToken,
+          accessToken: effectiveAccessToken,
           idToken: credential.idToken || undefined,
           ...(instanceUrl && { instanceUrl }),
         },
@@ -160,6 +188,34 @@ export async function GET(request: NextRequest) {
     try {
       const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
 
+      // For Slack, prioritize user token (idToken) over bot token (accessToken) if available
+      // This is because some Slack APIs (like search.all) require user tokens
+      let effectiveAccessToken = accessToken
+      if (credential.providerId === 'slack') {
+        logger.info(`[${requestId}] Slack credential token check (GET):`, {
+          hasIdToken: !!credential.idToken,
+          idTokenPrefix: credential.idToken?.substring(0, 10) || 'none',
+          idTokenType: credential.idToken?.startsWith('xoxp-')
+            ? 'user'
+            : credential.idToken?.startsWith('xoxb-')
+              ? 'bot'
+              : 'unknown',
+          hasAccessToken: !!accessToken,
+          accessTokenPrefix: accessToken?.substring(0, 10) || 'none',
+          accessTokenType: accessToken?.startsWith('xoxb-')
+            ? 'bot'
+            : accessToken?.startsWith('xoxp-')
+              ? 'user'
+              : 'unknown',
+        })
+        if (credential.idToken?.startsWith('xoxp-')) {
+          logger.info(`[${requestId}] Using Slack user token from idToken field instead of bot token (GET)`)
+          effectiveAccessToken = credential.idToken
+        } else {
+          logger.warn(`[${requestId}] No user token available for Slack, using bot token (accessToken) (GET)`)
+        }
+      }
+
       // For Salesforce, extract instanceUrl from the scope field
       let instanceUrl: string | undefined
       if (credential.providerId === 'salesforce' && credential.scope) {
@@ -171,7 +227,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json(
         {
-          accessToken,
+          accessToken: effectiveAccessToken,
           idToken: credential.idToken || undefined,
           ...(instanceUrl && { instanceUrl }),
         },

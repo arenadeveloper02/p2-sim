@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { getCredential } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,8 +52,26 @@ export async function POST(request: NextRequest) {
       hasAccessToken: !!body.accessToken,
       accessTokenPrefix: body.accessToken?.substring(0, 10) || 'none',
       accessTokenLength: body.accessToken?.length || 0,
+      accessTokenType: body.accessToken
+        ? body.accessToken.startsWith('xoxb-')
+          ? 'bot'
+          : body.accessToken.startsWith('xoxp-')
+            ? 'user'
+            : body.accessToken.startsWith('xoxa-')
+              ? 'app'
+              : 'unknown_or_credential_id'
+        : 'none',
       hasCredential: !!body.credential,
       credentialValue: body.credential?.substring(0, 20) || 'none',
+      credentialType: body.credential
+        ? body.credential.startsWith('xoxb-')
+          ? 'bot_token'
+          : body.credential.startsWith('xoxp-')
+            ? 'user_token'
+            : body.credential.startsWith('xoxa-')
+              ? 'app_token'
+              : 'credential_id'
+        : 'none',
       hasBotToken: !!body.botToken,
       botTokenPrefix: body.botToken?.substring(0, 10) || 'none',
       query: body.query?.substring(0, 50) || 'none',
@@ -80,7 +99,7 @@ export async function POST(request: NextRequest) {
     // The tool execution system may have already resolved the credential to accessToken
     let accessToken: string | null = null
 
-    // Check if bot token is provided (search.all doesn't support bot tokens)
+    // Check if bot token is provided directly (search.all doesn't support bot tokens)
     if (validatedData.botToken) {
       logger.warn(`[${requestId}] Bot token provided for search.all - this API requires user token`)
       return NextResponse.json(
@@ -93,135 +112,154 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if accessToken is a bot token
-    if (validatedData.accessToken?.startsWith('xoxb-')) {
-      logger.warn(
-        `[${requestId}] Bot token detected in accessToken - search.all requires user token`
-      )
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'search.all API requires a user token (OAuth), not a bot token. Please use OAuth authentication.',
-        },
-        { status: 400 }
-      )
-    }
-
-    // If credential ID is provided (not a token), resolve it to get OAuth token
-    const credentialId =
-      validatedData.credential ||
-      (validatedData.accessToken && !validatedData.accessToken.startsWith('xox')
-        ? validatedData.accessToken
-        : null)
-    if (credentialId) {
-      // This is a credential ID, not a token - resolve it
-      const authz = await authorizeCredentialUse(request as any, {
-        credentialId,
-        workflowId: validatedData.workflowId,
-      })
-      if (!authz.ok || !authz.credentialOwnerUserId) {
-        logger.warn(`[${requestId}] Unauthorized credential use: ${authz.error}`)
-        return NextResponse.json(
-          {
-            success: false,
-            error: authz.error || 'Unauthorized',
-          },
-          { status: 403 }
-        )
-      }
-      // For Slack, try to get user token first (stored in idToken field)
-      const { getSlackUserToken } = await import('@/app/api/auth/oauth/utils')
-      let resolvedToken = await getSlackUserToken(
-        credentialId,
-        authz.credentialOwnerUserId,
-        requestId
-      )
-
-      // If no user token, fall back to regular token refresh (bot token)
-      if (!resolvedToken || !resolvedToken.startsWith('xoxp-')) {
-        const { refreshAccessTokenIfNeeded } = await import('@/app/api/auth/oauth/utils')
-        resolvedToken = await refreshAccessTokenIfNeeded(
-          credentialId,
-          authz.credentialOwnerUserId,
-          requestId
-        )
-      }
-
-      if (!resolvedToken) {
-        logger.error(`[${requestId}] Failed to get access token`, {
-          credentialId,
-          userId: authz.credentialOwnerUserId,
-        })
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Could not retrieve access token',
-            authRequired: true,
-          },
-          { status: 401 }
-        )
-      }
-
-      logger.info(`[${requestId}] Token resolved from credential:`, {
-        credentialId,
-        tokenPrefix: resolvedToken.substring(0, 10),
-        tokenType: resolvedToken.startsWith('xoxb-')
-          ? 'bot'
-          : resolvedToken.startsWith('xoxp-')
-            ? 'user'
-            : resolvedToken.startsWith('xoxa-')
-              ? 'app'
-              : 'unknown',
-        tokenLength: resolvedToken.length,
-      })
-
-      // Verify resolved token is not a bot token
-      if (resolvedToken.startsWith('xoxb-')) {
+    // Check if we already have a user token (xoxp-)
+    if (validatedData.accessToken?.startsWith('xoxp-')) {
+      // Direct user token provided (OAuth user token)
+      accessToken = validatedData.accessToken.trim()
+      logger.info(`[${requestId}] Using provided user token for Slack search.all`)
+    } else {
+      // Need to resolve credential ID to get user token from database
+      // If accessToken is a bot token, we still need to resolve via credential ID
+      const credentialId =
+        validatedData.credential ||
+        (validatedData.accessToken && !validatedData.accessToken.startsWith('xox')
+          ? validatedData.accessToken
+          : null)
+      
+      // If accessToken is a bot token but we don't have a credential ID, reject it
+      if (validatedData.accessToken?.startsWith('xoxb-') && !credentialId) {
         logger.warn(
-          `[${requestId}] Resolved token is a bot token - search.all requires user token`,
-          {
-            credentialId,
-            tokenPrefix: resolvedToken.substring(0, 10),
-          }
+          `[${requestId}] Bot token detected in accessToken and no credential ID to resolve - search.all requires user token`
         )
         return NextResponse.json(
           {
             success: false,
             error:
-              'The credential resolves to a bot token, but search.all API requires a user token (OAuth). Please reconnect your Slack account to get a user token.',
+              'search.all API requires a user token (OAuth), not a bot token. Please use OAuth authentication.',
           },
           { status: 400 }
         )
       }
-      accessToken = resolvedToken
-      logger.info(
-        `[${requestId}] Using OAuth token for Slack search.all (resolved from credential)`
-      )
-    } else if (validatedData.accessToken?.startsWith('xoxp-')) {
-      // Direct user token provided (OAuth user token)
-      accessToken = validatedData.accessToken.trim()
-      logger.info(`[${requestId}] Using provided user token for Slack search.all`)
-    } else {
-      logger.warn(`[${requestId}] Missing valid access token or credential for search.all`, {
-        hasAccessToken: !!validatedData.accessToken,
+      
+      logger.info(`[${requestId}] Credential resolution check:`, {
         hasCredential: !!validatedData.credential,
-        accessTokenType: validatedData.accessToken
-          ? validatedData.accessToken.startsWith('xoxb-')
-            ? 'bot'
-            : validatedData.accessToken.startsWith('xoxp-')
-              ? 'user'
-              : 'unknown'
-          : 'none',
+        credentialValue: validatedData.credential?.substring(0, 30) || 'none',
+        hasAccessToken: !!validatedData.accessToken,
+        accessTokenValue: validatedData.accessToken?.substring(0, 30) || 'none',
+        accessTokenStartsWithXox: validatedData.accessToken?.startsWith('xox') || false,
+        resolvedCredentialId: credentialId?.substring(0, 30) || 'none',
       })
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'Slack access token (OAuth user token) is required. search.all API requires user authentication, not bot token.',
-        },
-        { status: 400 }
-      )
+      
+      if (credentialId) {
+        // This is a credential ID, not a token - resolve it
+        logger.info(`[${requestId}] Attempting to authorize credential use:`, {
+          credentialId: credentialId.substring(0, 30),
+          hasWorkflowId: !!validatedData.workflowId,
+        })
+        
+        const authz = await authorizeCredentialUse(request as any, {
+          credentialId,
+          workflowId: validatedData.workflowId,
+        })
+        
+        logger.info(`[${requestId}] Credential authorization result:`, {
+          ok: authz.ok,
+          error: authz.error,
+          hasCredentialOwnerUserId: !!authz.credentialOwnerUserId,
+          credentialOwnerUserId: authz.credentialOwnerUserId?.substring(0, 30) || 'none',
+        })
+        
+        if (!authz.ok || !authz.credentialOwnerUserId) {
+          logger.warn(`[${requestId}] Unauthorized credential use: ${authz.error}`)
+          return NextResponse.json(
+            {
+              success: false,
+              error: authz.error || 'Unauthorized',
+            },
+            { status: 403 }
+          )
+        }
+        
+        // Get credential directly from database to access idToken field
+        const credential = await getCredential(requestId, credentialId, authz.credentialOwnerUserId)
+        
+        if (!credential) {
+          logger.error(`[${requestId}] Credential not found in database`, {
+            credentialId,
+            userId: authz.credentialOwnerUserId,
+          })
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Credential not found',
+            },
+            { status: 404 }
+          )
+        }
+        
+        logger.info(`[${requestId}] Credential retrieved from database:`, {
+          credentialId,
+          providerId: credential.providerId,
+          hasIdToken: !!credential.idToken,
+          idTokenPrefix: credential.idToken?.substring(0, 10) || 'none',
+          idTokenType: credential.idToken?.startsWith('xoxp-')
+            ? 'user'
+            : credential.idToken?.startsWith('xoxb-')
+              ? 'bot'
+              : 'unknown',
+          hasAccessToken: !!credential.accessToken,
+          accessTokenPrefix: credential.accessToken?.substring(0, 10) || 'none',
+        })
+        
+        // For Slack, get user token from idToken field (stored during OAuth callback)
+        if (credential.providerId === 'slack' && credential.idToken?.startsWith('xoxp-')) {
+          accessToken = credential.idToken
+          logger.info(`[${requestId}] Using Slack user token from idToken field in database`)
+        } else if (credential.providerId === 'slack' && credential.accessToken?.startsWith('xoxp-')) {
+          // Fallback: accessToken might be user token if idToken is not set
+          accessToken = credential.accessToken
+          logger.info(`[${requestId}] Using Slack user token from accessToken field (fallback)`)
+        } else {
+          logger.warn(
+            `[${requestId}] No user token found in credential - search.all requires user token`,
+            {
+              credentialId,
+              hasIdToken: !!credential.idToken,
+              idTokenType: credential.idToken?.startsWith('xoxb-') ? 'bot' : 'unknown',
+              hasAccessToken: !!credential.accessToken,
+              accessTokenType: credential.accessToken?.startsWith('xoxb-') ? 'bot' : 'unknown',
+            }
+          )
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                'The credential does not have a user token. Please reconnect your Slack account to get a user token for search.all API.',
+            },
+            { status: 400 }
+          )
+        }
+      } else {
+        logger.warn(`[${requestId}] Missing valid access token or credential for search.all`, {
+          hasAccessToken: !!validatedData.accessToken,
+          hasCredential: !!validatedData.credential,
+          accessTokenType: validatedData.accessToken
+            ? validatedData.accessToken.startsWith('xoxb-')
+              ? 'bot'
+              : validatedData.accessToken.startsWith('xoxp-')
+                ? 'user'
+                : 'unknown'
+            : 'none',
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Slack access token (OAuth user token) is required. search.all API requires user authentication, not bot token.',
+          },
+          { status: 400 }
+        )
+      }
     }
 
     if (!accessToken) {
@@ -312,7 +350,27 @@ export async function POST(request: NextRequest) {
         status: slackResponse.status,
         statusText: slackResponse.statusText,
         error: data.error,
+        needed: (data as any).needed,
+        provided: (data as any).provided,
       })
+
+      // Handle missing_scope error specifically
+      if (data.error === 'missing_scope') {
+        const needed = (data as any).needed
+        const provided = (data as any).provided
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Missing required Slack scope: ${needed || 'unknown'}. Please reconnect your Slack account to grant the necessary permissions.`,
+            details: {
+              needed,
+              provided,
+              hint: 'You may need to reinstall the Slack app with updated permissions.',
+            },
+          },
+          { status: 403 }
+        )
+      }
 
       return NextResponse.json(
         {

@@ -208,15 +208,32 @@ export async function getSlackUserToken(
   }
 
   // For Slack, user token is stored in idToken field
-  if (credential.providerId === 'slack' && credential.idToken) {
-    // Verify it's a user token (starts with xoxp-)
-    if (credential.idToken.startsWith('xoxp-')) {
-      logger.info(`[${requestId}] Using Slack user token from idToken field`)
-      return credential.idToken
+  if (credential.providerId === 'slack') {
+    logger.info(`[${requestId}] Checking for Slack user token:`, {
+      hasIdToken: !!credential.idToken,
+      idTokenPrefix: credential.idToken?.substring(0, 10),
+      idTokenType: credential.idToken?.startsWith('xoxp-') ? 'user' : credential.idToken?.startsWith('xoxb-') ? 'bot' : 'unknown',
+      hasAccessToken: !!credential.accessToken,
+      accessTokenPrefix: credential.accessToken?.substring(0, 10),
+    })
+    
+    if (credential.idToken) {
+      // Verify it's a user token (starts with xoxp-)
+      if (credential.idToken.startsWith('xoxp-')) {
+        logger.info(`[${requestId}] Using Slack user token from idToken field`)
+        return credential.idToken
+      } else {
+        logger.warn(`[${requestId}] idToken exists but is not a user token:`, {
+          prefix: credential.idToken.substring(0, 10),
+        })
+      }
+    } else {
+      logger.warn(`[${requestId}] No user token found in idToken field for Slack credential`)
     }
   }
 
   // Fallback to accessToken (bot token) if user token not available
+  logger.info(`[${requestId}] Falling back to accessToken (bot token)`)
   return credential.accessToken
 }
 

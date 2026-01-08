@@ -72,20 +72,8 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
       'Content-Type': 'application/json',
     }),
     body: (params: SlackSearchAllParams) => {
-      // Check if accessToken is a bot token (search.all requires user token)
-      if (params.accessToken?.startsWith('xoxb-')) {
-        throw new Error(
-          'search.all API requires a user token (OAuth), not a bot token. Please connect your Slack account using OAuth authentication instead of a bot token.'
-        )
-      }
-
-      // Check if botToken is provided (search.all doesn't support bot tokens)
-      if (params.botToken) {
-        throw new Error(
-          'search.all API requires a user token (OAuth), not a bot token. Please use OAuth authentication.'
-        )
-      }
-
+      // Don't validate token type here - let the route handle it
+      // The route will resolve credential ID to user token from database
       return {
         // Pass credential ID if available, otherwise pass accessToken
         // The route will resolve credential to OAuth token (search.all requires user token)
