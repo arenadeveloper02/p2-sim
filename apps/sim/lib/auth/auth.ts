@@ -1744,9 +1744,14 @@ export const auth = betterAuth({
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          // Note: We use a custom callback route to extract both bot and user tokens
-          // The custom route is at /api/auth/oauth2/callback/slack
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
+          // Add user_scope parameter to request user token for search.all API
+          // Note: search.all requires a user token. We request user scopes to get the user token
+          // in the OAuth response (authed_user.access_token). Using 'channels:read' as a minimal
+          // user scope to ensure we get a user token.
+          authorizationUrlParams: {
+            user_scope: 'channels:read',
+          },
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://slack.com/api/auth.test', {

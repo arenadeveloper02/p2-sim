@@ -1,11 +1,11 @@
+import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
-import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { env } from '@/lib/core/config/env'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { env } from '@/lib/core/config/env'
+import { eq, and } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +13,8 @@ const logger = createLogger('SlackOAuthCallback')
 
 /**
  * Custom Slack OAuth callback to extract both bot and user tokens
- * This intercepts the OAuth response before better-auth processes it
+ * This intercepts the OAuth response to extract the user token from authed_user.access_token
+ * and stores it in the idToken field, while storing the bot token in accessToken.
  */
 export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl()
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl
     const code = searchParams.get('code')
     const error = searchParams.get('error')
+    const state = searchParams.get('state')
 
     if (error) {
       logger.error('Slack OAuth error:', { error })
@@ -41,13 +43,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/workspace?error=slack_no_code`)
     }
 
-    const clientId = env.SLACK_CLIENT_ID?.trim().replace(/^["']|["']$/g, '')
-    const clientSecret = env.SLACK_CLIENT_SECRET?.trim().replace(/^["']|["']$/g, '')
+    // Get client credentials - ensure no quotes
+    const rawClientId = env.SLACK_CLIENT_ID
+    const rawClientSecret = env.SLACK_CLIENT_SECRET
 
-    if (!clientId || !clientSecret) {
+    if (!rawClientId || !rawClientSecret) {
       logger.error('Slack credentials not configured')
       return NextResponse.redirect(`${baseUrl}/workspace?error=slack_config_error`)
     }
+
+    // Clean client ID and secret - remove quotes and whitespace
+    const clientId = rawClientId.trim().replace(/^["']|["']$/g, '')
+    const clientSecret = rawClientSecret.trim().replace(/^["']|["']$/g, '')
+
+    logger.info('Exchanging Slack OAuth code for tokens', {
+      hasCode: !!code,
+      hasState: !!state,
+      clientIdPrefix: clientId?.substring(0, 10),
+      clientIdLength: clientId?.length,
+    })
 
     // Exchange code for tokens
     const tokenResponse = await fetch('https://slack.com/api/oauth.v2.access', {
@@ -75,7 +89,10 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json()
 
     if (!tokenData.ok) {
-      logger.error('Slack token exchange returned error:', { error: tokenData.error })
+      logger.error('Slack token exchange returned error:', {
+        error: tokenData.error,
+        fullResponse: tokenData,
+      })
       return NextResponse.redirect(
         `${baseUrl}/workspace?error=slack_token_error&message=${encodeURIComponent(tokenData.error || 'Unknown error')}`
       )
@@ -88,8 +105,8 @@ export async function GET(request: NextRequest) {
     logger.info('Slack OAuth tokens extracted:', {
       hasBotToken: !!botToken,
       hasUserToken: !!userToken,
-      botTokenType: botToken?.substring(0, 10),
-      userTokenType: userToken?.substring(0, 10),
+      botTokenPrefix: botToken?.substring(0, 10),
+      userTokenPrefix: userToken?.substring(0, 10),
     })
 
     if (!botToken) {
@@ -166,14 +183,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/workspace?slack_connected=true`)
   } catch (error) {
     logger.error('Error in Slack OAuth callback:', error)
-    // If there's an error, fall back to better-auth's handler
-    // by redirecting to the better-auth callback endpoint
-    const { searchParams } = request.nextUrl
-    const betterAuthUrl = new URL(`${baseUrl}/api/auth/oauth2/callback/slack`)
-    searchParams.forEach((value, key) => {
-      betterAuthUrl.searchParams.set(key, value)
-    })
-    logger.warn('Falling back to better-auth handler due to error')
-    return NextResponse.redirect(betterAuthUrl.toString())
+    return NextResponse.redirect(`${baseUrl}/workspace?error=slack_callback_error`)
   }
 }
+
