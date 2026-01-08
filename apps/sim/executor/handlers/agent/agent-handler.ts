@@ -770,6 +770,7 @@ export class AgentBlockHandler implements BlockHandler {
     const conversationMessages = inputMessages.filter((m) => m.role !== 'system')
 
     // 1. Fetch memory history if configured (using semantic search)
+    // 1. Fetch memory history if configured (using semantic search)
     if (inputs.memoryType && inputs.memoryType !== 'none') {
       // Extract user prompt for search query
       let userPrompt: string | undefined
@@ -785,20 +786,142 @@ export class AgentBlockHandler implements BlockHandler {
         }
       }
 
-      // Commented out: Chronological memory fetch
-      // const memoryMessages = await memoryService.fetchMemoryMessages(ctx, inputs, blockId)
+      let shouldRun = true
+      let historyContextForSkip = ''
 
-      // Use semantic search instead
-      const searchResults = await memoryService.searchMemories(
-        ctx,
-        inputs,
-        blockId,
-        userPrompt,
-        true
-      )
+      // Controller logic if conversationId is present
+      const conversationId = inputs.conversationId
+      if (conversationId && userPrompt) {
+        try {
+          // Fetch latest log for this conversation
+          const { workflowExecutionLogs } = await import('@sim/db/schema')
+          const { desc, eq, and, isNotNull } = await import('drizzle-orm')
 
-      // Add search results to user prompt incrementally with token checking
-      if (searchResults && searchResults.length > 0 && userPrompt) {
+          const latestLogs = await db
+            .select({
+              initialInput: workflowExecutionLogs.initialInput,
+              finalChatOutput: workflowExecutionLogs.finalChatOutput,
+            })
+            .from(workflowExecutionLogs)
+            .where(
+              and(
+                eq(workflowExecutionLogs.conversationId, conversationId),
+                isNotNull(workflowExecutionLogs.initialInput),
+                isNotNull(workflowExecutionLogs.finalChatOutput)
+              )
+            )
+            .orderBy(desc(workflowExecutionLogs.startedAt))
+            .limit(1)
+
+          if (latestLogs.length > 0) {
+            const lastLog = latestLogs[0]
+            logger.info('Not calling the search API for agent Block')
+            // Format history for the controller prompt
+            const historyText = `Conversation History
+User - ${lastLog.initialInput}
+Assistant - ${lastLog.finalChatOutput}`
+
+            const systemPrompt = `You are a controller that decides whether to run the workflow or skip it.
+
+Return ONLY one word: RUN or SKIP
+
+## ⚠️ CRITICAL RULE - CHECK FIRST:
+**DEFAULT TO RUN.** Only return SKIP if you are 100% certain the user is asking about a PREVIOUS response.
+
+**If the user is asking for ANY information, data, or content → return RUN**
+**If this appears to be a NEW conversation or first message → return RUN**
+**If the user mentions any topic (GD, dentistry, target audience, etc.) → return RUN**
+
+## RETURN RUN FOR:
+- ANY request for information: "Give me...", "Tell me about...", "What is...", "Show me..."
+- ANY question about a topic: target audience, brand guidelines, marketing, GD, dentistry, etc.
+- ANY new topic or subject matter
+- Requests for data, analysis, or content generation
+- First message in a conversation
+- When in doubt → RUN
+
+## RETURN SKIP ONLY FOR (must have PREVIOUS assistant response in memory):
+- Formatting requests about PREVIOUS output: "give me in table", "as bullet points", "summarize that"
+- Direct references to previous response: "explain that", "tell me more about what you just said"
+- Simple acknowledgments: "thanks", "okay", "got it"
+- Questions about the PREVIOUS response specifically
+
+We will be passing the conversation history in the User Prompt, so you can analyse it using the history.
+
+## OUTPUT:
+Return ONLY: RUN or SKIP (one word, uppercase)`
+
+            const controllerUserPrompt = `${historyText}\n\nCurrent User Input: ${userPrompt}`
+
+            // Call OpenAI for decision
+            try {
+              const { OpenAI } = await import('openai')
+              const openai = new OpenAI({
+                apiKey: process.env.OPENAI_API_KEY,
+              })
+
+              const completion = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: controllerUserPrompt },
+                ],
+                temperature: 0,
+                max_tokens: 10,
+              })
+
+              const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
+
+              if (decision === 'SKIP') {
+                shouldRun = false
+                historyContextForSkip = `\n\nPrevious conversation:\nUser: ${lastLog.initialInput}\nAssistant: ${lastLog.finalChatOutput}`
+                logger.debug('Controller decided to SKIP semantic search', { conversationId })
+              } else {
+                logger.debug('Controller decided to RUN semantic search', {
+                  conversationId,
+                  decision,
+                })
+              }
+            } catch (openaiError) {
+              logger.warn('Failed to call OpenAI for controller decision, defaulting to RUN', {
+                error: openaiError,
+              })
+            }
+          }
+        } catch (dbError) {
+          logger.warn('Failed to fetch execution logs for controller, defaulting to RUN', {
+            error: dbError,
+          })
+        }
+      }
+
+      let searchResults: any[] = []
+
+      if (shouldRun) {
+        // Use semantic search (existing flow)
+        searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
+      } else if (historyContextForSkip) {
+        // Directly append the history context to user prompt if skipping
+        if (inputs.userPrompt) {
+          inputs.userPrompt =
+            typeof inputs.userPrompt === 'string'
+              ? `${inputs.userPrompt}${historyContextForSkip}`
+              : `${JSON.stringify(inputs.userPrompt)}${historyContextForSkip}`
+        } else if (conversationMessages.length > 0) {
+          const userMsg = conversationMessages.find((m) => m.role === 'user')
+          if (userMsg) {
+            userMsg.content += historyContextForSkip
+          }
+        } else if (inputs.messages && Array.isArray(inputs.messages)) {
+          const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
+          if (userMsgIndex !== -1) {
+            inputs.messages[userMsgIndex].content += historyContextForSkip
+          }
+        }
+      }
+
+      // Add search results to user prompt incrementally with token checking (only if RUN was decided and we have results)
+      if (shouldRun && searchResults && searchResults.length > 0 && userPrompt) {
         const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
         const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
 
