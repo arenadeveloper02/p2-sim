@@ -50,6 +50,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/custom-tool-modal/custom-tool-modal'
 import { ToolCredentialSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tool-credential-selector'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useChildDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/hooks/use-child-deployment'
 import { getAllBlocks } from '@/blocks'
 import {
   type CustomTool as CustomToolDefinition,
@@ -582,6 +583,8 @@ function WorkflowSelectorSyncWrapper({
       onChange={onChange}
       placeholder={uiComponent.placeholder || 'Select workflow'}
       disabled={disabled || isLoading}
+      searchable
+      searchPlaceholder='Search workflows...'
     />
   )
 }
@@ -753,6 +756,81 @@ function CodeEditorSyncWrapper({
 }
 
 /**
+ * Badge component showing deployment status for workflow tools
+ */
+function WorkflowToolDeployBadge({
+  workflowId,
+  onDeploySuccess,
+}: {
+  workflowId: string
+  onDeploySuccess?: () => void
+}) {
+  const { isDeployed, needsRedeploy, isLoading, refetch } = useChildDeployment(workflowId)
+  const [isDeploying, setIsDeploying] = useState(false)
+
+  const deployWorkflow = useCallback(async () => {
+    if (isDeploying || !workflowId) return
+
+    try {
+      setIsDeploying(true)
+      const response = await fetch(`/api/workflows/${workflowId}/deploy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deployChatEnabled: false,
+        }),
+      })
+
+      if (response.ok) {
+        refetch()
+        onDeploySuccess?.()
+      } else {
+        logger.error('Failed to deploy workflow')
+      }
+    } catch (error) {
+      logger.error('Error deploying workflow:', error)
+    } finally {
+      setIsDeploying(false)
+    }
+  }, [isDeploying, workflowId, refetch, onDeploySuccess])
+
+  if (isLoading || (isDeployed && !needsRedeploy)) {
+    return null
+  }
+
+  if (typeof isDeployed !== 'boolean') {
+    return null
+  }
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <Badge
+          variant={!isDeployed ? 'red' : 'amber'}
+          className='cursor-pointer'
+          size='sm'
+          dot
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation()
+            e.preventDefault()
+            if (!isDeploying) {
+              deployWorkflow()
+            }
+          }}
+        >
+          {isDeploying ? 'Deploying...' : !isDeployed ? 'undeployed' : 'redeploy'}
+        </Badge>
+      </Tooltip.Trigger>
+      <Tooltip.Content>
+        <span className='text-sm'>{!isDeployed ? 'Click to deploy' : 'Click to redeploy'}</span>
+      </Tooltip.Content>
+    </Tooltip.Root>
+  )
+}
+
+/**
  * Set of built-in tool types that are core platform tools.
  *
  * @remarks
@@ -760,6 +838,7 @@ function CodeEditorSyncWrapper({
  * in the tool selection dropdown.
  */
 const BUILT_IN_TOOL_TYPES = new Set([
+  'api',
   'file',
   'function',
   'knowledge',
@@ -772,6 +851,7 @@ const BUILT_IN_TOOL_TYPES = new Set([
   'tts',
   'stt',
   'memory',
+  'webhook_request',
   'workflow',
 ])
 
@@ -926,6 +1006,8 @@ export function ToolInput({
   const toolBlocks = getAllBlocks().filter(
     (block) =>
       (block.category === 'tools' ||
+        block.type === 'api' ||
+        block.type === 'webhook_request' ||
         block.type === 'workflow' ||
         block.type === 'knowledge' ||
         block.type === 'function') &&
@@ -2215,10 +2297,15 @@ export function ToolInput({
                               {getIssueBadgeLabel(issue)}
                             </Badge>
                           </Tooltip.Trigger>
-                          <Tooltip.Content>{issue.message}: click to open settings</Tooltip.Content>
+                          <Tooltip.Content>
+                            <span className='text-sm'>{issue.message}: click to open settings</span>
+                          </Tooltip.Content>
                         </Tooltip.Root>
                       )
                     })()}
+                  {tool.type === 'workflow' && tool.params?.workflowId && (
+                    <WorkflowToolDeployBadge workflowId={tool.params.workflowId} />
+                  )}
                 </div>
                 <div className='flex flex-shrink-0 items-center gap-[8px]'>
                   {supportsToolControl && !(isMcpTool && isMcpToolUnavailable(tool)) && (

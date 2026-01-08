@@ -87,7 +87,8 @@ export const env = createEnv({
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     EXA_API_KEY:                           z.string().min(1).optional(),           // Exa AI API key for enhanced online search
-    DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
+    BLACKLISTED_PROVIDERS:                 z.string().optional(),                  // Comma-separated provider IDs to hide (e.g., "openai,anthropic")
+    BLACKLISTED_MODELS:                    z.string().optional(),                  // Comma-separated model names/prefixes to hide (e.g., "gpt-4,claude-*")
 
     // Azure Configuration - Shared credentials with feature-specific models
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
@@ -178,6 +179,7 @@ export const env = createEnv({
     KB_CONFIG_BATCH_SIZE:                  z.number().optional().default(2000),    // Chunks to process per embedding batch
     KB_CONFIG_DELAY_BETWEEN_BATCHES:       z.number().optional().default(0),       // Delay between batches in ms (0 for max speed)
     KB_CONFIG_DELAY_BETWEEN_DOCUMENTS:     z.number().optional().default(50),      // Delay between documents in ms
+    KB_CONFIG_CHUNK_CONCURRENCY:           z.number().optional().default(10),      // Concurrent PDF chunk OCR processing
 
     // Real-time Communication
     SOCKET_SERVER_URL:                     z.string().url().optional(),            // WebSocket server URL for real-time features
