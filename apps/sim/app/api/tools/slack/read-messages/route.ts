@@ -56,23 +56,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = SlackReadMessagesSchema.parse(body)
 
-    const token = validatedData.accessToken.trim()
-
-    if (!token) {
-      logger.warn(`[${requestId}] Missing Slack access token`)
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Slack access token is required. Provide accessToken in the request body.',
-        },
-        { status: 400 }
-      )
-    }
 
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
       logger.info(`[${requestId}] Opening DM channel for user: ${validatedData.userId}`)
-      channel = await openDMChannel(token, validatedData.userId, requestId, logger)
+      channel = await openDMChannel(
+        validatedData.accessToken,
+        validatedData.userId,
+        requestId,
+        logger
+      )
     }
 
     const url = new URL('https://slack.com/api/conversations.history')
@@ -122,27 +115,111 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Reading Slack messages`, {
       channel,
       limit,
+      oldest,
+      latest,
     })
+
+    // First, try to get channel info to verify bot membership and channel type
+    let channelInfo: any = null
+    try {
+      const infoUrl = new URL('https://slack.com/api/conversations.info')
+      infoUrl.searchParams.append('channel', channel!)
+      const infoResponse = await fetch(infoUrl.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${validatedData.accessToken}`,
+        },
+      })
+      const infoData = await infoResponse.json()
+      if (infoData.ok) {
+        channelInfo = infoData.channel
+        logger.info(`[${requestId}] Channel info retrieved:`, {
+          channelId: channelInfo?.id,
+          channelName: channelInfo?.name,
+          isPrivate: channelInfo?.is_private,
+          isMember: channelInfo?.is_member,
+        })
+      }
+    } catch (infoError) {
+      logger.warn(`[${requestId}] Failed to get channel info:`, infoError)
+      // Continue with the request even if info fails
+    }
 
     const slackResponse = await fetch(url.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${validatedData.accessToken}`,
       },
     })
 
     const data = await slackResponse.json()
 
     if (!data.ok) {
-      logger.error(`[${requestId}] Slack API error:`, data)
+      logger.error(`[${requestId}] Slack API error:`, {
+        error: data.error,
+        response: data,
+        channel,
+        channelInfo: channelInfo
+          ? {
+              name: channelInfo.name,
+              isPrivate: channelInfo.is_private,
+              isMember: channelInfo.is_member,
+            }
+          : null,
+        limit,
+        oldest,
+        latest,
+      })
 
       if (data.error === 'not_in_channel') {
+        // Check if we have channel info to provide more specific error
+        const isPrivate = channelInfo?.is_private
+        const isMember = channelInfo?.is_member
+
+        let errorMessage =
+          'Bot is not in the channel or lacks permissions to read messages.'
+        let suggestion = ''
+
+        if (isPrivate && !isMember) {
+          errorMessage =
+            'Bot is not a member of this private channel. Please invite the bot by typing: /invite @Sim Studio'
+          suggestion = 'Private channels require explicit bot invitation.'
+        } else if (isPrivate && isMember) {
+          errorMessage =
+            'Bot is in the channel but may be missing required scopes. Please reconnect your Slack account with groups:history scope.'
+          suggestion = 'The bot appears to be in the channel but lacks groups:history permission for private channels.'
+        } else if (!isPrivate && !isMember) {
+          errorMessage =
+            'Bot is not in this public channel. Please invite the bot by typing: /invite @Sim Studio'
+          suggestion = 'Even public channels may require bot invitation depending on workspace settings.'
+        } else {
+          errorMessage =
+            'Bot appears to be in the channel but is missing required scopes. Please reconnect your Slack account with channels:history scope.'
+          suggestion = 'If the bot is already in the channel, this is likely a scope issue. Reconnect with channels:history and groups:history scopes.'
+        }
+
+        logger.warn(`[${requestId}] not_in_channel error details:`, {
+          channel,
+          channelName: channelInfo?.name,
+          isPrivate,
+          isMember,
+          errorMessage,
+        })
+
         return NextResponse.json(
           {
             success: false,
-            error:
-              'Bot is not in the channel. Please invite the Sim bot to your Slack channel by typing: /invite @Sim Studio',
+            error: errorMessage,
+            details: {
+              error: data.error,
+              channel,
+              channelName: channelInfo?.name,
+              isPrivate,
+              isMember,
+              suggestion,
+            },
           },
           { status: 400 }
         )

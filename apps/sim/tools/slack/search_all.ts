@@ -72,7 +72,11 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
       'Content-Type': 'application/json',
     }),
     body: (params: SlackSearchAllParams) => ({
-      accessToken: params.accessToken || params.botToken,
+      // Pass credential ID if available, otherwise pass accessToken/botToken
+      // The route will resolve credential to OAuth token (search.all requires user token)
+      credential: params.accessToken, // accessToken might be credential ID from tool execution
+      accessToken: params.accessToken, // Keep for backward compatibility
+      botToken: params.botToken,
       query: params.query,
       highlight: params.highlight,
       page: params.page,
@@ -93,11 +97,25 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
     const fileTexts: string[] = []
     const postTexts: string[] = []
 
+    // Log channel information from search results
+    const channelsFound: Array<{ type: string; channelId?: string; channelName?: string }> = []
+
     // Extract text from message matches
     if (data.output?.messages?.matches) {
       for (const match of data.output.messages.matches) {
         if (match.text) {
           messageTexts.push(match.text)
+        }
+        // Log channel information from messages
+        if (match.channel) {
+          const channelInfo: any = { type: 'message' }
+          if (typeof match.channel === 'object') {
+            channelInfo.channelId = match.channel.id
+            channelInfo.channelName = match.channel.name
+          } else {
+            channelInfo.channelId = match.channel
+          }
+          channelsFound.push(channelInfo)
         }
       }
     }
@@ -113,6 +131,16 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
         if (match.initial_comment?.comment) {
           fileTexts.push(match.initial_comment.comment)
         }
+        // Log channel information from files
+        if (match.channels && Array.isArray(match.channels)) {
+          match.channels.forEach((ch: any) => {
+            channelsFound.push({
+              type: 'file',
+              channelId: typeof ch === 'object' ? ch.id : ch,
+              channelName: typeof ch === 'object' ? ch.name : undefined,
+            })
+          })
+        }
       }
     }
 
@@ -122,7 +150,23 @@ export const slackSearchAllTool: ToolConfig<SlackSearchAllParams, SlackSearchAll
         if (match.text) {
           postTexts.push(match.text)
         }
+        // Log channel information from posts
+        if (match.channel) {
+          const channelInfo: any = { type: 'post' }
+          if (typeof match.channel === 'object') {
+            channelInfo.channelId = match.channel.id
+            channelInfo.channelName = match.channel.name
+          } else {
+            channelInfo.channelId = match.channel
+          }
+          channelsFound.push(channelInfo)
+        }
       }
+    }
+
+    // Log all channels found in search results
+    if (channelsFound.length > 0) {
+      console.log('[Slack Search All] Channels found in search results:', channelsFound)
     }
 
     // Combine all text

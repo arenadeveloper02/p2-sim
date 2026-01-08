@@ -124,24 +124,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       },
     },
     {
-      id: 'manualChannel',
-      title: 'Channel ID',
-      type: 'short-input',
-      canonicalParamId: 'channel',
-      placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
-      mode: 'both',
-      condition: {
-        field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user', 'search_all', 'read'],
-        not: true,
-        and: {
-          field: 'destinationType',
-          value: 'dm',
-          not: true,
-        },
-      },
-    },
-    {
       id: 'dmUserId',
       title: 'User',
       type: 'user-selector',
@@ -579,7 +561,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           operation,
           destinationType,
           channel,
-          manualChannel,
           dmUserId,
           manualDmUserId,
           text,
@@ -622,8 +603,32 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               : undefined
 
         const isDM = destinationType === 'dm'
-        const effectiveChannel = (channel || manualChannel || '').trim()
+        
+        // Debug: Log what we're receiving
+        if (operation === 'read') {
+          console.log('[Slack Block Params] Channel values:', {
+            channel,
+            channelType: typeof channel,
+            channelIsUndefined: channel === undefined,
+            channelIsNull: channel === null,
+            destinationType,
+            isDM,
+          })
+        }
+        
+        const effectiveChannel = (channel || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
+        
+        // Debug: Log what we calculated
+        if (operation === 'read') {
+          console.log('[Slack Block Params] Calculated values:', {
+            effectiveChannel,
+            effectiveChannelLength: effectiveChannel?.length,
+            effectiveChannelIsEmpty: effectiveChannel === '',
+            effectiveUserId,
+            willSetChannel: !!(effectiveChannel && !isDM),
+          })
+        }
 
         const noChannelOperations = ['list_channels', 'list_users', 'get_user', 'search_all']
         const dmSupportedOperations = ['send', 'read']
@@ -642,6 +647,18 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           baseParams.userId = effectiveUserId
         } else if (effectiveChannel) {
           baseParams.channel = effectiveChannel
+        }
+        
+        // Debug: Log what we're sending
+        if (operation === 'read') {
+          console.log('[Slack Block Params] Final baseParams:', {
+            hasChannel: !!baseParams.channel,
+            channelValue: baseParams.channel,
+            hasUserId: !!baseParams.userId,
+            userIdValue: baseParams.userId,
+            allKeys: Object.keys(baseParams),
+            fullBaseParams: JSON.stringify(baseParams, null, 2),
+          })
         }
 
         // Handle authentication based on method
@@ -844,7 +861,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     credential: { type: 'string', description: 'Slack access token' },
     botToken: { type: 'string', description: 'Bot token' },
     channel: { type: 'string', description: 'Channel identifier' },
-    manualChannel: { type: 'string', description: 'Manual channel identifier' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (selector)' },
     manualDmUserId: { type: 'string', description: 'User ID for DM recipient (manual input)' },
     text: { type: 'string', description: 'Message text' },
