@@ -765,7 +765,7 @@ export function ArenaCommentInput({
                               key={user.sysId}
                               value={user.sysId}
                               onSelect={() => handleUserSelect(user)}
-                              style={{ pointerEvents: 'auto' }}
+                              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                               className={cn(
                                 index === selectedMentionIndex && 'bg-accent'
                               )}

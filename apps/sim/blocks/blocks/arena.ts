@@ -23,16 +23,16 @@ export const ArenaBlock: BlockConfig = {
           id: 'arena_create_sub_task',
         },
         {
+          label: 'Add Comments',
+          id: 'arena_comments',
+        },
+        {
           label: 'Search Task',
           id: 'arena_search_task',
         },
         {
           label: 'Save Summary',
           id: 'arena_save_summary',
-        },
-        {
-          label: 'Comments',
-          id: 'arena_comments',
         },
       ],
       value: () => 'arena_create_task',

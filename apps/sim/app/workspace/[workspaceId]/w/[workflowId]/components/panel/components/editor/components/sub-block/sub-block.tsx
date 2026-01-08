@@ -51,6 +51,7 @@ import { ArenaGroupSelector } from './components/arena/arena-group-selector'
 import { ArenaProjectSelector } from './components/arena/arena-projects-selector'
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs
@@ -908,6 +909,19 @@ function SubBlockComponent({
           />
         )
       case 'arena-task-selector':
+        // Use ArenaTaskAndSubtaskSelector for comment-task in comments operation
+        if (config.id === 'comment-task') {
+          return (
+            <ArenaTaskAndSubtaskSelector
+              blockId={blockId}
+              subBlockId={config.id}
+              title={config.title ?? ''}
+              isPreview={isPreview}
+              subBlockValues={subBlockValues}
+              disabled={isDisabled}
+            />
+          )
+        }
         return (
           <ArenaTaskSelector
             blockId={blockId}

@@ -152,7 +152,7 @@ export function ArenaGroupSelector({
                     value={group.id}
                     onSelect={() => handleSelect(group)}
                     className='max-w-full whitespace-normal break-words'
-                    style={{ pointerEvents: 'auto' }}
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                   >
                     <span className='truncate'>{group.name}</span>
                     <Check

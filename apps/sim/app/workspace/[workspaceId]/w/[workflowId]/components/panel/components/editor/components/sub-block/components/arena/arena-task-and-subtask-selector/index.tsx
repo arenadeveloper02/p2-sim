@@ -21,12 +21,16 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
 interface Task {
-  sysId: string
-  id?: string
+  id: string
   name: string
+  sysId: string
+  taskType?: string
+  projectId?: string
+  taskNumber?: string
+  archived?: boolean
 }
 
-interface ArenaTaskSelectorProps {
+interface ArenaTaskAndSubtaskSelectorProps {
   blockId: string
   subBlockId: string
   title: string
@@ -36,7 +40,7 @@ interface ArenaTaskSelectorProps {
   disabled?: boolean
 }
 
-export function ArenaTaskSelector({
+export function ArenaTaskAndSubtaskSelector({
   blockId,
   subBlockId,
   title,
@@ -44,14 +48,15 @@ export function ArenaTaskSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaTaskSelectorProps) {
+}: ArenaTaskAndSubtaskSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  // Determine the project key based on the task subBlockId
-  const projectKey = subBlockId === 'comment-task' ? 'comment-project' : 'task-project'
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
+  
+  // Get client and project for comments operation
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client']?.clientId
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
   const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
@@ -59,27 +64,37 @@ export function ArenaTaskSelector({
 
   const [tasks, setTasks] = React.useState<Task[]>([])
   const [open, setOpen] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
 
   React.useEffect(() => {
-    if (!projectId) return
+    if (!clientId || !projectId) {
+      setTasks([])
+      return
+    }
 
     const fetchTasks = async () => {
+      setLoading(true)
       setTasks([])
       try {
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
-        const url = `${arenaBackendBaseUrl}/sol/v1/tasks/deliverable/list?projectId=${projectId}`
+        const url = `${arenaBackendBaseUrl}/list/projectservice/getalltaskslist?cid=${clientId}&projectType=STATUS&projectId=${projectId}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
+            accept: '*/*',
           },
         })
 
-        setTasks(response.data.deliverables || [])
+        // Handle the response structure: { statusCode: 200, response: { TaskList: [...] } }
+        const taskList = response.data?.response?.TaskList || response.data?.TaskList || []
+        setTasks(taskList)
       } catch (error) {
-        console.error('Error fetching tasks:', error)
+        console.error('Error fetching tasks and subtasks:', error)
         setTasks([])
+      } finally {
+        setLoading(false)
       }
     }
 
@@ -88,7 +103,7 @@ export function ArenaTaskSelector({
     return () => {
       setTasks([])
     }
-  }, [projectId])
+  }, [clientId, projectId])
 
   const selectedLabel =
     (typeof selectedValue === 'object' ? selectedValue?.customDisplayValue : null) ||
@@ -120,10 +135,10 @@ export function ArenaTaskSelector({
               'relative cursor-pointer items-center justify-between',
               layout === 'half' ? 'max-w-md' : 'w-full'
             )}
-            disabled={disabled || !projectId}
+            disabled={disabled || !clientId || !projectId || loading}
           >
             <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
-              {selectedLabel}
+              {loading ? 'Loading...' : selectedLabel}
             </span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
@@ -142,7 +157,7 @@ export function ArenaTaskSelector({
           >
             <CommandInput placeholder='Search tasks...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No task found.</CommandEmpty>
+              <CommandEmpty>{loading ? 'Loading...' : 'No task found.'}</CommandEmpty>
               <CommandGroup>
                 {tasks.map((task) => {
                   const taskId = task.sysId || task.id
@@ -173,3 +188,4 @@ export function ArenaTaskSelector({
     </div>
   )
 }
+
