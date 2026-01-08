@@ -1,11 +1,11 @@
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
-import { getSession } from '@/lib/auth'
-import { getBaseUrl } from '@/lib/core/utils/url'
-import { env } from '@/lib/core/config/env'
-import { eq, and } from 'drizzle-orm'
+import { createLogger } from '@sim/logger'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
+import { env } from '@/lib/core/config/env'
+import { getBaseUrl } from '@/lib/core/utils/url'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +31,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       logger.error('Slack OAuth error:', { error })
-      return NextResponse.redirect(`${baseUrl}/workspace?error=slack_oauth_error&message=${encodeURIComponent(error)}`)
+      return NextResponse.redirect(
+        `${baseUrl}/workspace?error=slack_oauth_error&message=${encodeURIComponent(error)}`
+      )
     }
 
     if (!code) {
@@ -74,7 +76,9 @@ export async function GET(request: NextRequest) {
 
     if (!tokenData.ok) {
       logger.error('Slack token exchange returned error:', { error: tokenData.error })
-      return NextResponse.redirect(`${baseUrl}/workspace?error=slack_token_error&message=${encodeURIComponent(tokenData.error || 'Unknown error')}`)
+      return NextResponse.redirect(
+        `${baseUrl}/workspace?error=slack_token_error&message=${encodeURIComponent(tokenData.error || 'Unknown error')}`
+      )
     }
 
     // Extract both tokens
@@ -173,4 +177,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(betterAuthUrl.toString())
   }
 }
-

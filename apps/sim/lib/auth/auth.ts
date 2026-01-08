@@ -179,7 +179,11 @@ export const auth = betterAuth({
               accountId: account.id,
               hasAccessToken: !!account.accessToken,
               hasIdToken: !!account.idToken,
-              accessTokenType: account.accessToken?.startsWith('xoxb-') ? 'bot' : account.accessToken?.startsWith('xoxp-') ? 'user' : 'unknown',
+              accessTokenType: account.accessToken?.startsWith('xoxb-')
+                ? 'bot'
+                : account.accessToken?.startsWith('xoxp-')
+                  ? 'user'
+                  : 'unknown',
             })
           }
 

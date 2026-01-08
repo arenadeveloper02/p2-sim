@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +46,7 @@ export async function POST(request: NextRequest) {
     )
 
     const body = await request.json()
-    
+
     logger.info(`[${requestId}] Raw request body received:`, {
       hasAccessToken: !!body.accessToken,
       accessTokenPrefix: body.accessToken?.substring(0, 10) || 'none',
@@ -58,7 +57,7 @@ export async function POST(request: NextRequest) {
       botTokenPrefix: body.botToken?.substring(0, 10) || 'none',
       query: body.query?.substring(0, 50) || 'none',
     })
-    
+
     const validatedData = SlackSearchAllSchema.parse(body)
 
     logger.info(`[${requestId}] After validation:`, {
@@ -163,7 +162,7 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         )
       }
-      
+
       logger.info(`[${requestId}] Token resolved from credential:`, {
         credentialId,
         tokenPrefix: resolvedToken.substring(0, 10),
@@ -176,13 +175,16 @@ export async function POST(request: NextRequest) {
               : 'unknown',
         tokenLength: resolvedToken.length,
       })
-      
+
       // Verify resolved token is not a bot token
       if (resolvedToken.startsWith('xoxb-')) {
-        logger.warn(`[${requestId}] Resolved token is a bot token - search.all requires user token`, {
-          credentialId,
-          tokenPrefix: resolvedToken.substring(0, 10),
-        })
+        logger.warn(
+          `[${requestId}] Resolved token is a bot token - search.all requires user token`,
+          {
+            credentialId,
+            tokenPrefix: resolvedToken.substring(0, 10),
+          }
+        )
         return NextResponse.json(
           {
             success: false,
