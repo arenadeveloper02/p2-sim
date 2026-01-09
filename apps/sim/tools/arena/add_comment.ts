@@ -74,18 +74,14 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       if (!clientId) throw new Error('Missing required field: Client')
 
       const projectValue = params['comment-project']
-      const projectId =
-        typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+      const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
       if (!projectId) throw new Error('Missing required field: Project')
 
-      const projectName =
-        typeof projectValue === 'string' ? '' : projectValue?.name || ''
+      const projectName = typeof projectValue === 'string' ? '' : projectValue?.name || ''
 
       const taskValue = params['comment-task']
       const elementId =
-        typeof taskValue === 'string'
-          ? taskValue
-          : taskValue?.sysId || taskValue?.id
+        typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
       if (!elementId) throw new Error('Missing required field: Task')
 
       if (!params['comment-text']) throw new Error('Missing required field: Comment Text')
@@ -97,12 +93,13 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       // Extract user mentioned IDs from HTML content
       const commentText = params['comment-text'] || ''
       const userMentionedIds = extractMentionedUserIds(commentText)
-      
+
       // Debug logging to help identify issues
-      if (commentText && commentText.includes('@') && userMentionedIds.length === 0) {
-        const hasMentionTag = commentText.includes('class="mention"') || commentText.includes("class='mention'")
+      if (commentText?.includes('@') && userMentionedIds.length === 0) {
+        const hasMentionTag =
+          commentText.includes('class="mention"') || commentText.includes("class='mention'")
         const hasDataUserId = commentText.includes('data-user-id')
-        
+
         if (hasMentionTag || hasDataUserId) {
           console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
             commentTextLength: commentText.length,
@@ -155,4 +152,3 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
     output: { type: 'object', description: 'Output from Arena' },
   },
 }
-

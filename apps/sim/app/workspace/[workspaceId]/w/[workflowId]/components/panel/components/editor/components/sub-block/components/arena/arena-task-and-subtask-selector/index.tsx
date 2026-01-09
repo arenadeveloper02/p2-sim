@@ -53,7 +53,7 @@ export function ArenaTaskAndSubtaskSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  
+
   // Get client and project for comments operation
   const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client']?.clientId
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
@@ -188,4 +188,3 @@ export function ArenaTaskAndSubtaskSelector({
     </div>
   )
 }
-

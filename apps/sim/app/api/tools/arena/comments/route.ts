@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from 'next/server'
 import { db } from '@sim/db'
 import { user } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
 import { getArenaTokenByWorkflowId } from '../utils/db-utils'
 
@@ -57,4 +57,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to add comment', details: error }, { status: 500 })
   }
 }
-

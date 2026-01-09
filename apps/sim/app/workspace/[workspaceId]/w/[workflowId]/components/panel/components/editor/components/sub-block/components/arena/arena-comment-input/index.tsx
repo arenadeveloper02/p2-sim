@@ -1,17 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import {
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import axios from 'axios'
 import { createLogger } from '@sim/logger'
+import axios from 'axios'
 import { ChevronsUpDown, Wand2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Textarea } from '@/components/emcn'
@@ -24,18 +15,18 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import { cn } from '@/lib/core/utils/cn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
+import { cn } from '@/lib/core/utils/cn'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
-import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import type { WandControlHandlers } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block'
 import { WandPromptBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/wand-prompt-bar/wand-prompt-bar'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWand } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-wand'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
 const logger = createLogger('ArenaCommentInput')
 
@@ -68,18 +59,18 @@ interface ArenaCommentInputProps {
  */
 function htmlToDisplayText(html: string): string {
   if (!html) return ''
-  
+
   // Create a temporary DOM element to parse HTML
   const temp = document.createElement('div')
   temp.innerHTML = html
-  
+
   // Replace mention links with just the user name
   const mentions = temp.querySelectorAll('a.mention')
   mentions.forEach((mention) => {
     const textNode = document.createTextNode(mention.textContent || '')
     mention.parentNode?.replaceChild(textNode, mention)
   })
-  
+
   // Convert <p> tags to newlines
   const paragraphs = temp.querySelectorAll('p')
   paragraphs.forEach((p, index) => {
@@ -88,7 +79,7 @@ function htmlToDisplayText(html: string): string {
       p.parentNode?.insertBefore(br, p)
     }
   })
-  
+
   return temp.textContent || temp.innerText || ''
 }
 
@@ -107,16 +98,16 @@ function escapeHtml(text: string): string {
  */
 function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
   if (!text) return ''
-  
+
   // Get all user names sorted by length (longest first) to match full names before partial matches
   const users = Array.from(mentions.values()).sort((a, b) => b.name.length - a.name.length)
-  
+
   // Split by lines and wrap in <p> tags
   const lines = text.split('\n')
   const htmlLines = lines.map((line) => {
     const parts: string[] = []
     let lastIndex = 0
-    
+
     // Find all @ mentions in the line
     let searchIndex = 0
     while (searchIndex < line.length) {
@@ -128,30 +119,25 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
         }
         break
       }
-      
+
       // Add text before the @
       if (atIndex > lastIndex) {
         parts.push(escapeHtml(line.substring(lastIndex, atIndex)))
       }
-      
+
       // Try to match user names starting from this @ position
       let matched = false
       for (const user of users) {
         const mentionText = `@${user.name}`
         const endIndex = atIndex + mentionText.length
-        
+
         // Check if this matches exactly
-        if (
-          endIndex <= line.length &&
-          line.substring(atIndex, endIndex) === mentionText
-        ) {
+        if (endIndex <= line.length && line.substring(atIndex, endIndex) === mentionText) {
           // Check if it's followed by space, newline, punctuation, or end of string
           const nextChar = endIndex < line.length ? line[endIndex] : ''
-          const isEndOfMention = 
-            endIndex === line.length || 
-            /\s/.test(nextChar) || 
-            /[.,;:!?]/.test(nextChar)
-          
+          const isEndOfMention =
+            endIndex === line.length || /\s/.test(nextChar) || /[.,;:!?]/.test(nextChar)
+
           if (isEndOfMention) {
             // Found a match!
             parts.push(
@@ -164,7 +150,7 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
           }
         }
       }
-      
+
       if (!matched) {
         // No match found, keep the @ as plain text and continue
         const nextAt = line.indexOf('@', atIndex + 1)
@@ -174,10 +160,10 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
         searchIndex = endIndex
       }
     }
-    
+
     return parts.join('')
   })
-  
+
   return htmlLines.map((line) => `<p>${line || '&nbsp;'}</p>`).join('')
 }
 
@@ -201,7 +187,7 @@ export function ArenaCommentInput({
   const [displayText, setDisplayText] = React.useState<string>('')
   const [htmlContent, setHtmlContent] = React.useState<string>('')
   const persistSubBlockValueRef = React.useRef<(value: string) => void>(() => {})
-  
+
   // Mention state
   const [showMentionMenu, setShowMentionMenu] = React.useState(false)
   const [mentionQuery, setMentionQuery] = React.useState('')
@@ -213,7 +199,7 @@ export function ArenaCommentInput({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const commandInputRef = React.useRef<HTMLInputElement>(null)
   const mentionsMap = React.useRef<Map<string, ArenaUser>>(new Map())
-  
+
   // Get project and client from store
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
@@ -292,14 +278,16 @@ export function ArenaCommentInput({
         : propValue !== undefined
           ? propValue
           : ctrl.valueString
-      
+
       const baseValueString = baseValue?.toString() ?? ''
-      
+
       // Only update if the value has actually changed
       if (baseValueString !== htmlContent && baseValueString !== '') {
         // Check if it's HTML (contains mention tags) or plain text
-        const isHtml = baseValueString.includes('<a class="mention"') || baseValueString.includes("class='mention'")
-        
+        const isHtml =
+          baseValueString.includes('<a class="mention"') ||
+          baseValueString.includes("class='mention'")
+
         if (isHtml) {
           // It's HTML, store it as-is and convert to display text
           setHtmlContent(baseValueString)
@@ -318,7 +306,10 @@ export function ArenaCommentInput({
             }
           } else {
             // No users loaded yet or no mentions, store as plain text wrapped in <p> tags
-            const plainHtml = baseValueString.split('\n').map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`).join('')
+            const plainHtml = baseValueString
+              .split('\n')
+              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
+              .join('')
             setHtmlContent(plainHtml)
             setLocalContent(plainHtml)
             setDisplayText(baseValueString)
@@ -342,7 +333,7 @@ export function ArenaCommentInput({
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const url = `${arenaBackendBaseUrl}/sol/v1/users/list?cId=${clientId}&pId=${projectId}`
-        
+
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
@@ -356,7 +347,7 @@ export function ArenaCommentInput({
         }))
 
         setUsers(formattedUsers)
-        
+
         // Update mentions map
         mentionsMap.current.clear()
         formattedUsers.forEach((user) => {
@@ -397,9 +388,13 @@ export function ArenaCommentInput({
       setDisplayText(newDisplayText)
 
       // Convert display text to HTML (only if we have users loaded)
-      const newHtml = mentionsMap.current.size > 0 
-        ? textToHtml(newDisplayText, mentionsMap.current)
-        : newDisplayText.split('\n').map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`).join('')
+      const newHtml =
+        mentionsMap.current.size > 0
+          ? textToHtml(newDisplayText, mentionsMap.current)
+          : newDisplayText
+              .split('\n')
+              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
+              .join('')
       setHtmlContent(newHtml)
       setLocalContent(newHtml)
 
@@ -418,9 +413,7 @@ export function ArenaCommentInput({
 
         // Check if we're in a mention (no space after @ and not already a complete mention)
         const isInMention =
-          !textAfterAt.includes(' ') &&
-          !textAfterAt.includes('\n') &&
-          textAfterAt.length >= 0
+          !textAfterAt.includes(' ') && !textAfterAt.includes('\n') && textAfterAt.length >= 0
 
         if (isInMention) {
           setMentionQuery(textAfterAt)
@@ -439,9 +432,7 @@ export function ArenaCommentInput({
   // Filter users based on mention query
   const filteredUsers = React.useMemo(() => {
     if (!mentionQuery) return users
-    return users.filter((user) =>
-      user.name.toLowerCase().includes(mentionQuery.toLowerCase())
-    )
+    return users.filter((user) => user.name.toLowerCase().includes(mentionQuery.toLowerCase()))
   }, [users, mentionQuery])
 
   // Handle user selection
@@ -451,9 +442,7 @@ export function ArenaCommentInput({
       if (!textarea) return
 
       const beforeMention = displayText.substring(0, mentionPosition)
-      const afterMention = displayText.substring(
-        textarea.selectionStart ?? displayText.length
-      )
+      const afterMention = displayText.substring(textarea.selectionStart ?? displayText.length)
 
       const newDisplayText = `${beforeMention}@${user.name} ${afterMention}`
       setDisplayText(newDisplayText)
@@ -477,8 +466,7 @@ export function ArenaCommentInput({
       // Focus back to textarea
       setTimeout(() => {
         textarea.focus()
-        const newCursorPosition =
-          beforeMention.length + `@${user.name} `.length
+        const newCursorPosition = beforeMention.length + `@${user.name} `.length
         textarea.setSelectionRange(newCursorPosition, newCursorPosition)
       }, 0)
     },
@@ -491,9 +479,7 @@ export function ArenaCommentInput({
       if (showMentionMenu && filteredUsers.length > 0) {
         if (e.key === 'ArrowDown') {
           e.preventDefault()
-          setSelectedMentionIndex((prev) =>
-            prev < filteredUsers.length - 1 ? prev + 1 : prev
-          )
+          setSelectedMentionIndex((prev) => (prev < filteredUsers.length - 1 ? prev + 1 : prev))
           return
         }
         if (e.key === 'ArrowUp') {
@@ -530,14 +516,14 @@ export function ArenaCommentInput({
       const textarea = textareaRef.current
       const rect = textarea.getBoundingClientRect()
       const scrollTop = textarea.scrollTop
-      
+
       // Calculate position based on cursor
       const textBeforeCursor = displayText.substring(0, mentionPosition)
       const lines = textBeforeCursor.split('\n')
       const lineNumber = lines.length - 1
       const lineHeight = ROW_HEIGHT_PX
       const topOffset = lineNumber * lineHeight - scrollTop
-      
+
       setMentionMenuPosition({
         top: rect.top + topOffset + lineHeight + 4 + window.scrollY,
         left: rect.left + window.scrollX,
@@ -558,7 +544,7 @@ export function ArenaCommentInput({
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node
-      
+
       // Check if click is outside the mention menu
       if (mentionMenuRef.current && !mentionMenuRef.current.contains(target)) {
         // Close the menu when clicking outside
@@ -572,7 +558,7 @@ export function ArenaCommentInput({
     const timeoutId = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside, true)
     }, 50)
-    
+
     return () => {
       clearTimeout(timeoutId)
       document.removeEventListener('mousedown', handleClickOutside, true)
@@ -794,9 +780,7 @@ export function ArenaCommentInput({
                               value={user.sysId}
                               onSelect={() => handleUserSelect(user)}
                               style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                              className={cn(
-                                index === selectedMentionIndex && 'bg-accent'
-                              )}
+                              className={cn(index === selectedMentionIndex && 'bg-accent')}
                             >
                               {user.name}
                             </CommandItem>
@@ -845,4 +829,3 @@ export function ArenaCommentInput({
     </>
   )
 }
-
