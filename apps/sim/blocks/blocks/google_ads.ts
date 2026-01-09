@@ -71,6 +71,7 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       placeholder: 'Select account...',
       required: true,
       mode: 'basic',
+      canonicalParamId: 'accounts',
     },
     // Google Ads Account (advanced mode - text input)
     {
