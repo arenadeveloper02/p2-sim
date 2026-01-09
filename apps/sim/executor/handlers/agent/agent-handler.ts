@@ -806,6 +806,7 @@ export class AgentBlockHandler implements BlockHandler {
             .where(
               and(
                 eq(workflowExecutionLogs.conversationId, conversationId),
+                eq(workflowExecutionLogs.status, 'completed'),
                 isNotNull(workflowExecutionLogs.initialInput),
                 isNotNull(workflowExecutionLogs.finalChatOutput)
               )
@@ -815,43 +816,88 @@ export class AgentBlockHandler implements BlockHandler {
 
           if (latestLogs.length > 0) {
             const lastLog = latestLogs[0]
-            logger.info('Not calling the search API for agent Block')
+            logger.debug('Not calling the search API for agent Block')
             // Format history for the controller prompt
             const historyText = `Conversation History
 User - ${lastLog.initialInput}
 Assistant - ${lastLog.finalChatOutput}`
 
-            const systemPrompt = `You are a controller that decides whether to run the workflow or skip it.
+            const systemPrompt = `You are a controller that decides whether to RUN a workflow or SKIP it.
 
-Return ONLY one word: RUN or SKIP
+Return ONLY ONE WORD:
+RUN or SKIP (uppercase only).
 
-## ⚠️ CRITICAL RULE - CHECK FIRST:
-**DEFAULT TO RUN.** Only return SKIP if you are 100% certain the user is asking about a PREVIOUS response.
+────────────────────────────────────────
+PRIMARY DECISION PRINCIPLE
 
-**If the user is asking for ANY information, data, or content → return RUN**
-**If this appears to be a NEW conversation or first message → return RUN**
-**If the user mentions any topic (GD, dentistry, target audience, etc.) → return RUN**
+DEFAULT TO RUN.
 
-## RETURN RUN FOR:
-- ANY request for information: "Give me...", "Tell me about...", "What is...", "Show me..."
-- ANY question about a topic: target audience, brand guidelines, marketing, GD, dentistry, etc.
-- ANY new topic or subject matter
-- Requests for data, analysis, or content generation
-- First message in a conversation
-- When in doubt → RUN
+Return SKIP when the user intent is the SAME as the previous assistant response
+and the user is asking for a transformation, reuse, or downstream application
+of the same content — even if light creativity is involved.
 
-## RETURN SKIP ONLY FOR (must have PREVIOUS assistant response in memory):
-- Formatting requests about PREVIOUS output: "give me in table", "as bullet points", "summarize that"
-- Direct references to previous response: "explain that", "tell me more about what you just said"
-- Simple acknowledgments: "thanks", "okay", "got it"
-- Questions about the PREVIOUS response specifically
+The workflow should RUN ONLY when the user introduces a NEW INTENT.
 
-We will be passing the conversation history in the User Prompt, so you can analyse it using the history.
+────────────────────────────────────────
+WHAT COUNTS AS NEW INTENT → RUN
 
-## OUTPUT:
-Return ONLY: RUN or SKIP (one word, uppercase)`
+ALWAYS RETURN RUN IF THE USER:
 
-            const controllerUserPrompt = `${historyText}\n\nCurrent User Input: ${userPrompt}`
+- Introduces a new topic, domain, industry, or subject
+- Requests new information, data, or facts not already present
+- Asks a new question unrelated to the previous response
+- Requests validation, critique, judgment, or correctness checking
+- Changes the goal, audience, or use case
+- Asks to review, improve, or fix logic, prompts, or workflows
+- Starts a new conversation
+- Mentions a clearly different business objective
+- If there is ANY doubt → RUN
+
+────────────────────────────────────────
+WHAT COUNTS AS SAME INTENT → SKIP
+
+Return SKIP ONLY IF ALL CONDITIONS ARE TRUE:
+
+1. A previous assistant response exists
+AND
+2. The user refers ONLY to that response or its content
+AND
+3. The request is a derivative transformation or reuse of the same content
+
+This INCLUDES:
+
+- Formatting or restructuring
+  (table, bullets, summary, shorter, longer)
+- Clarification or explanation without adding new facts
+- Creative adaptation using the same content
+  (e.g., social posts, ads, captions, emails, landing copy)
+- Applying “best practices” to existing content
+- Channel-specific versions
+  (e.g., “turn this into a LinkedIn post”, “make this an ad”)
+- Simple acknowledgments
+
+If NO new topic, NO new domain, and NO new objective is introduced → SKIP
+
+────────────────────────────────────────
+FINAL DECISION RULE
+
+- False RUN is acceptable
+- False SKIP is NOT acceptable
+- If you are not absolutely certain → RUN
+
+────────────────────────────────────────
+OUTPUT FORMAT (MANDATORY):
+
+Return ONLY:
+RUN
+or
+SKIP`
+
+            const controllerUserPrompt = `If the current request can be fulfilled using ONLY the information already present
+in the conversation history, treat it as SAME INTENT.\n${historyText}\n\nCurrent User Input: ${userPrompt}`
+
+            logger.debug('Controller user prompt', { controllerUserPrompt })
+            logger.debug('System prompt', { systemPrompt })
 
             // Call OpenAI for decision
             try {

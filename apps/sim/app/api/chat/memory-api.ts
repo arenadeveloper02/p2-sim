@@ -45,7 +45,7 @@ export async function callMemoryAPI(
       metadata: metadata,
     }
 
-    logger.info(`[${requestId}] Calling memory API`, { payload })
+    logger.info(`[${requestId}] Calling memory API`)
 
     const response = await fetch(`${MEMORY_API_BASE_URL}/memories`, {
       method: 'POST',
@@ -68,14 +68,6 @@ export async function callMemoryAPI(
       // Don't throw - we don't want to fail the main request if memory API fails
       return
     }
-
-    logger.info(`[${requestId}] Memory API call successful`, {
-      infer,
-      memoryType,
-      conversationId: memoryConversationId,
-      userId,
-      response: await response.json(),
-    })
   } catch (error: any) {
     logger.error(`[${requestId}] Error calling memory API:`, error)
     // Don't throw - we don't want to fail the main request if memory API fails
@@ -128,12 +120,7 @@ export async function searchMemoryAPI(
 
     payload.limit = 5
 
-    logger.debug(`[${requestId}] Calling memory search API`, {
-      query,
-      user_id: userId,
-      hasFilters: !!filters,
-      filters,
-    })
+    logger.debug(`[${requestId}] Calling memory search API`)
 
     const response = await fetch(`${MEMORY_API_BASE_URL}/search`, {
       method: 'POST',
