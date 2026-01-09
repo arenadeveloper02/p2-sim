@@ -61,10 +61,6 @@ export async function getUserKnowledgeBaseAccess(
     .groupBy(knowledgeBase.id)
     .orderBy(knowledgeBase.name)
 
-  logger.info(
-    `[${requestId}] Retrieved ${results.length} knowledge bases for user ${userId} from ${workspaceId ? 'workspace ' + workspaceId : 'all accessible workspaces'}`
-  )
-
   // Return simplified user knowledge base access data
   return results.map((row) => ({
     id: row.id,

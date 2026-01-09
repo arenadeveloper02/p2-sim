@@ -39,9 +39,6 @@ export function extractDateRanges(input: string): Array<DateRange> {
   const numericComparisonPattern =
     /(?:from\s+)?(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+and\s+then\s+|\s+and\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+to\s+)(\d{1,2})\/(\d{1,2})\/(\d{4})/i
   const numericComparisonMatch = input.match(numericComparisonPattern)
-  
-  logger.info('🔍 COMPARISON PATTERN MATCH:', { matched: !!numericComparisonMatch, pattern: numericComparisonPattern.source })
-
   if (numericComparisonMatch) {
     // First range (comparison/prior week)
     const month1 = numericComparisonMatch[1].padStart(2, '0')
