@@ -1,6 +1,6 @@
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, or } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'

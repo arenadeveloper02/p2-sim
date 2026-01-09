@@ -141,6 +141,7 @@ export function ArenaStatesSelector({
                     key={state.id}
                     value={state.name}
                     onSelect={() => handleSelect(state.name)}
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                   >
                     {state.name}
                     <Check

@@ -9,7 +9,7 @@ const logger = createLogger('ChatStore')
 /**
  * Maximum number of messages to store across all workflows
  */
-const MAX_MESSAGES = 50
+const MAX_MESSAGES = 500
 
 /**
  * Floating chat dimensions

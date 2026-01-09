@@ -142,7 +142,17 @@ Please re-run the agent with a clearer date specification.`
   "comparison_start_date": "${promptContext.comparison.comparison.start}",
   "comparison_end_date": "${promptContext.comparison.comparison.end}"
 }`
-    : `Example for "Sept 8-14 and then 15-21":
+    : promptContext.dateRange
+      ? `Example for single date range query (${promptContext.dateRange.start} to ${promptContext.dateRange.end}):
+{
+  "gaql_query": "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date BETWEEN '${promptContext.dateRange.start}' AND '${promptContext.dateRange.end}' AND campaign.status = 'ENABLED'",
+  "is_comparison": false,
+  "start_date": "${promptContext.dateRange.start}",
+  "end_date": "${promptContext.dateRange.end}",
+  "query_type": "campaigns",
+  "period_type": "custom"
+}`
+      : `Example for "Sept 8-14 and then 15-21":
 {
   "gaql_query": "SELECT ... WHERE segments.date BETWEEN '2025-09-15' AND '2025-09-21' ...",
   "is_comparison": true,
@@ -160,6 +170,9 @@ Please re-run the agent with a clearer date specification.`
     '2. Provide "comparison_query" with the FIRST date range',
     '3. Provide "comparison_start_date" and "comparison_end_date" for the FIRST date range',
     '4. The main "gaql_query" should use the SECOND date range',
+    "5. The main 'period_type' should be one of the { last_7_days: 'last 7 days',last_15_days: 'last 15 days',last_30_days: 'last 30 days',this_month: 'this month',last_month: 'last month',this_week: 'this week',last_week: 'last week',custom: 'custom date range'} also return the start_date and end_date based on this logic if found in the user's question",
+    "6. **MANDATORY**: You MUST include 'start_date' and 'end_date' fields in your JSON response. These should match the dates used in the gaql_query BETWEEN clause (format: 'YYYY-MM-DD'). If the query uses BETWEEN '2025-01-01' AND '2025-01-07', then start_date must be '2025-01-01' and end_date must be '2025-01-07'.",
+    "7. Extract the dates from the user's question or from the date range provided in the prompt context above.",
     comparisonExample,
   ].join('\n')
 
@@ -191,12 +204,61 @@ Please re-run the agent with a clearer date specification.`
 
     const parsed = parseAiResponse(aiResponse, userInput, logger)
 
+    logger.info('Parsed AI response', {
+      hasStartDate: !!parsed.startDate,
+      hasEndDate: !!parsed.endDate,
+      startDate: parsed.startDate,
+      endDate: parsed.endDate,
+      hasDateRange: !!promptContext.dateRange,
+      dateRangeFromContext: promptContext.dateRange,
+    })
+
+    // Extract dates from GAQL query if not provided in AI response
+    let extractedStartDate = parsed.startDate
+    let extractedEndDate = parsed.endDate
+
+    // Try to extract dates from the GAQL query BETWEEN clause
+    if (!extractedStartDate || !extractedEndDate) {
+      const betweenMatch = parsed.gaqlQuery.match(
+        /segments\.date\s+BETWEEN\s+'(\d{4}-\d{2}-\d{2})'\s+AND\s+'(\d{4}-\d{2}-\d{2})'/i
+      )
+      if (betweenMatch) {
+        extractedStartDate = extractedStartDate || betweenMatch[1]
+        extractedEndDate = extractedEndDate || betweenMatch[2]
+        logger.info('Extracted dates from GAQL query BETWEEN clause', {
+          startDate: extractedStartDate,
+          endDate: extractedEndDate,
+        })
+      }
+    }
+
+    // Use the extracted date range from user input as final fallback
+    if ((!extractedStartDate || !extractedEndDate) && promptContext.dateRange) {
+      extractedStartDate = extractedStartDate || promptContext.dateRange.start
+      extractedEndDate = extractedEndDate || promptContext.dateRange.end
+      logger.info('Using extracted date range from user input as fallback', {
+        startDate: extractedStartDate,
+        endDate: extractedEndDate,
+      })
+    }
+
+    // Final fallback to last 30 days if still no dates
+    if (!extractedStartDate || !extractedEndDate) {
+      extractedStartDate =
+        extractedStartDate || formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+      extractedEndDate = extractedEndDate || formatDate(new Date())
+      logger.warn('No dates found, using default last 30 days', {
+        startDate: extractedStartDate,
+        endDate: extractedEndDate,
+      })
+    }
+
     return {
       gaqlQuery: parsed.gaqlQuery,
       queryType: parsed.queryType || 'campaigns',
       periodType: parsed.periodType || 'last_30_days',
-      startDate: parsed.startDate || formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-      endDate: parsed.endDate || formatDate(new Date()),
+      startDate: extractedStartDate,
+      endDate: extractedEndDate,
       isComparison: parsed.isComparison || false,
       comparisonQuery: parsed.comparisonQuery,
       comparisonStartDate: parsed.comparisonStartDate,
