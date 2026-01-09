@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = SlackReadMessagesSchema.parse(body)
 
+    logger.info(`[${requestId}] Read messages token details:`, {
+      tokenStart: validatedData.accessToken.substring(0, 10) + '...',
+      tokenEnd: '...' + validatedData.accessToken.substring(validatedData.accessToken.length - 10),
+      tokenType: validatedData.accessToken.startsWith('xoxb-')
+        ? 'bot_token'
+        : validatedData.accessToken.startsWith('xoxp-')
+          ? 'user_token'
+          : 'unknown',
+      tokenLength: validatedData.accessToken.length,
+    })
+
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
       logger.info(`[${requestId}] Opening DM channel for user: ${validatedData.userId}`)
@@ -235,11 +246,18 @@ export async function POST(request: NextRequest) {
         )
       }
       if (data.error === 'missing_scope') {
+        const needed = (data as any).needed || 'unknown'
+        const provided = (data as any).provided || 'unknown'
+        logger.error(`[${requestId}] Missing scope error:`, {
+          needed,
+          provided,
+          channelType: channelInfo?.is_private ? 'private' : 'public',
+          isMember: channelInfo?.is_member,
+        })
         return NextResponse.json(
           {
             success: false,
-            error:
-              'Missing required permissions. Please reconnect your Slack account with the necessary scopes (channels:history, groups:history, im:history).',
+            error: `Missing required Slack scope: ${needed}. Please reconnect your Slack account to grant the necessary permissions.`,
           },
           { status: 400 }
         )

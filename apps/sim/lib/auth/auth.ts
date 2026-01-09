@@ -1727,6 +1727,8 @@ export const auth = betterAuth({
             'channels:history',
             'groups:read',
             'groups:history',
+            'mpim:read',
+            'mpim:history',
             'chat:write',
             'chat:write.public',
             'im:write',

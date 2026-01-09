@@ -613,6 +613,25 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           ...rest
         } = params
 
+        // Debug: Log raw params for search_all operation
+        if (operation === 'search_all') {
+          console.log('🔍 Raw Search Params:', {
+            operation,
+            clientId: rawClientId,
+            clientChannel,
+            searchQuery,
+            hasClientChannel: !!clientChannel,
+            clientChannelType: typeof clientChannel,
+            allParamsKeys: Object.keys(params),
+            // Check if clientId is properly formatted
+            clientIdType: typeof rawClientId,
+            clientIdValue: rawClientId,
+            // Check if this is an object (Arena client selector format)
+            isClientIdObject: typeof rawClientId === 'object',
+            clientIdFromObject: typeof rawClientId === 'object' ? rawClientId?.clientId : null
+          })
+        }
+
         // Extract clientId from object if it's an object (like Arena client selector)
         const clientId =
           typeof rawClientId === 'object' && rawClientId?.clientId
@@ -755,6 +774,14 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               }
             }
 
+            console.log('🔍 Search Debug:', {
+              searchQuery,
+              clientChannel,
+              clientChannelType: typeof clientChannel,
+              channelName,
+              originalQuery: query
+            })
+
             // If channel is selected, ensure it's included in the query with channel name
             if (channelName) {
               // Remove # prefix if present (from slack.channels selector format)
@@ -783,6 +810,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             if (!query.trim()) {
               throw new Error('Search query is required for search all operation')
             }
+
+            console.log('🔍 Final Search Query:', {
+              finalQuery: query.trim(),
+              hasChannelName: !!channelName,
+              channelNameUsed: channelName?.replace(/^#/, '').trim()
+            })
 
             baseParams.query = query.trim()
 

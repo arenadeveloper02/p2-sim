@@ -101,15 +101,16 @@ export async function POST(request: NextRequest) {
               ? 'user'
               : 'unknown',
         })
-        if (credential.idToken?.startsWith('xoxp-')) {
-          logger.info(
-            `[${requestId}] Using Slack user token from idToken field instead of bot token (POST)`
-          )
-          effectiveAccessToken = credential.idToken
+        // Default to bot token for most Slack operations
+        if (accessToken?.startsWith('xoxb-')) {
+          logger.info(`[${requestId}] Using Slack bot token (accessToken) for operation (POST)`)
+          effectiveAccessToken = accessToken
         } else {
-          logger.warn(
-            `[${requestId}] No user token available for Slack, using bot token (accessToken) (POST)`
-          )
+          logger.warn(`[${requestId}] No bot token available for Slack operation (POST)`)
+          // Fallback to user token if available (shouldn't happen in normal cases)
+          if (credential.idToken?.startsWith('xoxp-')) {
+            effectiveAccessToken = credential.idToken
+          }
         }
       }
 
@@ -192,8 +193,8 @@ export async function GET(request: NextRequest) {
     try {
       const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
 
-      // For Slack, prioritize user token (idToken) over bot token (accessToken) if available
-      // This is because some Slack APIs (like search.all) require user tokens
+      // For Slack, use bot token by default for most operations
+      // User token (idToken) should only be used for specific operations like search.all
       let effectiveAccessToken = accessToken
       if (credential.providerId === 'slack') {
         logger.info(`[${requestId}] Slack credential token check (GET):`, {
@@ -212,15 +213,17 @@ export async function GET(request: NextRequest) {
               ? 'user'
               : 'unknown',
         })
-        if (credential.idToken?.startsWith('xoxp-')) {
-          logger.info(
-            `[${requestId}] Using Slack user token from idToken field instead of bot token (GET)`
-          )
-          effectiveAccessToken = credential.idToken
+
+        // Default to bot token for most Slack operations
+        if (accessToken?.startsWith('xoxb-')) {
+          logger.info(`[${requestId}] Using Slack bot token (accessToken) for operation (GET)`)
+          effectiveAccessToken = accessToken
         } else {
-          logger.warn(
-            `[${requestId}] No user token available for Slack, using bot token (accessToken) (GET)`
-          )
+          logger.warn(`[${requestId}] No bot token available for Slack operation (GET)`)
+          // Fallback to user token if available (shouldn't happen in normal cases)
+          if (credential.idToken?.startsWith('xoxp-')) {
+            effectiveAccessToken = credential.idToken
+          }
         }
       }
 
