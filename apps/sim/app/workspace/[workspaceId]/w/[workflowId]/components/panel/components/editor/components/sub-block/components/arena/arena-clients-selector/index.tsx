@@ -130,7 +130,7 @@ export function ArenaClientsSelector({
                     key={client.clientId}
                     value={client.clientId}
                     onSelect={() => handleSelect(client)}
-                    style={{ pointerEvents: 'auto' }}
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                     className='max-w-full whitespace-normal break-words'
                   >
                     <span className='max-w-[400px] truncate'>{client.name}</span>
