@@ -1,11 +1,11 @@
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
-import { getSession } from '@/lib/auth'
-import { getBaseUrl } from '@/lib/core/utils/urls'
-import { env } from '@/lib/core/config/env'
-import { eq, and } from 'drizzle-orm'
+import { createLogger } from '@sim/logger'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
+import { env } from '@/lib/core/config/env'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export const dynamic = 'force-dynamic'
 
@@ -189,4 +189,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/workspace?error=slack_callback_error`)
   }
 }
-

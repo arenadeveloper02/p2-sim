@@ -1746,11 +1746,9 @@ export const auth = betterAuth({
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           // Add user_scope parameter to request user token for search.all API
-          // Note: search.all requires a user token. We request user scopes to get the user token
-          // in the OAuth response (authed_user.access_token). Using 'channels:read' as a minimal
-          // user scope to ensure we get a user token.
+          // Note: search.all requires 'search:read' user scope in addition to channels:read
           authorizationUrlParams: {
-            user_scope: 'channels:read',
+            user_scope: 'search:read,channels:read',
           },
           getUserInfo: async (tokens) => {
             try {

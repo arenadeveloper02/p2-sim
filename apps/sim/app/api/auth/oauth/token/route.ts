@@ -102,10 +102,14 @@ export async function POST(request: NextRequest) {
               : 'unknown',
         })
         if (credential.idToken?.startsWith('xoxp-')) {
-          logger.info(`[${requestId}] Using Slack user token from idToken field instead of bot token (POST)`)
+          logger.info(
+            `[${requestId}] Using Slack user token from idToken field instead of bot token (POST)`
+          )
           effectiveAccessToken = credential.idToken
         } else {
-          logger.warn(`[${requestId}] No user token available for Slack, using bot token (accessToken) (POST)`)
+          logger.warn(
+            `[${requestId}] No user token available for Slack, using bot token (accessToken) (POST)`
+          )
         }
       }
 
@@ -209,10 +213,14 @@ export async function GET(request: NextRequest) {
               : 'unknown',
         })
         if (credential.idToken?.startsWith('xoxp-')) {
-          logger.info(`[${requestId}] Using Slack user token from idToken field instead of bot token (GET)`)
+          logger.info(
+            `[${requestId}] Using Slack user token from idToken field instead of bot token (GET)`
+          )
           effectiveAccessToken = credential.idToken
         } else {
-          logger.warn(`[${requestId}] No user token available for Slack, using bot token (accessToken) (GET)`)
+          logger.warn(
+            `[${requestId}] No user token available for Slack, using bot token (accessToken) (GET)`
+          )
         }
       }
 

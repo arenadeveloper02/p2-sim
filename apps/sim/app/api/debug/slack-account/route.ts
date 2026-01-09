@@ -1,9 +1,9 @@
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
-import { getSession } from '@/lib/auth'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 

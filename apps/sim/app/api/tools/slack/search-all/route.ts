@@ -1,25 +1,20 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getCredential } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackSearchAllAPI')
 
 const SlackSearchAllSchema = z.object({
-  accessToken: z.string().optional().nullable(), // Can be credential ID or actual token
-  credential: z.string().optional().nullable(), // Credential ID
-  botToken: z.string().optional().nullable(), // Bot token (not supported for search.all)
+  accessToken: z.string().min(1, 'Access token is required'),
   query: z.string().min(1, 'Query is required'),
   highlight: z.boolean().optional().nullable(),
   page: z.coerce.number().int().min(1).optional().nullable(),
   sort: z.enum(['score', 'timestamp']).optional().nullable(),
   sort_dir: z.enum(['asc', 'desc']).optional().nullable(),
-  workflowId: z.string().optional().nullable(),
 })
 
 export async function POST(request: NextRequest) {
@@ -125,7 +120,7 @@ export async function POST(request: NextRequest) {
         (validatedData.accessToken && !validatedData.accessToken.startsWith('xox')
           ? validatedData.accessToken
           : null)
-      
+
       // If accessToken is a bot token but we don't have a credential ID, reject it
       if (validatedData.accessToken?.startsWith('xoxb-') && !credentialId) {
         logger.warn(
@@ -140,7 +135,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-      
+
       logger.info(`[${requestId}] Credential resolution check:`, {
         hasCredential: !!validatedData.credential,
         credentialValue: validatedData.credential?.substring(0, 30) || 'none',
@@ -149,26 +144,26 @@ export async function POST(request: NextRequest) {
         accessTokenStartsWithXox: validatedData.accessToken?.startsWith('xox') || false,
         resolvedCredentialId: credentialId?.substring(0, 30) || 'none',
       })
-      
+
       if (credentialId) {
         // This is a credential ID, not a token - resolve it
         logger.info(`[${requestId}] Attempting to authorize credential use:`, {
           credentialId: credentialId.substring(0, 30),
           hasWorkflowId: !!validatedData.workflowId,
         })
-        
+
         const authz = await authorizeCredentialUse(request as any, {
           credentialId,
           workflowId: validatedData.workflowId,
         })
-        
+
         logger.info(`[${requestId}] Credential authorization result:`, {
           ok: authz.ok,
           error: authz.error,
           hasCredentialOwnerUserId: !!authz.credentialOwnerUserId,
           credentialOwnerUserId: authz.credentialOwnerUserId?.substring(0, 30) || 'none',
         })
-        
+
         if (!authz.ok || !authz.credentialOwnerUserId) {
           logger.warn(`[${requestId}] Unauthorized credential use: ${authz.error}`)
           return NextResponse.json(
@@ -179,10 +174,10 @@ export async function POST(request: NextRequest) {
             { status: 403 }
           )
         }
-        
+
         // Get credential directly from database to access idToken field
         const credential = await getCredential(requestId, credentialId, authz.credentialOwnerUserId)
-        
+
         if (!credential) {
           logger.error(`[${requestId}] Credential not found in database`, {
             credentialId,
@@ -196,7 +191,7 @@ export async function POST(request: NextRequest) {
             { status: 404 }
           )
         }
-        
+
         logger.info(`[${requestId}] Credential retrieved from database:`, {
           credentialId,
           providerId: credential.providerId,
@@ -210,12 +205,15 @@ export async function POST(request: NextRequest) {
           hasAccessToken: !!credential.accessToken,
           accessTokenPrefix: credential.accessToken?.substring(0, 10) || 'none',
         })
-        
+
         // For Slack, get user token from idToken field (stored during OAuth callback)
         if (credential.providerId === 'slack' && credential.idToken?.startsWith('xoxp-')) {
           accessToken = credential.idToken
           logger.info(`[${requestId}] Using Slack user token from idToken field in database`)
-        } else if (credential.providerId === 'slack' && credential.accessToken?.startsWith('xoxp-')) {
+        } else if (
+          credential.providerId === 'slack' &&
+          credential.accessToken?.startsWith('xoxp-')
+        ) {
           // Fallback: accessToken might be user token if idToken is not set
           accessToken = credential.accessToken
           logger.info(`[${requestId}] Using Slack user token from accessToken field (fallback)`)
@@ -313,7 +311,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${validatedData.accessToken}`,
       },
       body: formData.toString(),
     })
@@ -396,14 +394,23 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     )
   } catch (error) {
-    logger.error(`[${requestId}] Unexpected error in Slack search.all`, {
-      error,
-    })
+    if (error instanceof z.ZodError) {
+      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid request data',
+          details: error.errors,
+        },
+        { status: 400 }
+      )
+    }
 
+    logger.error(`[${requestId}] Error in Slack search.all`, error)
     return NextResponse.json(
       {
         success: false,
-        error: 'Internal server error while searching Slack',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
       },
       { status: 500 }
     )
