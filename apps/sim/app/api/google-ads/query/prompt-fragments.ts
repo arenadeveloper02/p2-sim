@@ -475,7 +475,7 @@ const extensionsFragment: FragmentBuilder = () =>
 - campaign.advertising_channel_type MUST be in SELECT (4th field after campaign.status)
 - Do NOT add campaign.advertising_channel_type filter in WHERE unless user explicitly asks to exclude Performance Max
 - No date segments allowed (campaign_asset does not support segments.date)
-- Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
+oogleads/final-url- Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
 
 **BROKEN SITELINK DETECTION (When user asks to "analyze", "detect broken", or "identify issues"):**
 
