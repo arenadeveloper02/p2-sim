@@ -56,60 +56,13 @@ interface ArenaCommentInputProps {
 
 /**
  * Converts HTML with mentions to plain text for display
- * Preserves unresolved variables like <agent1.content> by extracting them before parsing
  */
 function htmlToDisplayText(html: string): string {
   if (!html) return ''
 
-  // Extract unresolved variables from the raw HTML string before parsing
-  // These look like <agent1.content> and need to be preserved
-  const variableMarkers = new Map<string, string>()
-  let markerIndex = 0
-  
-  // Pattern to find potential variable references in the HTML string
-  // We look for <word> or <word.word> patterns
-  const variablePattern = /<([a-zA-Z_][a-zA-Z0-9_.]*[a-zA-Z0-9_])>/g
-  let htmlWithMarkers = html
-  
-  // Find all potential variables and replace with markers
-  const matches: Array<{ match: string; index: number; varName: string }> = []
-  let match: RegExpExecArray | null
-  
-  // Reset regex
-  variablePattern.lastIndex = 0
-  
-  while ((match = variablePattern.exec(html)) !== null) {
-    const varName = match[1]
-    const matchIndex = match.index
-    
-    // Check if this looks like a variable (contains dot or is longer than typical HTML tags)
-    const isLikelyVariable = varName.includes('.') || varName.length > 3
-    
-    if (isLikelyVariable) {
-      // Check if it's not part of an HTML tag attribute
-      // Look at what comes after the match
-      const afterMatch = html.substring(matchIndex + match[0].length, matchIndex + match[0].length + 5)
-      const isInHtmlTag = /^\s*[>=]/.test(afterMatch)
-      
-      if (!isInHtmlTag) {
-        matches.push({ match: match[0], index: matchIndex, varName })
-      }
-    }
-  }
-  
-  // Replace matches in reverse order to preserve indices
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { match: fullMatch, index } = matches[i]
-    const marker = `__VAR_MARKER_${markerIndex++}__`
-    variableMarkers.set(marker, fullMatch)
-    htmlWithMarkers = htmlWithMarkers.substring(0, index) + 
-                      marker + 
-                      htmlWithMarkers.substring(index + fullMatch.length)
-  }
-
   // Create a temporary DOM element to parse HTML
   const temp = document.createElement('div')
-  temp.innerHTML = htmlWithMarkers
+  temp.innerHTML = html
 
   // Replace mention links with just the user name
   const mentions = temp.querySelectorAll('a.mention')
@@ -127,15 +80,7 @@ function htmlToDisplayText(html: string): string {
     }
   })
 
-  // Get the text content
-  let result = temp.textContent || temp.innerText || ''
-  
-  // Restore variable markers
-  variableMarkers.forEach((original, marker) => {
-    result = result.replace(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), original)
-  })
-
-  return result
+  return temp.textContent || temp.innerText || ''
 }
 
 /**
@@ -150,8 +95,6 @@ function escapeHtml(text: string): string {
 /**
  * Converts plain text with @mentions to HTML format
  * Handles user names with spaces by matching against the full user names
- * Only converts @mentions to HTML tags, preserves the rest of the text as-is
- * (including agent variables like <agent1.content>)
  */
 function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
   if (!text) return ''
@@ -170,16 +113,16 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
     while (searchIndex < line.length) {
       const atIndex = line.indexOf('@', searchIndex)
       if (atIndex === -1) {
-        // No more @ symbols, add remaining text as-is (don't escape to preserve agent variables)
+        // No more @ symbols, add remaining text
         if (lastIndex < line.length) {
-          parts.push(line.substring(lastIndex))
+          parts.push(escapeHtml(line.substring(lastIndex)))
         }
         break
       }
 
-      // Add text before the @ as-is (don't escape to preserve agent variables)
+      // Add text before the @
       if (atIndex > lastIndex) {
-        parts.push(line.substring(lastIndex, atIndex))
+        parts.push(escapeHtml(line.substring(lastIndex, atIndex)))
       }
 
       // Try to match user names starting from this @ position
@@ -196,8 +139,7 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
             endIndex === line.length || /\s/.test(nextChar) || /[.,;:!?]/.test(nextChar)
 
           if (isEndOfMention) {
-            // Found a match! Convert only the mention to HTML tag
-            // Escape the user name for safety in HTML attributes and content
+            // Found a match!
             parts.push(
               `<a class="mention" data-mention="@${escapeHtml(user.name)}" data-user-id="${user.sysId}">@${escapeHtml(user.name)}</a>`
             )
@@ -210,10 +152,10 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
       }
 
       if (!matched) {
-        // No match found, keep the @ and following text as-is (don't escape)
+        // No match found, keep the @ as plain text and continue
         const nextAt = line.indexOf('@', atIndex + 1)
         const endIndex = nextAt === -1 ? line.length : nextAt
-        parts.push(line.substring(atIndex, endIndex))
+        parts.push(escapeHtml(line.substring(atIndex, endIndex)))
         lastIndex = endIndex
         searchIndex = endIndex
       }
@@ -222,7 +164,6 @@ function textToHtml(text: string, mentions: Map<string, ArenaUser>): string {
     return parts.join('')
   })
 
-  // Wrap each line in <p> tags, but preserve empty lines as &nbsp;
   return htmlLines.map((line) => `<p>${line || '&nbsp;'}</p>`).join('')
 }
 
@@ -342,11 +283,10 @@ export function ArenaCommentInput({
 
       // Only update if the value has actually changed
       if (baseValueString !== htmlContent && baseValueString !== '') {
-        // Check if it's HTML (contains HTML tags like <p>, <a>, etc.)
+        // Check if it's HTML (contains mention tags) or plain text
         const isHtml =
           baseValueString.includes('<a class="mention"') ||
-          baseValueString.includes("class='mention'") ||
-          (baseValueString.includes('<p>') && baseValueString.includes('</p>'))
+          baseValueString.includes("class='mention'")
 
         if (isHtml) {
           // It's HTML, store it as-is and convert to display text
@@ -463,34 +403,24 @@ export function ArenaCommentInput({
         persistSubBlockValueRef.current(newHtml)
       }
 
-      // Check for @ mention, but only if we're not in a tag reference context
+      // Check for @ mention
       const cursorPos = e.target.selectionStart ?? newDisplayText.length
       const textBeforeCursor = newDisplayText.substring(0, cursorPos)
-      
-      // Check if we're in a tag reference context (unclosed < before cursor)
-      // If so, don't show mention menu to allow tag dropdown to work
-      const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
-      const lastCloseBracket = textBeforeCursor.lastIndexOf('>')
-      const isInTagContext = lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
-      
-      // Only check for @ mentions if we're not in a tag context
-      if (!isInTagContext) {
-        const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+      const lastAtIndex = textBeforeCursor.lastIndexOf('@')
 
-        if (lastAtIndex !== -1) {
-          const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
+      if (lastAtIndex !== -1) {
+        const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
 
-          // Check if we're in a mention (no space after @ and not already a complete mention)
-          const isInMention =
-            !textAfterAt.includes(' ') && !textAfterAt.includes('\n') && textAfterAt.length >= 0
+        // Check if we're in a mention (no space after @ and not already a complete mention)
+        const isInMention =
+          !textAfterAt.includes(' ') && !textAfterAt.includes('\n') && textAfterAt.length >= 0
 
-          if (isInMention) {
-            setMentionQuery(textAfterAt)
-            setMentionPosition(lastAtIndex)
-            setShowMentionMenu(true)
-            setSelectedMentionIndex(0)
-            return
-          }
+        if (isInMention) {
+          setMentionQuery(textAfterAt)
+          setMentionPosition(lastAtIndex)
+          setShowMentionMenu(true)
+          setSelectedMentionIndex(0)
+          return
         }
       }
 
@@ -744,32 +674,8 @@ export function ArenaCommentInput({
         blockId={blockId}
         subBlockId={subBlockId}
         config={config}
-        value={displayText}
-        onChange={(newDisplayText: string) => {
-          // Update displayText when tag is selected or value changes
-          setDisplayText(newDisplayText)
-          
-          // Convert display text to HTML (only if we have users loaded)
-          const newHtml =
-            mentionsMap.current.size > 0
-              ? textToHtml(newDisplayText, mentionsMap.current)
-              : newDisplayText
-                  .split('\n')
-                  .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-                  .join('')
-          setHtmlContent(newHtml)
-          setLocalContent(newHtml)
-
-          // Update the actual value (HTML)
-          if (!isPreview && !disabled) {
-            persistSubBlockValueRef.current(newHtml)
-          }
-          
-          // Call prop onChange if provided
-          if (onChange) {
-            onChange(newDisplayText)
-          }
-        }}
+        value={propValue}
+        onChange={onChange}
         isPreview={isPreview}
         disabled={disabled}
         isStreaming={wandHook.isStreaming}
@@ -787,11 +693,8 @@ export function ArenaCommentInput({
           }
 
           const combinedOnChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-            // Call controller's onChange first so it can detect tag triggers with the correct value
-            // The controller needs to see the displayText to detect < triggers
-            handleChange?.(e as any)
-            // Then handle our mention logic
             handleTextChange(e)
+            handleChange?.(e as any)
           }
 
           return (
