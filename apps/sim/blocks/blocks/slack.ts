@@ -239,7 +239,48 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'limit',
       title: 'Message Limit',
       type: 'short-input',
-      placeholder: '15',
+      placeholder: '50',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'fromDate',
+      title: 'From Date',
+      type: 'date-input',
+      placeholder: 'Select from date',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'toDate',
+      title: 'To Date',
+      type: 'date-input',
+      placeholder: 'Select to date',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'cursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous response',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'autoPaginate',
+      title: 'Auto-Paginate',
+      type: 'switch',
+      description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+      defaultValue: false,
       condition: {
         field: 'operation',
         value: 'read',
@@ -470,6 +511,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           content,
           limit,
           oldest,
+          fromDate,
+          toDate,
+          cursor,
+          autoPaginate,
           attachmentFiles,
           files,
           threadTs,
@@ -552,13 +597,34 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
 
           case 'read': {
             const parsedLimit = limit ? Number.parseInt(limit, 10) : 10
-            if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 15) {
-              throw new Error('Message limit must be between 1 and 15')
+            if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+              throw new Error('Message limit must be between 1 and 200')
             }
             baseParams.limit = parsedLimit
-            if (oldest) {
+
+            // Handle date conversion to timestamps
+            if (fromDate) {
+              const fromTimestamp = Math.floor(new Date(fromDate).getTime() / 1000).toString()
+              baseParams.oldest = fromTimestamp
+            } else if (oldest) {
               baseParams.oldest = oldest
             }
+
+            if (toDate) {
+              const toTimestamp = Math.floor(new Date(toDate).getTime() / 1000).toString()
+              baseParams.latest = toTimestamp
+            }
+
+            console.log(`[Slack Block] cursor value: "${cursor}", type: ${typeof cursor}`)
+            if (cursor) {
+              baseParams.cursor = cursor
+              console.log(`[Slack Block] Setting baseParams.cursor to: "${cursor}"`)
+            } else {
+              console.log(`[Slack Block] No cursor value, not setting baseParams.cursor`)
+            }
+
+            baseParams.autoPaginate = autoPaginate
+
             break
           }
 
@@ -643,6 +709,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },
     oldest: { type: 'string', description: 'Oldest timestamp' },
+    fromDate: { type: 'string', description: 'From date (YYYY-MM-DD)' },
+    toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
+    cursor: { type: 'string', description: 'Pagination cursor from previous response' },
+    autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
     // Update/Delete/React operation inputs
@@ -690,6 +760,50 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'json',
       description:
         'Array of message objects with comprehensive properties: text, user, timestamp, reactions, threads, files, attachments, blocks, stars, pins, and edit history',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    nextCursor: {
+      type: 'string',
+      description: 'Pagination cursor for next page of results',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    hasMore: {
+      type: 'boolean',
+      description: 'Whether there are more messages available for pagination',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    totalPages: {
+      type: 'number',
+      description: 'Total number of pages fetched (when auto-pagination is enabled)',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    totalMessages: {
+      type: 'number',
+      description: 'Total number of messages collected (when auto-pagination is enabled)',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    paginationInfo: {
+      type: 'json',
+      description: 'Pagination metadata including continuation cursor if limits were reached',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
     },
 
     // slack_list_channels outputs (list_channels operation)

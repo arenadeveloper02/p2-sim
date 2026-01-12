@@ -10,6 +10,7 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
+  DateInput,
   DocumentSelector,
   DocumentTagEntry,
   Dropdown,
@@ -556,6 +557,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
+            value={config.defaultValue as boolean}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -626,6 +628,18 @@ function SubBlockComponent({
       case 'time-input':
         return (
           <TimeInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isPreview={isPreview}
+            previewValue={previewValue as any}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'date-input':
+        return (
+          <DateInput
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}

@@ -429,6 +429,7 @@ describe('Blocks Module', () => {
         'condition-input',
         'eval-input',
         'time-input',
+        'date-input',
         'oauth-input',
         'webhook-config',
         'schedule-info',

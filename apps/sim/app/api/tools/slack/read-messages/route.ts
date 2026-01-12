@@ -17,11 +17,15 @@ const SlackReadMessagesSchema = z
     limit: z.coerce
       .number()
       .min(1, 'Limit must be at least 1')
-      .max(15, 'Limit cannot exceed 15')
+      .max(200, 'Limit cannot exceed 200')
       .optional()
       .nullable(),
     oldest: z.string().optional().nullable(),
     latest: z.string().optional().nullable(),
+    fromDate: z.string().optional().nullable(),
+    toDate: z.string().optional().nullable(),
+    cursor: z.string().optional().nullable(),
+    autoPaginate: z.boolean().optional().default(false),
   })
   .refine((data) => data.channel || data.userId, {
     message: 'Either channel or userId is required',
@@ -52,7 +56,10 @@ export async function POST(request: NextRequest) {
     )
 
     const body = await request.json()
+    logger.info(`[${requestId}] Raw request body: ${JSON.stringify(body)}`)
+    logger.info(`[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}`)
     const validatedData = SlackReadMessagesSchema.parse(body)
+    logger.info(`[${requestId}] Validated data: ${JSON.stringify({...validatedData, accessToken: '[REDACTED]'})}`)
 
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
@@ -70,18 +77,213 @@ export async function POST(request: NextRequest) {
     const limit = validatedData.limit ?? 10
     url.searchParams.append('limit', String(limit))
 
-    if (validatedData.oldest) {
-      url.searchParams.append('oldest', validatedData.oldest)
+    // Convert dates to timestamps if provided
+    let oldestTimestamp = validatedData.oldest
+    let latestTimestamp = validatedData.latest
+
+    if (oldestTimestamp && !validatedData.fromDate) {
+      logger.info(`[${requestId}] Received oldest timestamp: ${oldestTimestamp}`)
     }
-    if (validatedData.latest) {
-      url.searchParams.append('latest', validatedData.latest)
+    if (latestTimestamp && !validatedData.toDate) {
+      logger.info(`[${requestId}] Received latest timestamp: ${latestTimestamp}`)
     }
+
+    if (validatedData.fromDate) {
+      try {
+        const fromDate = new Date(validatedData.fromDate)
+        if (isNaN(fromDate.getTime())) {
+          throw new Error('Invalid from date format')
+        }
+        oldestTimestamp = Math.floor(fromDate.getTime() / 1000).toString()
+        logger.info(`[${requestId}] Converted fromDate "${validatedData.fromDate}" -> timestamp "${oldestTimestamp}" (${fromDate.toISOString()})`)
+      } catch (error) {
+        throw new Error('Invalid from date format. Use YYYY-MM-DD format.')
+      }
+    }
+
+    if (validatedData.toDate) {
+      try {
+        const toDate = new Date(validatedData.toDate)
+        if (isNaN(toDate.getTime())) {
+          throw new Error('Invalid to date format')
+        }
+        latestTimestamp = Math.floor(toDate.getTime() / 1000).toString()
+        logger.info(`[${requestId}] Converted toDate "${validatedData.toDate}" -> timestamp "${latestTimestamp}" (${toDate.toISOString()})`)
+      } catch (error) {
+        throw new Error('Invalid to date format. Use YYYY-MM-DD format.')
+      }
+    }
+
+    if (oldestTimestamp) {
+      url.searchParams.append('oldest', oldestTimestamp)
+    }
+    if (latestTimestamp) {
+      url.searchParams.append('latest', latestTimestamp)
+    }
+    if (validatedData.cursor) {
+      url.searchParams.append('cursor', validatedData.cursor)
+    }
+
+    const autoPaginate = validatedData.autoPaginate || false
+    const maxPages = 10 // Safety limit: maximum 10 pages
+    const maxTotalMessages = 1000 // Safety limit: maximum 1000 messages
 
     logger.info(`[${requestId}] Reading Slack messages`, {
       channel,
       limit,
+      autoPaginate,
+      autoPaginateType: typeof autoPaginate,
+      validatedAutoPaginate: validatedData.autoPaginate,
+      hasCursor: !!validatedData.cursor,
+      cursor: validatedData.cursor?.substring(0, 20) + '...',
     })
 
+    let allMessages: any[] = []
+    let currentCursor = validatedData.cursor
+    let pagesFetched = 0
+    let hasMore = true
+    let finalNextCursor: string | null = null
+
+    // If auto-paginate is enabled, fetch all pages starting from cursor (or beginning)
+    if (autoPaginate) {
+      logger.info(`[${requestId}] 🚀 AUTO-PAGINATION ENABLED - Starting multi-page fetch`)
+      logger.info(`[${requestId}] Initial state: cursor=${currentCursor}, hasMore=${hasMore}, pagesFetched=${pagesFetched}`)
+
+      while (hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages) {
+        pagesFetched++ // Increment at start of loop
+
+        const pageUrl = new URL('https://slack.com/api/conversations.history')
+        pageUrl.searchParams.append('channel', channel!)
+
+        // Use the same date filters for all pages
+        if (oldestTimestamp) {
+          pageUrl.searchParams.append('oldest', oldestTimestamp)
+        }
+        if (latestTimestamp) {
+          pageUrl.searchParams.append('latest', latestTimestamp)
+        }
+
+        // Use per-page limit (smaller for pagination)
+        const perPageLimit = Math.min(limit || 50, 100) // Max 100 per page for efficiency
+        pageUrl.searchParams.append('limit', String(perPageLimit))
+
+        if (currentCursor) {
+          pageUrl.searchParams.append('cursor', currentCursor)
+        }
+
+        logger.info(`[${requestId}] Fetching page ${pagesFetched} with cursor: ${currentCursor || 'none'}`)
+        logger.info(`[${requestId}] Page URL: ${pageUrl.toString()}`)
+
+        const slackResponse = await fetch(pageUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${validatedData.accessToken}`,
+          },
+        })
+
+        const data = await slackResponse.json()
+
+        if (!data.ok) {
+          logger.error(`[${requestId}] Slack API error on page ${pagesFetched}:`, data)
+          break // Stop pagination on error
+        }
+
+        logger.info(`[${requestId}] Page ${pagesFetched} response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`)
+
+        const pageMessages = (data.messages || []).map((message: any) => ({
+          type: message.type || 'message',
+          ts: message.ts,
+          text: message.text || '',
+          user: message.user,
+          bot_id: message.bot_id,
+          username: message.username,
+          channel: message.channel,
+          team: message.team,
+          thread_ts: message.thread_ts,
+          parent_user_id: message.parent_user_id,
+          reply_count: message.reply_count,
+          reply_users_count: message.reply_users_count,
+          latest_reply: message.latest_reply,
+          subscribed: message.subscribed,
+          last_read: message.last_read,
+          unread_count: message.unread_count,
+          subtype: message.subtype,
+          reactions: message.reactions?.map((reaction: any) => ({
+            name: reaction.name,
+            count: reaction.count,
+            users: reaction.users || [],
+          })),
+          is_starred: message.is_starred,
+          pinned_to: message.pinned_to,
+          files: message.files?.map((file: any) => ({
+            id: file.id,
+            name: file.name,
+            mimetype: file.mimetype,
+            size: file.size,
+            url_private: file.url_private,
+            permalink: file.permalink,
+            mode: file.mode,
+          })),
+          attachments: message.attachments,
+          blocks: message.blocks,
+          edited: message.edited
+            ? {
+                user: message.edited.user,
+                ts: message.edited.ts,
+              }
+            : undefined,
+          permalink: message.permalink,
+        }))
+
+        logger.info(`[${requestId}] Page ${pagesFetched}: got ${pageMessages.length} messages`)
+        allMessages.push(...pageMessages)
+
+        // Check if we've reached the message limit
+        if (allMessages.length >= maxTotalMessages) {
+          logger.warn(`[${requestId}] Reached maximum message limit (${maxTotalMessages})`)
+          hasMore = false
+          break
+        }
+
+        // Update cursor for next page
+        currentCursor = data.response_metadata?.next_cursor
+        hasMore = data.has_more && !!currentCursor
+        finalNextCursor = currentCursor || null
+
+        logger.info(`[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages}`)
+
+        // Add small delay between requests to avoid rate limits
+        if (hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        } else {
+          logger.info(`[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}/${maxPages}, messages=${allMessages.length}/${maxTotalMessages}`)
+        }
+      }
+
+      logger.info(`[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages, finalHasMore=${hasMore}`)
+
+      return NextResponse.json({
+        success: true,
+        output: {
+          messages: allMessages,
+          nextCursor: finalNextCursor, // Always include for block chaining
+          hasMore: !!finalNextCursor, // Whether there are more messages available
+          totalPages: pagesFetched,
+          totalMessages: allMessages.length,
+          paginationInfo: {
+            autoPaginated: true,
+            mode: 'auto-pagination',
+            maxPagesReached: pagesFetched >= maxPages,
+            maxMessagesReached: allMessages.length >= maxTotalMessages,
+          },
+        },
+      })
+    }
+
+    // Original single-page logic (auto-pagination disabled)
+    logger.info(`[${requestId}] SINGLE-PAGE FETCH - Auto-pagination disabled, cursor: ${validatedData.cursor}`)
+    logger.info(`[${requestId}] Request URL: ${url.toString()}`)
     const slackResponse = await fetch(url.toString(), {
       method: 'GET',
       headers: {
@@ -91,6 +293,8 @@ export async function POST(request: NextRequest) {
     })
 
     const data = await slackResponse.json()
+
+    logger.info(`[${requestId}] Single-page response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`)
 
     if (!data.ok) {
       logger.error(`[${requestId}] Slack API error:`, data)
@@ -185,6 +389,12 @@ export async function POST(request: NextRequest) {
       success: true,
       output: {
         messages,
+        nextCursor: data.response_metadata?.next_cursor || null,
+        hasMore: data.has_more || false,
+        paginationInfo: {
+          mode: 'single-page',
+          autoPaginated: false,
+        },
       },
     })
   } catch (error) {

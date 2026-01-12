@@ -51,7 +51,7 @@ export const slackMessageReaderTool: ToolConfig<
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of messages to retrieve (default: 10, max: 15)',
+      description: 'Number of messages to retrieve (default: 10, max: 200)',
     },
     oldest: {
       type: 'string',
