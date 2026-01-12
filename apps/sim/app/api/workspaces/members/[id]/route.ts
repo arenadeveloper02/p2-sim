@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { permissions, userKnowledgeBase, workspace } from '@sim/db/schema'
+import { permissions, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -101,26 +101,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         )
       )
 
-    // Soft delete all user_knowledge_base entries for this user in this workspace
-    const now = new Date()
-    const deletedEntries = await db
-      .update(userKnowledgeBase)
-      .set({
-        deletedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(userKnowledgeBase.userIdRef, userId),
-          eq(userKnowledgeBase.userWorkspaceIdRef, workspaceId),
-          isNull(userKnowledgeBase.deletedAt)
-        )
-      )
-      .returning({ id: userKnowledgeBase.id })
-
-    logger.info(
-      `Removed user ${userId} from workspace ${workspaceId} and soft deleted ${deletedEntries.length} user_knowledge_base entries`
-    )
+    logger.info(`Removed user ${userId} from workspace ${workspaceId}`)
 
     return NextResponse.json({ success: true })
   } catch (error) {

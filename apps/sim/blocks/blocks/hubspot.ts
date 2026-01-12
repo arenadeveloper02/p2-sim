@@ -5,6 +5,15 @@ import type { HubSpotResponse } from '@/tools/hubspot/types'
 import { getTrigger } from '@/triggers'
 import { hubspotAllTriggerOptions } from '@/triggers/hubspot/utils'
 
+// Cache to prevent multiple API calls for the same credential
+const campaignCache = new Map<
+  string,
+  { data: Array<{ label: string; id: string }>; timestamp: number }
+>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+// Track in-flight requests to deduplicate concurrent calls
+const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; id: string }>>>()
+
 export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
   type: 'hubspot',
   name: 'HubSpot',
@@ -41,6 +50,9 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Campaign Budget Totals', id: 'get_campaign_budget_totals' },
         { label: 'Get Campaign Budget Item', id: 'get_campaign_budget_item' },
         { label: 'Get Campaign Assets', id: 'get_campaign_assets' },
+        { label: 'Get Email Statistics Histogram', id: 'get_email_statistics_histogram' },
+        // { label: 'Get Email', id: 'get_email' },
+        { label: 'Marketing Emails', id: 'list_emails' },
       ],
       value: () => 'get_contacts',
     },
@@ -225,21 +237,227 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
     },
     {
       id: 'campaignGuid',
-      title: 'Campaign GUID',
-      type: 'short-input',
-      placeholder: 'Required for campaign operations (except listing)',
+      title: 'Campaign',
+      type: 'dropdown',
+      placeholder: 'Select a campaign...',
+      options: [], // Fallback empty array to prevent undefined errors
+      dependsOn: ['credential'],
+      multiSelect: false,
       condition: {
         field: 'operation',
         value: [
           'get_campaign',
-          'get_campaign_spend',
-          'get_campaign_metrics',
-          'get_campaign_revenue',
           'get_campaign_contacts',
           'get_campaign_budget_totals',
           'get_campaign_budget_item',
           'get_campaign_assets',
         ],
+      },
+      fetchOptions: async (blockId: string): Promise<Array<{ label: string; id: string }>> => {
+        try {
+          const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+
+          const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+          if (!activeWorkflowId) {
+            return []
+          }
+
+          const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+          const blockValues = workflowValues?.[blockId]
+          const credentialId = blockValues?.credential as string
+
+          if (!credentialId) {
+            return []
+          }
+
+          // Check cache first
+          const cached = campaignCache.get(credentialId)
+          const now = Date.now()
+          if (cached && now - cached.timestamp < CACHE_TTL) {
+            return cached.data
+          }
+
+          // Check if there's already a request in flight for this credential
+          const inFlightRequest = campaignInFlightRequests.get(credentialId)
+          if (inFlightRequest) {
+            return inFlightRequest
+          }
+
+          // Create a new request and track it
+          const requestPromise = (async () => {
+            try {
+              // Fetch campaigns from server-side API which uses fetchHubSpotCampaigns internally
+              // This avoids CORS issues since the API call happens on the server
+              const response = await fetch(
+                `/api/auth/oauth/hubspot/campaigns?credentialId=${encodeURIComponent(credentialId)}&limit=100`
+              )
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}))
+                throw new Error(
+                  (errorData as { error?: string }).error ||
+                    'Failed to fetch campaigns from HubSpot'
+                )
+              }
+
+              const data = await response.json()
+              // The API route uses fetchHubSpotCampaigns internally and returns the campaigns
+              const options = (data.campaigns || []) as Array<{ label: string; id: string }>
+
+              // Cache the results
+              campaignCache.set(credentialId, { data: options, timestamp: now })
+
+              return options
+            } catch (error) {
+              // Try to return cached data on error
+              if (cached) {
+                return cached.data
+              }
+              return []
+            } finally {
+              // Remove from in-flight requests when done
+              campaignInFlightRequests.delete(credentialId)
+            }
+          })()
+
+          // Store the in-flight request
+          campaignInFlightRequests.set(credentialId, requestPromise)
+
+          return requestPromise
+        } catch (error) {
+          // Try to return cached data on error
+          try {
+            const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+            const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+            const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+            if (activeWorkflowId) {
+              const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+              const blockValues = workflowValues?.[blockId]
+              const credentialId = blockValues?.credential as string
+              if (credentialId) {
+                const cached = campaignCache.get(credentialId)
+                if (cached) {
+                  return cached.data
+                }
+              }
+            }
+          } catch {
+            // Ignore errors in error handler
+          }
+          // Always return an array, even on error
+          return []
+        }
+      },
+    },
+    {
+      id: 'campaignGuid',
+      title: 'Campaigns',
+      type: 'dropdown',
+      placeholder: 'Select campaigns...',
+      options: [], // Fallback empty array to prevent undefined errors
+      dependsOn: ['credential'],
+      multiSelect: true,
+      selectAllOption: true,
+      condition: {
+        field: 'operation',
+        value: ['get_campaign_metrics', 'get_campaign_revenue', 'get_campaign_spend'],
+      },
+      fetchOptions: async (blockId: string): Promise<Array<{ label: string; id: string }>> => {
+        try {
+          const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+
+          const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+          if (!activeWorkflowId) {
+            return []
+          }
+
+          const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+          const blockValues = workflowValues?.[blockId]
+          const credentialId = blockValues?.credential as string
+
+          if (!credentialId) {
+            return []
+          }
+
+          // Check cache first
+          const cached = campaignCache.get(credentialId)
+          const now = Date.now()
+          if (cached && now - cached.timestamp < CACHE_TTL) {
+            return cached.data
+          }
+
+          // Check if there's already a request in flight for this credential
+          const inFlightRequest = campaignInFlightRequests.get(credentialId)
+          if (inFlightRequest) {
+            return inFlightRequest
+          }
+
+          // Create a new request and track it
+          const requestPromise = (async () => {
+            try {
+              // Fetch campaigns from server-side API which uses fetchHubSpotCampaigns internally
+              // This avoids CORS issues since the API call happens on the server
+              const response = await fetch(
+                `/api/auth/oauth/hubspot/campaigns?credentialId=${encodeURIComponent(credentialId)}&limit=100`
+              )
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}))
+                throw new Error(
+                  (errorData as { error?: string }).error ||
+                    'Failed to fetch campaigns from HubSpot'
+                )
+              }
+
+              const data = await response.json()
+              // The API route uses fetchHubSpotCampaigns internally and returns the campaigns
+              const options = (data.campaigns || []) as Array<{ label: string; id: string }>
+
+              // Cache the results
+              campaignCache.set(credentialId, { data: options, timestamp: now })
+
+              return options
+            } catch (error) {
+              // Try to return cached data on error
+              if (cached) {
+                return cached.data
+              }
+              return []
+            } finally {
+              // Remove from in-flight requests when done
+              campaignInFlightRequests.delete(credentialId)
+            }
+          })()
+
+          // Store the in-flight request
+          campaignInFlightRequests.set(credentialId, requestPromise)
+
+          return requestPromise
+        } catch (error) {
+          // Try to return cached data on error
+          try {
+            const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+            const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+            const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+            if (activeWorkflowId) {
+              const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+              const blockValues = workflowValues?.[blockId]
+              const credentialId = blockValues?.credential as string
+              if (credentialId) {
+                const cached = campaignCache.get(credentialId)
+                if (cached) {
+                  return cached.data
+                }
+              }
+            }
+          } catch {
+            // Ignore errors in error handler
+          }
+          // Always return an array, even on error
+          return []
+        }
       },
     },
     {
@@ -266,9 +484,159 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
     {
       id: 'assetType',
       title: 'Asset Type',
-      type: 'short-input',
-      placeholder: 'Asset type to list (e.g., emails, pages)',
+      type: 'dropdown',
+      options: [
+        { label: 'Ad Campaign', id: 'AD_CAMPAIGN' },
+        { label: 'Automation Platform Flow', id: 'AUTOMATION_PLATFORM_FLOW' },
+        { label: 'Blog Post', id: 'BLOG_POST' },
+        { label: 'Social Broadcast', id: 'SOCIAL_BROADCAST' },
+        { label: 'Web Interactive', id: 'WEB_INTERACTIVE' },
+        { label: 'CTA', id: 'CTA' },
+        { label: 'External Web URL', id: 'EXTERNAL_WEB_URL' },
+        { label: 'Form', id: 'FORM' },
+        { label: 'Landing Page', id: 'LANDING_PAGE' },
+        { label: 'Marketing Email', id: 'MARKETING_EMAIL' },
+        { label: 'Marketing Event', id: 'MARKETING_EVENT' },
+        { label: 'Marketing SMS', id: 'MARKETING_SMS' },
+        { label: 'Object List', id: 'OBJECT_LIST' },
+        { label: 'Site Page', id: 'SITE_PAGE' },
+        { label: 'Sequence', id: 'SEQUENCE' },
+        { label: 'Feedback Survey', id: 'FEEDBACK_SURVEY' },
+        { label: 'Meeting Event', id: 'MEETING_EVENT' },
+        { label: 'Email', id: 'EMAIL' },
+        { label: 'Call', id: 'CALL' },
+        { label: 'Playbook', id: 'PLAYBOOK' },
+        { label: 'Sales Document', id: 'SALES_DOCUMENT' },
+        { label: 'Podcast Episode', id: 'PODCAST_EPISODE' },
+        { label: 'Case Study', id: 'CASE_STUDY' },
+        { label: 'Knowledge Article', id: 'KNOWLEDGE_ARTICLE' },
+      ],
       condition: { field: 'operation', value: ['get_campaign_assets'] },
+      required: true,
+    },
+    {
+      id: 'interval',
+      title: 'Interval',
+      type: 'dropdown',
+      options: [
+        { label: 'Day', id: 'DAY' },
+        { label: 'Hour', id: 'HOUR' },
+        { label: 'Minute', id: 'MINUTE' },
+        { label: 'Month', id: 'MONTH' },
+        { label: 'Quarter', id: 'QUARTER' },
+        { label: 'Quarter Hour', id: 'QUARTER_HOUR' },
+        { label: 'Second', id: 'SECOND' },
+        { label: 'Week', id: 'WEEK' },
+        { label: 'Year', id: 'YEAR' },
+      ],
+      value: () => 'DAY',
+      condition: { field: 'operation', value: ['get_email_statistics_histogram'] },
+      required: true,
+    },
+    {
+      id: 'emailIds',
+      title: 'Email IDs',
+      type: 'short-input',
+      placeholder: 'Comma-separated email IDs (numbers only, e.g., 1,2,3)',
+      condition: { field: 'operation', value: ['get_email_statistics_histogram'] },
+    },
+    {
+      id: 'startTimestamp',
+      title: 'Start Timestamp',
+      type: 'short-input',
+      placeholder: 'Start timestamp in ISO8601 format (e.g., 2024-01-01T00:00:00Z)',
+      condition: { field: 'operation', value: ['get_email_statistics_histogram'] },
+    },
+    {
+      id: 'endTimestamp',
+      title: 'End Timestamp',
+      type: 'short-input',
+      placeholder: 'End timestamp in ISO8601 format (e.g., 2024-12-31T23:59:59Z)',
+      condition: { field: 'operation', value: ['get_email_statistics_histogram'] },
+    },
+    {
+      id: 'emailId',
+      title: 'Email ID',
+      type: 'short-input',
+      placeholder: 'Email ID (e.g., 282331989693)',
+      condition: { field: 'operation', value: ['get_email'] },
+      required: true,
+    },
+    {
+      id: 'archived',
+      title: 'Archived',
+      type: 'dropdown',
+      options: [
+        { label: 'False', id: 'false' },
+        { label: 'True', id: 'true' },
+      ],
+      value: () => 'true',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'createdAfter',
+      title: 'Created After',
+      type: 'short-input',
+      placeholder: 'ISO8601 date (e.g., 2025-12-01)',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'createdBefore',
+      title: 'Created Before',
+      type: 'short-input',
+      placeholder: 'ISO8601 date (e.g., 2025-12-31)',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'workflowNames',
+      title: 'Include Workflow Names',
+      type: 'dropdown',
+      options: [
+        { label: 'False', id: 'false' },
+        { label: 'True', id: 'true' },
+      ],
+      value: () => 'true',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'includeStats',
+      title: 'Include Stats',
+      type: 'dropdown',
+      options: [
+        { label: 'False', id: 'false' },
+        { label: 'True', id: 'true' },
+      ],
+      value: () => 'true',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'isPublished',
+      title: 'Is Published',
+      type: 'dropdown',
+      options: [
+        { label: 'False', id: 'false' },
+        { label: 'True', id: 'true' },
+      ],
+      value: () => 'true',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'limit',
+      title: 'Limit',
+      type: 'short-input',
+      placeholder: 'Maximum results (default: 10)',
+      condition: { field: 'operation', value: ['list_emails'] },
+    },
+    {
+      id: 'marketingCampaignNames',
+      title: 'Include Marketing Campaign Names',
+      type: 'dropdown',
+      options: [
+        { label: 'False', id: 'false' },
+        { label: 'True', id: 'true' },
+      ],
+      value: () => 'true',
+      condition: { field: 'operation', value: ['list_emails'] },
     },
     {
       id: 'idProperty',
@@ -978,6 +1346,9 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_get_campaign_budget_totals',
       'hubspot_get_campaign_budget_item',
       'hubspot_get_campaign_assets',
+      'hubspot_get_email_statistics_histogram',
+      'hubspot_get_email',
+      'hubspot_list_emails',
     ],
     config: {
       tool: (params) => {
@@ -1020,6 +1391,12 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_get_campaign_budget_item'
           case 'get_campaign_assets':
             return 'hubspot_get_campaign_assets'
+          case 'get_email_statistics_histogram':
+            return 'hubspot_get_email_statistics_histogram'
+          case 'get_email':
+            return 'hubspot_get_email'
+          case 'list_emails':
+            return 'hubspot_list_emails'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -1083,7 +1460,18 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         ]
         Object.entries(rest).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '' && !excludeKeys.includes(key)) {
-            cleanParams[key] = value
+            // Handle multi-select campaignGuid for get_campaign_metrics, get_campaign_revenue, and get_campaign_spend
+            if (
+              key === 'campaignGuid' &&
+              (operation === 'get_campaign_metrics' ||
+                operation === 'get_campaign_revenue' ||
+                operation === 'get_campaign_spend') &&
+              Array.isArray(value)
+            ) {
+              cleanParams[key] = value
+            } else {
+              cleanParams[key] = value
+            }
           }
         })
 
@@ -1096,11 +1484,53 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     credential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
-    campaignGuid: { type: 'string', description: 'Campaign GUID for marketing operations' },
+    campaignGuid: {
+      type: 'string',
+      description:
+        'Campaign GUID for marketing operations (or array for get_campaign_metrics, get_campaign_revenue, get_campaign_spend)',
+    },
     spendId: { type: 'string', description: 'Spend ID for campaign spend retrieval' },
     budgetId: { type: 'string', description: 'Budget ID for campaign budget retrieval' },
     contactType: { type: 'string', description: 'Contact type for campaign reports' },
     assetType: { type: 'string', description: 'Asset type for campaign assets' },
+    interval: {
+      type: 'string',
+      description:
+        'Interval for email statistics histogram (DAY, HOUR, MINUTE, MONTH, QUARTER, QUARTER_HOUR, SECOND, WEEK, YEAR)',
+    },
+    emailIds: { type: 'string', description: 'Comma-separated list of email IDs (numbers only)' },
+    emailId: { type: 'string', description: 'Email ID to retrieve' },
+    archived: {
+      type: 'string',
+      description: 'Specifies whether to return archived emails (true/false)',
+    },
+    createdAfter: {
+      type: 'string',
+      description: 'Only return emails created after the specified time (ISO8601 format)',
+    },
+    createdBefore: {
+      type: 'string',
+      description: 'Only return emails created before the specified time (ISO8601 format)',
+    },
+    workflowNames: {
+      type: 'string',
+      description:
+        'Include the names of any workflows associated with the returned emails (true/false)',
+    },
+    includeStats: { type: 'string', description: 'Include statistics with emails (true/false)' },
+    isPublished: { type: 'string', description: 'Filter by published/draft emails (true/false)' },
+    marketingCampaignNames: {
+      type: 'string',
+      description: 'Include the names for any associated marketing campaigns (true/false)',
+    },
+    startTimestamp: {
+      type: 'string',
+      description: 'The start timestamp of the time span, in ISO8601 representation',
+    },
+    endTimestamp: {
+      type: 'string',
+      description: 'The end timestamp of the time span, in ISO8601 representation',
+    },
     idProperty: { type: 'string', description: 'Property name to use as unique identifier' },
     propertiesToSet: { type: 'json', description: 'Properties to create/update (JSON object)' },
     properties: {
@@ -1108,7 +1538,10 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       description: 'Comma-separated properties to return (for list/get)',
     },
     associations: { type: 'string', description: 'Comma-separated object types for associations' },
-    limit: { type: 'string', description: 'Maximum results (list: 100, search: 200)' },
+    limit: {
+      type: 'string',
+      description: 'Maximum results (list: 100, search: 200, emails: default 10)',
+    },
     after: { type: 'string', description: 'Pagination cursor' },
     query: { type: 'string', description: 'Search query string' },
     filterGroups: { type: 'json', description: 'Filter groups for search (JSON array)' },
@@ -1124,12 +1557,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     deals: { type: 'json', description: 'Array of deal objects' },
     campaigns: { type: 'json', description: 'Array of campaign objects' },
     campaign: { type: 'json', description: 'Single campaign object' },
-    spend: { type: 'json', description: 'Campaign spend item' },
-    metrics: { type: 'json', description: 'Campaign metrics' },
-    revenue: { type: 'json', description: 'Campaign revenue' },
+    spend: {
+      type: 'json',
+      description: 'Campaign spend item (single object or array of objects for multiple campaigns)',
+    },
+    metrics: {
+      type: 'json',
+      description: 'Campaign metrics (single object or array of objects for multiple campaigns)',
+    },
+    revenue: {
+      type: 'json',
+      description: 'Campaign revenue (single object or array of objects for multiple campaigns)',
+    },
     budgetTotals: { type: 'json', description: 'Campaign budget totals' },
     budgetItem: { type: 'json', description: 'Campaign budget item' },
     assets: { type: 'json', description: 'Campaign assets' },
+    histogram: { type: 'json', description: 'Email statistics histogram data' },
+    email: { type: 'json', description: 'Email object with all properties' },
+    emails: { type: 'json', description: 'Array of email objects' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },

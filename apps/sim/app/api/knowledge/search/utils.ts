@@ -550,7 +550,7 @@ export async function rerankSearchResults(
     return results
   }
 
-  const model = rerankConfig?.model || 'rerank-v3.5'
+  const model = rerankConfig?.model || 'rerank-v4.0-pro'
   const candidateCount = Math.min(results.length, 100)
   const topN = Math.min(rerankConfig?.topN ?? results.length, candidateCount)
 
