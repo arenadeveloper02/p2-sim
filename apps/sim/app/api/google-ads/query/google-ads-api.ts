@@ -79,64 +79,99 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     // Format customer ID (remove dashes if present)
     const formattedCustomerId = accountId.replace(/-/g, '')
 
-    // Make Google Ads API request
+    // Make Google Ads API request with pagination support
     const adsApiUrl = `https://googleads.googleapis.com/v19/customers/${formattedCustomerId}/googleAds:search`
 
-    const requestPayload = {
+    const baseRequestPayload = {
       query: gaqlQuery.trim(),
+      // Note: pageSize is NOT supported - Google Ads API uses fixed page size of 10000
     }
 
-    logger.info('Making Google Ads API request', {
+    logger.info('Making Google Ads API request with pagination', {
       url: adsApiUrl,
       customerId: formattedCustomerId,
       query: gaqlQuery.trim(),
       managerCustomerId: POSITION2_MANAGER,
+      note: 'Using Google Ads API default page size (10000)',
     })
 
-    const adsResponse = await fetch(adsApiUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'developer-token': developerToken,
-        'login-customer-id': POSITION2_MANAGER,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestPayload),
-    })
+    let allResults: any[] = []
+    let nextPageToken: string | undefined = undefined
+    let pageCount = 0
 
-    if (!adsResponse.ok) {
-      const errorText = await adsResponse.text()
-      logger.error('Google Ads API request failed', {
-        status: adsResponse.status,
-        error: errorText,
-        customerId: formattedCustomerId,
-        managerCustomerId: POSITION2_MANAGER,
+    // Fetch all pages
+    do {
+      pageCount++
+      const requestPayload: { query: string; pageToken?: string } = nextPageToken
+        ? { ...baseRequestPayload, pageToken: nextPageToken }
+        : baseRequestPayload
+
+      logger.info(`Fetching page ${pageCount}`, {
+        hasPageToken: !!nextPageToken,
       })
-      throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
-    }
 
-    const adsData = await adsResponse.json()
-    logger.info('Google Ads API request successful', {
-      resultsCount: adsData.results?.length || 0,
+      const adsResponse: Response = await fetch(adsApiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'developer-token': developerToken,
+          'login-customer-id': POSITION2_MANAGER,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestPayload),
+      })
+
+      if (!adsResponse.ok) {
+        const errorText = await adsResponse.text()
+        logger.error('Google Ads API request failed', {
+          status: adsResponse.status,
+          error: errorText,
+          customerId: formattedCustomerId,
+          managerCustomerId: POSITION2_MANAGER,
+          pageNumber: pageCount,
+        })
+        throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
+      }
+
+      const adsData: any = await adsResponse.json()
+
+      // Accumulate results from this page
+      if (adsData.results && Array.isArray(adsData.results)) {
+        allResults = allResults.concat(adsData.results)
+      }
+
+      // Get next page token
+      nextPageToken = adsData.nextPageToken
+
+      logger.info(`Page ${pageCount} fetched successfully`, {
+        pageResults: adsData.results?.length || 0,
+        totalResults: allResults.length,
+        hasMorePages: !!nextPageToken,
+      })
+    } while (nextPageToken) // Continue until no more pages
+
+    logger.info('All pages fetched successfully', {
+      totalPages: pageCount,
+      totalResults: allResults.length,
       customerId: formattedCustomerId,
-      responseKeys: Object.keys(adsData),
-      hasResults: !!adsData.results,
-      firstResultKeys: adsData.results?.[0] ? Object.keys(adsData.results[0]) : [],
     })
 
     // Log a sample of the response structure for debugging
-    if (adsData.results?.[0]) {
+    if (allResults[0]) {
       logger.debug('Sample Google Ads API response structure', {
         sampleResult: {
-          keys: Object.keys(adsData.results[0]),
-          campaign: adsData.results[0].campaign ? Object.keys(adsData.results[0].campaign) : null,
-          metrics: adsData.results[0].metrics ? Object.keys(adsData.results[0].metrics) : null,
-          segments: adsData.results[0].segments ? Object.keys(adsData.results[0].segments) : null,
+          keys: Object.keys(allResults[0]),
+          campaign: allResults[0].campaign ? Object.keys(allResults[0].campaign) : null,
+          metrics: allResults[0].metrics ? Object.keys(allResults[0].metrics) : null,
+          segments: allResults[0].segments ? Object.keys(allResults[0].segments) : null,
         },
       })
     }
 
-    return adsData
+    return {
+      results: allResults,
+      totalResultsCount: allResults.length,
+    }
   } catch (error) {
     logger.error('Error in Google Ads API request', {
       error: error instanceof Error ? error.message : 'Unknown error',

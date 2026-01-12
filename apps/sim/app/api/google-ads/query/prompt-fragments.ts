@@ -263,16 +263,16 @@ SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.se
 Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data
 
 **Search Terms - Added/None Status:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: search_term_view.status shows Added/None status: ADDED = added as keyword, NONE = not added, ADDED_EXCLUDED = added as negative keyword, EXCLUDED = excluded.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+Note: search_term_view.status shows Added/None status: ADDED = added as keyword, NONE = not added, ADDED_EXCLUDED = added as negative keyword, EXCLUDED = excluded. No LIMIT - pagination will fetch all results.
 
 **Search Terms - Only Added:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'ADDED' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: Shows only search terms that have been added as keywords.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'ADDED' ORDER BY metrics.cost_micros DESC
+Note: Shows only search terms that have been added as keywords. No LIMIT - pagination will fetch all results.
 
 **Search Terms - Only None (Not Added):**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'NONE' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: Shows search terms that have NOT been added as keywords - potential keyword opportunities.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'NONE' ORDER BY metrics.cost_micros DESC
+Note: Shows search terms that have NOT been added as keywords - potential keyword opportunities. No LIMIT - pagination will fetch all results.
 
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
