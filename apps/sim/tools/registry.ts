@@ -42,7 +42,7 @@ import {
   apolloTaskCreateTool,
   apolloTaskSearchTool,
 } from '@/tools/apollo'
-import { arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
+import { arenaAddComment, arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -1409,6 +1409,7 @@ export const tools: Record<string, ToolConfig> = {
   arena_create_task: arenaCreateTask,
   arena_search_task: arenaSearchTask,
   arena_save_summary: arenaSaveSummary,
+  arena_comments: arenaAddComment,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
