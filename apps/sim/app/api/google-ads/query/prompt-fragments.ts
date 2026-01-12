@@ -54,7 +54,7 @@ What I Added:
 ## RESOURCES & METRICS
 
 **RESOURCES:**
-- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
+- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.start_date, campaign.end_date)
 - ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
