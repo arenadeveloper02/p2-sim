@@ -62,7 +62,7 @@ What I Added:
 - campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
-- asset_group (asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign) + campaign.id + campaign.status required
+- asset_group (asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls) + campaign.id + campaign.status required
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
 - customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
 - gender_view (demographic performance by gender)
@@ -230,11 +230,11 @@ SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel
 Note: Use this when user asks for "last 30 days" or wants performance metrics with assets over longer period.
 
 **Asset Groups (Performance with Date Segments):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM asset_group WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM asset_group WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 Note: Use asset_group for performance analysis with metrics and date filtering. asset_group supports segments.date.
 
 **Asset Groups (Last 7 Days Performance):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM asset_group WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM asset_group WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
 Note: Shows asset group performance for last 7 days with metrics.
 
 **Asset Group Assets (NO DATE SEGMENTS):**
