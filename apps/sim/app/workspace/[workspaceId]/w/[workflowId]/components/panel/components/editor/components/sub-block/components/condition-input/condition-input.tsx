@@ -33,7 +33,7 @@ import {
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { createEnvVarPattern, createReferencePattern } from '@/executor/utils/reference-validation'
-import { useTagSelection } from '@/hooks/use-tag-selection'
+import { useTagSelection } from '@/hooks/kb/use-tag-selection'
 import { normalizeName } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -156,7 +156,7 @@ export function ConditionInput({
     [key: string]: number[]
   }>({})
   const updateNodeInternals = useUpdateNodeInternals()
-  const removeEdge = useWorkflowStore((state) => state.removeEdge)
+  const batchRemoveEdges = useWorkflowStore((state) => state.batchRemoveEdges)
   const edges = useWorkflowStore((state) => state.edges)
 
   const prevStoreValueRef = useRef<string | null>(null)
@@ -654,16 +654,20 @@ export function ConditionInput({
   }
 
   const removeBlock = (id: string) => {
-    if (isPreview || disabled || conditionalBlocks.length <= 2) return
+    if (isPreview || disabled) return
+    // Condition mode requires at least 2 blocks (if/else), router mode requires at least 1
+    const minBlocks = isRouterMode ? 1 : 2
+    if (conditionalBlocks.length <= minBlocks) return
 
     // Remove any associated edges before removing the block
-    edges.forEach((edge) => {
-      if (edge.sourceHandle?.startsWith(`condition-${id}`)) {
-        removeEdge(edge.id)
-      }
-    })
+    const handlePrefix = isRouterMode ? `router-${id}` : `condition-${id}`
+    const edgeIdsToRemove = edges
+      .filter((edge) => edge.sourceHandle?.startsWith(handlePrefix))
+      .map((edge) => edge.id)
+    if (edgeIdsToRemove.length > 0) {
+      batchRemoveEdges(edgeIdsToRemove)
+    }
 
-    if (conditionalBlocks.length === 1) return
     shouldPersistRef.current = true
     setConditionalBlocks((blocks) => updateBlockTitles(blocks.filter((block) => block.id !== id)))
 
@@ -815,7 +819,9 @@ export function ConditionInput({
                   <Button
                     variant='ghost'
                     onClick={() => removeBlock(block.id)}
-                    disabled={isPreview || disabled || conditionalBlocks.length === 1}
+                    disabled={
+                      isPreview || disabled || conditionalBlocks.length <= (isRouterMode ? 1 : 2)
+                    }
                     className='h-auto p-0 text-[var(--text-error)] hover:text-[var(--text-error)]'
                   >
                     <Trash className='h-[14px] w-[14px]' />

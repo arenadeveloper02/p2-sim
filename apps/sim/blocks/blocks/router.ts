@@ -1,23 +1,10 @@
 import { ConnectIcon } from '@/components/icons'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { getProviderCredentialSubBlocks, PROVIDER_CREDENTIAL_INPUTS } from '@/blocks/utils'
 import type { ProviderId } from '@/providers/types'
-import {
-  getBaseModelProviders,
-  getHostedModels,
-  getProviderIcon,
-  providers,
-} from '@/providers/utils'
-import { useProvidersStore } from '@/stores/providers/store'
+import { getBaseModelProviders, getProviderIcon } from '@/providers/utils'
+import { useProvidersStore } from '@/stores/providers'
 import type { ToolResponse } from '@/tools/types'
-
-const getCurrentOllamaModels = () => {
-  return useProvidersStore.getState().providers.ollama.models
-}
-
-const getCurrentVLLMModels = () => {
-  return useProvidersStore.getState().providers.vllm.models
-}
 
 interface RouterResponse extends ToolResponse {
   output: {
@@ -128,25 +115,26 @@ Description: ${route.value || 'No description provided'}
     )
     .join('\n')
 
-  return `You are an intelligent routing agent. Your task is to analyze the provided context and select the most appropriate route from the available options.
+  return `You are a DETERMINISTIC routing agent. You MUST select exactly ONE option.
 
 Available Routes:
 ${routesInfo}
 
-Context to analyze:
+Context to route:
 ${context}
 
-Instructions:
-1. Carefully analyze the context against each route's description
-2. Select the route that best matches the context's intent and requirements
-3. Consider the semantic meaning, not just keyword matching
-4. If multiple routes could match, choose the most specific one
+ROUTING RULES:
+1. ALWAYS prefer selecting a route over NO_MATCH
+2. Pick the route whose description BEST matches the context, even if it's not a perfect match
+3. If the context is even partially related to a route's description, select that route
+4. ONLY output NO_MATCH if the context is completely unrelated to ALL route descriptions
 
-Response Format:
-Return ONLY the route ID as a single string, no punctuation, no explanation.
-Example: "route-abc123"
+OUTPUT FORMAT:
+- Output EXACTLY one route ID (copied exactly as shown above) OR "NO_MATCH"
+- No explanation, no punctuation, no additional text
+- Just the route ID or NO_MATCH
 
-Remember: Your response must be ONLY the route ID - no additional text, formatting, or explanation.`
+Your response:`
 }
 
 /**
@@ -169,23 +157,6 @@ const getModelOptions = () => {
 }
 
 /**
- * Helper to get API key condition for both router versions.
- */
-const getApiKeyCondition = () => {
-  return isHosted
-    ? {
-        field: 'model',
-        value: [...getHostedModels(), ...providers.vertex.models],
-        not: true,
-      }
-    : () => ({
-        field: 'model',
-        value: [...getCurrentOllamaModels(), ...getCurrentVLLMModels(), ...providers.vertex.models],
-        not: true,
-      })
-}
-
-/**
  * Legacy Router Block (block-based routing).
  * Hidden from toolbar but still supported for existing workflows.
  */
@@ -194,6 +165,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
   name: 'Router (Legacy)',
   description: 'Route workflow',
   authMode: AuthMode.ApiKey,
+  docsLink: 'https://docs.sim.ai/blocks/router',
   longDescription:
     'This is a core workflow block. Intelligently direct workflow execution to different paths based on input analysis. Use natural language to instruct the router to route to certain blocks based on the input.',
   bestPractices: `
@@ -221,76 +193,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
       defaultValue: 'claude-sonnet-4-5',
       options: getModelOptions,
     },
-    {
-      id: 'vertexCredential',
-      title: 'Google Cloud Account',
-      type: 'oauth-input',
-      serviceId: 'vertex-ai',
-      requiredScopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      placeholder: 'Select Google Cloud account',
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your API key',
-      password: true,
-      connectionDroppable: false,
-      required: true,
-      condition: getApiKeyCondition(),
-    },
-    {
-      id: 'azureEndpoint',
-      title: 'Azure OpenAI Endpoint',
-      type: 'short-input',
-      password: true,
-      placeholder: 'https://your-resource.openai.azure.com',
-      connectionDroppable: false,
-      condition: {
-        field: 'model',
-        value: providers['azure-openai'].models,
-      },
-    },
-    {
-      id: 'azureApiVersion',
-      title: 'Azure API Version',
-      type: 'short-input',
-      placeholder: '2024-07-01-preview',
-      connectionDroppable: false,
-      condition: {
-        field: 'model',
-        value: providers['azure-openai'].models,
-      },
-    },
-    {
-      id: 'vertexProject',
-      title: 'Vertex AI Project',
-      type: 'short-input',
-      placeholder: 'your-gcp-project-id',
-      connectionDroppable: false,
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
-    {
-      id: 'vertexLocation',
-      title: 'Vertex AI Location',
-      type: 'short-input',
-      placeholder: 'us-central1',
-      connectionDroppable: false,
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
+    ...getProviderCredentialSubBlocks(),
     {
       id: 'temperature',
       title: 'Temperature',
@@ -335,15 +238,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
   inputs: {
     prompt: { type: 'string', description: 'Routing prompt content' },
     model: { type: 'string', description: 'AI model to use' },
-    apiKey: { type: 'string', description: 'Provider API key' },
-    azureEndpoint: { type: 'string', description: 'Azure OpenAI endpoint URL' },
-    azureApiVersion: { type: 'string', description: 'Azure API version' },
-    vertexProject: { type: 'string', description: 'Google Cloud project ID for Vertex AI' },
-    vertexLocation: { type: 'string', description: 'Google Cloud location for Vertex AI' },
-    vertexCredential: {
-      type: 'string',
-      description: 'Google Cloud OAuth credential ID for Vertex AI',
-    },
+    ...PROVIDER_CREDENTIAL_INPUTS,
     temperature: {
       type: 'number',
       description: 'Response randomness level (low for consistent routing)',
@@ -390,6 +285,7 @@ export const RouterV2Block: BlockConfig<RouterV2Response> = {
   name: 'Router',
   description: 'Route workflow based on context',
   authMode: AuthMode.ApiKey,
+  docsLink: 'https://docs.sim.ai/blocks/router',
   longDescription:
     'Intelligently route workflow execution to different paths based on context analysis. Define multiple routes with descriptions, and an LLM will determine which route to take based on the provided context.',
   bestPractices: `
@@ -422,76 +318,7 @@ export const RouterV2Block: BlockConfig<RouterV2Response> = {
       defaultValue: 'claude-sonnet-4-5',
       options: getModelOptions,
     },
-    {
-      id: 'vertexCredential',
-      title: 'Google Cloud Account',
-      type: 'oauth-input',
-      serviceId: 'vertex-ai',
-      requiredScopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      placeholder: 'Select Google Cloud account',
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your API key',
-      password: true,
-      connectionDroppable: false,
-      required: true,
-      condition: getApiKeyCondition(),
-    },
-    {
-      id: 'azureEndpoint',
-      title: 'Azure OpenAI Endpoint',
-      type: 'short-input',
-      password: true,
-      placeholder: 'https://your-resource.openai.azure.com',
-      connectionDroppable: false,
-      condition: {
-        field: 'model',
-        value: providers['azure-openai'].models,
-      },
-    },
-    {
-      id: 'azureApiVersion',
-      title: 'Azure API Version',
-      type: 'short-input',
-      placeholder: '2024-07-01-preview',
-      connectionDroppable: false,
-      condition: {
-        field: 'model',
-        value: providers['azure-openai'].models,
-      },
-    },
-    {
-      id: 'vertexProject',
-      title: 'Vertex AI Project',
-      type: 'short-input',
-      placeholder: 'your-gcp-project-id',
-      connectionDroppable: false,
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
-    {
-      id: 'vertexLocation',
-      title: 'Vertex AI Location',
-      type: 'short-input',
-      placeholder: 'us-central1',
-      connectionDroppable: false,
-      required: true,
-      condition: {
-        field: 'model',
-        value: providers.vertex.models,
-      },
-    },
+    ...getProviderCredentialSubBlocks(),
   ],
   tools: {
     access: [
@@ -520,15 +347,7 @@ export const RouterV2Block: BlockConfig<RouterV2Response> = {
     context: { type: 'string', description: 'Context for routing decision' },
     routes: { type: 'json', description: 'Route definitions with descriptions' },
     model: { type: 'string', description: 'AI model to use' },
-    apiKey: { type: 'string', description: 'Provider API key' },
-    azureEndpoint: { type: 'string', description: 'Azure OpenAI endpoint URL' },
-    azureApiVersion: { type: 'string', description: 'Azure API version' },
-    vertexProject: { type: 'string', description: 'Google Cloud project ID for Vertex AI' },
-    vertexLocation: { type: 'string', description: 'Google Cloud location for Vertex AI' },
-    vertexCredential: {
-      type: 'string',
-      description: 'Google Cloud OAuth credential ID for Vertex AI',
-    },
+    ...PROVIDER_CREDENTIAL_INPUTS,
   },
   outputs: {
     context: { type: 'string', description: 'Context used for routing' },

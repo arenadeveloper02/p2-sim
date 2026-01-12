@@ -15,6 +15,7 @@ import {
   ROUTER,
 } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
+import { validateModelProvider } from '@/executor/utils/permission-check'
 import { calculateCost, getProviderFromModel } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
 
@@ -68,7 +69,12 @@ export class RouterBlockHandler implements BlockHandler {
       vertexProject: inputs.vertexProject,
       vertexLocation: inputs.vertexLocation,
       vertexCredential: inputs.vertexCredential,
+      bedrockAccessKeyId: inputs.bedrockAccessKeyId,
+      bedrockSecretKey: inputs.bedrockSecretKey,
+      bedrockRegion: inputs.bedrockRegion,
     }
+
+    await validateModelProvider(ctx.userId, routerConfig.model, ctx)
 
     const providerId = getProviderFromModel(routerConfig.model)
 
@@ -102,6 +108,12 @@ export class RouterBlockHandler implements BlockHandler {
       if (providerId === 'azure-openai') {
         providerRequest.azureEndpoint = inputs.azureEndpoint
         providerRequest.azureApiVersion = inputs.azureApiVersion
+      }
+
+      if (providerId === 'bedrock') {
+        providerRequest.bedrockAccessKeyId = routerConfig.bedrockAccessKeyId
+        providerRequest.bedrockSecretKey = routerConfig.bedrockSecretKey
+        providerRequest.bedrockRegion = routerConfig.bedrockRegion
       }
 
       const response = await fetch(url.toString(), {
@@ -197,7 +209,12 @@ export class RouterBlockHandler implements BlockHandler {
       vertexProject: inputs.vertexProject,
       vertexLocation: inputs.vertexLocation,
       vertexCredential: inputs.vertexCredential,
+      bedrockAccessKeyId: inputs.bedrockAccessKeyId,
+      bedrockSecretKey: inputs.bedrockSecretKey,
+      bedrockRegion: inputs.bedrockRegion,
     }
+
+    await validateModelProvider(ctx.userId, routerConfig.model, ctx)
 
     const providerId = getProviderFromModel(routerConfig.model)
 
@@ -233,6 +250,12 @@ export class RouterBlockHandler implements BlockHandler {
         providerRequest.azureApiVersion = inputs.azureApiVersion
       }
 
+      if (providerId === 'bedrock') {
+        providerRequest.bedrockAccessKeyId = routerConfig.bedrockAccessKeyId
+        providerRequest.bedrockSecretKey = routerConfig.bedrockSecretKey
+        providerRequest.bedrockRegion = routerConfig.bedrockRegion
+      }
+
       const response = await fetch(url.toString(), {
         method: 'POST',
         headers: {
@@ -255,14 +278,24 @@ export class RouterBlockHandler implements BlockHandler {
       const result = await response.json()
 
       const chosenRouteId = result.content.trim()
+
+      if (chosenRouteId === 'NO_MATCH' || chosenRouteId.toUpperCase() === 'NO_MATCH') {
+        logger.info('Router determined no route matches the context, routing to error path')
+        throw new Error('Router could not determine a matching route for the given context')
+      }
+
       const chosenRoute = routes.find((r) => r.id === chosenRouteId)
 
+      // Throw error if LLM returns invalid route ID - this routes through error path
       if (!chosenRoute) {
+        const availableRoutes = routes.map((r) => ({ id: r.id, title: r.title }))
         logger.error(
-          `Invalid routing decision. Response content: "${result.content}", available routes:`,
-          routes.map((r) => ({ id: r.id, title: r.title }))
+          `Invalid routing decision. Response content: "${result.content}". Available routes:`,
+          availableRoutes
         )
-        throw new Error(`Invalid routing decision: ${chosenRouteId}`)
+        throw new Error(
+          `Router could not determine a valid route. LLM response: "${result.content}". Available route IDs: ${routes.map((r) => r.id).join(', ')}`
+        )
       }
 
       // Find the target block connected to this route's handle
@@ -348,12 +381,12 @@ export class RouterBlockHandler implements BlockHandler {
 
         let systemPrompt = ''
         if (isAgentBlockType(targetBlock.metadata?.id)) {
+          const paramsPrompt = targetBlock.config?.params?.systemPrompt
+          const inputsPrompt = targetBlock.inputs?.systemPrompt
           systemPrompt =
-            targetBlock.config?.params?.systemPrompt || targetBlock.inputs?.systemPrompt || ''
-
-          if (!systemPrompt && targetBlock.inputs) {
-            systemPrompt = targetBlock.inputs.systemPrompt || ''
-          }
+            (typeof paramsPrompt === 'string' ? paramsPrompt : '') ||
+            (typeof inputsPrompt === 'string' ? inputsPrompt : '') ||
+            ''
         }
 
         return {

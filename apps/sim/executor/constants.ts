@@ -1,3 +1,5 @@
+import type { LoopType, ParallelType } from '@/lib/workflows/types'
+
 export enum BlockType {
   PARALLEL = 'parallel',
   LOOP = 'loop',
@@ -40,11 +42,7 @@ export const METADATA_ONLY_BLOCK_TYPES = [
   BlockType.NOTE,
 ] as const
 
-export type LoopType = 'for' | 'forEach' | 'while' | 'doWhile'
-
 export type SentinelType = 'start' | 'end'
-
-export type ParallelType = 'collection' | 'count'
 
 export const EDGE = {
   CONDITION_PREFIX: 'condition-',
@@ -180,6 +178,22 @@ export const AGENT = {
 export const MCP = {
   TOOL_PREFIX: 'mcp-',
 } as const
+
+export const CREDENTIAL_SET = {
+  PREFIX: 'credentialSet:',
+} as const
+
+export const CREDENTIAL = {
+  FOREIGN_LABEL: 'Saved by collaborator',
+} as const
+
+export function isCredentialSetValue(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.startsWith(CREDENTIAL_SET.PREFIX)
+}
+
+export function extractCredentialSetId(value: string): string {
+  return value.slice(CREDENTIAL_SET.PREFIX.length)
+}
 
 export const MEMORY = {
   DEFAULT_SLIDING_WINDOW_SIZE: 10,

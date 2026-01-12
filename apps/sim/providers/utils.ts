@@ -30,6 +30,7 @@ import {
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
 import { useProvidersStore } from '@/stores/providers/store'
+import { deepMergeInputMapping } from '@/tools/params'
 
 const logger = createLogger('ProviderUtils')
 
@@ -88,6 +89,7 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   'azure-openai': buildProviderMetadata('azure-openai'),
   openrouter: buildProviderMetadata('openrouter'),
   ollama: buildProviderMetadata('ollama'),
+  bedrock: buildProviderMetadata('bedrock'),
 }
 
 export function updateOllamaProviderModels(models: string[]): void {
@@ -622,6 +624,12 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
     return userProvidedKey || 'empty'
   }
 
+  // Bedrock uses its own credentials (bedrockAccessKeyId/bedrockSecretKey), not apiKey
+  const isBedrockModel = provider === 'bedrock' || model.startsWith('bedrock/')
+  if (isBedrockModel) {
+    return 'bedrock-uses-own-credentials'
+  }
+
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGeminiModel = provider === 'google'
@@ -966,7 +974,7 @@ export function prepareToolExecution(
   llmArgs: Record<string, any>,
   request: {
     workflowId?: string
-    workspaceId?: string // Add workspaceId for MCP tools
+    workspaceId?: string
     chatId?: string
     userId?: string
     environmentVariables?: Record<string, any>
@@ -987,9 +995,24 @@ export function prepareToolExecution(
     }
   }
 
-  const toolParams = {
-    ...llmArgs,
-    ...filteredUserParams,
+  // Start with LLM params as base
+  const toolParams: Record<string, any> = { ...llmArgs }
+
+  // Apply user params with special handling for inputMapping
+  for (const [key, userValue] of Object.entries(filteredUserParams)) {
+    if (key === 'inputMapping') {
+      // Deep merge inputMapping so LLM values fill in empty user fields
+      const llmInputMapping = llmArgs.inputMapping as Record<string, any> | undefined
+      toolParams.inputMapping = deepMergeInputMapping(llmInputMapping, userValue)
+    } else {
+      // Normal override for other params
+      toolParams[key] = userValue
+    }
+  }
+
+  // If LLM provided inputMapping but user didn't, ensure it's included
+  if (llmArgs.inputMapping && !filteredUserParams.inputMapping) {
+    toolParams.inputMapping = llmArgs.inputMapping
   }
 
   const executionParams = {
