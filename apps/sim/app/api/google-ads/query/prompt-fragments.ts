@@ -54,7 +54,7 @@ What I Added:
 ## RESOURCES & METRICS
 
 **RESOURCES:**
-- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.start_date, campaign.end_date)
+- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
 - ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
@@ -62,7 +62,6 @@ What I Added:
 - campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
-- asset_group (asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls) + campaign.id + campaign.status required
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
 - customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
 - gender_view (demographic performance by gender)
@@ -106,8 +105,8 @@ What I Added:
 - Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
 **SEGMENT COMPATIBILITY RULES:**
-- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, campaign_search_term_view, ad_group_ad, geographic_view, gender_view, shopping_performance_view, product_group_view, campaign_asset, asset_group
-- segments.date: NOT compatible with asset, asset_group_asset, customer, geo_target_constant, campaign_criterion, shopping_product
+- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, campaign_search_term_view, ad_group_ad, geographic_view, gender_view, shopping_performance_view, product_group_view
+- segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion, shopping_product
 - **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
 - Asset queries show structure (what exists), not performance (how it performed)
 - **SHOPPING PRODUCTS**: shopping_product shows current product state (no date segments), shopping_performance_view shows historical performance (requires date segments)
@@ -217,25 +216,9 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-**Campaign Assets / Ad Extensions (Current State - NO DATE SEGMENTS):**
+**Campaign Assets / Ad Extensions (NO DATE SEGMENTS):**
 SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
-Note: Shows current asset configuration. For asset gap analysis without performance metrics, do NOT use date segments.
-
-**Campaign Assets / Ad Extensions Performance (Last 7 Days with Metrics):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, campaign_asset.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_asset WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY metrics.clicks DESC
-Note: Use this when user asks for "last 7 days" or wants performance metrics with assets. campaign_asset DOES support segments.date with metrics.
-
-**Campaign Assets / Ad Extensions Performance (Last 30 Days with Metrics):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, campaign_asset.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_asset WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY metrics.clicks DESC
-Note: Use this when user asks for "last 30 days" or wants performance metrics with assets over longer period.
-
-**Asset Groups (Performance with Date Segments):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM asset_group WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
-Note: Use asset_group for performance analysis with metrics and date filtering. asset_group supports segments.date.
-
-**Asset Groups (Last 7 Days Performance):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM asset_group WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
-Note: Shows asset group performance for last 7 days with metrics.
+Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement. Include asset.final_urls for broken sitelink detection.
 
 **Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
@@ -488,20 +471,10 @@ const extensionsFragment: FragmentBuilder = () =>
 - asset.final_urls (destination URLs - CRITICAL for broken sitelink detection)
 - asset.sitelink_asset.description1, asset.sitelink_asset.description2 (optional but recommended)
 
-**CRITICAL DATE RANGE RULES FOR SITELINKS:**
-- When user asks "last 7 days" or "7 days": Use segments.date DURING LAST_7_DAYS
-- When user asks "last 30 days" or "30 days": Use segments.date DURING LAST_30_DAYS
-- When user asks "last 14 days" or "14 days": Use segments.date DURING LAST_14_DAYS
-- When user asks "sitelinks" WITHOUT date mention: Do NOT use date segments (shows current structure)
-- When user asks "sitelink performance": Include metrics AND use appropriate date range
-- ALWAYS match the exact date range the user requested - do NOT default to 30 days when they ask for 7 days
-
 **IMPORTANT NOTES:**
 - campaign.advertising_channel_type MUST be in SELECT (4th field after campaign.status)
 - Do NOT add campaign.advertising_channel_type filter in WHERE unless user explicitly asks to exclude Performance Max
-- campaign_asset DOES support segments.date when querying with performance metrics (metrics.clicks, metrics.impressions, etc.)
-- For asset gap analysis (structure only), do NOT use date segments
-- For asset performance analysis (with metrics), USE date segments (LAST_7_DAYS, LAST_30_DAYS, etc.)
+- No date segments allowed (campaign_asset does not support segments.date)
 - Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
 
 **BROKEN SITELINK DETECTION (When user asks to "analyze", "detect broken", or "identify issues"):**
