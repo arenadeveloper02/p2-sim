@@ -788,7 +788,9 @@ export class AgentBlockHandler implements BlockHandler {
 
       let lastConversationData = false
 
-      let historyText = ''
+      let shouldRun = true
+
+      let historyContextForSkip = ''
 
       // Controller logic if conversationId is present
       const conversationId = inputs.conversationId
@@ -820,121 +822,121 @@ export class AgentBlockHandler implements BlockHandler {
             const lastLog = latestLogs[0]
             logger.debug('Not calling the search API for agent Block')
             // Format history for the controller prompt
-            historyText = `Last Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS) -
-                User: ${lastLog.initialInput}
-                Assistant: ${lastLog.finalChatOutput}`
+            // historyText = `\nLast Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS) -
+            //     User: ${lastLog.initialInput}
+            //     Assistant: ${lastLog.finalChatOutput}`
 
-            //             const systemPrompt = `You are a controller that decides whether to RUN a workflow or SKIP it.
+            const systemPrompt = `You are a controller that decides whether to RUN a workflow or SKIP it.
 
-            // Return ONLY ONE WORD:
-            // RUN or SKIP (uppercase only).
+            Return ONLY ONE WORD:
+            RUN or SKIP (uppercase only).
 
-            // ────────────────────────────────────────
-            // PRIMARY DECISION PRINCIPLE
+            ────────────────────────────────────────
+            PRIMARY DECISION PRINCIPLE
 
-            // DEFAULT TO RUN.
+            DEFAULT TO RUN.
 
-            // Return SKIP when the user intent is the SAME as the previous assistant response
-            // and the user is asking for a transformation, reuse, or downstream application
-            // of the same content — even if light creativity is involved.
+            Return SKIP when the user intent is the SAME as the previous assistant response
+            and the user is asking for a transformation, reuse, or downstream application
+            of the same content — even if light creativity is involved.
 
-            // The workflow should RUN ONLY when the user introduces a NEW INTENT.
+            The workflow should RUN ONLY when the user introduces a NEW INTENT.
 
-            // ────────────────────────────────────────
-            // WHAT COUNTS AS NEW INTENT → RUN
+            ────────────────────────────────────────
+            WHAT COUNTS AS NEW INTENT → RUN
 
-            // ALWAYS RETURN RUN IF THE USER:
+            ALWAYS RETURN RUN IF THE USER:
 
-            // - Introduces a new topic, domain, industry, or subject
-            // - Requests new information, data, or facts not already present
-            // - Asks a new question unrelated to the previous response
-            // - Requests validation, critique, judgment, or correctness checking
-            // - Changes the goal, audience, or use case
-            // - Asks to review, improve, or fix logic, prompts, or workflows
-            // - Starts a new conversation
-            // - Mentions a clearly different business objective
-            // - If there is ANY doubt → RUN
+            - Introduces a new topic, domain, industry, or subject
+            - Requests new information, data, or facts not already present
+            - Asks a new question unrelated to the previous response
+            - Requests validation, critique, judgment, or correctness checking
+            - Changes the goal, audience, or use case
+            - Asks to review, improve, or fix logic, prompts, or workflows
+            - Starts a new conversation
+            - Mentions a clearly different business objective
+            - If there is ANY doubt → RUN
 
-            // ────────────────────────────────────────
-            // WHAT COUNTS AS SAME INTENT → SKIP
+            ────────────────────────────────────────
+            WHAT COUNTS AS SAME INTENT → SKIP
 
-            // Return SKIP ONLY IF ALL CONDITIONS ARE TRUE:
+            Return SKIP ONLY IF ALL CONDITIONS ARE TRUE:
 
-            // 1. A previous assistant response exists
-            // AND
-            // 2. The user refers ONLY to that response or its content
-            // AND
-            // 3. The request is a derivative transformation or reuse of the same content
+            1. A previous assistant response exists
+            AND
+            2. The user refers ONLY to that response or its content
+            AND
+            3. The request is a derivative transformation or reuse of the same content
 
-            // This INCLUDES:
+            This INCLUDES:
 
-            // - Formatting or restructuring
-            //   (table, bullets, summary, shorter, longer)
-            // - Clarification or explanation without adding new facts
-            // - Creative adaptation using the same content
-            //   (e.g., social posts, ads, captions, emails, landing copy)
-            // - Applying “best practices” to existing content
-            // - Channel-specific versions
-            //   (e.g., “turn this into a LinkedIn post”, “make this an ad”)
-            // - Simple acknowledgments
+            - Formatting or restructuring
+              (table, bullets, summary, shorter, longer)
+            - Clarification or explanation without adding new facts
+            - Creative adaptation using the same content
+              (e.g., social posts, ads, captions, emails, landing copy)
+            - Applying “best practices” to existing content
+            - Channel-specific versions
+              (e.g., “turn this into a LinkedIn post”, “make this an ad”)
+            - Simple acknowledgments
 
-            // If NO new topic, NO new domain, and NO new objective is introduced → SKIP
+            If NO new topic, NO new domain, and NO new objective is introduced → SKIP
 
-            // ────────────────────────────────────────
-            // FINAL DECISION RULE
+            ────────────────────────────────────────
+            FINAL DECISION RULE
 
-            // - False RUN is acceptable
-            // - False SKIP is NOT acceptable
-            // - If you are not absolutely certain → RUN
+            - False RUN is acceptable
+            - False SKIP is NOT acceptable
+            - If you are not absolutely certain → RUN
 
-            // ────────────────────────────────────────
-            // OUTPUT FORMAT (MANDATORY):
+            ────────────────────────────────────────
+            OUTPUT FORMAT (MANDATORY):
 
-            // Return ONLY:
-            // RUN
-            // or
-            // SKIP`
+            Return ONLY:
+            RUN
+            or
+            SKIP`
 
-            //             const controllerUserPrompt = `If the current request can be fulfilled using ONLY the information already present
-            // in the conversation history, treat it as SAME INTENT.\n${historyText}\n\nCurrent User Input: ${userPrompt}`
+            const controllerUserPrompt = `If the current request can be fulfilled using ONLY the information already present
+            in the conversation history, treat it as SAME INTENT.\n${historyContextForSkip}\n\nCurrent User Input: ${userPrompt}`
 
-            //             logger.debug('Controller user prompt', { controllerUserPrompt })
-            //             logger.debug('System prompt', { systemPrompt })
+            logger.debug('Controller user prompt', { controllerUserPrompt })
+            logger.debug('System prompt', { systemPrompt })
 
-            //             // Call OpenAI for decision
-            //             try {
-            //               const { OpenAI } = await import('openai')
-            //               const openai = new OpenAI({
-            //                 apiKey: process.env.OPENAI_API_KEY,
-            //               })
+            // Call OpenAI for decision
+            try {
+              const { OpenAI } = await import('openai')
+              const openai = new OpenAI({
+                apiKey: process.env.OPENAI_API_KEY,
+              })
 
-            //               const completion = await openai.chat.completions.create({
-            //                 model: 'gpt-4o',
-            //                 messages: [
-            //                   { role: 'system', content: systemPrompt },
-            //                   { role: 'user', content: controllerUserPrompt },
-            //                 ],
-            //                 temperature: 0,
-            //                 max_tokens: 10,
-            //               })
+              const completion = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: controllerUserPrompt },
+                ],
+                temperature: 0,
+                max_tokens: 10,
+              })
 
-            //               const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
+              const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
 
-            //               if (decision === 'SKIP') {
-            //                 shouldRun = false
-            //                 historyContextForSkip = `\n\nPrevious conversation:\nUser: ${lastLog.initialInput}\nAssistant: ${lastLog.finalChatOutput}`
-            //                 logger.debug('Controller decided to SKIP semantic search', { conversationId })
-            //               } else {
-            //                 logger.debug('Controller decided to RUN semantic search', {
-            //                   conversationId,
-            //                   decision,
-            //                 })
-            //               }
-            //             } catch (openaiError) {
-            //               logger.warn('Failed to call OpenAI for controller decision, defaulting to RUN', {
-            //                 error: openaiError,
-            //               })
-            //             }
+              if (decision === 'SKIP') {
+                shouldRun = false
+                historyContextForSkip = `\n\nLast Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS)- \nUser: ${lastLog.initialInput}\nAssistant: ${lastLog.finalChatOutput}`
+                logger.debug('Controller decided to SKIP semantic search', { conversationId })
+              } else {
+                logger.debug('Controller decided to RUN semantic search', {
+                  conversationId,
+                  decision,
+                })
+              }
+            } catch (openaiError) {
+              logger.warn('Failed to call OpenAI for controller decision, defaulting to RUN', {
+                error: openaiError,
+              })
+            }
           }
         } catch (dbError) {
           logger.warn('Failed to fetch execution logs for controller, defaulting to RUN', {
@@ -945,30 +947,30 @@ export class AgentBlockHandler implements BlockHandler {
 
       let searchResults: any[] = []
 
-      searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
-
-      // else if (historyContextForSkip) {
-      //   // Directly append the history context to user prompt if skipping
-      //   if (inputs.userPrompt) {
-      //     inputs.userPrompt =
-      //       typeof inputs.userPrompt === 'string'
-      //         ? `${inputs.userPrompt}${historyContextForSkip}`
-      //         : `${JSON.stringify(inputs.userPrompt)}${historyContextForSkip}`
-      //   } else if (conversationMessages.length > 0) {
-      //     const userMsg = conversationMessages.find((m) => m.role === 'user')
-      //     if (userMsg) {
-      //       userMsg.content += historyContextForSkip
-      //     }
-      //   } else if (inputs.messages && Array.isArray(inputs.messages)) {
-      //     const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
-      //     if (userMsgIndex !== -1) {
-      //       inputs.messages[userMsgIndex].content += historyContextForSkip
-      //     }
-      //   }
-      // }
+      if (shouldRun) {
+        searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
+      } else if (historyContextForSkip) {
+        // Directly append the history context to user prompt if skipping
+        if (inputs.userPrompt) {
+          inputs.userPrompt =
+            typeof inputs.userPrompt === 'string'
+              ? `${inputs.userPrompt}${historyContextForSkip}`
+              : `${JSON.stringify(inputs.userPrompt)}${historyContextForSkip}`
+        } else if (conversationMessages.length > 0) {
+          const userMsg = conversationMessages.find((m) => m.role === 'user')
+          if (userMsg) {
+            userMsg.content += historyContextForSkip
+          }
+        } else if (inputs.messages && Array.isArray(inputs.messages)) {
+          const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
+          if (userMsgIndex !== -1) {
+            inputs.messages[userMsgIndex].content += historyContextForSkip
+          }
+        }
+      }
 
       // Add search results to user prompt incrementally with token checking (only if RUN was decided and we have results)
-      if (searchResults && searchResults.length > 0 && userPrompt) {
+      if (shouldRun && searchResults && searchResults.length > 0 && userPrompt) {
         const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
         const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
 
@@ -977,13 +979,13 @@ export class AgentBlockHandler implements BlockHandler {
         let currentTokenCount = baseUserPromptTokens
         let memoryContext = ''
 
-        if (lastConversationData) {
-          const memoryTokens = getAccurateTokenCount(historyText, inputs.model)
-          if (currentTokenCount + memoryTokens <= tokenLimit) {
-            memoryContext += historyText
-            currentTokenCount += memoryTokens
-          }
-        }
+        // if (lastConversationData) {
+        //   const memoryTokens = getAccurateTokenCount(historyText, inputs.model)
+        //   if (currentTokenCount + memoryTokens <= tokenLimit) {
+        //     memoryContext += historyText
+        //     currentTokenCount += memoryTokens
+        //   }
+        // }
 
         // Add search results one by one, checking token count
         for (const memory of searchResults) {
