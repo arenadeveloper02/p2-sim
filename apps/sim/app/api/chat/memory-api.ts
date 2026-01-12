@@ -1,9 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { v4 as uuidv4 } from 'uuid'
+import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('MemoryAPI')
 
-const MEMORY_API_BASE_URL = 'https://dev-agent.thearena.ai/mem'
+const MEMORY_API_BASE_URL = env.MEMORY_API_BASE_URL
 
 /**
  * Helper function to call the memory API to store memories
