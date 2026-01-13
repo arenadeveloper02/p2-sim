@@ -149,6 +149,7 @@ export async function POST(
         userId: deployment.userId,
         workspaceId,
         variables: {},
+        conversationId: undefined,
       })
 
       await loggingSession.safeCompleteWithError({
@@ -382,6 +383,7 @@ export async function POST(
       variables: {},
       isExternalChat: true,
       chatId: payload || conversationId || undefined,
+      conversationId: conversationId || undefined,
       initialInput: input || undefined,
     })
 
@@ -440,6 +442,7 @@ export async function POST(
             userId: workspaceOwnerId,
             workspaceId,
             variables: {},
+            conversationId: undefined,
           })
 
           await loggingSession.safeCompleteWithError({

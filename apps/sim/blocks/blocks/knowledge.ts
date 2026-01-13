@@ -33,6 +33,19 @@ export const KnowledgeBlock: BlockConfig = {
       placeholder: 'Select knowledge base',
       multiSelect: false,
       required: true,
+      mode: 'basic',
+      canonicalParamId: 'knowledgeBaseId',
+      condition: { field: 'operation', value: ['search', 'upload_chunk', 'create_document'] },
+    },
+    // Knowledge Base (advanced mode - text input)
+    {
+      id: 'knowledgeBaseIdAdvanced',
+      title: 'Knowledge Base',
+      type: 'short-input',
+      canonicalParamId: 'knowledgeBaseId',
+      placeholder: 'Enter knowledge base ID',
+      required: true,
+      mode: 'advanced',
       condition: { field: 'operation', value: ['search', 'upload_chunk', 'create_document'] },
     },
     {

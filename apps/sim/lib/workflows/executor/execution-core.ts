@@ -268,12 +268,26 @@ export async function executeWorkflowCore(
       ...serverEnvVars, // Server vars override user/workspace vars
     }
 
+    // Extract conversationId from input if available (for chat workflows)
+    const conversationId =
+      typeof input === 'object' && input !== null && 'conversationId' in input
+        ? input.conversationId
+        : undefined
+
+    // Extract initial input for chat workflows
+    const initialInput =
+      triggerType === 'chat' && typeof input === 'object' && input !== null && 'input' in input
+        ? input.input
+        : undefined
+
     await loggingSession.safeStart({
       userId,
       workspaceId: providedWorkspaceId,
       variables,
       skipLogCreation,
       deploymentVersionId,
+      conversationId,
+      initialInput,
     })
 
     // Process block states with env var substitution using pre-decrypted values
@@ -480,12 +494,23 @@ export async function executeWorkflowCore(
       return result
     }
 
+    let finalChatOutput: string | undefined
+    if (triggerType === 'chat' && result.success) {
+      const output = result.output
+      if (typeof output === 'string') {
+        finalChatOutput = output
+      } else if (output !== undefined && output !== null) {
+        finalChatOutput = JSON.stringify(output)
+      }
+    }
+
     await loggingSession.safeComplete({
       endedAt: new Date().toISOString(),
       totalDurationMs: totalDuration || 0,
       finalOutput: result.output || {},
       traceSpans: traceSpans || [],
       workflowInput: processedInput,
+      finalChatOutput,
     })
 
     await clearExecutionCancellation(executionId)

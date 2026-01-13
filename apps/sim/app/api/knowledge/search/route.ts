@@ -1,4 +1,7 @@
+import { db } from '@sim/db'
+import { knowledgeBase } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -23,6 +26,32 @@ import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
 import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('VectorSearchAPI')
+
+/**
+ * UUID regex pattern to check if a string is a UUID
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Resolve knowledge base identifier (name or ID) to ID
+ * If the identifier is already a UUID, returns it as-is
+ * Otherwise, searches for a knowledge base by name and returns its ID
+ */
+async function resolveKnowledgeBaseId(identifier: string): Promise<string | null> {
+  // Check if it's already a UUID
+  if (UUID_REGEX.test(identifier)) {
+    return identifier
+  }
+
+  // Search by name
+  const result = await db
+    .select({ id: knowledgeBase.id })
+    .from(knowledgeBase)
+    .where(and(eq(knowledgeBase.name, identifier), isNull(knowledgeBase.deletedAt)))
+    .limit(1)
+
+  return result.length > 0 ? result[0].id : null
+}
 
 /** Structured tag filter with operator support */
 const StructuredTagFilterSchema = z.object({
@@ -65,6 +94,7 @@ const VectorSearchSchema = z
         topN: z.number().min(1).max(50).optional(),
       })
       .optional(),
+    advancedMode: z.boolean().optional(),
   })
   .refine(
     (data) => {
@@ -92,12 +122,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errorMessage }, { status: statusCode })
     }
 
+    let knowledgeBaseIds: string[] = []
     try {
       const validatedData = VectorSearchSchema.parse(searchParams)
 
-      const knowledgeBaseIds = Array.isArray(validatedData.knowledgeBaseIds)
-        ? validatedData.knowledgeBaseIds
-        : [validatedData.knowledgeBaseIds]
+      // advanced mode is selected
+      if (validatedData.advancedMode === true) {
+        const rawKnowledgeBaseIds = Array.isArray(validatedData.knowledgeBaseIds)
+          ? validatedData.knowledgeBaseIds
+          : [validatedData.knowledgeBaseIds]
+
+        // Resolve names to IDs for logging
+        const resolvedIds = await Promise.all(
+          rawKnowledgeBaseIds.map((id) => resolveKnowledgeBaseId(id))
+        )
+        knowledgeBaseIds = resolvedIds.filter((id): id is string => id !== null)
+
+        logger.info(`[${requestId}] Knowledge base search executed in advanced mode`, {
+          knowledgeBaseIds,
+          hasQuery: !!validatedData.query,
+          hasTagFilters: !!(validatedData.tagFilters && validatedData.tagFilters.length > 0),
+        })
+      } else {
+        knowledgeBaseIds = Array.isArray(validatedData.knowledgeBaseIds)
+          ? validatedData.knowledgeBaseIds
+          : [validatedData.knowledgeBaseIds]
+      }
 
       // Check access permissions in parallel for performance
       const accessChecks = await Promise.all(

@@ -36,6 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         executionData: workflowExecutionLogs.executionData,
         cost: workflowExecutionLogs.cost,
         files: workflowExecutionLogs.files,
+        conversationId: workflowExecutionLogs.conversationId,
         createdAt: workflowExecutionLogs.createdAt,
         workflowName: workflow.name,
         workflowDescription: workflow.description,

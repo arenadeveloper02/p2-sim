@@ -321,6 +321,7 @@ export const workflowExecutionLogs = pgTable(
     userId: text('user_id'),
     isExternalChat: boolean('is_external_chat').notNull().default(false), // true for external chat API requests
     chatId: text('chat_id'), // chat_id for tracking conversation context
+    conversationId: text('conversation_id'), // conversation_id for memory tracking
     initialInput: text('initial_input'), // Initial Input to the chat API
     finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
   },
