@@ -144,6 +144,7 @@ export class EdgeConstructor {
     for (const connection of workflow.connections) {
       let { source, target } = connection
       const originalSource = source
+      const originalTarget = target
       let sourceHandle = this.generateSourceHandle(
         source,
         target,
@@ -198,11 +199,11 @@ export class EdgeConstructor {
         this.addEdge(dag, loopSentinelStartId, target, EDGE.LOOP_EXIT, targetHandle)
       }
 
-      if (this.edgeCrossesLoopBoundary(source, target, blocksInLoops, dag)) {
+      if (this.edgeCrossesLoopBoundary(originalSource, originalTarget, blocksInLoops, dag)) {
         continue
       }
 
-      if (!this.isEdgeReachable(source, target, reachableBlocks, dag)) {
+      if (!this.isEdgeReachable(originalSource, originalTarget, reachableBlocks, dag)) {
         continue
       }
 
