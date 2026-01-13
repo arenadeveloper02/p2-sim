@@ -46,9 +46,11 @@ import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import type { SubBlockConfig } from '@/blocks/types'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
+import { ArenaCommentInput } from './components/arena/arena-comment-input'
 import { ArenaGroupSelector } from './components/arena/arena-group-selector'
 import { ArenaProjectSelector } from './components/arena/arena-projects-selector'
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
+import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 
 /**
@@ -438,6 +440,23 @@ function SubBlockComponent({
         )
 
       case 'long-input':
+        // Use ArenaCommentInput for comment-text field (only used in arena blocks)
+        if (config.id === 'comment-text') {
+          return (
+            <ArenaCommentInput
+              blockId={blockId}
+              subBlockId={config.id}
+              placeholder={config.placeholder}
+              rows={config.rows}
+              config={config}
+              isPreview={isPreview}
+              previewValue={previewValue as any}
+              disabled={isDisabled}
+              wandControlRef={wandControlRef}
+              hideInternalWand={true}
+            />
+          )
+        }
         return (
           <LongInput
             blockId={blockId}
@@ -890,6 +909,19 @@ function SubBlockComponent({
           />
         )
       case 'arena-task-selector':
+        // Use ArenaTaskAndSubtaskSelector for comment-task in comments operation
+        if (config.id === 'comment-task') {
+          return (
+            <ArenaTaskAndSubtaskSelector
+              blockId={blockId}
+              subBlockId={config.id}
+              title={config.title ?? ''}
+              isPreview={isPreview}
+              subBlockValues={subBlockValues}
+              disabled={isDisabled}
+            />
+          )
+        }
         return (
           <ArenaTaskSelector
             blockId={blockId}

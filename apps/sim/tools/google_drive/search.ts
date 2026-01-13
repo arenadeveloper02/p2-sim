@@ -1,9 +1,43 @@
 import { createLogger } from '@sim/logger'
+import { TextChunker } from '@/lib/chunkers/text-chunker'
+import { rerankContent } from '@/lib/content/rerank'
 import type { GoogleDriveSearchParams, GoogleDriveSearchResponse } from '@/tools/google_drive/types'
 import { DEFAULT_EXPORT_FORMATS, GOOGLE_WORKSPACE_MIME_TYPES } from '@/tools/google_drive/utils'
 import type { ToolConfig } from '@/tools/types'
+import { buildDriveQueryWithAI } from './ai-query-generation'
 
 const logger = createLogger('GoogleDriveSearchTool')
+
+/**
+ * Splits content into passages for reranking using the TextChunker strategy.
+ * Uses hierarchical splitting with semantic boundaries (paragraphs, sentences, etc.)
+ */
+async function splitContentIntoPassages(
+  content: string,
+  maxPassageLength = 1000,
+  minPassageLength = 100
+): Promise<string[]> {
+  if (!content || content.trim().length === 0) {
+    return []
+  }
+
+  // Convert character-based maxPassageLength to tokens (1 token ≈ 4 characters)
+  // Use a slightly smaller chunk size to account for token estimation variance
+  const chunkSizeInTokens = Math.floor((maxPassageLength / 4) * 0.9) // 90% to be safe
+
+  // Create chunker with appropriate settings
+  const chunker = new TextChunker({
+    chunkSize: chunkSizeInTokens,
+    chunkOverlap: 0, // No overlap for reranking passages
+    minCharactersPerChunk: minPassageLength,
+  })
+
+  // Chunk the content
+  const chunks = await chunker.chunk(content)
+
+  // Extract text from chunks
+  return chunks.map((chunk) => chunk.text).filter((text) => text.trim().length >= minPassageLength)
+}
 
 /**
  * Parses time window patterns from prompt:
@@ -177,6 +211,31 @@ function extractKeywords(prompt: string): string[] {
     'after',
     'before',
     'folder',
+    'give',
+    'get',
+    'list',
+    'lists',
+    'which',
+    'are',
+    'is',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'available',
+    'availability',
+    'what',
+    'where',
+    'when',
+    'who',
+    'how',
   ])
 
   const tokens = prompt.match(/[A-Za-z0-9\-_]+/g) || []
@@ -444,38 +503,47 @@ async function extractFileContent(
 
 /**
  * Builds a Google Drive query string from parsed prompt components
+ *
+ * COMMENTED OUT: Replaced with AI-based query generation using Claude
  */
-function buildDriveQuery(prompt: string, folderId?: string | null): string {
-  const parts: string[] = ['trashed=false']
+// function buildDriveQuery(prompt: string, folderId?: string | null): string {
+//   const parts: string[] = ['trashed=false']
 
-  // Add MIME type filters
-  const mimes = detectMimeTypes(prompt)
-  if (mimes.length > 0) {
-    const mimeExpr = mimes.map((m) => `mimeType='${m}'`).join(' or ')
-    parts.push(`(${mimeExpr})`)
-  }
+//   // Add MIME type filters
+//   const mimes = detectMimeTypes(prompt)
+//   if (mimes.length > 0) {
+//     const mimeExpr = mimes.map((m) => `mimeType='${m}'`).join(' or ')
+//     parts.push(`(${mimeExpr})`)
+//   }
 
-  // Add time window filters
-  const [startIso, endIso] = parseTimeWindow(prompt)
-  if (startIso && endIso) {
-    parts.push(`modifiedTime >= '${startIso}'`)
-    parts.push(`modifiedTime <= '${endIso}'`)
-  }
+//   // Add time window filters
+//   const [startIso, endIso] = parseTimeWindow(prompt)
+//   if (startIso && endIso) {
+//     parts.push(`modifiedTime >= '${startIso}'`)
+//     parts.push(`modifiedTime <= '${endIso}'`)
+//   }
 
-  // Add folder filter
-  if (folderId) {
-    parts.push(`'${folderId}' in parents`)
-  }
+//   // Add folder filter
+//   if (folderId) {
+//     parts.push(`'${folderId}' in parents`)
+//   }
 
-  // Add keyword filters (name and fullText search)
-  const keywords = extractKeywords(prompt)
-  for (const kw of keywords) {
-    const safe = kw.replace(/'/g, "\\'")
-    parts.push(`(name contains '${safe}' or fullText contains '${safe}')`)
-  }
+//   // Add keyword filters (name and fullText search)
+//   // Use OR logic between keywords to be less restrictive
+//   // Files matching any of the keywords will be returned
+//   const keywords = extractKeywords(prompt)
+//   if (keywords.length > 0) {
+//     const keywordConditions = keywords.map((kw) => {
+//       const safe = kw.replace(/'/g, "\\'")
+//       return `(name contains '${safe}' or fullText contains '${safe}')`
+//     })
+//     // Use OR logic: file must match at least one keyword
+//     // This is less restrictive than AND logic which requires all keywords
+//     parts.push(`(${keywordConditions.join(' and ')})`)
+//   }
 
-  return parts.join(' and ')
-}
+//   return parts.join(' and ')
+// }
 
 export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchResponse> = {
   id: 'google_drive_search',
@@ -546,8 +614,8 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
       }
     }
 
-    // Build the query string
-    const query = buildDriveQuery(prompt, folderId)
+    // Build the query string using AI
+    const query = await buildDriveQueryWithAI(prompt, folderId)
 
     logger.info('Built Drive query from prompt', { prompt, query, folderName, folderId })
 
@@ -660,7 +728,62 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
         return fileObj
       })
 
-      const files = await Promise.all(filePromises)
+      let files = await Promise.all(filePromises)
+
+      // For each file with content, split into passages and rerank to extract relevant content
+      const filesWithContent = files.filter(
+        (file) => file.content && file.content.trim().length > 0
+      )
+
+      if (filesWithContent.length > 0) {
+        // Process each file individually to extract relevant passages
+        const processedFiles = await Promise.all(
+          filesWithContent.map(async (file) => {
+            try {
+              // Split content into passages using TextChunker
+              const passages = await splitContentIntoPassages(file.content || '', 1000, 100)
+
+              if (passages.length === 0) {
+                return file
+              }
+
+              // Wrap passages in objects for reranking
+              const passageObjects = passages.map((passage) => ({ text: passage }))
+
+              // Rerank passages for this file
+              const rerankedPassageObjects = await rerankContent<{ text: string }>(
+                prompt,
+                passageObjects,
+                (item) => item.text,
+                {
+                  enabled: true,
+                  topN: Math.min(passages.length, 10), // Get top 10 most relevant passages per file
+                  // maxContentLength: 4000,
+                }
+              )
+
+              // Extract text from reranked passage objects
+              file.relevantContent = rerankedPassageObjects.map((item) => item.text)
+              file.content = ''
+              return file
+            } catch (error) {
+              logger.warn('Failed to extract relevant content from file', {
+                fileId: file.id,
+                fileName: file.name,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              })
+              // Return file without relevantContent if reranking fails
+              return file
+            }
+          })
+        )
+
+        // Replace files with processed versions
+        files = files.map((file) => {
+          const processed = processedFiles.find((pf) => pf.id === file.id)
+          return processed || file
+        })
+      }
 
       return {
         success: true,

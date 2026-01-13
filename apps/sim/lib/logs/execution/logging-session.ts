@@ -25,6 +25,7 @@ export interface SessionStartParams {
   skipLogCreation?: boolean // For resume executions - reuse existing log entry
   isExternalChat?: boolean
   chatId?: string
+  conversationId?: string
   initialInput?: string
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
 }
@@ -67,6 +68,7 @@ export class LoggingSession {
     userId?: string
     isExternalChat?: boolean
     chatId?: string
+    conversationId?: string
     initialInput?: string
   }
   private completed = false
@@ -92,6 +94,7 @@ export class LoggingSession {
       skipLogCreation,
       isExternalChat,
       chatId,
+      conversationId,
       initialInput,
       deploymentVersionId,
     } = params
@@ -116,6 +119,7 @@ export class LoggingSession {
         userId,
         isExternalChat,
         chatId,
+        conversationId,
         initialInput,
       }
 
@@ -131,6 +135,7 @@ export class LoggingSession {
           userId,
           isExternalChat,
           chatId,
+          conversationId,
           initialInput,
           deploymentVersionId,
         })
@@ -447,6 +452,7 @@ export class LoggingSession {
           userId,
           isExternalChat,
           chatId,
+          conversationId: undefined, // Not available in error fallback case
           initialInput,
           deploymentVersionId,
         })
