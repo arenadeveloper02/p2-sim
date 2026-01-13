@@ -1,5 +1,39 @@
 import type { ToolResponse } from '@/tools/types'
 
+export interface SlackFile {
+  id: string
+  created: number
+  timestamp: number
+  name: string
+  title: string
+  mimetype: string
+  filetype: string
+  pretty_type: string
+  user: string
+  mode: string
+  editable: boolean
+  is_external: boolean
+  external_type: string
+  size: number
+  url_private?: string
+  url_private_download?: string
+  permalink?: string
+  permalink_public?: string
+  edit_link?: string
+  preview?: string
+  preview_highlight?: string
+  lines?: number
+  lines_more?: number
+  is_public?: boolean
+  public_url_shared?: boolean
+  display_as_bot?: boolean
+  username?: string
+  channel?: string
+  groups?: string[]
+  ims?: string[]
+  comments_count?: number
+}
+
 export interface SlackBaseParams {
   authMethod: 'oauth' | 'bot_token'
   accessToken: string
@@ -69,6 +103,12 @@ export interface SlackListUsersParams extends SlackBaseParams {
 
 export interface SlackGetUserParams extends SlackBaseParams {
   userId: string
+}
+
+export interface SlackSearchAllParams extends SlackBaseParams {
+  query: string
+  count?: number
+  page?: number
 }
 
 export interface SlackMessageResponse extends ToolResponse {
@@ -305,6 +345,23 @@ export interface SlackGetUserResponse extends ToolResponse {
   }
 }
 
+export interface SlackSearchAllResponse extends ToolResponse {
+  output: {
+    ok: boolean
+    query: string
+    messages: {
+      total: number
+      pagination?: any
+      paging?: any
+      matches: SlackMessage[]
+    }
+    files: {
+      total: number
+      matches: SlackFile[]
+    }
+  }
+}
+
 export type SlackResponse =
   | SlackCanvasResponse
   | SlackMessageReaderResponse
@@ -317,3 +374,4 @@ export type SlackResponse =
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
+  | SlackSearchAllResponse

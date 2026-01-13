@@ -59,7 +59,9 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Raw request body: ${JSON.stringify(body)}`)
     logger.info(`[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}`)
     const validatedData = SlackReadMessagesSchema.parse(body)
-    logger.info(`[${requestId}] Validated data: ${JSON.stringify({...validatedData, accessToken: '[REDACTED]'})}`)
+    logger.info(
+      `[${requestId}] Validated data: ${JSON.stringify({ ...validatedData, accessToken: '[REDACTED]' })}`
+    )
 
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
@@ -91,11 +93,13 @@ export async function POST(request: NextRequest) {
     if (validatedData.fromDate) {
       try {
         const fromDate = new Date(validatedData.fromDate)
-        if (isNaN(fromDate.getTime())) {
+        if (Number.isNaN(fromDate.getTime())) {
           throw new Error('Invalid from date format')
         }
         oldestTimestamp = Math.floor(fromDate.getTime() / 1000).toString()
-        logger.info(`[${requestId}] Converted fromDate "${validatedData.fromDate}" -> timestamp "${oldestTimestamp}" (${fromDate.toISOString()})`)
+        logger.info(
+          `[${requestId}] Converted fromDate "${validatedData.fromDate}" -> timestamp "${oldestTimestamp}" (${fromDate.toISOString()})`
+        )
       } catch (error) {
         throw new Error('Invalid from date format. Use YYYY-MM-DD format.')
       }
@@ -104,11 +108,13 @@ export async function POST(request: NextRequest) {
     if (validatedData.toDate) {
       try {
         const toDate = new Date(validatedData.toDate)
-        if (isNaN(toDate.getTime())) {
+        if (Number.isNaN(toDate.getTime())) {
           throw new Error('Invalid to date format')
         }
         latestTimestamp = Math.floor(toDate.getTime() / 1000).toString()
-        logger.info(`[${requestId}] Converted toDate "${validatedData.toDate}" -> timestamp "${latestTimestamp}" (${toDate.toISOString()})`)
+        logger.info(
+          `[${requestId}] Converted toDate "${validatedData.toDate}" -> timestamp "${latestTimestamp}" (${toDate.toISOString()})`
+        )
       } catch (error) {
         throw new Error('Invalid to date format. Use YYYY-MM-DD format.')
       }
@@ -135,10 +141,10 @@ export async function POST(request: NextRequest) {
       autoPaginateType: typeof autoPaginate,
       validatedAutoPaginate: validatedData.autoPaginate,
       hasCursor: !!validatedData.cursor,
-      cursor: validatedData.cursor?.substring(0, 20) + '...',
+      cursor: `${validatedData.cursor?.substring(0, 20)}...`,
     })
 
-    let allMessages: any[] = []
+    const allMessages: any[] = []
     let currentCursor = validatedData.cursor
     let pagesFetched = 0
     let hasMore = true
@@ -147,7 +153,9 @@ export async function POST(request: NextRequest) {
     // If auto-paginate is enabled, fetch all pages starting from cursor (or beginning)
     if (autoPaginate) {
       logger.info(`[${requestId}] 🚀 AUTO-PAGINATION ENABLED - Starting multi-page fetch`)
-      logger.info(`[${requestId}] Initial state: cursor=${currentCursor}, hasMore=${hasMore}, pagesFetched=${pagesFetched}`)
+      logger.info(
+        `[${requestId}] Initial state: cursor=${currentCursor}, hasMore=${hasMore}, pagesFetched=${pagesFetched}`
+      )
 
       while (hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages) {
         pagesFetched++ // Increment at start of loop
@@ -171,7 +179,9 @@ export async function POST(request: NextRequest) {
           pageUrl.searchParams.append('cursor', currentCursor)
         }
 
-        logger.info(`[${requestId}] Fetching page ${pagesFetched} with cursor: ${currentCursor || 'none'}`)
+        logger.info(
+          `[${requestId}] Fetching page ${pagesFetched} with cursor: ${currentCursor || 'none'}`
+        )
         logger.info(`[${requestId}] Page URL: ${pageUrl.toString()}`)
 
         const slackResponse = await fetch(pageUrl.toString(), {
@@ -189,7 +199,9 @@ export async function POST(request: NextRequest) {
           break // Stop pagination on error
         }
 
-        logger.info(`[${requestId}] Page ${pagesFetched} response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`)
+        logger.info(
+          `[${requestId}] Page ${pagesFetched} response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`
+        )
 
         const pageMessages = (data.messages || []).map((message: any) => ({
           type: message.type || 'message',
@@ -251,17 +263,23 @@ export async function POST(request: NextRequest) {
         hasMore = data.has_more && !!currentCursor
         finalNextCursor = currentCursor || null
 
-        logger.info(`[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages}`)
+        logger.info(
+          `[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages}`
+        )
 
         // Add small delay between requests to avoid rate limits
         if (hasMore) {
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise((resolve) => setTimeout(resolve, 100))
         } else {
-          logger.info(`[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}/${maxPages}, messages=${allMessages.length}/${maxTotalMessages}`)
+          logger.info(
+            `[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}/${maxPages}, messages=${allMessages.length}/${maxTotalMessages}`
+          )
         }
       }
 
-      logger.info(`[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages, finalHasMore=${hasMore}`)
+      logger.info(
+        `[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages, finalHasMore=${hasMore}`
+      )
 
       return NextResponse.json({
         success: true,
@@ -282,7 +300,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Original single-page logic (auto-pagination disabled)
-    logger.info(`[${requestId}] SINGLE-PAGE FETCH - Auto-pagination disabled, cursor: ${validatedData.cursor}`)
+    logger.info(
+      `[${requestId}] SINGLE-PAGE FETCH - Auto-pagination disabled, cursor: ${validatedData.cursor}`
+    )
     logger.info(`[${requestId}] Request URL: ${url.toString()}`)
     const slackResponse = await fetch(url.toString(), {
       method: 'GET',
@@ -294,7 +314,9 @@ export async function POST(request: NextRequest) {
 
     const data = await slackResponse.json()
 
-    logger.info(`[${requestId}] Single-page response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`)
+    logger.info(
+      `[${requestId}] Single-page response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`
+    )
 
     if (!data.ok) {
       logger.error(`[${requestId}] Slack API error:`, data)

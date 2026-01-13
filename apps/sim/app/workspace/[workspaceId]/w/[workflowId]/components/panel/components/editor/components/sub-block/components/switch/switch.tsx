@@ -32,7 +32,7 @@ export function Switch({
   }, [storeValue, propValue, setStoreValue, isPreview])
 
   // Use preview value when in preview mode, otherwise use store value (prioritize user changes over defaults)
-  const value = isPreview ? previewValue : (storeValue !== null ? storeValue : propValue)
+  const value = isPreview ? previewValue : storeValue !== null ? storeValue : propValue
 
   const handleChange = (checked: boolean) => {
     // Only update store when not in preview mode and not disabled

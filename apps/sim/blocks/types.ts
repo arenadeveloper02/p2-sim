@@ -89,6 +89,8 @@ export type SubBlockType =
   | 'arena-task-selector'
   | 'arena-states-selector'
   | 'arena-client-selector'
+  | 'slack-client-selector'
+  | 'slack-channel-selector'
 
 /**
  * Selector types that require display name hydration
