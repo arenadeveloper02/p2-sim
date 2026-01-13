@@ -20,23 +20,27 @@ import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 
-interface Project {
-  sysId: string
+interface Task {
+  id: string
   name: string
+  sysId: string
+  taskType?: string
+  projectId?: string
+  taskNumber?: string
+  archived?: boolean
 }
 
-interface ArenaProjectSelectorProps {
+interface ArenaTaskAndSubtaskSelectorProps {
   blockId: string
   subBlockId: string
   title: string
-  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
 }
 
-export function ArenaProjectSelector({
+export function ArenaTaskAndSubtaskSelector({
   blockId,
   subBlockId,
   title,
@@ -44,89 +48,97 @@ export function ArenaProjectSelector({
   isPreview = false,
   subBlockValues,
   disabled = false,
-}: ArenaProjectSelectorProps) {
+}: ArenaTaskAndSubtaskSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  // Determine the client key based on the project subBlockId
-  const clientKey =
-    subBlockId === 'task-project'
-      ? 'task-client'
-      : subBlockId === 'comment-project'
-        ? 'comment-client'
-        : 'search-task-client'
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
+
+  // Get client and project for comments operation
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client']?.clientId
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
+  const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [projects, setProjects] = React.useState<Project[]>([])
+  const [tasks, setTasks] = React.useState<Task[]>([])
   const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
 
   React.useEffect(() => {
-    if (!clientId) return // No clientId, don't fetch projects
+    if (!clientId || !projectId) {
+      setTasks([])
+      return
+    }
 
-    const fetchProjects = async () => {
-      setProjects([])
+    const fetchTasks = async () => {
+      setLoading(true)
+      setTasks([])
       try {
         const v2Token = await getArenaToken()
-
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
-        const url = `${arenaBackendBaseUrl}/sol/v1/projects?cid=${clientId}&projectType=STATUS&name=${''}`
+
+        const url = `${arenaBackendBaseUrl}/list/projectservice/getalltaskslist?cid=${clientId}&projectType=STATUS&projectId=${projectId}`
         const response = await axios.get(url, {
           headers: {
             Authorisation: v2Token || '',
+            accept: '*/*',
           },
         })
 
-        setProjects(response.data.projectList || [])
+        // Handle the response structure: { statusCode: 200, response: { TaskList: [...] } }
+        const taskList = response.data?.response?.TaskList || response.data?.TaskList || []
+        setTasks(taskList)
       } catch (error) {
-        console.error('Error fetching projects:', error)
-        setProjects([])
+        console.error('Error fetching tasks and subtasks:', error)
+        setTasks([])
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchProjects()
+    fetchTasks()
 
     return () => {
-      setProjects([])
+      setTasks([])
     }
-  }, [clientId, searchQuery])
+  }, [clientId, projectId])
 
   const selectedLabel =
-    selectedValue?.customDisplayValue ||
-    projects.find(
-      (proj) =>
-        proj.sysId === (typeof selectedValue === 'string' ? selectedValue : selectedValue?.sysId)
+    (typeof selectedValue === 'object' ? selectedValue?.customDisplayValue : null) ||
+    tasks.find(
+      (task) =>
+        task.sysId === (typeof selectedValue === 'object' ? selectedValue?.sysId : selectedValue) ||
+        task.id === (typeof selectedValue === 'object' ? selectedValue?.sysId : selectedValue)
     )?.name ||
-    'Select project...'
+    'Select task...'
 
-  const handleSelect = (project: Project) => {
+  const handleSelect = (task: Task) => {
     if (!isPreview && !disabled) {
-      setStoreValue({ ...project, customDisplayValue: project.name })
+      setStoreValue({ ...task, customDisplayValue: task.name })
       setOpen(false)
     }
   }
 
   return (
-    <div className={cn('flex w-full flex-col gap-2 pt-1')}>
+    <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            id={`project-${subBlockId}`}
+            id={`task-${subBlockId}`}
             className={cn(
               comboboxVariants(),
-              'relative w-full cursor-pointer items-center justify-between'
+              'relative cursor-pointer items-center justify-between',
+              layout === 'half' ? 'max-w-md' : 'w-full'
             )}
-            disabled={disabled || !clientId} // Disable if no client selected
+            disabled={disabled || !clientId || !projectId || loading}
           >
             <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
-              {selectedLabel}
+              {loading ? 'Loading...' : selectedLabel}
             </span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
           </Button>
@@ -134,29 +146,34 @@ export function ArenaProjectSelector({
         <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
           <Command
             filter={(value, search) => {
-              const project = projects.find((p) => p.sysId === value)
-              if (!project) return 0
-              return project.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+              // `value` is from CommandItem's "value" prop (sysId or id here)
+              // We want to match by task name too
+              const task = tasks.find((t) => t.sysId === value || t.id === value)
+              if (!task) return 0
+
+              // Custom matching: case-insensitive substring
+              return task.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
             }}
           >
-            <CommandInput placeholder='Search projects...' className='h-9' />
+            <CommandInput placeholder='Search tasks...' className='h-9' />
             <CommandList>
-              <CommandEmpty>No project found.</CommandEmpty>
+              <CommandEmpty>{loading ? 'Loading...' : 'No task found.'}</CommandEmpty>
               <CommandGroup>
-                {projects.map((project) => {
+                {tasks.map((task) => {
+                  const taskId = task.sysId || task.id
                   const isSelected =
-                    typeof selectedValue === 'string'
-                      ? selectedValue === project.sysId
-                      : selectedValue?.sysId === project.sysId
+                    typeof selectedValue === 'object'
+                      ? selectedValue?.sysId === taskId || selectedValue?.id === taskId
+                      : selectedValue === taskId
                   return (
                     <CommandItem
-                      key={project.sysId}
-                      value={project.sysId}
-                      onSelect={() => handleSelect(project)}
-                      className='whitespace-normal break-words'
+                      key={taskId}
+                      value={taskId}
+                      onSelect={() => handleSelect(task)}
+                      className='max-w-full whitespace-normal break-words'
                       style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                     >
-                      <span className='flex-1 whitespace-normal break-words'>{project.name}</span>
+                      <span className='whitespace-normal break-words'>{task.name}</span>
                       <Check
                         className={cn('ml-auto h-4 w-4', isSelected ? 'opacity-100' : 'opacity-0')}
                       />

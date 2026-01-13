@@ -48,8 +48,11 @@ export function ArenaGroupSelector({
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-client']?.clientId
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['task-project']
+  // Determine the client and project keys based on the group subBlockId
+  const clientKey = subBlockId === 'comment-group' ? 'comment-client' : 'task-client'
+  const projectKey = subBlockId === 'comment-group' ? 'comment-project' : 'task-project'
+  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
   const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
@@ -149,6 +152,7 @@ export function ArenaGroupSelector({
                     value={group.id}
                     onSelect={() => handleSelect(group)}
                     className='max-w-full whitespace-normal break-words'
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                   >
                     <span className='truncate'>{group.name}</span>
                     <Check

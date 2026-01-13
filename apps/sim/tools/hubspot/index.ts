@@ -7,7 +7,10 @@ export {
   hubspotGetCampaignRevenueTool,
   hubspotGetCampaignSpendTool,
   hubspotGetCampaignTool,
+  hubspotGetEmailStatisticsHistogramTool,
+  hubspotGetEmailTool,
   hubspotListCampaignsTool,
+  hubspotListEmailsTool,
 } from './campaigns'
 export { hubspotCreateCompanyTool } from './create_company'
 export { hubspotCreateContactTool } from './create_contact'

@@ -42,7 +42,7 @@ import {
   apolloTaskCreateTool,
   apolloTaskSearchTool,
 } from '@/tools/apollo'
-import { arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
+import { arenaAddComment, arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -313,6 +313,7 @@ import {
   googleDriveDownloadTool,
   googleDriveGetContentTool,
   googleDriveListTool,
+  googleDriveSearchTool,
   googleDriveUploadTool,
 } from '@/tools/google_drive'
 import { googleFormsGetResponsesTool } from '@/tools/google_form'
@@ -399,11 +400,14 @@ import {
   hubspotGetCampaignTool,
   hubspotGetCompanyTool,
   hubspotGetContactTool,
+  hubspotGetEmailStatisticsHistogramTool,
+  hubspotGetEmailTool,
   hubspotGetUsersTool,
   hubspotListCampaignsTool,
   hubspotListCompaniesTool,
   hubspotListContactsTool,
   hubspotListDealsTool,
+  hubspotListEmailsTool,
   hubspotSearchCompaniesTool,
   hubspotSearchContactsTool,
   hubspotUpdateCompanyTool,
@@ -1405,6 +1409,7 @@ export const tools: Record<string, ToolConfig> = {
   arena_create_task: arenaCreateTask,
   arena_search_task: arenaSearchTask,
   arena_save_summary: arenaSaveSummary,
+  arena_comments: arenaAddComment,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -1841,6 +1846,7 @@ export const tools: Record<string, ToolConfig> = {
   reddit_subscribe: redditSubscribeTool,
   google_drive_get_content: googleDriveGetContentTool,
   google_drive_list: googleDriveListTool,
+  google_drive_search: googleDriveSearchTool,
   google_drive_upload: googleDriveUploadTool,
   google_drive_download: googleDriveDownloadTool,
   google_drive_create_folder: googleDriveCreateFolderTool,
@@ -2350,6 +2356,9 @@ export const tools: Record<string, ToolConfig> = {
   hubspot_get_campaign_budget_totals: hubspotGetCampaignBudgetTotalsTool,
   hubspot_get_campaign_budget_item: hubspotGetCampaignBudgetItemTool,
   hubspot_get_campaign_assets: hubspotGetCampaignAssetsTool,
+  hubspot_get_email_statistics_histogram: hubspotGetEmailStatisticsHistogramTool,
+  hubspot_get_email: hubspotGetEmailTool,
+  hubspot_list_emails: hubspotListEmailsTool,
   hubspot_search_companies: hubspotSearchCompaniesTool,
   hubspot_search_contacts: hubspotSearchContactsTool,
   hubspot_update_company: hubspotUpdateCompanyTool,

@@ -77,8 +77,8 @@ export function processGoogleAdsResults(
       accountConversionsValue += conversionsValue
 
       const campaignInfo: Campaign = {
-        name: campaignData.name || 'Unknown',
-        status: campaignData.status || 'Unknown',
+        name: campaignData?.name || 'Unknown',
+        status: campaignData?.status || 'Unknown',
         clicks,
         impressions,
         cost: Math.round((costMicros / MICROS_PER_DOLLAR) * 100) / 100,

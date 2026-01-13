@@ -429,6 +429,150 @@ export interface HubSpotGetCampaignAssetsResponse extends ToolResponse {
   }
 }
 
+export type HubSpotEmailStatisticsInterval =
+  | 'DAY'
+  | 'HOUR'
+  | 'MINUTE'
+  | 'MONTH'
+  | 'QUARTER'
+  | 'QUARTER_HOUR'
+  | 'SECOND'
+  | 'WEEK'
+  | 'YEAR'
+
+export interface HubSpotGetEmailStatisticsHistogramParams {
+  accessToken: string
+  interval: HubSpotEmailStatisticsInterval
+  emailIds?: number[]
+  startTimestamp?: string
+  endTimestamp?: string
+}
+
+export interface HubSpotEmailStatisticsCounters {
+  bounce: number
+  click: number
+  contactslost: number
+  delivered: number
+  dropped: number
+  hardbounced: number
+  notsent: number
+  open: number
+  pending: number
+  selected: number
+  sent: number
+  softbounced: number
+  spamreport: number
+  suppressed: number
+  unsubscribed: number
+}
+
+export interface HubSpotEmailStatisticsDeviceBreakdown {
+  click_device_type?: {
+    computer: number
+    mobile: number
+    unknown: number
+  }
+  open_device_type?: {
+    computer: number
+    mobile: number
+    unknown: number
+  }
+}
+
+export interface HubSpotEmailStatisticsRatios {
+  bounceratio: number
+  clickratio: number
+  clickthroughratio: number
+  contactslostratio: number
+  deliveredratio: number
+  hardbounceratio: number
+  notsentratio: number
+  openratio: number
+  pendingratio: number
+  softbounceratio: number
+  spamreportratio: number
+  unsubscribedratio: number
+}
+
+export interface HubSpotEmailStatisticsTimeInterval {
+  start: string
+  end: string
+}
+
+export interface HubSpotEmailStatisticsResult {
+  aggregateStatistic?: {
+    counters: HubSpotEmailStatisticsCounters
+    deviceBreakdown: HubSpotEmailStatisticsDeviceBreakdown
+    qualifierStats: Record<string, any>
+    ratios: HubSpotEmailStatisticsRatios
+  }
+  interval: HubSpotEmailStatisticsTimeInterval
+}
+
+export interface HubSpotEmailStatisticsHistogram {
+  results: HubSpotEmailStatisticsResult[]
+  total: number
+}
+
+export interface HubSpotGetEmailStatisticsHistogramResponse extends ToolResponse {
+  output: {
+    histogram: HubSpotEmailStatisticsHistogram
+    metadata: {
+      operation: 'get_email_statistics_histogram'
+      interval: HubSpotEmailStatisticsInterval
+      emailIds?: number[]
+      startTimestamp?: string
+      endTimestamp?: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetEmailParams {
+  accessToken: string
+  emailId: string
+}
+
+export interface HubSpotGetEmailResponse extends ToolResponse {
+  output: {
+    email: Record<string, any> // The email object from HubSpot API
+    metadata: {
+      operation: 'get_email'
+      emailId: string
+    }
+    success: boolean
+  }
+}
+
+export interface HubSpotListEmailsParams {
+  accessToken: string
+  archived?: boolean
+  createdAfter?: string
+  createdBefore?: string
+  workflowNames?: boolean
+  includeStats?: boolean
+  isPublished?: boolean
+  limit?: number
+  marketingCampaignNames?: boolean
+}
+
+export interface HubSpotListEmailsResponse extends ToolResponse {
+  output: {
+    emails: Record<string, any>[] // Array of email objects from HubSpot API
+    paging?: Record<string, any> // Pagination information if available
+    metadata: {
+      operation: 'list_emails'
+      totalReturned: number
+      archived?: boolean
+      createdAfter?: string
+      createdBefore?: string
+      isPublished?: boolean
+      limit?: number
+    }
+    success: boolean
+  }
+}
+
 // Generic HubSpot response type for the block
 export type HubSpotResponse =
   | HubSpotGetUsersResponse
@@ -452,3 +596,6 @@ export type HubSpotResponse =
   | HubSpotGetCampaignBudgetTotalsResponse
   | HubSpotGetCampaignBudgetItemResponse
   | HubSpotGetCampaignAssetsResponse
+  | HubSpotGetEmailStatisticsHistogramResponse
+  | HubSpotGetEmailResponse
+  | HubSpotListEmailsResponse
