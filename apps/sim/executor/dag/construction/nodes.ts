@@ -136,13 +136,47 @@ export class NodeConstructor {
     })
   }
 
+  /**
+   * Find the innermost loop ID for a block.
+   * For nested loops, returns the most deeply nested loop containing the block.
+   */
   private findLoopIdForBlock(blockId: string, dag: DAG): string | undefined {
+    const containingLoops: Array<{ loopId: string; nodes: string[] }> = []
+
+    // Find all loops containing this block
     for (const [loopId, loopConfig] of dag.loopConfigs) {
       if (loopConfig.nodes.includes(blockId)) {
-        return loopId
+        containingLoops.push({ loopId, nodes: loopConfig.nodes })
       }
     }
-    return undefined
+
+    if (containingLoops.length === 0) {
+      return undefined
+    }
+
+    if (containingLoops.length === 1) {
+      return containingLoops[0].loopId
+    }
+
+    // For nested loops, find the innermost one
+    // The innermost loop is the one whose nodes are a subset of all other containing loops
+    // or the one with the fewest nodes (most specific)
+    for (const candidate of containingLoops) {
+      const isInnermost = containingLoops.every((other) => {
+        if (other.loopId === candidate.loopId) return true
+        // Check if candidate's nodes are all within other's nodes
+        return candidate.nodes.every((nodeId) => other.nodes.includes(nodeId))
+      })
+
+      if (isInnermost) {
+        return candidate.loopId
+      }
+    }
+
+    // Fallback: return the loop with the fewest nodes (most specific)
+    return containingLoops.reduce((innermost, current) =>
+      current.nodes.length < innermost.nodes.length ? current : innermost
+    ).loopId
   }
 
   private findParallelForBlock(blockId: string, dag: DAG): string | null {

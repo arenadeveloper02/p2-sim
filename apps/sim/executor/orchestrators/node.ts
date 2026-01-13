@@ -41,15 +41,22 @@ export class NodeExecutionOrchestrator {
     }
 
     const loopId = node.metadata.loopId
-    if (loopId && !this.loopOrchestrator.getLoopScope(ctx, loopId)) {
-      this.loopOrchestrator.initializeLoopScope(ctx, loopId)
-    }
+    if (loopId) {
+      // Initialize this loop's scope if needed
+      if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
+        this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+      }
 
-    if (loopId && !this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
-      return {
-        nodeId,
-        output: {},
-        isFinalOutput: false,
+      // For nested loops, ensure all outer loop scopes are also initialized
+      // This ensures loop variables from outer loops are available
+      this.initializeContainingLoopScopes(ctx, nodeId, loopId)
+
+      if (!this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
+        return {
+          nodeId,
+          output: {},
+          isFinalOutput: false,
+        }
       }
     }
 
@@ -263,5 +270,45 @@ export class NodeExecutionOrchestrator {
   private findParallelIdForNode(nodeId: string): string | undefined {
     const baseId = extractBaseBlockId(nodeId)
     return this.parallelOrchestrator.findParallelIdForNode(baseId)
+  }
+
+  /**
+   * Initialize scopes for all loops containing this node.
+   * Traverses up the loop hierarchy using metadata to find ancestors.
+   */
+  private initializeContainingLoopScopes(
+    ctx: ExecutionContext,
+    nodeId: string,
+    currentLoopId: string
+  ): void {
+    const ancestors: string[] = []
+    let pointer = currentLoopId
+
+    // Traverse up the loop hierarchy
+    // We start from the current loop and search for its parent
+    while (pointer) {
+      const loopNode = this.dag.nodes.get(pointer)
+      if (!loopNode) break
+
+      const parentLoopId = loopNode.metadata.loopId
+      if (parentLoopId) {
+        ancestors.push(parentLoopId)
+        pointer = parentLoopId
+
+        // Safety break to prevent infinite loops in malformed graphs
+        if (ancestors.length > 50) break
+      } else {
+        break
+      }
+    }
+
+    // Initialize from outermost to innermost
+    // ancestors is [Parent, GrandParent...] -> Reverse to [GrandParent, Parent]
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const loopId = ancestors[i]
+      if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
+        this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+      }
+    }
   }
 }
