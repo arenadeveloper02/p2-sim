@@ -65,6 +65,18 @@ export const slackMessageReaderTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'End of time range (timestamp)',
     },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Cursor for pagination from previous response',
+    },
+    autoPaginate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+    },
   },
 
   request: {
@@ -80,6 +92,8 @@ export const slackMessageReaderTool: ToolConfig<
       limit: params.limit,
       oldest: params.oldest,
       latest: params.latest,
+      cursor: params.cursor,
+      autoPaginate: params.autoPaginate,
     }),
   },
 

@@ -61,6 +61,8 @@ export interface SlackMessageReaderParams extends SlackBaseParams {
   limit?: number
   oldest?: string
   latest?: string
+  cursor?: string
+  autoPaginate?: boolean
 }
 
 export interface SlackDownloadParams extends SlackBaseParams {

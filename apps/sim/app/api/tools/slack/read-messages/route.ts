@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     logger.info(`[${requestId}] Raw request body: ${JSON.stringify(body)}`)
-    logger.info(`[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}`)
+    logger.info(`[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}, isEmpty: ${body.cursor === ''}, isNull: ${body.cursor === null}, isUndefined: ${body.cursor === undefined}`)
     const validatedData = SlackReadMessagesSchema.parse(body)
     logger.info(
       `[${requestId}] Validated data: ${JSON.stringify({ ...validatedData, accessToken: '[REDACTED]' })}`
@@ -126,12 +126,15 @@ export async function POST(request: NextRequest) {
     if (latestTimestamp) {
       url.searchParams.append('latest', latestTimestamp)
     }
+    logger.info(`[${requestId}] About to check cursor: "${validatedData.cursor}", truthy: ${!!validatedData.cursor}`)
     if (validatedData.cursor) {
       url.searchParams.append('cursor', validatedData.cursor)
+      logger.info(`[${requestId}] Added cursor to URL: ${validatedData.cursor}`)
+    } else {
+      logger.info(`[${requestId}] No cursor added to URL`)
     }
 
     const autoPaginate = validatedData.autoPaginate || false
-    const maxPages = 10 // Safety limit: maximum 10 pages
     const maxTotalMessages = 1000 // Safety limit: maximum 1000 messages
 
     logger.info(`[${requestId}] Reading Slack messages`, {
@@ -157,7 +160,7 @@ export async function POST(request: NextRequest) {
         `[${requestId}] Initial state: cursor=${currentCursor}, hasMore=${hasMore}, pagesFetched=${pagesFetched}`
       )
 
-      while (hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages) {
+      while (hasMore && allMessages.length < maxTotalMessages) {
         pagesFetched++ // Increment at start of loop
 
         const pageUrl = new URL('https://slack.com/api/conversations.history')
@@ -264,7 +267,7 @@ export async function POST(request: NextRequest) {
         finalNextCursor = currentCursor || null
 
         logger.info(
-          `[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && pagesFetched < maxPages && allMessages.length < maxTotalMessages}`
+          `[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && allMessages.length < maxTotalMessages}`
         )
 
         // Add small delay between requests to avoid rate limits
@@ -272,13 +275,13 @@ export async function POST(request: NextRequest) {
           await new Promise((resolve) => setTimeout(resolve, 100))
         } else {
           logger.info(
-            `[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}/${maxPages}, messages=${allMessages.length}/${maxTotalMessages}`
+            `[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}, messages=${allMessages.length}/${maxTotalMessages}`
           )
         }
       }
 
       logger.info(
-        `[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages, finalHasMore=${hasMore}`
+        `[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages`
       )
 
       return NextResponse.json({
@@ -292,7 +295,6 @@ export async function POST(request: NextRequest) {
           paginationInfo: {
             autoPaginated: true,
             mode: 'auto-pagination',
-            maxPagesReached: pagesFetched >= maxPages,
             maxMessagesReached: allMessages.length >= maxTotalMessages,
           },
         },

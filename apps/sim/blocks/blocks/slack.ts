@@ -744,9 +744,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             }
 
             console.log(`[Slack Block] cursor value: "${cursor}", type: ${typeof cursor}`)
-            if (cursor) {
-              baseParams.cursor = cursor
-              console.log(`[Slack Block] Setting baseParams.cursor to: "${cursor}"`)
+            if (cursor && cursor.trim() !== '') {
+              baseParams.cursor = cursor.trim()
+              console.log(`[Slack Block] Setting baseParams.cursor to: "${cursor.trim()}"`)
             } else {
               console.log(`[Slack Block] No cursor value, not setting baseParams.cursor`)
             }
