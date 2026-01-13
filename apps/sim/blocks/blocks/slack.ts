@@ -642,9 +642,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         } = params
 
         // Extract channel name for query building
-        const channelName = typeof channelId === 'object' && channelId?.channel_name
-          ? channelId.channel_name
-          : ''
+        const channelName =
+          typeof channelId === 'object' && channelId?.channel_name ? channelId.channel_name : ''
 
         console.log('[Slack Block] Channel extraction:', {
           channelId,
@@ -656,14 +655,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         })
 
         // Normalize IDs for other uses
-        const normalizedChannelId = typeof channelId === 'object' && channelId?.channel_id
-          ? channelId.channel_id
-          : channelId
+        const normalizedChannelId =
+          typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : channelId
 
         const isDM = destinationType === 'dm'
-        const channelFromObject = typeof channelId === 'object' && channelId?.channel_id
-          ? channelId.channel_id
-          : ''
+        const channelFromObject =
+          typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : ''
         const effectiveChannel = (channel || manualChannel || channelFromObject || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
 
@@ -895,7 +892,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             break
           }
         }
-
 
         return baseParams
       },
