@@ -57,7 +57,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     logger.info(`[${requestId}] Raw request body: ${JSON.stringify(body)}`)
-    logger.info(`[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}, isEmpty: ${body.cursor === ''}, isNull: ${body.cursor === null}, isUndefined: ${body.cursor === undefined}`)
+    logger.info(
+      `[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}, isEmpty: ${body.cursor === ''}, isNull: ${body.cursor === null}, isUndefined: ${body.cursor === undefined}`
+    )
     const validatedData = SlackReadMessagesSchema.parse(body)
     logger.info(
       `[${requestId}] Validated data: ${JSON.stringify({ ...validatedData, accessToken: '[REDACTED]' })}`
@@ -126,7 +128,9 @@ export async function POST(request: NextRequest) {
     if (latestTimestamp) {
       url.searchParams.append('latest', latestTimestamp)
     }
-    logger.info(`[${requestId}] About to check cursor: "${validatedData.cursor}", truthy: ${!!validatedData.cursor}`)
+    logger.info(
+      `[${requestId}] About to check cursor: "${validatedData.cursor}", truthy: ${!!validatedData.cursor}`
+    )
     if (validatedData.cursor) {
       url.searchParams.append('cursor', validatedData.cursor)
       logger.info(`[${requestId}] Added cursor to URL: ${validatedData.cursor}`)
