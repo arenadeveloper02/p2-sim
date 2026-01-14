@@ -187,29 +187,29 @@ export function ArenaClientsSelector({
     [clients]
   )
 
-  // When switching to advanced mode, show the NAME instead of ID
-  // When switching back to basic mode, convert ID string to object
+  // When switching to advanced mode, keep the object but display the name
+  // When switching back to basic mode, ensure we have the object
   React.useEffect(() => {
     if (fieldAdvancedMode) {
+      // In advanced mode, keep the object if we have it (for ID extraction)
+      // Only convert to string if it's a variable
       if (typeof selectedValue === 'object' && selectedValue?.clientId) {
-        // Object from basic mode - extract name
-        const clientName = selectedValue.name || selectedValue.customDisplayValue || ''
-        if (!isPreview && !disabled && clientName) {
-          setStoreValue(clientName)
-        }
+        // Already an object - keep it, just update display
+        // No need to change stored value
       } else if (
         typeof selectedValue === 'string' &&
         selectedValue.trim() &&
         !selectedValue.trim().startsWith('<')
       ) {
-        // String ID - look up the name
+        // String ID or name - look up and store as object (so we have ID for backend)
         const matchedClient = findClientByNameOrId(selectedValue)
         if (matchedClient && !isPreview && !disabled) {
-          setStoreValue(matchedClient.name)
+          setStoreValue({ ...matchedClient, customDisplayValue: matchedClient.name })
         }
       }
+      // If it's a variable (<block.field>), keep as string - backend will resolve it
     } else {
-      // Switching back to basic mode - convert ID string to object if needed
+      // Switching back to basic mode - ensure we have the object
       if (
         typeof selectedValue === 'string' &&
         selectedValue.trim() &&
@@ -292,14 +292,15 @@ export function ArenaClientsSelector({
               // Only update display value, not store value
               setInputDisplayValue(newValue)
               setAdvancedModeSearch(newValue)
+              // If it's a variable, store it immediately as string
               if (newValue.trim().startsWith('<')) {
                 if (!isPreview && !disabled) {
-                  setStoreValue(newValue)
+                  setStoreValue(newValue.trim())
                   setAdvancedModeOpen(false)
                 }
                 return
               }
-              // Show autocomplete but don't update store value
+              // Show autocomplete but don't update store value yet (wait for blur/select)
               if (!isPreview && !disabled) {
                 setAdvancedModeOpen(
                   newValue.trim().length > 0 && Array.isArray(clients) && clients.length > 0
@@ -370,23 +371,24 @@ export function ArenaClientsSelector({
                       }
                     }}
                     onBlur={() => {
-                      if (
-                        !isPreview &&
-                        !disabled &&
-                        inputDisplayValue &&
-                        !inputDisplayValue.trim().startsWith('<')
-                      ) {
-                        const matchedClient = findClientByNameOrId(inputDisplayValue)
-                        if (matchedClient) {
-                          // Store the full object so basic mode can display it correctly
-                          setStoreValue({
-                            ...matchedClient,
-                            customDisplayValue: matchedClient.name,
-                          })
-                          setInputDisplayValue(matchedClient.name)
+                      if (!isPreview && !disabled && inputDisplayValue) {
+                        // If it's a variable, store as string (backend will resolve it)
+                        if (inputDisplayValue.trim().startsWith('<')) {
+                          setStoreValue(inputDisplayValue.trim())
                         } else {
-                          // If no match, keep the typed value (might be an ID or invalid)
-                          setStoreValue(inputDisplayValue)
+                          // Try to match name or ID and store as object (so we have ID for backend)
+                          const matchedClient = findClientByNameOrId(inputDisplayValue)
+                          if (matchedClient) {
+                            // Store the full object with ID (backend will extract clientId)
+                            setStoreValue({
+                              ...matchedClient,
+                              customDisplayValue: matchedClient.name,
+                            })
+                            setInputDisplayValue(matchedClient.name)
+                          } else {
+                            // If no match, might be an ID - store as string, backend will handle it
+                            setStoreValue(inputDisplayValue.trim())
+                          }
                         }
                       }
                       setTimeout(() => setAdvancedModeOpen(false), 200)
