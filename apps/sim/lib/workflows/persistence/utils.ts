@@ -14,7 +14,13 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { v4 as uuidv4 } from 'uuid'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/sanitization/validation'
-import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
+import type {
+  BlockData,
+  BlockState,
+  Loop,
+  Parallel,
+  WorkflowState,
+} from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 
@@ -206,7 +212,9 @@ export async function loadWorkflowFromNormalizedTables(
     // Convert blocks to the expected format
     const blocksMap: Record<string, BlockState> = {}
     blocks.forEach((block) => {
-      const blockData = block.data || {}
+      const blockData = (block.data || {}) as BlockData & {
+        fieldAdvancedMode?: Record<string, boolean>
+      }
 
       const assembled: BlockState = {
         id: block.id,
@@ -223,6 +231,7 @@ export async function loadWorkflowFromNormalizedTables(
         height: Number(block.height),
         subBlocks: (block.subBlocks as BlockState['subBlocks']) || {},
         outputs: (block.outputs as BlockState['outputs']) || {},
+        fieldAdvancedMode: blockData.fieldAdvancedMode || {},
         data: blockData,
       }
 
@@ -368,7 +377,10 @@ export async function saveWorkflowToNormalizedTables(
           height: String(block.height || 0),
           subBlocks: block.subBlocks || {},
           outputs: block.outputs || {},
-          data: block.data || {},
+          data: {
+            ...(block.data || {}),
+            fieldAdvancedMode: block.fieldAdvancedMode || {},
+          },
           parentId: block.data?.parentId || null,
           extent: block.data?.extent || null,
         }))

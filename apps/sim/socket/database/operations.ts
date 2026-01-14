@@ -1103,7 +1103,10 @@ async function handleWorkflowOperationTx(
           name: block.name,
           positionX: block.position.x,
           positionY: block.position.y,
-          data: block.data || {},
+          data: {
+            ...(block.data || {}),
+            fieldAdvancedMode: block.fieldAdvancedMode || {},
+          },
           subBlocks: block.subBlocks || {},
           outputs: block.outputs || {},
           enabled: block.enabled ?? true,
