@@ -1,3 +1,4 @@
+import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { AhrefsBlock } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
@@ -15,7 +16,7 @@ import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock } from '@/blocks/blocks/confluence'
-import { CursorBlock } from '@/blocks/blocks/cursor'
+import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
@@ -30,11 +31,11 @@ import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FirefliesBlock } from '@/blocks/blocks/fireflies'
 import { FunctionBlock } from '@/blocks/blocks/function'
 import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
-import { GitHubBlock } from '@/blocks/blocks/github'
+import { GitHubBlock, GitHubV2Block } from '@/blocks/blocks/github'
 import { GitLabBlock } from '@/blocks/blocks/gitlab'
-import { GmailBlock } from '@/blocks/blocks/gmail'
+import { GmailBlock, GmailV2Block } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
-import { GoogleCalendarBlock } from '@/blocks/blocks/google_calendar'
+import { GoogleCalendarBlock, GoogleCalendarV2Block } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
 import { GoogleFormsBlock } from '@/blocks/blocks/google_form'
@@ -54,12 +55,13 @@ import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
 import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
 import { InputTriggerBlock } from '@/blocks/blocks/input_trigger'
-import { IntercomBlock } from '@/blocks/blocks/intercom'
+import { IntercomBlock, IntercomV2Block } from '@/blocks/blocks/intercom'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
 import { JiraServiceManagementBlock } from '@/blocks/blocks/jira_service_management'
 import { KalshiBlock } from '@/blocks/blocks/kalshi'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
+import { LemlistBlock } from '@/blocks/blocks/lemlist'
 import { LinearBlock } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
@@ -77,7 +79,7 @@ import { MongoDBBlock } from '@/blocks/blocks/mongodb'
 import { MySQLBlock } from '@/blocks/blocks/mysql'
 import { Neo4jBlock } from '@/blocks/blocks/neo4j'
 import { NoteBlock } from '@/blocks/blocks/note'
-import { NotionBlock } from '@/blocks/blocks/notion'
+import { NotionBlock, NotionV2Block } from '@/blocks/blocks/notion'
 import { OneDriveBlock } from '@/blocks/blocks/onedrive'
 import { OpenAIBlock } from '@/blocks/blocks/openai'
 import { OutlookBlock } from '@/blocks/blocks/outlook'
@@ -147,6 +149,7 @@ import { SQSBlock } from './blocks/sqs'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
+  a2a: A2ABlock,
   agent: AgentBlock,
   ahrefs: AhrefsBlock,
   airtable: AirtableBlock,
@@ -165,6 +168,7 @@ export const registry: Record<string, BlockConfig> = {
   condition: ConditionBlock,
   confluence: ConfluenceBlock,
   cursor: CursorBlock,
+  cursor_v2: CursorV2Block,
   datadog: DatadogBlock,
   discord: DiscordBlock,
   dropbox: DropboxBlock,
@@ -179,13 +183,16 @@ export const registry: Record<string, BlockConfig> = {
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,
   github: GitHubBlock,
+  github_v2: GitHubV2Block,
   gitlab: GitLabBlock,
   gmail: GmailBlock,
+  gmail_v2: GmailV2Block,
   grain: GrainBlock,
   grafana: GrafanaBlock,
   greptile: GreptileBlock,
   guardrails: GuardrailsBlock,
   google_calendar: GoogleCalendarBlock,
+  google_calendar_v2: GoogleCalendarV2Block,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
   google_forms: GoogleFormsBlock,
@@ -203,11 +210,13 @@ export const registry: Record<string, BlockConfig> = {
   incidentio: IncidentioBlock,
   input_trigger: InputTriggerBlock,
   intercom: IntercomBlock,
+  intercom_v2: IntercomV2Block,
   jina: JinaBlock,
   jira: JiraBlock,
   jira_service_management: JiraServiceManagementBlock,
   kalshi: KalshiBlock,
   knowledge: KnowledgeBlock,
+  lemlist: LemlistBlock,
   linear: LinearBlock,
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
@@ -226,6 +235,7 @@ export const registry: Record<string, BlockConfig> = {
   neo4j: Neo4jBlock,
   note: NoteBlock,
   notion: NotionBlock,
+  notion_v2: NotionV2Block,
   onedrive: OneDriveBlock,
   openai: OpenAIBlock,
   outlook: OutlookBlock,
