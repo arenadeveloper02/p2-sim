@@ -135,6 +135,12 @@ export async function duplicateWorkflow(
       })
 
       // Second pass: Create blocks with updated parent relationships
+      // Build a map of block types for circular reference prevention
+      const blockTypeMap = new Map<string, string>()
+      sourceBlocks.forEach((block) => {
+        blockTypeMap.set(block.id, block.type)
+      })
+
       const newBlocks = sourceBlocks.map((block) => {
         const newBlockId = blockIdMapping.get(block.id)!
 
@@ -148,6 +154,25 @@ export async function duplicateWorkflow(
           newParentId = blockIdMapping.get(blockData.parentId)!
         }
 
+        // PREVENTION: Nested loops/parallels should not have parentId references to other loops/parallels
+        // This prevents circular references that cause React Flow position calculation errors
+        if (newParentId && (block.type === 'loop' || block.type === 'parallel')) {
+          const parentBlockType = blockTypeMap.get(blockData.parentId)
+          if (parentBlockType === 'loop' || parentBlockType === 'parallel') {
+            logger.warn(
+              `[${requestId}] Prevented nested ${block.type} from getting parentId to ${parentBlockType} during duplication. Removing parentId to prevent circular reference.`,
+              {
+                blockId: block.id,
+                blockType: block.type,
+                parentId: blockData.parentId,
+                parentType: parentBlockType,
+              }
+            )
+            // Don't set parentId for nested loops/parallels - they are containers themselves
+            newParentId = null
+          }
+        }
+
         // Update data.parentId and extent if they exist in the data object
         let updatedData = block.data
         let newExtent = blockData.extent
@@ -156,10 +181,25 @@ export async function duplicateWorkflow(
           if (dataObj.parentId && typeof dataObj.parentId === 'string') {
             updatedData = { ...dataObj }
             if (blockIdMapping.has(dataObj.parentId)) {
-              ;(updatedData as any).parentId = blockIdMapping.get(dataObj.parentId)!
-              // Ensure extent is set to 'parent' for child blocks
-              ;(updatedData as any).extent = 'parent'
-              newExtent = 'parent'
+              const mappedParentId = blockIdMapping.get(dataObj.parentId)!
+
+              // Apply the same prevention logic here
+              if (newParentId === null) {
+                // Remove parentId and extent from data if we prevented it above
+                ;(updatedData as any).parentId = undefined
+                ;(updatedData as any).extent = undefined
+                newExtent = null
+              } else {
+                ;(updatedData as any).parentId = mappedParentId
+                // Ensure extent is set to 'parent' for child blocks
+                ;(updatedData as any).extent = 'parent'
+                newExtent = 'parent'
+              }
+            } else {
+              // Parent doesn't exist in mapping, remove parentId
+              ;(updatedData as any).parentId = undefined
+              ;(updatedData as any).extent = undefined
+              newExtent = null
             }
           }
         }

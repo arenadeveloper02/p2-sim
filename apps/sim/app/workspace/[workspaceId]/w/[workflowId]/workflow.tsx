@@ -2198,6 +2198,17 @@ const WorkflowContent = React.memo(() => {
       // Don't process parent changes if the node hasn't actually changed parent or is being moved within same parent
       if (potentialParentId === dragStartParentId) return
 
+      // Handle removal from parent (block dragged out of container)
+      if (!potentialParentId && dragStartParentId) {
+        // Block was dragged out of a container - remove parent relationship
+        const affectedEdges = edgesForDisplay.filter(
+          (e) => e.source === node.id || e.target === node.id
+        )
+        updateNodeParent(node.id, '', affectedEdges)
+        setPotentialParentId(null)
+        return
+      }
+
       // Check if this is a starter block - starter blocks should never be in containers
       const isStarterBlock = node.data?.type === 'starter'
       if (isStarterBlock) {
