@@ -41,7 +41,7 @@ export interface ParsedBingQuery {
 }
 
 export interface BingAdsReportRequest {
-  reportType: 'CampaignPerformance' | 'AdGroupPerformance' | 'KeywordPerformance' | 'AccountPerformance'
+  reportType: 'CampaignPerformance' | 'AdGroupPerformance' | 'KeywordPerformance' | 'AccountPerformance' | 'SearchQueryPerformance' | 'GeographicPerformance' | 'AdExtensionByAdReport' | 'AdExtensionDetailReport'
   columns: string[]
   scope: {
     accountIds: string[]

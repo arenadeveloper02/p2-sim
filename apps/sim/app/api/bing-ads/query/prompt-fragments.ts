@@ -10,6 +10,11 @@ export type Intent =
   | 'device_performance'
   | 'conversion_tracking'
   | 'budget_analysis'
+  | 'impression_share'
+  | 'ad_extensions'
+  | 'sitelinks'
+  | 'callouts'
+  | 'structured_snippets'
 
 export interface PromptContext {
   dateRange?: DateRange
@@ -69,7 +74,33 @@ You are a Microsoft Advertising (Bing Ads) Reporting API expert. Generate valid 
 **KeywordPerformance Columns:**
 - Required: CampaignName, AdGroupName, Keyword, KeywordId, KeywordStatus
 - Metrics: Impressions, Clicks, Spend, Conversions
-- Quality: QualityScore
+- Quality: QualityScore, ExpectedCtr, AdRelevance, LandingPageExperience
+
+**SearchQueryPerformance Columns:**
+- Required: CampaignName, AdGroupName, SearchQuery
+- Metrics: Impressions, Clicks, Spend, Conversions
+- Optional: KeywordId, Keyword
+
+**GeographicPerformance Columns:**
+- Required: Country, State, City, MetroArea
+- Metrics: Impressions, Clicks, Spend, Conversions
+- Optional: CampaignName, AdGroupName
+
+**AdExtensionByAdReport Columns:**
+- Required: AdExtensionType, AdExtensionId, AdExtensionVersion
+- Optional: CampaignName, AdGroupName, AdTitle
+- Metrics: Impressions, Clicks, Spend, Conversions, Ctr, AverageCpc
+- Note: This report shows performance by ad extension type, not individual extension details
+
+**AdExtensionDetailReport Columns (for Sitelink/Callout/Snippet details):**
+- Required: AdExtensionType, AdExtensionId, AdExtensionPropertyValue
+- Optional: CampaignName, AdGroupName, AdExtensionVersion
+- Metrics: Impressions, Clicks, Spend, Conversions, Ctr, AverageCpc
+- Note: AdExtensionPropertyValue contains the actual sitelink text, callout text, or snippet values
+
+**Impression Share Columns (add to CampaignPerformance):**
+- ImpressionSharePercent, ImpressionLostToBudgetPercent, ImpressionLostToRankAggPercent
+- ExactMatchImpressionSharePercent, TopImpressionSharePercent
 
 ## DATE PRESETS
 
@@ -154,8 +185,72 @@ Return a JSON object with:
 **Example 6 - "Keyword performance for last week":**
 {
   "reportType": "KeywordPerformance",
-  "columns": ["CampaignName", "AdGroupName", "Keyword", "KeywordId", "Impressions", "Clicks", "Spend", "QualityScore"],
+  "columns": ["CampaignName", "AdGroupName", "Keyword", "KeywordId", "Impressions", "Clicks", "Spend", "QualityScore", "ExpectedCtr", "AdRelevance", "LandingPageExperience"],
   "datePreset": "LastWeek",
+  "aggregation": "Summary"
+}
+
+**Example 7 - "Search terms report":**
+{
+  "reportType": "SearchQueryPerformance",
+  "columns": ["CampaignName", "AdGroupName", "SearchQuery", "Keyword", "Impressions", "Clicks", "Spend", "Conversions"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 8 - "Geographic performance by country":**
+{
+  "reportType": "GeographicPerformance",
+  "columns": ["Country", "CampaignName", "Impressions", "Clicks", "Spend", "Conversions", "Ctr"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 9 - "Geographic performance by state":**
+{
+  "reportType": "GeographicPerformance",
+  "columns": ["Country", "State", "CampaignName", "Impressions", "Clicks", "Spend", "Conversions"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 10 - "Geographic performance by city":**
+{
+  "reportType": "GeographicPerformance",
+  "columns": ["Country", "State", "City", "CampaignName", "Impressions", "Clicks", "Spend", "Conversions"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 11 - "Sitelink extensions performance":**
+{
+  "reportType": "AdExtensionByAdReport",
+  "columns": ["CampaignName", "AdGroupName", "AdExtensionType", "AdExtensionId", "Impressions", "Clicks", "Spend", "Ctr"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 12 - "Callout extensions":**
+{
+  "reportType": "AdExtensionDetailReport",
+  "columns": ["CampaignName", "AdGroupName", "AdExtensionType", "AdExtensionId", "AdExtensionPropertyValue", "Impressions", "Clicks", "Spend"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 13 - "Impression share analysis":**
+{
+  "reportType": "CampaignPerformance",
+  "columns": ["CampaignName", "CampaignId", "Impressions", "Clicks", "Spend", "ImpressionSharePercent", "ImpressionLostToBudgetPercent", "ImpressionLostToRankAggPercent", "ExactMatchImpressionSharePercent"],
+  "datePreset": "LastThirtyDays",
+  "aggregation": "Summary"
+}
+
+**Example 14 - "Cost per conversion analysis":**
+{
+  "reportType": "CampaignPerformance",
+  "columns": ["CampaignName", "CampaignId", "Impressions", "Clicks", "Spend", "Conversions", "Revenue", "CostPerConversion", "ConversionRate"],
+  "datePreset": "LastThirtyDays",
   "aggregation": "Summary"
 }
 
@@ -217,6 +312,28 @@ export const INTENT_PATTERNS: Record<Intent, RegExp[]> = {
     /spend/i,
     /cost/i,
   ],
+  impression_share: [
+    /impression share/i,
+    /lost impression/i,
+    /budget lost/i,
+    /rank lost/i,
+  ],
+  ad_extensions: [
+    /ad extension/i,
+    /extensions/i,
+  ],
+  sitelinks: [
+    /sitelink/i,
+    /site link/i,
+  ],
+  callouts: [
+    /callout/i,
+    /call out/i,
+  ],
+  structured_snippets: [
+    /structured snippet/i,
+    /snippet/i,
+  ],
 }
 
 // Detect intent from user query
@@ -243,6 +360,36 @@ export function detectIntent(query: string): Intent {
     return 'search_terms'
   }
   
+  // Check for geographic queries
+  if (INTENT_PATTERNS.geographic.some(p => p.test(lowerQuery))) {
+    return 'geographic'
+  }
+  
+  // Check for impression share queries
+  if (INTENT_PATTERNS.impression_share.some(p => p.test(lowerQuery))) {
+    return 'impression_share'
+  }
+  
+  // Check for sitelinks queries
+  if (INTENT_PATTERNS.sitelinks.some(p => p.test(lowerQuery))) {
+    return 'sitelinks'
+  }
+  
+  // Check for callouts queries
+  if (INTENT_PATTERNS.callouts.some(p => p.test(lowerQuery))) {
+    return 'callouts'
+  }
+  
+  // Check for structured snippets queries
+  if (INTENT_PATTERNS.structured_snippets.some(p => p.test(lowerQuery))) {
+    return 'structured_snippets'
+  }
+  
+  // Check for ad extensions queries
+  if (INTENT_PATTERNS.ad_extensions.some(p => p.test(lowerQuery))) {
+    return 'ad_extensions'
+  }
+  
   // Default to campaign performance for general queries
   return 'campaign_performance'
 }
@@ -258,6 +405,15 @@ export function getReportTypeForIntent(intent: Intent): string {
       return 'KeywordPerformance'
     case 'search_terms':
       return 'SearchQueryPerformance'
+    case 'geographic':
+      return 'GeographicPerformance'
+    case 'sitelinks':
+    case 'callouts':
+    case 'structured_snippets':
+    case 'ad_extensions':
+      return 'AdExtensionByAdReport'
+    case 'impression_share':
+      return 'CampaignPerformance' // Impression share is a column in CampaignPerformance
     case 'campaign_performance':
     default:
       return 'CampaignPerformance'
@@ -272,11 +428,22 @@ export function getDefaultColumnsForReportType(reportType: string): string[] {
     case 'AdGroupPerformance':
       return ['CampaignName', 'AdGroupName', 'AdGroupId', 'AdGroupStatus', 'Impressions', 'Clicks', 'Spend', 'Conversions', 'Ctr', 'AverageCpc']
     case 'KeywordPerformance':
-      return ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId', 'KeywordStatus', 'Impressions', 'Clicks', 'Spend', 'Conversions', 'QualityScore']
+      return ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId', 'KeywordStatus', 'Impressions', 'Clicks', 'Spend', 'Conversions', 'QualityScore', 'ExpectedCtr', 'AdRelevance', 'LandingPageExperience']
     case 'SearchQueryPerformance':
-      return ['CampaignName', 'AdGroupName', 'SearchQuery', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+      return ['CampaignName', 'AdGroupName', 'SearchQuery', 'Keyword', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+    case 'GeographicPerformance':
+      return ['Country', 'State', 'City', 'CampaignName', 'Impressions', 'Clicks', 'Spend', 'Conversions', 'Ctr']
+    case 'AdExtensionByAdReport':
+      return ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId', 'Impressions', 'Clicks', 'Spend', 'Ctr']
+    case 'AdExtensionDetailReport':
+      return ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId', 'AdExtensionPropertyValue', 'Impressions', 'Clicks', 'Spend']
     case 'CampaignPerformance':
     default:
       return ['CampaignName', 'CampaignId', 'CampaignStatus', 'Impressions', 'Clicks', 'Spend', 'Conversions', 'Ctr', 'AverageCpc', 'CostPerConversion']
   }
+}
+
+// Get impression share columns
+export function getImpressionShareColumns(): string[] {
+  return ['ImpressionSharePercent', 'ImpressionLostToBudgetPercent', 'ImpressionLostToRankAggPercent', 'ExactMatchImpressionSharePercent', 'TopImpressionSharePercent']
 }

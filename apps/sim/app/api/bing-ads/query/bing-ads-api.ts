@@ -227,23 +227,62 @@ function buildPollSoapEnvelope(params: {
 </s:Envelope>`
 }
 
-function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
+function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
+  const reportType = parsedQuery.reportType || 'CampaignPerformance'
+  
+  // Map report type to XML type and column element name
+  const reportTypeMap: Record<string, { xmlType: string; columnElement: string; requiredColumns: string[] }> = {
+    'CampaignPerformance': {
+      xmlType: 'CampaignPerformanceReportRequest',
+      columnElement: 'CampaignPerformanceReportColumn',
+      requiredColumns: ['CampaignName', 'CampaignId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+    },
+    'AccountPerformance': {
+      xmlType: 'AccountPerformanceReportRequest',
+      columnElement: 'AccountPerformanceReportColumn',
+      requiredColumns: ['AccountName', 'AccountId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+    },
+    'AdGroupPerformance': {
+      xmlType: 'AdGroupPerformanceReportRequest',
+      columnElement: 'AdGroupPerformanceReportColumn',
+      requiredColumns: ['CampaignName', 'AdGroupName', 'AdGroupId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+    },
+    'KeywordPerformance': {
+      xmlType: 'KeywordPerformanceReportRequest',
+      columnElement: 'KeywordPerformanceReportColumn',
+      requiredColumns: ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId', 'Impressions', 'Clicks', 'Spend']
+    },
+    'SearchQueryPerformance': {
+      xmlType: 'SearchQueryPerformanceReportRequest',
+      columnElement: 'SearchQueryPerformanceReportColumn',
+      requiredColumns: ['CampaignName', 'AdGroupName', 'SearchQuery', 'Impressions', 'Clicks', 'Spend']
+    },
+    'GeographicPerformance': {
+      xmlType: 'GeographicPerformanceReportRequest',
+      columnElement: 'GeographicPerformanceReportColumn',
+      requiredColumns: ['Country', 'Impressions', 'Clicks', 'Spend']
+    },
+    'AdExtensionByAdReport': {
+      xmlType: 'AdExtensionByAdReportRequest',
+      columnElement: 'AdExtensionByAdReportColumn',
+      requiredColumns: ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId', 'Impressions', 'Clicks']
+    },
+    'AdExtensionDetailReport': {
+      xmlType: 'AdExtensionDetailReportRequest',
+      columnElement: 'AdExtensionDetailReportColumn',
+      requiredColumns: ['CampaignName', 'AdExtensionType', 'AdExtensionId', 'Impressions', 'Clicks']
+    }
+  }
+  
+  const config = reportTypeMap[reportType] || reportTypeMap['CampaignPerformance']
   const requested = Array.isArray(parsedQuery.columns) ? parsedQuery.columns : []
-  const required = [
-    'CampaignName',
-    'CampaignId',
-    'Impressions',
-    'Clicks',
-    'Spend',
-    'Conversions',
-  ]
-  const columns = Array.from(new Set([...required, ...requested]))
+  const columns = Array.from(new Set([...config.requiredColumns, ...requested]))
 
   const aggregation = parsedQuery.aggregation || 'Summary'
   const predefinedTime = parsedQuery.datePreset || 'LastSevenDays'
-  const reportName = `CampaignPerformance_${new Date().toISOString()}`
+  const reportName = `${reportType}_${new Date().toISOString()}`
 
-  return `<ReportRequest i:nil="false" i:type="CampaignPerformanceReportRequest" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  return `<ReportRequest i:nil="false" i:type="${config.xmlType}" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
   <ExcludeColumnHeaders i:nil="false">false</ExcludeColumnHeaders>
   <ExcludeReportFooter i:nil="false">true</ExcludeReportFooter>
   <ExcludeReportHeader i:nil="false">true</ExcludeReportHeader>
@@ -253,7 +292,7 @@ function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery
   <ReturnOnlyCompleteData i:nil="false">false</ReturnOnlyCompleteData>
   <Aggregation>${escapeXml(aggregation)}</Aggregation>
   <Columns i:nil="false">${columns
-    .map((c) => `<CampaignPerformanceReportColumn>${escapeXml(c)}</CampaignPerformanceReportColumn>`)
+    .map((c) => `<${config.columnElement}>${escapeXml(c)}</${config.columnElement}>`)
     .join('')}</Columns>
   <Scope i:nil="false">
     <AccountIds i:nil="false" xmlns:a1="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
@@ -265,6 +304,11 @@ function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery
     <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
   </Time>
 </ReportRequest>`
+}
+
+// Keep backward compatibility
+function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
+  return buildReportRequestXml(accountId, parsedQuery)
 }
 
 async function downloadReportAsCsvText(url: string, _accessToken?: string): Promise<string> {
