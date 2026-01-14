@@ -7,16 +7,23 @@ import { useParams } from 'next/navigation'
 import {
   Badge,
   Combobox,
+  type ComboboxOption,
   type ComboboxOptionGroup,
   Popover,
   PopoverContent,
   PopoverItem,
   PopoverTrigger,
+  Switch,
   Tooltip,
 } from '@/components/emcn'
 import { McpIcon } from '@/components/icons'
-import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  getIssueBadgeLabel,
+  getIssueBadgeVariant,
+  isToolUnavailable,
+  getMcpToolIssue as validateMcpTool,
+} from '@/lib/mcp/tool-validation'
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
@@ -26,7 +33,6 @@ import {
 import {
   CheckboxList,
   Code,
-  ComboBox,
   FileSelectorInput,
   FileUpload,
   LongInput,
@@ -45,16 +51,18 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/custom-tool-modal/custom-tool-modal'
 import { ToolCredentialSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tool-credential-selector'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useChildDeployment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/hooks/use-child-deployment'
 import { getAllBlocks } from '@/blocks'
+import { useMcpTools } from '@/hooks/mcp/use-mcp-tools'
 import {
   type CustomTool as CustomToolDefinition,
   useCustomTools,
 } from '@/hooks/queries/custom-tools'
-import { useMcpServers } from '@/hooks/queries/mcp'
+import { useForceRefreshMcpTools, useMcpServers, useStoredMcpTools } from '@/hooks/queries/mcp'
 import { useWorkflows } from '@/hooks/queries/workflows'
-import { useMcpTools } from '@/hooks/use-mcp-tools'
+import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { getProviderFromModel, supportsToolUsageControl } from '@/providers/utils'
-import { useSettingsModalStore } from '@/stores/settings-modal/store'
+import { useSettingsModalStore } from '@/stores/modals/settings/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import {
   formatParameterLabel,
@@ -205,7 +213,7 @@ function GenericSyncWrapper<T = unknown>({
   const [storeValue] = useSubBlockValue(blockId, paramId)
 
   useEffect(() => {
-    if (storeValue) {
+    if (storeValue != null) {
       const transformedValue = transformer ? transformer(storeValue) : String(storeValue)
       if (transformedValue !== value) {
         onChange(transformedValue)
@@ -447,35 +455,28 @@ function CheckboxListSyncWrapper({
 }
 
 function ComboboxSyncWrapper({
-  blockId,
-  paramId,
   value,
   onChange,
   uiComponent,
   disabled,
 }: {
-  blockId: string
-  paramId: string
   value: string
   onChange: (value: string) => void
   uiComponent: any
   disabled: boolean
 }) {
+  const options = (uiComponent.options || []).map((opt: any) =>
+    typeof opt === 'string' ? { label: opt, value: opt } : { label: opt.label, value: opt.id }
+  )
+
   return (
-    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
-      <ComboBox
-        blockId={blockId}
-        subBlockId={paramId}
-        options={uiComponent.options || []}
-        placeholder={uiComponent.placeholder}
-        config={{
-          id: paramId,
-          type: 'combobox' as const,
-          title: paramId,
-        }}
-        disabled={disabled}
-      />
-    </GenericSyncWrapper>
+    <Combobox
+      options={options}
+      value={value}
+      onChange={onChange}
+      placeholder={uiComponent.placeholder || 'Select option'}
+      disabled={disabled}
+    />
   )
 }
 
@@ -552,8 +553,6 @@ function ChannelSelectorSyncWrapper({
 }
 
 function WorkflowSelectorSyncWrapper({
-  blockId,
-  paramId,
   value,
   onChange,
   uiComponent,
@@ -561,8 +560,6 @@ function WorkflowSelectorSyncWrapper({
   workspaceId,
   currentWorkflowId,
 }: {
-  blockId: string
-  paramId: string
   value: string
   onChange: (value: string) => void
   uiComponent: any
@@ -578,26 +575,19 @@ function WorkflowSelectorSyncWrapper({
 
   const options = availableWorkflows.map((workflow) => ({
     label: workflow.name,
-    id: workflow.id,
+    value: workflow.id,
   }))
 
   return (
-    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
-      <ComboBox
-        blockId={blockId}
-        subBlockId={paramId}
-        options={options}
-        value={value}
-        placeholder={uiComponent.placeholder || 'Select workflow'}
-        disabled={disabled || isLoading}
-        config={{
-          id: paramId,
-          type: 'combobox',
-          options: options,
-          placeholder: uiComponent.placeholder || 'Select workflow',
-        }}
-      />
-    </GenericSyncWrapper>
+    <Combobox
+      options={options}
+      value={value}
+      onChange={onChange}
+      placeholder={uiComponent.placeholder || 'Select workflow'}
+      disabled={disabled || isLoading}
+      searchable
+      searchPlaceholder='Search workflows...'
+    />
   )
 }
 
@@ -685,7 +675,7 @@ function WorkflowInputMapperSyncWrapper({
 
   if (!workflowId) {
     return (
-      <div className='rounded-md border border-gray-600/50 bg-gray-900/20 p-4 text-center text-gray-400 text-sm'>
+      <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
         Select a workflow to configure its inputs
       </div>
     )
@@ -693,15 +683,15 @@ function WorkflowInputMapperSyncWrapper({
 
   if (isLoading) {
     return (
-      <div className='flex items-center justify-center rounded-md border border-gray-600/50 bg-gray-900/20 p-8'>
-        <Loader2 className='h-5 w-5 animate-spin text-gray-400' />
+      <div className='flex items-center justify-center rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-8'>
+        <Loader2 className='h-5 w-5 animate-spin text-[var(--text-muted)]' />
       </div>
     )
   }
 
   if (inputFields.length === 0) {
     return (
-      <div className='rounded-md border border-gray-600/50 bg-gray-900/20 p-4 text-center text-gray-400 text-sm'>
+      <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
         This workflow has no custom input fields
       </div>
     )
@@ -768,6 +758,81 @@ function CodeEditorSyncWrapper({
 }
 
 /**
+ * Badge component showing deployment status for workflow tools
+ */
+function WorkflowToolDeployBadge({
+  workflowId,
+  onDeploySuccess,
+}: {
+  workflowId: string
+  onDeploySuccess?: () => void
+}) {
+  const { isDeployed, needsRedeploy, isLoading, refetch } = useChildDeployment(workflowId)
+  const [isDeploying, setIsDeploying] = useState(false)
+
+  const deployWorkflow = useCallback(async () => {
+    if (isDeploying || !workflowId) return
+
+    try {
+      setIsDeploying(true)
+      const response = await fetch(`/api/workflows/${workflowId}/deploy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deployChatEnabled: false,
+        }),
+      })
+
+      if (response.ok) {
+        refetch()
+        onDeploySuccess?.()
+      } else {
+        logger.error('Failed to deploy workflow')
+      }
+    } catch (error) {
+      logger.error('Error deploying workflow:', error)
+    } finally {
+      setIsDeploying(false)
+    }
+  }, [isDeploying, workflowId, refetch, onDeploySuccess])
+
+  if (isLoading || (isDeployed && !needsRedeploy)) {
+    return null
+  }
+
+  if (typeof isDeployed !== 'boolean') {
+    return null
+  }
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <Badge
+          variant={!isDeployed ? 'red' : 'amber'}
+          className='cursor-pointer'
+          size='sm'
+          dot
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation()
+            e.preventDefault()
+            if (!isDeploying) {
+              deployWorkflow()
+            }
+          }}
+        >
+          {isDeploying ? 'Deploying...' : !isDeployed ? 'undeployed' : 'redeploy'}
+        </Badge>
+      </Tooltip.Trigger>
+      <Tooltip.Content>
+        <span className='text-sm'>{!isDeployed ? 'Click to deploy' : 'Click to redeploy'}</span>
+      </Tooltip.Content>
+    </Tooltip.Root>
+  )
+}
+
+/**
  * Set of built-in tool types that are core platform tools.
  *
  * @remarks
@@ -775,6 +840,7 @@ function CodeEditorSyncWrapper({
  * in the tool selection dropdown.
  */
 const BUILT_IN_TOOL_TYPES = new Set([
+  'api',
   'file',
   'function',
   'knowledge',
@@ -787,6 +853,7 @@ const BUILT_IN_TOOL_TYPES = new Set([
   'tts',
   'stt',
   'memory',
+  'webhook_request',
   'workflow',
 ])
 
@@ -837,7 +904,22 @@ export function ToolInput({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [usageControlPopoverIndex, setUsageControlPopoverIndex] = useState<number | null>(null)
-  const { data: customTools = [] } = useCustomTools(workspaceId)
+
+  const value = isPreview ? previewValue : storeValue
+
+  const selectedTools: StoredTool[] =
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value[0] !== null &&
+    typeof value[0]?.type === 'string'
+      ? (value as StoredTool[])
+      : []
+
+  const hasReferenceOnlyCustomTools = selectedTools.some(
+    (tool) => tool.type === 'custom-tool' && tool.customToolId && !tool.code
+  )
+  const shouldFetchCustomTools = !isPreview || hasReferenceOnlyCustomTools
+  const { data: customTools = [] } = useCustomTools(shouldFetchCustomTools ? workspaceId : '')
 
   const {
     mcpTools,
@@ -847,30 +929,56 @@ export function ToolInput({
   } = useMcpTools(workspaceId)
 
   const { data: mcpServers = [], isLoading: mcpServersLoading } = useMcpServers(workspaceId)
+  const { data: storedMcpTools = [] } = useStoredMcpTools(workspaceId)
+  const forceRefreshMcpTools = useForceRefreshMcpTools()
   const openSettingsModal = useSettingsModalStore((state) => state.openModal)
   const mcpDataLoading = mcpLoading || mcpServersLoading
+  const hasRefreshedRef = useRef(false)
+
+  const hasMcpTools = selectedTools.some((tool) => tool.type === 'mcp')
+
+  useEffect(() => {
+    if (isPreview) return
+    if (hasMcpTools && !hasRefreshedRef.current) {
+      hasRefreshedRef.current = true
+      forceRefreshMcpTools(workspaceId)
+    }
+  }, [hasMcpTools, forceRefreshMcpTools, workspaceId, isPreview])
 
   /**
-   * Returns issue info for an MCP tool using shared validation logic.
+   * Returns issue info for an MCP tool.
+   * Uses DB schema (storedMcpTools) when available for real-time updates after refresh,
+   * otherwise falls back to Zustand schema (tool.schema) which is always available.
    */
   const getMcpToolIssue = useCallback(
     (tool: StoredTool) => {
       if (tool.type !== 'mcp') return null
 
-      const { getMcpToolIssue: validateTool } = require('@/lib/mcp/tool-validation')
+      const serverId = tool.params?.serverId as string
+      const toolName = tool.params?.toolName as string
 
-      return validateTool(
+      // Try to get fresh schema from DB (enables real-time updates after MCP refresh)
+      const storedTool =
+        storedMcpTools.find(
+          (st) =>
+            st.serverId === serverId && st.toolName === toolName && st.workflowId === workflowId
+        ) || storedMcpTools.find((st) => st.serverId === serverId && st.toolName === toolName)
+
+      // Use DB schema if available, otherwise use Zustand schema
+      const schema = storedTool?.schema ?? tool.schema
+
+      return validateMcpTool(
         {
-          serverId: tool.params?.serverId as string,
+          serverId,
           serverUrl: tool.params?.serverUrl as string | undefined,
-          toolName: tool.params?.toolName as string,
-          schema: tool.schema,
+          toolName,
+          schema,
         },
         mcpServers.map((s) => ({
           id: s.id,
           url: s.url,
           connectionStatus: s.connectionStatus,
-          lastError: s.lastError,
+          lastError: s.lastError ?? undefined,
         })),
         mcpTools.map((t) => ({
           serverId: t.serverId,
@@ -879,20 +987,12 @@ export function ToolInput({
         }))
       )
     },
-    [mcpTools, mcpServers]
+    [mcpTools, mcpServers, storedMcpTools, workflowId]
   )
 
   const isMcpToolUnavailable = useCallback(
     (tool: StoredTool): boolean => {
-      const { isToolUnavailable } = require('@/lib/mcp/tool-validation')
       return isToolUnavailable(getMcpToolIssue(tool))
-    },
-    [getMcpToolIssue]
-  )
-
-  const hasMcpToolIssue = useCallback(
-    (tool: StoredTool): boolean => {
-      return getMcpToolIssue(tool) !== null
     },
     [getMcpToolIssue]
   )
@@ -911,23 +1011,38 @@ export function ToolInput({
   const provider = model ? getProviderFromModel(model) : ''
   const supportsToolControl = provider ? supportsToolUsageControl(provider) : false
 
-  const toolBlocks = getAllBlocks().filter(
-    (block) =>
-      (block.category === 'tools' ||
-        block.type === 'workflow' ||
-        block.type === 'knowledge' ||
-        block.type === 'function') &&
-      block.type !== 'evaluator' &&
-      block.type !== 'mcp' &&
-      block.type !== 'file'
-  )
+  const { filterBlocks, config: permissionConfig } = usePermissionConfig()
 
-  const value = isPreview ? previewValue : storeValue
+  const toolBlocks = useMemo(() => {
+    const allToolBlocks = getAllBlocks().filter(
+      (block) =>
+        (block.category === 'tools' ||
+          block.type === 'api' ||
+          block.type === 'webhook_request' ||
+          block.type === 'workflow' ||
+          block.type === 'knowledge' ||
+          block.type === 'function') &&
+        block.type !== 'evaluator' &&
+        block.type !== 'mcp' &&
+        block.type !== 'file'
+    )
+    return filterBlocks(allToolBlocks)
+  }, [filterBlocks])
 
-  const selectedTools: StoredTool[] =
-    Array.isArray(value) && value.length > 0 && typeof value[0] === 'object'
-      ? (value as unknown as StoredTool[])
-      : []
+  const customFilter = useCallback((value: string, search: string) => {
+    if (!search.trim()) return 1
+
+    const normalizedValue = value.toLowerCase()
+    const normalizedSearch = search.toLowerCase()
+
+    if (normalizedValue === normalizedSearch) return 1
+
+    if (normalizedValue.startsWith(normalizedSearch)) return 0.8
+
+    if (normalizedValue.includes(normalizedSearch)) return 0.6
+
+    return 0
+  }, [])
 
   const hasBackfilledRef = useRef(false)
   useEffect(() => {
@@ -1500,33 +1615,37 @@ export function ToolInput({
     const groups: ComboboxOptionGroup[] = []
 
     // Actions group (no section header)
-    groups.push({
-      items: [
-        {
-          label: 'Create Tool',
-          value: 'action-create-tool',
-          icon: WrenchIcon,
-          onSelect: () => {
-            setCustomToolModalOpen(true)
-            setOpen(false)
-          },
-          disabled: isPreview,
+    const actionItems: ComboboxOption[] = []
+    if (!permissionConfig.disableCustomTools) {
+      actionItems.push({
+        label: 'Create Tool',
+        value: 'action-create-tool',
+        icon: WrenchIcon,
+        onSelect: () => {
+          setCustomToolModalOpen(true)
+          setOpen(false)
         },
-        {
-          label: 'Add MCP Server',
-          value: 'action-add-mcp',
-          icon: McpIcon,
-          onSelect: () => {
-            setOpen(false)
-            window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'mcp' } }))
-          },
-          disabled: isPreview,
+        disabled: isPreview,
+      })
+    }
+    if (!permissionConfig.disableMcpTools) {
+      actionItems.push({
+        label: 'Add MCP Server',
+        value: 'action-add-mcp',
+        icon: McpIcon,
+        onSelect: () => {
+          setOpen(false)
+          window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'mcp' } }))
         },
-      ],
-    })
+        disabled: isPreview,
+      })
+    }
+    if (actionItems.length > 0) {
+      groups.push({ items: actionItems })
+    }
 
     // Custom Tools section
-    if (customTools.length > 0) {
+    if (!permissionConfig.disableCustomTools && customTools.length > 0) {
       groups.push({
         section: 'Custom Tools',
         items: customTools.map((customTool) => ({
@@ -1551,7 +1670,7 @@ export function ToolInput({
     }
 
     // MCP Tools section
-    if (availableMcpTools.length > 0) {
+    if (!permissionConfig.disableMcpTools && availableMcpTools.length > 0) {
       groups.push({
         section: 'MCP Tools',
         items: availableMcpTools.map((mcpTool) => {
@@ -1628,6 +1747,8 @@ export function ToolInput({
     setStoreValue,
     handleMcpToolSelect,
     handleSelectTool,
+    permissionConfig.disableCustomTools,
+    permissionConfig.disableMcpTools,
   ])
 
   const toolRequiresOAuth = (toolId: string): boolean => {
@@ -1872,8 +1993,6 @@ export function ToolInput({
       case 'combobox':
         return (
           <ComboboxSyncWrapper
-            blockId={blockId}
-            paramId={param.id}
             value={value}
             onChange={onChange}
             uiComponent={uiComponent}
@@ -1932,8 +2051,6 @@ export function ToolInput({
       case 'workflow-selector':
         return (
           <WorkflowSelectorSyncWrapper
-            blockId={blockId}
-            paramId={param.id}
             value={value}
             onChange={onChange}
             uiComponent={uiComponent}
@@ -2140,7 +2257,7 @@ export function ToolInput({
             >
               <div
                 className={cn(
-                  'flex items-center justify-between gap-[8px] bg-[var(--surface-4)] px-[8px] py-[6.5px]',
+                  'flex items-center justify-between gap-[8px] rounded-t-[4px] bg-[var(--surface-4)] px-[8px] py-[6.5px]',
                   (isCustomTool || hasToolBody) && 'cursor-pointer'
                 )}
                 onClick={() => {
@@ -2181,13 +2298,12 @@ export function ToolInput({
                     (() => {
                       const issue = getMcpToolIssue(tool)
                       if (!issue) return null
-                      const { getIssueBadgeLabel } = require('@/lib/mcp/tool-validation')
                       const serverId = tool.params?.serverId
                       return (
                         <Tooltip.Root>
                           <Tooltip.Trigger asChild>
                             <Badge
-                              variant='amber'
+                              variant={getIssueBadgeVariant(issue)}
                               className='cursor-pointer'
                               size='sm'
                               dot
@@ -2200,10 +2316,15 @@ export function ToolInput({
                               {getIssueBadgeLabel(issue)}
                             </Badge>
                           </Tooltip.Trigger>
-                          <Tooltip.Content>{issue.message}: click to open settings</Tooltip.Content>
+                          <Tooltip.Content>
+                            <span className='text-sm'>{issue.message}: click to open settings</span>
+                          </Tooltip.Content>
                         </Tooltip.Root>
                       )
                     })()}
+                  {tool.type === 'workflow' && tool.params?.workflowId && (
+                    <WorkflowToolDeployBadge workflowId={tool.params.workflowId} />
+                  )}
                 </div>
                 <div className='flex flex-shrink-0 items-center gap-[8px]'>
                   {supportsToolControl && !(isMcpTool && isMcpToolUnavailable(tool)) && (

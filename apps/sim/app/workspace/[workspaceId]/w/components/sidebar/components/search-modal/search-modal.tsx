@@ -17,6 +17,7 @@ import {
 import { searchItems } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-utils'
 import { SIDEBAR_SCROLL_EVENT } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { getAllBlocks } from '@/blocks'
+import { usePermissionConfig } from '@/hooks/use-permission-config'
 
 interface SearchModalProps {
   open: boolean
@@ -104,12 +105,14 @@ export function SearchModal({
   const router = useRouter()
   const workspaceId = params.workspaceId as string
   const brand = useBrandConfig()
+  const { filterBlocks } = usePermissionConfig()
 
   const blocks = useMemo(() => {
     if (!isOnWorkflowPage) return []
 
     const allBlocks = getAllBlocks()
-    const regularBlocks = allBlocks
+    const filteredAllBlocks = filterBlocks(allBlocks)
+    const regularBlocks = filteredAllBlocks
       .filter(
         (block) => block.type !== 'starter' && !block.hideFromToolbar && block.category === 'blocks'
       )
@@ -143,16 +146,17 @@ export function SearchModal({
       },
     ]
 
-    return [...regularBlocks, ...specialBlocks]
-  }, [isOnWorkflowPage])
+    return [...regularBlocks, ...filterBlocks(specialBlocks)]
+  }, [isOnWorkflowPage, filterBlocks])
 
   const triggers = useMemo(() => {
     if (!isOnWorkflowPage) return []
 
     const allTriggers = getTriggersForSidebar()
+    const filteredTriggers = filterBlocks(allTriggers)
     const priorityOrder = ['Start', 'Schedule', 'Webhook']
 
-    const sortedTriggers = allTriggers.sort((a, b) => {
+    const sortedTriggers = filteredTriggers.sort((a, b) => {
       const aIndex = priorityOrder.indexOf(a.name)
       const bIndex = priorityOrder.indexOf(b.name)
       const aHasPriority = aIndex !== -1
@@ -175,13 +179,14 @@ export function SearchModal({
         config: block,
       })
     )
-  }, [isOnWorkflowPage])
+  }, [isOnWorkflowPage, filterBlocks])
 
   const tools = useMemo(() => {
     if (!isOnWorkflowPage) return []
 
     const allBlocks = getAllBlocks()
-    return allBlocks
+    const filteredAllBlocks = filterBlocks(allBlocks)
+    return filteredAllBlocks
       .filter((block) => block.category === 'tools')
       .map(
         (block): ToolItem => ({
@@ -193,7 +198,7 @@ export function SearchModal({
           type: block.type,
         })
       )
-  }, [isOnWorkflowPage])
+  }, [isOnWorkflowPage, filterBlocks])
 
   const pages = useMemo(
     (): PageItem[] => [

@@ -29,9 +29,14 @@
  *   DELETE /api/v1/admin/workflows/:id                      - Delete workflow
  *   GET    /api/v1/admin/workflows/:id/export               - Export workflow (JSON)
  *   POST   /api/v1/admin/workflows/import                   - Import single workflow
+ *   POST   /api/v1/admin/workflows/:id/deploy               - Deploy workflow
+ *   DELETE /api/v1/admin/workflows/:id/deploy               - Undeploy workflow
+ *   GET    /api/v1/admin/workflows/:id/versions             - List deployment versions
+ *   POST   /api/v1/admin/workflows/:id/versions/:vid/activate - Activate specific version
  *
  *   Organizations:
  *   GET    /api/v1/admin/organizations                      - List all organizations
+ *   POST   /api/v1/admin/organizations                      - Create organization (requires ownerId)
  *   GET    /api/v1/admin/organizations/:id                  - Get organization details
  *   PATCH  /api/v1/admin/organizations/:id                  - Update organization
  *   GET    /api/v1/admin/organizations/:id/members          - List organization members
@@ -47,6 +52,14 @@
  *   GET    /api/v1/admin/subscriptions                      - List all subscriptions
  *   GET    /api/v1/admin/subscriptions/:id                  - Get subscription details
  *   DELETE /api/v1/admin/subscriptions/:id                  - Cancel subscription (?atPeriodEnd=true for scheduled)
+ *
+ *   BYOK Keys:
+ *   GET    /api/v1/admin/byok                               - List BYOK keys (?organizationId=X or ?workspaceId=X)
+ *   DELETE /api/v1/admin/byok                               - Delete BYOK keys for org/workspace
+ *
+ *   Access Control (Permission Groups):
+ *   GET    /api/v1/admin/access-control                     - List permission groups (?organizationId=X)
+ *   DELETE /api/v1/admin/access-control                     - Delete permission groups for org (?organizationId=X)
  */
 
 export type { AdminAuthFailure, AdminAuthResult, AdminAuthSuccess } from '@/app/api/v1/admin/auth'
@@ -65,6 +78,8 @@ export {
   unauthorizedResponse,
 } from '@/app/api/v1/admin/responses'
 export type {
+  AdminDeploymentVersion,
+  AdminDeployResult,
   AdminErrorResponse,
   AdminFolder,
   AdminListResponse,
@@ -76,6 +91,7 @@ export type {
   AdminSeatAnalytics,
   AdminSingleResponse,
   AdminSubscription,
+  AdminUndeployResult,
   AdminUser,
   AdminUserBilling,
   AdminUserBillingWithSubscription,

@@ -4,9 +4,9 @@ import { devtools, type PersistStorage, persist } from 'zustand/middleware'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { NormalizedBlockOutput } from '@/executor/types'
-import { useExecutionStore } from '@/stores/execution/store'
+import { useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
-import { useGeneralStore } from '@/stores/settings/general/store'
+import { useGeneralStore } from '@/stores/settings/general'
 import type { ConsoleEntry, ConsoleStore, ConsoleUpdate } from '@/stores/terminal/console/types'
 
 const logger = createLogger('TerminalConsoleStore')
@@ -94,7 +94,6 @@ const isStreamingOutput = (output: any): boolean => {
     return false
   }
 
-  // Check for streaming indicators
   return (
     output.isStreaming === true ||
     ('executionData' in output &&
@@ -112,12 +111,10 @@ const shouldSkipEntry = (output: any): boolean => {
     return false
   }
 
-  // Skip raw streaming objects with both stream and executionData
   if ('stream' in output && 'executionData' in output) {
     return true
   }
 
-  // Skip raw StreamingExecution objects
   if ('stream' in output && 'execution' in output) {
     return true
   }
@@ -134,7 +131,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
 
         addConsole: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => {
           set((state) => {
-            // Skip duplicate streaming entries
             if (shouldSkipEntry(entry.output)) {
               return { entries: state.entries }
             }
@@ -176,8 +172,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
 
           const newEntry = get().entries[0]
 
-          // Surface error notifications immediately when error entries are added
-          // Only show if error notifications are enabled in settings
           if (newEntry?.error) {
             const { isErrorNotificationsEnabled } = useGeneralStore.getState()
 
@@ -186,7 +180,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 const errorMessage = String(newEntry.error)
                 const blockName = newEntry.blockName || 'Unknown Block'
 
-                // Copilot message includes block name for better debugging context
                 const copilotMessage = `${errorMessage}\n\nError in ${blockName}.\n\nPlease fix this.`
 
                 useNotificationStore.getState().addNotification({
@@ -218,22 +211,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           set((state) => ({
             entries: state.entries.filter((entry) => entry.workflowId !== workflowId),
           }))
-          // Clear run path indicators when console is cleared
-          useExecutionStore.getState().clearRunPath()
-        },
-
-        /**
-         * Clears all console entries or entries for a specific workflow and clears the run path
-         * @param workflowId - The workflow ID to clear entries for, or null to clear all
-         * @deprecated Use clearWorkflowConsole for clearing specific workflows
-         */
-        clearConsole: (workflowId: string | null) => {
-          set((state) => ({
-            entries: workflowId
-              ? state.entries.filter((entry) => entry.workflowId !== workflowId)
-              : [],
-          }))
-          // Clear run path indicators when console is cleared
           useExecutionStore.getState().clearRunPath()
         },
 
@@ -254,7 +231,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
 
             let stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
 
-            // Escape quotes and wrap in quotes if contains special characters
             if (
               stringValue.includes('"') ||
               stringValue.includes(',') ||
@@ -303,7 +279,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
           const filename = `terminal-console-${workflowId}-${timestamp}.csv`
 
-          // Create and trigger download
           const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
           const link = document.createElement('a')
 
@@ -330,12 +305,10 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
         updateConsole: (blockId: string, update: string | ConsoleUpdate, executionId?: string) => {
           set((state) => {
             const updatedEntries = state.entries.map((entry) => {
-              // Only update if both blockId and executionId match
               if (entry.blockId !== blockId || entry.executionId !== executionId) {
                 return entry
               }
 
-              // Handle simple string update
               if (typeof update === 'string') {
                 const newOutput = updateBlockOutput(entry.output, update)
                 return {
@@ -344,7 +317,6 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 }
               }
 
-              // Handle complex update
               const updatedEntry = { ...entry }
 
               if (update.content !== undefined) {

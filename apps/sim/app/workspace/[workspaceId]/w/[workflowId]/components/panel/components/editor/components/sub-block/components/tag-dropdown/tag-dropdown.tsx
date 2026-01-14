@@ -8,6 +8,7 @@ import {
   PopoverAnchor,
   PopoverBackButton,
   PopoverContent,
+  PopoverDivider,
   PopoverFolder,
   PopoverItem,
   PopoverScrollArea,
@@ -30,8 +31,8 @@ import type {
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { getBlock } from '@/blocks'
 import type { BlockConfig } from '@/blocks/types'
-import { useVariablesStore } from '@/stores/panel/variables/store'
-import type { Variable } from '@/stores/panel/variables/types'
+import type { Variable } from '@/stores/panel'
+import { useVariablesStore } from '@/stores/panel'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { normalizeName } from '@/stores/workflows/utils'
@@ -754,6 +755,24 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             const allTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
             blockTags = isSelfReference ? allTags.filter((tag) => tag.endsWith('.url')) : allTags
           }
+        } else if (sourceBlock.type === 'human_in_the_loop') {
+          const dynamicOutputs = getBlockOutputPaths(sourceBlock.type, mergedSubBlocks)
+
+          const isSelfReference = activeSourceBlockId === blockId
+
+          if (dynamicOutputs.length > 0) {
+            const allTags = dynamicOutputs.map((path) => `${normalizedBlockName}.${path}`)
+            // For self-reference, only show url and resumeEndpoint (not response format fields)
+            blockTags = isSelfReference
+              ? allTags.filter((tag) => tag.endsWith('.url') || tag.endsWith('.resumeEndpoint'))
+              : allTags
+          } else {
+            const outputPaths = getBlockOutputPaths(sourceBlock.type, mergedSubBlocks)
+            const allTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
+            blockTags = isSelfReference
+              ? allTags.filter((tag) => tag.endsWith('.url') || tag.endsWith('.resumeEndpoint'))
+              : allTags
+          }
         } else {
           const operationValue =
             mergedSubBlocks?.operation?.value ?? getSubBlockValue(activeSourceBlockId, 'operation')
@@ -1073,7 +1092,19 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
             blockTags = isSelfReference ? allTags.filter((tag) => tag.endsWith('.url')) : allTags
           }
         } else if (accessibleBlock.type === 'human_in_the_loop') {
-          blockTags = [`${normalizedBlockName}.url`]
+          const dynamicOutputs = getBlockOutputPaths(accessibleBlock.type, mergedSubBlocks)
+
+          const isSelfReference = accessibleBlockId === blockId
+
+          if (dynamicOutputs.length > 0) {
+            const allTags = dynamicOutputs.map((path) => `${normalizedBlockName}.${path}`)
+            // For self-reference, only show url and resumeEndpoint (not response format fields)
+            blockTags = isSelfReference
+              ? allTags.filter((tag) => tag.endsWith('.url') || tag.endsWith('.resumeEndpoint'))
+              : allTags
+          } else {
+            blockTags = [`${normalizedBlockName}.url`, `${normalizedBlockName}.resumeEndpoint`]
+          }
         } else {
           const operationValue =
             mergedSubBlocks?.operation?.value ?? getSubBlockValue(accessibleBlockId, 'operation')
@@ -1426,7 +1457,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
   }
 
   return (
-    <Popover open={visible} onOpenChange={(open) => !open && onClose?.()}>
+    <Popover open={visible} onOpenChange={(open) => !open && onClose?.()} colorScheme='inverted'>
       <PopoverAnchor asChild>
         <div
           className={cn('pointer-events-none', className)}
@@ -1502,23 +1533,24 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                           }
                         }}
                       >
-                        <span className='flex-1 truncate text-[var(--text-primary)]'>
+                        <span className='flex-1 truncate'>
                           {tag.startsWith(TAG_PREFIXES.VARIABLE)
                             ? tag.substring(TAG_PREFIXES.VARIABLE.length)
                             : tag}
                         </span>
                         {variableInfo && (
-                          <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
+                          <span className='ml-auto text-[10px] text-[var(--text-muted-inverse)]'>
                             {variableInfo.type}
                           </span>
                         )}
                       </PopoverItem>
                     )
                   })}
+                  {nestedBlockTagGroups.length > 0 && <PopoverDivider rootOnly />}
                 </>
               )}
 
-              {nestedBlockTagGroups.map((group: NestedBlockTagGroup) => {
+              {nestedBlockTagGroups.map((group: NestedBlockTagGroup, groupIndex: number) => {
                 const blockConfig = getBlock(group.blockType)
                 let blockColor = blockConfig?.bgColor || BLOCK_COLORS.DEFAULT
 
@@ -1565,9 +1597,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                       }}
                     >
                       <TagIcon icon={tagIcon} color={blockColor} />
-                      <span className='flex-1 truncate font-medium text-[var(--text-primary)]'>
-                        {group.blockName}
-                      </span>
+                      <span className='flex-1 truncate font-medium'>{group.blockName}</span>
                     </PopoverItem>
                     {group.nestedTags.map((nestedTag) => {
                       if (nestedTag.fullTag === rootTag) {
@@ -1650,11 +1680,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                                     }
                                   }}
                                 >
-                                  <span className='flex-1 truncate text-[var(--text-primary)]'>
-                                    {child.display}
-                                  </span>
+                                  <span className='flex-1 truncate'>{child.display}</span>
                                   {childType && childType !== 'any' && (
-                                    <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
+                                    <span className='ml-auto text-[10px] text-[var(--text-muted-inverse)]'>
                                       {childType}
                                     </span>
                                   )}
@@ -1722,17 +1750,16 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                             }
                           }}
                         >
-                          <span className='flex-1 truncate text-[var(--text-primary)]'>
-                            {nestedTag.display}
-                          </span>
+                          <span className='flex-1 truncate'>{nestedTag.display}</span>
                           {tagDescription && tagDescription !== 'any' && (
-                            <span className='ml-auto text-[10px] text-[var(--text-secondary)]'>
+                            <span className='ml-auto text-[10px] text-[var(--text-muted-inverse)]'>
                               {tagDescription}
                             </span>
                           )}
                         </PopoverItem>
                       )
                     })}
+                    {groupIndex < nestedBlockTagGroups.length - 1 && <PopoverDivider rootOnly />}
                   </div>
                 )
               })}

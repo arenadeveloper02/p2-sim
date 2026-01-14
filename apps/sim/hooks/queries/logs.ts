@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { getStartDateFromTimeRange } from '@/lib/logs/filters'
+import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filters'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import type { LogsResponse, TimeRange, WorkflowLog } from '@/stores/logs/filters/types'
 
@@ -12,10 +12,15 @@ export const logKeys = {
   detail: (logId: string | undefined) => [...logKeys.details(), logId ?? ''] as const,
   dashboard: (workspaceId: string | undefined, filters: Record<string, unknown>) =>
     [...logKeys.all, 'dashboard', workspaceId ?? '', filters] as const,
+  executionSnapshots: () => [...logKeys.all, 'executionSnapshot'] as const,
+  executionSnapshot: (executionId: string | undefined) =>
+    [...logKeys.executionSnapshots(), executionId ?? ''] as const,
 }
 
 interface LogFilters {
   timeRange: TimeRange
+  startDate?: string
+  endDate?: string
   level: string
   workflowIds: string[]
   folderIds: string[]
@@ -45,9 +50,14 @@ function applyFilterParams(params: URLSearchParams, filters: Omit<LogFilters, 'l
     params.set('folderIds', filters.folderIds.join(','))
   }
 
-  const startDate = getStartDateFromTimeRange(filters.timeRange)
+  const startDate = getStartDateFromTimeRange(filters.timeRange, filters.startDate)
   if (startDate) {
     params.set('startDate', startDate.toISOString())
+  }
+
+  const endDate = getEndDateFromTimeRange(filters.timeRange, filters.endDate)
+  if (endDate) {
+    params.set('endDate', endDate.toISOString())
   }
 
   if (filters.searchQuery.trim()) {
@@ -187,5 +197,47 @@ export function useDashboardLogs(
     refetchInterval: options?.refetchInterval ?? false,
     staleTime: 0,
     placeholderData: keepPreviousData,
+  })
+}
+
+export interface ExecutionSnapshotData {
+  executionId: string
+  workflowId: string
+  workflowState: Record<string, unknown>
+  executionMetadata: {
+    trigger: string
+    startedAt: string
+    endedAt?: string
+    totalDurationMs?: number
+    cost: {
+      total: number | null
+      input: number | null
+      output: number | null
+    }
+    totalTokens: number | null
+  }
+}
+
+async function fetchExecutionSnapshot(executionId: string): Promise<ExecutionSnapshotData> {
+  const response = await fetch(`/api/logs/execution/${executionId}`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch execution snapshot: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  if (!data) {
+    throw new Error('No execution snapshot data returned')
+  }
+
+  return data
+}
+
+export function useExecutionSnapshot(executionId: string | undefined) {
+  return useQuery({
+    queryKey: logKeys.executionSnapshot(executionId),
+    queryFn: () => fetchExecutionSnapshot(executionId as string),
+    enabled: Boolean(executionId),
+    staleTime: 5 * 60 * 1000, // 5 minutes - execution snapshots don't change
   })
 }

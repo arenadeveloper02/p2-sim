@@ -10,6 +10,7 @@ import {
   circlebackMeetingNotesTrigger,
   circlebackWebhookTrigger,
 } from '@/triggers/circleback'
+import { firefliesTranscriptionCompleteTrigger } from '@/triggers/fireflies'
 import { genericWebhookTrigger } from '@/triggers/generic'
 import {
   githubIssueClosedTrigger,
@@ -55,6 +56,7 @@ import {
   hubspotTicketDeletedTrigger,
   hubspotTicketPropertyChangedTrigger,
 } from '@/triggers/hubspot'
+import { imapPollingTrigger } from '@/triggers/imap'
 import {
   jiraIssueCommentedTrigger,
   jiraIssueCreatedTrigger,
@@ -120,6 +122,7 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   github_push: githubPushTrigger,
   github_release_published: githubReleasePublishedTrigger,
   github_workflow_run: githubWorkflowRunTrigger,
+  fireflies_transcription_complete: firefliesTranscriptionCompleteTrigger,
   gmail_poller: gmailPollingTrigger,
   grain_webhook: grainWebhookTrigger,
   grain_recording_created: grainRecordingCreatedTrigger,
@@ -183,4 +186,5 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   hubspot_ticket_created: hubspotTicketCreatedTrigger,
   hubspot_ticket_deleted: hubspotTicketDeletedTrigger,
   hubspot_ticket_property_changed: hubspotTicketPropertyChangedTrigger,
+  imap_poller: imapPollingTrigger,
 }

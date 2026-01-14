@@ -1,10 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { MIN_SIDEBAR_WIDTH, useSidebarStore } from '@/stores/sidebar/store'
-
-/**
- * Constants for sidebar sizing
- */
-const MAX_WIDTH_PERCENTAGE = 0.3 // 30% of viewport width
+import { useCallback, useEffect } from 'react'
+import { SIDEBAR_WIDTH } from '@/stores/constants'
+import { useSidebarStore } from '@/stores/sidebar/store'
 
 /**
  * Custom hook to handle sidebar resize functionality.
@@ -14,8 +10,7 @@ const MAX_WIDTH_PERCENTAGE = 0.3 // 30% of viewport width
  * @returns Resize state and handlers
  */
 export function useSidebarResize() {
-  const { setSidebarWidth } = useSidebarStore()
-  const [isResizing, setIsResizing] = useState(false)
+  const { setSidebarWidth, isResizing, setIsResizing } = useSidebarStore()
 
   /**
    * Handles mouse down on resize handle
@@ -33,9 +28,9 @@ export function useSidebarResize() {
 
     const handleMouseMove = (e: MouseEvent) => {
       const newWidth = e.clientX
-      const maxWidth = window.innerWidth * MAX_WIDTH_PERCENTAGE
+      const maxWidth = window.innerWidth * SIDEBAR_WIDTH.MAX_PERCENTAGE
 
-      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= maxWidth) {
+      if (newWidth >= SIDEBAR_WIDTH.MIN && newWidth <= maxWidth) {
         setSidebarWidth(newWidth)
       }
     }

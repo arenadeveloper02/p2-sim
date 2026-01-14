@@ -159,7 +159,7 @@ export function CustomTools() {
                     )}
                   </div>
                   <div className='flex flex-shrink-0 items-center gap-[8px]'>
-                    <Button variant='ghost' onClick={() => setEditingTool(tool.id)}>
+                    <Button variant='default' onClick={() => setEditingTool(tool.id)}>
                       Edit
                     </Button>
                     <Button

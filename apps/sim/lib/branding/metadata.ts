@@ -44,7 +44,7 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
     alternates: {
       canonical: '/',
       languages: {
-        'en-US': '/en-US',
+        'en-US': '/',
       },
     },
     robots: {
@@ -67,10 +67,10 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
       siteName: 'Arena AI',
       images: [
         {
-          url: brand.logoUrl || '/social/facebook.png',
-          width: 1200,
-          height: 630,
-          alt: `Arena’s Visual AI agent builder for production workflows.`,
+          url: brand.logoUrl || '/logo/426-240/primary/small.png',
+          width: 2130,
+          height: 1200,
+          alt: brand.name,
         },
       ],
     },
@@ -78,7 +78,7 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
       card: 'summary_large_image',
       title: defaultTitle,
       description: summaryFull,
-      images: [brand.logoUrl || '/social/twitter.png'],
+      images: [brand.logoUrl || '/logo/426-240/primary/small.png'],
       creator: '@position2',
       site: '@position2',
     },

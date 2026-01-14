@@ -7,7 +7,7 @@ import { HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { type DiffStatus, hasDiffStatus } from '@/lib/workflows/diff/types'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import { usePanelEditorStore } from '@/stores/panel/editor/store'
+import { usePanelEditorStore } from '@/stores/panel'
 
 /**
  * Global styles for subflow nodes (loop and parallel containers).
@@ -47,6 +47,8 @@ export interface SubflowNodeData {
   parentId?: string
   extent?: 'parent'
   isPreview?: boolean
+  /** Whether this subflow is selected in preview mode */
+  isPreviewSelected?: boolean
   kind: 'loop' | 'parallel'
   name?: string
 }
@@ -61,7 +63,7 @@ export interface SubflowNodeData {
  */
 export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeData>) => {
   const { getNodes } = useReactFlow()
-  const { collaborativeRemoveBlock } = useCollaborativeWorkflow()
+  const { collaborativeBatchRemoveBlocks } = useCollaborativeWorkflow()
   const blockRef = useRef<HTMLDivElement>(null)
 
   const currentWorkflow = useCurrentWorkflow()
@@ -108,12 +110,12 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
    */
   const getHandleClasses = (position: 'left' | 'right') => {
     const baseClasses = '!z-[10] !cursor-crosshair !border-none !transition-[colors] !duration-150'
-    const colorClasses = '!bg-[var(--surface-7)]'
+    const colorClasses = '!bg-[var(--workflow-edge)]'
 
     const positionClasses = {
-      left: '!left-[-7px] !h-5 !w-[7px] !rounded-l-[2px] !rounded-r-none hover:!left-[-10px] hover:!w-[10px] hover:!rounded-l-full',
+      left: '!left-[-8px] !h-5 !w-[7px] !rounded-l-[2px] !rounded-r-none hover:!left-[-11px] hover:!w-[10px] hover:!rounded-l-full',
       right:
-        '!right-[-7px] !h-5 !w-[7px] !rounded-r-[2px] !rounded-l-none hover:!right-[-10px] hover:!w-[10px] hover:!rounded-r-full',
+        '!right-[-8px] !h-5 !w-[7px] !rounded-r-[2px] !rounded-l-none hover:!right-[-11px] hover:!w-[10px] hover:!rounded-r-full',
     }
 
     return cn(baseClasses, colorClasses, positionClasses[position])
@@ -123,16 +125,18 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
     return { top: `${HANDLE_POSITIONS.DEFAULT_Y_OFFSET}px`, transform: 'translateY(-50%)' }
   }
 
+  const isPreviewSelected = data?.isPreviewSelected || false
+
   /**
    * Determine the ring styling based on subflow state priority:
-   * 1. Focused (selected in editor) - blue ring
+   * 1. Focused (selected in editor) or preview selected - blue ring
    * 2. Diff status (version comparison) - green/orange ring
    */
-  const hasRing = isFocused || diffStatus === 'new' || diffStatus === 'edited'
+  const hasRing = isFocused || isPreviewSelected || diffStatus === 'new' || diffStatus === 'edited'
   const ringStyles = cn(
     hasRing && 'ring-[1.75px]',
-    isFocused && 'ring-[var(--brand-secondary)]',
-    diffStatus === 'new' && 'ring-[#22C55F]',
+    (isFocused || isPreviewSelected) && 'ring-[var(--brand-secondary)]',
+    diffStatus === 'new' && 'ring-[var(--brand-tertiary-2)]',
     diffStatus === 'edited' && 'ring-[var(--warning)]'
   )
 
@@ -144,7 +148,7 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
           ref={blockRef}
           onClick={() => setCurrentBlockId(id)}
           className={cn(
-            'relative cursor-pointer select-none rounded-[8px] border border-[var(--border)]',
+            'relative cursor-pointer select-none rounded-[8px] border border-[var(--border-1)]',
             'transition-block-bg transition-ring',
             'z-[20]'
           )}
@@ -184,7 +188,7 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
                 variant='ghost'
                 onClick={(e) => {
                   e.stopPropagation()
-                  collaborativeRemoveBlock(id)
+                  collaborativeBatchRemoveBlocks([id])
                 }}
                 className='h-[14px] w-[14px] p-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100'
               >
@@ -205,13 +209,12 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
             data-dragarea='true'
             style={{
               position: 'relative',
-              minHeight: '100%',
               pointerEvents: isPreview ? 'none' : 'auto',
             }}
           >
             {/* Subflow Start */}
             <div
-              className='absolute top-[16px] left-[16px] flex items-center justify-center rounded-[8px] bg-[var(--surface-2)] px-[12px] py-[6px]'
+              className='absolute top-[16px] left-[16px] flex items-center justify-center rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-2)] px-[12px] py-[6px]'
               style={{ pointerEvents: isPreview ? 'none' : 'auto' }}
               data-parent-id={id}
               data-node-role={`${data.kind}-start`}

@@ -20,6 +20,7 @@ import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/provide
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
   HelpModal,
+  NavItemContextMenu,
   SearchModal,
   SettingsModal,
   UsageIndicator,
@@ -27,6 +28,7 @@ import {
   WorkspaceHeader,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
 import {
+  useContextMenu,
   useFolderOperations,
   useSidebarResize,
   useWorkflowOperations,
@@ -37,10 +39,12 @@ import {
   useExportWorkspace,
   useImportWorkspace,
 } from '@/app/workspace/[workspaceId]/w/hooks'
+import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { SIDEBAR_WIDTH } from '@/stores/constants'
 import { useFolderStore } from '@/stores/folders/store'
-import { useSearchModalStore } from '@/stores/search-modal/store'
-import { useSettingsModalStore } from '@/stores/settings-modal/store'
-import { MIN_SIDEBAR_WIDTH, useSidebarStore } from '@/stores/sidebar/store'
+import { useSearchModalStore } from '@/stores/modals/search/store'
+import { useSettingsModalStore } from '@/stores/modals/settings/store'
+import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
 
@@ -75,6 +79,7 @@ export function Sidebar() {
 
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const { canEdit } = useUserPermissionsContext()
+  const { config: permissionConfig } = usePermissionConfig()
 
   /**
    * Sidebar state from store with hydration tracking to prevent SSR mismatch.
@@ -174,6 +179,46 @@ export function Sidebar() {
     workspaceId,
   })
 
+  /** Context menu state for navigation items */
+  const [activeNavItemHref, setActiveNavItemHref] = useState<string | null>(null)
+  const {
+    isOpen: isNavContextMenuOpen,
+    position: navContextMenuPosition,
+    menuRef: navMenuRef,
+    handleContextMenu: handleNavContextMenuBase,
+    closeMenu: closeNavContextMenu,
+  } = useContextMenu()
+
+  const handleNavItemContextMenu = useCallback(
+    (e: React.MouseEvent, href: string) => {
+      setActiveNavItemHref(href)
+      handleNavContextMenuBase(e)
+    },
+    [handleNavContextMenuBase]
+  )
+
+  const handleNavContextMenuClose = useCallback(() => {
+    closeNavContextMenu()
+    setActiveNavItemHref(null)
+  }, [closeNavContextMenu])
+
+  const handleNavOpenInNewTab = useCallback(() => {
+    if (activeNavItemHref) {
+      window.open(activeNavItemHref, '_blank', 'noopener,noreferrer')
+    }
+  }, [activeNavItemHref])
+
+  const handleNavCopyLink = useCallback(async () => {
+    if (activeNavItemHref) {
+      const fullUrl = `${window.location.origin}${activeNavItemHref}`
+      try {
+        await navigator.clipboard.writeText(fullUrl)
+      } catch (error) {
+        logger.error('Failed to copy link to clipboard', { error })
+      }
+    }
+  }, [activeNavItemHref])
+
   const { handleDuplicateWorkspace: duplicateWorkspace } = useDuplicateWorkspace({
     getWorkspaceId: () => workspaceId,
   })
@@ -257,7 +302,7 @@ export function Sidebar() {
       if (isCollapsed) {
         setIsCollapsed(false)
       }
-      setSidebarWidth(MIN_SIDEBAR_WIDTH)
+      setSidebarWidth(SIDEBAR_WIDTH.MIN)
     }
   }, [isOnWorkflowPage, isCollapsed, setIsCollapsed, setSidebarWidth])
 
@@ -464,8 +509,8 @@ export function Sidebar() {
   return (
     <>
       {isCollapsed ? (
-        /* Floating collapsed header */
-        <div className='fixed top-[14px] left-[10px] z-10 max-w-[232px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-1)] px-[12px] py-[6px]'>
+        /* Floating collapsed header - minimal pill showing workspace name and expand toggle */
+        <div className='fixed top-[14px] left-[10px] z-10 w-fit rounded-[10px] border border-[var(--border)] bg-[var(--surface-1)] px-[10px] py-[6px]'>
           <WorkspaceHeader
             activeWorkspace={activeWorkspace}
             workspaceId={workspaceId}
@@ -571,7 +616,7 @@ export function Sidebar() {
                             <ArrowDown className='h-[14px] w-[14px]' />
                           </Button>
                         </Tooltip.Trigger>
-                        <Tooltip.Content className='py-[2.5px]'>
+                        <Tooltip.Content>
                           <p>{isImporting ? 'Importing workflow...' : 'Import workflow'}</p>
                         </Tooltip.Content>
                       </Tooltip.Root>
@@ -586,7 +631,7 @@ export function Sidebar() {
                             <FolderPlus className='h-[14px] w-[14px]' />
                           </Button>
                         </Tooltip.Trigger>
-                        <Tooltip.Content className='py-[2.5px]'>
+                        <Tooltip.Content>
                           <p>{isCreatingFolder ? 'Creating folder...' : 'Create folder'}</p>
                         </Tooltip.Content>
                       </Tooltip.Root>
@@ -601,7 +646,7 @@ export function Sidebar() {
                             <Plus className='h-[14px] w-[14px]' />
                           </Button>
                         </Tooltip.Trigger>
-                        <Tooltip.Content className='py-[2.5px]'>
+                        <Tooltip.Content>
                           <p>{isCreatingWorkflow ? 'Creating workflow...' : 'Create workflow'}</p>
                         </Tooltip.Content>
                       </Tooltip.Root>
@@ -687,12 +732,23 @@ export function Sidebar() {
                           openKnowledgeBasePageEvent({})
                         }
                       }}
+                      onContextMenu={(e) => handleNavItemContextMenu(e, item.href!)}
                     >
                       {content}
                     </Link>
                   )
                 })}
               </div>
+
+              {/* Nav Item Context Menu */}
+              <NavItemContextMenu
+                isOpen={isNavContextMenuOpen}
+                position={navContextMenuPosition}
+                menuRef={navMenuRef}
+                onClose={handleNavContextMenuClose}
+                onOpenInNewTab={handleNavOpenInNewTab}
+                onCopyLink={handleNavCopyLink}
+              />
             </div>
           </aside>
 
@@ -719,7 +775,12 @@ export function Sidebar() {
       />
 
       {/* Footer Navigation Modals */}
-      <HelpModal open={isHelpModalOpen} onOpenChange={setIsHelpModalOpen} />
+      <HelpModal
+        open={isHelpModalOpen}
+        onOpenChange={setIsHelpModalOpen}
+        workflowId={workflowId}
+        workspaceId={workspaceId}
+      />
       <SettingsModal
         open={isSettingsModalOpen}
         onOpenChange={(open) => (open ? openSettingsModal() : closeSettingsModal())}

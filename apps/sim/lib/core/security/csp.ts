@@ -109,7 +109,12 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
   ],
 
-  'frame-src': ['https://drive.google.com', 'https://docs.google.com', 'https://*.google.com'],
+  'frame-src': [
+    "'self'",
+    'https://drive.google.com',
+    'https://docs.google.com',
+    'https://*.google.com',
+  ],
 
   'frame-ancestors': ["'self'"],
   'form-action': ["'self'"],
@@ -194,6 +199,18 @@ export function getMainCSPPolicy(): string {
  */
 export function getWorkflowExecutionCSPPolicy(): string {
   return "default-src * 'unsafe-inline' 'unsafe-eval'; connect-src *;"
+}
+
+/**
+ * CSP for embeddable form pages
+ * Allows embedding in iframes from any origin while maintaining other security policies
+ */
+export function getFormEmbedCSPPolicy(): string {
+  const basePolicy = buildCSPString({
+    ...buildTimeCSPDirectives,
+    'frame-ancestors': ['*'],
+  })
+  return basePolicy
 }
 
 /**

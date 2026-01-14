@@ -256,24 +256,13 @@ export function InputMapping({
 
   if (!selectedWorkflowId) {
     return (
-      <div className='flex flex-col items-center justify-center rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-3)] p-8 text-center dark:bg-[#1F1F1F]'>
-        <svg
-          className='mb-3 h-10 w-10 text-[var(--text-tertiary)]'
-          fill='none'
-          viewBox='0 0 24 24'
-          stroke='currentColor'
-        >
-          <path
-            strokeLinecap='round'
-            strokeLinejoin='round'
-            strokeWidth={1.5}
-            d='M13 10V3L4 14h7v7l9-11h-7z'
-          />
-        </svg>
-        <p className='font-medium text-[var(--text-tertiary)] text-sm'>No workflow selected</p>
-        <p className='mt-1 text-[var(--text-tertiary)]/80 text-xs'>
-          Select a workflow above to configure inputs
-        </p>
+      <div className='flex h-32 items-center justify-center rounded-[4px] border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] dark:bg-[#1F1F1F]'>
+        <div className='text-center'>
+          <p className='font-medium text-[var(--text-secondary)] text-sm'>No workflow selected</p>
+          <p className='mt-1 text-[var(--text-muted)] text-xs'>
+            Select a workflow above to configure inputs
+          </p>
+        </div>
       </div>
     )
   }
@@ -368,25 +357,25 @@ function InputMappingField({
   return (
     <div
       className={cn(
-        'rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-3)] dark:bg-[#1F1F1F]',
+        'rounded-[4px] border border-[var(--border-1)]',
         collapsed ? 'overflow-hidden' : 'overflow-visible'
       )}
     >
       <div
-        className='flex cursor-pointer items-center justify-between bg-transparent px-[10px] py-[5px]'
+        className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-[10px] py-[5px]'
         onClick={onToggleCollapse}
       >
         <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
           <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
             {fieldName}
           </span>
-          {fieldType && <Badge className='h-[20px] text-[13px]'>{fieldType}</Badge>}
+          {fieldType && <Badge size='sm'>{fieldType}</Badge>}
         </div>
       </div>
 
       {!collapsed && (
-        <div className='flex flex-col gap-[6px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
-          <div className='space-y-[4px]'>
+        <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
+          <div className='flex flex-col gap-[6px]'>
             <Label className='text-[13px]'>Value</Label>
             <div className='relative'>
               <Input

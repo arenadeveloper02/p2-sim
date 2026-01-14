@@ -51,12 +51,13 @@ import {
   useFloatBoundarySync,
   useFloatDrag,
   useFloatResize,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
-import { getChatPosition, useChatStore } from '@/stores/chat/store'
-import { useExecutionStore } from '@/stores/execution/store'
+import { useChatStore } from '@/stores/chat/store'
+import { getChatPosition } from '@/stores/chat/utils'
+import { useExecutionStore } from '@/stores/execution'
 import { useOperationQueue } from '@/stores/operation-queue/store'
 import { useTerminalConsoleStore } from '@/stores/terminal'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -395,7 +396,7 @@ export function Chat() {
 
   // Get custom fields (excluding reserved fields: input, conversationId, files)
   const customFields = useMemo(() => {
-    return getCustomInputFields(startBlockInputFormat)
+    return getCustomInputFields(startBlockInputFormat as InputFormatField[])
   }, [startBlockInputFormat])
 
   // Reset modal flags when workflow changes or messages are added
@@ -533,6 +534,7 @@ export function Chat() {
   /**
    * Processes streaming response from workflow execution
    * Reads the stream chunk by chunk and updates the message content in real-time
+   * When the final event arrives, extracts any additional selected outputs (model, tokens, toolCalls)
    * @param stream - ReadableStream containing the workflow execution response
    * @param responseMessageId - ID of the message to update with streamed content
    */
@@ -656,6 +658,37 @@ export function Chat() {
               if (event === 'final' && eventData) {
                 receivedFinalEvent = true
                 finalEventData = eventData as ExecutionResult
+                if (
+                  selectedOutputs.length > 0 &&
+                  'logs' in finalEventData &&
+                  Array.isArray(finalEventData.logs) &&
+                  activeWorkflowId
+                ) {
+                  const additionalOutputs: string[] = []
+
+                  for (const outputId of selectedOutputs) {
+                    const blockId = extractBlockIdFromOutputId(outputId)
+                    const path = extractPathFromOutputId(outputId, blockId)
+
+                    if (path === 'content') continue
+
+                    const outputValue = extractOutputFromLogs(
+                      finalEventData.logs as BlockLog[],
+                      outputId
+                    )
+                    if (outputValue !== undefined) {
+                      const formattedValue =
+                        typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue)
+                      if (formattedValue) {
+                        additionalOutputs.push(`**${path}:** ${formattedValue}`)
+                      }
+                    }
+                  }
+
+                  if (additionalOutputs.length > 0) {
+                    appendMessageContent(responseMessageId, `\n\n${additionalOutputs.join('\n\n')}`)
+                  }
+                }
                 continue
               }
 
@@ -690,7 +723,7 @@ export function Chat() {
         focusInput(100)
       }
     },
-    [appendMessageContent, finalizeMessageStream, focusInput]
+    [appendMessageContent, finalizeMessageStream, focusInput, selectedOutputs, activeWorkflowId]
   )
 
   /**
@@ -702,7 +735,6 @@ export function Chat() {
       if (!result || !activeWorkflowId) return
       if (typeof result !== 'object') return
 
-      // Handle streaming response
       if ('stream' in result && result.stream instanceof ReadableStream) {
         const responseMessageId = crypto.randomUUID()
         addMessage({
@@ -716,7 +748,6 @@ export function Chat() {
         return
       }
 
-      // Handle success with logs
       if ('success' in result && result.success && 'logs' in result && Array.isArray(result.logs)) {
         selectedOutputs
           .map((outputId) => extractOutputFromLogs(result.logs as BlockLog[], outputId))
@@ -734,7 +765,6 @@ export function Chat() {
         return
       }
 
-      // Handle error response
       if ('success' in result && !result.success) {
         const errorMessage =
           'error' in result && typeof result.error === 'string'
@@ -812,7 +842,6 @@ export function Chat() {
 
     const sentMessage = chatMessage.trim()
 
-    // Update prompt history (only if new unique message)
     if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
       setPromptHistory((prev) => [...prev, sentMessage])
     }
@@ -836,7 +865,6 @@ export function Chat() {
       // Process file attachments
       const attachmentsWithData = await processFileAttachments(chatFiles)
 
-      // Add user message
       const messageContent =
         sentMessage || (chatFiles.length > 0 ? `Uploaded ${chatFiles.length} file(s)` : '')
       addMessage({
@@ -867,13 +895,11 @@ export function Chat() {
         }
       }
 
-      // Clear input and files
       setChatMessage('')
       clearFiles()
       clearErrors()
       focusInput(10)
 
-      // Execute workflow
       const result = await handleRunWorkflow(workflowInput)
       handleWorkflowResponse(result)
     } catch (error) {
@@ -1018,7 +1044,9 @@ export function Chat() {
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSendMessage()
+        if (!isStreaming && !isExecuting) {
+          handleSendMessage()
+        }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         if (promptHistory.length > 0) {
@@ -1041,7 +1069,7 @@ export function Chat() {
         }
       }
     },
-    [handleSendMessage, promptHistory, historyIndex]
+    [handleSendMessage, promptHistory, historyIndex, isStreaming, isExecuting]
   )
 
   /**
@@ -1373,7 +1401,7 @@ export function Chat() {
                 onKeyDown={handleKeyPress}
                 placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
                 className='w-full border-0 bg-transparent pr-[56px] pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
-                disabled={!activeWorkflowId || isExecuting}
+                disabled={!activeWorkflowId}
               />
 
               {/* Buttons positioned absolutely on the right */}
@@ -1382,7 +1410,7 @@ export function Chat() {
                   onClick={() => document.getElementById('floating-chat-file-input')?.click()}
                   title='Attach file'
                   className={cn(
-                    '!bg-transparent cursor-pointer rounded-[6px] p-[0px]',
+                    '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
                     (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
                       'cursor-not-allowed opacity-50'
                   )}
@@ -1403,7 +1431,8 @@ export function Chat() {
                     disabled={
                       (!chatMessage.trim() && chatFiles.length === 0) ||
                       !activeWorkflowId ||
-                      isExecuting
+                      isExecuting ||
+                      isStreaming
                     }
                     className={cn(
                       'h-[22px] w-[22px] rounded-full p-0 transition-colors',
@@ -1437,7 +1466,7 @@ export function Chat() {
         <StartBlockInputModal
           open={isInputModalOpen}
           onOpenChange={setIsInputModalOpen}
-          inputFormat={startBlockInputFormat}
+          inputFormat={startBlockInputFormat as InputFormatField[] | null | undefined}
           onSubmit={handleStartBlockInputsSubmit}
           initialValues={startBlockInputs}
         />

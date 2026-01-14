@@ -12,8 +12,7 @@ import { createLogger } from '@sim/logger'
 import { ArrowUp, AtSign, Image, Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
-import { Badge, Button } from '@/components/emcn'
-import { Textarea } from '@/components/ui'
+import { Badge, Button, Textarea } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { copilotPromptSentEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -36,8 +35,8 @@ import {
   useTextareaAutoResize,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks'
 import type { MessageFileAttachment } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
-import { useCopilotStore } from '@/stores/panel/copilot/store'
-import type { ChatContext } from '@/stores/panel/copilot/types'
+import type { ChatContext } from '@/stores/panel'
+import { useCopilotStore } from '@/stores/panel'
 
 const logger = createLogger('CopilotUserInput')
 
@@ -119,7 +118,6 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
     const selectedModel =
       selectedModelOverride !== undefined ? selectedModelOverride : copilotStore.selectedModel
     const setSelectedModel = onModelChangeOverride || copilotStore.setSelectedModel
-    const contextUsage = copilotStore.contextUsage
 
     // Internal state
     const [internalMessage, setInternalMessage] = useState('')
@@ -302,7 +300,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
       async (overrideMessage?: string, options: { preserveInput?: boolean } = {}) => {
         const targetMessage = overrideMessage ?? message
         const trimmedMessage = targetMessage.trim()
-        if (!trimmedMessage || disabled || isLoading) return
+        // Allow submission even when isLoading - store will queue the message
+        if (!trimmedMessage || disabled) return
 
         const failedUploads = fileAttachments.attachedFiles.filter((f) => !f.uploading && !f.key)
         if (failedUploads.length > 0) {
@@ -601,7 +600,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
         elements.push(
           <span
             key={`mention-${i}-${range.start}-${range.end}`}
-            className='rounded-[6px] bg-[rgba(142,76,251,0.65)]'
+            className='rounded-[4px] bg-[rgba(50,189,126,0.65)] py-[1px]'
           >
             {mentionText}
           </span>
@@ -630,7 +629,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
         <div
           ref={setInputContainerRef}
           className={cn(
-            'relative w-full rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[6px] py-[6px] transition-colors dark:bg-[var(--surface-5)]',
+            'relative w-full rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-4)] px-[6px] py-[6px] transition-colors dark:bg-[var(--surface-4)]',
             fileAttachments.isDragging && 'ring-[1.75px] ring-[var(--brand-secondary)]'
           )}
           onDragEnter={fileAttachments.handleDragEnter}
@@ -757,8 +756,8 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                 onClick={fileAttachments.handleFileSelect}
                 title='Attach file'
                 className={cn(
-                  'cursor-pointer rounded-[6px] bg-transparent p-[0px] dark:bg-transparent',
-                  (disabled || isLoading) && 'cursor-not-allowed opacity-50'
+                  'cursor-pointer rounded-[6px] border-0 bg-transparent p-[0px] dark:bg-transparent',
+                  disabled && 'cursor-not-allowed opacity-50'
                 )}
               >
                 <Image className='!h-3.5 !w-3.5 scale-x-110' />
@@ -769,20 +768,19 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                   onClick={handleAbort}
                   disabled={isAborting}
                   className={cn(
-                    'h-[20px] w-[20px] rounded-full p-0 transition-colors',
+                    'h-[20px] w-[20px] rounded-full border-0 p-0 transition-colors',
                     !isAborting
-                      ? 'bg-[var(--c-C0C0C0)] hover:bg-[var(--c-D0D0D0)]'
-                      : 'bg-[var(--c-C0C0C0)]'
+                      ? 'bg-[var(--c-383838)] hover:bg-[var(--c-575757)] dark:bg-[var(--c-E0E0E0)] dark:hover:bg-[var(--c-CFCFCF)]'
+                      : 'bg-[var(--c-383838)] dark:bg-[var(--c-E0E0E0)]'
                   )}
                   title='Stop generation'
                 >
                   {isAborting ? (
-                    <Loader2 className='block h-[13px] w-[13px] animate-spin text-black' />
+                    <Loader2 className='block h-[13px] w-[13px] animate-spin text-white dark:text-black' />
                   ) : (
                     <svg
-                      className='block h-[13px] w-[13px]'
+                      className='block h-[13px] w-[13px] fill-white dark:fill-black'
                       viewBox='0 0 24 24'
-                      fill='black'
                       xmlns='http://www.w3.org/2000/svg'
                     >
                       <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
@@ -796,23 +794,26 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
                   }}
                   disabled={!canSubmit}
                   className={cn(
-                    'h-[22px] w-[22px] rounded-full p-0 transition-colors',
+                    'h-[22px] w-[22px] rounded-full border-0 p-0 transition-colors',
                     canSubmit
-                      ? 'bg-[var(--c-C0C0C0)] hover:bg-[var(--c-D0D0D0)]'
-                      : 'bg-[var(--c-C0C0C0)]'
+                      ? 'bg-[var(--c-383838)] hover:bg-[var(--c-575757)] dark:bg-[var(--c-E0E0E0)] dark:hover:bg-[var(--c-CFCFCF)]'
+                      : 'bg-[var(--c-808080)] dark:bg-[var(--c-808080)]'
                   )}
                 >
                   {isLoading ? (
-                    <Loader2 className='block h-3.5 w-3.5 animate-spin text-black' />
+                    <Loader2 className='block h-3.5 w-3.5 animate-spin text-white dark:text-black' />
                   ) : (
-                    <ArrowUp className='block h-3.5 w-3.5 text-black' strokeWidth={2.25} />
+                    <ArrowUp
+                      className='block h-3.5 w-3.5 text-white dark:text-black'
+                      strokeWidth={2.25}
+                    />
                   )}
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Hidden File Input */}
+          {/* Hidden File Input - enabled during streaming so users can prepare images for the next message */}
           <input
             ref={fileAttachments.fileInputRef}
             type='file'
@@ -820,7 +821,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
             className='hidden'
             accept='image/*'
             multiple
-            disabled={disabled || isLoading}
+            disabled={disabled}
           />
         </div>
       </div>

@@ -535,6 +535,9 @@ export const webhook = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     failedCount: integer('failed_count').default(0), // Track consecutive failures
     lastFailedAt: timestamp('last_failed_at'), // When the webhook last failed
+    credentialSetId: text('credential_set_id').references(() => credentialSet.id, {
+      onDelete: 'set null',
+    }), // For credential set webhooks - enables efficient queries
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -547,6 +550,8 @@ export const webhook = pgTable(
         table.workflowId,
         table.blockId
       ),
+      // Optimize queries for credential set webhooks
+      credentialSetIdIdx: index('webhook_credential_set_id_idx').on(table.credentialSetId),
     }
   }
 )
@@ -801,6 +806,43 @@ export const chat = pgTable(
   }
 )
 
+export const form = pgTable(
+  'form',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    identifier: text('identifier').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+
+    // UI/UX Customizations
+    // { primaryColor, welcomeMessage, thankYouTitle, thankYouMessage, logoUrl }
+    customizations: json('customizations').default('{}'),
+
+    // Authentication options (following chat pattern)
+    authType: text('auth_type').notNull().default('public'), // 'public', 'password', 'email'
+    password: text('password'), // Stored encrypted, populated when authType is 'password'
+    allowedEmails: json('allowed_emails').default('[]'), // Array of allowed emails or domains
+
+    // Branding
+    showBranding: boolean('show_branding').notNull().default(true),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    identifierIdx: uniqueIndex('form_identifier_idx').on(table.identifier),
+    workflowIdIdx: index('form_workflow_id_idx').on(table.workflowId),
+    userIdIdx: index('form_user_id_idx').on(table.userId),
+  })
+)
+
 export const organization = pgTable('organization', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -829,7 +871,7 @@ export const member = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({
-    userIdIdx: index('member_user_id_idx').on(table.userId),
+    userIdUnique: uniqueIndex('member_user_id_unique').on(table.userId), // Users can only belong to one org
     organizationIdIdx: index('member_organization_id_idx').on(table.organizationId),
   })
 )
@@ -1740,6 +1782,61 @@ export const ssoProvider = pgTable(
   })
 )
 
+/**
+ * Workflow MCP Servers - User-created MCP servers that expose workflows as tools.
+ * These servers are accessible by external MCP clients via API key authentication.
+ */
+export const workflowMcpServer = pgTable(
+  'workflow_mcp_server',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdIdx: index('workflow_mcp_server_workspace_id_idx').on(table.workspaceId),
+    createdByIdx: index('workflow_mcp_server_created_by_idx').on(table.createdBy),
+  })
+)
+
+/**
+ * Workflow MCP Tools - Workflows registered as tools within a Workflow MCP Server.
+ * Each tool maps to a deployed workflow's execute endpoint.
+ */
+export const workflowMcpTool = pgTable(
+  'workflow_mcp_tool',
+  {
+    id: text('id').primaryKey(),
+    serverId: text('server_id')
+      .notNull()
+      .references(() => workflowMcpServer.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    toolName: text('tool_name').notNull(),
+    toolDescription: text('tool_description'),
+    parameterSchema: json('parameter_schema').notNull().default('{}'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    serverIdIdx: index('workflow_mcp_tool_server_id_idx').on(table.serverId),
+    workflowIdIdx: index('workflow_mcp_tool_workflow_id_idx').on(table.workflowId),
+    serverWorkflowUnique: uniqueIndex('workflow_mcp_tool_server_workflow_unique').on(
+      table.serverId,
+      table.workflowId
+    ),
+  })
+)
+
 export const deployedChat = pgTable(
   'deployed_chat',
   {
@@ -1860,38 +1957,166 @@ export const usageLog = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
 
-    // Charge category: 'model' (token-based) or 'fixed' (flat fee)
     category: usageLogCategoryEnum('category').notNull(),
 
-    // What generated this charge: 'workflow', 'wand', 'copilot'
     source: usageLogSourceEnum('source').notNull(),
 
-    // For model charges: model name (e.g., 'gpt-4o', 'claude-4.5-opus')
-    // For fixed charges: charge type (e.g., 'execution_fee', 'search_query')
     description: text('description').notNull(),
 
-    // Category-specific metadata (e.g., tokens for 'model' category)
     metadata: jsonb('metadata'),
 
-    // Cost in USD
     cost: decimal('cost').notNull(),
 
-    // Optional context references
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
     workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     executionId: text('execution_id'),
 
-    // Timestamp
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
-    // Index for querying user's usage history (most common query)
     userCreatedAtIdx: index('usage_log_user_created_at_idx').on(table.userId, table.createdAt),
-    // Index for filtering by source
     sourceIdx: index('usage_log_source_idx').on(table.source),
-    // Index for workspace-specific queries
     workspaceIdIdx: index('usage_log_workspace_id_idx').on(table.workspaceId),
-    // Index for workflow-specific queries
     workflowIdIdx: index('usage_log_workflow_id_idx').on(table.workflowId),
+  })
+)
+
+export const credentialSet = pgTable(
+  'credential_set',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    providerId: text('provider_id').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationIdIdx: index('credential_set_organization_id_idx').on(table.organizationId),
+    createdByIdx: index('credential_set_created_by_idx').on(table.createdBy),
+    orgNameUnique: uniqueIndex('credential_set_org_name_unique').on(
+      table.organizationId,
+      table.name
+    ),
+    providerIdIdx: index('credential_set_provider_id_idx').on(table.providerId),
+  })
+)
+
+export const credentialSetMemberStatusEnum = pgEnum('credential_set_member_status', [
+  'active',
+  'pending',
+  'revoked',
+])
+
+export const credentialSetMember = pgTable(
+  'credential_set_member',
+  {
+    id: text('id').primaryKey(),
+    credentialSetId: text('credential_set_id')
+      .notNull()
+      .references(() => credentialSet.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    status: credentialSetMemberStatusEnum('status').notNull().default('pending'),
+    joinedAt: timestamp('joined_at'),
+    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    credentialSetIdIdx: index('credential_set_member_set_id_idx').on(table.credentialSetId),
+    userIdIdx: index('credential_set_member_user_id_idx').on(table.userId),
+    uniqueMembership: uniqueIndex('credential_set_member_unique').on(
+      table.credentialSetId,
+      table.userId
+    ),
+    statusIdx: index('credential_set_member_status_idx').on(table.status),
+  })
+)
+
+export const credentialSetInvitationStatusEnum = pgEnum('credential_set_invitation_status', [
+  'pending',
+  'accepted',
+  'expired',
+  'cancelled',
+])
+
+export const credentialSetInvitation = pgTable(
+  'credential_set_invitation',
+  {
+    id: text('id').primaryKey(),
+    credentialSetId: text('credential_set_id')
+      .notNull()
+      .references(() => credentialSet.id, { onDelete: 'cascade' }),
+    email: text('email'),
+    token: text('token').notNull().unique(),
+    invitedBy: text('invited_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    status: credentialSetInvitationStatusEnum('status').notNull().default('pending'),
+    expiresAt: timestamp('expires_at').notNull(),
+    acceptedAt: timestamp('accepted_at'),
+    acceptedByUserId: text('accepted_by_user_id').references(() => user.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    credentialSetIdIdx: index('credential_set_invitation_set_id_idx').on(table.credentialSetId),
+    tokenIdx: index('credential_set_invitation_token_idx').on(table.token),
+    statusIdx: index('credential_set_invitation_status_idx').on(table.status),
+    expiresAtIdx: index('credential_set_invitation_expires_at_idx').on(table.expiresAt),
+  })
+)
+
+export const permissionGroup = pgTable(
+  'permission_group',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    config: jsonb('config').notNull().default('{}'),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    organizationIdIdx: index('permission_group_organization_id_idx').on(table.organizationId),
+    createdByIdx: index('permission_group_created_by_idx').on(table.createdBy),
+    orgNameUnique: uniqueIndex('permission_group_org_name_unique').on(
+      table.organizationId,
+      table.name
+    ),
+  })
+)
+
+export const permissionGroupMember = pgTable(
+  'permission_group_member',
+  {
+    id: text('id').primaryKey(),
+    permissionGroupId: text('permission_group_id')
+      .notNull()
+      .references(() => permissionGroup.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    assignedBy: text('assigned_by').references(() => user.id, { onDelete: 'set null' }),
+    assignedAt: timestamp('assigned_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    permissionGroupIdIdx: index('permission_group_member_group_id_idx').on(table.permissionGroupId),
+    userIdUnique: uniqueIndex('permission_group_member_user_id_unique').on(table.userId),
   })
 )

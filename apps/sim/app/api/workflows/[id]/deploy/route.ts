@@ -3,12 +3,13 @@ import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { deployWorkflow, loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { removeMcpToolsForWorkflow, syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import {
-  createSchedulesForDeploy,
-  deleteSchedulesForWorkflow,
-  validateWorkflowSchedules,
-} from '@/lib/workflows/schedules'
+  deployWorkflow,
+  loadWorkflowFromNormalizedTables,
+  undeployWorkflow,
+} from '@/lib/workflows/persistence/utils'
+import { createSchedulesForDeploy, validateWorkflowSchedules } from '@/lib/workflows/schedules'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -160,6 +161,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logger.info(`[${requestId}] Workflow deployed successfully: ${id}`)
 
+    // Sync MCP tools with the latest parameter schema
+    await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
+
     const responseApiKeyInfo = workflowData!.workspaceId
       ? 'Workspace API keys'
       : 'Personal API keys'
@@ -203,31 +207,22 @@ export async function DELETE(
       return createErrorResponse(error.message, error.status)
     }
 
+    const result = await undeployWorkflow({ workflowId: id })
+    if (!result.success) {
+      return createErrorResponse(result.error || 'Failed to undeploy workflow', 500)
+    }
+
+    // Delete any chat deployments linked to this workflow
     await db.transaction(async (tx) => {
-      await deleteSchedulesForWorkflow(id, tx)
-
-      await tx
-        .update(workflowDeploymentVersion)
-        .set({ isActive: false })
-        .where(eq(workflowDeploymentVersion.workflowId, id))
-
-      // Mark the workflow itself as undeployed
-      await tx
-        .update(workflow)
-        .set({ isDeployed: false, deployedAt: null })
-        .where(eq(workflow.id, id))
-
-      // Delete any chat deployments linked to this workflow
       await tx.delete(chat).where(eq(chat.workflowId, id))
     })
+    await removeMcpToolsForWorkflow(id, requestId)
 
     logger.info(`[${requestId}] Workflow undeployed successfully: ${id}`)
 
     try {
-      const { trackPlatformEvent } = await import('@/lib/core/telemetry')
-      trackPlatformEvent('platform.workflow.undeployed', {
-        'workflow.id': id,
-      })
+      const { PlatformEvents } = await import('@/lib/core/telemetry')
+      PlatformEvents.workflowUndeployed({ workflowId: id })
     } catch (_e) {
       // Silently fail
     }

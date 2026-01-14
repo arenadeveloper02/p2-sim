@@ -18,10 +18,9 @@ import {
 import { useSession } from '@/lib/auth/auth-client'
 import { env } from '@/lib/core/config/env'
 import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
-import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal/invite-modal'
+import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
 
 const logger = createLogger('WorkspaceHeader')
 
@@ -30,6 +29,7 @@ interface Workspace {
   name: string
   ownerId: string
   role?: string
+  permissions?: 'admin' | 'write' | 'read' | null
 }
 
 interface WorkspaceHeaderProps {
@@ -131,7 +131,6 @@ export function WorkspaceHeader({
   isImportingWorkspace,
   showCollapseButton = true,
 }: WorkspaceHeaderProps) {
-  const userPermissions = useUserPermissionsContext()
   const { data: session } = useSession()
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -142,11 +141,14 @@ export function WorkspaceHeader({
   const [isListRenaming, setIsListRenaming] = useState(false)
   const listRenameInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
-  const capturedWorkspaceRef = useRef<{ id: string; name: string } | null>(null)
+  const capturedWorkspaceRef = useRef<{
+    id: string
+    name: string
+    permissions?: 'admin' | 'write' | 'read' | null
+  } | null>(null)
 
   /**
    * Check if current user is a platform admin
@@ -185,6 +187,13 @@ export function WorkspaceHeader({
     setIsMounted(true)
   }, [])
 
+  // Listen for open-invite-modal event from context menu
+  useEffect(() => {
+    const handleOpenInvite = () => setIsInviteModalOpen(true)
+    window.addEventListener('open-invite-modal', handleOpenInvite)
+    return () => window.removeEventListener('open-invite-modal', handleOpenInvite)
+  }, [])
+
   /**
    * Focus the inline list rename input when it becomes active
    */
@@ -221,7 +230,11 @@ export function WorkspaceHeader({
     e.preventDefault()
     e.stopPropagation()
 
-    capturedWorkspaceRef.current = { id: workspace.id, name: workspace.name }
+    capturedWorkspaceRef.current = {
+      id: workspace.id,
+      name: workspace.name,
+      permissions: workspace.permissions,
+    }
     setContextMenuPosition({ x: e.clientX, y: e.clientY })
     setIsContextMenuOpen(true)
   }
@@ -294,9 +307,9 @@ export function WorkspaceHeader({
   }
 
   return (
-    <div className='flex min-w-0 items-center justify-between gap-[2px]'>
+    <div className={`flex items-center gap-[8px] ${isCollapsed ? '' : 'min-w-0 justify-between'}`}>
       {/* Workspace Name with Switcher */}
-      <div className='min-w-0 flex-1'>
+      <div className={isCollapsed ? '' : 'min-w-0 flex-1'}>
         {/* Workspace Switcher Popover - only render after mount to avoid Radix ID hydration mismatch */}
         {isMounted ? (
           <Popover
@@ -313,10 +326,16 @@ export function WorkspaceHeader({
               <button
                 type='button'
                 aria-label='Switch workspace'
-                className='-mx-[6px] flex min-w-0 max-w-full cursor-pointer items-center gap-[8px] rounded-[6px] bg-transparent px-[6px] py-[4px] transition-colors hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)]'
+                className={`flex cursor-pointer items-center gap-[8px] rounded-[6px] bg-transparent px-[6px] py-[4px] transition-colors hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)] ${
+                  isCollapsed ? '' : '-mx-[6px] min-w-0 max-w-full'
+                }`}
                 title={activeWorkspace?.name || 'Loading...'}
               >
-                <span className='truncate font-base text-[14px] text-[var(--text-primary)]'>
+                <span
+                  className={`font-base text-[14px] text-[var(--text-primary)] ${
+                    isCollapsed ? 'max-w-[120px] truncate' : 'truncate'
+                  }`}
+                >
                   {activeWorkspace?.name || 'Loading...'}
                 </span>
                 <ChevronDown
@@ -358,7 +377,7 @@ export function WorkspaceHeader({
                             <ArrowDown className='h-[14px] w-[14px]' />
                           </Button>
                         </Tooltip.Trigger>
-                        <Tooltip.Content className='py-[2.5px]'>
+                        <Tooltip.Content>
                           <p>
                             {isImportingWorkspace ? 'Importing workspace...' : 'Import workspace'}
                           </p>
@@ -465,11 +484,17 @@ export function WorkspaceHeader({
           <button
             type='button'
             aria-label='Switch workspace'
-            className='-mx-[6px] flex min-w-0 max-w-full cursor-pointer items-center gap-[8px] rounded-[6px] bg-transparent px-[6px] py-[4px] transition-colors hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)]'
+            className={`flex cursor-pointer items-center gap-[8px] rounded-[6px] bg-transparent px-[6px] py-[4px] transition-colors hover:bg-[var(--surface-6)] dark:hover:bg-[var(--surface-5)] ${
+              isCollapsed ? '' : '-mx-[6px] min-w-0 max-w-full'
+            }`}
             title={activeWorkspace?.name || 'Loading...'}
             disabled
           >
-            <span className='truncate font-base text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'>
+            <span
+              className={`font-base text-[14px] text-[var(--text-primary)] dark:text-[var(--white)] ${
+                isCollapsed ? 'max-w-[120px] truncate' : 'truncate'
+              }`}
+            >
               {activeWorkspace?.name || 'Loading...'}
             </span>
             <ChevronDown className='h-[8px] w-[12px] flex-shrink-0 text-[var(--text-muted)]' />
@@ -478,10 +503,12 @@ export function WorkspaceHeader({
       </div>
       {/* Workspace Actions */}
       <div className='flex flex-shrink-0 items-center gap-[10px]'>
-        {/* Invite */}
-        <Badge className='cursor-pointer' onClick={() => setIsInviteModalOpen(true)}>
-          Invite
-        </Badge>
+        {/* Invite - hidden in collapsed mode */}
+        {!isCollapsed && (
+          <Badge className='cursor-pointer' onClick={() => setIsInviteModalOpen(true)}>
+            Invite
+          </Badge>
+        )}
         {/* Sidebar Collapse Toggle */}
         {showCollapseButton && (
           <Button
@@ -497,23 +524,31 @@ export function WorkspaceHeader({
       </div>
 
       {/* Context Menu */}
-      <ContextMenu
-        isOpen={isContextMenuOpen}
-        position={contextMenuPosition}
-        menuRef={contextMenuRef}
-        onClose={closeContextMenu}
-        onRename={handleRenameAction}
-        onDuplicate={handleDuplicateAction}
-        onExport={handleExportAction}
-        onDelete={handleDeleteAction}
-        showRename={true}
-        showDuplicate={true}
-        showExport={true}
-        disableRename={!userPermissions.canEdit}
-        disableDuplicate={!userPermissions.canEdit}
-        disableExport={!userPermissions.canAdmin}
-        disableDelete={!userPermissions.canAdmin}
-      />
+      {(() => {
+        const capturedPermissions = capturedWorkspaceRef.current?.permissions
+        const contextCanEdit = capturedPermissions === 'admin' || capturedPermissions === 'write'
+        const contextCanAdmin = capturedPermissions === 'admin'
+
+        return (
+          <ContextMenu
+            isOpen={isContextMenuOpen}
+            position={contextMenuPosition}
+            menuRef={contextMenuRef}
+            onClose={closeContextMenu}
+            onRename={handleRenameAction}
+            onDuplicate={handleDuplicateAction}
+            onExport={handleExportAction}
+            onDelete={handleDeleteAction}
+            showRename={true}
+            showDuplicate={true}
+            showExport={true}
+            disableRename={!contextCanEdit}
+            disableDuplicate={!contextCanEdit}
+            disableExport={!contextCanAdmin}
+            disableDelete={!contextCanAdmin}
+          />
+        )
+      })()}
 
       {/* Invite Modal */}
       <InviteModal

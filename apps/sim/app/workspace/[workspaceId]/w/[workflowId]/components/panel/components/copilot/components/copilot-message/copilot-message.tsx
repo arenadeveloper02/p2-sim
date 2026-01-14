@@ -1,9 +1,13 @@
 'use client'
 
-import { type FC, memo, useMemo, useState } from 'react'
-import { Check, Copy, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { type FC, memo, useCallback, useMemo, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/emcn'
-import { ToolCall } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components'
+import {
+  OptionsSelector,
+  parseSpecialTags,
+  ToolCall,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components'
 import {
   FileAttachmentDisplay,
   SmoothStreamingText,
@@ -15,12 +19,10 @@ import CopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId
 import {
   useCheckpointManagement,
   useMessageEditing,
-  useMessageFeedback,
-  useSuccessTimers,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/hooks'
 import { UserInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/user-input'
-import { useCopilotStore } from '@/stores/panel/copilot/store'
-import type { CopilotMessage as CopilotMessageType } from '@/stores/panel/copilot/types'
+import type { CopilotMessage as CopilotMessageType } from '@/stores/panel'
+import { useCopilotStore } from '@/stores/panel'
 
 /**
  * Props for the CopilotMessage component
@@ -40,6 +42,8 @@ interface CopilotMessageProps {
   onEditModeChange?: (isEditing: boolean, cancelCallback?: () => void) => void
   /** Callback when revert mode changes */
   onRevertModeChange?: (isReverting: boolean) => void
+  /** Whether this is the last message in the conversation */
+  isLastMessage?: boolean
 }
 
 /**
@@ -59,6 +63,7 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
     checkpointCount = 0,
     onEditModeChange,
     onRevertModeChange,
+    isLastMessage = false,
   }) => {
     const isUser = message.role === 'user'
     const isAssistant = message.role === 'assistant'
@@ -87,22 +92,6 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
 
     // UI state
     const [isHoveringMessage, setIsHoveringMessage] = useState(false)
-
-    // Success timers hook
-    const {
-      showCopySuccess,
-      showUpvoteSuccess,
-      showDownvoteSuccess,
-      handleCopy,
-      setShowUpvoteSuccess,
-      setShowDownvoteSuccess,
-    } = useSuccessTimers()
-
-    // Message feedback hook
-    const { handleUpvote, handleDownvote } = useMessageFeedback(message, messages, {
-      setShowUpvoteSuccess,
-      setShowDownvoteSuccess,
-    })
 
     // Checkpoint management hook
     const {
@@ -153,14 +142,6 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
       pendingEditRef,
     })
 
-    /**
-     * Handles copying message content to clipboard
-     * Uses the success timer hook to show feedback
-     */
-    const handleCopyContent = () => {
-      handleCopy(message.content)
-    }
-
     // Get clean text content with double newline parsing
     const cleanTextContent = useMemo(() => {
       if (!message.content) return ''
@@ -168,6 +149,42 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
       // Parse out excessive newlines (more than 2 consecutive newlines)
       return message.content.replace(/\n{3,}/g, '\n\n')
     }, [message.content])
+
+    // Parse special tags from message content (options, plan)
+    // Parse during streaming to show options/plan as they stream in
+    const parsedTags = useMemo(() => {
+      if (isUser) return null
+
+      // Try message.content first
+      if (message.content) {
+        const parsed = parseSpecialTags(message.content)
+        if (parsed.options || parsed.plan) return parsed
+      }
+
+      // During streaming, check content blocks for options/plan
+      if (isStreaming && message.contentBlocks && message.contentBlocks.length > 0) {
+        for (const block of message.contentBlocks) {
+          if (block.type === 'text' && block.content) {
+            const parsed = parseSpecialTags(block.content)
+            if (parsed.options || parsed.plan) return parsed
+          }
+        }
+      }
+
+      return message.content ? parseSpecialTags(message.content) : null
+    }, [message.content, message.contentBlocks, isUser, isStreaming])
+
+    // Get sendMessage from store for continuation actions
+    const sendMessage = useCopilotStore((s) => s.sendMessage)
+
+    // Handler for option selection
+    const handleOptionSelect = useCallback(
+      (_optionKey: string, optionText: string) => {
+        // Send the option text as a message
+        sendMessage(optionText)
+      },
+      [sendMessage]
+    )
 
     // Memoize content blocks to avoid re-rendering unchanged blocks
     const memoizedContentBlocks = useMemo(() => {
@@ -179,8 +196,12 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
         if (block.type === 'text') {
           const isLastTextBlock =
             index === message.contentBlocks!.length - 1 && block.type === 'text'
-          // Clean content for this text block
-          const cleanBlockContent = block.content.replace(/\n{3,}/g, '\n\n')
+          // Always strip special tags from display (they're rendered separately as options/plan)
+          const parsed = parseSpecialTags(block.content)
+          const cleanBlockContent = parsed.cleanContent.replace(/\n{3,}/g, '\n\n')
+
+          // Skip if no content after stripping tags
+          if (!cleanBlockContent.trim()) return null
 
           // Use smooth streaming for the last text block if we're streaming
           const shouldUseSmoothing = isStreaming && isLastTextBlock
@@ -201,19 +222,14 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
           )
         }
         if (block.type === 'thinking') {
-          const isLastBlock = index === message.contentBlocks!.length - 1
-          // Consider the thinking block streaming if the overall message is streaming
-          // and the block has not been finalized with a duration yet. This avoids
-          // freezing the timer when new blocks are appended after the thinking block.
-          const isStreamingThinking = isStreaming && (block as any).duration == null
-
+          // Check if there are any blocks after this one (tool calls, text, etc.)
+          const hasFollowingContent = index < message.contentBlocks!.length - 1
           return (
             <div key={`thinking-${index}-${block.timestamp || index}`} className='w-full'>
               <ThinkingBlock
                 content={block.content}
-                isStreaming={isStreamingThinking}
-                duration={block.duration}
-                startTime={block.startTime}
+                isStreaming={isStreaming}
+                hasFollowingContent={hasFollowingContent}
               />
             </div>
           )
@@ -319,7 +335,7 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                 onClick={handleMessageClick}
                 onMouseEnter={() => setIsHoveringMessage(true)}
                 onMouseLeave={() => setIsHoveringMessage(false)}
-                className='group relative w-full cursor-pointer rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[6px] py-[6px] transition-all duration-200 hover:border-[var(--surface-7)] hover:bg-[var(--surface-5)] dark:bg-[var(--surface-5)] dark:hover:border-[var(--surface-7)] dark:hover:bg-[var(--border-1)]'
+                className='group relative w-full cursor-pointer rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-4)] px-[6px] py-[6px] transition-all duration-200 hover:border-[var(--surface-7)] hover:bg-[var(--surface-4)] dark:bg-[var(--surface-4)] dark:hover:border-[var(--surface-7)] dark:hover:bg-[var(--border-1)]'
               >
                 <div
                   ref={messageContentRef}
@@ -350,7 +366,7 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                       nodes.push(
                         <span
                           key={`mention-${i}-${lastIndex}`}
-                          className='rounded-[6px] bg-[rgba(142,76,251,0.65)]'
+                          className='rounded-[4px] bg-[rgba(50,189,126,0.65)] py-[1px]'
                         >
                           {mention}
                         </span>
@@ -365,7 +381,7 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
 
                 {/* Gradient fade when truncated - applies to entire message box */}
                 {!isExpanded && needsExpansion && (
-                  <div className='pointer-events-none absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t from-0% from-[var(--surface-5)] via-40% via-[var(--surface-5)]/70 to-100% to-transparent group-hover:from-[var(--surface-5)] group-hover:via-[var(--surface-5)]/70 dark:from-[var(--surface-5)] dark:via-[var(--surface-5)]/70 dark:group-hover:from-[var(--border-1)] dark:group-hover:via-[var(--border-1)]/70' />
+                  <div className='pointer-events-none absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t from-0% from-[var(--surface-4)] via-25% via-[var(--surface-4)] to-100% to-transparent opacity-40 group-hover:opacity-30 dark:from-[var(--surface-4)] dark:via-[var(--surface-4)] dark:group-hover:from-[var(--border-1)] dark:group-hover:via-[var(--border-1)]' />
                 )}
 
                 {/* Abort button when hovering and response is generating (only on last user message) */}
@@ -376,13 +392,12 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                         e.stopPropagation()
                         abortMessage()
                       }}
-                      className='h-[20px] w-[20px] rounded-full bg-[var(--c-C0C0C0)] p-0 transition-colors hover:bg-[var(--c-D0D0D0)]'
+                      className='h-[20px] w-[20px] rounded-full border-0 bg-[var(--c-383838)] p-0 transition-colors hover:bg-[var(--c-575757)] dark:bg-[var(--c-E0E0E0)] dark:hover:bg-[var(--c-CFCFCF)]'
                       title='Stop generation'
                     >
                       <svg
-                        className='block h-[13px] w-[13px]'
+                        className='block h-[13px] w-[13px] fill-white dark:fill-black'
                         viewBox='0 0 24 24'
-                        fill='black'
                         xmlns='http://www.w3.org/2000/svg'
                       >
                         <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
@@ -455,63 +470,12 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
             {/* Content blocks in chronological order */}
             {memoizedContentBlocks}
 
-            {/* Show streaming indicator if streaming but no text content yet after tool calls */}
-            {isStreaming &&
-              !message.content &&
-              message.contentBlocks?.every((block) => block.type === 'tool_call') && (
-                <StreamingIndicator />
-              )}
-
-            {/* Streaming indicator when no content yet */}
-            {!cleanTextContent && !message.contentBlocks?.length && isStreaming && (
-              <StreamingIndicator />
-            )}
+            {/* Always show streaming indicator at the end while streaming */}
+            {isStreaming && <StreamingIndicator />}
 
             {message.errorType === 'usage_limit' && (
-              <div className='mt-3 flex gap-1.5'>
+              <div className='flex gap-1.5'>
                 <UsageLimitActions />
-              </div>
-            )}
-
-            {/* Action buttons for completed messages */}
-            {!isStreaming && cleanTextContent && (
-              <div className='flex items-center gap-[8px] pt-[8px]'>
-                <Button
-                  onClick={handleCopyContent}
-                  variant='ghost'
-                  title='Copy'
-                  className='!h-[14px] !w-[14px] !p-0'
-                >
-                  {showCopySuccess ? (
-                    <Check className='h-[14px] w-[14px]' strokeWidth={2} />
-                  ) : (
-                    <Copy className='h-[14px] w-[14px]' strokeWidth={2} />
-                  )}
-                </Button>
-                <Button
-                  onClick={handleUpvote}
-                  variant='ghost'
-                  title='Upvote'
-                  className='!h-[14px] !w-[14px] !p-0'
-                >
-                  {showUpvoteSuccess ? (
-                    <Check className='h-[14px] w-[14px]' strokeWidth={2} />
-                  ) : (
-                    <ThumbsUp className='h-[14px] w-[14px]' strokeWidth={2} />
-                  )}
-                </Button>
-                <Button
-                  onClick={handleDownvote}
-                  variant='ghost'
-                  title='Downvote'
-                  className='!h-[14px] !w-[14px] !p-0'
-                >
-                  {showDownvoteSuccess ? (
-                    <Check className='h-[14px] w-[14px]' strokeWidth={2} />
-                  ) : (
-                    <ThumbsDown className='h-[14px] w-[14px]' strokeWidth={2} />
-                  )}
-                </Button>
               </div>
             )}
 
@@ -533,6 +497,20 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* Options selector when agent presents choices - streams in but disabled until complete */}
+            {/* Disabled for previous messages (not isLastMessage) so only the latest options are interactive */}
+            {parsedTags?.options && Object.keys(parsedTags.options).length > 0 && (
+              <OptionsSelector
+                options={parsedTags.options}
+                onSelect={handleOptionSelect}
+                disabled={!isLastMessage || isSendingMessage || isStreaming}
+                enableKeyboardNav={
+                  isLastMessage && !isStreaming && parsedTags.optionsComplete === true
+                }
+                streaming={isStreaming || !parsedTags.optionsComplete}
+              />
             )}
           </div>
         </div>
@@ -568,6 +546,11 @@ const CopilotMessage: FC<CopilotMessageProps> = memo(
 
     // If checkpoint count changed, re-render
     if (prevProps.checkpointCount !== nextProps.checkpointCount) {
+      return false
+    }
+
+    // If isLastMessage changed, re-render (for options visibility)
+    if (prevProps.isLastMessage !== nextProps.isLastMessage) {
       return false
     }
 

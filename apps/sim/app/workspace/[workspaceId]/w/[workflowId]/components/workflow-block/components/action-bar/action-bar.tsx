@@ -4,7 +4,12 @@ import { Button, Copy, Tooltip, Trash2 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { getUniqueBlockName, prepareDuplicateBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+
+const DEFAULT_DUPLICATE_OFFSET = { x: 50, y: 50 }
 
 /**
  * Props for the ActionBar component
@@ -27,11 +32,39 @@ interface ActionBarProps {
 export const ActionBar = memo(
   function ActionBar({ blockId, blockType, disabled = false }: ActionBarProps) {
     const {
-      collaborativeRemoveBlock,
-      collaborativeToggleBlockEnabled,
-      collaborativeDuplicateBlock,
-      collaborativeToggleBlockHandles,
+      collaborativeBatchAddBlocks,
+      collaborativeBatchRemoveBlocks,
+      collaborativeBatchToggleBlockEnabled,
+      collaborativeBatchToggleBlockHandles,
     } = useCollaborativeWorkflow()
+    const { activeWorkflowId } = useWorkflowRegistry()
+    const blocks = useWorkflowStore((state) => state.blocks)
+    const subBlockStore = useSubBlockStore()
+
+    const handleDuplicateBlock = useCallback(() => {
+      const sourceBlock = blocks[blockId]
+      if (!sourceBlock) return
+
+      const newId = crypto.randomUUID()
+      const newName = getUniqueBlockName(sourceBlock.name, blocks)
+      const subBlockValues = subBlockStore.workflowValues[activeWorkflowId || '']?.[blockId] || {}
+
+      const { block, subBlockValues: filteredValues } = prepareDuplicateBlockState({
+        sourceBlock,
+        newId,
+        newName,
+        positionOffset: DEFAULT_DUPLICATE_OFFSET,
+        subBlockValues,
+      })
+
+      collaborativeBatchAddBlocks([block], [], {}, {}, { [newId]: filteredValues })
+    }, [
+      blockId,
+      blocks,
+      activeWorkflowId,
+      subBlockStore.workflowValues,
+      collaborativeBatchAddBlocks,
+    ])
 
     /**
      * Optimized single store subscription for all block data
@@ -54,8 +87,8 @@ export const ActionBar = memo(
 
     const userPermissions = useUserPermissionsContext()
 
-    // Check for start_trigger (unified start block) - prevent duplication but allow deletion
     const isStartBlock = blockType === 'starter' || blockType === 'start_trigger'
+    const isResponseBlock = blockType === 'response'
     const isNoteBlock = blockType === 'note'
 
     /**
@@ -88,7 +121,7 @@ export const ActionBar = memo(
                 onClick={(e) => {
                   e.stopPropagation()
                   if (!disabled) {
-                    collaborativeToggleBlockEnabled(blockId)
+                    collaborativeBatchToggleBlockEnabled([blockId])
                   }
                 }}
                 className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'
@@ -107,7 +140,7 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
-        {!isStartBlock && (
+        {!isStartBlock && !isResponseBlock && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Button
@@ -115,7 +148,7 @@ export const ActionBar = memo(
                 onClick={(e) => {
                   e.stopPropagation()
                   if (!disabled) {
-                    collaborativeDuplicateBlock(blockId)
+                    handleDuplicateBlock()
                   }
                 }}
                 className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'
@@ -128,29 +161,6 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
-        {!isStartBlock && parentId && (parentType === 'loop' || parentType === 'parallel') && (
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                variant='ghost'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (!disabled && userPermissions.canEdit) {
-                    window.dispatchEvent(
-                      new CustomEvent('remove-from-subflow', { detail: { blockId } })
-                    )
-                  }
-                }}
-                className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'
-                disabled={disabled || !userPermissions.canEdit}
-              >
-                <LogOut className='h-[11px] w-[11px]' />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>{getTooltipMessage('Remove from Subflow')}</Tooltip.Content>
-          </Tooltip.Root>
-        )}
-
         {!isNoteBlock && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
@@ -159,7 +169,7 @@ export const ActionBar = memo(
                 onClick={(e) => {
                   e.stopPropagation()
                   if (!disabled) {
-                    collaborativeToggleBlockHandles(blockId)
+                    collaborativeBatchToggleBlockHandles([blockId])
                   }
                 }}
                 className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'
@@ -178,6 +188,29 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
+        {!isStartBlock && parentId && (parentType === 'loop' || parentType === 'parallel') && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Button
+                variant='ghost'
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!disabled && userPermissions.canEdit) {
+                    window.dispatchEvent(
+                      new CustomEvent('remove-from-subflow', { detail: { blockIds: [blockId] } })
+                    )
+                  }
+                }}
+                className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'
+                disabled={disabled || !userPermissions.canEdit}
+              >
+                <LogOut className='h-[11px] w-[11px]' />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>{getTooltipMessage('Remove from Subflow')}</Tooltip.Content>
+          </Tooltip.Root>
+        )}
+
         <Tooltip.Root>
           <Tooltip.Trigger asChild>
             <Button
@@ -185,7 +218,7 @@ export const ActionBar = memo(
               onClick={(e) => {
                 e.stopPropagation()
                 if (!disabled) {
-                  collaborativeRemoveBlock(blockId)
+                  collaborativeBatchRemoveBlocks([blockId])
                 }
               }}
               className='hover:!text-[var(--text-inverse)] h-[23px] w-[23px] rounded-[8px] bg-[var(--surface-7)] p-0 text-[var(--text-secondary)] hover:bg-[var(--brand-secondary)]'

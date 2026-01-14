@@ -39,13 +39,20 @@ import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
+  LogRowContextMenu,
+  OutputContextMenu,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/components'
+import {
   useOutputPanelResize,
   useTerminalFilters,
   useTerminalResize,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/hooks'
+import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { getBlock } from '@/blocks'
+import { useCodeViewerFeatures } from '@/hooks/use-code-viewer'
+import { OUTPUT_PANEL_WIDTH, TERMINAL_HEIGHT } from '@/stores/constants'
 import { useCopilotTrainingStore } from '@/stores/copilot-training/store'
-import { useGeneralStore } from '@/stores/settings/general/store'
+import { useGeneralStore } from '@/stores/settings/general'
 import type { ConsoleEntry } from '@/stores/terminal'
 import { useTerminalConsoleStore, useTerminalStore } from '@/stores/terminal'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -53,15 +60,15 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 /**
  * Terminal height configuration constants
  */
-const MIN_HEIGHT = 30
+const MIN_HEIGHT = TERMINAL_HEIGHT.MIN
 const NEAR_MIN_THRESHOLD = 40
-const DEFAULT_EXPANDED_HEIGHT = 196
+const DEFAULT_EXPANDED_HEIGHT = TERMINAL_HEIGHT.DEFAULT
 
 /**
  * Column width constants - numeric values for calculations
  */
 const BLOCK_COLUMN_WIDTH_PX = 240
-const MIN_OUTPUT_PANEL_WIDTH_PX = 440
+const MIN_OUTPUT_PANEL_WIDTH_PX = OUTPUT_PANEL_WIDTH.MIN
 
 /**
  * Column width constants - Tailwind classes for styling
@@ -299,6 +306,7 @@ export function Terminal() {
   const terminalRef = useRef<HTMLElement>(null)
   const prevEntriesLengthRef = useRef(0)
   const prevWorkflowEntriesLengthRef = useRef(0)
+  const isTerminalFocusedRef = useRef(false)
   const {
     setTerminalHeight,
     lastExpandedHeight,
@@ -331,27 +339,34 @@ export function Terminal() {
   const [mainOptionsOpen, setMainOptionsOpen] = useState(false)
   const [outputOptionsOpen, setOutputOptionsOpen] = useState(false)
 
-  // Output panel search state
-  const [isOutputSearchActive, setIsOutputSearchActive] = useState(false)
-  const [outputSearchQuery, setOutputSearchQuery] = useState('')
-  const [matchCount, setMatchCount] = useState(0)
-  const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
-  const outputSearchInputRef = useRef<HTMLInputElement>(null)
   const outputContentRef = useRef<HTMLDivElement>(null)
+  const {
+    isSearchActive: isOutputSearchActive,
+    searchQuery: outputSearchQuery,
+    setSearchQuery: setOutputSearchQuery,
+    matchCount,
+    currentMatchIndex,
+    activateSearch: activateOutputSearch,
+    closeSearch: closeOutputSearch,
+    goToNextMatch,
+    goToPreviousMatch,
+    handleMatchCountChange,
+    searchInputRef: outputSearchInputRef,
+  } = useCodeViewerFeatures({
+    contentRef: outputContentRef,
+    externalWrapText: wrapText,
+    onWrapTextChange: setWrapText,
+  })
 
-  // Training controls state
   const [isTrainingEnvEnabled, setIsTrainingEnvEnabled] = useState(false)
   const showTrainingControls = useGeneralStore((state) => state.showTrainingControls)
   const { isTraining, toggleModal: toggleTrainingModal, stopTraining } = useCopilotTrainingStore()
 
-  // Playground state
   const [isPlaygroundEnabled, setIsPlaygroundEnabled] = useState(false)
 
-  // Terminal resize hooks
   const { handleMouseDown } = useTerminalResize()
   const { handleMouseDown: handleOutputPanelResizeMouseDown } = useOutputPanelResize()
 
-  // Terminal filters hook
   const {
     filters,
     sortConfig,
@@ -363,6 +378,26 @@ export function Terminal() {
     filterEntries,
     hasActiveFilters,
   } = useTerminalFilters()
+
+  const [hasSelection, setHasSelection] = useState(false)
+  const [contextMenuEntry, setContextMenuEntry] = useState<ConsoleEntry | null>(null)
+  const [storedSelectionText, setStoredSelectionText] = useState('')
+
+  const {
+    isOpen: isLogRowMenuOpen,
+    position: logRowMenuPosition,
+    menuRef: logRowMenuRef,
+    handleContextMenu: handleLogRowContextMenu,
+    closeMenu: closeLogRowMenu,
+  } = useContextMenu()
+
+  const {
+    isOpen: isOutputMenuOpen,
+    position: outputMenuPosition,
+    menuRef: outputMenuRef,
+    handleContextMenu: handleOutputContextMenu,
+    closeMenu: closeOutputMenu,
+  } = useContextMenu()
 
   /**
    * Expands the terminal to its last meaningful height, with safeguards:
@@ -506,19 +541,18 @@ export function Terminal() {
   /**
    * Handle row click - toggle if clicking same entry
    * Disables auto-selection when user manually selects, re-enables when deselecting
+   * Also focuses the terminal to enable keyboard navigation
    */
   const handleRowClick = useCallback((entry: ConsoleEntry) => {
+    // Focus the terminal to enable keyboard navigation
+    terminalRef.current?.focus()
     setSelectedEntry((prev) => {
       const isDeselecting = prev?.id === entry.id
-      // Re-enable auto-select when deselecting, disable when selecting
       setAutoSelectEnabled(isDeselecting)
       return isDeselecting ? null : entry
     })
   }, [])
 
-  /**
-   * Handle header click - toggle between expanded and collapsed
-   */
   const handleHeaderClick = useCallback(() => {
     if (isExpanded) {
       setIsToggling(true)
@@ -528,11 +562,25 @@ export function Terminal() {
     }
   }, [expandToLastHeight, isExpanded, setTerminalHeight])
 
-  /**
-   * Handle transition end - reset toggling state
-   */
   const handleTransitionEnd = useCallback(() => {
     setIsToggling(false)
+  }, [])
+
+  /**
+   * Handle terminal focus - enables keyboard navigation
+   */
+  const handleTerminalFocus = useCallback(() => {
+    isTerminalFocusedRef.current = true
+  }, [])
+
+  /**
+   * Handle terminal blur - disables keyboard navigation
+   */
+  const handleTerminalBlur = useCallback((e: React.FocusEvent) => {
+    // Only blur if focus is moving outside the terminal
+    if (!terminalRef.current?.contains(e.relatedTarget as Node)) {
+      isTerminalFocusedRef.current = false
+    }
   }, [])
 
   /**
@@ -559,53 +607,6 @@ export function Terminal() {
     }
   }, [activeWorkflowId, clearWorkflowConsole])
 
-  /**
-   * Activates output search and focuses the search input.
-   */
-  const activateOutputSearch = useCallback(() => {
-    setIsOutputSearchActive(true)
-    setTimeout(() => {
-      outputSearchInputRef.current?.focus()
-    }, 0)
-  }, [])
-
-  /**
-   * Closes output search and clears the query.
-   */
-  const closeOutputSearch = useCallback(() => {
-    setIsOutputSearchActive(false)
-    setOutputSearchQuery('')
-    setMatchCount(0)
-    setCurrentMatchIndex(0)
-  }, [])
-
-  /**
-   * Navigates to the next match in the search results.
-   */
-  const goToNextMatch = useCallback(() => {
-    if (matchCount === 0) return
-    setCurrentMatchIndex((prev) => (prev + 1) % matchCount)
-  }, [matchCount])
-
-  /**
-   * Navigates to the previous match in the search results.
-   */
-  const goToPreviousMatch = useCallback(() => {
-    if (matchCount === 0) return
-    setCurrentMatchIndex((prev) => (prev - 1 + matchCount) % matchCount)
-  }, [matchCount])
-
-  /**
-   * Handles match count change from Code.Viewer.
-   */
-  const handleMatchCountChange = useCallback((count: number) => {
-    setMatchCount(count)
-    setCurrentMatchIndex(0)
-  }, [])
-
-  /**
-   * Handle clear console for current workflow via mouse interaction.
-   */
   const handleClearConsole = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -614,10 +615,6 @@ export function Terminal() {
     [clearCurrentWorkflowConsole]
   )
 
-  /**
-   * Handle export of console entries for the current workflow via mouse interaction.
-   * Mirrors the visibility and interaction behavior of the clear console action.
-   */
   const handleExportConsole = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -628,9 +625,68 @@ export function Terminal() {
     [activeWorkflowId, exportConsoleCSV]
   )
 
-  /**
-   * Handle training button click - toggle training state or open modal
-   */
+  const handleCopySelection = useCallback(() => {
+    if (storedSelectionText) {
+      navigator.clipboard.writeText(storedSelectionText)
+      setShowCopySuccess(true)
+    }
+  }, [storedSelectionText])
+
+  const handleOutputPanelContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const selection = window.getSelection()
+      const selectionText = selection?.toString() || ''
+      setStoredSelectionText(selectionText)
+      setHasSelection(selectionText.length > 0)
+      handleOutputContextMenu(e)
+    },
+    [handleOutputContextMenu]
+  )
+
+  const handleRowContextMenu = useCallback(
+    (e: React.MouseEvent, entry: ConsoleEntry) => {
+      setContextMenuEntry(entry)
+      handleLogRowContextMenu(e)
+    },
+    [handleLogRowContextMenu]
+  )
+
+  const handleFilterByBlock = useCallback(
+    (blockId: string) => {
+      toggleBlock(blockId)
+      closeLogRowMenu()
+    },
+    [toggleBlock, closeLogRowMenu]
+  )
+
+  const handleFilterByStatus = useCallback(
+    (status: 'error' | 'info') => {
+      toggleStatus(status)
+      closeLogRowMenu()
+    },
+    [toggleStatus, closeLogRowMenu]
+  )
+
+  const handleFilterByRunId = useCallback(
+    (runId: string) => {
+      toggleRunId(runId)
+      closeLogRowMenu()
+    },
+    [toggleRunId, closeLogRowMenu]
+  )
+
+  const handleCopyRunId = useCallback(
+    (runId: string) => {
+      navigator.clipboard.writeText(runId)
+      closeLogRowMenu()
+    },
+    [closeLogRowMenu]
+  )
+
+  const handleClearConsoleFromMenu = useCallback(() => {
+    clearCurrentWorkflowConsole()
+  }, [clearCurrentWorkflowConsole])
+
   const handleTrainingClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -643,9 +699,6 @@ export function Terminal() {
     [isTraining, stopTraining, toggleTrainingModal]
   )
 
-  /**
-   * Whether training controls should be visible
-   */
   const shouldShowTrainingButton = isTrainingEnvEnabled && showTrainingControls
 
   /**
@@ -721,6 +774,23 @@ export function Terminal() {
   }, [showCopySuccess])
 
   /**
+   * Track text selection state for context menu.
+   * Skip updates when the context menu is open to prevent the selection
+   * state from changing mid-click (which would disable the copy button).
+   */
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (isOutputMenuOpen) return
+
+      const selection = window.getSelection()
+      setHasSelection(Boolean(selection && selection.toString().length > 0))
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [isOutputMenuOpen])
+
+  /**
    * Auto-select the latest entry when new logs arrive
    * Re-enables auto-selection when all entries are cleared
    * Only auto-selects when NEW entries are added (length increases)
@@ -746,9 +816,12 @@ export function Terminal() {
   /**
    * Handle keyboard navigation through logs
    * Disables auto-selection when user manually navigates
+   * Only active when the terminal is focused
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle navigation when terminal is focused
+      if (!isTerminalFocusedRef.current) return
       if (isEventFromEditableElement(e)) return
       const activeElement = document.activeElement as HTMLElement | null
       const toolbarRoot = document.querySelector(
@@ -783,9 +856,12 @@ export function Terminal() {
   /**
    * Handle keyboard navigation for input/output toggle
    * Left arrow shows output, right arrow shows input
+   * Only active when the terminal is focused
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle navigation when terminal is focused
+      if (!isTerminalFocusedRef.current) return
       // Ignore when typing/navigating inside editable inputs/editors
       if (isEventFromEditableElement(e)) return
 
@@ -815,66 +891,20 @@ export function Terminal() {
   }, [expandToLastHeight, selectedEntry, showInput, hasInputData, isExpanded])
 
   /**
-   * Handle Escape to close search or unselect entry
+   * Handle Escape to unselect entry (search close is handled by useCodeViewerFeatures)
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isOutputSearchActive && selectedEntry) {
         e.preventDefault()
-        // First close search if active
-        if (isOutputSearchActive) {
-          closeOutputSearch()
-          return
-        }
-        // Then unselect entry
-        if (selectedEntry) {
-          setSelectedEntry(null)
-          setAutoSelectEnabled(true)
-        }
+        setSelectedEntry(null)
+        setAutoSelectEnabled(true)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedEntry, isOutputSearchActive, closeOutputSearch])
-
-  /**
-   * Handle Enter/Shift+Enter for search navigation when search input is focused
-   */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isOutputSearchActive) return
-
-      const isSearchInputFocused = document.activeElement === outputSearchInputRef.current
-
-      if (e.key === 'Enter' && isSearchInputFocused && matchCount > 0) {
-        e.preventDefault()
-        if (e.shiftKey) {
-          goToPreviousMatch()
-        } else {
-          goToNextMatch()
-        }
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOutputSearchActive, matchCount, goToNextMatch, goToPreviousMatch])
-
-  /**
-   * Scroll to current match when it changes
-   */
-  useEffect(() => {
-    if (!isOutputSearchActive || matchCount === 0 || !outputContentRef.current) return
-
-    // Find all match elements and scroll to the current one
-    const matchElements = outputContentRef.current.querySelectorAll('[data-search-match]')
-    const currentElement = matchElements[currentMatchIndex]
-
-    if (currentElement) {
-      currentElement.scrollIntoView({ block: 'center' })
-    }
-  }, [currentMatchIndex, isOutputSearchActive, matchCount])
+  }, [selectedEntry, isOutputSearchActive])
 
   /**
    * Adjust output panel width when sidebar or panel width changes.
@@ -936,6 +966,9 @@ export function Terminal() {
           isToggling && 'transition-[height] duration-100 ease-out'
         )}
         onTransitionEnd={handleTransitionEnd}
+        onFocus={handleTerminalFocus}
+        onBlur={handleTerminalBlur}
+        tabIndex={-1}
         aria-label='Terminal'
       >
         <div className='relative flex h-full border-[var(--border)] border-t'>
@@ -1239,7 +1272,7 @@ export function Terminal() {
                           </Button>
                         </Tooltip.Trigger>
                         <Tooltip.Content>
-                          <span>Clear console</span>
+                          <Tooltip.Shortcut keys='⌘D'>Clear console</Tooltip.Shortcut>
                         </Tooltip.Content>
                       </Tooltip.Root>
                     </>
@@ -1310,6 +1343,7 @@ export function Terminal() {
                         isSelected && 'bg-[var(--surface-6)] dark:bg-[var(--surface-4)]'
                       )}
                       onClick={() => handleRowClick(entry)}
+                      onContextMenu={(e) => handleRowContextMenu(e, entry)}
                     >
                       {/* Block */}
                       <div
@@ -1328,7 +1362,13 @@ export function Terminal() {
                       </div>
 
                       {/* Status */}
-                      <div className={clsx(COLUMN_WIDTHS.STATUS, COLUMN_BASE_CLASS)}>
+                      <div
+                        className={clsx(
+                          COLUMN_WIDTHS.STATUS,
+                          COLUMN_BASE_CLASS,
+                          'flex items-center'
+                        )}
+                      >
                         {statusInfo ? (
                           <Badge variant={statusInfo.isError ? 'red' : 'gray'} dot>
                             {statusInfo.label}
@@ -1339,25 +1379,16 @@ export function Terminal() {
                       </div>
 
                       {/* Run ID */}
-                      <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <span
-                            className={clsx(
-                              COLUMN_WIDTHS.RUN_ID,
-                              COLUMN_BASE_CLASS,
-                              'truncate font-medium font-mono text-[12px]'
-                            )}
-                            style={{ color: runIdColor?.text || '#D2D2D2' }}
-                          >
-                            {formatRunId(entry.executionId)}
-                          </span>
-                        </Tooltip.Trigger>
-                        {entry.executionId && (
-                          <Tooltip.Content>
-                            <span className='font-mono text-[11px]'>{entry.executionId}</span>
-                          </Tooltip.Content>
+                      <span
+                        className={clsx(
+                          COLUMN_WIDTHS.RUN_ID,
+                          COLUMN_BASE_CLASS,
+                          'truncate font-medium font-mono text-[12px]'
                         )}
-                      </Tooltip.Root>
+                        style={{ color: runIdColor?.text || '#D2D2D2' }}
+                      >
+                        {formatRunId(entry.executionId)}
+                      </span>
 
                       {/* Duration */}
                       <span
@@ -1414,9 +1445,7 @@ export function Terminal() {
                     variant='ghost'
                     className={clsx(
                       'px-[8px] py-[6px] text-[12px]',
-                      !showInput &&
-                        hasInputData &&
-                        '!text-[var(--text-primary)] dark:!text-[var(--text-primary)]'
+                      !showInput ? '!text-[var(--text-primary)]' : '!text-[var(--text-tertiary)]'
                     )}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -1434,7 +1463,7 @@ export function Terminal() {
                       variant='ghost'
                       className={clsx(
                         'px-[8px] py-[6px] text-[12px]',
-                        showInput && '!text-[var(--text-primary)]'
+                        showInput ? '!text-[var(--text-primary)]' : '!text-[var(--text-tertiary)]'
                       )}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -1606,7 +1635,7 @@ export function Terminal() {
                         </Button>
                       </Tooltip.Trigger>
                       <Tooltip.Content>
-                        <span>Clear console</span>
+                        <Tooltip.Shortcut keys='⌘D'>Clear console</Tooltip.Shortcut>
                       </Tooltip.Content>
                     </Tooltip.Root>
                   )}
@@ -1720,7 +1749,10 @@ export function Terminal() {
               )}
 
               {/* Content */}
-              <div className={clsx('flex-1 overflow-y-auto', !wrapText && 'overflow-x-auto')}>
+              <div
+                className={clsx('flex-1 overflow-y-auto', !wrapText && 'overflow-x-auto')}
+                onContextMenu={handleOutputPanelContextMenu}
+              >
                 {shouldShowCodeDisplay ? (
                   <OutputCodeContent
                     code={selectedEntry.input.code}
@@ -1749,6 +1781,43 @@ export function Terminal() {
           )}
         </div>
       </aside>
+
+      {/* Log Row Context Menu */}
+      <LogRowContextMenu
+        isOpen={isLogRowMenuOpen}
+        position={logRowMenuPosition}
+        menuRef={logRowMenuRef}
+        onClose={closeLogRowMenu}
+        entry={contextMenuEntry}
+        filters={filters}
+        onFilterByBlock={handleFilterByBlock}
+        onFilterByStatus={handleFilterByStatus}
+        onFilterByRunId={handleFilterByRunId}
+        onCopyRunId={handleCopyRunId}
+        onClearFilters={() => {
+          clearFilters()
+          closeLogRowMenu()
+        }}
+        onClearConsole={handleClearConsoleFromMenu}
+        hasActiveFilters={hasActiveFilters}
+      />
+
+      {/* Output Panel Context Menu */}
+      <OutputContextMenu
+        isOpen={isOutputMenuOpen}
+        position={outputMenuPosition}
+        menuRef={outputMenuRef}
+        onClose={closeOutputMenu}
+        onCopySelection={handleCopySelection}
+        onCopyAll={handleCopy}
+        onSearch={activateOutputSearch}
+        wrapText={wrapText}
+        onToggleWrap={() => setWrapText(!wrapText)}
+        openOnRun={openOnRun}
+        onToggleOpenOnRun={() => setOpenOnRun(!openOnRun)}
+        onClearConsole={handleClearConsoleFromMenu}
+        hasSelection={hasSelection}
+      />
     </>
   )
 }

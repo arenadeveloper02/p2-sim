@@ -29,6 +29,7 @@ import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
+import { FirefliesBlock } from '@/blocks/blocks/fireflies'
 import { FunctionBlock } from '@/blocks/blocks/function'
 import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
 import { GitHubBlock } from '@/blocks/blocks/github'
@@ -46,17 +47,20 @@ import { GoogleSlidesBlock } from '@/blocks/blocks/google_slides'
 import { GoogleVaultBlock } from '@/blocks/blocks/google_vault'
 import { GrafanaBlock } from '@/blocks/blocks/grafana'
 import { GrainBlock } from '@/blocks/blocks/grain'
+import { GreptileBlock } from '@/blocks/blocks/greptile'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
 import { HunterBlock } from '@/blocks/blocks/hunter'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
+import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
 import { InputTriggerBlock } from '@/blocks/blocks/input_trigger'
 import { IntercomBlock } from '@/blocks/blocks/intercom'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
+import { JiraServiceManagementBlock } from '@/blocks/blocks/jira_service_management'
 import { KalshiBlock } from '@/blocks/blocks/kalshi'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LinearBlock } from '@/blocks/blocks/linear'
@@ -93,7 +97,7 @@ import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
-import { RouterBlock } from '@/blocks/blocks/router'
+import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
 import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
@@ -132,7 +136,7 @@ import { VisionBlock } from '@/blocks/blocks/vision'
 import { WaitBlock } from '@/blocks/blocks/wait'
 import { WealthboxBlock } from '@/blocks/blocks/wealthbox'
 import { WebflowBlock } from '@/blocks/blocks/webflow'
-import { WebhookBlock } from '@/blocks/blocks/webhook'
+import { WebhookRequestBlock } from '@/blocks/blocks/webhook_request'
 import { WhatsAppBlock } from '@/blocks/blocks/whatsapp'
 import { WikipediaBlock } from '@/blocks/blocks/wikipedia'
 import { WordPressBlock } from '@/blocks/blocks/wordpress'
@@ -179,6 +183,7 @@ export const registry: Record<string, BlockConfig> = {
   file: FileBlock,
   figma: FigmaBlock,
   firecrawl: FirecrawlBlock,
+  fireflies: FirefliesBlock,
   function: FunctionBlock,
   generic_webhook: GenericWebhookBlock,
   github: GitHubBlock,
@@ -187,6 +192,7 @@ export const registry: Record<string, BlockConfig> = {
   google_ads: GoogleAdsBlock,
   grain: GrainBlock,
   grafana: GrafanaBlock,
+  greptile: GreptileBlock,
   guardrails: GuardrailsBlock,
   google_calendar: GoogleCalendarBlock,
   google_docs: GoogleDocsBlock,
@@ -202,11 +208,13 @@ export const registry: Record<string, BlockConfig> = {
   human_in_the_loop: HumanInTheLoopBlock,
   hunter: HunterBlock,
   image_generator: ImageGeneratorBlock,
+  imap: ImapBlock,
   incidentio: IncidentioBlock,
   input_trigger: InputTriggerBlock,
   intercom: IntercomBlock,
   jina: JinaBlock,
   jira: JiraBlock,
+  jira_service_management: JiraServiceManagementBlock,
   kalshi: KalshiBlock,
   knowledge: KnowledgeBlock,
   linear: LinearBlock,
@@ -247,6 +255,7 @@ export const registry: Record<string, BlockConfig> = {
   response: ResponseBlock,
   rss: RssBlock,
   router: RouterBlock,
+  router_v2: RouterV2Block,
   s3: S3Block,
   salesforce: SalesforceBlock,
   semrush: SemrushBlock,
@@ -285,7 +294,7 @@ export const registry: Record<string, BlockConfig> = {
   wait: WaitBlock,
   wealthbox: WealthboxBlock,
   webflow: WebflowBlock,
-  webhook: WebhookBlock,
+  webhook_request: WebhookRequestBlock,
   whatsapp: WhatsAppBlock,
   wikipedia: WikipediaBlock,
   wordpress: WordPressBlock,
@@ -299,11 +308,9 @@ export const registry: Record<string, BlockConfig> = {
 }
 
 export const getBlock = (type: string): BlockConfig | undefined => {
-  // Direct lookup first
   if (registry[type]) {
     return registry[type]
   }
-  // Fallback: normalize hyphens to underscores (e.g., 'microsoft-teams' -> 'microsoft_teams')
   const normalized = type.replace(/-/g, '_')
   return registry[normalized]
 }

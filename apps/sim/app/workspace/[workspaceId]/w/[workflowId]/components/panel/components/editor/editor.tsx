@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { BookOpen, Check, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
+import { BookOpen, Check, ChevronUp, Pencil, Settings } from 'lucide-react'
 import { Button, Tooltip } from '@/components/emcn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
@@ -16,11 +16,13 @@ import {
   useEditorBlockProperties,
   useEditorSubblockLayout,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/hooks'
+import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
+import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
 import { getSubBlockStableKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/utils'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { getBlock } from '@/blocks/registry'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import { usePanelEditorStore } from '@/stores/panel/editor/store'
+import { usePanelEditorStore } from '@/stores/panel'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -45,7 +47,13 @@ const IconComponent = ({ icon: Icon, className }: { icon: any; className?: strin
  * @returns Editor panel content
  */
 export function Editor() {
-  const { currentBlockId, connectionsHeight, toggleConnectionsCollapsed } = usePanelEditorStore()
+  const {
+    currentBlockId,
+    connectionsHeight,
+    toggleConnectionsCollapsed,
+    shouldFocusRename,
+    setShouldFocusRename,
+  } = usePanelEditorStore()
   const currentWorkflow = useCurrentWorkflow()
   const currentBlock = currentBlockId ? currentWorkflow.getBlockById(currentBlockId) : null
   const blockConfig = currentBlock ? getBlock(currentBlock.type) : null
@@ -55,9 +63,8 @@ export function Editor() {
   const isSubflow =
     currentBlock && (currentBlock.type === 'loop' || currentBlock.type === 'parallel')
 
-  // Get subflow display properties
-  const subflowIcon = isSubflow && currentBlock.type === 'loop' ? RepeatIcon : SplitIcon
-  const subflowBgColor = isSubflow && currentBlock.type === 'loop' ? '#2FB3FF' : '#FEE12B'
+  // Get subflow display properties from configs
+  const subflowConfig = isSubflow ? (currentBlock.type === 'loop' ? LoopTool : ParallelTool) : null
 
   // Refs for resize functionality
   const subBlocksRef = useRef<HTMLDivElement>(null)
@@ -161,12 +168,21 @@ export function Editor() {
     }
   }, [isRenaming])
 
+  // Trigger rename mode when signaled from context menu
+  useEffect(() => {
+    if (shouldFocusRename && currentBlock && !isSubflow) {
+      handleStartRename()
+      setShouldFocusRename(false)
+    }
+  }, [shouldFocusRename, currentBlock, isSubflow, handleStartRename, setShouldFocusRename])
+
   /**
    * Handles opening documentation link in a new secure tab.
    */
   const handleOpenDocs = () => {
-    if (blockConfig?.docsLink) {
-      window.open(blockConfig.docsLink, '_blank', 'noopener,noreferrer')
+    const docsLink = isSubflow ? subflowConfig?.docsLink : blockConfig?.docsLink
+    if (docsLink) {
+      window.open(docsLink, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -184,10 +200,10 @@ export function Editor() {
           {(blockConfig || isSubflow) && currentBlock?.type !== 'note' && (
             <div
               className='flex h-[18px] w-[18px] items-center justify-center rounded-[4px]'
-              style={{ background: isSubflow ? subflowBgColor : blockConfig?.bgColor }}
+              style={{ background: isSubflow ? subflowConfig?.bgColor : blockConfig?.bgColor }}
             >
               <IconComponent
-                icon={isSubflow ? subflowIcon : blockConfig?.icon}
+                icon={isSubflow ? subflowConfig?.icon : blockConfig?.icon}
                 className='h-[12px] w-[12px] text-[var(--white)]'
               />
             </div>
@@ -284,7 +300,7 @@ export function Editor() {
               </Tooltip.Content>
             </Tooltip.Root>
           )}
-          {currentBlock && !isSubflow && blockConfig?.docsLink && (
+          {currentBlock && (isSubflow ? subflowConfig?.docsLink : blockConfig?.docsLink) && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button

@@ -135,7 +135,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [starCount, setStarCount] = useState('24.4k')
+  const [starCount, setStarCount] = useState('25.1k')
   const [conversationId, setConversationId] = useState('')
 
   // Left threads state managed here
@@ -207,7 +207,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
       setShowScrollButton(distanceFromBottom > 100)
 
-      // Track if user is manually scrolling during streaming
       if (isStreamingResponse && !isUserScrollingRef.current) {
         setUserHasScrolled(true)
       }
@@ -309,13 +308,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return () => container.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
-  // Reset user scroll tracking when streaming starts
   useEffect(() => {
     if (isStreamingResponse) {
-      // Reset userHasScrolled when streaming starts
       setUserHasScrolled(false)
 
-      // Give a small delay to distinguish between programmatic scroll and user scroll
       isUserScrollingRef.current = true
       setTimeout(() => {
         isUserScrollingRef.current = false
@@ -399,7 +395,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error(`Failed to load chat configuration: ${response.status}`)
       }
 
-      // Reset auth required state when authentication is successful
       setAuthRequired(null)
 
       const data = await response.json()
@@ -433,7 +428,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }
 
-  // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
     setConversationId(uuidv4())
@@ -458,7 +452,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }, 800)
   }
 
-  // Handle sending a message
   const handleSendMessage = async (
     messageParam?: string,
     isVoiceInput = false,
@@ -485,7 +478,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       filesCount: files?.length,
     })
 
-    // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
     // Only add user message to chat if there's actual content or files
@@ -520,7 +512,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }, 100)
     }
 
-    // Create abort controller for request cancellation
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => {
       abortController.abort()
@@ -561,7 +552,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,
       }
 
-      // Add files if present (convert to base64 for JSON transmission)
       if (files && files.length > 0) {
         payload.files = await Promise.all(
           files.map(async (file) => ({
@@ -589,7 +579,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         signal: abortController.signal,
       })
 
-      // Clear timeout since request succeeded
       clearTimeout(timeoutId)
 
       if (!response.ok) {
@@ -602,7 +591,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error('Response body is missing')
       }
 
-      // Use the streaming hook with audio support
       const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
       const audioHandler = shouldPlayAudio
         ? createAudioStreamHandler(
@@ -632,7 +620,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         }
       )
     } catch (error: any) {
-      // Clear timeout in case of error
       clearTimeout(timeoutId)
 
       if (error.name === 'AbortError') {
@@ -653,7 +640,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }
 
-  // Stop audio when component unmounts or when streaming is stopped
   useEffect(() => {
     return () => {
       stopAudio()
@@ -663,28 +649,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [stopAudio])
 
-  // Voice interruption - stop audio when user starts speaking
   const handleVoiceInterruption = useCallback(() => {
     stopAudio()
 
-    // Stop any ongoing streaming response
     if (isStreamingResponse) {
       stopStreaming(setMessages)
     }
   }, [isStreamingResponse, stopStreaming, setMessages, stopAudio])
 
-  // Handle voice mode activation
   const handleVoiceStart = useCallback(() => {
     setIsVoiceFirstMode(true)
   }, [])
 
-  // Handle exiting voice mode
   const handleExitVoiceMode = useCallback(() => {
     setIsVoiceFirstMode(false)
-    stopAudio() // Stop any playing audio when exiting
+    stopAudio()
   }, [stopAudio])
 
-  // Handle voice transcript from voice-first interface
   const handleVoiceTranscript = useCallback(
     (transcript: string) => {
       logger.info('Received voice transcript:', transcript)
@@ -910,54 +891,29 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // If error, show error message using the extracted component
   if (error) {
-    return <ChatErrorState error={error} starCount={starCount} />
+    return <ChatErrorState error={error} />
   }
 
-  // If authentication is required, use the extracted components
   if (authRequired) {
-    // Get title and description from the URL params or use defaults
-    const title = new URLSearchParams(window.location.search).get('title') || 'chat'
-    const primaryColor =
-      new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
+    // const title = new URLSearchParams(window.location.search).get('title') || 'chat'
+    // const primaryColor =
+    //   new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
 
     if (authRequired === 'password') {
-      return (
-        <PasswordAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'email') {
-      return (
-        <EmailAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'sso') {
-      return (
-        <SSOAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <SSOAuth identifier={identifier} />
     }
   }
 
-  // Loading state while fetching config using the extracted component
   if (!chatConfig) {
     return <ChatLoadingState />
   }
 
-  // Voice-first mode interface
   if (isVoiceFirstMode) {
     return (
       <VoiceInterface
@@ -977,7 +933,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     )
   }
 
-  // Standard text-based chat interface
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
       {isHistoryLoading && (

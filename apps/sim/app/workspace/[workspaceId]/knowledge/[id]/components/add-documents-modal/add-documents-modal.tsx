@@ -35,7 +35,6 @@ interface AddDocumentsModalProps {
     minSize: number
     overlap: number
   }
-  onUploadComplete?: () => void
 }
 
 export function AddDocumentsModal({
@@ -44,7 +43,6 @@ export function AddDocumentsModal({
   knowledgeBaseId,
   knowledgeBaseName,
   chunkingConfig,
-  onUploadComplete,
 }: AddDocumentsModalProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -57,11 +55,6 @@ export function AddDocumentsModal({
 
   const { isUploading, uploadProgress, uploadFiles, uploadError, clearError } = useKnowledgeUpload({
     workspaceId,
-    onUploadComplete: () => {
-      logger.info(`Successfully uploaded ${files.length} files`)
-      onUploadComplete?.()
-      handleClose()
-    },
   })
 
   useEffect(() => {
@@ -238,6 +231,8 @@ export function AddDocumentsModal({
         chunkOverlap: chunkingConfig?.overlap || 200,
         recipe: 'default',
       })
+      logger.info(`Successfully uploaded ${files.length} files`)
+      handleClose()
     } catch (error) {
       logger.error('Error uploading files:', error)
     }
@@ -248,7 +243,7 @@ export function AddDocumentsModal({
       <ModalContent>
         <ModalHeader>Add Documents</ModalHeader>
 
-        <ModalBody className='!pb-[16px]'>
+        <ModalBody>
           <div className='min-h-0 flex-1 overflow-y-auto'>
             <div className='space-y-[12px]'>
               {fileError && (
@@ -266,8 +261,8 @@ export function AddDocumentsModal({
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   className={cn(
-                    '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--c-575757)] border-dashed py-[10px]',
-                    isDragging && 'border-[var(--brand-primary-hex)]'
+                    '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--border-1)] border-dashed py-[10px]',
+                    isDragging && 'border-[var(--surface-7)]'
                   )}
                 >
                   <input

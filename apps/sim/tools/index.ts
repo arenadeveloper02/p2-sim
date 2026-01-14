@@ -121,6 +121,7 @@ function handleBodySizeLimitError(error: unknown, requestId: string, context: st
  */
 const MCP_SYSTEM_PARAMETERS = new Set([
   'serverId',
+  'serverUrl',
   'toolName',
   'serverName',
   '_context',
@@ -252,9 +253,8 @@ export async function executeTool(
       try {
         const baseUrl = getBaseUrl()
 
-        // Prepare the token payload
         const tokenPayload: OAuthTokenPayload = {
-          credentialId: contextParams.credential,
+          credentialId: contextParams.credential as string,
         }
 
         // Add workflowId if it exists in params, context, or executionContext

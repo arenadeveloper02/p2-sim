@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
   AlertCircle,
@@ -21,45 +22,47 @@ import {
   Badge,
   Breadcrumb,
   Button,
+  Checkbox,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
-  Tooltip,
-  Trash,
-} from '@/components/emcn'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { SearchHighlight } from '@/components/ui/search-highlight'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
+  Tooltip,
+  Trash,
+} from '@/components/emcn'
+import { Input } from '@/components/ui/input'
+import { SearchHighlight } from '@/components/ui/search-highlight'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/core/utils/cn'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
+import type { DocumentData } from '@/lib/knowledge/types'
 import {
   ActionBar,
   AddDocumentsModal,
   BaseTagsModal,
+  DocumentContextMenu,
+  RenameDocumentModal,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
   useKnowledgeBase,
   useKnowledgeBaseDocuments,
   useKnowledgeBasesList,
-} from '@/hooks/use-knowledge'
+} from '@/hooks/kb/use-knowledge'
 import {
   type TagDefinition,
   useKnowledgeBaseTagDefinitions,
-} from '@/hooks/use-knowledge-base-tag-definitions'
-import type { DocumentData } from '@/stores/knowledge/store'
+} from '@/hooks/kb/use-knowledge-base-tag-definitions'
+import { knowledgeKeys } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('KnowledgeBase')
 
@@ -171,7 +174,7 @@ function KnowledgeBaseLoading({ knowledgeBaseName }: KnowledgeBaseLoadingProps) 
   return (
     <div className='flex h-full flex-1 flex-col'>
       <div className='flex flex-1 overflow-hidden'>
-        <div className='flex flex-1 flex-col overflow-auto px-[24px] pt-[24px] pb-[24px]'>
+        <div className='flex flex-1 flex-col overflow-auto bg-white px-[24px] pt-[24px] pb-[24px] dark:bg-[var(--bg)]'>
           <Breadcrumb items={breadcrumbItems} />
 
           <div className='mt-[14px] flex items-center justify-between'>
@@ -193,7 +196,7 @@ function KnowledgeBaseLoading({ knowledgeBaseName }: KnowledgeBaseLoadingProps) 
           </div>
 
           <div className='mt-[14px] flex items-center justify-between'>
-            <div className='flex h-[32px] w-[400px] items-center gap-[6px] rounded-[8px] bg-[var(--surface-4)] px-[8px]'>
+            <div className='flex h-[32px] w-[400px] items-center gap-[6px] rounded-[8px] bg-[var(--surface-3)] px-[8px] dark:bg-[var(--surface-4)]'>
               <Search className='h-[14px] w-[14px] text-[var(--text-subtle)]' />
               <Input
                 placeholder='Search documents...'
@@ -404,6 +407,7 @@ export function KnowledgeBase({
   id,
   knowledgeBaseName: passedKnowledgeBaseName,
 }: KnowledgeBaseProps) {
+  const queryClient = useQueryClient()
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const { removeKnowledgeBase } = useKnowledgeBasesList(workspaceId, { enabled: false })
@@ -431,6 +435,17 @@ export function KnowledgeBase({
   const [currentPage, setCurrentPage] = useState(1)
   const [sortBy, setSortBy] = useState<DocumentSortField>('uploadedAt')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [contextMenuDocument, setContextMenuDocument] = useState<DocumentData | null>(null)
+  const [showRenameModal, setShowRenameModal] = useState(false)
+  const [documentToRename, setDocumentToRename] = useState<DocumentData | null>(null)
+
+  const {
+    isOpen: isContextMenuOpen,
+    position: contextMenuPosition,
+    menuRef,
+    handleContextMenu: baseHandleContextMenu,
+    closeMenu: closeContextMenu,
+  } = useContextMenu()
 
   const {
     knowledgeBase,
@@ -438,10 +453,14 @@ export function KnowledgeBase({
     error: knowledgeBaseError,
     refresh: refreshKnowledgeBase,
   } = useKnowledgeBase(id)
+  const [hasProcessingDocuments, setHasProcessingDocuments] = useState(false)
+
   const {
     documents,
     pagination,
     isLoading: isLoadingDocuments,
+    isFetching: isFetchingDocuments,
+    isPlaceholderData: isPlaceholderDocuments,
     error: documentsError,
     updateDocument,
     refreshDocuments,
@@ -451,6 +470,7 @@ export function KnowledgeBase({
     offset: (currentPage - 1) * DOCUMENTS_PER_PAGE,
     sortBy,
     sortOrder,
+    refetchInterval: hasProcessingDocuments && !isDeleting ? 3000 : false,
   })
 
   const { tagDefinitions } = useKnowledgeBaseTagDefinitions(id)
@@ -517,25 +537,15 @@ export function KnowledgeBase({
   )
 
   useEffect(() => {
-    const hasProcessingDocuments = documents.some(
+    const processing = documents.some(
       (doc) => doc.processingStatus === 'pending' || doc.processingStatus === 'processing'
     )
+    setHasProcessingDocuments(processing)
 
-    if (!hasProcessingDocuments) return
-
-    const refreshInterval = setInterval(async () => {
-      try {
-        if (!isDeleting) {
-          await checkForDeadProcesses()
-          await refreshDocuments()
-        }
-      } catch (error) {
-        logger.error('Error refreshing documents:', error)
-      }
-    }, 3000)
-
-    return () => clearInterval(refreshInterval)
-  }, [documents, refreshDocuments, isDeleting])
+    if (processing) {
+      checkForDeadProcesses()
+    }
+  }, [documents])
 
   /**
    * Checks for documents with stale processing states and marks them as failed
@@ -591,6 +601,10 @@ export function KnowledgeBase({
     const document = documents.find((doc) => doc.id === docId)
     if (!document) return
 
+    const newEnabled = !document.enabled
+
+    updateDocument(docId, { enabled: newEnabled })
+
     try {
       const response = await fetch(`/api/knowledge/${id}/documents/${docId}`, {
         method: 'PUT',
@@ -598,7 +612,7 @@ export function KnowledgeBase({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          enabled: !document.enabled,
+          enabled: newEnabled,
         }),
       })
 
@@ -608,10 +622,11 @@ export function KnowledgeBase({
 
       const result = await response.json()
 
-      if (result.success) {
-        updateDocument(docId, { enabled: !document.enabled })
+      if (!result.success) {
+        updateDocument(docId, { enabled: !newEnabled })
       }
     } catch (err) {
+      updateDocument(docId, { enabled: !newEnabled })
       logger.error('Error updating document:', err)
     }
   }
@@ -650,25 +665,6 @@ export function KnowledgeBase({
 
       await refreshDocuments()
 
-      let refreshAttempts = 0
-      const maxRefreshAttempts = 3
-      const refreshInterval = setInterval(async () => {
-        try {
-          refreshAttempts++
-          await refreshDocuments()
-          if (refreshAttempts >= maxRefreshAttempts) {
-            clearInterval(refreshInterval)
-          }
-        } catch (error) {
-          logger.error('Error refreshing documents after retry:', error)
-          clearInterval(refreshInterval)
-        }
-      }, 1000)
-
-      setTimeout(() => {
-        clearInterval(refreshInterval)
-      }, 4000)
-
       logger.info(`Document retry initiated successfully for: ${docId}`)
     } catch (err) {
       logger.error('Error retrying document:', err)
@@ -680,6 +676,60 @@ export function KnowledgeBase({
             err instanceof Error ? err.message : 'Failed to retry document processing',
         })
       }
+    }
+  }
+
+  /**
+   * Opens the rename document modal
+   */
+  const handleRenameDocument = (doc: DocumentData) => {
+    setDocumentToRename(doc)
+    setShowRenameModal(true)
+  }
+
+  /**
+   * Saves the renamed document
+   */
+  const handleSaveRename = async (documentId: string, newName: string) => {
+    const currentDoc = documents.find((doc) => doc.id === documentId)
+    const previousName = currentDoc?.filename
+
+    updateDocument(documentId, { filename: newName })
+    queryClient.setQueryData<DocumentData>(knowledgeKeys.document(id, documentId), (previous) =>
+      previous ? { ...previous, filename: newName } : previous
+    )
+
+    try {
+      const response = await fetch(`/api/knowledge/${id}/documents/${documentId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ filename: newName }),
+      })
+
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to rename document')
+      }
+
+      const result = await response.json()
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to rename document')
+      }
+
+      logger.info(`Document renamed: ${documentId}`)
+    } catch (err) {
+      if (previousName !== undefined) {
+        updateDocument(documentId, { filename: previousName })
+        queryClient.setQueryData<DocumentData>(
+          knowledgeKeys.document(id, documentId),
+          (previous) => (previous ? { ...previous, filename: previousName } : previous)
+        )
+      }
+      logger.error('Error renaming document:', err)
+      throw err
     }
   }
 
@@ -834,7 +884,6 @@ export function KnowledgeBase({
       const result = await response.json()
 
       if (result.success) {
-        // Update successful documents in the store
         result.data.updatedDocuments.forEach((updatedDoc: { id: string; enabled: boolean }) => {
           updateDocument(updatedDoc.id, { enabled: updatedDoc.enabled })
         })
@@ -842,7 +891,6 @@ export function KnowledgeBase({
         logger.info(`Successfully enabled ${result.data.successCount} documents`)
       }
 
-      // Clear selection after successful operation
       setSelectedDocuments(new Set())
     } catch (err) {
       logger.error('Error enabling documents:', err)
@@ -952,7 +1000,57 @@ export function KnowledgeBase({
   const enabledCount = selectedDocumentsList.filter((doc) => doc.enabled).length
   const disabledCount = selectedDocumentsList.filter((doc) => !doc.enabled).length
 
-  if ((isLoadingKnowledgeBase || isLoadingDocuments) && !knowledgeBase && documents.length === 0) {
+  /**
+   * Handle right-click on a document row
+   * If right-clicking on an unselected document, select only that document
+   * If right-clicking on a selected document with multiple selections, keep all selections
+   */
+  const handleDocumentContextMenu = useCallback(
+    (e: React.MouseEvent, doc: DocumentData) => {
+      const isCurrentlySelected = selectedDocuments.has(doc.id)
+
+      if (!isCurrentlySelected) {
+        setSelectedDocuments(new Set([doc.id]))
+      }
+
+      setContextMenuDocument(doc)
+      baseHandleContextMenu(e)
+    },
+    [selectedDocuments, baseHandleContextMenu]
+  )
+
+  /**
+   * Handle right-click on empty space (table container)
+   */
+  const handleEmptyContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      setContextMenuDocument(null)
+      baseHandleContextMenu(e)
+    },
+    [baseHandleContextMenu]
+  )
+
+  /**
+   * Handle context menu close
+   */
+  const handleContextMenuClose = useCallback(() => {
+    closeContextMenu()
+    setContextMenuDocument(null)
+  }, [closeContextMenu])
+
+  const prevKnowledgeBaseIdRef = useRef<string>(id)
+  const isNavigatingToNewKB = prevKnowledgeBaseIdRef.current !== id
+
+  useEffect(() => {
+    if (knowledgeBase && knowledgeBase.id === id) {
+      prevKnowledgeBaseIdRef.current = id
+    }
+  }, [knowledgeBase, id])
+
+  const isInitialLoad = isLoadingKnowledgeBase && !knowledgeBase
+  const isFetchingNewKB = isNavigatingToNewKB && isFetchingDocuments
+
+  if (isInitialLoad || isFetchingNewKB) {
     return <KnowledgeBaseLoading knowledgeBaseName={knowledgeBaseName} />
   }
 
@@ -987,7 +1085,7 @@ export function KnowledgeBase({
   return (
     <div className='flex h-full flex-1 flex-col'>
       <div className='flex flex-1 overflow-hidden'>
-        <div className='flex flex-1 flex-col overflow-auto px-[24px] pt-[24px] pb-[24px]'>
+        <div className='flex flex-1 flex-col overflow-auto bg-white px-[24px] pt-[24px] pb-[24px] dark:bg-[var(--bg)]'>
           <Breadcrumb items={breadcrumbItems} />
 
           <div className='mt-[14px] flex items-center justify-between'>
@@ -1100,7 +1198,7 @@ export function KnowledgeBase({
             </div>
           )}
 
-          <div className='mt-[12px] flex flex-1 flex-col'>
+          <div className='mt-[12px] flex flex-1 flex-col' onContextMenu={handleEmptyContextMenu}>
             {isLoadingDocuments && documents.length === 0 ? (
               <DocumentTableSkeleton rowCount={5} />
             ) : documents.length === 0 ? (
@@ -1125,11 +1223,11 @@ export function KnowledgeBase({
                     <TableHead className='w-[28px] py-[8px] pr-0 pl-0'>
                       <div className='flex items-center justify-center'>
                         <Checkbox
+                          size='sm'
                           checked={isAllSelected}
                           onCheckedChange={handleSelectAll}
                           disabled={!userPermissions.canEdit}
                           aria-label='Select all documents'
-                          className='h-[14px] w-[14px] border-[var(--border-2)] focus-visible:ring-[var(--brand-primary-hex)]/20 data-[state=checked]:border-[var(--brand-primary-hex)] data-[state=checked]:bg-[var(--brand-primary-hex)] [&>*]:h-[12px] [&>*]:w-[12px]'
                         />
                       </div>
                     </TableHead>
@@ -1155,13 +1253,16 @@ export function KnowledgeBase({
                       <TableRow
                         key={doc.id}
                         className={`${
-                          isSelected ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'
+                          isSelected
+                            ? 'bg-[var(--surface-3)] dark:bg-[var(--surface-4)]'
+                            : 'hover:bg-[var(--surface-3)] dark:hover:bg-[var(--surface-4)]'
                         } ${doc.processingStatus === 'completed' ? 'cursor-pointer' : 'cursor-default'}`}
                         onClick={() => {
                           if (doc.processingStatus === 'completed') {
                             handleDocumentClick(doc.id)
                           }
                         }}
+                        onContextMenu={(e) => handleDocumentContextMenu(e, doc)}
                       >
                         <TableCell className='w-[28px] py-[8px] pr-0 pl-0'>
                           <div className='flex items-center justify-center'>
@@ -1170,10 +1271,10 @@ export function KnowledgeBase({
                               onCheckedChange={(checked) =>
                                 handleSelectDocument(doc.id, checked as boolean)
                               }
+                              size='sm'
                               disabled={!userPermissions.canEdit}
                               onClick={(e) => e.stopPropagation()}
                               aria-label={`Select ${doc.filename}`}
-                              className='h-[14px] w-[14px] border-[var(--border-2)] focus-visible:ring-[var(--brand-primary-hex)]/20 data-[state=checked]:border-[var(--brand-primary-hex)] data-[state=checked]:bg-[var(--brand-primary-hex)] [&>*]:h-[12px] [&>*]:w-[12px]'
                             />
                           </div>
                         </TableCell>
@@ -1505,8 +1606,18 @@ export function KnowledgeBase({
         knowledgeBaseId={id}
         knowledgeBaseName={knowledgeBaseName}
         chunkingConfig={knowledgeBase?.chunkingConfig}
-        onUploadComplete={refreshDocuments}
       />
+
+      {/* Rename Document Modal */}
+      {documentToRename && (
+        <RenameDocumentModal
+          open={showRenameModal}
+          onOpenChange={setShowRenameModal}
+          documentId={documentToRename.id}
+          initialName={documentToRename.filename}
+          onSave={handleSaveRename}
+        />
+      )}
 
       <ActionBar
         selectedCount={selectedDocuments.size}
@@ -1516,6 +1627,85 @@ export function KnowledgeBase({
         enabledCount={enabledCount}
         disabledCount={disabledCount}
         isLoading={isBulkOperating}
+      />
+
+      <DocumentContextMenu
+        isOpen={isContextMenuOpen}
+        position={contextMenuPosition}
+        menuRef={menuRef}
+        onClose={handleContextMenuClose}
+        hasDocument={contextMenuDocument !== null}
+        isDocumentEnabled={contextMenuDocument?.enabled ?? true}
+        hasTags={
+          contextMenuDocument
+            ? getDocumentTags(contextMenuDocument, tagDefinitions).length > 0
+            : false
+        }
+        selectedCount={selectedDocuments.size}
+        enabledCount={enabledCount}
+        disabledCount={disabledCount}
+        onOpenInNewTab={
+          contextMenuDocument && selectedDocuments.size === 1
+            ? () => {
+                const urlParams = new URLSearchParams({
+                  kbName: knowledgeBaseName,
+                  docName: contextMenuDocument.filename || 'Document',
+                })
+                window.open(
+                  `/workspace/${workspaceId}/knowledge/${id}/${contextMenuDocument.id}?${urlParams.toString()}`,
+                  '_blank'
+                )
+              }
+            : undefined
+        }
+        onRename={
+          contextMenuDocument && selectedDocuments.size === 1 && userPermissions.canEdit
+            ? () => handleRenameDocument(contextMenuDocument)
+            : undefined
+        }
+        onToggleEnabled={
+          contextMenuDocument && userPermissions.canEdit
+            ? selectedDocuments.size > 1
+              ? () => {
+                  if (disabledCount > 0) {
+                    handleBulkEnable()
+                  } else {
+                    handleBulkDisable()
+                  }
+                }
+              : () => handleToggleEnabled(contextMenuDocument.id)
+            : undefined
+        }
+        onViewTags={
+          contextMenuDocument && selectedDocuments.size === 1
+            ? () => {
+                const urlParams = new URLSearchParams({
+                  kbName: knowledgeBaseName,
+                  docName: contextMenuDocument.filename || 'Document',
+                })
+                router.push(
+                  `/workspace/${workspaceId}/knowledge/${id}/${contextMenuDocument.id}?${urlParams.toString()}`
+                )
+              }
+            : undefined
+        }
+        onDelete={
+          contextMenuDocument && userPermissions.canEdit
+            ? selectedDocuments.size > 1
+              ? handleBulkDelete
+              : () => handleDeleteDocument(contextMenuDocument.id)
+            : undefined
+        }
+        onAddDocument={userPermissions.canEdit ? handleAddDocuments : undefined}
+        disableToggleEnabled={
+          !userPermissions.canEdit ||
+          contextMenuDocument?.processingStatus === 'processing' ||
+          contextMenuDocument?.processingStatus === 'pending'
+        }
+        disableDelete={
+          !userPermissions.canEdit || contextMenuDocument?.processingStatus === 'processing'
+        }
+        disableAddDocument={!userPermissions.canEdit}
       />
     </div>
   )

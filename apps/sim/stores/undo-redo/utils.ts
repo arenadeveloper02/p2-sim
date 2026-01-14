@@ -1,4 +1,14 @@
-import type { Operation, OperationEntry } from '@/stores/undo-redo/types'
+import { UNDO_REDO_OPERATIONS } from '@/socket/constants'
+import type {
+  BatchAddBlocksOperation,
+  BatchAddEdgesOperation,
+  BatchMoveBlocksOperation,
+  BatchRemoveBlocksOperation,
+  BatchRemoveEdgesOperation,
+  BatchUpdateParentOperation,
+  Operation,
+  OperationEntry,
+} from '@/stores/undo-redo/types'
 
 export function createOperationEntry(operation: Operation, inverse: Operation): OperationEntry {
   return {
@@ -11,96 +21,70 @@ export function createOperationEntry(operation: Operation, inverse: Operation): 
 
 export function createInverseOperation(operation: Operation): Operation {
   switch (operation.type) {
-    case 'add-block':
+    case UNDO_REDO_OPERATIONS.BATCH_ADD_BLOCKS: {
+      const op = operation as BatchAddBlocksOperation
       return {
         ...operation,
-        type: 'remove-block',
+        type: UNDO_REDO_OPERATIONS.BATCH_REMOVE_BLOCKS,
         data: {
-          blockId: operation.data.blockId,
-          blockSnapshot: null,
-          edgeSnapshots: [],
+          blockSnapshots: op.data.blockSnapshots,
+          edgeSnapshots: op.data.edgeSnapshots,
+          subBlockValues: op.data.subBlockValues,
         },
-      }
+      } as BatchRemoveBlocksOperation
+    }
 
-    case 'remove-block':
+    case UNDO_REDO_OPERATIONS.BATCH_REMOVE_BLOCKS: {
+      const op = operation as BatchRemoveBlocksOperation
       return {
         ...operation,
-        type: 'add-block',
+        type: UNDO_REDO_OPERATIONS.BATCH_ADD_BLOCKS,
         data: {
-          blockId: operation.data.blockId,
+          blockSnapshots: op.data.blockSnapshots,
+          edgeSnapshots: op.data.edgeSnapshots,
+          subBlockValues: op.data.subBlockValues,
         },
-      }
+      } as BatchAddBlocksOperation
+    }
 
-    case 'add-edge':
+    case UNDO_REDO_OPERATIONS.BATCH_ADD_EDGES: {
+      const op = operation as BatchAddEdgesOperation
       return {
         ...operation,
-        type: 'remove-edge',
+        type: UNDO_REDO_OPERATIONS.BATCH_REMOVE_EDGES,
         data: {
-          edgeId: operation.data.edgeId,
-          edgeSnapshot: null,
+          edgeSnapshots: op.data.edgeSnapshots,
         },
-      }
+      } as BatchRemoveEdgesOperation
+    }
 
-    case 'remove-edge':
+    case UNDO_REDO_OPERATIONS.BATCH_REMOVE_EDGES: {
+      const op = operation as BatchRemoveEdgesOperation
       return {
         ...operation,
-        type: 'add-edge',
+        type: UNDO_REDO_OPERATIONS.BATCH_ADD_EDGES,
         data: {
-          edgeId: operation.data.edgeId,
+          edgeSnapshots: op.data.edgeSnapshots,
         },
-      }
+      } as BatchAddEdgesOperation
+    }
 
-    case 'add-subflow':
+    case UNDO_REDO_OPERATIONS.BATCH_MOVE_BLOCKS: {
+      const op = operation as BatchMoveBlocksOperation
       return {
         ...operation,
-        type: 'remove-subflow',
+        type: UNDO_REDO_OPERATIONS.BATCH_MOVE_BLOCKS,
         data: {
-          subflowId: operation.data.subflowId,
-          subflowSnapshot: null,
+          moves: op.data.moves.map((m) => ({
+            blockId: m.blockId,
+            before: m.after,
+            after: m.before,
+          })),
         },
-      }
+      } as BatchMoveBlocksOperation
+    }
 
-    case 'remove-subflow':
-      return {
-        ...operation,
-        type: 'add-subflow',
-        data: {
-          subflowId: operation.data.subflowId,
-        },
-      }
-
-    case 'move-block':
-      return {
-        ...operation,
-        data: {
-          blockId: operation.data.blockId,
-          before: operation.data.after,
-          after: operation.data.before,
-        },
-      }
-
-    case 'move-subflow':
-      return {
-        ...operation,
-        data: {
-          subflowId: operation.data.subflowId,
-          before: operation.data.after,
-          after: operation.data.before,
-        },
-      }
-
-    case 'duplicate-block':
-      return {
-        ...operation,
-        type: 'remove-block',
-        data: {
-          blockId: operation.data.duplicatedBlockId,
-          blockSnapshot: operation.data.duplicatedBlockSnapshot,
-          edgeSnapshots: [],
-        },
-      }
-
-    case 'update-parent':
+    case UNDO_REDO_OPERATIONS.UPDATE_PARENT:
       return {
         ...operation,
         data: {
@@ -113,7 +97,24 @@ export function createInverseOperation(operation: Operation): Operation {
         },
       }
 
-    case 'apply-diff':
+    case UNDO_REDO_OPERATIONS.BATCH_UPDATE_PARENT: {
+      const op = operation as BatchUpdateParentOperation
+      return {
+        ...operation,
+        data: {
+          updates: op.data.updates.map((u) => ({
+            blockId: u.blockId,
+            oldParentId: u.newParentId,
+            newParentId: u.oldParentId,
+            oldPosition: u.newPosition,
+            newPosition: u.oldPosition,
+            affectedEdges: u.affectedEdges,
+          })),
+        },
+      } as BatchUpdateParentOperation
+    }
+
+    case UNDO_REDO_OPERATIONS.APPLY_DIFF:
       return {
         ...operation,
         data: {
@@ -123,7 +124,7 @@ export function createInverseOperation(operation: Operation): Operation {
         },
       }
 
-    case 'accept-diff':
+    case UNDO_REDO_OPERATIONS.ACCEPT_DIFF:
       return {
         ...operation,
         data: {
@@ -134,7 +135,7 @@ export function createInverseOperation(operation: Operation): Operation {
         },
       }
 
-    case 'reject-diff':
+    case UNDO_REDO_OPERATIONS.REJECT_DIFF:
       return {
         ...operation,
         data: {
@@ -145,136 +146,27 @@ export function createInverseOperation(operation: Operation): Operation {
         },
       }
 
-    default: {
-      const exhaustiveCheck: never = operation
-      throw new Error(`Unhandled operation type: ${(exhaustiveCheck as any).type}`)
-    }
-  }
-}
-
-export function operationToCollaborativePayload(operation: Operation): {
-  operation: string
-  target: string
-  payload: any
-} {
-  switch (operation.type) {
-    case 'add-block':
+    case UNDO_REDO_OPERATIONS.BATCH_TOGGLE_ENABLED:
       return {
-        operation: 'add',
-        target: 'block',
-        payload: { id: operation.data.blockId },
-      }
-
-    case 'remove-block':
-      return {
-        operation: 'remove',
-        target: 'block',
-        payload: { id: operation.data.blockId },
-      }
-
-    case 'add-edge':
-      return {
-        operation: 'add',
-        target: 'edge',
-        payload: { id: operation.data.edgeId },
-      }
-
-    case 'remove-edge':
-      return {
-        operation: 'remove',
-        target: 'edge',
-        payload: { id: operation.data.edgeId },
-      }
-
-    case 'add-subflow':
-      return {
-        operation: 'add',
-        target: 'subflow',
-        payload: { id: operation.data.subflowId },
-      }
-
-    case 'remove-subflow':
-      return {
-        operation: 'remove',
-        target: 'subflow',
-        payload: { id: operation.data.subflowId },
-      }
-
-    case 'move-block':
-      return {
-        operation: 'update-position',
-        target: 'block',
-        payload: {
-          id: operation.data.blockId,
-          x: operation.data.after.x,
-          y: operation.data.after.y,
-          parentId: operation.data.after.parentId,
+        ...operation,
+        data: {
+          blockIds: operation.data.blockIds,
+          previousStates: operation.data.previousStates,
         },
       }
 
-    case 'move-subflow':
+    case UNDO_REDO_OPERATIONS.BATCH_TOGGLE_HANDLES:
       return {
-        operation: 'update-position',
-        target: 'subflow',
-        payload: {
-          id: operation.data.subflowId,
-          x: operation.data.after.x,
-          y: operation.data.after.y,
-        },
-      }
-
-    case 'duplicate-block':
-      return {
-        operation: 'duplicate',
-        target: 'block',
-        payload: {
-          sourceId: operation.data.sourceBlockId,
-          duplicatedId: operation.data.duplicatedBlockId,
-        },
-      }
-
-    case 'update-parent':
-      return {
-        operation: 'update-parent',
-        target: 'block',
-        payload: {
-          id: operation.data.blockId,
-          parentId: operation.data.newParentId,
-          x: operation.data.newPosition.x,
-          y: operation.data.newPosition.y,
-        },
-      }
-
-    case 'apply-diff':
-      return {
-        operation: 'apply-diff',
-        target: 'workflow',
-        payload: {
-          diffAnalysis: operation.data.diffAnalysis,
-        },
-      }
-
-    case 'accept-diff':
-      return {
-        operation: 'accept-diff',
-        target: 'workflow',
-        payload: {
-          diffAnalysis: operation.data.diffAnalysis,
-        },
-      }
-
-    case 'reject-diff':
-      return {
-        operation: 'reject-diff',
-        target: 'workflow',
-        payload: {
-          diffAnalysis: operation.data.diffAnalysis,
+        ...operation,
+        data: {
+          blockIds: operation.data.blockIds,
+          previousStates: operation.data.previousStates,
         },
       }
 
     default: {
       const exhaustiveCheck: never = operation
-      throw new Error(`Unhandled operation type: ${(exhaustiveCheck as any).type}`)
+      throw new Error(`Unhandled operation type: ${(exhaustiveCheck as Operation).type}`)
     }
   }
 }

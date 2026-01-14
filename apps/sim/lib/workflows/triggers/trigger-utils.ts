@@ -6,14 +6,52 @@ import {
 } from '@/lib/workflows/triggers/triggers'
 import { getAllBlocks, getBlock } from '@/blocks'
 import type { BlockConfig } from '@/blocks/types'
+import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 import { getTrigger } from '@/triggers'
 
 const logger = createLogger('TriggerUtils')
 
 /**
+ * Valid start block types that can trigger a workflow
+ */
+export const VALID_START_BLOCK_TYPES = [
+  'starter',
+  'start',
+  'start_trigger',
+  'api',
+  'api_trigger',
+  'input_trigger',
+] as const
+
+export type ValidStartBlockType = (typeof VALID_START_BLOCK_TYPES)[number]
+
+/**
+ * Check if a block type is a valid start block type
+ */
+export function isValidStartBlockType(blockType: string): blockType is ValidStartBlockType {
+  return VALID_START_BLOCK_TYPES.includes(blockType as ValidStartBlockType)
+}
+
+/**
+ * Check if a workflow state has a valid start block
+ */
+export function hasValidStartBlockInState(state: WorkflowState | null | undefined): boolean {
+  if (!state?.blocks) {
+    return false
+  }
+
+  const startBlock = Object.values(state.blocks).find((block: BlockState) => {
+    const blockType = block?.type
+    return isValidStartBlockType(blockType)
+  })
+
+  return !!startBlock
+}
+
+/**
  * Generates mock data based on the output type definition
  */
-function generateMockValue(type: string, description?: string, fieldName?: string): any {
+function generateMockValue(type: string, _description?: string, fieldName?: string): unknown {
   const name = fieldName || 'value'
 
   switch (type) {
@@ -51,18 +89,19 @@ function generateMockValue(type: string, description?: string, fieldName?: strin
 /**
  * Recursively processes nested output structures
  */
-function processOutputField(key: string, field: any, depth = 0, maxDepth = 10): any {
+function processOutputField(key: string, field: unknown, depth = 0, maxDepth = 10): unknown {
   // Prevent infinite recursion
   if (depth > maxDepth) {
     return null
   }
 
   if (field && typeof field === 'object' && 'type' in field) {
-    return generateMockValue(field.type, field.description, key)
+    const typedField = field as { type: string; description?: string }
+    return generateMockValue(typedField.type, typedField.description, key)
   }
 
   if (field && typeof field === 'object' && !Array.isArray(field)) {
-    const nestedObject: Record<string, any> = {}
+    const nestedObject: Record<string, unknown> = {}
     for (const [nestedKey, nestedField] of Object.entries(field)) {
       nestedObject[nestedKey] = processOutputField(nestedKey, nestedField, depth + 1, maxDepth)
     }
@@ -75,8 +114,8 @@ function processOutputField(key: string, field: any, depth = 0, maxDepth = 10): 
 /**
  * Generates mock payload from outputs object
  */
-function generateMockPayloadFromOutputs(outputs: Record<string, any>): Record<string, any> {
-  const mockPayload: Record<string, any> = {}
+function generateMockPayloadFromOutputs(outputs: Record<string, unknown>): Record<string, unknown> {
+  const mockPayload: Record<string, unknown> = {}
 
   for (const [key, output] of Object.entries(outputs)) {
     if (key === 'visualization') {
@@ -92,8 +131,8 @@ function generateMockPayloadFromOutputs(outputs: Record<string, any>): Record<st
  * Generates a mock payload based on outputs definition
  */
 export function generateMockPayloadFromOutputsDefinition(
-  outputs: Record<string, any>
-): Record<string, any> {
+  outputs: Record<string, unknown>
+): Record<string, unknown> {
   return generateMockPayloadFromOutputs(outputs)
 }
 
@@ -358,8 +397,8 @@ export function triggerNeedsMockPayload<T extends { type: string }>(
  */
 export function extractTriggerMockPayload<
   T extends { type: string; subBlocks?: Record<string, unknown> },
->(trigger: StartBlockCandidate<T>): any {
-  const subBlocks = trigger.block.subBlocks as Record<string, any> | undefined
+>(trigger: StartBlockCandidate<T>): unknown {
+  const subBlocks = trigger.block.subBlocks as Record<string, { value?: unknown }> | undefined
 
   // Determine the trigger ID
   let triggerId: string

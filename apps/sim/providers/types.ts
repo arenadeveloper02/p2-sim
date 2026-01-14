@@ -15,10 +15,8 @@ export type ProviderId =
   | 'openrouter'
   | 'vllm'
   | 'sambanova'
+  | 'bedrock'
 
-/**
- * Model pricing information per million tokens
- */
 export interface ModelPricing {
   input: number // Per 1M tokens
   cachedInput?: number // Per 1M tokens (if supported)
@@ -164,6 +162,9 @@ export interface ProviderRequest {
   azureApiVersion?: string
   vertexProject?: string
   vertexLocation?: string
+  bedrockAccessKeyId?: string
+  bedrockSecretKey?: string
+  bedrockRegion?: string
   reasoningEffort?: string
   verbosity?: string
   thinkingLevel?: string

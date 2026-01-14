@@ -487,7 +487,9 @@ function SubBlockComponent({
               multiSelect={config.multiSelect}
               selectAllOption={config.selectAllOption}
               fetchOptions={config.fetchOptions}
+              fetchOptionById={config.fetchOptionById}
               dependsOn={config.dependsOn}
+              searchable={config.searchable}
             />
           </div>
         )
@@ -505,6 +507,9 @@ function SubBlockComponent({
               previewValue={previewValue as any}
               disabled={isDisabled}
               config={config}
+              fetchOptions={config.fetchOptions}
+              fetchOptionById={config.fetchOptionById}
+              dependsOn={config.dependsOn}
             />
           </div>
         )
@@ -628,6 +633,18 @@ function SubBlockComponent({
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
+          />
+        )
+
+      case 'router-input':
+        return (
+          <ConditionInput
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as any}
+            disabled={isDisabled}
+            mode='router'
           />
         )
 

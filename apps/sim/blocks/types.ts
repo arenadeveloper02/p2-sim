@@ -40,6 +40,7 @@ export type GenerationType =
   | 'mongodb-update'
   | 'neo4j-cypher'
   | 'neo4j-parameters'
+  | 'timestamp'
 
 export type SubBlockType =
   | 'short-input' // Single line input
@@ -88,6 +89,7 @@ export type SubBlockType =
   | 'arena-task-selector'
   | 'arena-states-selector'
   | 'arena-client-selector'
+  | 'router-input' // Router route definitions with descriptions
 
 /**
  * Selector types that require display name hydration
@@ -227,6 +229,7 @@ export interface SubBlockConfig {
   hideFromPreview?: boolean // Hide this subblock from the workflow block preview
   requiresFeature?: string // Environment variable name that must be truthy for this subblock to be visible
   description?: string
+  tooltip?: string // Tooltip text displayed via info icon next to the title
   value?: (params: Record<string, any>) => string
   grouped?: boolean
   scrollable?: boolean
@@ -261,6 +264,8 @@ export interface SubBlockConfig {
   // OAuth specific properties - serviceId is the canonical identifier for OAuth services
   serviceId?: string
   requiredScopes?: string[]
+  // Whether this credential selector supports credential sets (for trigger blocks)
+  supportsCredentialSets?: boolean
   // File selector specific properties
   mimeType?: string
   // File upload specific properties
@@ -297,11 +302,19 @@ export interface SubBlockConfig {
   useWebhookUrl?: boolean
   // Trigger-save specific: The trigger ID for validation and saving
   triggerId?: string
-  // Dropdown specific: Function to fetch options dynamically (for multi-select or single-select)
+  // Dropdown/Combobox: Function to fetch options dynamically
+  // Works with both 'dropdown' (select-only) and 'combobox' (editable with expression support)
   fetchOptions?: (
     blockId: string,
     subBlockId: string
   ) => Promise<Array<{ label: string; id: string }>>
+  // Dropdown/Combobox: Function to fetch a single option's label by ID (for hydration)
+  // Called when component mounts with a stored value to display the correct label before options load
+  fetchOptionById?: (
+    blockId: string,
+    subBlockId: string,
+    optionId: string
+  ) => Promise<{ label: string; id: string } | null>
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {
@@ -317,6 +330,7 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   subBlocks: SubBlockConfig[]
   triggerAllowed?: boolean
   authMode?: AuthMode
+  singleInstance?: boolean
   tools: {
     access: string[]
     config?: {

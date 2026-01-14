@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, RotateCcw, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -23,7 +24,7 @@ import { formatFileSize, validateKnowledgeBaseFile } from '@/lib/uploads/utils/f
 import { ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { createKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useKnowledgeUpload } from '@/app/workspace/[workspaceId]/knowledge/hooks/use-knowledge-upload'
-import type { KnowledgeBaseData } from '@/stores/knowledge/store'
+import { knowledgeKeys } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('CreateBaseModal')
 
@@ -34,7 +35,6 @@ interface FileWithPreview extends File {
 interface CreateBaseModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onKnowledgeBaseCreated?: (knowledgeBase: KnowledgeBaseData) => void
 }
 
 const FormSchema = z
@@ -80,13 +80,10 @@ interface SubmitStatus {
   message: string
 }
 
-export function CreateBaseModal({
-  open,
-  onOpenChange,
-  onKnowledgeBaseCreated,
-}: CreateBaseModalProps) {
+export function CreateBaseModal({ open, onOpenChange }: CreateBaseModalProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
+  const queryClient = useQueryClient()
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -101,9 +98,6 @@ export function CreateBaseModal({
 
   const { uploadFiles, isUploading, uploadProgress, uploadError, clearError } = useKnowledgeUpload({
     workspaceId,
-    onUploadComplete: (uploadedFiles) => {
-      logger.info(`Successfully uploaded ${uploadedFiles.length} files`)
-    },
   })
 
   const handleClose = (open: boolean) => {
@@ -316,13 +310,10 @@ export function CreateBaseModal({
           logger.info(`Successfully uploaded ${uploadedFiles.length} files`)
           logger.info(`Started processing ${uploadedFiles.length} documents in the background`)
 
-          newKnowledgeBase.docCount = uploadedFiles.length
-
-          if (onKnowledgeBaseCreated) {
-            onKnowledgeBaseCreated(newKnowledgeBase)
-          }
+          await queryClient.invalidateQueries({
+            queryKey: knowledgeKeys.list(workspaceId),
+          })
         } catch (uploadError) {
-          // If file upload fails completely, delete the knowledge base to avoid orphaned empty KB
           logger.error('File upload failed, deleting knowledge base:', uploadError)
           try {
             await fetch(`/api/knowledge/${newKnowledgeBase.id}`, {
@@ -335,9 +326,9 @@ export function CreateBaseModal({
           throw uploadError
         }
       } else {
-        if (onKnowledgeBaseCreated) {
-          onKnowledgeBaseCreated(newKnowledgeBase)
-        }
+        await queryClient.invalidateQueries({
+          queryKey: knowledgeKeys.list(workspaceId),
+        })
       }
 
       files.forEach((file) => URL.revokeObjectURL(file.preview))
@@ -361,7 +352,7 @@ export function CreateBaseModal({
         <ModalHeader>Create Knowledge Base</ModalHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className='flex min-h-0 flex-1 flex-col'>
-          <ModalBody className='!pb-[16px]'>
+          <ModalBody>
             <div ref={scrollContainerRef} className='min-h-0 flex-1 overflow-y-auto'>
               <div className='space-y-[12px]'>
                 <div className='flex flex-col gap-[8px]'>
@@ -461,8 +452,8 @@ export function CreateBaseModal({
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     className={cn(
-                      '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--c-575757)] border-dashed py-[10px]',
-                      isDragging && 'border-[var(--brand-primary-hex)]'
+                      '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--border-1)] border-dashed py-[10px]',
+                      isDragging && 'border-[var(--surface-7)]'
                     )}
                   >
                     <input
