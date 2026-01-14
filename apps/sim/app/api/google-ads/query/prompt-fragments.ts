@@ -160,6 +160,13 @@ What I Added:
 - **CRITICAL**: NEVER use OR to combine multiple date ranges in one query
 - **CRITICAL**: If user asks for "this week" or "current week", calculate Monday to yesterday (or today if it's Monday) and use BETWEEN
 
+**LIMIT CLAUSE RULES:**
+- **CRITICAL - NO LIMIT FOR SEARCH TERMS**: Do NOT add LIMIT clause to search_term_view or campaign_search_term_view queries
+- **CRITICAL - NO LIMIT FOR KEYWORDS**: Do NOT add LIMIT clause to keyword_view queries  
+- Pagination automatically fetches ALL results (up to 10,000 per page, multiple pages if needed)
+- Only use LIMIT for specific top-N requests like "top 10 campaigns" or "top 20 keywords"
+- Default behavior: NO LIMIT = fetch all results via pagination
+
 **STATUS FILTERS:**
 - campaign.status = 'ENABLED' (MANDATORY - ONLY active campaigns)
 - Valid values: 'ENABLED', 'PAUSED', 'REMOVED'
@@ -594,7 +601,8 @@ const searchTermsFragment: FragmentBuilder = () =>
 - Include metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
 - For Performance Max search terms: Add campaign.advertising_channel_type = 'PERFORMANCE_MAX' filter.
-- ORDER results by spend (cost_micros DESC) and use LIMIT 1000 for comprehensive results.
+- ORDER results by spend (cost_micros DESC).
+- **CRITICAL - NO LIMIT**: Do NOT add LIMIT clause to search term queries. Pagination will automatically fetch all results (up to 10,000 per page).
 - **COST FILTERING**: For "SQR where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $0.50 = 500,000.
 - **CRITICAL**: Always use metrics.cost_micros > [amount_in_micros] for cost filtering, NOT metrics.cost_micros > [dollars].
 `.trim()
