@@ -80,7 +80,7 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     const formattedCustomerId = accountId.replace(/-/g, '')
 
     // Make Google Ads API request
-    const adsApiUrl = `https://googleads.googleapis.com/v19/customers/${formattedCustomerId}/googleAds:search`
+    const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
 
     const requestPayload = {
       query: gaqlQuery.trim(),
