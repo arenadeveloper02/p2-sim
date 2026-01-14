@@ -302,6 +302,9 @@ export interface SubBlockConfig {
     blockId: string,
     subBlockId: string
   ) => Promise<Array<{ label: string; id: string }>>
+  // Per-field advanced mode: When true, this field supports individual advanced mode toggle
+  // In advanced mode, selectors become editable and support variable references like <block.field>
+  advancedModeSupported?: boolean
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {

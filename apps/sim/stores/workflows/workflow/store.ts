@@ -1104,6 +1104,67 @@ export const useWorkflowStore = create<WorkflowStore>()(
         // Note: Socket.IO handles real-time sync automatically
       },
 
+      toggleFieldAdvancedMode: (id: string, fieldId: string) => {
+        const block = get().blocks[id]
+        if (!block) return
+
+        const currentFieldAdvancedMode = block.fieldAdvancedMode || {}
+        const currentValue = currentFieldAdvancedMode[fieldId] || false
+
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...block,
+              fieldAdvancedMode: {
+                ...currentFieldAdvancedMode,
+                [fieldId]: !currentValue,
+              },
+            },
+          },
+          edges: [...get().edges],
+          loops: { ...get().loops },
+        }
+
+        set(newState)
+
+        get().triggerUpdate()
+        // Note: Socket.IO handles real-time sync automatically
+      },
+
+      getFieldAdvancedMode: (id: string, fieldId: string): boolean => {
+        const block = get().blocks[id]
+        if (!block || !block.fieldAdvancedMode) return false
+        return block.fieldAdvancedMode[fieldId] || false
+      },
+
+      setFieldAdvancedMode: (id: string, fieldId: string, value: boolean) => {
+        const block = get().blocks[id]
+        if (!block) return
+
+        const currentFieldAdvancedMode = block.fieldAdvancedMode || {}
+
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...block,
+              fieldAdvancedMode: {
+                ...currentFieldAdvancedMode,
+                [fieldId]: value,
+              },
+            },
+          },
+          edges: [...get().edges],
+          loops: { ...get().loops },
+        }
+
+        set(newState)
+
+        get().triggerUpdate()
+        // Note: Socket.IO handles real-time sync automatically
+      },
+
       toggleBlockTriggerMode: (id: string) => {
         const block = get().blocks[id]
         if (!block) return

@@ -69,16 +69,18 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
 
+      // Handle both string (advanced mode) and object (basic mode) for client
       const clientValue = params['comment-client']
       const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
       if (!clientId) throw new Error('Missing required field: Client')
 
+      // Handle both string (advanced mode) and object (basic mode) for project
       const projectValue = params['comment-project']
       const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
       if (!projectId) throw new Error('Missing required field: Project')
-
       const projectName = typeof projectValue === 'string' ? '' : projectValue?.name || ''
 
+      // Handle both string (advanced mode) and object (basic mode) for task
       const taskValue = params['comment-task']
       const elementId =
         typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
@@ -138,11 +140,35 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
     params?: ArenaCommentsParams
   ): Promise<ArenaCommentsResponse> => {
     const data = await response.json()
+
+    // Extract IDs from params for variable referencing
+    const clientValue = params?.['comment-client']
+    const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+
+    const projectValue = params?.['comment-project']
+    const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+
+    const groupValue = params?.['comment-group']
+    const groupId = groupValue?.id
+
+    const taskValue = params?.['comment-task']
+    const taskId = typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
+
     return {
       success: true,
       output: {
         success: true,
         output: data,
+        // Expose IDs for variable referencing
+        client_id: clientId,
+        customerId: clientId,
+        project_id: projectId,
+        projectId: projectId,
+        group_id: groupId,
+        epicId: groupId,
+        task_id: taskId,
+        id: taskId,
+        sysId: taskId,
       },
     }
   },
@@ -150,5 +176,14 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
   outputs: {
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'object', description: 'Output from Arena' },
+    client_id: { type: 'string', description: 'Client ID (customerId)' },
+    customerId: { type: 'string', description: 'Customer ID' },
+    project_id: { type: 'string', description: 'Project ID' },
+    projectId: { type: 'string', description: 'Project ID' },
+    group_id: { type: 'string', description: 'Group ID (epicId)' },
+    epicId: { type: 'string', description: 'Epic/Group ID' },
+    task_id: { type: 'string', description: 'Task ID (sysId)' },
+    id: { type: 'string', description: 'Task ID (id field)' },
+    sysId: { type: 'string', description: 'Task system ID' },
   },
 }

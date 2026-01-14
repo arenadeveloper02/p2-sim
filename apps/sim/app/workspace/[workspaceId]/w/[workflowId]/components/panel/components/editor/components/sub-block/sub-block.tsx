@@ -1,6 +1,6 @@
 import { type JSX, type MouseEvent, memo, useRef, useState } from 'react'
 import { AlertTriangle, Wand2 } from 'lucide-react'
-import { Label, Tooltip } from '@/components/emcn/components'
+import { Switch as EmcnSwitch, Label, Tooltip } from '@/components/emcn/components'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
@@ -44,6 +44,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
 import { ArenaCommentInput } from './components/arena/arena-comment-input'
@@ -192,7 +193,8 @@ const renderLabel = (
     onSearchCancel: () => void
     searchInputRef: React.RefObject<HTMLInputElement | null>
   },
-  subBlockValues?: Record<string, any>
+  blockId: string,
+  subBlockValues: Record<string, any> | undefined
 ): JSX.Element | null => {
   if (config.type === 'switch') return null
   if (!config.title) return null
@@ -408,6 +410,21 @@ function SubBlockComponent({
   })
 
   const isDisabled = gatedDisabled
+
+  // Get field advanced mode state (hooks must be called at component level)
+  const fieldAdvancedMode = useWorkflowStore(
+    (state) => state.blocks[blockId]?.fieldAdvancedMode?.[config.id] ?? false
+  )
+  const setFieldAdvancedMode = useWorkflowStore((state) => state.setFieldAdvancedMode)
+
+  const handleAdvancedModeToggle = (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isPreview && !isDisabled) {
+      // Toggle for backward compatibility with existing code
+      const currentValue = fieldAdvancedMode ?? false
+      setFieldAdvancedMode(blockId, config.id, !currentValue)
+    }
+  }
 
   /**
    * Selects and renders the appropriate input component based on config.type.
@@ -985,25 +1002,54 @@ function SubBlockComponent({
 
   return (
     <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-[10px]'>
-      {renderLabel(
-        config,
-        isValidJson,
-        {
-          isSearchActive,
-          searchQuery,
-          isWandEnabled,
-          isPreview,
-          isStreaming: wandControlRef.current?.isWandStreaming ?? false,
-          disabled: isDisabled,
-          onSearchClick: handleSearchClick,
-          onSearchBlur: handleSearchBlur,
-          onSearchChange: handleSearchChange,
-          onSearchSubmit: handleSearchSubmit,
-          onSearchCancel: handleSearchCancel,
-          searchInputRef,
-        },
-        subBlockValues
-      )}
+      <div className='flex items-center justify-between gap-[6px]'>
+        {renderLabel(
+          config,
+          isValidJson,
+          {
+            isSearchActive,
+            searchQuery,
+            isWandEnabled,
+            isPreview,
+            isStreaming: wandControlRef.current?.isWandStreaming ?? false,
+            disabled: isDisabled,
+            onSearchClick: handleSearchClick,
+            onSearchBlur: handleSearchBlur,
+            onSearchChange: handleSearchChange,
+            onSearchSubmit: handleSearchSubmit,
+            onSearchCancel: handleSearchCancel,
+            searchInputRef,
+          },
+          blockId,
+          subBlockValues
+        )}
+        {/* Per-field advanced mode toggle - positioned to the right */}
+        {config.advancedModeSupported && !isPreview && !isDisabled && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <span className='inline-flex items-center'>
+                <EmcnSwitch
+                  checked={Boolean(fieldAdvancedMode)}
+                  onCheckedChange={(checked) => {
+                    if (!isPreview && !isDisabled) {
+                      setFieldAdvancedMode(blockId, config.id, checked)
+                    }
+                  }}
+                  aria-label={fieldAdvancedMode ? 'Disable advanced mode' : 'Enable advanced mode'}
+                />
+              </span>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              <p>{fieldAdvancedMode ? 'Advanced mode: ON' : 'Advanced mode: OFF'}</p>
+              <p className='text-[11px] text-[var(--text-muted)]'>
+                {fieldAdvancedMode
+                  ? 'Field supports variables like <block.field>'
+                  : 'Click to enable variable references'}
+              </p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        )}
+      </div>
       {renderInput()}
     </div>
   )

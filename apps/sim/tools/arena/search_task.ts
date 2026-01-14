@@ -77,10 +77,20 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
 
       const isSearchTask = params.operation === 'arena_search_task'
       if (isSearchTask) {
-        url += `?name=${params['search-task-name']}`
+        const taskName = params['search-task-name']
+        if (taskName) {
+          url += `?name=${taskName}`
+        }
       }
-      if (params['search-task-client']?.name) {
-        url += `&account=${params['search-task-client'].name}`
+      if (params['search-task-client']) {
+        // Handle both object (basic mode) and string (advanced mode)
+        const clientName =
+          typeof params['search-task-client'] === 'string'
+            ? undefined // In advanced mode, we might have an ID, not a name
+            : params['search-task-client']?.name
+        if (clientName) {
+          url += `&account=${clientName}`
+        }
       }
       if (params['search-task-project']) {
         const projectId =
@@ -92,7 +102,13 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         }
       }
       if (params['search-task-state']) {
-        url += `&statusList=${params['search-task-state'].join(',')}`
+        // Handle both array (basic mode) and string (advanced mode - comma-separated or variable)
+        const stateValue = Array.isArray(params['search-task-state'])
+          ? params['search-task-state'].join(',')
+          : String(params['search-task-state']).trim()
+        if (stateValue) {
+          url += `&statusList=${stateValue}`
+        }
       }
       if (params['search-task-visibility']) {
         if (params['search-task-visibility'] === 'Internal') {
@@ -192,21 +208,71 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
     params?: SearchTaskQueryParams
   ): Promise<SearchTaskResponse> => {
     const data = await response.json()
+    const outputData = data.output || data
+
+    // Extract first task for common field access
+    const tasks = outputData?.tasks || []
+    const firstTask = tasks.length > 0 ? tasks[0] : null
+
     return {
       success: true,
       output: {
         success: true,
         output: data,
+        // Expose tasks array and pagination
+        tasks: tasks,
+        pagination: outputData?.pagination,
+        // Expose common fields from first task for convenience
+        task_id: firstTask?.sysId || firstTask?.id,
+        id: firstTask?.id,
+        sysId: firstTask?.sysId,
+        task_name: firstTask?.name,
+        name: firstTask?.name,
+        description: firstTask?.description,
+        taskNumber: firstTask?.taskNumber,
+        status: firstTask?.status,
+        arenaStatus: firstTask?.arenaStatus,
+        client_id: firstTask?.clientId || firstTask?.customerId,
+        customerId: firstTask?.clientId || firstTask?.customerId,
+        project_id: firstTask?.projectId,
+        projectId: firstTask?.projectId,
+        group_id: firstTask?.epicId,
+        epicId: firstTask?.epicId,
+        assignee_id: firstTask?.assignedToId,
+        assignedToId: firstTask?.assignedToId,
+        projectName: firstTask?.projectName,
+        customerName: firstTask?.clientName || firstTask?.customerName,
+        epicName: firstTask?.epicName || firstTask?.groupName,
       },
     }
   },
 
   //this output config will override block output config
   outputs: {
-    // ts: { type: 'string', description: 'Timestamp when response was transformed' },
-    // response: { type: 'object', description: 'Response from Arena' },
-    // success: { type: 'boolean', description: 'Indicates if transform was successful' },
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'object', description: 'Output from Arena' },
+    tasks: { type: 'array', description: 'Array of matching tasks' },
+    pagination: { type: 'object', description: 'Pagination information' },
+    // Common fields from first task for convenience
+    task_id: { type: 'string', description: 'First task ID (sysId)' },
+    id: { type: 'string', description: 'First task ID (id field)' },
+    sysId: { type: 'string', description: 'First task system ID' },
+    task_name: { type: 'string', description: 'First task name' },
+    name: { type: 'string', description: 'First task name' },
+    description: { type: 'string', description: 'First task description' },
+    taskNumber: { type: 'string', description: 'First task number' },
+    status: { type: 'string', description: 'First task status' },
+    arenaStatus: { type: 'string', description: 'First task arena status' },
+    client_id: { type: 'string', description: 'First task client ID (customerId)' },
+    customerId: { type: 'string', description: 'First task customer ID' },
+    project_id: { type: 'string', description: 'First task project ID' },
+    projectId: { type: 'string', description: 'First task project ID' },
+    group_id: { type: 'string', description: 'First task group ID (epicId)' },
+    epicId: { type: 'string', description: 'First task epic/group ID' },
+    assignee_id: { type: 'string', description: 'First task assignee ID (assignedToId)' },
+    assignedToId: { type: 'string', description: 'First task assigned user ID' },
+    projectName: { type: 'string', description: 'First task project name' },
+    customerName: { type: 'string', description: 'First task customer/client name' },
+    epicName: { type: 'string', description: 'First task epic/group name' },
   },
 }

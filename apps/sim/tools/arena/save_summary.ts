@@ -65,11 +65,19 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
     params?: ArenaSaveSummaryParams
   ): Promise<ArenaSaveSummaryResponse> => {
     const data = await response.json()
+
+    // Extract IDs from params for variable referencing
+    const clientValue = params?.['save-summary-client']
+    const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+
     return {
       success: true,
       output: {
         success: true,
         output: data,
+        // Expose IDs for variable referencing
+        client_id: clientId,
+        customerId: clientId,
       },
     }
   },
@@ -77,5 +85,7 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
   outputs: {
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'object', description: 'Output from Arena' },
+    client_id: { type: 'string', description: 'Client ID (customerId)' },
+    customerId: { type: 'string', description: 'Customer ID' },
   },
 }

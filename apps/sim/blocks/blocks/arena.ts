@@ -44,7 +44,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'Task Name',
       type: 'long-input',
       required: true,
-      placeholder: 'Enter task name',
+      placeholder: 'Enter task name or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -56,7 +56,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'Task Description',
       type: 'long-input',
       required: true,
-      placeholder: 'Enter task description',
+      placeholder: 'Enter task description or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -68,53 +68,58 @@ export const ArenaBlock: BlockConfig = {
       title: 'Client',
       type: 'arena-client-selector',
       required: true,
-      placeholder: 'Enter client name',
+      placeholder: 'Select client or enter ID/variable like <block.client_id>',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task', 'arena_create_sub_task'] },
+      advancedModeSupported: true,
     },
     {
       id: 'task-project',
       title: 'Project',
       type: 'arena-project-selector',
       required: true,
-      placeholder: 'Enter project name',
+      placeholder: 'Select project or enter ID/variable like <block.project_id>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_create_task', 'arena_create_sub_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'task-group',
       title: 'Group',
       type: 'arena-group-selector',
       required: true,
-      placeholder: 'Enter group name',
+      placeholder: 'Select group or enter ID/variable like <block.group_id>',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task'] },
+      advancedModeSupported: true,
     },
     {
       id: 'task-task',
       title: 'Task',
       type: 'arena-task-selector',
       required: true,
-      placeholder: 'Enter task name',
+      placeholder: 'Select task or enter ID/variable like <block.task_id>',
       condition: {
         field: 'operation',
         value: ['arena_create_sub_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'task-assignee',
       title: 'Assignee',
       type: 'arena-assignee-selector',
       required: true,
-      placeholder: 'Enter assignee name',
+      placeholder: 'Select assignee or enter ID/variable like <block.assignee_id>',
       dependsOn: ['operation', 'task-client', 'task-project'],
       condition: {
         field: 'operation',
         value: ['arena_create_task', 'arena_create_sub_task'],
       },
+      advancedModeSupported: true,
     },
 
     //search task blocks
@@ -123,7 +128,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'Task Name',
       type: 'long-input',
       required: false,
-      placeholder: 'Enter task name',
+      placeholder: 'Enter task name or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -135,36 +140,39 @@ export const ArenaBlock: BlockConfig = {
       title: 'Client',
       type: 'arena-client-selector',
       required: false,
-      placeholder: 'Enter client name',
+      placeholder: 'Select client or enter ID/variable like <block.client_id>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'search-task-project',
       title: 'Project',
       type: 'arena-project-selector',
       required: false,
-      placeholder: 'Enter project name',
+      placeholder: 'Select project or enter ID/variable like <block.project_id>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'search-task-state',
       title: 'State',
       type: 'arena-states-selector',
       required: false,
-      placeholder: 'Enter state',
+      placeholder: 'Select states or enter comma-separated values/variables',
       //value: () => 'open',
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'search-task-visibility',
@@ -214,12 +222,13 @@ export const ArenaBlock: BlockConfig = {
       title: 'Search Assignee',
       type: 'arena-assignee-selector',
       required: false,
-      placeholder: 'Enter assignee name',
+      placeholder: 'Select assignee or enter ID/variable like <block.assignee_id>',
       dependsOn: ['search-task-client'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'search-task-max-results',
@@ -236,19 +245,20 @@ export const ArenaBlock: BlockConfig = {
       title: 'Client',
       type: 'arena-client-selector',
       required: true,
-      placeholder: 'Enter client name',
+      placeholder: 'Select client or enter ID/variable like <block.client_id>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_save_summary'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'save-summary-text',
       title: 'Summary',
       type: 'long-input',
       required: true,
-      placeholder: 'Enter summary',
+      placeholder: 'Enter summary or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -262,48 +272,52 @@ export const ArenaBlock: BlockConfig = {
       title: 'Client',
       type: 'arena-client-selector',
       required: true,
-      placeholder: 'Enter client name',
+      placeholder: 'Select client or enter ID/variable like <block.client_id>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_comments'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'comment-project',
       title: 'Project',
       type: 'arena-project-selector',
       required: true,
-      placeholder: 'Enter project name',
+      placeholder: 'Select project or enter ID/variable like <block.project_id>',
       dependsOn: ['operation', 'comment-client'],
       condition: {
         field: 'operation',
         value: ['arena_comments'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'comment-group',
       title: 'Group',
       type: 'arena-group-selector',
       required: true,
-      placeholder: 'Enter group name',
+      placeholder: 'Select group or enter ID/variable like <block.group_id>',
       dependsOn: ['operation', 'comment-client', 'comment-project'],
       condition: {
         field: 'operation',
         value: ['arena_comments'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'comment-task',
       title: 'Task',
       type: 'arena-task-selector',
       required: true,
-      placeholder: 'Enter task name',
+      placeholder: 'Select task or enter ID/variable like <block.task_id>',
       dependsOn: ['operation', 'comment-project'],
       condition: {
         field: 'operation',
         value: ['arena_comments'],
       },
+      advancedModeSupported: true,
     },
     {
       id: 'comment-client-note',
@@ -321,7 +335,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'Comments',
       type: 'long-input',
       required: true,
-      placeholder: 'Enter comments',
+      placeholder: 'Enter comments or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -335,6 +349,30 @@ export const ArenaBlock: BlockConfig = {
   outputs: {
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'json', description: 'Output from Arena' },
+    // Task identifiers - multiple aliases for flexibility
+    task_id: { type: 'string', description: 'Task ID (sysId)' },
+    id: { type: 'string', description: 'Task ID (id field)' },
+    sysId: { type: 'string', description: 'Task system ID' },
+    // Client/Project/Group/Assignee IDs - multiple aliases
+    client_id: { type: 'string', description: 'Client ID (customerId)' },
+    customerId: { type: 'string', description: 'Customer ID' },
+    project_id: { type: 'string', description: 'Project ID' },
+    projectId: { type: 'string', description: 'Project ID' },
+    group_id: { type: 'string', description: 'Group ID (epicId)' },
+    epicId: { type: 'string', description: 'Epic/Group ID' },
+    assignee_id: { type: 'string', description: 'Assignee ID (assignedToId)' },
+    assignedToId: { type: 'string', description: 'Assigned user ID' },
+    // Task details
+    task_name: { type: 'string', description: 'Task name' },
+    name: { type: 'string', description: 'Task name' },
+    description: { type: 'string', description: 'Task description' },
+    // Additional useful fields
+    taskNumber: { type: 'string', description: 'Task number' },
+    status: { type: 'string', description: 'Task status' },
+    arenaStatus: { type: 'string', description: 'Arena status' },
+    projectName: { type: 'string', description: 'Project name' },
+    customerName: { type: 'string', description: 'Customer/Client name' },
+    epicName: { type: 'string', description: 'Epic/Group name' },
   },
   tools: {
     access: ['arena_create_task', 'arena_save_summary', 'arena_comments'],
@@ -356,7 +394,73 @@ export const ArenaBlock: BlockConfig = {
         }
       },
       params: (params) => {
-        return params
+        // Helper function to extract ID from selector object or use string value directly
+        // Supports both basic mode (selector objects) and advanced mode (string values/variables)
+        const extractId = (value: any): string => {
+          if (!value) return ''
+          if (typeof value === 'object') {
+            // Extract ID from selector object (basic mode)
+            return value.clientId || value.sysId || value.id || value.value || String(value)
+          }
+          // Use string value directly (advanced mode - supports variables like <block.field>)
+          return String(value).trim()
+        }
+
+        // Helper function to extract string value (for text inputs)
+        const extractString = (value: any): string => {
+          if (!value) return ''
+          return String(value).trim()
+        }
+
+        const result = { ...params }
+
+        // Extract values for Create Task / Create Sub Task operations
+        if (
+          params.operation === 'arena_create_task' ||
+          params.operation === 'arena_create_sub_task'
+        ) {
+          result['task-name'] = extractString(params['task-name'])
+          result['task-description'] = extractString(params['task-description'])
+          result['task-client'] = extractId(params['task-client'])
+          result['task-project'] = extractId(params['task-project'])
+          result['task-group'] = extractId(params['task-group'])
+          result['task-task'] = extractId(params['task-task'])
+          result['task-assignee'] = extractId(params['task-assignee'])
+        }
+
+        // Extract values for Search Task operation
+        if (params.operation === 'arena_search_task') {
+          result['search-task-name'] = extractString(params['search-task-name'])
+          result['search-task-client'] = extractId(params['search-task-client'])
+          result['search-task-project'] = extractId(params['search-task-project'])
+          result['search-task-assignee'] = extractId(params['search-task-assignee'])
+          // For states, handle both array (basic mode) and string (advanced mode)
+          if (params['search-task-state']) {
+            if (Array.isArray(params['search-task-state'])) {
+              result['search-task-state'] = params['search-task-state']
+            } else {
+              // Advanced mode: comma-separated string or variable reference
+              result['search-task-state'] = extractString(params['search-task-state'])
+            }
+          }
+        }
+
+        // Extract values for Add Comments operation
+        if (params.operation === 'arena_comments') {
+          result['comment-client'] = extractId(params['comment-client'])
+          result['comment-project'] = extractId(params['comment-project'])
+          result['comment-group'] = extractId(params['comment-group'])
+          result['comment-task'] = extractId(params['comment-task'])
+          result['comment-text'] = extractString(params['comment-text'])
+        }
+
+        // Extract values for Save Summary operation
+        if (params.operation === 'arena_save_summary') {
+          result['save-summary-client'] = extractId(params['save-summary-client'])
+          result['save-summary-text'] = extractString(params['save-summary-text'])
+        }
+
+        return result
       },
     },
   },

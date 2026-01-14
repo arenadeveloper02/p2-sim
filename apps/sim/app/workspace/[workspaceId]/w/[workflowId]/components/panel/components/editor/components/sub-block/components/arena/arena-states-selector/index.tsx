@@ -3,6 +3,7 @@
 import * as React from 'react'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
+import { Input } from '@/components/emcn/components'
 import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useSubBlockValue } from '../../../hooks/use-sub-block-value'
 
 interface ArenaState {
@@ -45,18 +48,37 @@ export function ArenaStatesSelector({
 }: ArenaStatesSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
+  // Check if advanced mode is enabled for this field
+  const fieldAdvancedMode = useWorkflowStore((state) =>
+    state.getFieldAdvancedMode(blockId, subBlockId)
+  )
+
   // Expecting array for multiselect
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValues: string[] = isPreview
     ? previewValue || []
     : Array.isArray(storeValue)
       ? storeValue
-      : storeValue
-        ? storeValue.split(',') // fallback if stored as CSV
+      : typeof storeValue === 'string' && storeValue.trim()
+        ? storeValue
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : []
 
   const [states, setStates] = React.useState<ArenaState[]>([])
   const [open, setOpen] = React.useState(false)
+
+  // Clear value when switching to advanced mode if it's an array
+  React.useEffect(() => {
+    if (fieldAdvancedMode && Array.isArray(storeValue) && storeValue.length > 0) {
+      // When switching to advanced mode, convert array to comma-separated string
+      const csvValue = storeValue.join(', ')
+      if (!isPreview && !disabled) {
+        setStoreValue(csvValue)
+      }
+    }
+  }, [fieldAdvancedMode, storeValue, isPreview, disabled, setStoreValue])
 
   React.useEffect(() => {
     const fetchStates = async () => {
@@ -101,6 +123,55 @@ export function ArenaStatesSelector({
 
   const selectedLabel = selectedValues.length > 0 ? selectedValues.join(', ') : 'Select states...'
 
+  // If advanced mode is enabled, use plain Input with tag dropdown support
+  if (fieldAdvancedMode) {
+    // Convert array to comma-separated string for display
+    const currentValue = Array.isArray(storeValue)
+      ? storeValue.join(', ')
+      : typeof storeValue === 'string'
+        ? storeValue
+        : ''
+
+    return (
+      <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
+        <SubBlockInputController
+          blockId={blockId}
+          subBlockId={subBlockId}
+          config={{
+            id: subBlockId,
+            type: 'short-input',
+            connectionDroppable: true,
+          }}
+          value={currentValue}
+          onChange={(newValue) => {
+            // Store as string (supports variables like <block.field> or comma-separated values)
+            if (!isPreview && !disabled) {
+              setStoreValue(newValue)
+            }
+          }}
+          disabled={disabled || isPreview}
+          isPreview={isPreview}
+        >
+          {({ ref, value, onChange, onKeyDown, onDrop, onDragOver, onFocus }) => (
+            <Input
+              ref={ref as React.RefObject<HTMLInputElement>}
+              value={value}
+              onChange={onChange as (e: React.ChangeEvent<HTMLInputElement>) => void}
+              onKeyDown={onKeyDown as (e: React.KeyboardEvent<HTMLInputElement>) => void}
+              onFocus={onFocus}
+              placeholder='Enter comma-separated states or variables like <block.field>'
+              disabled={disabled || isPreview}
+              onDrop={onDrop as (e: React.DragEvent<HTMLInputElement>) => void}
+              onDragOver={onDragOver as (e: React.DragEvent<HTMLInputElement>) => void}
+              className='w-full'
+            />
+          )}
+        </SubBlockInputController>
+      </div>
+    )
+  }
+
+  // Basic mode: Use existing Popover/Command pattern
   return (
     <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
       <Popover open={open} onOpenChange={setOpen}>
