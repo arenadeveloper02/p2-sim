@@ -310,6 +310,25 @@ export const useWorkflowStore = create<WorkflowStore>()(
           return
         }
 
+        // PREVENTION: Nested loops/parallels should not have parentId references to other loops/parallels
+        // This prevents circular references that cause React Flow position calculation errors
+        if (parentId && (block.type === 'loop' || block.type === 'parallel')) {
+          const parentBlock = get().blocks[parentId]
+          if (parentBlock && (parentBlock.type === 'loop' || parentBlock.type === 'parallel')) {
+            logger.warn(
+              `Prevented nested ${block.type} from getting parentId to ${parentBlock.type}. Nested containers should not have parentId references.`,
+              {
+                blockId: id,
+                blockType: block.type,
+                parentId: parentId,
+                parentType: parentBlock.type,
+              }
+            )
+            // Don't set parentId for nested loops/parallels - they are containers themselves
+            return
+          }
+        }
+
         // Store current absolute position
         const absolutePosition = { ...block.position }
 

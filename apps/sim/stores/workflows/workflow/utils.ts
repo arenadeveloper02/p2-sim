@@ -118,6 +118,7 @@ export function convertParallelBlockToParallel(
 
 /**
  * Find all nodes that are children of this container (loop or parallel)
+ * Excludes nested loop/parallel blocks as they are containers themselves, not regular nodes
  *
  * @param containerId - ID of the container to find children for
  * @param blocks - Record of all blocks in the workflow
@@ -125,7 +126,13 @@ export function convertParallelBlockToParallel(
  */
 export function findChildNodes(containerId: string, blocks: Record<string, BlockState>): string[] {
   return Object.values(blocks)
-    .filter((block) => block.data?.parentId === containerId)
+    .filter(
+      (block) =>
+        block.data?.parentId === containerId &&
+        // Exclude nested loops and parallels - they are containers, not regular nodes
+        block.type !== 'loop' &&
+        block.type !== 'parallel'
+    )
     .map((block) => block.id)
 }
 

@@ -549,6 +549,43 @@ async function handleBlockOperationTx(
         throw new Error('Missing block ID for update parent operation')
       }
 
+      // PREVENTION: Check if this would create a nested loop/parallel with parentId reference
+      // Nested loops/parallels should not have parentId references to other loops/parallels
+      if (payload.parentId) {
+        const [blockToMove] = await tx
+          .select({ type: workflowBlocks.type })
+          .from(workflowBlocks)
+          .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))
+          .limit(1)
+
+        const [parentBlock] = await tx
+          .select({ type: workflowBlocks.type })
+          .from(workflowBlocks)
+          .where(
+            and(eq(workflowBlocks.id, payload.parentId), eq(workflowBlocks.workflowId, workflowId))
+          )
+          .limit(1)
+
+        if (
+          blockToMove &&
+          parentBlock &&
+          (blockToMove.type === 'loop' || blockToMove.type === 'parallel') &&
+          (parentBlock.type === 'loop' || parentBlock.type === 'parallel')
+        ) {
+          logger.warn(
+            `Prevented nested ${blockToMove.type} from getting parentId to ${parentBlock.type}. Nested containers should not have parentId references.`,
+            {
+              blockId: payload.id,
+              blockType: blockToMove.type,
+              parentId: payload.parentId,
+              parentType: parentBlock.type,
+            }
+          )
+          // Don't set parentId for nested loops/parallels
+          return
+        }
+      }
+
       // Fetch current parent to update subflow node list when detaching or reparenting
       const [existing] = await tx
         .select({

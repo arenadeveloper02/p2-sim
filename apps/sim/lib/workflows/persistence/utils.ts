@@ -248,6 +248,7 @@ export async function loadWorkflowFromNormalizedTables(
     }))
 
     // Convert subflows to loops and parallels
+    // IMPORTANT: Filter out nested loop/parallel blocks from nodes arrays to prevent circular references
     const loops: Record<string, Loop> = {}
     const parallels: Record<string, Parallel> = {}
 
@@ -263,9 +264,19 @@ export async function loadWorkflowFromNormalizedTables(
             ? (config as Loop).loopType
             : 'for'
 
+        // Filter out nested loop/parallel blocks from nodes array to prevent circular references
+        // Nested loops/parallels are containers themselves and should not be in parent's nodes array
+        const allNodes = Array.isArray((config as Loop).nodes) ? (config as Loop).nodes : []
+        const filteredNodes = allNodes.filter((nodeId) => {
+          const block = migratedBlocks[nodeId]
+          // Exclude nested loops and parallels - they are containers, not regular nodes
+          if (!block) return false
+          return block.type !== 'loop' && block.type !== 'parallel'
+        })
+
         const loop: Loop = {
           id: subflow.id,
-          nodes: Array.isArray((config as Loop).nodes) ? (config as Loop).nodes : [],
+          nodes: filteredNodes,
           iterations:
             typeof (config as Loop).iterations === 'number' ? (config as Loop).iterations : 1,
           loopType,
@@ -290,9 +301,18 @@ export async function loadWorkflowFromNormalizedTables(
           }
         }
       } else if (subflow.type === SUBFLOW_TYPES.PARALLEL) {
+        // Filter out nested loop/parallel blocks from nodes array to prevent circular references
+        const allNodes = Array.isArray((config as Parallel).nodes) ? (config as Parallel).nodes : []
+        const filteredNodes = allNodes.filter((nodeId) => {
+          const block = migratedBlocks[nodeId]
+          // Exclude nested loops and parallels - they are containers, not regular nodes
+          if (!block) return false
+          return block.type !== 'loop' && block.type !== 'parallel'
+        })
+
         const parallel: Parallel = {
           id: subflow.id,
-          nodes: Array.isArray((config as Parallel).nodes) ? (config as Parallel).nodes : [],
+          nodes: filteredNodes,
           count: typeof (config as Parallel).count === 'number' ? (config as Parallel).count : 5,
           distribution: (config as Parallel).distribution ?? '',
           parallelType:
