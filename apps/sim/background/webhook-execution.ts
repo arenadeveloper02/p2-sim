@@ -92,7 +92,6 @@ export type WebhookExecutionPayload = {
   headers: Record<string, string>
   path: string
   blockId?: string
-  testMode?: boolean
   executionTarget?: 'deployed' | 'live'
   credentialId?: string
   credentialAccountUserId?: string
@@ -318,7 +317,7 @@ async function executeWebhookJobInternal(
         workspaceId,
         variables: {},
         triggerData: {
-          isTest: payload.testMode === true,
+          isTest: false,
           executionTarget: payload.executionTarget || 'deployed',
         },
         conversationId: undefined,
@@ -377,7 +376,7 @@ async function executeWebhookJobInternal(
         workspaceId,
         variables: {},
         triggerData: {
-          isTest: payload.testMode === true,
+          isTest: false,
           executionTarget: payload.executionTarget || 'deployed',
         },
         conversationId: undefined,
@@ -597,7 +596,7 @@ async function executeWebhookJobInternal(
         workspaceId: errorWorkspaceId,
         variables: {},
         triggerData: {
-          isTest: payload.testMode === true,
+          isTest: false,
           executionTarget: payload.executionTarget || 'deployed',
         },
         conversationId: undefined,
