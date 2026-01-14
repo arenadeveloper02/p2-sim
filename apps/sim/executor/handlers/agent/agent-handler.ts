@@ -1640,14 +1640,27 @@ export class AgentBlockHandler implements BlockHandler {
 
     try {
       const extractedJson = JSON.parse(content.trim())
+
+      // Get the schema from responseFormat
+      const schema = responseFormat?.schema || responseFormat
+      const isStrict = responseFormat?.strict !== false
+
+      // Validate and filter the response according to the schema
+      const validatedJson = this.validateAndFilterStructuredResponse(
+        extractedJson,
+        schema,
+        isStrict
+      )
+
       return {
-        ...extractedJson,
+        ...validatedJson,
         ...this.createResponseMetadata(result),
       }
     } catch (error) {
       logger.error('LLM did not adhere to structured response format:', {
         content: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
         responseFormat: responseFormat,
+        error: error instanceof Error ? error.message : String(error),
       })
 
       const standardResponse = this.processStandardResponse(result)
@@ -1656,6 +1669,80 @@ export class AgentBlockHandler implements BlockHandler {
           'LLM did not adhere to the specified structured response format. Expected valid JSON but received malformed content. Falling back to standard format.',
       })
     }
+  }
+
+  /**
+   * Validates and filters a structured response according to the schema.
+   * When strict mode is enabled (additionalProperties: false), removes any properties
+   * that are not defined in the schema.
+   */
+  private validateAndFilterStructuredResponse(data: any, schema: any, isStrict: boolean): any {
+    if (!schema || typeof schema !== 'object' || schema === null) {
+      return data
+    }
+
+    // If schema has additionalProperties: false, we need to filter strictly
+    const additionalProperties = schema.additionalProperties
+    const shouldFilterStrictly = isStrict && additionalProperties === false
+
+    // If it's an object schema with properties
+    if (
+      schema.type === 'object' &&
+      schema.properties &&
+      typeof data === 'object' &&
+      data !== null &&
+      !Array.isArray(data)
+    ) {
+      const filtered: Record<string, any> = {}
+      const allowedProperties = new Set(Object.keys(schema.properties))
+
+      // Only include properties that are defined in the schema
+      for (const [key, value] of Object.entries(data)) {
+        if (allowedProperties.has(key)) {
+          const propertySchema = schema.properties[key]
+          // Recursively validate nested objects
+          if (propertySchema && typeof propertySchema === 'object' && propertySchema !== null) {
+            filtered[key] = this.validateAndFilterStructuredResponse(
+              value,
+              propertySchema,
+              isStrict
+            )
+          } else {
+            filtered[key] = value
+          }
+        } else if (shouldFilterStrictly) {
+          // Log warning when filtering out properties in strict mode
+          logger.warn('Filtering out property not in schema', {
+            property: key,
+            value: typeof value === 'string' ? value.substring(0, 50) : value,
+          })
+        }
+      }
+
+      // Validate required properties
+      if (schema.required && Array.isArray(schema.required)) {
+        for (const requiredProp of schema.required) {
+          if (!(requiredProp in filtered)) {
+            logger.warn('Missing required property in structured response', {
+              property: requiredProp,
+              availableProperties: Object.keys(filtered),
+            })
+          }
+        }
+      }
+
+      return filtered
+    }
+
+    // If it's an array schema
+    if (schema.type === 'array' && schema.items && Array.isArray(data)) {
+      return data.map((item) =>
+        this.validateAndFilterStructuredResponse(item, schema.items, isStrict)
+      )
+    }
+
+    // For other types or if filtering is not needed, return as-is
+    return data
   }
 
   private processStandardResponse(result: any): BlockOutput {
