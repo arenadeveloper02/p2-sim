@@ -653,7 +653,7 @@ async function handleInternalRequest(
     const fullUrl = fullUrlObj.toString()
 
     if (isCustomTool(toolId) && tool.request.body) {
-      const requestBody = tool.request.body(params)
+      const requestBody = await tool.request.body(params)
       if (
         typeof requestBody === 'object' &&
         requestBody !== null &&

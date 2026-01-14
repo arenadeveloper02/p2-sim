@@ -65,25 +65,39 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
         'Content-Type': 'application/json',
       }
     },
-    body: (params: ArenaCommentsParams) => {
+    body: async (params: ArenaCommentsParams) => {
+      // Dynamic import to avoid client-side bundling issues
+      const { resolveClientId, resolveProjectId, resolveTaskId } = await import(
+        './utils/resolve-ids'
+      )
+
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
+      const workflowId = params._context.workflowId
 
-      // Handle both string (advanced mode) and object (basic mode) for client
-      const clientValue = params['comment-client']
-      const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+      // Resolve client ID (supports name/id from advanced mode or variables)
+      const clientId = await resolveClientId(params['comment-client'] as any, workflowId)
       if (!clientId) throw new Error('Missing required field: Client')
 
-      // Handle both string (advanced mode) and object (basic mode) for project
-      const projectValue = params['comment-project']
-      const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+      // Resolve project ID (supports name/id from advanced mode or variables)
+      const projectId = await resolveProjectId(
+        params['comment-project'] as any,
+        clientId,
+        workflowId
+      )
       if (!projectId) throw new Error('Missing required field: Project')
-      const projectName = typeof projectValue === 'string' ? '' : projectValue?.name || ''
+      const projectName =
+        typeof params['comment-project'] === 'object'
+          ? (params['comment-project'] as any)?.name || ''
+          : ''
 
-      // Handle both string (advanced mode) and object (basic mode) for task
-      const taskValue = params['comment-task']
-      const elementId =
-        typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
+      // Resolve task ID (supports name/id from advanced mode or variables)
+      const elementId = await resolveTaskId(
+        params['comment-task'] as any,
+        clientId,
+        projectId,
+        workflowId
+      )
       if (!elementId) throw new Error('Missing required field: Task')
 
       if (!params['comment-text']) throw new Error('Missing required field: Comment Text')

@@ -33,6 +33,12 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       visibility: 'user-or-llm',
       description: 'Name of the task',
     },
+    'search-task-number': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Task number (unique identifier)',
+    },
     'search-task-client': {
       type: 'string',
       required: false,
@@ -79,26 +85,37 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       if (isSearchTask) {
         const taskName = params['search-task-name']
         if (taskName) {
-          url += `?name=${taskName}`
+          url += `?name=${encodeURIComponent(taskName)}`
+        }
+        const taskNumber = params['search-task-number']
+        if (taskNumber) {
+          url += url.includes('?')
+            ? `&taskNumber=${encodeURIComponent(taskNumber)}`
+            : `?taskNumber=${encodeURIComponent(taskNumber)}`
         }
       }
+      // Client filter: Arena search expects `account` as CLIENT NAME (not id).
+      // This supports advanced mode variables like <loop.currentItem> that resolve to a name.
       if (params['search-task-client']) {
-        // Handle both object (basic mode) and string (advanced mode)
         const clientName =
           typeof params['search-task-client'] === 'string'
-            ? undefined // In advanced mode, we might have an ID, not a name
+            ? String(params['search-task-client']).trim()
             : params['search-task-client']?.name
         if (clientName) {
-          url += `&account=${clientName}`
+          url += `&account=${encodeURIComponent(clientName)}`
         }
       }
+
+      // Note: name->ID resolution for project/assignee (and for project resolution requiring clientId)
+      // happens in request.postProcess below, because url() must remain synchronous.
+
       if (params['search-task-project']) {
         const projectId =
           typeof params['search-task-project'] === 'string'
-            ? params['search-task-project']
+            ? String(params['search-task-project']).trim()
             : params['search-task-project']?.sysId
         if (projectId) {
-          url += `&projectSysId=${projectId}`
+          url += `&projectSysId=${encodeURIComponent(projectId)}`
         }
       }
       if (params['search-task-state']) {
@@ -121,10 +138,10 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       if (params['search-task-assignee']) {
         const assigneeId =
           typeof params['search-task-assignee'] === 'string'
-            ? params['search-task-assignee']
+            ? String(params['search-task-assignee']).trim()
             : params['search-task-assignee']?.value
         if (assigneeId) {
-          url += `&assigneeId=${assigneeId}`
+          url += `&assigneeId=${encodeURIComponent(assigneeId)}`
         }
       }
       if (params._context?.workflowId) {
@@ -201,6 +218,73 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         'Content-Type': 'application/json',
       }
     },
+  },
+
+  postProcess: async (result, params, executeTool) => {
+    // Dynamic import to avoid client-side bundling issues
+    const { resolveAssigneeId, resolveClientId, resolveProjectId } = await import(
+      './utils/resolve-ids'
+    )
+
+    // If caller provided names (via <loop.currentItem> etc.), resolve to IDs and re-run the query once.
+    // Only attempt when workflowId exists and we have at least one resolvable field.
+    const workflowId = (params as any)?._context?.workflowId || (params as any)?.workflowId
+    if (!workflowId) return result
+
+    // If params already contain variables (<...>), don't try to resolve (we can't evaluate here).
+    // Variables should resolve before tool execution; by the time we are here, values should be plain strings.
+    const rawClient = (params as any)['search-task-client']
+    const rawProject = (params as any)['search-task-project']
+    const rawAssignee = (params as any)['search-task-assignee']
+
+    const stringClient = typeof rawClient === 'string' ? rawClient.trim() : rawClient?.clientId
+    const stringProject = typeof rawProject === 'string' ? rawProject.trim() : rawProject?.sysId
+    const stringAssignee = typeof rawAssignee === 'string' ? rawAssignee.trim() : rawAssignee?.value
+
+    // Heuristic: if these look like UUIDs, skip resolution.
+    const looksLikeUuid = (v?: string) =>
+      !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+
+    // We still resolve clientId internally (to resolve project/assignee), but we do NOT overwrite
+    // the outgoing `search-task-client` param because the search endpoint expects account=name.
+    const needsClientResolution = !!stringClient && !looksLikeUuid(stringClient)
+    const needsProjectResolution = !!stringProject && !looksLikeUuid(stringProject)
+    const needsAssigneeResolution = !!stringAssignee && !looksLikeUuid(stringAssignee)
+
+    if (!needsClientResolution && !needsProjectResolution && !needsAssigneeResolution) {
+      return result
+    }
+
+    // Resolve client first (needed to resolve project/assignee in some cases)
+    const resolvedClientId = stringClient ? await resolveClientId(rawClient as any, workflowId) : ''
+
+    const resolvedProjectId =
+      stringProject && resolvedClientId
+        ? await resolveProjectId(rawProject as any, resolvedClientId, workflowId)
+        : looksLikeUuid(stringProject)
+          ? stringProject
+          : ''
+
+    const resolvedAssigneeId =
+      stringAssignee && resolvedClientId
+        ? await resolveAssigneeId(
+            rawAssignee as any,
+            resolvedClientId,
+            resolvedProjectId || undefined,
+            workflowId
+          )
+        : looksLikeUuid(stringAssignee)
+          ? stringAssignee
+          : ''
+
+    const nextParams: Record<string, any> = { ...(params as any) }
+    // IMPORTANT: keep `search-task-client` as the original name/string for `account=...` filtering
+    if (resolvedProjectId) nextParams['search-task-project'] = resolvedProjectId
+    if (resolvedAssigneeId) nextParams['search-task-assignee'] = resolvedAssigneeId
+
+    // Re-run the same tool once with resolved IDs.
+    const rerun = await executeTool('arena_search_task', nextParams)
+    return rerun
   },
 
   transformResponse: async (

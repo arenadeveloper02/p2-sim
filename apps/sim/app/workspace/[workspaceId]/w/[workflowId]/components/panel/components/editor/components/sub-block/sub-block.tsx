@@ -1024,7 +1024,7 @@ function SubBlockComponent({
           subBlockValues
         )}
         {/* Per-field advanced mode toggle - positioned to the right */}
-        {config.advancedModeSupported && !isPreview && !isDisabled && (
+        {config.advancedModeSupported && !isPreview && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <span className='inline-flex items-center'>
@@ -1035,6 +1035,7 @@ function SubBlockComponent({
                       setFieldAdvancedMode(blockId, config.id, checked)
                     }
                   }}
+                  disabled={isDisabled}
                   aria-label={fieldAdvancedMode ? 'Disable advanced mode' : 'Enable advanced mode'}
                 />
               </span>

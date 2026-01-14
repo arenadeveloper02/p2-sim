@@ -136,6 +136,18 @@ export const ArenaBlock: BlockConfig = {
       },
     },
     {
+      id: 'search-task-number',
+      title: 'Task Number',
+      type: 'short-input',
+      required: false,
+      placeholder: 'Enter task number or use <block.taskNumber>',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_search_task'],
+      },
+    },
+    {
       id: 'search-task-client',
       title: 'Client',
       type: 'arena-client-selector',
@@ -431,6 +443,7 @@ export const ArenaBlock: BlockConfig = {
         // Extract values for Search Task operation
         if (params.operation === 'arena_search_task') {
           result['search-task-name'] = extractString(params['search-task-name'])
+          result['search-task-number'] = extractString(params['search-task-number'])
           result['search-task-client'] = extractId(params['search-task-client'])
           result['search-task-project'] = extractId(params['search-task-project'])
           result['search-task-assignee'] = extractId(params['search-task-assignee'])

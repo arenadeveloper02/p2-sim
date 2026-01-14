@@ -71,7 +71,12 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
         'Content-Type': 'application/json',
       }
     },
-    body: (params: ArenaCreateTaskParams) => {
+    body: async (params: ArenaCreateTaskParams) => {
+      // Dynamic import to avoid client-side bundling issues
+      const { resolveAssigneeId, resolveClientId, resolveGroupId, resolveProjectId } = await import(
+        './utils/resolve-ids'
+      )
+
       const today = new Date()
       const nextWeekDay = new Date()
       nextWeekDay.setDate(today.getDate() + 7)
@@ -81,21 +86,34 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
       if (!params['task-name']) throw new Error('Missing required field: Task Name')
       if (!params['task-description']) throw new Error('Missing required field: Task Description')
-      if (!params['task-client']?.clientId) throw new Error('Missing required field: Task Client')
-      const projectId =
-        typeof params['task-project'] === 'string'
-          ? params['task-project']
-          : params['task-project']?.sysId
+      const workflowId = params._context.workflowId
+
+      // Resolve client ID (supports name/id from advanced mode or variables)
+      const clientId = await resolveClientId(params['task-client'] as any, workflowId)
+      if (!clientId) throw new Error('Missing required field: Task Client')
+
+      // Resolve project ID (supports name/id from advanced mode or variables)
+      const projectId = await resolveProjectId(params['task-project'] as any, clientId, workflowId)
       if (!projectId) throw new Error('Missing required field: Project')
-      const assigneeId =
-        typeof params['task-assignee'] === 'string'
-          ? params['task-assignee']
-          : params['task-assignee']?.value
+
+      // Resolve assignee ID (supports name/email/id from advanced mode or variables)
+      const assigneeId = await resolveAssigneeId(
+        params['task-assignee'] as any,
+        clientId,
+        projectId,
+        workflowId
+      )
       if (!assigneeId) throw new Error('Missing required field: Assignee')
 
       let taskId: string | undefined
       if (isTask) {
-        if (!params['task-group']?.id) throw new Error('Missing required field: Task Group')
+        const groupId = await resolveGroupId(
+          params['task-group'] as any,
+          clientId,
+          projectId,
+          workflowId
+        )
+        if (!groupId) throw new Error('Missing required field: Task Group')
       } else {
         taskId =
           typeof params['task-task'] === 'string'
@@ -111,14 +129,21 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
         plannedStartDate: startOfDayTimestamp(today),
         plannedEndDate: startOfDayTimestamp(nextWeekDay),
         taskType: isTask ? 'MILESTONE' : 'SHOW-ON-TIMELINE',
-        clientId: params['task-client']?.clientId,
+        clientId: clientId,
         projectId: projectId,
         assignedToId: assigneeId,
       }
 
       if (isTask) {
-        body.epicId = params['task-group']?.id
-        body.epicName = params['task-group']?.name
+        const groupId = await resolveGroupId(
+          params['task-group'] as any,
+          clientId,
+          projectId,
+          workflowId
+        )
+        body.epicId = groupId
+        body.epicName =
+          typeof params['task-group'] === 'object' ? (params['task-group'] as any)?.name : undefined
       } else {
         body.deliverableId = taskId
       }
