@@ -2139,6 +2139,23 @@ const WorkflowContent = React.memo(() => {
       const currentBlock = blocks[node.id]
       const currentParentId = currentBlock?.data?.parentId
 
+      // Check if the node was actually dragged (not just clicked)
+      // Only process drag-related updates if we have drag start info AND there was actual movement
+      const start = getDragStartPosition()
+      const hasDragStartInfo = start && start.id === node.id
+      const wasActuallyDragged =
+        hasDragStartInfo &&
+        (Math.abs(start.x - node.position.x) > 1 || Math.abs(start.y - node.position.y) > 1)
+
+      // If this was just a click (no actual drag), don't process any updates
+      if (!wasActuallyDragged) {
+        // Clear any stale state
+        setPotentialParentId(null)
+        setDragStartPosition(null)
+        setDragStartParentId(null)
+        return
+      }
+
       // Calculate position - clamp if inside a container
       let finalPosition = node.position
       if (currentParentId) {
@@ -2175,7 +2192,6 @@ const WorkflowContent = React.memo(() => {
       collaborativeUpdateBlockPosition(node.id, finalPosition, true)
 
       // Record single move entry on drag end to avoid micro-moves
-      const start = getDragStartPosition()
       if (start && start.id === node.id) {
         const before = { x: start.x, y: start.y, parentId: start.parentId }
         const after = {
@@ -2199,8 +2215,62 @@ const WorkflowContent = React.memo(() => {
       if (potentialParentId === dragStartParentId) return
 
       // Handle removal from parent (block dragged out of container)
+      // Only remove if the block was actually dragged outside the loop area
       if (!potentialParentId && dragStartParentId) {
-        // Block was dragged out of a container - remove parent relationship
+        // Check if the block is actually outside the loop area by checking if it's still inside
+        const parentNode = getNodes().find((n) => n.id === dragStartParentId)
+        if (parentNode) {
+          const parentAbsPos = getNodeAbsolutePosition(dragStartParentId)
+          const nodeAbsPos = getNodeAbsolutePosition(node.id)
+
+          const containerRect = {
+            left: parentAbsPos.x,
+            right: parentAbsPos.x + (parentNode.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH),
+            top: parentAbsPos.y,
+            bottom:
+              parentAbsPos.y + (parentNode.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT),
+          }
+
+          const isSubflow = node.type === 'subflowNode'
+          const blockWidth = isSubflow
+            ? currentBlock?.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH
+            : BLOCK_DIMENSIONS.FIXED_WIDTH
+          const blockHeight = isSubflow
+            ? currentBlock?.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT
+            : Math.max(
+                currentBlock?.height || BLOCK_DIMENSIONS.MIN_HEIGHT,
+                BLOCK_DIMENSIONS.MIN_HEIGHT
+              )
+
+          const nodeRect = {
+            left: nodeAbsPos.x,
+            right: nodeAbsPos.x + blockWidth,
+            top: nodeAbsPos.y,
+            bottom: nodeAbsPos.y + blockHeight,
+          }
+
+          // Check if block is still inside the loop area
+          const isStillInside =
+            nodeRect.left >= containerRect.left &&
+            nodeRect.right <= containerRect.right &&
+            nodeRect.top >= containerRect.top &&
+            nodeRect.bottom <= containerRect.bottom
+
+          // Only remove from parent if block is actually outside the loop area
+          if (!isStillInside) {
+            // Block was dragged out of a container - remove parent relationship
+            const affectedEdges = edgesForDisplay.filter(
+              (e) => e.source === node.id || e.target === node.id
+            )
+            updateNodeParent(node.id, '', affectedEdges)
+            setPotentialParentId(null)
+            return
+          }
+          // If still inside, don't remove from parent - just clear potentialParentId
+          setPotentialParentId(null)
+          return
+        }
+        // Parent node doesn't exist, remove from parent
         const affectedEdges = edgesForDisplay.filter(
           (e) => e.source === node.id || e.target === node.id
         )
@@ -2240,8 +2310,10 @@ const WorkflowContent = React.memo(() => {
       }
 
       // Update the node's parent relationship
-      if (potentialParentId) {
+      // Only process if parent is actually changing (not just repositioning within same parent)
+      if (potentialParentId && potentialParentId !== currentParentId) {
         // Remove existing edges before moving into container
+        // Only remove edges when parent is actually changing, not when just moving within same parent
         const edgesToRemove = edgesForDisplay.filter(
           (e) => e.source === node.id || e.target === node.id
         )
@@ -2252,6 +2324,7 @@ const WorkflowContent = React.memo(() => {
           logger.info('Removed edges when moving node into subflow', {
             blockId: node.id,
             targetParentId: potentialParentId,
+            currentParentId: currentParentId,
             edgeCount: edgesToRemove.length,
           })
         }

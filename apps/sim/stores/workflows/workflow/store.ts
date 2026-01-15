@@ -12,6 +12,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getUniqueBlockName, mergeSubblockState, normalizeName } from '@/stores/workflows/utils'
 import type {
+  BlockState,
   Position,
   SubBlockState,
   WorkflowState,
@@ -310,22 +311,40 @@ export const useWorkflowStore = create<WorkflowStore>()(
           return
         }
 
-        // PREVENTION: Nested loops/parallels should not have parentId references to other loops/parallels
-        // This prevents circular references that cause React Flow position calculation errors
-        if (parentId && (block.type === 'loop' || block.type === 'parallel')) {
-          const parentBlock = get().blocks[parentId]
-          if (parentBlock && (parentBlock.type === 'loop' || parentBlock.type === 'parallel')) {
-            logger.warn(
-              `Prevented nested ${block.type} from getting parentId to ${parentBlock.type}. Nested containers should not have parentId references.`,
-              {
-                blockId: id,
-                blockType: block.type,
-                parentId: parentId,
-                parentType: parentBlock.type,
-              }
-            )
-            // Don't set parentId for nested loops/parallels - they are containers themselves
-            return
+        // PREVENTION: Detect and prevent circular parentId references
+        // This prevents infinite loops in React Flow position calculation
+        // NOTE: Nested loops/parallels ARE allowed, but circular references are not
+        if (parentId) {
+          // Check if setting this parentId would create a circular reference
+          // Traverse up the parent chain to see if we'd create a cycle
+          const visited = new Set<string>([id]) // Start with current block
+          let currentParentId: string | undefined = parentId
+
+          while (currentParentId) {
+            // If we encounter the current block in the parent chain, it's a cycle
+            if (visited.has(currentParentId)) {
+              logger.error(
+                `Prevented circular parentId reference: Block ${id} would create a cycle`,
+                {
+                  blockId: id,
+                  blockType: block.type,
+                  attemptedParentId: parentId,
+                  cyclePath: Array.from(visited),
+                }
+              )
+              return
+            }
+
+            visited.add(currentParentId)
+
+            // Check if the parent exists and has its own parent
+            const allBlocks = get().blocks
+            const parentBlock: BlockState | undefined = allBlocks[currentParentId]
+            if (!parentBlock) {
+              break // Parent doesn't exist, no cycle possible
+            }
+
+            currentParentId = parentBlock.data?.parentId
           }
         }
 

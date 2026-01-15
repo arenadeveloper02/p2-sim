@@ -549,40 +549,48 @@ async function handleBlockOperationTx(
         throw new Error('Missing block ID for update parent operation')
       }
 
-      // PREVENTION: Check if this would create a nested loop/parallel with parentId reference
-      // Nested loops/parallels should not have parentId references to other loops/parallels
+      // PREVENTION: Detect and prevent circular parentId references
+      // This prevents infinite loops in React Flow position calculation
+      // NOTE: Nested loops/parallels ARE allowed, but circular references are not
       if (payload.parentId) {
-        const [blockToMove] = await tx
-          .select({ type: workflowBlocks.type })
-          .from(workflowBlocks)
-          .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))
-          .limit(1)
+        // Check if setting this parentId would create a circular reference
+        // Traverse up the parent chain to see if we'd create a cycle
+        const visited = new Set<string>([payload.id]) // Start with current block
+        let currentParentId: string | undefined = payload.parentId
 
-        const [parentBlock] = await tx
-          .select({ type: workflowBlocks.type })
-          .from(workflowBlocks)
-          .where(
-            and(eq(workflowBlocks.id, payload.parentId), eq(workflowBlocks.workflowId, workflowId))
-          )
-          .limit(1)
+        while (currentParentId) {
+          // If we encounter the current block in the parent chain, it's a cycle
+          if (visited.has(currentParentId)) {
+            logger.error(
+              `Prevented circular parentId reference: Block ${payload.id} would create a cycle`,
+              {
+                blockId: payload.id,
+                attemptedParentId: payload.parentId,
+                cyclePath: Array.from(visited),
+              }
+            )
+            return
+          }
 
-        if (
-          blockToMove &&
-          parentBlock &&
-          (blockToMove.type === 'loop' || blockToMove.type === 'parallel') &&
-          (parentBlock.type === 'loop' || parentBlock.type === 'parallel')
-        ) {
-          logger.warn(
-            `Prevented nested ${blockToMove.type} from getting parentId to ${parentBlock.type}. Nested containers should not have parentId references.`,
-            {
-              blockId: payload.id,
-              blockType: blockToMove.type,
-              parentId: payload.parentId,
-              parentType: parentBlock.type,
-            }
-          )
-          // Don't set parentId for nested loops/parallels
-          return
+          visited.add(currentParentId)
+
+          // Check if the parent exists and has its own parent
+          const [parentBlock] = await tx
+            .select({
+              id: workflowBlocks.id,
+              parentId: sql<string | null>`${workflowBlocks.data}->>'parentId'`,
+            })
+            .from(workflowBlocks)
+            .where(
+              and(eq(workflowBlocks.id, currentParentId), eq(workflowBlocks.workflowId, workflowId))
+            )
+            .limit(1)
+
+          if (!parentBlock || !parentBlock.parentId) {
+            break // Parent doesn't exist or has no parent, no cycle possible
+          }
+
+          currentParentId = parentBlock.parentId
         }
       }
 
