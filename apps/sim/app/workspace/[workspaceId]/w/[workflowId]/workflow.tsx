@@ -2230,6 +2230,30 @@ const WorkflowContent = React.memo(() => {
 
       // Update the node's parent relationship
       if (potentialParentId) {
+        // Prevent circular parent references
+        const wouldCreateCycle = (() => {
+          if (potentialParentId === node.id) return true
+          const visited = new Set<string>()
+          let currentId: string | null = potentialParentId
+          while (currentId) {
+            if (visited.has(currentId)) return true
+            if (currentId === node.id) return true
+            visited.add(currentId)
+            const currentBlock = blocks[currentId] as { data?: { parentId?: string } } | undefined
+            currentId = currentBlock?.data?.parentId || null
+          }
+          return false
+        })()
+
+        if (wouldCreateCycle) {
+          logger.error('Cannot create circular parent reference', {
+            blockId: node.id,
+            attemptedParentId: potentialParentId,
+          })
+          setPotentialParentId(null)
+          return
+        }
+
         // Remove existing edges before moving into container
         const edgesToRemove = edgesForDisplay.filter(
           (e) => e.source === node.id || e.target === node.id

@@ -42,6 +42,35 @@ export class NodeExecutionOrchestrator {
 
     const loopId = node.metadata.loopId
     if (loopId) {
+      // For sentinel start nodes of nested loops: check if the loop has completed
+      // and needs to be reset for a new outer loop iteration
+      if (node.metadata.isSentinel && node.metadata.sentinelType === 'start') {
+        const existingScope = this.loopOrchestrator.getLoopScope(ctx, loopId)
+        if (existingScope) {
+          const needsReset =
+            (existingScope.loopType === 'for' &&
+              existingScope.maxIterations !== undefined &&
+              existingScope.allIterationOutputs.length >= existingScope.maxIterations) ||
+            (existingScope.loopType === 'forEach' &&
+              existingScope.items &&
+              existingScope.allIterationOutputs.length >= existingScope.items.length)
+
+          if (needsReset) {
+            logger.info('Resetting nested loop scope for new outer loop iteration', {
+              loopId,
+              completedIterations: existingScope.allIterationOutputs.length,
+              maxIterations: existingScope.maxIterations || existingScope.items?.length,
+            })
+            // Clear execution state for all nodes in the loop so they can execute again
+            this.loopOrchestrator.clearLoopExecutionState(loopId)
+            // Restore loop edges that may have been deactivated
+            this.loopOrchestrator.restoreLoopEdges(loopId)
+            // Re-initialize the loop scope with fresh state
+            this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+          }
+        }
+      }
+
       // Initialize this loop's scope if needed
       if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
         this.loopOrchestrator.initializeLoopScope(ctx, loopId)
@@ -102,6 +131,9 @@ export class NodeExecutionOrchestrator {
     switch (sentinelType) {
       case 'start': {
         if (loopId) {
+          // Note: Loop scope reset for nested loops is handled in executeNode() before handleSentinel is called
+          // This ensures the scope is reset before any other loop logic runs
+
           const shouldExecute = await this.loopOrchestrator.evaluateInitialCondition(ctx, loopId)
           if (!shouldExecute) {
             logger.info('While loop initial condition false, skipping loop body', { loopId })
