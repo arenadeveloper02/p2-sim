@@ -225,7 +225,7 @@ export function Editor() {
         </div>
         <div className='flex shrink-0 items-center gap-[8px]'>
           {/* Rename button */}
-          {currentBlock && !isSubflow && (
+          {currentBlock && currentBlock.type !== 'note' && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button

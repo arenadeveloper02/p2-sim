@@ -1852,12 +1852,24 @@ const WorkflowContent = React.memo(() => {
 
         // Special case for container start source: Always allow connections to nodes within the same container
         if (
-          (connection.sourceHandle === 'loop-start-source' ||
-            connection.sourceHandle === 'parallel-start-source') &&
-          blocks[targetNode.id]?.data?.parentId === sourceNode.id
+          connection.sourceHandle === 'loop-start-source' ||
+          connection.sourceHandle === 'parallel-start-source'
         ) {
-          // This is a connection from container start to a node inside the container - always allow
+          // Auto-set parentId if target doesn't have it yet
+          if (!blocks[targetNode.id]?.data?.parentId && !targetIsContainer) {
+            updateNodeParent(connection.target, sourceNode.id, [])
+            logger.info(
+              'Auto-set parentId on block when connecting from loop/parallel start source',
+              {
+                targetId: connection.target,
+                targetType: targetNode.data?.type,
+                parentId: sourceNode.id,
+                parentType: sourceNode.data?.type,
+              }
+            )
+          }
 
+          // This is a connection from container start to a node inside the container - always allow
           addEdge({
             ...connection,
             id: edgeId,
@@ -1905,6 +1917,27 @@ const WorkflowContent = React.memo(() => {
         const isInsideContainer = Boolean(sourceParentId) || Boolean(targetParentId)
         const parentId = sourceParentId || targetParentId
 
+        // AUTO-SET parentId: If source is inside a loop/parallel and target is not, set target's parentId
+        // This ensures blocks connected inside a loop are automatically included in the loop's nodes array
+        if (sourceParentId && !targetParentId && !targetIsContainer) {
+          const sourceParentBlock = blocks[sourceParentId]
+          // Only set parentId if the source's parent is a loop or parallel
+          if (
+            sourceParentBlock &&
+            (sourceParentBlock.type === 'loop' || sourceParentBlock.type === 'parallel')
+          ) {
+            // Automatically set parentId on the target block to nest it inside the source's parent
+            // This ensures blocks connected inside a loop are properly tracked
+            updateNodeParent(connection.target, sourceParentId, [])
+            logger.info('Auto-set parentId on block when connecting from inside loop/parallel', {
+              targetId: connection.target,
+              targetType: targetNode.data?.type,
+              parentId: sourceParentId,
+              parentType: sourceParentBlock.type,
+            })
+          }
+        }
+
         // Add appropriate metadata for container context
         addEdge({
           ...connection,
@@ -1919,7 +1952,7 @@ const WorkflowContent = React.memo(() => {
         })
       }
     },
-    [addEdge, getNodes, blocks]
+    [addEdge, getNodes, blocks, updateNodeParent]
   )
 
   /**

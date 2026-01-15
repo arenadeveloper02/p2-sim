@@ -16,7 +16,11 @@ import { v4 as uuidv4 } from 'uuid'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/sanitization/validation'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
-import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
+import {
+  findChildNodes,
+  generateLoopBlocks,
+  generateParallelBlocks,
+} from '@/stores/workflows/workflow/utils'
 
 const logger = createLogger('WorkflowDBHelpers')
 
@@ -274,13 +278,25 @@ export async function loadWorkflowFromNormalizedTables(
           return block.type !== 'loop' && block.type !== 'parallel'
         })
 
+        // Trim forEachItems to remove any accidental newlines or whitespace
+        const rawForEachItems = (config as Loop).forEachItems
+        const forEachItems = typeof rawForEachItems === 'string' ? rawForEachItems.trim() : ''
+
+        // Regenerate nodes from blocks' parentId to ensure accuracy
+        // This fixes cases where the database has stale nodes arrays
+        // (e.g., when blocks are connected but parentId wasn't set or nodes array wasn't updated)
+        const regeneratedNodes = findChildNodes(subflow.id, migratedBlocks)
+
+        // Use regenerated nodes if available, otherwise fall back to filtered nodes from database
+        const finalNodes = regeneratedNodes.length > 0 ? regeneratedNodes : filteredNodes
+
         const loop: Loop = {
           id: subflow.id,
-          nodes: filteredNodes,
+          nodes: finalNodes,
           iterations:
             typeof (config as Loop).iterations === 'number' ? (config as Loop).iterations : 1,
           loopType,
-          forEachItems: (config as Loop).forEachItems ?? '',
+          forEachItems,
           whileCondition: (config as Loop).whileCondition ?? '',
           doWhileCondition: (config as Loop).doWhileCondition ?? '',
         }
@@ -288,15 +304,23 @@ export async function loadWorkflowFromNormalizedTables(
 
         // Sync block.data with loop config to ensure all fields are present
         // This allows switching between loop types without losing data
-        if (migratedBlocks[subflow.id]) {
-          const block = migratedBlocks[subflow.id]
+        // Also ensure nested loops preserve their parentId for auto-layout
+        const loopBlock = migratedBlocks[subflow.id]
+        if (loopBlock) {
+          const existingParentId = loopBlock.data?.parentId
+
           migratedBlocks[subflow.id] = {
-            ...block,
+            ...loopBlock,
             data: {
-              ...block.data,
-              collection: loop.forEachItems ?? block.data?.collection ?? '',
-              whileCondition: loop.whileCondition ?? block.data?.whileCondition ?? '',
-              doWhileCondition: loop.doWhileCondition ?? block.data?.doWhileCondition ?? '',
+              ...loopBlock.data,
+              collection: forEachItems || loopBlock.data?.collection || '',
+              whileCondition: loop.whileCondition ?? loopBlock.data?.whileCondition ?? '',
+              doWhileCondition: loop.doWhileCondition ?? loopBlock.data?.doWhileCondition ?? '',
+              // Preserve parentId if it exists (for nested loops) - needed for auto-layout
+              ...(existingParentId && {
+                parentId: existingParentId,
+                extent: loopBlock.data?.extent || 'parent',
+              }),
             },
           }
         }
