@@ -2216,8 +2216,23 @@ const WorkflowContent = React.memo(() => {
 
       // Handle removal from parent (block dragged out of container)
       // Only remove if the block was actually dragged outside the loop area
+      // SPECIAL CASE: Nested loops/parallels should NOT be removable by dragging
+      // They can only be removed using the "Remove from Subflow" button
+      // Unlike regular blocks, nested loops should stay in parent and parent should expand to contain them
       if (!potentialParentId && dragStartParentId) {
-        // Check if the block is actually outside the loop area by checking if it's still inside
+        const isNestedLoop = currentBlock?.type === 'loop' || currentBlock?.type === 'parallel'
+
+        // If this is a nested loop/parallel, prevent it from being removed by dragging
+        // Allow it to be dragged freely - parent loop will expand to contain it
+        // Only the "Remove from Subflow" button can remove it
+        if (isNestedLoop) {
+          // Clear potentialParentId but don't remove from parent
+          // The parent loop will automatically expand via calculateLoopDimensions
+          setPotentialParentId(null)
+          return
+        }
+
+        // For regular blocks, check if the block is actually outside the loop area
         const parentNode = getNodes().find((n) => n.id === dragStartParentId)
         if (parentNode) {
           const parentAbsPos = getNodeAbsolutePosition(dragStartParentId)

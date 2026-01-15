@@ -1,13 +1,15 @@
 import { memo, useMemo, useRef } from 'react'
-import { RepeatIcon, SplitIcon } from 'lucide-react'
+import { LogOut, RepeatIcon, SplitIcon } from 'lucide-react'
 import { Handle, type NodeProps, Position, useReactFlow } from 'reactflow'
-import { Button, Trash } from '@/components/emcn'
+import { Button, Tooltip, Trash } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { type DiffStatus, hasDiffStatus } from '@/lib/workflows/diff/types'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePanelEditorStore } from '@/stores/panel/editor/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 /**
  * Global styles for subflow nodes (loop and parallel containers).
@@ -77,6 +79,14 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
   const setCurrentBlockId = usePanelEditorStore((state) => state.setCurrentBlockId)
   const currentBlockId = usePanelEditorStore((state) => state.currentBlockId)
   const isFocused = currentBlockId === id
+
+  // Get parent information to show "Remove from Subflow" button for nested loops
+  const parentId = data?.parentId
+  const parentType = useWorkflowStore((state) =>
+    parentId ? state.blocks[parentId]?.type : undefined
+  )
+  const userPermissions = useUserPermissionsContext()
+  const hasParent = parentId && (parentType === 'loop' || parentType === 'parallel')
 
   /**
    * Calculate the nesting level of this subflow node based on its parent hierarchy.
@@ -179,18 +189,44 @@ export const SubflowNodeComponent = memo(({ data, id }: NodeProps<SubflowNodeDat
                 {blockName}
               </span>
             </div>
-            {!isPreview && (
-              <Button
-                variant='ghost'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  collaborativeRemoveBlock(id)
-                }}
-                className='h-[14px] w-[14px] p-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100'
-              >
-                <Trash className='h-[14px] w-[14px]' />
-              </Button>
-            )}
+            <div className='flex items-center gap-[5px]'>
+              {!isPreview && hasParent && (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      variant='ghost'
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (userPermissions.canEdit) {
+                          window.dispatchEvent(
+                            new CustomEvent('remove-from-subflow', { detail: { blockId: id } })
+                          )
+                        }
+                      }}
+                      className='h-[14px] w-[14px] p-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100'
+                      disabled={!userPermissions.canEdit}
+                    >
+                      <LogOut className='h-[14px] w-[14px]' />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='bottom'>
+                    {userPermissions.canEdit ? 'Remove from Subflow' : 'Read-only mode'}
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              )}
+              {!isPreview && (
+                <Button
+                  variant='ghost'
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    collaborativeRemoveBlock(id)
+                  }}
+                  className='h-[14px] w-[14px] p-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100'
+                >
+                  <Trash className='h-[14px] w-[14px]' />
+                </Button>
+              )}
+            </div>
           </div>
 
           {!isPreview && (

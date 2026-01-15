@@ -300,14 +300,11 @@ export function useNodeUtilities(blocks: Record<string, any>) {
     (nodeId: string): { width: number; height: number } => {
       // Check both React Flow's node.parentId AND blocks store's data.parentId
       // This ensures we catch children even if React Flow hasn't re-rendered yet
-      // IMPORTANT: Exclude nested loops/parallels - they are containers themselves, not regular children
+      // Include ALL children (including nested loops/parallels) so parent expands to contain them
+      // This matches the behavior of regular blocks - parent loop expands to accommodate nested loops
       const childNodes = getNodes().filter((node) => {
         const hasParentId = node.parentId === nodeId || blocks[node.id]?.data?.parentId === nodeId
-        if (!hasParentId) return false
-
-        // Exclude nested loops/parallels - they shouldn't affect parent loop dimensions
-        const block = blocks[node.id]
-        return block && block.type !== 'loop' && block.type !== 'parallel'
+        return hasParentId
       })
 
       if (childNodes.length === 0) {
