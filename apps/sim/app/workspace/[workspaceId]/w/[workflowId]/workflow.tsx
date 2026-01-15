@@ -45,6 +45,7 @@ import {
 import {
   clampPositionToContainer,
   estimateBlockDimensions,
+  isBlockInAnyLoop,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-node-utilities'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { getBlock } from '@/blocks'
@@ -2053,18 +2054,48 @@ const WorkflowContent = React.memo(() => {
 
       // Update potential parent if there's at least one intersecting container node
       if (intersectingNodes.length > 0) {
-        // Sort by depth first (deepest/most nested containers first), then by size if same depth
-        const sortedContainers = intersectingNodes.sort((a, b) => {
-          // First try to compare by hierarchy depth
-          if (a.depth !== b.depth) {
-            return b.depth - a.depth // Higher depth (more nested) comes first
-          }
-          // If same depth, use size as secondary criterion
-          return a.size - b.size // Smaller container takes precedence
-        })
+        // If the block is already inside a container, prioritize that container or its children
+        // This ensures the blue highlight shows on the correct (innermost) container
+        const currentParentId = blocks[node.id]?.data?.parentId
+        let bestContainerMatch = intersectingNodes[0]
 
-        // Use the most appropriate container (deepest or smallest at same depth)
-        const bestContainerMatch = sortedContainers[0]
+        if (currentParentId) {
+          // Find if current parent is in the intersecting nodes
+          const currentParentMatch = intersectingNodes.find(
+            (item) => item.container.id === currentParentId
+          )
+          if (currentParentMatch) {
+            // Prefer the current parent (innermost container the block is already in)
+            bestContainerMatch = currentParentMatch
+          } else {
+            // Find the innermost container that contains the current parent
+            // This handles nested loops - prefer inner loop over outer loop
+            const sortedContainers = intersectingNodes.sort((a, b) => {
+              // Check if one container is inside the other
+              const aIsInsideB = blocks[a.container.id]?.data?.parentId === b.container.id
+              const bIsInsideA = blocks[b.container.id]?.data?.parentId === a.container.id
+
+              if (aIsInsideB) return -1 // a is inside b, prefer a (more nested)
+              if (bIsInsideA) return 1 // b is inside a, prefer b (more nested)
+
+              // If neither is inside the other, use depth and size
+              if (a.depth !== b.depth) {
+                return b.depth - a.depth // Higher depth (more nested) comes first
+              }
+              return a.size - b.size // Smaller container takes precedence
+            })
+            bestContainerMatch = sortedContainers[0]
+          }
+        } else {
+          // Block not in any container - sort by depth and size
+          const sortedContainers = intersectingNodes.sort((a, b) => {
+            if (a.depth !== b.depth) {
+              return b.depth - a.depth // Higher depth (more nested) comes first
+            }
+            return a.size - b.size // Smaller container takes precedence
+          })
+          bestContainerMatch = sortedContainers[0]
+        }
 
         setPotentialParentId(bestContainerMatch.container.id)
 
@@ -2211,27 +2242,31 @@ const WorkflowContent = React.memo(() => {
         setDragStartPosition(null)
       }
 
+      // SPECIAL CASE: Nested loops/parallels AND blocks inside nested loops should NOT be removable by dragging
+      // They can only be removed using the "Remove from Subflow" button
+      // Check this FIRST before any removal logic
+      const isNestedLoop = currentBlock?.type === 'loop' || currentBlock?.type === 'parallel'
+      const { isInLoop: isBlockInNestedLoop } = isBlockInAnyLoop(node.id, blocks)
+      const isBlockInNestedStructure = isBlockInNestedLoop && !isNestedLoop
+
+      // If this is a nested loop/parallel OR a block inside nested loops, prevent removal by dragging
+      // Allow it to be dragged freely - parent loop(s) will expand to contain it
+      // Only the "Remove from Subflow" button can remove it
+      if ((isNestedLoop || isBlockInNestedStructure) && dragStartParentId) {
+        // Don't allow changing parent - block must stay in its current parent
+        // Clear potentialParentId to prevent any parent changes
+        // The parent loop(s) will automatically expand via calculateLoopDimensions
+        setPotentialParentId(null)
+        return
+      }
+
       // Don't process parent changes if the node hasn't actually changed parent or is being moved within same parent
       if (potentialParentId === dragStartParentId) return
 
       // Handle removal from parent (block dragged out of container)
       // Only remove if the block was actually dragged outside the loop area
-      // SPECIAL CASE: Nested loops/parallels should NOT be removable by dragging
-      // They can only be removed using the "Remove from Subflow" button
-      // Unlike regular blocks, nested loops should stay in parent and parent should expand to contain them
+      // This only applies to regular blocks NOT in nested structures
       if (!potentialParentId && dragStartParentId) {
-        const isNestedLoop = currentBlock?.type === 'loop' || currentBlock?.type === 'parallel'
-
-        // If this is a nested loop/parallel, prevent it from being removed by dragging
-        // Allow it to be dragged freely - parent loop will expand to contain it
-        // Only the "Remove from Subflow" button can remove it
-        if (isNestedLoop) {
-          // Clear potentialParentId but don't remove from parent
-          // The parent loop will automatically expand via calculateLoopDimensions
-          setPotentialParentId(null)
-          return
-        }
-
         // For regular blocks, check if the block is actually outside the loop area
         const parentNode = getNodes().find((n) => n.id === dragStartParentId)
         if (parentNode) {

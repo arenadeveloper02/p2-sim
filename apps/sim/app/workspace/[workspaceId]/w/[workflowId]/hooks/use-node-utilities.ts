@@ -62,6 +62,45 @@ export function clampPositionToContainer(
 }
 
 /**
+ * Checks if a block is inside any loop or parallel (traversing up the parent chain).
+ * This is useful for detecting blocks inside nested loop structures.
+ *
+ * @param blockId - ID of the block to check
+ * @param blocks - Record of all blocks in the workflow
+ * @returns Object with isInLoop flag and optional loopParentId
+ */
+export function isBlockInAnyLoop(
+  blockId: string,
+  blocks: Record<string, { type?: string; data?: { parentId?: string } }>
+): { isInLoop: boolean; loopParentId?: string } {
+  const block = blocks[blockId]
+  if (!block?.data?.parentId) {
+    return { isInLoop: false }
+  }
+
+  // Traverse up the parent chain to find if any parent is a loop/parallel
+  let currentParentId = block.data.parentId
+  const visited = new Set<string>()
+
+  while (currentParentId && !visited.has(currentParentId)) {
+    visited.add(currentParentId)
+    const parent = blocks[currentParentId]
+
+    if (!parent) break
+
+    // Check if this parent is a loop or parallel
+    if (parent.type === 'loop' || parent.type === 'parallel') {
+      return { isInLoop: true, loopParentId: currentParentId }
+    }
+
+    // Continue up the chain
+    currentParentId = parent.data?.parentId
+  }
+
+  return { isInLoop: false }
+}
+
+/**
  * Hook providing utilities for node position, hierarchy, and dimension calculations
  */
 export function useNodeUtilities(blocks: Record<string, any>) {

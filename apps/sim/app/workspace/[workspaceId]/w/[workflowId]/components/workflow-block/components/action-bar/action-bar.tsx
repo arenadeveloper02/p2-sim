@@ -1,8 +1,9 @@
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { ArrowLeftRight, ArrowUpDown, Circle, CircleOff, LogOut } from 'lucide-react'
 import { Button, Copy, Tooltip, Trash2 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { isBlockInAnyLoop } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-node-utilities'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -36,7 +37,7 @@ export const ActionBar = memo(
     /**
      * Optimized single store subscription for all block data
      */
-    const { isEnabled, horizontalHandles, parentId, parentType } = useWorkflowStore(
+    const { isEnabled, horizontalHandles, parentId, parentType, allBlocks } = useWorkflowStore(
       useCallback(
         (state) => {
           const block = state.blocks[blockId]
@@ -46,11 +47,18 @@ export const ActionBar = memo(
             horizontalHandles: block?.horizontalHandles ?? false,
             parentId,
             parentType: parentId ? state.blocks[parentId]?.type : undefined,
+            allBlocks: state.blocks,
           }
         },
         [blockId]
       )
     )
+
+    // Check if block is inside any loop (not just immediate parent)
+    // This handles nested loop cases where block is in inner loop but should show button
+    const isInAnyLoop = useMemo(() => {
+      return isBlockInAnyLoop(blockId, allBlocks).isInLoop
+    }, [blockId, allBlocks])
 
     const userPermissions = useUserPermissionsContext()
 
@@ -128,7 +136,7 @@ export const ActionBar = memo(
           </Tooltip.Root>
         )}
 
-        {!isStartBlock && parentId && (parentType === 'loop' || parentType === 'parallel') && (
+        {!isStartBlock && isInAnyLoop && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <Button
