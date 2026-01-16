@@ -24,6 +24,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Task {
   sysId: string
@@ -75,6 +76,18 @@ export function ArenaTaskSelector({
   React.useEffect(() => {
     if (!projectId) return
 
+    // Skip fetch if dependencies are variables
+    if (isVariable(clientId) || isVariable(projectId)) {
+      setTasks([])
+      return
+    }
+
+    // Skip fetch if task field is in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setTasks([])
+      return
+    }
+
     const fetchTasks = async () => {
       setTasks([])
       try {
@@ -100,7 +113,7 @@ export function ArenaTaskSelector({
     return () => {
       setTasks([])
     }
-  }, [projectId])
+  }, [clientId, projectId, fieldAdvancedMode, selectedValue])
 
   // Determine selected label and task ID
   const selectedTask = tasks.find(

@@ -5,10 +5,18 @@ import { getArenaTokenByWorkflowId } from '@/app/api/tools/arena/utils/db-utils'
 
 /**
  * Check if a string looks like a UUID (Arena sysId format)
+ * Arena uses UUIDs both with and without dashes
  */
 function isUUID(value: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  return uuidRegex.test(value.trim())
+  const trimmed = value.trim()
+  // Arena uses UUIDs without dashes: 32 hex characters
+  const uuidWithoutDashesRegex = /^[0-9a-f]{32}$/i
+  if (uuidWithoutDashesRegex.test(trimmed)) {
+    return true
+  }
+  // Also accept UUIDs with dashes: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  const uuidWithDashesRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  return uuidWithDashesRegex.test(trimmed)
 }
 
 /**
@@ -82,12 +90,19 @@ export async function resolveClientId(
       return partialMatch.clientId
     }
 
-    // If no match found, return the original value (might be an ID in a different format)
-    return stringValue
+    // If no match found, throw an error (don't return the name as if it were an ID)
+    throw new Error(
+      `Client not found: "${stringValue}". Please check the client name or use a valid client ID.`
+    )
   } catch (error) {
-    // If lookup fails, return the original value
+    // If lookup fails, throw an error
     console.error('Error resolving client name to ID:', error)
-    return stringValue
+    if (error instanceof Error && error.message.includes('Client not found')) {
+      throw error
+    }
+    throw new Error(
+      `Failed to resolve client "${stringValue}": ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -111,6 +126,13 @@ export async function resolveProjectId(
   // Check if it looks like a UUID
   if (isUUID(stringValue)) {
     return stringValue
+  }
+
+  // Validate that clientId is a valid UUID before using it
+  if (!isUUID(clientId)) {
+    throw new Error(
+      `Invalid clientId provided to resolveProjectId: "${clientId}". Client must be resolved to a valid ID first.`
+    )
   }
 
   // It's likely a name - fetch projects and match by name
@@ -156,11 +178,21 @@ export async function resolveProjectId(
       return partialMatch.sysId
     }
 
-    // If no match found, return the original value
-    return stringValue
+    // If no match found, throw an error
+    throw new Error(
+      `Project not found: "${stringValue}" for client "${clientId}". Please check the project name or use a valid project ID.`
+    )
   } catch (error) {
     console.error('Error resolving project name to ID:', error)
-    return stringValue
+    if (error instanceof Error && error.message.includes('Project not found')) {
+      throw error
+    }
+    if (error instanceof Error && error.message.includes('Invalid clientId')) {
+      throw error
+    }
+    throw new Error(
+      `Failed to resolve project "${stringValue}" for client "${clientId}": ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -187,6 +219,18 @@ export async function resolveGroupId(
     return stringValue
   }
 
+  // Validate that clientId and projectId are valid UUIDs before using them
+  if (!isUUID(clientId)) {
+    throw new Error(
+      `Invalid clientId provided to resolveGroupId: "${clientId}". Client must be resolved to a valid ID first.`
+    )
+  }
+  if (!isUUID(projectId)) {
+    throw new Error(
+      `Invalid projectId provided to resolveGroupId: "${projectId}". Project must be resolved to a valid ID first.`
+    )
+  }
+
   // It's likely a name - fetch groups/epics and match by name
   try {
     const tokenObject = await getArenaTokenByWorkflowId(workflowId)
@@ -199,8 +243,8 @@ export async function resolveGroupId(
       throw new Error('ARENA_BACKEND_BASE_URL not configured')
     }
 
-    // Fetch epics/groups for the project
-    const url = `${arenaBackendBaseUrl}/sol/v1/epics?cid=${clientId}&projectSysId=${projectId}`
+    // Fetch epics/groups for the project - use the same format as frontend
+    const url = `${arenaBackendBaseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
 
     const response = await fetch(url, {
       headers: {
@@ -213,27 +257,60 @@ export async function resolveGroupId(
     }
 
     const data = await response.json()
-    const groups = Array.isArray(data) ? data : data.epics || data.epicList || []
+    // Handle different response structures - prioritize epics (matches frontend format)
+    const groups = Array.isArray(data)
+      ? data
+      : Array.isArray(data.epics)
+        ? data.epics
+        : Array.isArray(data.epicList)
+          ? data.epicList
+          : []
 
-    // Try exact match first (case-insensitive)
-    const exactMatch = groups.find((g: any) => g.name?.toLowerCase() === stringValue.toLowerCase())
+    // Log for debugging
+    console.log(`[resolveGroupId] Searching for "${stringValue}" in ${groups.length} groups`)
+
+    // Try exact match first (case-insensitive) - trim whitespace
+    const exactMatch = groups.find(
+      (g: any) => g.name?.trim().toLowerCase() === stringValue.trim().toLowerCase()
+    )
     if (exactMatch) {
+      console.log(
+        `[resolveGroupId] Found exact match: ${exactMatch.name} (${exactMatch.id || exactMatch.sysId})`
+      )
       return exactMatch.id || exactMatch.sysId
     }
 
-    // Try partial match
-    const partialMatch = groups.find((g: any) =>
-      g.name?.toLowerCase().includes(stringValue.toLowerCase())
-    )
+    // Try partial match - check if the search term is contained in the name
+    const searchTerm = stringValue.trim().toLowerCase()
+    const partialMatch = groups.find((g: any) => {
+      const groupName = g.name?.trim().toLowerCase() || ''
+      return groupName.includes(searchTerm)
+    })
     if (partialMatch) {
+      console.log(
+        `[resolveGroupId] Found partial match: ${partialMatch.name} (${partialMatch.id || partialMatch.sysId})`
+      )
       return partialMatch.id || partialMatch.sysId
     }
 
-    // If no match found, return the original value
-    return stringValue
+    // If no match found, throw an error
+    throw new Error(
+      `Group not found: "${stringValue}" for project "${projectId}". Please check the group name or use a valid group ID.`
+    )
   } catch (error) {
     console.error('Error resolving group name to ID:', error)
-    return stringValue
+    if (error instanceof Error && error.message.includes('Group not found')) {
+      throw error
+    }
+    if (
+      error instanceof Error &&
+      (error.message.includes('Invalid clientId') || error.message.includes('Invalid projectId'))
+    ) {
+      throw error
+    }
+    throw new Error(
+      `Failed to resolve group "${stringValue}" for project "${projectId}": ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -260,6 +337,19 @@ export async function resolveAssigneeId(
     return stringValue
   }
 
+  // Validate that clientId is a valid UUID before using it
+  if (!isUUID(clientId)) {
+    throw new Error(
+      `Invalid clientId provided to resolveAssigneeId: "${clientId}". Client must be resolved to a valid ID first.`
+    )
+  }
+  // If projectId is provided, validate it too
+  if (projectId && !isUUID(projectId)) {
+    throw new Error(
+      `Invalid projectId provided to resolveAssigneeId: "${projectId}". Project must be resolved to a valid ID first.`
+    )
+  }
+
   // It's likely a name - fetch assignees and match by name
   try {
     const tokenObject = await getArenaTokenByWorkflowId(workflowId)
@@ -272,10 +362,10 @@ export async function resolveAssigneeId(
       throw new Error('ARENA_BACKEND_BASE_URL not configured')
     }
 
-    // Build URL for fetching assignees
-    let url = `${arenaBackendBaseUrl}/sol/v1/users?cid=${clientId}`
+    // Build URL for fetching assignees - use the same format as frontend
+    let url = `${arenaBackendBaseUrl}/sol/v1/users/list?cId=${clientId}`
     if (projectId) {
-      url += `&projectSysId=${projectId}`
+      url += `&pId=${projectId}`
     } else {
       // For search task, fetch all users
       url += `&allUsers=true&includeClientUsers=true`
@@ -292,33 +382,61 @@ export async function resolveAssigneeId(
     }
 
     const data = await response.json()
-    const users = Array.isArray(data) ? data : data.users || data.userList || []
+    // Handle different response structures - prioritize userList (matches frontend format)
+    const users = Array.isArray(data)
+      ? data
+      : Array.isArray(data.userList)
+        ? data.userList
+        : Array.isArray(data.users)
+          ? data.users
+          : []
+
+    // Log for debugging
+    console.log(`[resolveAssigneeId] Searching for "${stringValue}" in ${users.length} users`)
 
     // Try exact match first (case-insensitive) - match by name or email
     const exactMatch = users.find(
       (u: any) =>
-        u.name?.toLowerCase() === stringValue.toLowerCase() ||
-        u.email?.toLowerCase() === stringValue.toLowerCase()
+        u.name?.trim().toLowerCase() === stringValue.trim().toLowerCase() ||
+        u.email?.trim().toLowerCase() === stringValue.trim().toLowerCase()
     )
     if (exactMatch) {
+      console.log(`[resolveAssigneeId] Found exact match: ${exactMatch.name} (${exactMatch.sysId})`)
       return exactMatch.sysId || exactMatch.id || exactMatch.userId
     }
 
-    // Try partial match
-    const partialMatch = users.find(
-      (u: any) =>
-        u.name?.toLowerCase().includes(stringValue.toLowerCase()) ||
-        u.email?.toLowerCase().includes(stringValue.toLowerCase())
-    )
+    // Try partial match - check if the search term is contained in the name
+    const searchTerm = stringValue.trim().toLowerCase()
+    const partialMatch = users.find((u: any) => {
+      const userName = u.name?.trim().toLowerCase() || ''
+      const userEmail = u.email?.trim().toLowerCase() || ''
+      return userName.includes(searchTerm) || userEmail.includes(searchTerm)
+    })
     if (partialMatch) {
+      console.log(
+        `[resolveAssigneeId] Found partial match: ${partialMatch.name} (${partialMatch.sysId})`
+      )
       return partialMatch.sysId || partialMatch.id || partialMatch.userId
     }
 
-    // If no match found, return the original value
-    return stringValue
+    // If no match found, throw an error
+    throw new Error(
+      `Assignee not found: "${stringValue}" for client "${clientId}"${projectId ? ` and project "${projectId}"` : ''}. Please check the assignee name/email or use a valid assignee ID.`
+    )
   } catch (error) {
     console.error('Error resolving assignee name to ID:', error)
-    return stringValue
+    if (error instanceof Error && error.message.includes('Assignee not found')) {
+      throw error
+    }
+    if (
+      error instanceof Error &&
+      (error.message.includes('Invalid clientId') || error.message.includes('Invalid projectId'))
+    ) {
+      throw error
+    }
+    throw new Error(
+      `Failed to resolve assignee "${stringValue}": ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -344,6 +462,18 @@ export async function resolveTaskId(
   // Check if it looks like a UUID
   if (isUUID(stringValue)) {
     return stringValue
+  }
+
+  // Validate that clientId and projectId are valid UUIDs before using them
+  if (!isUUID(clientId)) {
+    throw new Error(
+      `Invalid clientId provided to resolveTaskId: "${clientId}". Client must be resolved to a valid ID first.`
+    )
+  }
+  if (!isUUID(projectId)) {
+    throw new Error(
+      `Invalid projectId provided to resolveTaskId: "${projectId}". Project must be resolved to a valid ID first.`
+    )
   }
 
   // It's likely a name - fetch tasks and match by name
@@ -394,10 +524,23 @@ export async function resolveTaskId(
       return partialMatch.sysId || partialMatch.id
     }
 
-    // If no match found, return the original value
-    return stringValue
+    // If no match found, throw an error
+    throw new Error(
+      `Task not found: "${stringValue}" for project "${projectId}". Please check the task name or use a valid task ID.`
+    )
   } catch (error) {
     console.error('Error resolving task name to ID:', error)
-    return stringValue
+    if (error instanceof Error && error.message.includes('Task not found')) {
+      throw error
+    }
+    if (
+      error instanceof Error &&
+      (error.message.includes('Invalid clientId') || error.message.includes('Invalid projectId'))
+    ) {
+      throw error
+    }
+    throw new Error(
+      `Failed to resolve task "${stringValue}" for project "${projectId}": ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }

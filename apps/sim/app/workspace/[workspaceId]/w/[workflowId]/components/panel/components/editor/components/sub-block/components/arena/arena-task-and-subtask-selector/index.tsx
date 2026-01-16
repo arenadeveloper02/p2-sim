@@ -24,6 +24,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Task {
   id: string
@@ -83,6 +84,20 @@ export function ArenaTaskAndSubtaskSelector({
       return
     }
 
+    // Skip fetch if dependencies are variables
+    if (isVariable(clientId) || isVariable(projectId)) {
+      setTasks([])
+      setLoading(false)
+      return
+    }
+
+    // Skip fetch if task field is in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setTasks([])
+      setLoading(false)
+      return
+    }
+
     const fetchTasks = async () => {
       setLoading(true)
       setTasks([])
@@ -114,7 +129,7 @@ export function ArenaTaskAndSubtaskSelector({
     return () => {
       setTasks([])
     }
-  }, [clientId, projectId])
+  }, [clientId, projectId, fieldAdvancedMode, selectedValue])
 
   // State for advanced mode autocomplete
   const [advancedModeOpen, setAdvancedModeOpen] = React.useState(false)

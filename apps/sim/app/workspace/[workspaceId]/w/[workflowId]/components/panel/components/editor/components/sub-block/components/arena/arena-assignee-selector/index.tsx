@@ -24,6 +24,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Assignee {
   value: string
@@ -84,6 +85,20 @@ export function ArenaAssigneeSelector({
     if (!clientId) return
     if (isCreateTask && !projectId) return
 
+    // Skip fetch if dependencies are variables
+    if (isVariable(clientId) || (isCreateTask && projectId && isVariable(projectId))) {
+      setAssignees([])
+      setLoading(false)
+      return
+    }
+
+    // Skip fetch if assignee field is in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setAssignees([])
+      setLoading(false)
+      return
+    }
+
     const fetchAssignees = async () => {
       setLoading(true)
       try {
@@ -121,7 +136,7 @@ export function ArenaAssigneeSelector({
     }
 
     fetchAssignees()
-  }, [clientId, isCreateTask ? projectId : undefined, subBlockId])
+  }, [clientId, isCreateTask ? projectId : undefined, fieldAdvancedMode, selectedValue, subBlockId])
 
   // Determine selected label and assignee ID
   const selectedAssignee = assignees.find(

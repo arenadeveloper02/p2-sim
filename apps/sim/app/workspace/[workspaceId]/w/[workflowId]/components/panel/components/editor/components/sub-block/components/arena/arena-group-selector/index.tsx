@@ -24,6 +24,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Group {
   id: string
@@ -79,6 +80,18 @@ export function ArenaGroupSelector({
   React.useEffect(() => {
     if (!clientId || !projectId) return
 
+    // Skip fetch if dependencies are variables
+    if (isVariable(clientId) || isVariable(projectId)) {
+      setGroups([])
+      return
+    }
+
+    // Skip fetch if group field is in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setGroups([])
+      return
+    }
+
     const fetchGroups = async () => {
       try {
         setGroups([])
@@ -109,7 +122,7 @@ export function ArenaGroupSelector({
     return () => {
       setGroups([])
     }
-  }, [clientId, projectId])
+  }, [clientId, projectId, fieldAdvancedMode, selectedValue])
 
   // Determine selected label and group ID
   const selectedGroup = groups.find(

@@ -87,6 +87,12 @@ export function ArenaStatesSelector({
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
+        if (!v2Token || !arenaBackendBaseUrl) {
+          console.warn('Missing v2Token or arenaBackendBaseUrl for states fetch')
+          setStates([])
+          return
+        }
+
         const url = `${arenaBackendBaseUrl}/sol/v1/state-management/state`
         const response = await axios.get(url, {
           headers: {
@@ -94,9 +100,32 @@ export function ArenaStatesSelector({
           },
         })
 
-        setStates(response.data || [])
+        // Handle different possible response structures
+        let statesArray: ArenaState[] = []
+        if (Array.isArray(response.data)) {
+          statesArray = response.data
+        } else if (response.data?.data && Array.isArray(response.data.data)) {
+          statesArray = response.data.data
+        } else if (response.data?.response && Array.isArray(response.data.response)) {
+          statesArray = response.data.response
+        } else if (response.data?.states && Array.isArray(response.data.states)) {
+          statesArray = response.data.states
+        } else if (response.data?.list && Array.isArray(response.data.list)) {
+          statesArray = response.data.list
+        } else {
+          console.warn(
+            'Unexpected states response structure:',
+            JSON.stringify(response.data, null, 2)
+          )
+          statesArray = []
+        }
+
+        setStates(statesArray)
       } catch (error) {
         console.error('Error fetching states:', error)
+        if (error instanceof Error) {
+          console.error('Error message:', error.message)
+        }
         setStates([])
       }
     }
@@ -194,6 +223,7 @@ export function ArenaStatesSelector({
         <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
           <Command
             filter={(value, search) => {
+              if (!Array.isArray(states) || states.length === 0) return 0
               const state = states.find((s) => s.id === value || s.name === value)
               if (!state) return 0
 
@@ -207,22 +237,24 @@ export function ArenaStatesSelector({
             <CommandList>
               <CommandEmpty>No state found.</CommandEmpty>
               <CommandGroup>
-                {states.map((state) => (
-                  <CommandItem
-                    key={state.id}
-                    value={state.name}
-                    onSelect={() => handleSelect(state.name)}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  >
-                    {state.name}
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
+                {Array.isArray(states) && states.length > 0
+                  ? states.map((state) => (
+                      <CommandItem
+                        key={state.id}
+                        value={state.name}
+                        onSelect={() => handleSelect(state.name)}
+                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      >
+                        {state.name}
+                        <Check
+                          className={cn(
+                            'ml-auto h-4 w-4',
+                            selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                      </CommandItem>
+                    ))
+                  : null}
               </CommandGroup>
             </CommandList>
           </Command>

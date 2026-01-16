@@ -24,6 +24,7 @@ import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useSubBlockStore, useWorkflowRegistry } from '@/stores'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Project {
   sysId: string
@@ -82,6 +83,18 @@ export function ArenaProjectSelector({
   React.useEffect(() => {
     if (!clientId) return // No clientId, don't fetch projects
 
+    // Skip fetch if clientId is a variable (won't be resolved in UI)
+    if (isVariable(clientId)) {
+      setProjects([])
+      return
+    }
+
+    // Skip fetch if project field is in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setProjects([])
+      return
+    }
+
     const fetchProjects = async () => {
       setProjects([])
       try {
@@ -107,7 +120,7 @@ export function ArenaProjectSelector({
     return () => {
       setProjects([])
     }
-  }, [clientId, searchQuery])
+  }, [clientId, fieldAdvancedMode, selectedValue, searchQuery])
 
   // Determine selected label and project ID
   const selectedProject = projects.find(

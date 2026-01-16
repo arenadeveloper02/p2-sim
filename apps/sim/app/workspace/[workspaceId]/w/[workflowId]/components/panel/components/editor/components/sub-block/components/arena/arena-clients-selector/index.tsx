@@ -23,6 +23,7 @@ import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workfl
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { isVariable } from '../utils'
 
 interface Client {
   clientId: string
@@ -65,6 +66,12 @@ export function ArenaClientsSelector({
   const [isEditing, setIsEditing] = React.useState(false)
 
   React.useEffect(() => {
+    // Skip fetch if in advanced mode and value is a variable
+    if (fieldAdvancedMode && isVariable(selectedValue)) {
+      setClients([])
+      return
+    }
+
     const fetchClients = async () => {
       try {
         setClients([])
@@ -149,7 +156,7 @@ export function ArenaClientsSelector({
     return () => {
       setClients([])
     }
-  }, [])
+  }, [fieldAdvancedMode, selectedValue])
 
   // Determine selected label and value
   const selectedClient = Array.isArray(clients)
