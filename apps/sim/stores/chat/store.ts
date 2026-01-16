@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { v4 as uuidv4 } from 'uuid'
 import { create } from 'zustand'
-import { devtools, persist } from 'zustand/middleware'
+import { devtools, persist, type PersistStorage } from 'zustand/middleware'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
@@ -18,6 +18,85 @@ const MAX_MESSAGES = 500
  */
 const DEFAULT_WIDTH = 305
 const DEFAULT_HEIGHT = 286
+
+/**
+ * Safe storage adapter that handles QuotaExceededError gracefully
+ * Sanitizes messages before storing to prevent localStorage quota issues
+ */
+const safeStorageAdapter: PersistStorage<ChatState> = {
+  getItem: (name: string) => {
+    if (typeof localStorage === 'undefined') return null
+    try {
+      const value = localStorage.getItem(name)
+      if (value === null) return null
+      return JSON.parse(value)
+    } catch (e) {
+      logger.warn('Failed to read from localStorage', e)
+      return null
+    }
+  },
+  setItem: (name: string, value: any) => {
+    if (typeof localStorage === 'undefined') return
+    try {
+      // Ensure messages are sanitized before storing
+      const sanitizedValue = {
+        ...value,
+        state: {
+          ...value.state,
+          messages: sanitizeMessagesForPersistence(value.state?.messages || []),
+        },
+      }
+      const serialized = JSON.stringify(sanitizedValue)
+      localStorage.setItem(name, serialized)
+    } catch (e) {
+      // Handle QuotaExceededError gracefully
+      if (e instanceof Error && e.name === 'QuotaExceededError') {
+        logger.warn('localStorage quota exceeded, reducing message count and retrying', e)
+        try {
+          // Try to keep only the most recent messages to ensure we don't exceed quota
+          const messages = value.state?.messages || []
+          const limitedMessages = messages.slice(0, Math.min(50, messages.length))
+          const limitedState = {
+            ...value,
+            state: {
+              ...value.state,
+              messages: sanitizeMessagesForPersistence(limitedMessages),
+            },
+          }
+          const serialized = JSON.stringify(limitedState)
+          localStorage.setItem(name, serialized)
+          logger.info('Successfully stored chat messages after reducing count')
+        } catch (retryError) {
+          logger.error('Failed to store chat messages even after reduction', retryError)
+          // Last resort: try storing without messages
+          try {
+            const noMessagesState = {
+              ...value,
+              state: {
+                ...value.state,
+                messages: [],
+              },
+            }
+            localStorage.setItem(name, JSON.stringify(noMessagesState))
+            logger.warn('Stored chat state without messages due to quota limit')
+          } catch (finalError) {
+            logger.error('Failed to store chat state even without messages', finalError)
+          }
+        }
+      } else {
+        logger.warn('Failed to save to localStorage', e)
+      }
+    }
+  },
+  removeItem: (name: string) => {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.removeItem(name)
+    } catch (e) {
+      logger.warn('Failed to remove from localStorage', e)
+    }
+  },
+}
 
 /**
  * Floating chat store
@@ -271,6 +350,7 @@ export const useChatStore = create<ChatState>()(
       }),
       {
         name: 'chat-store',
+        storage: safeStorageAdapter,
         partialize: (state) => {
           // Sanitize messages before persisting - replace base64 images with placeholders
           // This prevents localStorage quota issues while preserving message structure

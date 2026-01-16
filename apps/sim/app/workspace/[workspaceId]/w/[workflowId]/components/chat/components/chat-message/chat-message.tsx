@@ -264,43 +264,42 @@ export function ChatMessage({ message }: ChatMessageProps) {
       return null
     }
 
-    // If content is a pure base64 image, render it directly
-    if (typeof content === 'string' && isBase64(content)) {
-      const cleanedContent = content.replace(/\s+/g, '')
-      return renderBs64Img({ isBase64: true, imageData: cleanedContent })
-    }
+    try {
 
-    // If content is a string, check for mixed content (text + base64 images)
-    if (typeof content === 'string') {
-      const { textParts, base64Images } = extractBase64Image(content)
+      // If content is a string, check for mixed content (text + base64 images)
+      if (typeof content === 'string') {
+        const { textParts, base64Images } = extractBase64Image(content)
 
-      // If we found base64 images, render both text and images
-      if (base64Images.length > 0) {
-        return (
-          <>
-            {textParts.length > 0 && (
-              <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
-            )}
-            {base64Images.map((imageData, index) => (
-              <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
-            ))}
-          </>
-        )
+        // If we found base64 images, render both text and images
+        if (base64Images.length > 0) {
+          return (
+            <>
+              {textParts.length > 0 && (
+                <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
+              )}
+              {base64Images.map((imageData, index) => (
+                <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+              ))}
+            </>
+          )
+        }
+
+        // If no base64 images, just render as markdown
+        // return <ArenaCopilotMarkdownRenderer content={content} />
       }
 
-      // If no base64 images, just render as markdown
-      if (formattedContent) {
-        return <ArenaCopilotMarkdownRenderer content={formattedContent} />
-      }
+      // For other content types, render as markdown
+      return <ArenaCopilotMarkdownRenderer content={content} />
+    } catch (error) {
+      console.error('Error rendering message content:', error)
+      return (
+        <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
+          <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
+        </div>
+      )
     }
-
-    // For other content types, use formatted content
-    if (formattedContent) {
-      return <ArenaCopilotMarkdownRenderer content={formattedContent} />
-    }
-
-    return null
   }
+
 
   return (
     <div className='w-full max-w-full overflow-hidden pl-[2px] opacity-100 transition-opacity duration-200'>

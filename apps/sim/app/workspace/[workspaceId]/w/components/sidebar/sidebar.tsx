@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import {ArrowLeft, Database, HelpCircle, Layout, Plus, Search, Settings } from 'lucide-react'
+import { ArrowLeft, Database, Layout, Plus, Search, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { Button, Download, FolderPlus, Library, Loader, Tooltip } from '@/components/emcn'

@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { isDev } from '@/lib/core/config/feature-flags'
 import {
   isEmailAllowed,
   setDeploymentAuthCookie,
@@ -51,6 +52,19 @@ export async function checkWorkflowAccessForChatCreation(
   }
 
   return { hasAccess: false }
+}
+
+export function addCorsHeaders(response: NextResponse, request: NextRequest) {
+  const origin = request.headers.get('origin') || ''
+
+  if (isDev && origin.includes('localhost')) {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With')
+  }
+
+  return response
 }
 
 /**

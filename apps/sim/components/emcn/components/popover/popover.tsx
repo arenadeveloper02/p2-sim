@@ -66,7 +66,7 @@ type PopoverVariant = 'default' | 'secondary'
 const STYLES = {
   /** Base classes shared by all interactive items */
   itemBase:
-    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
+    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base text-[var(--text-muted)] disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
 
   /** Content container */
   content: 'px-[6px] py-[6px] rounded-[6px]',
@@ -92,12 +92,12 @@ const STYLES = {
       divider: 'border-[var(--border-1)]',
     },
     inverted: {
-      text: 'text-white dark:text-[var(--text-primary)]',
+      text: ' dark:text-[var(--text-primary)]',
       section: 'text-[var(--text-muted-inverse)]',
       search: 'text-[var(--text-muted-inverse)] dark:text-[var(--text-muted)]',
       searchInput:
-        'text-white placeholder:text-[var(--text-muted-inverse)] dark:text-[var(--text-primary)] dark:placeholder:text-[var(--text-muted)]',
-      content: 'bg-[#1b1b1b] text-white dark:bg-[var(--surface-3)] dark:text-foreground',
+        ' placeholder:text-[var(--text-muted-inverse)] dark:text-[var(--text-primary)] dark:placeholder:text-[var(--text-muted)]',
+      content: 'bg-[var(--surface-5)]  dark:bg-[var(--surface-3)] dark:text-foreground',
       divider: 'border-[#363636] dark:border-[var(--border-1)]',
     },
   } satisfies Record<
@@ -115,19 +115,19 @@ const STYLES = {
   /** Interactive state styles: default, secondary (brand), inverted (dark bg in light mode) */
   states: {
     default: {
-      active: 'bg-[var(--border-1)] text-[var(--text-primary)] [&_svg]:text-[var(--text-primary)]',
+      active: 'bg-[var(--surface-7)] dark:bg-[var(--surface-5)] text-[var(--text-primary)] [&_svg]:text-[var(--text-primary)]',
       hover:
         'hover:bg-[var(--border-1)] hover:text-[var(--text-primary)] hover:[&_svg]:text-[var(--text-primary)]',
     },
     secondary: {
-      active: 'bg-[var(--brand-secondary)] text-white [&_svg]:text-white',
-      hover: 'hover:bg-[var(--brand-secondary)] hover:text-white hover:[&_svg]:text-white',
+      active: 'bg-[var(--brand-secondary)]  [&_svg]:',
+      hover: 'hover:bg-[var(--brand-secondary)] hover: hover:[&_svg]:',
     },
     inverted: {
       active:
-        'bg-[#363636] text-white [&_svg]:text-white dark:bg-[var(--surface-5)] dark:text-[var(--text-primary)] dark:[&_svg]:text-[var(--text-primary)]',
+        'bg-[var(--surface-7)]  [&_svg]: dark:bg-[var(--surface-5)] dark:text-[var(--text-primary)] dark:[&_svg]:text-[var(--text-primary)]',
       hover:
-        'hover:bg-[#363636] hover:text-white hover:[&_svg]:text-white dark:hover:bg-[var(--surface-5)] dark:hover:text-[var(--text-primary)] dark:hover:[&_svg]:text-[var(--text-primary)]',
+        'hover:bg-[var(--surface-7)] hover: hover:[&_svg]: dark:hover:bg-[var(--surface-5)] dark:hover:text-[var(--text-primary)] dark:hover:[&_svg]:text-[var(--text-primary)]',
     },
   },
 } as const

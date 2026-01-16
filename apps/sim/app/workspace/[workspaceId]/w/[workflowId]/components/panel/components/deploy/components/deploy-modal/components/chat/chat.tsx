@@ -220,6 +220,13 @@ export function ChatDeploy({
 
   useEffect(() => {
     if (existingChat && !hasInitializedForm) {
+      // Deduplicate emails when initializing from existingChat
+      const allowedEmails = Array.isArray(existingChat.allowedEmails)
+        ? existingChat.allowedEmails
+        : []
+      const normalizedEmails = allowedEmails.map((e) => e.toLowerCase().trim())
+      const uniqueEmails = Array.from(new Set(normalizedEmails))
+
       setFormData({
         identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
@@ -227,7 +234,7 @@ export function ChatDeploy({
         department: existingChat.department || '',
         authType: existingChat.authType || 'public',
         password: '',
-        emails: Array.isArray(existingChat.allowedEmails) ? [...existingChat.allowedEmails] : [],
+        emails: uniqueEmails,
         welcomeMessage:
           existingChat.customizations?.welcomeMessage || 'Hi there! How can I help you today?',
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
@@ -686,6 +693,42 @@ function AuthSelector({
     emails.map((email) => ({ value: email, isValid: true }))
   )
 
+  // Sync emailItems with emails prop and deduplicate
+  // Keep invalid items in emailItems even if not in emails (to show red badges)
+  useEffect(() => {
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+    const uniqueEmails = Array.from(new Set(normalizedEmails))
+    const currentValues = new Set(emailItems.map((item) => item.value.toLowerCase().trim()))
+
+    // Create a map of existing items to preserve isValid state
+    const existingItemsMap = new Map(
+      emailItems.map((item) => [item.value.toLowerCase().trim(), item])
+    )
+
+    // Include invalid emails in the items to display (for red badges)
+    const invalidEmailValues = new Set(invalidEmails.map((e) => e.toLowerCase().trim()))
+    const allEmailValues = new Set([...uniqueEmails, ...invalidEmailValues])
+
+    // Only update if there's a mismatch
+    const needsUpdate =
+      allEmailValues.size !== emailItems.length ||
+      !Array.from(allEmailValues).every((email) => currentValues.has(email)) ||
+      !emailItems.every((item) => allEmailValues.has(item.value.toLowerCase().trim()))
+
+    if (needsUpdate) {
+      setEmailItems(
+        Array.from(allEmailValues).map((email) => {
+          const existing = existingItemsMap.get(email)
+          // If email is in invalidEmails, mark as invalid
+          const isInvalid = invalidEmailValues.has(email)
+          return existing
+            ? { ...existing, isValid: isInvalid ? false : existing.isValid }
+            : { value: email, isValid: !isInvalid }
+        })
+      )
+    }
+  }, [emails, invalidEmails])
+
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
     onPasswordChange(newPassword)
@@ -739,31 +782,109 @@ function AuthSelector({
 
       const data = await response.json()
 
+      // If validation fails, mark email as invalid and show error
+      if (data.valid === false) {
+        // Remove from emails state
+        onEmailsChange(emails.filter((e) => e !== normalized))
+        
+        // Update emailItems to mark as invalid (red badge)
+        setEmailItems((prev) =>
+          prev.map((item) =>
+            item.value === normalized ? { ...item, isValid: false } : item
+          )
+        )
+
+        // Show error message with email address
+        const errorMessage = data.missingEmails?.includes(normalized) ||
+          (data.missingEmails && data.missingEmails.length > 0)
+          ? `The user "${normalized}" does not exist in the system. Please add a user that exists.`
+          : `The user "${normalized}" does not have access to Agentic AI.`
+
+        setEmailError(errorMessage)
+        setEmailValidationErrors((prev) => {
+          const next = new Map(prev)
+          next.set(normalized, errorMessage)
+          return next
+        })
+        setInvalidEmails((prev) => {
+          if (!prev.includes(normalized)) {
+            return [...prev, normalized]
+          }
+          return prev
+        })
+        return false
+      }
+
+      // Email is valid and exists
       if (data.valid && data.existingEmails.includes(normalized)) {
-        // Email is valid and exists
         setEmailError('')
         setEmailValidationErrors((prev) => {
           const next = new Map(prev)
           next.delete(normalized)
           return next
         })
+        // Remove from invalidEmails if it was there
+        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        // Update emailItems to mark as valid
+        setEmailItems((prev) =>
+          prev.map((item) =>
+            item.value === normalized ? { ...item, isValid: true } : item
+          )
+        )
         onEmailsChange([...emails, normalized])
         return true
       }
-      // Email doesn't exist in the system
-      setEmailValidationErrors((prev) => {
-        const next = new Map(prev)
-        next.set(normalized, 'User does not have access to Agentic AI')
-        return next
+
+      // If valid is true but email not in existingEmails, still keep it
+      if (data.valid) {
+        setEmailError('')
+        setEmailValidationErrors((prev) => {
+          const next = new Map(prev)
+          next.delete(normalized)
+          return next
+        })
+        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        setEmailItems((prev) =>
+          prev.map((item) =>
+            item.value === normalized ? { ...item, isValid: true } : item
+          )
+        )
+        onEmailsChange([...emails, normalized])
+        return true
+      }
+
+      // Fallback: mark as invalid
+      onEmailsChange(emails.filter((e) => e !== normalized))
+      setEmailItems((prev) =>
+        prev.map((item) =>
+          item.value === normalized ? { ...item, isValid: false } : item
+        )
+      )
+      setEmailError(`The user "${normalized}" does not exist in the system. Please add a user that exists.`)
+      setInvalidEmails((prev) => {
+        if (!prev.includes(normalized)) {
+          return [...prev, normalized]
+        }
+        return prev
       })
-      setInvalidEmails((prev) => [...prev, normalized])
       return false
     } catch (error) {
       logger.error('Error validating email', { error, email: normalized })
-      // On error, still add the email but show a warning
-      setEmailError('Failed to validate email. Please verify it exists.')
-      onEmailsChange([...emails, normalized])
-      return true
+      // On error, remove from emails and mark as invalid
+      onEmailsChange(emails.filter((e) => e !== normalized))
+      setEmailItems((prev) =>
+        prev.map((item) =>
+          item.value === normalized ? { ...item, isValid: false } : item
+        )
+      )
+      setEmailError(`Failed to validate "${normalized}". Please verify the email exists and try again.`)
+      setInvalidEmails((prev) => {
+        if (!prev.includes(normalized)) {
+          return [...prev, normalized]
+        }
+        return prev
+      })
+      return false
     }
   }
 
@@ -797,15 +918,23 @@ function AuthSelector({
   // Prefill session.email on mount
   useEffect(() => {
     if (session?.user?.email && !isExistingChat) {
-      const sessionEmail = session.user.email.toLowerCase()
-      if (!emails.includes(sessionEmail) && !invalidEmails.includes(sessionEmail)) {
+      const sessionEmail = session.user.email.toLowerCase().trim()
+      const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+      const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
+      const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
+
+      if (
+        !normalizedEmails.includes(sessionEmail) &&
+        !normalizedInvalidEmails.includes(sessionEmail) &&
+        !normalizedEmailItems.includes(sessionEmail)
+      ) {
         addEmail(sessionEmail).catch((error) => {
           logger.error('Error prefilling session email', { error })
         })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.email, isExistingChat])
+  }, [session?.user?.email, isExistingChat, emails, emailItems])
 
   const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
   const authOptions = ssoEnabled

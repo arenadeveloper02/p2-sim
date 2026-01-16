@@ -1947,7 +1947,6 @@ export const workflowStatsMonthly = pgTable(
 
 // Usage logging for tracking individual billable operations
 
-
 /**
  * A2A Task State Enum (v0.2.6)
  */
@@ -2094,7 +2093,6 @@ export const a2aPushNotificationConfig = pgTable(
     taskIdUnique: uniqueIndex('a2a_push_notification_config_task_unique').on(table.taskId),
   })
 )
-
 
 export const usageLogCategoryEnum = pgEnum('usage_log_category', ['model', 'fixed'])
 export const usageLogSourceEnum = pgEnum('usage_log_source', ['workflow', 'wand', 'copilot'])
