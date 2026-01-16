@@ -115,13 +115,16 @@ const STYLES = {
   /** Interactive state styles: default, secondary (brand), inverted (dark bg in light mode) */
   states: {
     default: {
-      active: 'bg-[var(--surface-7)] dark:bg-[var(--surface-5)] text-[var(--text-primary)] [&_svg]:text-[var(--text-primary)]',
+      active:
+        'bg-[var(--surface-7)] dark:bg-[var(--surface-5)] text-[var(--text-primary)] [&_svg]:text-[var(--text-primary)]',
       hover:
         'hover:bg-[var(--border-1)] hover:text-[var(--text-primary)] hover:[&_svg]:text-[var(--text-primary)]',
     },
     secondary: {
-      active: 'bg-[var(--brand-secondary)] text-white dark:text-black [&_svg]:text-white [&_svg]:dark:text-black',
-      hover: 'hover:bg-[var(--brand-secondary)] hover:text-white hover:dark:text-black hover:[&_svg]:text-white',
+      active:
+        'bg-[var(--brand-secondary)] text-white dark:text-black [&_svg]:text-white [&_svg]:dark:text-black',
+      hover:
+        'hover:bg-[var(--brand-secondary)] hover:text-white hover:dark:text-black hover:[&_svg]:text-white',
     },
     inverted: {
       active:

@@ -787,19 +787,18 @@ function AuthSelector({
       if (data.valid === false) {
         // Remove from emails state
         onEmailsChange(emails.filter((e) => e !== normalized))
-        
+
         // Update emailItems to mark as invalid (red badge)
         setEmailItems((prev) =>
-          prev.map((item) =>
-            item.value === normalized ? { ...item, isValid: false } : item
-          )
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
         )
 
         // Show error message with email address
-        const errorMessage = data.missingEmails?.includes(normalized) ||
+        const errorMessage =
+          data.missingEmails?.includes(normalized) ||
           (data.missingEmails && data.missingEmails.length > 0)
-          ? `The user "${normalized}" does not exist in the system. Please add a user that exists.`
-          : `The user "${normalized}" does not have access to Agentic AI.`
+            ? `The user "${normalized}" does not exist in the system. Please add a user that exists.`
+            : `The user "${normalized}" does not have access to Agentic AI.`
 
         setEmailError(errorMessage)
         setEmailValidationErrors((prev) => {
@@ -828,9 +827,7 @@ function AuthSelector({
         setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
         // Update emailItems to mark as valid
         setEmailItems((prev) =>
-          prev.map((item) =>
-            item.value === normalized ? { ...item, isValid: true } : item
-          )
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
         )
         onEmailsChange([...emails, normalized])
         return true
@@ -846,9 +843,7 @@ function AuthSelector({
         })
         setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
         setEmailItems((prev) =>
-          prev.map((item) =>
-            item.value === normalized ? { ...item, isValid: true } : item
-          )
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
         )
         onEmailsChange([...emails, normalized])
         return true
@@ -857,11 +852,11 @@ function AuthSelector({
       // Fallback: mark as invalid
       onEmailsChange(emails.filter((e) => e !== normalized))
       setEmailItems((prev) =>
-        prev.map((item) =>
-          item.value === normalized ? { ...item, isValid: false } : item
-        )
+        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
       )
-      setEmailError(`The user "${normalized}" does not exist in the system. Please add a user that exists.`)
+      setEmailError(
+        `The user "${normalized}" does not exist in the system. Please add a user that exists.`
+      )
       setInvalidEmails((prev) => {
         if (!prev.includes(normalized)) {
           return [...prev, normalized]
@@ -874,11 +869,11 @@ function AuthSelector({
       // On error, remove from emails and mark as invalid
       onEmailsChange(emails.filter((e) => e !== normalized))
       setEmailItems((prev) =>
-        prev.map((item) =>
-          item.value === normalized ? { ...item, isValid: false } : item
-        )
+        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
       )
-      setEmailError(`Failed to validate "${normalized}". Please verify the email exists and try again.`)
+      setEmailError(
+        `Failed to validate "${normalized}". Please verify the email exists and try again.`
+      )
       setInvalidEmails((prev) => {
         if (!prev.includes(normalized)) {
           return [...prev, normalized]
@@ -893,17 +888,17 @@ function AuthSelector({
     setEmailError('')
     const itemToRemove = emailItems[index]
     if (!itemToRemove) return
-    
+
     const emailToRemove = itemToRemove.value.toLowerCase().trim()
-    
+
     // Remove from emailItems
     setEmailItems((prev) => prev.filter((_, i) => i !== index))
-    
+
     // Remove from emails if it was valid
     if (isValid) {
       onEmailsChange(emails.filter((e) => e.toLowerCase().trim() !== emailToRemove))
     }
-    
+
     // Also remove from invalidEmails and emailValidationErrors to prevent re-adding
     setInvalidEmails((prev) => prev.filter((e) => e.toLowerCase().trim() !== emailToRemove))
     setEmailValidationErrors((prev) => {

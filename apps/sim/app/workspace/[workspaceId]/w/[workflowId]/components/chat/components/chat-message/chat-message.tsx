@@ -8,7 +8,6 @@ import {
   extractAllBase64Images,
   extractBase64Image,
   hasBase64Images,
-  isBase64,
   renderBs64Img,
 } from './constants'
 
@@ -265,7 +264,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
 
     try {
-
       // If content is a string, check for mixed content (text + base64 images)
       if (typeof content === 'string') {
         const { textParts, base64Images } = extractBase64Image(content)
@@ -299,7 +297,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
       )
     }
   }
-
 
   return (
     <div className='w-full max-w-full overflow-hidden pl-[2px] opacity-100 transition-opacity duration-200'>

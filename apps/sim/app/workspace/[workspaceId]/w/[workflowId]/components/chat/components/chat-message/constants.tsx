@@ -241,48 +241,52 @@ export function extractBase64Image(content: string): {
     } else {
       // Check if cleanedPart contains base64 strings anywhere within it
       let cleanText = cleanedPart
-      
+
       // Find and remove base64 strings that start with image headers
       // They might be inline like "image: iVBORw0KGgo..." or on separate lines
       for (const header of COMMON_IMAGE_HEADERS) {
         // Find the position of the header in the text
         const headerIndex = cleanText.indexOf(header)
-        
+
         if (headerIndex !== -1) {
           // Found a potential base64 string starting with this header
           // Extract everything from the header onwards that looks like base64
           let base64Start = headerIndex
-          
+
           // Look backwards to see if there's "image:" or similar prefix to remove
           const beforeHeader = cleanText.substring(0, base64Start)
           const imagePrefixMatch = beforeHeader.match(/(?:^|\s)(image\s*:?\s*)$/i)
           if (imagePrefixMatch) {
             base64Start = base64Start - imagePrefixMatch[1].length
           }
-          
+
           // Extract the base64 string (everything from base64Start that's base64-like)
           let base64End = base64Start
           const textFromStart = cleanText.substring(base64Start)
-          
+
           // Match base64 characters (including spaces/newlines that might be in the string)
           const base64Match = textFromStart.match(/^[^A-Za-z0-9+/=\s]*([A-Za-z0-9+/=\s]{50,})/)
-          
+
           if (base64Match) {
             const base64WithSpaces = base64Match[1]
             const base64String = base64WithSpaces.replace(/\s+/g, '')
-            
+
             // Verify it starts with the header and is valid base64
-            if (base64String.startsWith(header) && /^[A-Za-z0-9+/=]+$/.test(base64String) && base64String.length >= 50) {
+            if (
+              base64String.startsWith(header) &&
+              /^[A-Za-z0-9+/=]+$/.test(base64String) &&
+              base64String.length >= 50
+            ) {
               // Calculate the end position
               base64End = base64Start + base64Match[0].length
-              
+
               // Remove the base64 string from the text
               const beforeBase64 = cleanText.substring(0, base64Start).trim()
               const afterBase64 = cleanText.substring(base64End).trim()
-              
+
               // Reconstruct text without base64
               cleanText = [beforeBase64, afterBase64].filter(Boolean).join(' ').trim()
-              
+
               // Add to base64Images if not already there
               if (!base64Images.includes(base64String)) {
                 base64Images.push(base64String)
@@ -291,25 +295,25 @@ export function extractBase64Image(content: string): {
           }
         }
       }
-      
+
       // Also check line by line for base64 strings (as fallback)
       const lines = cleanText.split(/\n/)
       const cleanLines: string[] = []
-      
+
       for (const line of lines) {
         const trimmedLine = line.trim()
         if (!trimmedLine) {
           cleanLines.push(line)
           continue
         }
-        
+
         // Check if this entire line is a base64 string
         const cleanLineStr = trimmedLine.replace(/\s+/g, '')
         const isBase64Line =
           COMMON_IMAGE_HEADERS.some((header) => cleanLineStr.startsWith(header)) &&
           cleanLineStr.length >= 50 &&
           /^[A-Za-z0-9+/=]+$/.test(cleanLineStr)
-        
+
         if (isBase64Line) {
           // Extract base64 and don't include in text
           if (!base64Images.includes(cleanLineStr)) {
@@ -320,7 +324,7 @@ export function extractBase64Image(content: string): {
           cleanLines.push(line)
         }
       }
-      
+
       // Only push to textParts if there's actual text remaining
       const finalCleanText = cleanLines.join('\n').trim()
       if (finalCleanText) {
@@ -493,48 +497,54 @@ function removeBase64FromContent(content: string): string {
   for (const header of COMMON_IMAGE_HEADERS) {
     // Find the position of the header in the text
     let headerIndex = cleanContent.indexOf(header)
-    
+
     while (headerIndex !== -1) {
       // Found a potential base64 string starting with this header
       let base64Start = headerIndex
-      
+
       // Look backwards to see if there's "image:" or similar prefix to remove
       const beforeHeader = cleanContent.substring(0, base64Start)
       const imagePrefixMatch = beforeHeader.match(/(?:^|\s)(image\s*:?\s*)$/i)
       if (imagePrefixMatch) {
         base64Start = base64Start - imagePrefixMatch[1].length
       }
-      
+
       // Extract the base64 string (everything from base64Start that's base64-like)
       const textFromStart = cleanContent.substring(base64Start)
-      
+
       // Match base64 characters (including spaces/newlines that might be in the string)
       const base64Match = textFromStart.match(/^[^A-Za-z0-9+/=\s]*([A-Za-z0-9+/=\s]{50,})/)
-      
+
       if (base64Match) {
         const base64WithSpaces = base64Match[1]
         const base64String = base64WithSpaces.replace(/\s+/g, '')
-        
+
         // Verify it starts with the header and is valid base64
-        if (base64String.startsWith(header) && /^[A-Za-z0-9+/=]+$/.test(base64String) && base64String.length >= 50) {
+        if (
+          base64String.startsWith(header) &&
+          /^[A-Za-z0-9+/=]+$/.test(base64String) &&
+          base64String.length >= 50
+        ) {
           // Calculate the end position
           const base64End = base64Start + base64Match[0].length
-          
+
           // Remove the base64 string from the text and replace with placeholder
           const beforeBase64 = cleanContent.substring(0, base64Start).trim()
           const afterBase64 = cleanContent.substring(base64End).trim()
-          
+
           // Reconstruct text without base64, add placeholder if there was text before
-          const placeholder = beforeBase64 ? ' [Image: Content too large to persist]' : '[Image: Content too large to persist]'
+          const placeholder = beforeBase64
+            ? ' [Image: Content too large to persist]'
+            : '[Image: Content too large to persist]'
           cleanContent = [beforeBase64, afterBase64].filter(Boolean).join(' ').trim()
-          
+
           // If we removed base64, add placeholder
           if (beforeBase64 || afterBase64) {
             cleanContent = [beforeBase64, placeholder, afterBase64].filter(Boolean).join(' ').trim()
           } else {
             cleanContent = placeholder
           }
-          
+
           // Continue searching from the start (since we modified the string)
           headerIndex = cleanContent.indexOf(header)
         } else {
