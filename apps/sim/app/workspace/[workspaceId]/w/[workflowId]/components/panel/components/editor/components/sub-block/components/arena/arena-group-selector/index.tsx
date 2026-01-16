@@ -431,7 +431,7 @@ export function ArenaGroupSelector({
               comboboxVariants(),
               'relative h-[32px] w-full cursor-pointer items-center justify-between'
             )}
-            disabled={disabled || !clientId || !projectId}
+            disabled={disabled || (!fieldAdvancedMode && (!clientId || !projectId))}
           >
             <span className='truncate'>{selectedLabel}</span>
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />

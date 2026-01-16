@@ -18,6 +18,7 @@ import {
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -80,7 +81,31 @@ function htmlToDisplayText(html: string): string {
     }
   })
 
-  return temp.textContent || temp.innerText || ''
+  // Get the text content, which will automatically decode HTML entities
+  const text = temp.textContent || temp.innerText || ''
+
+  // If the text contains HTML entities that weren't decoded, decode them manually
+  // This handles cases where the HTML was double-escaped
+  // textContent should already decode HTML entities, but handle edge cases
+  // where entities might be double-encoded
+  let decoded = text
+  let previousDecoded = ''
+  // Keep decoding until no more changes (handles multiple levels of encoding)
+  while (decoded !== previousDecoded) {
+    previousDecoded = decoded
+    decoded = decoded
+      .replace(/&amp;lt;/g, '<')
+      .replace(/&amp;gt;/g, '>')
+      .replace(/&amp;amp;/g, '&')
+      .replace(/&amp;quot;/g, '"')
+      .replace(/&amp;#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+  }
+  return decoded
 }
 
 /**
@@ -183,10 +208,10 @@ export function ArenaCommentInput({
   wandControlRef,
   hideInternalWand = false,
 }: ArenaCommentInputProps) {
+  // Local state for immediate UI updates during streaming
   const [localContent, setLocalContent] = React.useState<string>('')
-  const [displayText, setDisplayText] = React.useState<string>('')
-  const [htmlContent, setHtmlContent] = React.useState<string>('')
   const persistSubBlockValueRef = React.useRef<(value: string) => void>(() => {})
+  const hasInitializedRef = React.useRef(false)
 
   // Mention state
   const [showMentionMenu, setShowMentionMenu] = React.useState(false)
@@ -207,27 +232,22 @@ export function ArenaCommentInput({
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
   const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
 
-  // Wand functionality
+  // Wand functionality - use plain text for currentValue
   const wandHook = useWand({
     wandConfig: config.wandConfig,
-    currentValue: htmlContent,
+    currentValue: localContent,
     onStreamStart: () => {
       setLocalContent('')
-      setHtmlContent('')
-      setDisplayText('')
     },
     onStreamChunk: (chunk) => {
-      const newHtml = htmlContent + chunk
-      setHtmlContent(newHtml)
-      setLocalContent(newHtml)
-      setDisplayText(htmlToDisplayText(newHtml))
+      setLocalContent((current) => current + chunk)
     },
     onGeneratedContent: (content) => {
-      setHtmlContent(content)
       setLocalContent(content)
-      setDisplayText(htmlToDisplayText(content))
       if (!isPreview && !disabled) {
-        persistSubBlockValueRef.current(content)
+        // Convert plain text to HTML before persisting
+        const html = textToHtml(content, mentionsMap.current)
+        persistSubBlockValueRef.current(html)
       }
     },
   })
@@ -270,54 +290,59 @@ export function ArenaCommentInput({
 
   const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
 
-  // Initialize from prop value
+  // During streaming, use local content; otherwise use the controller value (like long-input)
+  const value = React.useMemo(() => {
+    if (wandHook.isStreaming) return localContent
+    return ctrl.valueString
+  }, [wandHook.isStreaming, localContent, ctrl.valueString])
+
+  // Base value for syncing (not including streaming)
+  const baseValue = isPreview
+    ? previewValue
+    : propValue !== undefined
+      ? propValue
+      : ctrl.valueString
+
+  // Convert HTML to plain text on initial load only (once)
   React.useEffect(() => {
-    if (!wandHook.isStreaming) {
-      const baseValue = isPreview
-        ? previewValue
-        : propValue !== undefined
-          ? propValue
-          : ctrl.valueString
-
+    if (!wandHook.isStreaming && baseValue !== undefined && !hasInitializedRef.current) {
       const baseValueString = baseValue?.toString() ?? ''
-
-      // Only update if the value has actually changed
-      if (baseValueString !== htmlContent && baseValueString !== '') {
-        // Check if it's HTML (contains mention tags) or plain text
+      if (baseValueString) {
+        // Check if it's HTML (contains mention tags or HTML tags)
         const isHtml =
           baseValueString.includes('<a class="mention"') ||
-          baseValueString.includes("class='mention'")
+          baseValueString.includes("class='mention'") ||
+          (baseValueString.includes('<p>') && baseValueString.includes('</p>'))
 
         if (isHtml) {
-          // It's HTML, store it as-is and convert to display text
-          setHtmlContent(baseValueString)
-          setLocalContent(baseValueString)
-          setDisplayText(htmlToDisplayText(baseValueString))
+          // It's HTML from storage, convert to plain text for the controller
+          const plainText = htmlToDisplayText(baseValueString)
+          // Update controller with plain text (this will update ctrl.valueString)
+          if (plainText !== ctrl.valueString && !isPreview && !disabled && onChange) {
+            onChange(plainText)
+          }
         } else {
-          // It's plain text, convert to HTML if we have users loaded
-          if (mentionsMap.current.size > 0 && baseValueString.includes('@')) {
-            const convertedHtml = textToHtml(baseValueString, mentionsMap.current)
-            setHtmlContent(convertedHtml)
-            setLocalContent(convertedHtml)
-            setDisplayText(baseValueString)
-            // Persist the converted HTML
-            if (!isPreview && !disabled) {
-              persistSubBlockValueRef.current(convertedHtml)
-            }
-          } else {
-            // No users loaded yet or no mentions, store as plain text wrapped in <p> tags
-            const plainHtml = baseValueString
-              .split('\n')
-              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-              .join('')
-            setHtmlContent(plainHtml)
-            setLocalContent(plainHtml)
-            setDisplayText(baseValueString)
+          // It's already plain text, just use it as-is
+          if (baseValueString !== ctrl.valueString && !isPreview && !disabled && onChange) {
+            onChange(baseValueString)
           }
         }
+        hasInitializedRef.current = true
+      } else {
+        hasInitializedRef.current = true
       }
     }
-  }, [isPreview, previewValue, propValue, ctrl.valueString, wandHook.isStreaming])
+  }, [baseValue, wandHook.isStreaming, isPreview, disabled, ctrl.valueString, onChange])
+
+  // Sync local content with base value when not streaming
+  React.useEffect(() => {
+    if (!wandHook.isStreaming) {
+      const baseValueString = baseValue?.toString() ?? ''
+      if (baseValueString !== localContent) {
+        setLocalContent(baseValueString)
+      }
+    }
+  }, [baseValue, wandHook.isStreaming]) // Removed localContent to prevent infinite loop
 
   // Fetch users when project is selected
   React.useEffect(() => {
@@ -365,69 +390,56 @@ export function ArenaCommentInput({
     fetchUsers()
   }, [clientId, projectId])
 
-  // Re-convert display text to HTML when users are loaded (if we have plain text mentions)
+  // Convert plain text (value) to HTML when persisting (debounced to avoid too many updates)
   React.useEffect(() => {
-    if (mentionsMap.current.size > 0 && displayText && displayText.includes('@')) {
-      const newHtml = textToHtml(displayText, mentionsMap.current)
-      // Only update if the HTML actually contains mention tags (meaning conversion worked)
-      if (newHtml !== htmlContent && newHtml.includes('class="mention"')) {
-        setHtmlContent(newHtml)
-        setLocalContent(newHtml)
-        // Update the stored value with the new HTML
-        if (!isPreview && !disabled) {
-          persistSubBlockValueRef.current(newHtml)
-        }
+    if (wandHook.isStreaming || isPreview || disabled) return
+
+    const timeoutId = setTimeout(() => {
+      if (!value) {
+        return
       }
-    }
-  }, [users.length, displayText]) // Re-run when users are loaded or display text changes
+
+      // Only convert to HTML if there are mentions
+      // Otherwise, store as plain text to avoid double-escaping
+      const newHtml =
+        mentionsMap.current.size > 0 && value.includes('@')
+          ? textToHtml(value, mentionsMap.current)
+          : value // Store as plain text if no mentions
+
+      // Persist the value (HTML if mentions exist, plain text otherwise)
+      persistSubBlockValueRef.current(newHtml)
+    }, 300) // Debounce by 300ms
+
+    return () => clearTimeout(timeoutId)
+  }, [value, isPreview, disabled, wandHook.isStreaming, users.length])
 
   // Handle text change and detect @ mentions
-  const handleTextChange = React.useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newDisplayText = e.target.value
-      setDisplayText(newDisplayText)
+  const handleTextChange = React.useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
 
-      // Convert display text to HTML (only if we have users loaded)
-      const newHtml =
-        mentionsMap.current.size > 0
-          ? textToHtml(newDisplayText, mentionsMap.current)
-          : newDisplayText
-              .split('\n')
-              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-              .join('')
-      setHtmlContent(newHtml)
-      setLocalContent(newHtml)
+    // Check for @ mention
+    const cursorPos = e.target.selectionStart ?? newValue.length
+    const textBeforeCursor = newValue.substring(0, cursorPos)
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@')
 
-      // Update the actual value (HTML)
-      if (!isPreview && !disabled) {
-        persistSubBlockValueRef.current(newHtml)
+    if (lastAtIndex !== -1) {
+      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
+
+      // Check if we're in a mention (no space after @ and not already a complete mention)
+      const isInMention =
+        !textAfterAt.includes(' ') && !textAfterAt.includes('\n') && textAfterAt.length >= 0
+
+      if (isInMention) {
+        setMentionQuery(textAfterAt)
+        setMentionPosition(lastAtIndex)
+        setShowMentionMenu(true)
+        setSelectedMentionIndex(0)
+        return
       }
+    }
 
-      // Check for @ mention
-      const cursorPos = e.target.selectionStart ?? newDisplayText.length
-      const textBeforeCursor = newDisplayText.substring(0, cursorPos)
-      const lastAtIndex = textBeforeCursor.lastIndexOf('@')
-
-      if (lastAtIndex !== -1) {
-        const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
-
-        // Check if we're in a mention (no space after @ and not already a complete mention)
-        const isInMention =
-          !textAfterAt.includes(' ') && !textAfterAt.includes('\n') && textAfterAt.length >= 0
-
-        if (isInMention) {
-          setMentionQuery(textAfterAt)
-          setMentionPosition(lastAtIndex)
-          setShowMentionMenu(true)
-          setSelectedMentionIndex(0)
-          return
-        }
-      }
-
-      setShowMentionMenu(false)
-    },
-    [isPreview, disabled]
-  )
+    setShowMentionMenu(false)
+  }, [])
 
   // Filter users based on mention query
   const filteredUsers = React.useMemo(() => {
@@ -441,23 +453,15 @@ export function ArenaCommentInput({
       const textarea = textareaRef.current
       if (!textarea) return
 
-      const beforeMention = displayText.substring(0, mentionPosition)
-      const afterMention = displayText.substring(textarea.selectionStart ?? displayText.length)
+      const currentValue = value || ''
+      const beforeMention = currentValue.substring(0, mentionPosition)
+      const afterMention = currentValue.substring(textarea.selectionStart ?? currentValue.length)
 
-      const newDisplayText = `${beforeMention}@${user.name} ${afterMention}`
-      setDisplayText(newDisplayText)
+      const newValue = `${beforeMention}@${user.name} ${afterMention}`
 
-      // Convert to HTML (users should be loaded at this point)
-      const newHtml = textToHtml(newDisplayText, mentionsMap.current)
-      setHtmlContent(newHtml)
-      setLocalContent(newHtml)
-
-      // Update value - ensure HTML is persisted immediately
-      if (!isPreview && !disabled) {
-        // Use setTimeout to ensure state updates are complete before persisting
-        setTimeout(() => {
-          persistSubBlockValueRef.current(newHtml)
-        }, 0)
+      // Update the controller value (plain text)
+      if (!isPreview && !disabled && onChange) {
+        onChange(newValue)
       }
 
       setShowMentionMenu(false)
@@ -470,7 +474,7 @@ export function ArenaCommentInput({
         textarea.setSelectionRange(newCursorPosition, newCursorPosition)
       }, 0)
     },
-    [displayText, mentionPosition, isPreview, disabled]
+    [value, mentionPosition, isPreview, disabled, onChange]
   )
 
   // Handle keyboard navigation in mention menu
@@ -518,7 +522,8 @@ export function ArenaCommentInput({
       const scrollTop = textarea.scrollTop
 
       // Calculate position based on cursor
-      const textBeforeCursor = displayText.substring(0, mentionPosition)
+      const currentValue = value || ''
+      const textBeforeCursor = currentValue.substring(0, mentionPosition)
       const lines = textBeforeCursor.split('\n')
       const lineNumber = lines.length - 1
       const lineHeight = ROW_HEIGHT_PX
@@ -536,7 +541,7 @@ export function ArenaCommentInput({
     } else {
       setMentionMenuPosition(null)
     }
-  }, [showMentionMenu, mentionPosition, displayText])
+  }, [showMentionMenu, mentionPosition, value])
 
   // Close mention menu when clicking outside
   React.useEffect(() => {
@@ -564,17 +569,6 @@ export function ArenaCommentInput({
       document.removeEventListener('mousedown', handleClickOutside, true)
     }
   }, [showMentionMenu])
-
-  const value = React.useMemo(() => {
-    if (wandHook.isStreaming) return displayText
-    return displayText
-  }, [wandHook.isStreaming, displayText])
-
-  const baseValue = isPreview
-    ? previewValue
-    : propValue !== undefined
-      ? propValue
-      : ctrl.valueString
 
   React.useLayoutEffect(() => {
     const rowCount = rows || DEFAULT_ROWS
@@ -693,8 +687,10 @@ export function ArenaCommentInput({
           }
 
           const combinedOnChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-            handleTextChange(e)
+            // First, let the controller handle the change (for tag insertion, etc.)
             handleChange?.(e as any)
+            // Then handle mentions
+            handleTextChange(e)
           }
 
           return (
@@ -737,7 +733,10 @@ export function ArenaCommentInput({
                   height: `${height}px`,
                 }}
               >
-                {value}
+                {formatDisplayText(value, {
+                  accessiblePrefixes,
+                  highlightAll: !accessiblePrefixes,
+                })}
               </div>
 
               {/* Mention Menu */}

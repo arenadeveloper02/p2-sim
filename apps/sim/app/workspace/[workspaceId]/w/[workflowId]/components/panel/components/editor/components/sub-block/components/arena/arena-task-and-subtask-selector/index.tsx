@@ -354,7 +354,12 @@ export function ArenaTaskAndSubtaskSelector({
                       setTimeout(() => setAdvancedModeOpen(false), 200)
                     }}
                     placeholder='Enter task name, ID, or variable like <block.task_id>'
-                    disabled={disabled || isPreview || !clientId || !projectId || loading}
+                    disabled={
+                      disabled ||
+                      isPreview ||
+                      (!fieldAdvancedMode && (!clientId || !projectId)) ||
+                      loading
+                    }
                     onDrop={onDrop as (e: React.DragEvent<HTMLInputElement>) => void}
                     onDragOver={onDragOver as (e: React.DragEvent<HTMLInputElement>) => void}
                     onScroll={handleScroll}
@@ -426,7 +431,7 @@ export function ArenaTaskAndSubtaskSelector({
               'relative h-[32px] w-full cursor-pointer items-center justify-between',
               layout === 'half' ? 'max-w-md' : 'w-full'
             )}
-            disabled={disabled || !clientId || !projectId || loading}
+            disabled={disabled || (!fieldAdvancedMode && (!clientId || !projectId)) || loading}
           >
             <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
               {loading ? 'Loading...' : selectedLabel}

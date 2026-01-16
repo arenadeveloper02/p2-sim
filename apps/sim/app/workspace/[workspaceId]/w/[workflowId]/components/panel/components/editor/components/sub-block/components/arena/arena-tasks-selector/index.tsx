@@ -432,7 +432,7 @@ export function ArenaTaskSelector({
               'relative h-[32px] w-full cursor-pointer items-center justify-between',
               layout === 'half' ? 'max-w-md' : 'w-full'
             )}
-            disabled={disabled || !projectId}
+            disabled={disabled || (!fieldAdvancedMode && !projectId)}
           >
             <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
               {selectedLabel}

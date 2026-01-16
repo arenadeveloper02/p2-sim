@@ -426,7 +426,7 @@ export function ArenaProjectSelector({
               comboboxVariants(),
               'relative h-[32px] w-full cursor-pointer items-center justify-between'
             )}
-            disabled={disabled || !clientId} // Disable if no client selected
+            disabled={disabled || (!fieldAdvancedMode && !clientId)} // Disable if no client selected (unless in advanced mode)
           >
             <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
               {selectedLabel}
