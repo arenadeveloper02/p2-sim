@@ -890,11 +890,32 @@ function AuthSelector({
   }
 
   const handleRemoveEmailItem = (_value: string, index: number, isValid: boolean) => {
+    setEmailError('')
     const itemToRemove = emailItems[index]
+    if (!itemToRemove) return
+    
+    const emailToRemove = itemToRemove.value.toLowerCase().trim()
+    
+    // Remove from emailItems
     setEmailItems((prev) => prev.filter((_, i) => i !== index))
-    if (isValid && itemToRemove) {
-      onEmailsChange(emails.filter((e) => e !== itemToRemove.value))
+    
+    // Remove from emails if it was valid
+    if (isValid) {
+      onEmailsChange(emails.filter((e) => e.toLowerCase().trim() !== emailToRemove))
     }
+    
+    // Also remove from invalidEmails and emailValidationErrors to prevent re-adding
+    setInvalidEmails((prev) => prev.filter((e) => e.toLowerCase().trim() !== emailToRemove))
+    setEmailValidationErrors((prev) => {
+      const next = new Map(prev)
+      // Remove any entries that match this email (case-insensitive)
+      for (const [key] of Array.from(next.entries())) {
+        if (typeof key === 'string' && key.toLowerCase().trim() === emailToRemove) {
+          next.delete(key)
+        }
+      }
+      return next
+    })
   }
 
   const handleRemoveEmail = (emailToRemove: string) => {

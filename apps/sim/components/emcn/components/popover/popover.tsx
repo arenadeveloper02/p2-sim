@@ -66,7 +66,7 @@ type PopoverVariant = 'default' | 'secondary'
 const STYLES = {
   /** Base classes shared by all interactive items */
   itemBase:
-    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base text-[var(--text-muted)] disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
+    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
 
   /** Content container */
   content: 'px-[6px] py-[6px] rounded-[6px]',
@@ -120,8 +120,8 @@ const STYLES = {
         'hover:bg-[var(--border-1)] hover:text-[var(--text-primary)] hover:[&_svg]:text-[var(--text-primary)]',
     },
     secondary: {
-      active: 'bg-[var(--brand-secondary)]  [&_svg]:',
-      hover: 'hover:bg-[var(--brand-secondary)] hover: hover:[&_svg]:',
+      active: 'bg-[var(--brand-secondary)] text-white dark:text-black [&_svg]:text-white [&_svg]:dark:text-black',
+      hover: 'hover:bg-[var(--brand-secondary)] hover:text-white hover:dark:text-black hover:[&_svg]:text-white',
     },
     inverted: {
       active:
