@@ -247,10 +247,11 @@ export function WorkspaceHeader({
   }
 
   /**
-   * Close context menu
+   * Close context menu and the workspace dropdown
    */
   const closeContextMenu = () => {
     setIsContextMenuOpen(false)
+    setIsWorkspaceMenuOpen(false)
   }
 
   /**

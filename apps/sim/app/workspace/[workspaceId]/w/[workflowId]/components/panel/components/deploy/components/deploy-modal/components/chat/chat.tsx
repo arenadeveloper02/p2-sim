@@ -493,7 +493,7 @@ export function ChatDeploy({
             >
               Cancel
             </Button>
-            <Button variant='destructive' onClick={handleDelete} disabled={isDeleting}>
+            <Button variant='default' onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </ModalFooter>
@@ -610,7 +610,8 @@ function IdentifierInput({
             </div>
           ) : (
             isValid &&
-            value && (
+            value &&
+            value !== originalIdentifier && (
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <div className='-translate-y-1/2 absolute top-1/2 right-2'>

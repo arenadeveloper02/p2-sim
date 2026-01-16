@@ -12,7 +12,7 @@ import {
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useFolders } from '@/hooks/queries/folders'
-import { useDashboardLogs, useLogDetail, useLogsList } from '@/hooks/queries/logs'
+import { useDashboardStats, useLogDetail, useLogsList } from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
@@ -133,7 +133,7 @@ export default function Logs() {
     [timeRange, startDate, endDate, level, workflowIds, folderIds, triggers, debouncedSearchQuery]
   )
 
-  const dashboardLogsQuery = useDashboardLogs(workspaceId, dashboardFilters, {
+  const dashboardStatsQuery = useDashboardStats(workspaceId, dashboardFilters, {
     enabled: Boolean(workspaceId) && isInitialized.current,
     refetchInterval: isLive ? 5000 : false,
   })
@@ -462,9 +462,9 @@ export default function Logs() {
             className={cn('flex min-h-0 flex-1 flex-col pr-[24px]', !isDashboardView && 'hidden')}
           >
             <Dashboard
-              logs={dashboardLogsQuery.data ?? []}
-              isLoading={!dashboardLogsQuery.data}
-              error={dashboardLogsQuery.error}
+              stats={dashboardStatsQuery.data}
+              isLoading={dashboardStatsQuery.isLoading}
+              error={dashboardStatsQuery.error}
             />
           </div>
 

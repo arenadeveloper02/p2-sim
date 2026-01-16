@@ -8,6 +8,7 @@ import {
   extractFieldsFromSchema,
   parseResponseFormatSafely,
 } from '@/lib/core/utils/response-format'
+import { getToolOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { getBlock } from '@/blocks'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -134,6 +135,10 @@ export function OutputSelect({
           ? baselineWorkflow.blocks?.[block.id]?.subBlocks?.responseFormat?.value
           : subBlockValues?.[block.id]?.responseFormat
       const responseFormat = parseResponseFormatSafely(responseFormatValue, block.id)
+      const operationValue =
+        shouldUseBaseline && baselineWorkflow
+          ? baselineWorkflow.blocks?.[block.id]?.subBlocks?.operation?.value
+          : subBlockValues?.[block.id]?.operation
 
       let outputsToProcess: Record<string, unknown> = {}
 
@@ -147,7 +152,12 @@ export function OutputSelect({
           outputsToProcess = blockConfig?.outputs || {}
         }
       } else {
-        outputsToProcess = blockConfig?.outputs || {}
+        const toolOutputs =
+          blockConfig && typeof operationValue === 'string'
+            ? getToolOutputs(blockConfig, operationValue)
+            : {}
+        outputsToProcess =
+          Object.keys(toolOutputs).length > 0 ? toolOutputs : blockConfig?.outputs || {}
       }
 
       if (Object.keys(outputsToProcess).length === 0) return
