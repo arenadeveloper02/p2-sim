@@ -1003,26 +1003,26 @@ function SubBlockComponent({
   return (
     <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-[10px]'>
       <div className='flex items-center justify-between gap-[6px]'>
-        {renderLabel(
-          config,
-          isValidJson,
-          {
-            isSearchActive,
-            searchQuery,
-            isWandEnabled,
-            isPreview,
-            isStreaming: wandControlRef.current?.isWandStreaming ?? false,
-            disabled: isDisabled,
-            onSearchClick: handleSearchClick,
-            onSearchBlur: handleSearchBlur,
-            onSearchChange: handleSearchChange,
-            onSearchSubmit: handleSearchSubmit,
-            onSearchCancel: handleSearchCancel,
-            searchInputRef,
-          },
+      {renderLabel(
+        config,
+        isValidJson,
+        {
+          isSearchActive,
+          searchQuery,
+          isWandEnabled,
+          isPreview,
+          isStreaming: wandControlRef.current?.isWandStreaming ?? false,
+          disabled: isDisabled,
+          onSearchClick: handleSearchClick,
+          onSearchBlur: handleSearchBlur,
+          onSearchChange: handleSearchChange,
+          onSearchSubmit: handleSearchSubmit,
+          onSearchCancel: handleSearchCancel,
+          searchInputRef,
+        },
           blockId,
-          subBlockValues
-        )}
+        subBlockValues
+      )}
         {/* Per-field advanced mode toggle - positioned to the right */}
         {config.advancedModeSupported && !isPreview && (
           <Tooltip.Root>

@@ -239,20 +239,20 @@ export function ArenaStatesSelector({
               <CommandGroup>
                 {Array.isArray(states) && states.length > 0
                   ? states.map((state) => (
-                      <CommandItem
-                        key={state.id}
-                        value={state.name}
-                        onSelect={() => handleSelect(state.name)}
-                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                      >
-                        {state.name}
-                        <Check
-                          className={cn(
-                            'ml-auto h-4 w-4',
-                            selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
-                          )}
-                        />
-                      </CommandItem>
+                  <CommandItem
+                    key={state.id}
+                    value={state.name}
+                    onSelect={() => handleSelect(state.name)}
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                  >
+                    {state.name}
+                    <Check
+                      className={cn(
+                        'ml-auto h-4 w-4',
+                        selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                  </CommandItem>
                     ))
                   : null}
               </CommandGroup>

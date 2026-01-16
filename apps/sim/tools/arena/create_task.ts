@@ -73,9 +73,13 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
     },
     body: async (params: ArenaCreateTaskParams) => {
       // Dynamic import to avoid client-side bundling issues
-      const { resolveAssigneeId, resolveClientId, resolveGroupId, resolveProjectId } = await import(
-        './utils/resolve-ids'
-      )
+      const {
+        resolveAssigneeId,
+        resolveClientId,
+        resolveGroupId,
+        resolveProjectId,
+        resolveTaskId,
+      } = await import('./utils/resolve-ids')
 
       const today = new Date()
       const nextWeekDay = new Date()
@@ -106,19 +110,14 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       if (!assigneeId) throw new Error('Missing required field: Assignee')
 
       let taskId: string | undefined
+      let groupId: string | undefined
       if (isTask) {
-        const groupId = await resolveGroupId(
-          params['task-group'] as any,
-          clientId,
-          projectId,
-          workflowId
-        )
+        // For create task, resolve group ID
+        groupId = await resolveGroupId(params['task-group'] as any, clientId, projectId, workflowId)
         if (!groupId) throw new Error('Missing required field: Task Group')
       } else {
-        taskId =
-          typeof params['task-task'] === 'string'
-            ? params['task-task']
-            : params['task-task']?.sysId || params['task-task']?.id
+        // For create subtask, resolve task ID (supports name/id from advanced mode or variables)
+        taskId = await resolveTaskId(params['task-task'] as any, clientId, projectId, workflowId)
         if (!taskId) throw new Error('Missing required field: Task')
       }
 
@@ -135,12 +134,6 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
       }
 
       if (isTask) {
-        const groupId = await resolveGroupId(
-          params['task-group'] as any,
-          clientId,
-          projectId,
-          workflowId
-        )
         body.epicId = groupId
         body.epicName =
           typeof params['task-group'] === 'object' ? (params['task-group'] as any)?.name : undefined
