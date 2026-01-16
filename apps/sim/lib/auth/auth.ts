@@ -1896,7 +1896,21 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom`,
           getUserInfo: async (tokens) => {
             try {
-              logger.info('Fetching Zoom user profile')
+              // Validate access token exists
+              if (!tokens.accessToken) {
+                logger.error('Zoom getUserInfo: Missing access token', {
+                  hasRefreshToken: !!tokens.refreshToken,
+                  tokensKeys: Object.keys(tokens || {}),
+                })
+                throw new Error('Missing access token for Zoom API request')
+              }
+
+              logger.info('Fetching Zoom user profile', {
+                hasAccessToken: !!tokens.accessToken,
+                tokenLength: tokens.accessToken?.length || 0,
+                hasRefreshToken: !!tokens.refreshToken,
+                tokenPrefix: tokens.accessToken?.substring(0, 20) || 'N/A',
+              })
 
               const response = await fetch('https://api.zoom.us/v2/users/me', {
                 headers: {
@@ -1904,15 +1918,74 @@ export const auth = betterAuth({
                 },
               })
 
+              // Read response body before checking status (important for error details)
+              const responseText = await response.text()
+
               if (!response.ok) {
+                // Try to parse error response
+                let errorBody: any = {}
+                try {
+                  errorBody = JSON.parse(responseText)
+                } catch {
+                  errorBody = { raw: responseText }
+                }
+
+                // Get response headers for debugging
+                const responseHeaders: Record<string, string> = {}
+                response.headers.forEach((value, key) => {
+                  responseHeaders[key] = value
+                })
+
                 logger.error('Failed to fetch Zoom user info', {
                   status: response.status,
                   statusText: response.statusText,
+                  errorBody,
+                  responseText,
+                  responseHeaders,
+                  url: 'https://api.zoom.us/v2/users/me',
                 })
-                throw new Error('Failed to fetch user info')
+
+                // Throw error with detailed message
+                const errorMessage =
+                  errorBody.message || errorBody.error || errorBody.code || 'Unknown error'
+                throw new Error(
+                  `Zoom API error (${response.status}): ${errorMessage} - ${JSON.stringify(errorBody)}`
+                )
               }
 
-              const profile = await response.json()
+              // Parse successful response
+              let profile: any
+              try {
+                profile = JSON.parse(responseText)
+              } catch (parseError) {
+                logger.error('Failed to parse Zoom user profile response', {
+                  responseText,
+                  parseError: parseError instanceof Error ? parseError.message : String(parseError),
+                })
+                throw new Error('Invalid JSON response from Zoom API')
+              }
+
+              // Validate required fields
+              if (!profile || typeof profile !== 'object') {
+                logger.error('Zoom profile is not a valid object', { profile })
+                throw new Error('Zoom profile is not a valid object')
+              }
+
+              if (!profile.id) {
+                logger.error('Zoom profile missing required id field', {
+                  profile,
+                  profileKeys: Object.keys(profile || {}),
+                })
+                throw new Error('Zoom profile missing required id field')
+              }
+
+              logger.info('Successfully fetched Zoom user profile', {
+                userId: profile.id,
+                email: profile.email,
+                firstName: profile.first_name,
+                lastName: profile.last_name,
+                verified: profile.verified,
+              })
 
               return {
                 id: profile.id,
@@ -1925,7 +1998,12 @@ export const auth = betterAuth({
                 updatedAt: new Date(),
               }
             } catch (error) {
-              logger.error('Error in Zoom getUserInfo:', { error })
+              logger.error('Error in Zoom getUserInfo:', {
+                error,
+                errorMessage: error instanceof Error ? error.message : String(error),
+                errorStack: error instanceof Error ? error.stack : undefined,
+                errorName: error instanceof Error ? error.name : typeof error,
+              })
               return null
             }
           },
