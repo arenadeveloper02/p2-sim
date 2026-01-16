@@ -255,14 +255,8 @@ export class LoopOrchestrator {
 
     // Verify all nodes inside the loop have completed before allowing continuation
     // This is critical for nested loops - the outer loop should wait for inner loops to complete all iterations
-    // The sentinel end only executes when all nodes before it have completed, but for nested loops,
-    // we need to ensure the inner loop has completed ALL iterations, not just one iteration
     const allNodesCompleted = this.hasAllLoopNodesCompleted(ctx, loopId)
     if (!allNodesCompleted) {
-      logger.info('Loop continuation blocked - nested loop has not completed all iterations', {
-        loopId,
-        iteration: scope.iteration,
-      })
       // Block continuation but don't exit - this will prevent the loop from continuing
       // until nested loops complete. The execution will wait for nested loops to finish.
       return {
@@ -352,11 +346,6 @@ export class LoopOrchestrator {
 
               if (nestedLoopCompleted) {
                 // Nested loop has completed - re-trigger parent loop's sentinel end
-                logger.info('Re-triggering parent loop sentinel end after nested loop completion', {
-                  parentLoopId,
-                  nestedLoopId,
-                })
-
                 // Unmark the sentinel end so it can execute again
                 this.state.unmarkExecuted(parentSentinelEndId)
 
@@ -389,12 +378,6 @@ export class LoopOrchestrator {
         const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
 
         if (nestedScope) {
-          logger.info('Resetting nested loop scope for new outer loop iteration', {
-            outerLoopId,
-            nestedLoopId,
-            completedIterations: nestedScope.allIterationOutputs.length,
-          })
-
           // Clear execution state for all nodes in the nested loop
           this.clearLoopExecutionState(nestedLoopId)
 
@@ -704,12 +687,6 @@ export class LoopOrchestrator {
     const sentinelEndId = buildSentinelEndId(loopId)
     const loopNodes = loopConfig.nodes || []
 
-    logger.info('Checking if all loop nodes have completed', {
-      loopId,
-      nodeCount: loopNodes.length,
-      sentinelEndId,
-    })
-
     // Check all nodes in the loop have been executed (excluding the sentinel end itself)
     for (const nodeId of loopNodes) {
       // Skip the sentinel end node - we're evaluating from within it
@@ -720,23 +697,11 @@ export class LoopOrchestrator {
       // Check if this "node" is actually a nested loop ID
       // Loop configs may contain loop IDs in the nodes array for nested loops
       const isNestedLoopId = this.dag.loopConfigs.has(nodeId)
-      logger.info('Checking if node is nested loop', {
-        loopId,
-        nodeId,
-        isNestedLoopId,
-        loopConfigsKeys: Array.from(this.dag.loopConfigs.keys()),
-      })
 
       if (isNestedLoopId) {
         // This is a nested loop - check if it has completed all iterations
         const nestedLoopId = nodeId
         const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
-        logger.info('Nested loop scope check', {
-          loopId,
-          nestedLoopId,
-          scopeExists: !!nestedScope,
-          allScopes: ctx.loopExecutions ? Array.from(ctx.loopExecutions.keys()) : [],
-        })
 
         if (nestedScope) {
           const nestedLoopConfig = this.dag.loopConfigs.get(nestedLoopId) as
@@ -756,17 +721,6 @@ export class LoopOrchestrator {
               const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
               const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
 
-              logger.info('Checking nested loop completion (from loop ID)', {
-                loopId,
-                nestedLoopId,
-                completedIterations,
-                expectedIterations,
-                iteration: nestedScope.iteration,
-                sentinelEndExecuted: nestedSentinelEndExecuted,
-                sentinelEndShouldExit: nestedSentinelEndOutput?.shouldExit,
-                loopType: nestedScope.loopType,
-              })
-
               // The nested loop is complete if:
               // 1. All iterations are recorded in allIterationOutputs (most reliable check), OR
               // 2. The sentinel end has executed AND has shouldExit: true (loop has exited)
@@ -775,24 +729,8 @@ export class LoopOrchestrator {
                 (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true)
 
               if (!isComplete) {
-                logger.info('Nested loop has not completed all iterations (from loop ID)', {
-                  loopId,
-                  nestedLoopId,
-                  completedIterations,
-                  expectedIterations,
-                  iteration: nestedScope.iteration,
-                  sentinelEndExecuted: nestedSentinelEndExecuted,
-                  sentinelEndShouldExit: nestedSentinelEndOutput?.shouldExit,
-                })
                 return false
               }
-
-              logger.info('Nested loop has completed all iterations (from loop ID)', {
-                loopId,
-                nestedLoopId,
-                completedIterations,
-                expectedIterations,
-              })
             }
           }
         } else {
@@ -804,22 +742,8 @@ export class LoopOrchestrator {
 
           if (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true) {
             // Loop has completed (exited) - allow continuation
-            logger.info(
-              'Nested loop has completed (exited) but scope not found - allowing continuation',
-              {
-                loopId,
-                nestedLoopId: nodeId,
-              }
-            )
-            // Continue to next node
           } else {
             // Loop hasn't started or hasn't completed yet - we should wait
-            logger.info('Nested loop has not completed yet - waiting', {
-              loopId,
-              nestedLoopId: nodeId,
-              sentinelEndExecuted: nestedSentinelEndExecuted,
-              sentinelEndShouldExit: nestedSentinelEndOutput?.shouldExit,
-            })
             return false
           }
         }
@@ -827,90 +751,11 @@ export class LoopOrchestrator {
       }
 
       // This is a regular node - check if it has executed
-      const hasExecuted = this.state.hasExecuted(nodeId)
-      if (!hasExecuted) {
-        logger.info('Loop node not yet executed', { loopId, nodeId, hasExecuted })
+      if (!this.state.hasExecuted(nodeId)) {
         return false
-      }
-
-      // Check if this node is a nested loop's sentinel end
-      // If it is, we need to verify that nested loop has also completed all its iterations
-      const node = this.dag.nodes.get(nodeId)
-      if (node?.metadata.isSentinel && node.metadata.sentinelType === 'end') {
-        const nestedLoopId = node.metadata.loopId
-        if (nestedLoopId && nestedLoopId !== loopId) {
-          // This is a nested loop's sentinel end
-          // Verify the nested loop has completed all its iterations
-          const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
-          if (nestedScope) {
-            const nestedLoopConfig = this.dag.loopConfigs.get(nestedLoopId) as
-              | LoopConfigWithNodes
-              | undefined
-            if (nestedLoopConfig) {
-              const expectedIterations =
-                nestedScope.loopType === 'for'
-                  ? nestedScope.maxIterations
-                  : nestedScope.loopType === 'forEach'
-                    ? nestedScope.items?.length
-                    : undefined
-
-              if (expectedIterations !== undefined) {
-                const completedIterations = nestedScope.allIterationOutputs.length
-                const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
-                const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
-                const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
-
-                logger.info('Checking nested loop completion', {
-                  loopId,
-                  nestedLoopId,
-                  completedIterations,
-                  expectedIterations,
-                  iteration: nestedScope.iteration,
-                  sentinelEndExecuted: nestedSentinelEndExecuted,
-                  sentinelEndShouldExit: nestedSentinelEndOutput?.shouldExit,
-                  loopType: nestedScope.loopType,
-                })
-
-                // The nested loop is complete if:
-                // 1. All iterations are recorded in allIterationOutputs (most reliable check), OR
-                // 2. The sentinel end has executed AND has shouldExit: true (loop has exited)
-                //    Note: The sentinel end executes once per iteration, so we need to check
-                //    if it has exited, not just if it has executed
-                const isComplete =
-                  completedIterations >= expectedIterations ||
-                  (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true)
-
-                if (!isComplete) {
-                  logger.info('Nested loop has not completed all iterations', {
-                    loopId,
-                    nestedLoopId,
-                    completedIterations,
-                    expectedIterations,
-                    iteration: nestedScope.iteration,
-                    sentinelEndExecuted: nestedSentinelEndExecuted,
-                    sentinelEndShouldExit: nestedSentinelEndOutput?.shouldExit,
-                  })
-                  return false
-                }
-
-                logger.info('Nested loop has completed all iterations', {
-                  loopId,
-                  nestedLoopId,
-                  completedIterations,
-                  expectedIterations,
-                })
-              }
-            } else {
-              logger.warn('Nested loop config not found', { nestedLoopId })
-            }
-          } else {
-            logger.warn('Nested loop scope not found', { nestedLoopId })
-          }
-        }
       }
     }
 
-    logger.info('All loop nodes have completed', { loopId })
     return true
   }
 }

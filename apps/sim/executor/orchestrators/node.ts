@@ -166,7 +166,6 @@ export class NodeExecutionOrchestrator {
         // If shouldExit is false, the loop is waiting for nested loops to complete
         // Don't exit yet - the nested loop will re-trigger this sentinel end when it completes
         if (!continuationResult.shouldExit) {
-          logger.info('Loop sentinel end waiting for nested loops to complete', { loopId })
           return {
             shouldContinue: false,
             shouldExit: false,
