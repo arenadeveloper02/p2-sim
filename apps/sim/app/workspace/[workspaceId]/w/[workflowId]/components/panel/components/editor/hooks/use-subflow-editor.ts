@@ -37,7 +37,7 @@ const SUBFLOW_CONFIG = {
     typeLabels: { count: 'Parallel Count', collection: 'Parallel Each' },
     typeKey: 'parallelType' as const,
     storeKey: 'parallels' as const,
-    maxIterations: 20,
+    maxIterations: 500,
     configKeys: {
       iterations: 'count' as const,
       items: 'distribution' as const,
