@@ -23,43 +23,12 @@ export class EdgeManager {
 
     // First pass: categorize edges as activating or deactivating
     // Don't modify incomingEdges yet - we need the original state for deactivation checks
-    // Debug: Log output for sentinel-end nodes
-    if (node.metadata.isSentinel && node.metadata.sentinelType === 'end') {
-      logger.info('Processing edges for sentinel-end node', {
-        nodeId: node.id,
-        outgoingEdgesCount: node.outgoingEdges.size,
-        outputShouldExit: output?.shouldExit,
-        outputSelectedRoute: output?.selectedRoute,
-        outputKeys: output ? Object.keys(output) : [],
-      })
-    }
-
     for (const [edgeId, edge] of node.outgoingEdges) {
       if (skipBackwardsEdge && this.isBackwardsEdge(edge.sourceHandle)) {
         continue
       }
 
-      // Debug logging for sentinel-end nodes
-      if (node.metadata.isSentinel && node.metadata.sentinelType === 'end') {
-        logger.info('Checking edge from sentinel-end', {
-          sourceNodeId: node.id,
-          targetNodeId: edge.target,
-          edgeHandle: edge.sourceHandle,
-          outputShouldExit: output?.shouldExit,
-          outputSelectedRoute: output?.selectedRoute,
-        })
-      }
-
       const shouldActivate = this.shouldActivateEdge(edge, output, node, ctx)
-
-      // Debug logging for sentinel-end nodes when edge activates
-      if (node.metadata.isSentinel && node.metadata.sentinelType === 'end' && shouldActivate) {
-        logger.info('Edge from sentinel-end activated', {
-          sourceNodeId: node.id,
-          targetNodeId: edge.target,
-          edgeHandle: edge.sourceHandle,
-        })
-      }
 
       if (!shouldActivate) {
         const isLoopEdge =
@@ -102,17 +71,6 @@ export class EdgeManager {
 
       const isReady = this.isNodeReady(targetNode)
 
-      // Debug logging for sentinel-end targets
-      if (node.metadata.isSentinel && node.metadata.sentinelType === 'end') {
-        logger.info('Checking readiness of target node from sentinel-end', {
-          sourceNodeId: node.id,
-          targetNodeId: targetId,
-          isReady,
-          incomingEdgesCount: targetNode.incomingEdges.size,
-          incomingEdges: Array.from(targetNode.incomingEdges),
-        })
-      }
-
       if (isReady) {
         readyNodes.push(targetId)
       }
@@ -127,17 +85,6 @@ export class EdgeManager {
     }
 
     const activeIncomingCount = this.countActiveIncomingEdges(node)
-
-    // Debug logging for nodes with incoming edges
-    if (activeIncomingCount > 0 || node.incomingEdges.size > 0) {
-      logger.info('Node readiness check', {
-        nodeId: node.id,
-        incomingEdgesCount: node.incomingEdges.size,
-        incomingEdges: Array.from(node.incomingEdges),
-        activeIncomingCount,
-        isReady: activeIncomingCount === 0,
-      })
-    }
 
     if (activeIncomingCount > 0) {
       return false
@@ -196,18 +143,7 @@ export class EdgeManager {
       // Only activate if both conditions are met:
       // 1. shouldExit is explicitly true (loop has actually exited)
       // 2. selectedRoute matches LOOP_EXIT (confirming this is an exit, not a continue)
-      const shouldActivate = output?.shouldExit === true && output?.selectedRoute === EDGE.LOOP_EXIT
-      if (!shouldActivate) {
-        logger.info('LOOP_EXIT edge blocked', {
-          sourceNodeId: sourceNode.id,
-          targetNodeId: edge.target,
-          shouldExit: output?.shouldExit,
-          selectedRoute: output?.selectedRoute,
-          expectedRoute: EDGE.LOOP_EXIT,
-          hasOutput: !!output,
-        })
-      }
-      return shouldActivate
+      return output?.shouldExit === true && output?.selectedRoute === EDGE.LOOP_EXIT
     }
 
     // CRITICAL: For LOOP_CONTINUE edges, only activate when selectedRoute is LOOP_CONTINUE
