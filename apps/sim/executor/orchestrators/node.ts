@@ -48,17 +48,33 @@ export class NodeExecutionOrchestrator {
       if (node.metadata.isSentinel && node.metadata.sentinelType === 'start') {
         const existingScope = this.loopOrchestrator.getLoopScope(ctx, loopId)
         if (existingScope) {
+          // Check if this is a nested forEach loop that was reset by resetNestedLoopScopes
+          // but needs re-initialization with fresh data. This happens when:
+          // - Loop is a forEach loop
+          // - Loop has items but iteration is 0 (was reset by outer loop)
+          // - Loop has completed previous iterations (allIterationOutputs not empty),
+          //   indicating it was reset mid-execution, not on first run
+          const isNestedForEachNeedingRefresh =
+            existingScope.loopType === 'forEach' &&
+            existingScope.items &&
+            existingScope.items.length > 0 &&
+            existingScope.iteration === 0 &&
+            existingScope.allIterationOutputs.length > 0 // Has completed iterations, so was reset
+
           const needsReset =
             (existingScope.loopType === 'for' &&
               existingScope.maxIterations !== undefined &&
               existingScope.allIterationOutputs.length >= existingScope.maxIterations) ||
             (existingScope.loopType === 'forEach' &&
               existingScope.items &&
-              existingScope.allIterationOutputs.length >= existingScope.items.length)
+              existingScope.allIterationOutputs.length >= existingScope.items.length) ||
+            isNestedForEachNeedingRefresh
 
           if (needsReset) {
             logger.info('Resetting nested loop scope for new outer loop iteration', {
               loopId,
+              loopType: existingScope.loopType,
+              isNestedForEachNeedingRefresh,
               completedIterations: existingScope.allIterationOutputs.length,
               maxIterations: existingScope.maxIterations || existingScope.items?.length,
             })
@@ -67,6 +83,7 @@ export class NodeExecutionOrchestrator {
             // Restore loop edges that may have been deactivated
             this.loopOrchestrator.restoreLoopEdges(loopId)
             // Re-initialize the loop scope with fresh state
+            // This will re-resolve forEach items (e.g., <api.results>) from current block outputs
             this.loopOrchestrator.initializeLoopScope(ctx, loopId)
           }
         }

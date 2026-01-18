@@ -384,8 +384,18 @@ export class LoopOrchestrator {
           // Restore loop edges that may have been deactivated
           this.restoreLoopEdges(nestedLoopId)
 
-          // Re-initialize the loop scope with fresh state
-          this.initializeLoopScope(ctx, nestedLoopId)
+          // For forEach loops, don't re-initialize here because block outputs
+          // (e.g., <api.results>) may not be updated yet. The loop will be
+          // re-initialized when its sentinel start node runs (after blocks have executed),
+          // which ensures it gets fresh data from the current outer loop iteration.
+          // For 'for' loops, re-initialize here as they don't depend on block outputs.
+          if (nestedScope.loopType !== 'forEach') {
+            // Re-initialize the loop scope with fresh state
+            this.initializeLoopScope(ctx, nestedLoopId)
+          }
+          // For forEach loops, we leave the scope as-is and let the sentinel start
+          // re-initialize it with fresh data when it runs. The execution state
+          // has been cleared above, so the loop will reset properly.
         }
       }
     }
