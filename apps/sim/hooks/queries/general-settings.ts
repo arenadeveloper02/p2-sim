@@ -25,6 +25,7 @@ export interface GeneralSettings {
   billingUsageNotificationsEnabled: boolean
   errorNotificationsEnabled: boolean
   snapToGridSize: number
+  showActionBar: boolean
 }
 
 /**
@@ -51,6 +52,7 @@ async function fetchGeneralSettings(): Promise<GeneralSettings> {
     billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled ?? true,
     errorNotificationsEnabled: data.errorNotificationsEnabled ?? true,
     snapToGridSize: data.snapToGridSize ?? 0,
+    showActionBar: data.showActionBar ?? true,
   }
 }
 
@@ -72,6 +74,7 @@ function syncSettingsToZustand(settings: GeneralSettings) {
     isBillingUsageNotificationsEnabled: settings.billingUsageNotificationsEnabled,
     isErrorNotificationsEnabled: settings.errorNotificationsEnabled,
     snapToGridSize: settings.snapToGridSize,
+    showActionBar: settings.showActionBar,
   }
 
   const hasChanges = Object.entries(newSettings).some(

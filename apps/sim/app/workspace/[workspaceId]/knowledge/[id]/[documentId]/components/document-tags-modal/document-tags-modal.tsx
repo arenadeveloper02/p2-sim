@@ -409,7 +409,7 @@ export function DocumentTagsModal({
 
   return (
     <Modal open={open} onOpenChange={handleClose}>
-      <ModalContent>
+      <ModalContent size='sm'>
         <ModalHeader>
           <div className='flex items-center justify-between'>
             <span>Document Tags</span>
@@ -503,7 +503,7 @@ export function DocumentTagsModal({
                           />
                         )}
                         {tagNameConflict && (
-                          <span className='text-[11px] text-[var(--text-error)]'>
+                          <span className='text-[12px] text-[var(--text-error)]'>
                             A tag with this name already exists
                           </span>
                         )}
@@ -656,7 +656,7 @@ export function DocumentTagsModal({
                       />
                     )}
                     {tagNameConflict && (
-                      <span className='text-[11px] text-[var(--text-error)]'>
+                      <span className='text-[12px] text-[var(--text-error)]'>
                         A tag with this name already exists
                       </span>
                     )}

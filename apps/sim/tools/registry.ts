@@ -1061,6 +1061,7 @@ import {
   posthogUpdateSurveyTool,
 } from '@/tools/posthog'
 import { createTool as presentationCreateTool } from '@/tools/presentation'
+import { pulseParserTool } from '@/tools/pulse'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import {
   rdsDeleteTool,
@@ -1085,6 +1086,7 @@ import {
   redditUnsaveTool,
   redditVoteTool,
 } from '@/tools/reddit'
+import { reductoParserTool } from '@/tools/reducto'
 import { mailSendTool } from '@/tools/resend'
 import {
   s3CopyObjectTool,
@@ -2167,6 +2169,7 @@ export const tools: Record<string, ToolConfig> = {
   google_slides_add_image: googleSlidesAddImageTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
+  pulse_parser: pulseParserTool,
   posthog_capture_event: posthogCaptureEventTool,
   posthog_batch_events: posthogBatchEventsTool,
   posthog_list_persons: posthogListPersonsTool,
@@ -2289,6 +2292,7 @@ export const tools: Record<string, ToolConfig> = {
   apollo_task_search: apolloTaskSearchTool,
   apollo_email_accounts: apolloEmailAccountsTool,
   mistral_parser: mistralParserTool,
+  reducto_parser: reductoParserTool,
   thinking_tool: thinkingTool,
   tinybird_events: tinybirdEventsTool,
   tinybird_query: tinybirdQueryTool,

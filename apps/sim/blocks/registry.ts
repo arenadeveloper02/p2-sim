@@ -97,9 +97,11 @@ import { PolymarketBlock } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
 import { PresentationBlock } from '@/blocks/blocks/presentation'
+import { PulseBlock } from '@/blocks/blocks/pulse'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
+import { ReductoBlock } from '@/blocks/blocks/reducto'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
 import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
@@ -247,6 +249,7 @@ export const registry: Record<string, BlockConfig> = {
   microsoft_planner: MicrosoftPlannerBlock,
   microsoft_teams: MicrosoftTeamsBlock,
   mistral_parse: MistralParseBlock,
+  reducto: ReductoBlock,
   mongodb: MongoDBBlock,
   mysql: MySQLBlock,
   neo4j: Neo4jBlock,
@@ -263,6 +266,7 @@ export const registry: Record<string, BlockConfig> = {
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
+  pulse: PulseBlock,
   qdrant: QdrantBlock,
   rds: RDSBlock,
   sqs: SQSBlock,
