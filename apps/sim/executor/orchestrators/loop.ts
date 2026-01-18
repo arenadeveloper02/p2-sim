@@ -686,6 +686,10 @@ export class LoopOrchestrator {
    * This includes checking nested loops - all nested loop sentinel end nodes must have completed.
    * Note: The sentinel end node itself is excluded from this check since we're evaluating
    * continuation from within the sentinel end node.
+   *
+   * For loops with conditional routing (conditions/routers), not all nodes will execute
+   * because only one path is taken. In such cases, we check if at least one terminal node
+   * has executed (terminal nodes have edges to the sentinel end, indicating a path completed).
    */
   private hasAllLoopNodesCompleted(ctx: ExecutionContext, loopId: string): boolean {
     const loopConfig = this.dag.loopConfigs.get(loopId) as LoopConfigWithNodes | undefined
@@ -696,20 +700,32 @@ export class LoopOrchestrator {
 
     const sentinelEndId = buildSentinelEndId(loopId)
     const loopNodes = loopConfig.nodes || []
+    const nodesSet = new Set(loopNodes)
 
-    // Check all nodes in the loop have been executed (excluding the sentinel end itself)
+    // Find terminal nodes (nodes with edges to sentinel end) - these indicate path completion
+    const terminalNodes: string[] = []
     for (const nodeId of loopNodes) {
-      // Skip the sentinel end node - we're evaluating from within it
-      if (nodeId === sentinelEndId) {
-        continue
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this node has an edge to the sentinel end (it's a terminal node)
+      const hasEdgeToSentinelEnd = Array.from(node.outgoingEdges.values()).some(
+        (edge) => edge.target === sentinelEndId
+      )
+
+      if (hasEdgeToSentinelEnd) {
+        terminalNodes.push(nodeId)
       }
+    }
 
-      // Check if this "node" is actually a nested loop ID
-      // Loop configs may contain loop IDs in the nodes array for nested loops
+    // Check nested loops first - they must complete before the outer loop continues
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
       const isNestedLoopId = this.dag.loopConfigs.has(nodeId)
-
       if (isNestedLoopId) {
-        // This is a nested loop - check if it has completed all iterations
         const nestedLoopId = nodeId
         const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
 
@@ -731,9 +747,6 @@ export class LoopOrchestrator {
               const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
               const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
 
-              // The nested loop is complete if:
-              // 1. All iterations are recorded in allIterationOutputs (most reliable check), OR
-              // 2. The sentinel end has executed AND has shouldExit: true (loop has exited)
               const isComplete =
                 completedIterations >= expectedIterations ||
                 (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true)
@@ -744,8 +757,6 @@ export class LoopOrchestrator {
             }
           }
         } else {
-          // Nested loop scope not found - check if the nested loop has completed
-          // by checking if its sentinel end has executed and exited
           const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
           const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
           const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
@@ -757,10 +768,25 @@ export class LoopOrchestrator {
             return false
           }
         }
-        continue
       }
+    }
 
-      // This is a regular node - check if it has executed
+    // For loops with conditional routing, check if at least one terminal node has executed
+    // This handles cases where not all nodes execute due to condition/router branching
+    if (terminalNodes.length > 0) {
+      const hasTerminalNodeExecuted = terminalNodes.some((nodeId) => this.state.hasExecuted(nodeId))
+      if (hasTerminalNodeExecuted) {
+        // At least one terminal node has executed, meaning a path has completed
+        return true
+      }
+    }
+
+    // Fallback: If no terminal nodes found (or none executed), check all regular nodes
+    // This handles simple loops without conditional routing
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+      if (this.dag.loopConfigs.has(nodeId)) continue // Nested loops already checked above
+
       if (!this.state.hasExecuted(nodeId)) {
         return false
       }
