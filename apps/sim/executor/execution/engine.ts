@@ -331,7 +331,7 @@ export class ExecutionEngine {
       this.finalOutput = output
     }
 
-    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
+    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
 
     logger.info('Processing outgoing edges', {
       nodeId,

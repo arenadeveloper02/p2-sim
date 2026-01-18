@@ -168,6 +168,9 @@ export class EdgeConstructor {
         }
         source = sentinelEndId
         sourceHandle = EDGE.LOOP_EXIT
+        // Don't create an edge from sentinel-start for LOOP_EXIT edges
+        // Only sentinel-end should have LOOP_EXIT edges to targets outside the loop
+        loopSentinelStartId = undefined
       }
 
       if (targetIsLoopBlock) {
@@ -238,7 +241,12 @@ export class EdgeConstructor {
         continue
       }
 
-      const { startNodes, terminalNodes } = this.findLoopBoundaryNodes(nodes, dag, reachableBlocks)
+      const { startNodes, terminalNodes } = this.findLoopBoundaryNodes(
+        nodes,
+        dag,
+        reachableBlocks,
+        loopId
+      )
 
       for (const startNodeId of startNodes) {
         this.addEdge(dag, sentinelStartId, startNodeId)
@@ -346,7 +354,8 @@ export class EdgeConstructor {
   private findLoopBoundaryNodes(
     nodes: string[],
     dag: DAG,
-    reachableBlocks: Set<string>
+    reachableBlocks: Set<string>,
+    loopId: string
   ): { startNodes: string[]; terminalNodes: string[] } {
     const nodesSet = new Set(nodes)
     const startNodesSet = new Set<string>()
@@ -360,9 +369,30 @@ export class EdgeConstructor {
       let hasIncomingFromLoop = false
 
       for (const incomingNodeId of node.incomingEdges) {
+        // Check if incoming edge is from a node inside the loop
         if (nodesSet.has(incomingNodeId)) {
           hasIncomingFromLoop = true
           break
+        }
+
+        // Check if incoming edge is from a nested loop's sentinel-end
+        // A node should NOT be a startNode if it has incoming from nested loop sentinel-end
+        const incomingNode = dag.nodes.get(incomingNodeId)
+        if (
+          incomingNode?.metadata.isSentinel &&
+          incomingNode.metadata.sentinelType === 'end' &&
+          incomingNode.metadata.loopId &&
+          incomingNode.metadata.loopId !== loopId
+        ) {
+          // This is a sentinel-end from a different loop
+          // Check if that loop is nested inside the current loop
+          const nestedLoopId = incomingNode.metadata.loopId
+          if (nodesSet.has(nestedLoopId)) {
+            // The nested loop block ID is in the current loop's nodes
+            // So this sentinel-end is from a nested loop
+            hasIncomingFromLoop = true
+            break
+          }
         }
       }
 

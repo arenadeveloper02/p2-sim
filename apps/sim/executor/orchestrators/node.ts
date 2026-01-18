@@ -208,13 +208,20 @@ export class NodeExecutionOrchestrator {
           }
         }
 
-        return {
+        const exitOutput = {
           results: continuationResult.aggregatedResults || [],
           shouldContinue: false,
           shouldExit: true,
           selectedRoute: continuationResult.selectedRoute,
           totalIterations: continuationResult.aggregatedResults?.length || 0,
         }
+        logger.info('Loop sentinel end exiting', {
+          loopId,
+          shouldExit: exitOutput.shouldExit,
+          selectedRoute: exitOutput.selectedRoute,
+          expectedRoute: EDGE.LOOP_EXIT,
+        })
+        return exitOutput
       }
 
       default:
