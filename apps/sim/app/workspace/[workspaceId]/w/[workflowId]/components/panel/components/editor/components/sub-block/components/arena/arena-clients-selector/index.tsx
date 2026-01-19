@@ -66,9 +66,17 @@ export function ArenaClientsSelector({
             },
           }
         )
-        setClients(response.data.response || [])
+        // Ensure response.data.response is an array
+        const clientsData = response.data?.response
+        console.log('Arena API response:', response.data)
+        console.log('Clients data:', clientsData, 'Type:', typeof clientsData)
+        const clientsArray = Array.isArray(clientsData) ? clientsData : []
+        console.log('Final clients array:', clientsArray)
+        setClients(clientsArray)
       } catch (error) {
         console.error('Error fetching clients:', error)
+        // Set empty array on error to ensure clients is always an array
+        setClients([])
       }
     }
 
@@ -80,7 +88,7 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedLabel =
-    clients?.find((cl) => cl.clientId === selectedValue?.clientId)?.name || 'Select client...'
+    (Array.isArray(clients) && clients.find((cl) => cl.clientId === selectedValue?.clientId))?.name || 'Select client...'
 
   const handleSelect = (client: Client) => {
     console.log('Selected client:', client)
@@ -112,7 +120,7 @@ export function ArenaClientsSelector({
         <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
           <Command
             filter={(value, search) => {
-              const client = clients.find((cl) => cl.clientId === value || cl.name === value)
+              const client = Array.isArray(clients) ? clients.find((cl) => cl.clientId === value || cl.name === value) : null
               if (!client) return 0
 
               return client.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -125,7 +133,7 @@ export function ArenaClientsSelector({
             <CommandList>
               <CommandEmpty>No client found.</CommandEmpty>
               <CommandGroup>
-                {clients.map((client) => (
+                {Array.isArray(clients) && clients.map((client) => (
                   <CommandItem
                     key={client.clientId}
                     value={client.clientId}

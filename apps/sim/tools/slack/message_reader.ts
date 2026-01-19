@@ -143,6 +143,10 @@ export const slackMessageReaderTool: ToolConfig<
           ts: { type: 'string', description: 'Message timestamp' },
           text: { type: 'string', description: 'Message text content' },
           user: { type: 'string', description: 'User ID who sent the message' },
+          user_name: {
+            type: 'string',
+            description: 'Username (handle) of the user who sent the message',
+          },
           bot_id: { type: 'string', description: 'Bot ID if sent by a bot' },
           username: { type: 'string', description: 'Display username' },
           channel: { type: 'string', description: 'Channel ID' },
@@ -180,6 +184,11 @@ export const slackMessageReaderTool: ToolConfig<
                 users: {
                   type: 'array',
                   description: 'Array of user IDs who reacted',
+                  items: { type: 'string' },
+                },
+                user_names: {
+                  type: 'array',
+                  description: 'Array of usernames who reacted',
                   items: { type: 'string' },
                 },
               },
@@ -226,6 +235,7 @@ export const slackMessageReaderTool: ToolConfig<
             description: 'Edit information if message was edited',
             properties: {
               user: { type: 'string', description: 'User ID who edited' },
+              user_name: { type: 'string', description: 'Username of the user who edited' },
               ts: { type: 'string', description: 'Edit timestamp' },
             },
           },

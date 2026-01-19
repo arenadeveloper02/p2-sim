@@ -10,6 +10,76 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackReadMessagesAPI')
 
+// Helper function to fetch user information for multiple users
+async function fetchUserInfo(
+  userIds: string[],
+  accessToken: string,
+  requestId: string,
+  logger: any
+): Promise<Record<string, string>> {
+  const userNames: Record<string, string> = {}
+  const uniqueUserIds = [...new Set(userIds.filter((id) => id))] // Remove duplicates and empty values
+
+  if (uniqueUserIds.length === 0) {
+    return userNames
+  }
+
+  logger.info(`[${requestId}] Fetching user info for ${uniqueUserIds.length} unique users`)
+
+  // Process in batches to avoid rate limits
+  const batchSize = 10
+  for (let i = 0; i < uniqueUserIds.length; i += batchSize) {
+    const batch = uniqueUserIds.slice(i, i + batchSize)
+
+    const batchPromises = batch.map(async (userId, index) => {
+      try {
+        // Add small delay between requests to avoid rate limiting
+        if (index > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+
+        const userInfoUrl = new URL('https://slack.com/api/users.info')
+        userInfoUrl.searchParams.append('user', userId)
+
+        logger.info(`[${requestId}] Fetching user info for user: ${userId}`)
+
+        const response = await fetch(userInfoUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+
+        const data = await response.json()
+
+        if (data.ok && data.user) {
+          userNames[userId] = data.user.name || ''
+          logger.info(`[${requestId}] Got username "${data.user.name}" for user ${userId}`)
+        } else {
+          logger.warn(`[${requestId}] Failed to fetch user info for ${userId}:`, data.error)
+          userNames[userId] = '' // Empty string for failed lookups
+        }
+      } catch (error) {
+        logger.error(`[${requestId}] Error fetching user info for ${userId}:`, error)
+        userNames[userId] = ''
+      }
+    })
+
+    await Promise.allSettled(batchPromises)
+
+    // Add delay between batches
+    if (i + batchSize < uniqueUserIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+  }
+
+  logger.info(
+    `[${requestId}] Successfully fetched user info for ${Object.keys(userNames).length} users`
+  )
+  return userNames
+}
+
 // Helper function to fetch thread replies
 async function fetchThreadReplies(
   channel: string,
@@ -49,54 +119,71 @@ async function fetchThreadReplies(
       return []
     }
 
-    // Skip the first message (parent) and map the replies
-    const replies = (data.messages || [])
-      .slice(1)
-      .slice(0, maxReplies)
-      .map((message: any) => ({
-        type: message.type || 'message',
-        ts: message.ts,
-        text: message.text || '',
-        user: message.user,
-        bot_id: message.bot_id,
-        username: message.username,
-        channel: message.channel,
-        team: message.team,
-        thread_ts: message.thread_ts,
-        parent_user_id: message.parent_user_id,
-        reply_count: message.reply_count,
-        reply_users_count: message.reply_users_count,
-        latest_reply: message.latest_reply,
-        subscribed: message.subscribed,
-        last_read: message.last_read,
-        unread_count: message.unread_count,
-        subtype: message.subtype,
-        reactions: message.reactions?.map((reaction: any) => ({
-          name: reaction.name,
-          count: reaction.count,
-          users: reaction.users || [],
-        })),
-        is_starred: message.is_starred,
-        pinned_to: message.pinned_to,
-        files: message.files?.map((file: any) => ({
-          id: file.id,
-          name: file.name,
-          mimetype: file.mimetype,
-          size: file.size,
-          url_private: file.url_private,
-          permalink: file.permalink,
-          mode: file.mode,
-        })),
-        attachments: message.attachments,
-        blocks: message.blocks,
-        edited: message.edited
-          ? {
-              user: message.edited.user,
-              ts: message.edited.ts,
-            }
-          : undefined,
-        permalink: message.permalink,
-      }))
+    // Collect user IDs from thread replies for user info fetching
+    const rawReplies = (data.messages || []).slice(1).slice(0, maxReplies)
+    const replyUserIds: string[] = []
+
+    rawReplies.forEach((message: any) => {
+      if (message.user) replyUserIds.push(message.user)
+      if (message.edited?.user) replyUserIds.push(message.edited.user)
+      message.reactions?.forEach((reaction: any) => {
+        if (reaction.users) replyUserIds.push(...reaction.users)
+      })
+    })
+
+    // Fetch user information for thread reply users
+    const replyUserNames = await fetchUserInfo(replyUserIds, accessToken, requestId, logger)
+
+    // Map the replies with user names
+    const replies = rawReplies.map((message: any) => ({
+      type: message.type || 'message',
+      ts: message.ts,
+      text: message.text || '',
+      user: message.user,
+      user_name: message.user ? replyUserNames[message.user] || '' : '',
+      bot_id: message.bot_id,
+      username: message.username,
+      channel: message.channel,
+      team: message.team,
+      thread_ts: message.thread_ts,
+      parent_user_id: message.parent_user_id,
+      reply_count: message.reply_count,
+      reply_users_count: message.reply_users_count,
+      latest_reply: message.latest_reply,
+      subscribed: message.subscribed,
+      last_read: message.last_read,
+      unread_count: message.unread_count,
+      subtype: message.subtype,
+      reactions: message.reactions?.map((reaction: any) => ({
+        name: reaction.name,
+        count: reaction.count,
+        users: reaction.users || [],
+        user_names: reaction.users
+          ? reaction.users.map((userId: string) => replyUserNames[userId] || '')
+          : [],
+      })),
+      is_starred: message.is_starred,
+      pinned_to: message.pinned_to,
+      files: message.files?.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimetype: file.mimetype,
+        size: file.size,
+        url_private: file.url_private,
+        permalink: file.permalink,
+        mode: file.mode,
+      })),
+      attachments: message.attachments,
+      blocks: message.blocks,
+      edited: message.edited
+        ? {
+            user: message.edited.user,
+            user_name: message.edited.user ? replyUserNames[message.edited.user] || '' : '',
+            ts: message.edited.ts,
+          }
+        : undefined,
+      permalink: message.permalink,
+    }))
 
     logger.info(
       `[${requestId}] Successfully fetched ${replies.length} thread replies for ts: ${threadTs}`
@@ -268,6 +355,7 @@ export async function POST(request: NextRequest) {
     let pagesFetched = 0
     let hasMore = true
     let finalNextCursor: string | null = null
+    const allUserIds: string[] = []
 
     // If auto-paginate is enabled, fetch all pages starting from cursor (or beginning)
     if (autoPaginate) {
@@ -322,11 +410,27 @@ export async function POST(request: NextRequest) {
           `[${requestId}] Page ${pagesFetched} response: has_more=${data.has_more}, messages=${(data.messages || []).length}, next_cursor=${data.response_metadata?.next_cursor?.substring(0, 20)}...`
         )
 
-        const pageMessages = (data.messages || []).map((message: any) => ({
+        // Collect user IDs from this page's messages
+        const pageRawMessages = data.messages || []
+        const pageUserIds: string[] = []
+
+        pageRawMessages.forEach((message: any) => {
+          if (message.user) pageUserIds.push(message.user)
+          if (message.edited?.user) pageUserIds.push(message.edited.user)
+          message.reactions?.forEach((reaction: any) => {
+            if (reaction.users) pageUserIds.push(...reaction.users)
+          })
+        })
+
+        // Add to global user IDs collection
+        allUserIds.push(...pageUserIds)
+
+        const pageMessages = pageRawMessages.map((message: any) => ({
           type: message.type || 'message',
           ts: message.ts,
           text: message.text || '',
           user: message.user,
+          user_name: '', // Will be filled after user info fetch
           bot_id: message.bot_id,
           username: message.username,
           channel: message.channel,
@@ -344,6 +448,7 @@ export async function POST(request: NextRequest) {
             name: reaction.name,
             count: reaction.count,
             users: reaction.users || [],
+            user_names: [], // Will be filled after user info fetch
           })),
           is_starred: message.is_starred,
           pinned_to: message.pinned_to,
@@ -361,6 +466,7 @@ export async function POST(request: NextRequest) {
           edited: message.edited
             ? {
                 user: message.edited.user,
+                user_name: '', // Will be filled after user info fetch
                 ts: message.edited.ts,
               }
             : undefined,
@@ -399,6 +505,31 @@ export async function POST(request: NextRequest) {
       logger.info(
         `[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages`
       )
+
+      // Fetch user information for all collected user IDs
+      const userNames = await fetchUserInfo(
+        allUserIds,
+        validatedData.accessToken,
+        requestId,
+        logger
+      )
+
+      // Update all messages with user names
+      allMessages.forEach((message: any) => {
+        if (message.user) {
+          message.user_name = userNames[message.user] || ''
+        }
+        if (message.edited?.user) {
+          message.edited.user_name = userNames[message.edited.user] || ''
+        }
+        if (message.reactions) {
+          message.reactions.forEach((reaction: any) => {
+            if (reaction.users) {
+              reaction.user_names = reaction.users.map((userId: string) => userNames[userId] || '')
+            }
+          })
+        }
+      })
 
       // Fetch thread replies if requested
       if (validatedData.includeThreads && allMessages.length > 0) {
@@ -558,11 +689,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const messages = (data.messages || []).map((message: any) => ({
+    // Collect all user IDs from messages for bulk user info fetching
+    const rawMessages = data.messages || []
+    const singlePageUserIds: string[] = []
+
+    rawMessages.forEach((message: any) => {
+      if (message.user) singlePageUserIds.push(message.user)
+      if (message.edited?.user) singlePageUserIds.push(message.edited.user)
+      // Also collect from reactions users
+      message.reactions?.forEach((reaction: any) => {
+        if (reaction.users) singlePageUserIds.push(...reaction.users)
+      })
+    })
+
+    // Fetch user information for all collected user IDs
+    const userNames = await fetchUserInfo(
+      singlePageUserIds,
+      validatedData.accessToken,
+      requestId,
+      logger
+    )
+
+    const messages = rawMessages.map((message: any) => ({
       type: message.type || 'message',
       ts: message.ts,
       text: message.text || '',
       user: message.user,
+      user_name: message.user ? userNames[message.user] || '' : '',
       bot_id: message.bot_id,
       username: message.username,
       channel: message.channel,
@@ -580,6 +733,9 @@ export async function POST(request: NextRequest) {
         name: reaction.name,
         count: reaction.count,
         users: reaction.users || [],
+        user_names: reaction.users
+          ? reaction.users.map((userId: string) => userNames[userId] || '')
+          : [],
       })),
       is_starred: message.is_starred,
       pinned_to: message.pinned_to,
@@ -597,6 +753,7 @@ export async function POST(request: NextRequest) {
       edited: message.edited
         ? {
             user: message.edited.user,
+            user_name: message.edited.user ? userNames[message.edited.user] || '' : '',
             ts: message.edited.ts,
           }
         : undefined,
