@@ -57,6 +57,7 @@ interface ArenaCommentInputProps {
 /**
  * Converts HTML with mentions to plain text for display
  * Preserves unresolved variables like <agent1.content> by extracting them before parsing
+ * Preserves non-mention anchor tags by including their HTML source in the display text
  */
 function htmlToDisplayText(html: string): string {
   if (!html) return ''
@@ -65,51 +66,96 @@ function htmlToDisplayText(html: string): string {
   // These look like <agent1.content> and need to be preserved
   const variableMarkers = new Map<string, string>()
   let markerIndex = 0
-  
+
   // Pattern to find potential variable references in the HTML string
   // We look for <word> or <word.word> patterns
   const variablePattern = /<([a-zA-Z_][a-zA-Z0-9_.]*[a-zA-Z0-9_])>/g
   let htmlWithMarkers = html
-  
+
   // Find all potential variables and replace with markers
   const matches: Array<{ match: string; index: number; varName: string }> = []
   let match: RegExpExecArray | null
-  
+
   // Reset regex
   variablePattern.lastIndex = 0
-  
+
   while ((match = variablePattern.exec(html)) !== null) {
     const varName = match[1]
     const matchIndex = match.index
-    
+
     // Check if this looks like a variable (contains dot or is longer than typical HTML tags)
     const isLikelyVariable = varName.includes('.') || varName.length > 3
-    
+
     if (isLikelyVariable) {
       // Check if it's not part of an HTML tag attribute
       // Look at what comes after the match
-      const afterMatch = html.substring(matchIndex + match[0].length, matchIndex + match[0].length + 5)
+      const afterMatch = html.substring(
+        matchIndex + match[0].length,
+        matchIndex + match[0].length + 5
+      )
       const isInHtmlTag = /^\s*[>=]/.test(afterMatch)
-      
+
       if (!isInHtmlTag) {
         matches.push({ match: match[0], index: matchIndex, varName })
       }
     }
   }
-  
+
   // Replace matches in reverse order to preserve indices
   for (let i = matches.length - 1; i >= 0; i--) {
     const { match: fullMatch, index } = matches[i]
     const marker = `__VAR_MARKER_${markerIndex++}__`
     variableMarkers.set(marker, fullMatch)
-    htmlWithMarkers = htmlWithMarkers.substring(0, index) + 
-                      marker + 
-                      htmlWithMarkers.substring(index + fullMatch.length)
+    htmlWithMarkers =
+      htmlWithMarkers.substring(0, index) +
+      marker +
+      htmlWithMarkers.substring(index + fullMatch.length)
+  }
+
+  // Extract non-mention anchor tags before parsing to preserve them
+  // We'll replace them with markers and restore them later
+  const anchorMarkers = new Map<string, string>()
+  let anchorMarkerIndex = 0
+
+  // Pattern to match complete anchor tags
+  // Match <a followed by attributes, then content, then closing </a>
+  // The .*? is non-greedy to match the first closing tag
+  const anchorTagRegex = /<a\s+[^>]*>.*?<\/a>/gi
+  const anchorMatches: Array<{ fullMatch: string; marker: string; startIndex: number }> = []
+
+  // Reset regex
+  anchorTagRegex.lastIndex = 0
+  let anchorMatch: RegExpExecArray | null
+
+  // Find all anchor tags and filter out mentions
+  while ((anchorMatch = anchorTagRegex.exec(htmlWithMarkers)) !== null) {
+    const fullMatch = anchorMatch[0]
+    const startIndex = anchorMatch.index
+
+    // Check if this anchor is a mention by looking for class="mention" or class='mention'
+    const isMention = /class\s*=\s*["']mention["']/i.test(fullMatch)
+
+    if (!isMention) {
+      const marker = `__ANCHOR_MARKER_${anchorMarkerIndex++}__`
+      anchorMatches.push({ fullMatch, marker, startIndex })
+      anchorMarkers.set(marker, fullMatch)
+    }
+  }
+
+  // Replace anchor tags with markers in reverse order to preserve indices
+  let htmlWithAnchorMarkers = htmlWithMarkers
+  for (let i = anchorMatches.length - 1; i >= 0; i--) {
+    const { fullMatch, marker, startIndex } = anchorMatches[i]
+    // Replace at the specific index to avoid replacing wrong occurrences
+    htmlWithAnchorMarkers =
+      htmlWithAnchorMarkers.substring(0, startIndex) +
+      marker +
+      htmlWithAnchorMarkers.substring(startIndex + fullMatch.length)
   }
 
   // Create a temporary DOM element to parse HTML
   const temp = document.createElement('div')
-  temp.innerHTML = htmlWithMarkers
+  temp.innerHTML = htmlWithAnchorMarkers
 
   // Replace mention links with just the user name
   const mentions = temp.querySelectorAll('a.mention')
@@ -127,12 +173,23 @@ function htmlToDisplayText(html: string): string {
     }
   })
 
-  // Get the text content
+  // Get the text content (which now contains our markers)
   let result = temp.textContent || temp.innerText || ''
-  
+
+  // Restore anchor tags first (before restoring variables, in case variables are in anchor text)
+  anchorMarkers.forEach((originalAnchor, marker) => {
+    result = result.replace(
+      new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+      originalAnchor
+    )
+  })
+
   // Restore variable markers
   variableMarkers.forEach((original, marker) => {
-    result = result.replace(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), original)
+    result = result.replace(
+      new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+      original
+    )
   })
 
   return result
@@ -343,9 +400,11 @@ export function ArenaCommentInput({
       // Only update if the value has actually changed
       if (baseValueString !== htmlContent && baseValueString !== '') {
         // Check if it's HTML (contains HTML tags like <p>, <a>, etc.)
+        // Check for anchor tags (with or without mention class), paragraph tags, or other HTML tags
         const isHtml =
           baseValueString.includes('<a class="mention"') ||
           baseValueString.includes("class='mention'") ||
+          (baseValueString.includes('<a') && baseValueString.includes('</a>')) ||
           (baseValueString.includes('<p>') && baseValueString.includes('</p>'))
 
         if (isHtml) {
@@ -466,13 +525,14 @@ export function ArenaCommentInput({
       // Check for @ mention, but only if we're not in a tag reference context
       const cursorPos = e.target.selectionStart ?? newDisplayText.length
       const textBeforeCursor = newDisplayText.substring(0, cursorPos)
-      
+
       // Check if we're in a tag reference context (unclosed < before cursor)
       // If so, don't show mention menu to allow tag dropdown to work
       const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
       const lastCloseBracket = textBeforeCursor.lastIndexOf('>')
-      const isInTagContext = lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
-      
+      const isInTagContext =
+        lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
+
       // Only check for @ mentions if we're not in a tag context
       if (!isInTagContext) {
         const lastAtIndex = textBeforeCursor.lastIndexOf('@')
@@ -748,7 +808,7 @@ export function ArenaCommentInput({
         onChange={(newDisplayText: string) => {
           // Update displayText when tag is selected or value changes
           setDisplayText(newDisplayText)
-          
+
           // Convert display text to HTML (only if we have users loaded)
           const newHtml =
             mentionsMap.current.size > 0
@@ -764,7 +824,7 @@ export function ArenaCommentInput({
           if (!isPreview && !disabled) {
             persistSubBlockValueRef.current(newHtml)
           }
-          
+
           // Call prop onChange if provided
           if (onChange) {
             onChange(newDisplayText)
