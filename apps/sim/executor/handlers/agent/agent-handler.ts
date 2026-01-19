@@ -1640,14 +1640,20 @@ export class AgentBlockHandler implements BlockHandler {
 
     try {
       const extractedJson = JSON.parse(content.trim())
+      const schema = responseFormat.schema || responseFormat
+
+      // Validate and filter the response according to the schema
+      const validatedJson = this.validateAndFilterStructuredResponse(extractedJson, schema)
+
       return {
-        ...extractedJson,
+        ...validatedJson,
         ...this.createResponseMetadata(result),
       }
     } catch (error) {
       logger.error('LLM did not adhere to structured response format:', {
         content: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
         responseFormat: responseFormat,
+        error: error instanceof Error ? error.message : String(error),
       })
 
       const standardResponse = this.processStandardResponse(result)
@@ -1656,6 +1662,82 @@ export class AgentBlockHandler implements BlockHandler {
           'LLM did not adhere to the specified structured response format. Expected valid JSON but received malformed content. Falling back to standard format.',
       })
     }
+  }
+
+  /**
+   * Validates and filters a structured response according to the schema.
+   * Enforces additionalProperties: false by filtering out any properties not in the schema.
+   * Ensures all required fields are present.
+   */
+  private validateAndFilterStructuredResponse(parsedJson: any, schema: any): Record<string, any> {
+    if (!schema || typeof schema !== 'object') {
+      logger.warn('Invalid schema provided for structured response validation')
+      return parsedJson
+    }
+
+    // If parsedJson is not an object, return as-is (shouldn't happen for object schemas)
+    if (typeof parsedJson !== 'object' || parsedJson === null || Array.isArray(parsedJson)) {
+      logger.warn('Parsed JSON is not an object, cannot validate against object schema')
+      return parsedJson
+    }
+
+    // If schema is not an object type, return as-is
+    if (schema.type !== 'object' || !schema.properties) {
+      return parsedJson
+    }
+
+    const filtered: Record<string, any> = {}
+    const allowedProperties = new Set(Object.keys(schema.properties))
+    const requiredFields = new Set(schema.required || [])
+    const additionalProperties = schema.additionalProperties !== false
+
+    // Filter properties based on schema
+    for (const [key, value] of Object.entries(parsedJson)) {
+      if (allowedProperties.has(key)) {
+        // Recursively validate nested objects if they have a schema
+        const propertySchema = schema.properties[key]
+        if (
+          propertySchema &&
+          typeof propertySchema === 'object' &&
+          propertySchema.type === 'object' &&
+          propertySchema.properties &&
+          typeof value === 'object' &&
+          value !== null &&
+          !Array.isArray(value)
+        ) {
+          filtered[key] = this.validateAndFilterStructuredResponse(value, propertySchema)
+        } else {
+          filtered[key] = value
+        }
+      } else if (!additionalProperties) {
+        // Log warning for additional properties when additionalProperties is false
+        logger.warn(
+          `Structured response contains additional property "${key}" not in schema. Property will be filtered out.`,
+          {
+            schemaProperties: Array.from(allowedProperties),
+            receivedProperty: key,
+            receivedValue: typeof value === 'string' ? value.substring(0, 100) : value,
+          }
+        )
+      } else {
+        // Include additional properties if allowed
+        filtered[key] = value
+      }
+    }
+
+    // Check for missing required fields
+    const missingRequired = Array.from(requiredFields).filter(
+      (field) => !(String(field) in filtered)
+    ) as string[]
+    if (missingRequired.length > 0) {
+      logger.warn(`Structured response is missing required fields: ${missingRequired.join(', ')}`, {
+        requiredFields: Array.from(requiredFields),
+        missingFields: missingRequired,
+        receivedFields: Object.keys(filtered),
+      })
+    }
+
+    return filtered
   }
 
   private processStandardResponse(result: any): BlockOutput {

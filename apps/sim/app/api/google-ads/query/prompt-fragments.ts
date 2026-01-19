@@ -30,15 +30,17 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 
 **CRITICAL: ACCOUNT CONTEXT**: The user has already selected a specific Google Ads account (e.g., CA - Eventgroove Products, AMI, Heartland). When they mention the account name in their query, DO NOT add it as a campaign.name filter. The account is already selected by the API. Only filter by campaign.name when the user explicitly asks for specific campaign types (Brand, PMax, Shopping, etc.).
 
+**CRITICAL: CURRENT YEAR ONLY**: ALWAYS use the current year (2026) for date ranges. NEVER use 2023, 2024, or any past year unless explicitly requested by the user. Default to LAST_7_DAYS or current date ranges in 2026.
+
 **CRITICAL: CAMPAIGN FILTERING**: When the user asks for ad groups or ads within a specific campaign (e.g., "show me ad groups in Colorado-Springs-Central-NB campaign"), you MUST add a WHERE clause filter: campaign.name LIKE '%CampaignName%'. This ensures only ad groups/ads from that specific campaign are returned. The same applies when filtering by ad group name.
 
 **PERFORMANCE MAX SEARCH TERM FINDINGS:**
 Why Regular search_term_view Doesn't Work for PMax:
 - search_term_view: "does not include Performance Max data"
-- campaign_search_term_view: "provides detailed performance and cost data for search terms that triggered your ads" (including PMax)
+- campaign_search_term_view: "provides search term data for Performance Max campaigns" (use campaign_search_term_view.search_term for the search term)
 
 What I Added:
-- New Resource: campaign_search_term_view for Performance Max search terms
+- New Resource: campaign_search_term_view for Performance Max search terms (available in API v22+)
 - Updated Segment Compatibility: Added campaign_search_term_view to segments.date compatibility
 - New Query Example: Performance Max search terms with proper filtering
 - Updated Fragment: Enhanced searchTermsFragment with PMax guidance
@@ -59,7 +61,7 @@ What I Added:
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
 - search_term_view (search query reports) + campaign.id + campaign.status required
-- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
+- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required - supports metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
@@ -231,31 +233,33 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 
 **CRITICAL ASSET RESOURCE RULES:**
 - asset, campaign_asset, asset_group_asset resources DO NOT support segments.date
-- **SOLUTION**: Use campaign or ad_group resources for asset performance data
+- SOLUTION: Use campaign or ad_group resources for asset performance data
 - Asset queries show structure (what assets exist) not performance (how they performed)
 - For performance data with date segments, always use campaign or ad_group resources
 
-**Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+**Search Terms - Basic:**
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, segments.keyword.info.text, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+Note: segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, segments.keyword.info.text, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+Note: segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Performance Max Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
-Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data
+SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
+Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data. This resource supports all standard metrics including cost_micros.
 
 **Search Terms - Added/None Status:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: search_term_view.status shows Added/None status: ADDED = added as keyword, NONE = not added, ADDED_EXCLUDED = added as negative keyword, EXCLUDED = excluded.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, segments.keyword.info.text, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC LIMIT 1000
+Note: search_term_view.status shows Added/None status: ADDED = added as keyword, NONE = not added, ADDED_EXCLUDED = added as negative keyword, EXCLUDED = excluded. segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Search Terms - Only Added:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'ADDED' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: Shows only search terms that have been added as keywords.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, segments.keyword.info.text, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'ADDED' ORDER BY metrics.cost_micros DESC LIMIT 1000
+Note: Shows only search terms that have been added as keywords. segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Search Terms - Only None (Not Added):**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'NONE' ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: Shows search terms that have NOT been added as keywords - potential keyword opportunities.
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, segments.keyword.info.text, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'NONE' ORDER BY metrics.cost_micros DESC LIMIT 1000
+Note: Shows search terms that have NOT been added as keywords - potential keyword opportunities. segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
@@ -337,7 +341,7 @@ Note: Shows ads currently under policy review from ENABLED campaigns.
 - Brand: campaign.name LIKE '%Brand%'
 - Non-Brand: campaign.name NOT LIKE '%Brand%'
 - PMax: campaign.advertising_channel_type = 'PERFORMANCE_MAX'
-- For PMax search terms: Use campaign_search_term_view (not search_term_view)
+  - For PMax search terms: Use campaign_search_term_view with campaign_search_term_view.search_term (not search_term_view)
 
 AdvertisingChannelTypeEnum.AdvertisingChannelType
 UNSPECIFIED → Not specified.
@@ -563,7 +567,7 @@ const searchTermsFragment: FragmentBuilder = () =>
   `
 **SEARCH QUERY REPORTS (SQR):**
 - Use search_term_view with campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term for regular Search campaigns.
-- Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data.
+- For Performance Max search terms: Use campaign_search_term_view (not search_term_view). Filter with campaign.advertising_channel_type = 'PERFORMANCE_MAX'.
 - Include metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
 - For Performance Max search terms: Add campaign.advertising_channel_type = 'PERFORMANCE_MAX' filter.
