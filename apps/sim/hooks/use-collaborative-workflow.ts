@@ -1587,7 +1587,7 @@ export function useCollaborativeWorkflow() {
         const config = {
           id: nodeId,
           nodes: childNodes,
-          count: Math.max(1, Math.min(20, count)), // Clamp between 1-20 for parallels
+          count: Math.max(1, Math.min(500, count)), // Clamp between 1-500 for parallels
           distribution: currentDistribution,
           parallelType: currentParallelType,
         }

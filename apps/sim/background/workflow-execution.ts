@@ -72,6 +72,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       userId: actorUserId,
       workspaceId,
       variables: {},
+      conversationId: undefined,
     })
 
     const workflow = await getWorkflowById(workflowId)

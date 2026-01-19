@@ -118,6 +118,7 @@ export async function GET(request: NextRequest) {
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         cost: workflowExecutionLogs.cost,
         files: workflowExecutionLogs.files,
+        conversationId: workflowExecutionLogs.conversationId,
         executionData: params.details === 'full' ? workflowExecutionLogs.executionData : sql`null`,
         workflowName: workflow.name,
         workflowDescription: workflow.description,

@@ -85,6 +85,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     userId?: string
     isExternalChat?: boolean
     chatId?: string
+    conversationId?: string
     initialInput?: string
     deploymentVersionId?: string
   }): Promise<{
@@ -101,6 +102,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       userId,
       isExternalChat,
       chatId,
+      conversationId,
       initialInput,
       deploymentVersionId,
     } = params
@@ -169,6 +171,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         userId: userId || null,
         isExternalChat: isExternalChat ?? false,
         chatId: chatId || null,
+        conversationId: conversationId || null,
         initialInput: initialInput || null,
       })
       .returning()

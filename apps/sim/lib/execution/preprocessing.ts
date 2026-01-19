@@ -536,6 +536,7 @@ async function logPreprocessingError(params: {
       userId,
       workspaceId,
       variables: {},
+      conversationId: undefined,
     })
 
     await session.safeCompleteWithError({
