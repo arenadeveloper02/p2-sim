@@ -181,15 +181,14 @@ while (count < items.length) {
 
 ## Características avanzadas
 
-### Limitaciones
+### Bucles Anidados
 
-<Callout type="warning">
-  Los bloques contenedores (Bucles y Paralelos) no pueden anidarse unos dentro de otros. Esto significa:
-  - No puedes colocar un bloque de Bucle dentro de otro bloque de Bucle
-  - No puedes colocar un bloque Paralelo dentro de un bloque de Bucle
-  - No puedes colocar ningún bloque contenedor dentro de otro bloque contenedor
-  
-  Si necesitas iteración multidimensional, considera reestructurar tu flujo de trabajo para usar bucles secuenciales o procesar datos por etapas.
+<Callout type="info">
+  Los bloques de bucle pueden anidarse dentro de otros bloques de bucle, permitiendo iteración multidimensional. Cuando anidas bucles:
+  - Los bucles internos se ejecutan dentro de cada iteración del bucle externo
+  - Las variables de bucle como `<loop.index>` se refieren al bucle contenedor más interno
+  - Cada bucle mantiene su propio estado de iteración de forma independiente
+  - Usa bucles anidados para procesar estructuras de datos multidimensionales o realizar operaciones iterativas complejas
 </Callout>
 
 <Callout type="info">

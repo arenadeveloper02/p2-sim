@@ -65,46 +65,50 @@ function htmlToDisplayText(html: string): string {
   // These look like <agent1.content> and need to be preserved
   const variableMarkers = new Map<string, string>()
   let markerIndex = 0
-  
+
   // Pattern to find potential variable references in the HTML string
   // We look for <word> or <word.word> patterns
   const variablePattern = /<([a-zA-Z_][a-zA-Z0-9_.]*[a-zA-Z0-9_])>/g
   let htmlWithMarkers = html
-  
+
   // Find all potential variables and replace with markers
   const matches: Array<{ match: string; index: number; varName: string }> = []
   let match: RegExpExecArray | null
-  
+
   // Reset regex
   variablePattern.lastIndex = 0
-  
+
   while ((match = variablePattern.exec(html)) !== null) {
     const varName = match[1]
     const matchIndex = match.index
-    
+
     // Check if this looks like a variable (contains dot or is longer than typical HTML tags)
     const isLikelyVariable = varName.includes('.') || varName.length > 3
-    
+
     if (isLikelyVariable) {
       // Check if it's not part of an HTML tag attribute
       // Look at what comes after the match
-      const afterMatch = html.substring(matchIndex + match[0].length, matchIndex + match[0].length + 5)
+      const afterMatch = html.substring(
+        matchIndex + match[0].length,
+        matchIndex + match[0].length + 5
+      )
       const isInHtmlTag = /^\s*[>=]/.test(afterMatch)
-      
+
       if (!isInHtmlTag) {
         matches.push({ match: match[0], index: matchIndex, varName })
       }
     }
   }
-  
+
   // Replace matches in reverse order to preserve indices
   for (let i = matches.length - 1; i >= 0; i--) {
     const { match: fullMatch, index } = matches[i]
     const marker = `__VAR_MARKER_${markerIndex++}__`
     variableMarkers.set(marker, fullMatch)
-    htmlWithMarkers = htmlWithMarkers.substring(0, index) + 
-                      marker + 
-                      htmlWithMarkers.substring(index + fullMatch.length)
+    htmlWithMarkers =
+      htmlWithMarkers.substring(0, index) +
+      marker +
+      htmlWithMarkers.substring(index + fullMatch.length)
   }
 
   // Create a temporary DOM element to parse HTML
@@ -129,10 +133,13 @@ function htmlToDisplayText(html: string): string {
 
   // Get the text content
   let result = temp.textContent || temp.innerText || ''
-  
+
   // Restore variable markers
   variableMarkers.forEach((original, marker) => {
-    result = result.replace(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), original)
+    result = result.replace(
+      new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+      original
+    )
   })
 
   return result
@@ -466,13 +473,14 @@ export function ArenaCommentInput({
       // Check for @ mention, but only if we're not in a tag reference context
       const cursorPos = e.target.selectionStart ?? newDisplayText.length
       const textBeforeCursor = newDisplayText.substring(0, cursorPos)
-      
+
       // Check if we're in a tag reference context (unclosed < before cursor)
       // If so, don't show mention menu to allow tag dropdown to work
       const lastOpenBracket = textBeforeCursor.lastIndexOf('<')
       const lastCloseBracket = textBeforeCursor.lastIndexOf('>')
-      const isInTagContext = lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
-      
+      const isInTagContext =
+        lastOpenBracket !== -1 && (lastCloseBracket === -1 || lastCloseBracket < lastOpenBracket)
+
       // Only check for @ mentions if we're not in a tag context
       if (!isInTagContext) {
         const lastAtIndex = textBeforeCursor.lastIndexOf('@')
@@ -748,7 +756,7 @@ export function ArenaCommentInput({
         onChange={(newDisplayText: string) => {
           // Update displayText when tag is selected or value changes
           setDisplayText(newDisplayText)
-          
+
           // Convert display text to HTML (only if we have users loaded)
           const newHtml =
             mentionsMap.current.size > 0
@@ -764,7 +772,7 @@ export function ArenaCommentInput({
           if (!isPreview && !disabled) {
             persistSubBlockValueRef.current(newHtml)
           }
-          
+
           // Call prop onChange if provided
           if (onChange) {
             onChange(newDisplayText)
