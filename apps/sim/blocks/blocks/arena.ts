@@ -419,9 +419,26 @@ export const ArenaBlock: BlockConfig = {
         }
 
         // Helper function to extract string value (for text inputs)
+        // Returns empty string for falsy values, but trims whitespace for truthy values
+        // Also handles HTML entity decoding to prevent double-escaping issues
         const extractString = (value: any): string => {
-          if (!value) return ''
-          return String(value).trim()
+          if (value === null || value === undefined) return ''
+          let str = String(value).trim()
+          // Handle HTML entities that might have been double-escaped
+          // Decode common HTML entities to prevent double-escaping issues
+          if (str.includes('&')) {
+            // Only decode if it looks like HTML entities (to avoid decoding legitimate & characters)
+            if (str.includes('&lt;') || str.includes('&gt;') || str.includes('&amp;')) {
+              str = str
+                .replace(/&amp;lt;/g, '<')
+                .replace(/&amp;gt;/g, '>')
+                .replace(/&amp;amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+            }
+          }
+          return str
         }
 
         const result = { ...params }
@@ -442,8 +459,13 @@ export const ArenaBlock: BlockConfig = {
 
         // Extract values for Search Task operation
         if (params.operation === 'arena_search_task') {
-          result['search-task-name'] = extractString(params['search-task-name'])
-          result['search-task-number'] = extractString(params['search-task-number'])
+          const taskName = extractString(params['search-task-name'])
+          const taskNumber = extractString(params['search-task-number'])
+
+          // Only include non-empty values to avoid sending null/empty strings
+          if (taskName) result['search-task-name'] = taskName
+          if (taskNumber) result['search-task-number'] = taskNumber
+
           result['search-task-client'] = extractId(params['search-task-client'])
           result['search-task-project'] = extractId(params['search-task-project'])
           result['search-task-assignee'] = extractId(params['search-task-assignee'])

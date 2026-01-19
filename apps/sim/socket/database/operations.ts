@@ -249,6 +249,7 @@ async function handleBlockOperationTx(
           positionY: payload.position.y,
           data: {
             ...(payload.data || {}),
+            fieldAdvancedMode: payload.fieldAdvancedMode || {},
             ...(parentId ? { parentId } : {}),
             ...(extent ? { extent } : {}),
           },
@@ -702,6 +703,7 @@ async function handleBlockOperationTx(
           positionY: payload.position.y,
           data: {
             ...(payload.data || {}),
+            fieldAdvancedMode: payload.fieldAdvancedMode || {},
             ...(parentId ? { parentId } : {}),
             ...(extent ? { extent } : {}),
           },
