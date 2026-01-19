@@ -112,7 +112,13 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
             const value = obj[key]
             // Handle nested objects/arrays by converting to JSON string
             if (value !== null && typeof value === 'object') {
-              return JSON.stringify(value)
+              try {
+                return JSON.stringify(value)
+              } catch (_stringifyError) {
+                // If stringification fails (e.g., circular reference), use a placeholder
+                // This prevents the entire request from failing due to a single problematic value
+                return '[Unable to stringify object]'
+              }
             }
             return value === undefined ? '' : value
           })
