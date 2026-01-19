@@ -69,15 +69,28 @@ export class LoopResolver implements Resolver {
       // This is a "loop." prefix reference - use current loop scope or find innermost loop
       if (!loopScope) {
         loopId = this.findLoopForBlock(context.currentNodeId)
-        if (!loopId) {
-          return undefined
+        if (loopId) {
+          loopScope = context.executionContext.loopExecutions?.get(loopId)
         }
-        loopScope = context.executionContext.loopExecutions?.get(loopId)
+      }
+    }
+
+    // For 'results' property, we can still resolve from block output state even if loopScope is missing
+    // (handles cases where the loop has completed and scope was cleared)
+    if (property === 'results' && !loopScope && loopId) {
+      const blockOutput = context.executionState.getBlockOutput(loopId, context.currentNodeId)
+      if (blockOutput && 'results' in blockOutput) {
+        const value = blockOutput.results
+        // If there are additional path parts, navigate deeper
+        if (pathParts.length > 0) {
+          return navigatePath(value, pathParts)
+        }
+        return value
       }
     }
 
     if (!loopScope) {
-      logger.warn('Loop scope not found', { reference, loopId, firstPart })
+      logger.warn('Loop scope not found', { reference, loopId, firstPart, property })
       return undefined
     }
 
@@ -93,6 +106,22 @@ export class LoopResolver implements Resolver {
         break
       case 'items':
         value = loopScope.items
+        break
+      case 'results':
+        // Try to get results from the active loop scope first
+        if (loopScope.allIterationOutputs) {
+          value = loopScope.allIterationOutputs
+        } else {
+          // If loop scope doesn't have results, try getting from block output state
+          // (this handles cases where the loop has completed and results were stored)
+          const blockOutput = context.executionState.getBlockOutput(
+            loopId || '',
+            context.currentNodeId
+          )
+          if (blockOutput && 'results' in blockOutput) {
+            value = blockOutput.results
+          }
+        }
         break
       default:
         logger.warn('Unknown loop property', { property })
