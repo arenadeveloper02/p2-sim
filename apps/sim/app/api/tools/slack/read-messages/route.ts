@@ -3,8 +3,8 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { openDMChannel } from '../utils'
 import type { SlackMessage } from '@/tools/slack/types'
+import { openDMChannel } from '../utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +25,9 @@ async function fetchThreadReplies(
     repliesUrl.searchParams.append('ts', threadTs)
     repliesUrl.searchParams.append('limit', Math.min(maxReplies + 1, 200).toString()) // +1 to account for parent message
 
-    logger.info(`[${requestId}] Fetching thread replies for ts: ${threadTs}, channel: ${channel}, maxReplies: ${maxReplies}`)
+    logger.info(
+      `[${requestId}] Fetching thread replies for ts: ${threadTs}, channel: ${channel}, maxReplies: ${maxReplies}`
+    )
     logger.info(`[${requestId}] Replies API URL: ${repliesUrl.toString()}`)
 
     const response = await fetch(repliesUrl.toString(), {
@@ -38,7 +40,9 @@ async function fetchThreadReplies(
 
     const data = await response.json()
 
-    logger.info(`[${requestId}] Thread replies API response for ts ${threadTs}: ok=${data.ok}, messages=${data.messages?.length || 0}`)
+    logger.info(
+      `[${requestId}] Thread replies API response for ts ${threadTs}: ok=${data.ok}, messages=${data.messages?.length || 0}`
+    )
 
     if (!data.ok) {
       logger.warn(`[${requestId}] Failed to fetch thread replies for ts ${threadTs}:`, data.error)
@@ -46,52 +50,57 @@ async function fetchThreadReplies(
     }
 
     // Skip the first message (parent) and map the replies
-    const replies = (data.messages || []).slice(1).slice(0, maxReplies).map((message: any) => ({
-      type: message.type || 'message',
-      ts: message.ts,
-      text: message.text || '',
-      user: message.user,
-      bot_id: message.bot_id,
-      username: message.username,
-      channel: message.channel,
-      team: message.team,
-      thread_ts: message.thread_ts,
-      parent_user_id: message.parent_user_id,
-      reply_count: message.reply_count,
-      reply_users_count: message.reply_users_count,
-      latest_reply: message.latest_reply,
-      subscribed: message.subscribed,
-      last_read: message.last_read,
-      unread_count: message.unread_count,
-      subtype: message.subtype,
-      reactions: message.reactions?.map((reaction: any) => ({
-        name: reaction.name,
-        count: reaction.count,
-        users: reaction.users || [],
-      })),
-      is_starred: message.is_starred,
-      pinned_to: message.pinned_to,
-      files: message.files?.map((file: any) => ({
-        id: file.id,
-        name: file.name,
-        mimetype: file.mimetype,
-        size: file.size,
-        url_private: file.url_private,
-        permalink: file.permalink,
-        mode: file.mode,
-      })),
-      attachments: message.attachments,
-      blocks: message.blocks,
-      edited: message.edited
-        ? {
-            user: message.edited.user,
-            ts: message.edited.ts,
-          }
-        : undefined,
-      permalink: message.permalink,
-    }))
+    const replies = (data.messages || [])
+      .slice(1)
+      .slice(0, maxReplies)
+      .map((message: any) => ({
+        type: message.type || 'message',
+        ts: message.ts,
+        text: message.text || '',
+        user: message.user,
+        bot_id: message.bot_id,
+        username: message.username,
+        channel: message.channel,
+        team: message.team,
+        thread_ts: message.thread_ts,
+        parent_user_id: message.parent_user_id,
+        reply_count: message.reply_count,
+        reply_users_count: message.reply_users_count,
+        latest_reply: message.latest_reply,
+        subscribed: message.subscribed,
+        last_read: message.last_read,
+        unread_count: message.unread_count,
+        subtype: message.subtype,
+        reactions: message.reactions?.map((reaction: any) => ({
+          name: reaction.name,
+          count: reaction.count,
+          users: reaction.users || [],
+        })),
+        is_starred: message.is_starred,
+        pinned_to: message.pinned_to,
+        files: message.files?.map((file: any) => ({
+          id: file.id,
+          name: file.name,
+          mimetype: file.mimetype,
+          size: file.size,
+          url_private: file.url_private,
+          permalink: file.permalink,
+          mode: file.mode,
+        })),
+        attachments: message.attachments,
+        blocks: message.blocks,
+        edited: message.edited
+          ? {
+              user: message.edited.user,
+              ts: message.edited.ts,
+            }
+          : undefined,
+        permalink: message.permalink,
+      }))
 
-    logger.info(`[${requestId}] Successfully fetched ${replies.length} thread replies for ts: ${threadTs}`)
+    logger.info(
+      `[${requestId}] Successfully fetched ${replies.length} thread replies for ts: ${threadTs}`
+    )
     return replies
   } catch (error) {
     logger.error(`[${requestId}] Error fetching thread replies for ts ${threadTs}:`, error)
@@ -410,13 +419,15 @@ export async function POST(request: NextRequest) {
         const uniqueThreadTs = Array.from(threadTsSet).slice(0, validatedData.maxThreads)
 
         if (uniqueThreadTs.length > 0) {
-          logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`)
+          logger.info(
+            `[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`
+          )
 
           // Fetch replies for each unique thread (with concurrency control)
           const threadPromises = uniqueThreadTs.map(async (threadTs, index) => {
             // Add small delay between requests to avoid rate limiting
             if (index > 0) {
-              await new Promise(resolve => setTimeout(resolve, 100))
+              await new Promise((resolve) => setTimeout(resolve, 100))
             }
             return {
               threadTs,
@@ -427,7 +438,7 @@ export async function POST(request: NextRequest) {
                 validatedData.maxRepliesPerThread,
                 requestId,
                 logger
-              )
+              ),
             }
           })
 
@@ -438,19 +449,24 @@ export async function POST(request: NextRequest) {
             const result = threadResults[index]
             if (result.status === 'fulfilled') {
               const { replies } = result.value
-            // Find the parent message (the one with this ts or thread_ts)
-            const parentMessage = allMessages.find((msg: any) =>
-              msg.ts === threadTs || msg.thread_ts === threadTs
-            )
+              // Find the parent message (the one with this ts or thread_ts)
+              const parentMessage = allMessages.find(
+                (msg: any) => msg.ts === threadTs || msg.thread_ts === threadTs
+              )
               if (parentMessage) {
                 parentMessage.replies = replies
-                logger.info(`[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`)
+                logger.info(
+                  `[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`
+                )
               }
             } else {
-              logger.warn(`[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`, result.reason)
+              logger.warn(
+                `[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`,
+                result.reason
+              )
               // Still attach empty array to parent message if found
-              const parentMessage = allMessages.find(msg =>
-                msg.ts === threadTs || msg.thread_ts === threadTs
+              const parentMessage = allMessages.find(
+                (msg) => msg.ts === threadTs || msg.thread_ts === threadTs
               )
               if (parentMessage) {
                 parentMessage.replies = []
@@ -591,34 +607,46 @@ export async function POST(request: NextRequest) {
 
     // Fetch thread replies if requested
     if (validatedData.includeThreads && messages.length > 0) {
-      logger.info(`[${requestId}] 🚀 Starting thread fetching for single-page messages - includeThreads: ${validatedData.includeThreads}`)
+      logger.info(
+        `[${requestId}] 🚀 Starting thread fetching for single-page messages - includeThreads: ${validatedData.includeThreads}`
+      )
 
       // Collect unique thread_ts values from messages that have threads
       const threadTsSet = new Set<string>()
       messages.forEach((msg: any) => {
-        logger.info(`[${requestId}] Checking message ts: ${msg.ts}, thread_ts: ${msg.thread_ts}, reply_count: ${msg.reply_count}`)
+        logger.info(
+          `[${requestId}] Checking message ts: ${msg.ts}, thread_ts: ${msg.thread_ts}, reply_count: ${msg.reply_count}`
+        )
         if (msg.reply_count && msg.reply_count > 0) {
           // This message has replies, use its own ts
           threadTsSet.add(msg.ts)
-          logger.info(`[${requestId}] Added thread parent ts: ${msg.ts} (has ${msg.reply_count} replies)`)
+          logger.info(
+            `[${requestId}] Added thread parent ts: ${msg.ts} (has ${msg.reply_count} replies)`
+          )
         } else if (msg.thread_ts) {
           // This message is part of a thread, use the thread_ts
           threadTsSet.add(msg.thread_ts)
-          logger.info(`[${requestId}] Added thread ts: ${msg.thread_ts} (message is part of thread)`)
+          logger.info(
+            `[${requestId}] Added thread ts: ${msg.thread_ts} (message is part of thread)`
+          )
         }
       })
 
       const uniqueThreadTs = Array.from(threadTsSet).slice(0, validatedData.maxThreads)
-      logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads: ${uniqueThreadTs.join(', ')}`)
+      logger.info(
+        `[${requestId}] Found ${uniqueThreadTs.length} unique threads: ${uniqueThreadTs.join(', ')}`
+      )
 
       if (uniqueThreadTs.length > 0) {
-        logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`)
+        logger.info(
+          `[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`
+        )
 
         // Fetch replies for each unique thread (with concurrency control)
         const threadPromises = uniqueThreadTs.map(async (threadTs, index) => {
           // Add small delay between requests to avoid rate limiting
           if (index > 0) {
-            await new Promise(resolve => setTimeout(resolve, 100))
+            await new Promise((resolve) => setTimeout(resolve, 100))
           }
           return {
             threadTs,
@@ -629,7 +657,7 @@ export async function POST(request: NextRequest) {
               validatedData.maxRepliesPerThread,
               requestId,
               logger
-            )
+            ),
           }
         })
 
@@ -641,18 +669,23 @@ export async function POST(request: NextRequest) {
           if (result.status === 'fulfilled') {
             const { replies } = result.value
             // Find the parent message (the one with this ts or thread_ts)
-            const parentMessage = messages.find((msg: any) =>
-              msg.ts === threadTs || msg.thread_ts === threadTs
+            const parentMessage = messages.find(
+              (msg: any) => msg.ts === threadTs || msg.thread_ts === threadTs
             )
             if (parentMessage) {
               parentMessage.replies = replies
-              logger.info(`[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`)
+              logger.info(
+                `[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`
+              )
             }
           } else {
-            logger.warn(`[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`, result.reason)
+            logger.warn(
+              `[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`,
+              result.reason
+            )
             // Still attach empty array to parent message if found
-            const parentMessage = messages.find((msg: any) =>
-              msg.ts === threadTs || msg.thread_ts === threadTs
+            const parentMessage = messages.find(
+              (msg: any) => msg.ts === threadTs || msg.thread_ts === threadTs
             )
             if (parentMessage) {
               parentMessage.replies = []

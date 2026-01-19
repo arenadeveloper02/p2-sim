@@ -799,13 +799,21 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             baseParams.includeThreads = includeThreads
             if (maxThreads) {
               const parsedMaxThreads = Number.parseInt(maxThreads, 10)
-              if (!Number.isNaN(parsedMaxThreads) && parsedMaxThreads > 0 && parsedMaxThreads <= 50) {
+              if (
+                !Number.isNaN(parsedMaxThreads) &&
+                parsedMaxThreads > 0 &&
+                parsedMaxThreads <= 50
+              ) {
                 baseParams.maxThreads = parsedMaxThreads
               }
             }
             if (maxRepliesPerThread) {
               const parsedMaxReplies = Number.parseInt(maxRepliesPerThread, 10)
-              if (!Number.isNaN(parsedMaxReplies) && parsedMaxReplies > 0 && parsedMaxReplies <= 200) {
+              if (
+                !Number.isNaN(parsedMaxReplies) &&
+                parsedMaxReplies > 0 &&
+                parsedMaxReplies <= 200
+              ) {
                 baseParams.maxRepliesPerThread = parsedMaxReplies
               }
             }
@@ -973,9 +981,15 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
     cursor: { type: 'string', description: 'Pagination cursor from previous response' },
     autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
-    includeThreads: { type: 'boolean', description: 'Include thread replies for messages that have threads' },
+    includeThreads: {
+      type: 'boolean',
+      description: 'Include thread replies for messages that have threads',
+    },
     maxThreads: { type: 'string', description: 'Maximum number of threads to fetch replies for' },
-    maxRepliesPerThread: { type: 'string', description: 'Maximum number of replies to fetch per thread' },
+    maxRepliesPerThread: {
+      type: 'string',
+      description: 'Maximum number of replies to fetch per thread',
+    },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
     // Update/Delete/React operation inputs
