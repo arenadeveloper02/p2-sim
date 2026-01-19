@@ -436,6 +436,54 @@ export function WorkflowPreview({
           executionStatus,
         },
       })
+
+      if (block.type === 'loop') {
+        // Recursively render all children (including nested loops)
+        const renderChildren = (parentId: string, parentPosition: { x: number; y: number }) => {
+          const childBlocks = Object.entries(workflowState.blocks || {}).filter(
+            ([_, childBlock]) => childBlock.data?.parentId === parentId
+          )
+
+          childBlocks.forEach(([childId, childBlock]) => {
+            const childConfig = getBlock(childBlock.type)
+
+            if (childConfig) {
+              const childNodeType = childBlock.type === 'note' ? 'noteBlock' : 'workflowBlock'
+
+              nodeArray.push({
+                id: childId,
+                type: childNodeType,
+                position: {
+                  x: parentPosition.x + 50,
+                  y: parentPosition.y + (childBlock.position?.y || 100),
+                },
+                data: {
+                  type: childBlock.type,
+                  config: childConfig,
+                  name: childBlock.name,
+                  blockState: childBlock,
+                  showSubBlocks,
+                  isChild: true,
+                  parentId,
+                  canEdit: false,
+                  isPreview: true,
+                },
+                draggable: false,
+              })
+
+              // If this child is also a loop or parallel, recursively render its children
+              if (childBlock.type === 'loop' || childBlock.type === 'parallel') {
+                renderChildren(childId, {
+                  x: parentPosition.x + 50,
+                  y: parentPosition.y + (childBlock.position?.y || 100),
+                })
+              }
+            }
+          })
+        }
+
+        renderChildren(blockId, block.position)
+      }
     })
 
     return nodeArray

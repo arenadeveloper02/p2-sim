@@ -81,6 +81,7 @@ import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import type { BlockState } from '@/stores/workflows/workflow/types'
 
 /** Lazy-loaded components for non-critical UI that can load after initial render */
 const LazyChat = lazy(() =>
@@ -2332,6 +2333,62 @@ const WorkflowContent = React.memo(() => {
     connectionCompletedRef.current = false
   }, [])
 
+  /**
+   * Check if two blocks are in the same container hierarchy.
+   * Returns true if:
+   * - Both are in the same container (same parentId)
+   * - One is an ancestor of the other (nested containers)
+   * - Both are at root level (no parentId)
+   */
+  const areInSameContainerHierarchyHelper = useCallback(
+    (
+      sourceParentId: string | undefined,
+      targetParentId: string | undefined,
+      blocks: Record<string, BlockState>
+    ): boolean => {
+      // Both at root level
+      if (!sourceParentId && !targetParentId) {
+        return true
+      }
+
+      // Same direct parent
+      if (sourceParentId === targetParentId) {
+        return true
+      }
+
+      // One is at root, other is in container - not allowed
+      if ((sourceParentId && !targetParentId) || (!sourceParentId && targetParentId)) {
+        return false
+      }
+
+      // Both have parents - check if one is ancestor of the other
+      if (sourceParentId && targetParentId) {
+        // Check if source's parent is an ancestor of target's parent
+        let currentId: string | undefined = targetParentId
+        while (currentId) {
+          if (currentId === sourceParentId) {
+            return true // sourceParentId is ancestor of targetParentId
+          }
+          const currentBlock: BlockState | undefined = blocks[currentId]
+          currentId = currentBlock?.data?.parentId
+        }
+
+        // Check if target's parent is an ancestor of source's parent
+        currentId = sourceParentId
+        while (currentId) {
+          if (currentId === targetParentId) {
+            return true // targetParentId is ancestor of sourceParentId
+          }
+          const currentBlock: BlockState | undefined = blocks[currentId]
+          currentId = currentBlock?.data?.parentId
+        }
+      }
+
+      return false
+    },
+    []
+  )
+
   /** Handles new edge connections with container boundary validation. */
   const onConnect = useCallback(
     (connection: any) => {
@@ -2367,6 +2424,10 @@ const WorkflowContent = React.memo(() => {
           connection.sourceHandle === 'parallel-start-source'
             ? connection.source
             : undefined)
+
+        // Check if target is a loop/parallel block (container)
+        const targetIsContainer =
+          targetNode.data?.type === 'loop' || targetNode.data?.type === 'parallel'
         const targetParentId = blocks[targetNode.id]?.data?.parentId
 
         // Generate a unique edge ID
@@ -2394,12 +2455,33 @@ const WorkflowContent = React.memo(() => {
           return
         }
 
+        // Special case: Allow connections TO loop/parallel block's start source from blocks in the same container
+        // This handles: block inside outer loop → inner loop's start source
+        if (targetIsContainer && sourceParentId === targetParentId) {
+          // Source and target loop are in the same container - allow connection
+          addEdge({
+            ...connection,
+            id: edgeId,
+            type: 'workflowEdge',
+            data: sourceParentId
+              ? {
+                  parentId: sourceParentId,
+                  isInsideContainer: true,
+                }
+              : undefined,
+          })
+          return
+        }
+
         // Prevent connections across container boundaries
-        if (
-          (sourceParentId && !targetParentId) ||
-          (!sourceParentId && targetParentId) ||
-          (sourceParentId && targetParentId && sourceParentId !== targetParentId)
-        ) {
+        // Allow connections within the same container or between nested containers
+        const areInSameContainerHierarchy = areInSameContainerHierarchyHelper(
+          sourceParentId,
+          targetParentId,
+          blocks
+        )
+
+        if (!areInSameContainerHierarchy) {
           return
         }
 
@@ -2502,14 +2584,6 @@ const WorkflowContent = React.memo(() => {
       const nodeAbsolutePos = getNodeAbsolutePosition(node.id)
 
       // Prevent subflows from being dragged into other subflows
-      if (node.type === 'subflowNode') {
-        // Clear any highlighting for subflow nodes
-        if (potentialParentId) {
-          clearDragHighlights()
-          setPotentialParentId(null)
-        }
-        return // Exit early - subflows cannot be placed inside other subflows
-      }
 
       // Find intersections with container nodes using absolute coordinates
       const intersectingNodes = getNodes()
@@ -2649,12 +2723,33 @@ const WorkflowContent = React.memo(() => {
       const allNodes = getNodes()
       const selectedNodes = allNodes.filter((n) => n.selected)
 
-      // If multiple nodes are selected, update all their positions
-      if (selectedNodes.length > 1) {
-        const positionUpdates = computeClampedPositionUpdates(selectedNodes, blocks, allNodes)
-        collaborativeBatchUpdatePositions(positionUpdates, {
-          previousPositions: multiNodeDragStartRef.current,
-        })
+      // Get the block's current parent (if any)
+      const currentBlock = blocks[node.id]
+      const currentParentId = currentBlock?.data?.parentId
+
+
+      // Calculate position - clamp if inside a container
+      let finalPosition = node.position
+      if (currentParentId) {
+        // Block is inside a container - clamp position to keep it fully inside
+        const parentNode = getNodes().find((n) => n.id === currentParentId)
+        if (parentNode) {
+          const containerDimensions = {
+            width: parentNode.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH,
+            height: parentNode.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT,
+          }
+          const isSubflow = node.type === 'subflowNode'
+          const blockDimensions = {
+            width: isSubflow
+              ? currentBlock?.data?.width || CONTAINER_DIMENSIONS.DEFAULT_WIDTH
+              : BLOCK_DIMENSIONS.FIXED_WIDTH,
+            height: isSubflow
+              ? currentBlock?.data?.height || CONTAINER_DIMENSIONS.DEFAULT_HEIGHT
+              : Math.max(
+                  currentBlock?.height || BLOCK_DIMENSIONS.MIN_HEIGHT,
+                  BLOCK_DIMENSIONS.MIN_HEIGHT
+                ),
+          }
 
         // Process parent updates using shared helper
         executeBatchParentUpdate(
@@ -2731,6 +2826,30 @@ const WorkflowContent = React.memo(() => {
 
       // Update the node's parent relationship
       if (potentialParentId) {
+        // Prevent circular parent references
+        const wouldCreateCycle = (() => {
+          if (potentialParentId === node.id) return true
+          const visited = new Set<string>()
+          let currentId: string | null = potentialParentId
+          while (currentId) {
+            if (visited.has(currentId)) return true
+            if (currentId === node.id) return true
+            visited.add(currentId)
+            const currentBlock = blocks[currentId] as { data?: { parentId?: string } } | undefined
+            currentId = currentBlock?.data?.parentId || null
+          }
+          return false
+        })()
+
+        if (wouldCreateCycle) {
+          logger.error('Cannot create circular parent reference', {
+            blockId: node.id,
+            attemptedParentId: potentialParentId,
+          })
+          setPotentialParentId(null)
+          return
+        }
+
         // Remove existing edges before moving into container
         const edgesToRemove = edgesForDisplay.filter(
           (e) => e.source === node.id || e.target === node.id

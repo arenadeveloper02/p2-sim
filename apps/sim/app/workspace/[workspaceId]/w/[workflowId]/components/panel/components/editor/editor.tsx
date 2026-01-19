@@ -231,6 +231,8 @@ export function Editor() {
         // Keep rename mode open on error so user can correct the name
         return
       }
+      // Reset editedName to match the new name after successful rename
+      setEditedName(trimmedName)
     }
     setIsRenaming(false)
   }, [currentBlockId, isRenaming, editedName, currentBlock?.name, collaborativeUpdateBlockName])
@@ -257,6 +259,13 @@ export function Editor() {
       setShouldFocusRename(false)
     }
   }, [shouldFocusRename, currentBlock, isSubflow, handleStartRename, setShouldFocusRename])
+  
+  // Sync editedName when currentBlock.name changes (e.g., from collaborative updates)
+  useEffect(() => {
+    if (!isRenaming && currentBlock?.name) {
+      setEditedName(currentBlock.name)
+    }
+  }, [currentBlock?.name, isRenaming])
 
   /**
    * Handles opening documentation link in a new secure tab.
@@ -320,7 +329,7 @@ export function Editor() {
         </div>
         <div className='flex shrink-0 items-center gap-[8px]'>
           {/* Rename button */}
-          {currentBlock && !isSubflow && (
+          {currentBlock && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button

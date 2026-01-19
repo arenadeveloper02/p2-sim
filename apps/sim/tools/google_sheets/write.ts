@@ -122,6 +122,8 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
         processedValues = rows
       }
 
+      // Send all data in one request
+
       const body: Record<string, any> = {
         majorDimension: params.majorDimension || 'ROWS',
         values: processedValues,
