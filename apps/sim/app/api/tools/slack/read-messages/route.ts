@@ -4,10 +4,100 @@ import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { openDMChannel } from '../utils'
+import type { SlackMessage } from '@/tools/slack/types'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackReadMessagesAPI')
+
+// Helper function to fetch thread replies
+async function fetchThreadReplies(
+  channel: string,
+  threadTs: string,
+  accessToken: string,
+  maxReplies: number,
+  requestId: string,
+  logger: any
+): Promise<SlackMessage[]> {
+  try {
+    const repliesUrl = new URL('https://slack.com/api/conversations.replies')
+    repliesUrl.searchParams.append('channel', channel)
+    repliesUrl.searchParams.append('ts', threadTs)
+    repliesUrl.searchParams.append('limit', Math.min(maxReplies + 1, 200).toString()) // +1 to account for parent message
+
+    logger.info(`[${requestId}] Fetching thread replies for ts: ${threadTs}, channel: ${channel}, maxReplies: ${maxReplies}`)
+    logger.info(`[${requestId}] Replies API URL: ${repliesUrl.toString()}`)
+
+    const response = await fetch(repliesUrl.toString(), {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    const data = await response.json()
+
+    logger.info(`[${requestId}] Thread replies API response for ts ${threadTs}: ok=${data.ok}, messages=${data.messages?.length || 0}`)
+
+    if (!data.ok) {
+      logger.warn(`[${requestId}] Failed to fetch thread replies for ts ${threadTs}:`, data.error)
+      return []
+    }
+
+    // Skip the first message (parent) and map the replies
+    const replies = (data.messages || []).slice(1).slice(0, maxReplies).map((message: any) => ({
+      type: message.type || 'message',
+      ts: message.ts,
+      text: message.text || '',
+      user: message.user,
+      bot_id: message.bot_id,
+      username: message.username,
+      channel: message.channel,
+      team: message.team,
+      thread_ts: message.thread_ts,
+      parent_user_id: message.parent_user_id,
+      reply_count: message.reply_count,
+      reply_users_count: message.reply_users_count,
+      latest_reply: message.latest_reply,
+      subscribed: message.subscribed,
+      last_read: message.last_read,
+      unread_count: message.unread_count,
+      subtype: message.subtype,
+      reactions: message.reactions?.map((reaction: any) => ({
+        name: reaction.name,
+        count: reaction.count,
+        users: reaction.users || [],
+      })),
+      is_starred: message.is_starred,
+      pinned_to: message.pinned_to,
+      files: message.files?.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimetype: file.mimetype,
+        size: file.size,
+        url_private: file.url_private,
+        permalink: file.permalink,
+        mode: file.mode,
+      })),
+      attachments: message.attachments,
+      blocks: message.blocks,
+      edited: message.edited
+        ? {
+            user: message.edited.user,
+            ts: message.edited.ts,
+          }
+        : undefined,
+      permalink: message.permalink,
+    }))
+
+    logger.info(`[${requestId}] Successfully fetched ${replies.length} thread replies for ts: ${threadTs}`)
+    return replies
+  } catch (error) {
+    logger.error(`[${requestId}] Error fetching thread replies for ts ${threadTs}:`, error)
+    return []
+  }
+}
 
 const SlackReadMessagesSchema = z
   .object({
@@ -26,6 +116,19 @@ const SlackReadMessagesSchema = z
     toDate: z.string().optional().nullable(),
     cursor: z.string().optional().nullable(),
     autoPaginate: z.boolean().optional().default(false),
+    includeThreads: z.boolean().optional().default(false),
+    maxThreads: z.coerce
+      .number()
+      .min(1, 'maxThreads must be at least 1')
+      .max(50, 'maxThreads cannot exceed 50')
+      .optional()
+      .default(10),
+    maxRepliesPerThread: z.coerce
+      .number()
+      .min(1, 'maxRepliesPerThread must be at least 1')
+      .max(200, 'maxRepliesPerThread cannot exceed 200')
+      .optional()
+      .default(100),
   })
   .refine((data) => data.channel || data.userId, {
     message: 'Either channel or userId is required',
@@ -288,6 +391,79 @@ export async function POST(request: NextRequest) {
         `[${requestId}] ✅ Auto-pagination completed: ${pagesFetched} pages, ${allMessages.length} total messages`
       )
 
+      // Fetch thread replies if requested
+      if (validatedData.includeThreads && allMessages.length > 0) {
+        logger.info(`[${requestId}] 🚀 Starting thread fetching for auto-paginated messages`)
+
+        // Collect unique thread_ts values from messages that have threads
+        const threadTsSet = new Set<string>()
+        allMessages.forEach((msg: any) => {
+          if (msg.reply_count && msg.reply_count > 0) {
+            // This message has replies, use its own ts
+            threadTsSet.add(msg.ts)
+          } else if (msg.thread_ts) {
+            // This message is part of a thread, use the thread_ts
+            threadTsSet.add(msg.thread_ts)
+          }
+        })
+
+        const uniqueThreadTs = Array.from(threadTsSet).slice(0, validatedData.maxThreads)
+
+        if (uniqueThreadTs.length > 0) {
+          logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`)
+
+          // Fetch replies for each unique thread (with concurrency control)
+          const threadPromises = uniqueThreadTs.map(async (threadTs, index) => {
+            // Add small delay between requests to avoid rate limiting
+            if (index > 0) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+            }
+            return {
+              threadTs,
+              replies: await fetchThreadReplies(
+                channel!,
+                threadTs,
+                validatedData.accessToken,
+                validatedData.maxRepliesPerThread,
+                requestId,
+                logger
+              )
+            }
+          })
+
+          const threadResults = await Promise.allSettled(threadPromises)
+
+          // Attach replies to their parent messages
+          uniqueThreadTs.forEach((threadTs, index) => {
+            const result = threadResults[index]
+            if (result.status === 'fulfilled') {
+              const { replies } = result.value
+            // Find the parent message (the one with this ts or thread_ts)
+            const parentMessage = allMessages.find((msg: any) =>
+              msg.ts === threadTs || msg.thread_ts === threadTs
+            )
+              if (parentMessage) {
+                parentMessage.replies = replies
+                logger.info(`[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`)
+              }
+            } else {
+              logger.warn(`[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`, result.reason)
+              // Still attach empty array to parent message if found
+              const parentMessage = allMessages.find(msg =>
+                msg.ts === threadTs || msg.thread_ts === threadTs
+              )
+              if (parentMessage) {
+                parentMessage.replies = []
+              }
+            }
+          })
+
+          logger.info(`[${requestId}] ✅ Thread fetching completed for auto-paginated messages`)
+        } else {
+          logger.info(`[${requestId}] No threads found in auto-paginated results`)
+        }
+      }
+
       return NextResponse.json({
         success: true,
         output: {
@@ -412,6 +588,83 @@ export async function POST(request: NextRequest) {
     }))
 
     logger.info(`[${requestId}] Successfully read ${messages.length} messages`)
+
+    // Fetch thread replies if requested
+    if (validatedData.includeThreads && messages.length > 0) {
+      logger.info(`[${requestId}] 🚀 Starting thread fetching for single-page messages - includeThreads: ${validatedData.includeThreads}`)
+
+      // Collect unique thread_ts values from messages that have threads
+      const threadTsSet = new Set<string>()
+      messages.forEach((msg: any) => {
+        logger.info(`[${requestId}] Checking message ts: ${msg.ts}, thread_ts: ${msg.thread_ts}, reply_count: ${msg.reply_count}`)
+        if (msg.reply_count && msg.reply_count > 0) {
+          // This message has replies, use its own ts
+          threadTsSet.add(msg.ts)
+          logger.info(`[${requestId}] Added thread parent ts: ${msg.ts} (has ${msg.reply_count} replies)`)
+        } else if (msg.thread_ts) {
+          // This message is part of a thread, use the thread_ts
+          threadTsSet.add(msg.thread_ts)
+          logger.info(`[${requestId}] Added thread ts: ${msg.thread_ts} (message is part of thread)`)
+        }
+      })
+
+      const uniqueThreadTs = Array.from(threadTsSet).slice(0, validatedData.maxThreads)
+      logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads: ${uniqueThreadTs.join(', ')}`)
+
+      if (uniqueThreadTs.length > 0) {
+        logger.info(`[${requestId}] Found ${uniqueThreadTs.length} unique threads to fetch replies for`)
+
+        // Fetch replies for each unique thread (with concurrency control)
+        const threadPromises = uniqueThreadTs.map(async (threadTs, index) => {
+          // Add small delay between requests to avoid rate limiting
+          if (index > 0) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+          }
+          return {
+            threadTs,
+            replies: await fetchThreadReplies(
+              channel!,
+              threadTs,
+              validatedData.accessToken,
+              validatedData.maxRepliesPerThread,
+              requestId,
+              logger
+            )
+          }
+        })
+
+        const threadResults = await Promise.allSettled(threadPromises)
+
+        // Attach replies to their parent messages
+        uniqueThreadTs.forEach((threadTs, index) => {
+          const result = threadResults[index]
+          if (result.status === 'fulfilled') {
+            const { replies } = result.value
+            // Find the parent message (the one with this ts or thread_ts)
+            const parentMessage = messages.find((msg: any) =>
+              msg.ts === threadTs || msg.thread_ts === threadTs
+            )
+            if (parentMessage) {
+              parentMessage.replies = replies
+              logger.info(`[${requestId}] Attached ${replies.length} replies to thread ts: ${threadTs}`)
+            }
+          } else {
+            logger.warn(`[${requestId}] Failed to fetch replies for thread ts: ${threadTs}`, result.reason)
+            // Still attach empty array to parent message if found
+            const parentMessage = messages.find((msg: any) =>
+              msg.ts === threadTs || msg.thread_ts === threadTs
+            )
+            if (parentMessage) {
+              parentMessage.replies = []
+            }
+          }
+        })
+
+        logger.info(`[${requestId}] ✅ Thread fetching completed for single-page messages`)
+      } else {
+        logger.info(`[${requestId}] No threads found in single-page results`)
+      }
+    }
 
     return NextResponse.json({
       success: true,

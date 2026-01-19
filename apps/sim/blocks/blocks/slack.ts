@@ -287,6 +287,47 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         value: 'read',
       },
     },
+    {
+      id: 'includeThreads',
+      title: 'Include Thread Replies',
+      type: 'switch',
+      description: 'Include replies for messages that are part of threads',
+      defaultValue: false,
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'maxThreads',
+      title: 'Max Threads',
+      type: 'short-input',
+      placeholder: '10',
+      description: 'Maximum number of threads to fetch replies for',
+      condition: {
+        field: 'operation',
+        value: 'read',
+        and: {
+          field: 'includeThreads',
+          value: true,
+        },
+      },
+    },
+    {
+      id: 'maxRepliesPerThread',
+      title: 'Max Replies Per Thread',
+      type: 'short-input',
+      placeholder: '100',
+      description: 'Maximum number of replies to fetch per thread',
+      condition: {
+        field: 'operation',
+        value: 'read',
+        and: {
+          field: 'includeThreads',
+          value: true,
+        },
+      },
+    },
     // List Channels specific fields
     {
       id: 'includePrivate',
@@ -616,6 +657,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           toDate,
           cursor,
           autoPaginate,
+          includeThreads,
+          maxThreads,
+          maxRepliesPerThread,
           attachmentFiles,
           files,
           threadTs,
@@ -752,6 +796,19 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             }
 
             baseParams.autoPaginate = autoPaginate
+            baseParams.includeThreads = includeThreads
+            if (maxThreads) {
+              const parsedMaxThreads = Number.parseInt(maxThreads, 10)
+              if (!Number.isNaN(parsedMaxThreads) && parsedMaxThreads > 0 && parsedMaxThreads <= 50) {
+                baseParams.maxThreads = parsedMaxThreads
+              }
+            }
+            if (maxRepliesPerThread) {
+              const parsedMaxReplies = Number.parseInt(maxRepliesPerThread, 10)
+              if (!Number.isNaN(parsedMaxReplies) && parsedMaxReplies > 0 && parsedMaxReplies <= 200) {
+                baseParams.maxRepliesPerThread = parsedMaxReplies
+              }
+            }
 
             break
           }
@@ -916,6 +973,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
     cursor: { type: 'string', description: 'Pagination cursor from previous response' },
     autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
+    includeThreads: { type: 'boolean', description: 'Include thread replies for messages that have threads' },
+    maxThreads: { type: 'string', description: 'Maximum number of threads to fetch replies for' },
+    maxRepliesPerThread: { type: 'string', description: 'Maximum number of replies to fetch per thread' },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
     // Update/Delete/React operation inputs

@@ -63,6 +63,9 @@ export interface SlackMessageReaderParams extends SlackBaseParams {
   latest?: string
   cursor?: string
   autoPaginate?: boolean
+  includeThreads?: boolean
+  maxThreads?: number
+  maxRepliesPerThread?: number
 }
 
 export interface SlackDownloadParams extends SlackBaseParams {
@@ -192,6 +195,9 @@ export interface SlackMessage {
   subscribed?: boolean
   last_read?: string
   unread_count?: number
+
+  // Thread replies (when includeThreads is enabled)
+  replies?: SlackMessage[]
 
   // Message subtype
   subtype?: string

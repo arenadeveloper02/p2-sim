@@ -77,6 +77,24 @@ export const slackMessageReaderTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
     },
+    includeThreads: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Include thread replies for messages that have threads',
+    },
+    maxThreads: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Maximum number of threads to fetch replies for (default: 10)',
+    },
+    maxRepliesPerThread: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Maximum number of replies to fetch per thread (default: 100)',
+    },
   },
 
   request: {
@@ -94,6 +112,9 @@ export const slackMessageReaderTool: ToolConfig<
       latest: params.latest,
       cursor: params.cursor,
       autoPaginate: params.autoPaginate,
+      includeThreads: params.includeThreads,
+      maxThreads: params.maxThreads,
+      maxRepliesPerThread: params.maxRepliesPerThread,
     }),
   },
 
@@ -136,6 +157,13 @@ export const slackMessageReaderTool: ToolConfig<
           subscribed: { type: 'boolean', description: 'Whether user is subscribed to thread' },
           last_read: { type: 'string', description: 'Last read timestamp' },
           unread_count: { type: 'number', description: 'Number of unread messages' },
+
+          // Thread replies
+          replies: {
+            type: 'array',
+            description: 'Thread replies for this message (when includeThreads is enabled)',
+            items: { type: 'object' }, // Recursive reference to message structure
+          },
 
           // Message subtype
           subtype: { type: 'string', description: 'Message subtype' },
