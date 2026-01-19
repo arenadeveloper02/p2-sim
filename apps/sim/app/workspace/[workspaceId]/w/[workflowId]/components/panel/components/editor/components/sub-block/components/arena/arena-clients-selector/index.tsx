@@ -88,7 +88,8 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedLabel =
-    (Array.isArray(clients) && clients.find((cl) => cl.clientId === selectedValue?.clientId))?.name || 'Select client...'
+    (Array.isArray(clients) && clients.find((cl) => cl.clientId === selectedValue?.clientId))
+      ?.name || 'Select client...'
 
   const handleSelect = (client: Client) => {
     console.log('Selected client:', client)
@@ -120,7 +121,9 @@ export function ArenaClientsSelector({
         <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
           <Command
             filter={(value, search) => {
-              const client = Array.isArray(clients) ? clients.find((cl) => cl.clientId === value || cl.name === value) : null
+              const client = Array.isArray(clients)
+                ? clients.find((cl) => cl.clientId === value || cl.name === value)
+                : null
               if (!client) return 0
 
               return client.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -133,23 +136,24 @@ export function ArenaClientsSelector({
             <CommandList>
               <CommandEmpty>No client found.</CommandEmpty>
               <CommandGroup>
-                {Array.isArray(clients) && clients.map((client) => (
-                  <CommandItem
-                    key={client.clientId}
-                    value={client.clientId}
-                    onSelect={() => handleSelect(client)}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    className='max-w-full whitespace-normal break-words'
-                  >
-                    <span className='max-w-[400px] truncate'>{client.name}</span>
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
+                {Array.isArray(clients) &&
+                  clients.map((client) => (
+                    <CommandItem
+                      key={client.clientId}
+                      value={client.clientId}
+                      onSelect={() => handleSelect(client)}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      className='max-w-full whitespace-normal break-words'
+                    >
+                      <span className='max-w-[400px] truncate'>{client.name}</span>
+                      <Check
+                        className={cn(
+                          'ml-auto h-4 w-4',
+                          selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
               </CommandGroup>
             </CommandList>
           </Command>
