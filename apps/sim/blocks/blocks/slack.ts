@@ -783,7 +783,13 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             }
 
             if (toDate) {
-              const toTimestamp = Math.floor(new Date(toDate).getTime() / 1000).toString()
+              let toDateObj = new Date(toDate)
+              // If fromDate and toDate are the same day, set toDate to end of that day
+              // to include all messages from the entire day
+              if (fromDate && fromDate === toDate) {
+                toDateObj.setHours(23, 59, 59, 999)
+              }
+              const toTimestamp = Math.floor(toDateObj.getTime() / 1000).toString()
               baseParams.latest = toTimestamp
             }
 

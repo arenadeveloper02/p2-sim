@@ -1720,9 +1720,6 @@ export const auth = betterAuth({
             'canvases:write',
             'reactions:write',
             // User token scopes - for user-specific actions
-            'identity.basic',
-            'identity.email',
-            'identity.avatar',
             'search:read',
           ],
           responseType: 'code',
