@@ -283,6 +283,12 @@ export class ExecutionEngine {
   }
 
   private async executeNodeAsync(nodeId: string): Promise<void> {
+    // Check for cancellation before executing the node
+    if (await this.checkCancellation()) {
+      logger.info('Node execution cancelled before starting', { nodeId })
+      return
+    }
+
     try {
       const wasAlreadyExecuted = this.context.executedBlocks.has(nodeId)
       const result = await this.nodeOrchestrator.executeNode(this.context, nodeId)
@@ -325,7 +331,7 @@ export class ExecutionEngine {
       this.finalOutput = output
     }
 
-    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
+    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
 
     logger.info('Processing outgoing edges', {
       nodeId,

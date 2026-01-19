@@ -560,7 +560,7 @@ describe('workflow store', () => {
       expect(parsedDistribution).toHaveLength(3)
     })
 
-    it('should clamp parallel count between 1 and 20', () => {
+    it('should clamp parallel count between 1 and 500', () => {
       const { addBlock, updateParallelCount } = useWorkflowStore.getState()
 
       addBlock(
@@ -574,9 +574,9 @@ describe('workflow store', () => {
         }
       )
 
-      updateParallelCount('parallel1', 100)
+      updateParallelCount('parallel1', 1000)
       let state = useWorkflowStore.getState()
-      expect(state.blocks.parallel1?.data?.count).toBe(20)
+      expect(state.blocks.parallel1?.data?.count).toBe(500)
 
       updateParallelCount('parallel1', 0)
       state = useWorkflowStore.getState()

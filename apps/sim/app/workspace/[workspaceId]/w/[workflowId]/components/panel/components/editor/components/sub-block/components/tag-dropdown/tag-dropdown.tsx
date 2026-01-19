@@ -845,59 +845,119 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       {} as Record<string, { type: string; id: string }>
     )
 
-    let loopBlockGroup: BlockTagGroup | null = null
+    // Find all containing loops recursively (nested loops from innermost to outermost)
+    const findAllContainingLoops = (targetBlockId: string): Array<[string, any]> => {
+      const containingLoops: Array<[string, any]> = []
+      const visited = new Set<string>()
+
+      const findLoopsRecursively = (blockId: string) => {
+        if (visited.has(blockId)) return
+        visited.add(blockId)
+
+        // Find all loops that contain this block directly
+        const directContainingLoops = Object.entries(loops).filter(([_, loop]) =>
+          loop.nodes.includes(blockId)
+        )
+
+        for (const [loopId, loop] of directContainingLoops) {
+          if (!containingLoops.some(([id]) => id === loopId)) {
+            containingLoops.push([loopId, loop])
+            // Recursively find loops that contain this loop block
+            findLoopsRecursively(loopId)
+          }
+        }
+      }
+
+      findLoopsRecursively(targetBlockId)
+      return containingLoops
+    }
 
     const isLoopBlock = blocks[blockId]?.type === 'loop'
     const currentLoop = isLoopBlock ? loops[blockId] : null
 
-    const containingLoop = Object.entries(loops).find(([_, loop]) => loop.nodes.includes(blockId))
+    // Get all containing loops (including nested ones)
+    const allContainingLoops = findAllContainingLoops(blockId)
 
-    let containingLoopBlockId: string | null = null
+    // Count total loops to determine if we need to prefix tags for uniqueness
+    const totalLoops = allContainingLoops.length + (isLoopBlock ? 1 : 0)
+    const hasMultipleLoops = totalLoops > 1
 
+    // Create BlockTagGroups for all containing loops
+    const loopBlockGroups: BlockTagGroup[] = []
+
+    // If current block is a loop, add it first (innermost)
     if (currentLoop && isLoopBlock) {
-      containingLoopBlockId = blockId
       const loopType = currentLoop.loopType || 'for'
-      const contextualTags: string[] = ['index']
-      if (loopType === 'forEach') {
-        contextualTags.push('currentItem')
-        contextualTags.push('items')
-      }
-
       const loopBlock = blocks[blockId]
       if (loopBlock) {
         const loopBlockName = loopBlock.name || loopBlock.type
+        const normalizedBlockName = normalizeName(loopBlockName)
 
-        loopBlockGroup = {
+        // If multiple loops exist, prefix tags with block name to make them unique
+        // Otherwise, keep simple format for backward compatibility
+        const contextualTags: string[] = hasMultipleLoops
+          ? [`${normalizedBlockName}.index`]
+          : ['index']
+        if (loopType === 'forEach') {
+          if (hasMultipleLoops) {
+            contextualTags.push(`${normalizedBlockName}.currentItem`)
+            contextualTags.push(`${normalizedBlockName}.items`)
+          } else {
+            contextualTags.push('currentItem')
+            contextualTags.push('items')
+          }
+        }
+
+        loopBlockGroups.push({
           blockName: loopBlockName,
           blockId: blockId,
           blockType: 'loop',
           tags: contextualTags,
           distance: 0,
-        }
+        })
       }
-    } else if (containingLoop) {
-      const [loopId, loop] = containingLoop
-      containingLoopBlockId = loopId
-      const loopType = loop.loopType || 'for'
-      const contextualTags: string[] = ['index']
-      if (loopType === 'forEach') {
-        contextualTags.push('currentItem')
-        contextualTags.push('items')
-      }
+    }
 
+    // Add all containing loops (from innermost to outermost)
+    for (const [loopId, loop] of allContainingLoops) {
+      // Skip if we already added this loop (when current block is a loop)
+      if (loopId === blockId && isLoopBlock) continue
+
+      const loopType = loop.loopType || 'for'
       const containingLoopBlock = blocks[loopId]
       if (containingLoopBlock) {
         const loopBlockName = containingLoopBlock.name || containingLoopBlock.type
+        const normalizedBlockName = normalizeName(loopBlockName)
 
-        loopBlockGroup = {
+        // If multiple loops exist, prefix tags with block name to make them unique
+        // Otherwise, keep simple format for backward compatibility
+        const contextualTags: string[] = hasMultipleLoops
+          ? [`${normalizedBlockName}.index`]
+          : ['index']
+        if (loopType === 'forEach') {
+          if (hasMultipleLoops) {
+            contextualTags.push(`${normalizedBlockName}.currentItem`)
+            contextualTags.push(`${normalizedBlockName}.items`)
+          } else {
+            contextualTags.push('currentItem')
+            contextualTags.push('items')
+          }
+        }
+
+        loopBlockGroups.push({
           blockName: loopBlockName,
           blockId: loopId,
           blockType: 'loop',
           tags: contextualTags,
           distance: 0,
-        }
+        })
       }
     }
+
+    // Keep the first loopBlockGroup for backward compatibility (if any)
+    const loopBlockGroup = loopBlockGroups.length > 0 ? loopBlockGroups[0] : null
+    const containingLoopBlockId =
+      loopBlockGroups.length > 0 ? loopBlockGroups[0]?.blockId || null : null
 
     let parallelBlockGroup: BlockTagGroup | null = null
     const containingParallel = Object.entries(parallels || {}).find(([_, parallel]) =>
@@ -1114,8 +1174,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     }
 
     const finalBlockTagGroups: BlockTagGroup[] = []
-    if (loopBlockGroup) {
-      finalBlockTagGroups.push(loopBlockGroup)
+    // Add all loop block groups (nested loops from innermost to outermost)
+    if (loopBlockGroups.length > 0) {
+      finalBlockTagGroups.push(...loopBlockGroups)
     }
     if (parallelBlockGroup) {
       finalBlockTagGroups.push(parallelBlockGroup)
@@ -1125,8 +1186,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     finalBlockTagGroups.push(...blockTagGroups)
 
     const contextualTags: string[] = []
-    if (loopBlockGroup) {
-      contextualTags.push(...loopBlockGroup.tags)
+    // Add tags from all loop block groups
+    for (const group of loopBlockGroups) {
+      contextualTags.push(...group.tags)
     }
     if (parallelBlockGroup) {
       contextualTags.push(...parallelBlockGroup.tags)
@@ -1206,8 +1268,21 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           const path = tagParts.slice(1).join('.')
           if (
             (group.blockType === 'loop' || group.blockType === 'parallel') &&
+            tagParts.length === 2 &&
+            ['index', 'currentItem', 'items'].includes(tagParts[1])
+          ) {
+            // For loop/parallel tags like "LoopName.index", display just "index" but keep full tag
+            const displayName = tagParts[1] // e.g., "index", "currentItem", "items"
+            directTags.push({
+              key: displayName,
+              display: displayName,
+              fullTag: tag, // Keep the full prefixed tag for selection
+            })
+          } else if (
+            (group.blockType === 'loop' || group.blockType === 'parallel') &&
             tagParts.length === 1
           ) {
+            // Fallback for tags without prefix (backward compatibility)
             directTags.push({
               key: tag,
               display: tag,
@@ -1360,8 +1435,16 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         blockGroup &&
         (blockGroup.blockType === 'loop' || blockGroup.blockType === 'parallel')
       ) {
-        if (!tag.includes('.') && ['index', 'currentItem', 'items'].includes(tag)) {
-          processedTag = `${blockGroup.blockType}.${tag}`
+        // Check if tag is already prefixed (e.g., "LoopName.index")
+        const tagParts = tag.split('.')
+        if (tagParts.length === 2 && ['index', 'currentItem', 'items'].includes(tagParts[1])) {
+          // Tag is already prefixed with block name, use it as-is
+          processedTag = tag
+        } else if (!tag.includes('.') && ['index', 'currentItem', 'items'].includes(tag)) {
+          // Legacy format: tag without prefix, add normalized block name prefix
+          // This handles backward compatibility for existing workflows
+          const normalizedBlockName = normalizeName(blockGroup.blockName)
+          processedTag = `${normalizedBlockName}.${tag}`
         } else {
           processedTag = tag
         }

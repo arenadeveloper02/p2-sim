@@ -188,15 +188,14 @@ return results;
 
 ## Fonctionnalités avancées
 
-### Limitations
+### Boucles Imbriquées
 
-<Callout type="warning">
-  Les blocs conteneurs (Boucles et Parallèles) ne peuvent pas être imbriqués les uns dans les autres. Cela signifie :
-  - Vous ne pouvez pas placer un bloc Boucle à l'intérieur d'un autre bloc Boucle
-  - Vous ne pouvez pas placer un bloc Parallèle à l'intérieur d'un bloc Boucle
-  - Vous ne pouvez pas placer un bloc conteneur à l'intérieur d'un autre bloc conteneur
-  
-  Si vous avez besoin d'une itération multidimensionnelle, envisagez de restructurer votre flux de travail pour utiliser des boucles séquentielles ou traiter les données par étapes.
+<Callout type="info">
+  Les blocs de boucle peuvent être imbriqués dans d'autres blocs de boucle, permettant une itération multidimensionnelle. Lorsque vous imbriquez des boucles :
+  - Les boucles internes s'exécutent dans chaque itération de la boucle externe
+  - Les variables de boucle comme `<loop.index>` font référence à la boucle conteneur la plus interne
+  - Chaque boucle maintient son propre état d'itération de manière indépendante
+  - Utilisez des boucles imbriquées pour traiter des structures de données multidimensionnelles ou effectuer des opérations itératives complexes
 </Callout>
 
 <Callout type="info">

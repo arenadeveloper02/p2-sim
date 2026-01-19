@@ -253,6 +253,19 @@ export class LoopOrchestrator {
 
     scope.currentIterationOutputs.clear()
 
+    // Verify all nodes inside the loop have completed before allowing continuation
+    // This is critical for nested loops - the outer loop should wait for inner loops to complete all iterations
+    const allNodesCompleted = this.hasAllLoopNodesCompleted(ctx, loopId)
+    if (!allNodesCompleted) {
+      // Block continuation but don't exit - this will prevent the loop from continuing
+      // until nested loops complete. The execution will wait for nested loops to finish.
+      return {
+        shouldContinue: false,
+        shouldExit: false,
+        selectedRoute: EDGE.LOOP_EXIT,
+      }
+    }
+
     if (!(await this.evaluateCondition(ctx, scope, scope.iteration + 1))) {
       return this.createExitResult(ctx, loopId, scope)
     }
@@ -262,6 +275,10 @@ export class LoopOrchestrator {
     if (scope.items && scope.iteration < scope.items.length) {
       scope.item = scope.items[scope.iteration]
     }
+
+    // When an outer loop continues to a new iteration, reset all nested loop scopes
+    // This ensures nested loops can execute again for the new outer loop iteration
+    this.resetNestedLoopScopes(ctx, loopId)
 
     return {
       shouldContinue: true,
@@ -278,12 +295,154 @@ export class LoopOrchestrator {
     const results = scope.allIterationOutputs
     this.state.setBlockOutput(loopId, { results }, DEFAULTS.EXECUTION_TIME)
 
+    // When a nested loop exits, check if any parent loop's sentinel end needs to be re-triggered
+    this.checkAndTriggerParentLoopSentinelEnd(ctx, loopId)
+
     return {
       shouldContinue: false,
       shouldExit: true,
       selectedRoute: EDGE.LOOP_EXIT,
       aggregatedResults: results,
     }
+  }
+
+  /**
+   * When a nested loop exits, check if any parent loop's sentinel end is waiting for it
+   * and needs to be re-triggered. This ensures outer loops continue after inner loops complete.
+   */
+  private checkAndTriggerParentLoopSentinelEnd(ctx: ExecutionContext, nestedLoopId: string): void {
+    // Find all loops that contain this nested loop
+    for (const [parentLoopId, loopConfig] of this.dag.loopConfigs) {
+      if (parentLoopId === nestedLoopId) continue // Skip self
+
+      const parentLoopNodes = (loopConfig as LoopConfigWithNodes).nodes || []
+      if (parentLoopNodes.includes(nestedLoopId)) {
+        // This is a parent loop that contains the nested loop
+        const parentSentinelEndId = buildSentinelEndId(parentLoopId)
+        const parentSentinelEndExecuted = this.state.hasExecuted(parentSentinelEndId)
+
+        if (parentSentinelEndExecuted) {
+          // Parent loop's sentinel end has executed - check if it's waiting for nested loop
+          const parentScope = ctx.loopExecutions?.get(parentLoopId)
+          if (parentScope) {
+            // Check if parent loop has more iterations to run
+            const hasMoreIterations =
+              (parentScope.loopType === 'for' &&
+                parentScope.maxIterations !== undefined &&
+                parentScope.allIterationOutputs.length < parentScope.maxIterations) ||
+              (parentScope.loopType === 'forEach' &&
+                parentScope.items &&
+                parentScope.allIterationOutputs.length < parentScope.items.length) ||
+              parentScope.loopType === 'while' ||
+              parentScope.loopType === 'doWhile'
+
+            if (hasMoreIterations) {
+              // Parent loop has more iterations - check if nested loop has now completed
+              const nestedLoopCompleted = this.hasNestedLoopCompleted(
+                ctx,
+                parentLoopId,
+                nestedLoopId
+              )
+
+              if (nestedLoopCompleted) {
+                // Nested loop has completed - re-trigger parent loop's sentinel end
+                // Unmark the sentinel end so it can execute again
+                this.state.unmarkExecuted(parentSentinelEndId)
+
+                // Add to pending nodes to be re-executed
+                if (!ctx.pendingDynamicNodes) {
+                  ctx.pendingDynamicNodes = []
+                }
+                ctx.pendingDynamicNodes.push(parentSentinelEndId)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * When an outer loop continues to a new iteration, reset all nested loop scopes
+   * so they can execute again for the new outer loop iteration
+   */
+  private resetNestedLoopScopes(ctx: ExecutionContext, outerLoopId: string): void {
+    const loopConfig = this.dag.loopConfigs.get(outerLoopId) as LoopConfigWithNodes | undefined
+    if (!loopConfig) return
+
+    const loopNodes = loopConfig.nodes || []
+    for (const nodeId of loopNodes) {
+      // Check if this node is a nested loop
+      if (this.dag.loopConfigs.has(nodeId)) {
+        const nestedLoopId = nodeId
+        const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
+
+        if (nestedScope) {
+          // Clear execution state for all nodes in the nested loop
+          this.clearLoopExecutionState(nestedLoopId)
+
+          // Restore loop edges that may have been deactivated
+          this.restoreLoopEdges(nestedLoopId)
+
+          // For forEach loops, don't re-initialize here because block outputs
+          // (e.g., <api.results>) may not be updated yet. The loop will be
+          // re-initialized when its sentinel start node runs (after blocks have executed),
+          // which ensures it gets fresh data from the current outer loop iteration.
+          // For 'for' loops, re-initialize here as they don't depend on block outputs.
+          if (nestedScope.loopType !== 'forEach') {
+            // Re-initialize the loop scope with fresh state
+            this.initializeLoopScope(ctx, nestedLoopId)
+          }
+          // For forEach loops, we leave the scope as-is and let the sentinel start
+          // re-initialize it with fresh data when it runs. The execution state
+          // has been cleared above, so the loop will reset properly.
+        }
+      }
+    }
+  }
+
+  /**
+   * Check if a nested loop has completed all its iterations
+   */
+  private hasNestedLoopCompleted(
+    ctx: ExecutionContext,
+    parentLoopId: string,
+    nestedLoopId: string
+  ): boolean {
+    const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
+    if (!nestedScope) {
+      // Check if sentinel end has exited
+      const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
+      const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
+      const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
+      return nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true
+    }
+
+    const nestedLoopConfig = this.dag.loopConfigs.get(nestedLoopId) as
+      | LoopConfigWithNodes
+      | undefined
+    if (!nestedLoopConfig) return false
+
+    const expectedIterations =
+      nestedScope.loopType === 'for'
+        ? nestedScope.maxIterations
+        : nestedScope.loopType === 'forEach'
+          ? nestedScope.items?.length
+          : undefined
+
+    if (expectedIterations !== undefined) {
+      const completedIterations = nestedScope.allIterationOutputs.length
+      const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
+      const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
+      const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
+
+      return (
+        completedIterations >= expectedIterations ||
+        (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true)
+      )
+    }
+
+    return false
   }
 
   private async evaluateCondition(
@@ -520,5 +679,119 @@ export class LoopOrchestrator {
 
   private resolveForEachItems(ctx: ExecutionContext, items: any): any[] {
     return resolveArrayInput(ctx, items, this.resolver)
+  }
+
+  /**
+   * Checks if all nodes inside a loop have completed execution.
+   * This includes checking nested loops - all nested loop sentinel end nodes must have completed.
+   * Note: The sentinel end node itself is excluded from this check since we're evaluating
+   * continuation from within the sentinel end node.
+   *
+   * For loops with conditional routing (conditions/routers), not all nodes will execute
+   * because only one path is taken. In such cases, we check if at least one terminal node
+   * has executed (terminal nodes have edges to the sentinel end, indicating a path completed).
+   */
+  private hasAllLoopNodesCompleted(ctx: ExecutionContext, loopId: string): boolean {
+    const loopConfig = this.dag.loopConfigs.get(loopId) as LoopConfigWithNodes | undefined
+    if (!loopConfig) {
+      logger.warn('Loop config not found for completion check', { loopId })
+      return true // If we can't find the config, assume complete to avoid blocking
+    }
+
+    const sentinelEndId = buildSentinelEndId(loopId)
+    const loopNodes = loopConfig.nodes || []
+    const nodesSet = new Set(loopNodes)
+
+    // Find terminal nodes (nodes with edges to sentinel end) - these indicate path completion
+    const terminalNodes: string[] = []
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this node has an edge to the sentinel end (it's a terminal node)
+      const hasEdgeToSentinelEnd = Array.from(node.outgoingEdges.values()).some(
+        (edge) => edge.target === sentinelEndId
+      )
+
+      if (hasEdgeToSentinelEnd) {
+        terminalNodes.push(nodeId)
+      }
+    }
+
+    // Check nested loops first - they must complete before the outer loop continues
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const isNestedLoopId = this.dag.loopConfigs.has(nodeId)
+      if (isNestedLoopId) {
+        const nestedLoopId = nodeId
+        const nestedScope = ctx.loopExecutions?.get(nestedLoopId)
+
+        if (nestedScope) {
+          const nestedLoopConfig = this.dag.loopConfigs.get(nestedLoopId) as
+            | LoopConfigWithNodes
+            | undefined
+          if (nestedLoopConfig) {
+            const expectedIterations =
+              nestedScope.loopType === 'for'
+                ? nestedScope.maxIterations
+                : nestedScope.loopType === 'forEach'
+                  ? nestedScope.items?.length
+                  : undefined
+
+            if (expectedIterations !== undefined) {
+              const completedIterations = nestedScope.allIterationOutputs.length
+              const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
+              const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
+              const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
+
+              const isComplete =
+                completedIterations >= expectedIterations ||
+                (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true)
+
+              if (!isComplete) {
+                return false
+              }
+            }
+          }
+        } else {
+          const nestedSentinelEndId = buildSentinelEndId(nestedLoopId)
+          const nestedSentinelEndExecuted = this.state.hasExecuted(nestedSentinelEndId)
+          const nestedSentinelEndOutput = this.state.getBlockOutput(nestedSentinelEndId)
+
+          if (nestedSentinelEndExecuted && nestedSentinelEndOutput?.shouldExit === true) {
+            // Loop has completed (exited) - allow continuation
+          } else {
+            // Loop hasn't started or hasn't completed yet - we should wait
+            return false
+          }
+        }
+      }
+    }
+
+    // For loops with conditional routing, check if at least one terminal node has executed
+    // This handles cases where not all nodes execute due to condition/router branching
+    if (terminalNodes.length > 0) {
+      const hasTerminalNodeExecuted = terminalNodes.some((nodeId) => this.state.hasExecuted(nodeId))
+      if (hasTerminalNodeExecuted) {
+        // At least one terminal node has executed, meaning a path has completed
+        return true
+      }
+    }
+
+    // Fallback: If no terminal nodes found (or none executed), check all regular nodes
+    // This handles simple loops without conditional routing
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+      if (this.dag.loopConfigs.has(nodeId)) continue // Nested loops already checked above
+
+      if (!this.state.hasExecuted(nodeId)) {
+        return false
+      }
+    }
+
+    return true
   }
 }

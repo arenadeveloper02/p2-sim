@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { EDGE } from '@/executor/constants'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { DAGEdge } from '@/executor/dag/types'
-import type { NormalizedBlockOutput } from '@/executor/types'
+import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
 
 const logger = createLogger('EdgeManager')
 
@@ -14,7 +14,8 @@ export class EdgeManager {
   processOutgoingEdges(
     node: DAGNode,
     output: NormalizedBlockOutput,
-    skipBackwardsEdge = false
+    skipBackwardsEdge = false,
+    ctx?: ExecutionContext
   ): string[] {
     const readyNodes: string[] = []
     const activatedTargets: string[] = []
@@ -27,7 +28,8 @@ export class EdgeManager {
         continue
       }
 
-      const shouldActivate = this.shouldActivateEdge(edge, output)
+      const shouldActivate = this.shouldActivateEdge(edge, output, node, ctx)
+
       if (!shouldActivate) {
         const isLoopEdge =
           edge.sourceHandle === EDGE.LOOP_CONTINUE ||
@@ -62,7 +64,14 @@ export class EdgeManager {
     // Fourth pass: check readiness after all edge processing is complete
     for (const targetId of activatedTargets) {
       const targetNode = this.dag.nodes.get(targetId)
-      if (targetNode && this.isNodeReady(targetNode)) {
+      if (!targetNode) {
+        logger.warn('Target node not found in readiness check', { target: targetId })
+        continue
+      }
+
+      const isReady = this.isNodeReady(targetNode)
+
+      if (isReady) {
         readyNodes.push(targetId)
       }
     }
@@ -76,6 +85,7 @@ export class EdgeManager {
     }
 
     const activeIncomingCount = this.countActiveIncomingEdges(node)
+
     if (activeIncomingCount > 0) {
       return false
     }
@@ -118,15 +128,29 @@ export class EdgeManager {
     }
   }
 
-  private shouldActivateEdge(edge: DAGEdge, output: NormalizedBlockOutput): boolean {
+  private shouldActivateEdge(
+    edge: DAGEdge,
+    output: NormalizedBlockOutput,
+    sourceNode: DAGNode,
+    ctx?: ExecutionContext
+  ): boolean {
     const handle = edge.sourceHandle
 
-    if (output.selectedRoute === EDGE.LOOP_EXIT) {
-      return handle === EDGE.LOOP_EXIT
+    // CRITICAL: For LOOP_EXIT edges, only activate when shouldExit is explicitly true
+    // This prevents blocks from executing prematurely when loops continue or wait for nested loops
+    // Check handle first to catch all LOOP_EXIT edges regardless of selectedRoute value
+    if (handle === EDGE.LOOP_EXIT) {
+      // Only activate if both conditions are met:
+      // 1. shouldExit is explicitly true (loop has actually exited)
+      // 2. selectedRoute matches LOOP_EXIT (confirming this is an exit, not a continue)
+      return output?.shouldExit === true && output?.selectedRoute === EDGE.LOOP_EXIT
     }
 
-    if (output.selectedRoute === EDGE.LOOP_CONTINUE) {
-      return handle === EDGE.LOOP_CONTINUE || handle === EDGE.LOOP_CONTINUE_ALT
+    // CRITICAL: For LOOP_CONTINUE edges, only activate when selectedRoute is LOOP_CONTINUE
+    // This prevents LOOP_CONTINUE edges from activating when the loop is exiting
+    // Check by handle first to explicitly block LOOP_CONTINUE edges when route is LOOP_EXIT
+    if (handle === EDGE.LOOP_CONTINUE || handle === EDGE.LOOP_CONTINUE_ALT) {
+      return output?.selectedRoute === EDGE.LOOP_CONTINUE
     }
 
     if (output.selectedRoute === EDGE.PARALLEL_EXIT) {
