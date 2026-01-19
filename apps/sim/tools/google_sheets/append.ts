@@ -164,6 +164,8 @@ export const appendTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsAppendRe
         )
       }
 
+      // Send all data in one request
+
       const body: Record<string, any> = {
         majorDimension: params.majorDimension || 'ROWS',
         values: processedValues,
