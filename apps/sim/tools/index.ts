@@ -975,24 +975,10 @@ async function handleProxyRequest(
         { toolId, params, executionContext: minimalExecutionContext },
         `proxy:${toolId}`
       )
-
-      // Log body size for debugging (only in development or if very large)
-      const bodySize = Buffer.byteLength(body, 'utf8')
-      if (bodySize > 1024 * 1024) {
-        // Log if larger than 1MB
-        logger.warn(`[${requestId}] Large request body for proxy:${toolId}`, {
-          bodySizeMB: (bodySize / (1024 * 1024)).toFixed(2),
-          toolId,
-        })
-      }
     } catch (stringifyError) {
       logger.error(`[${requestId}] Failed to stringify request body for proxy:${toolId}`, {
         error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
         toolId,
-        paramsKeys: Object.keys(params || {}),
-        hasBlockData: !!params?.blockData,
-        blockDataKeys: params?.blockData ? Object.keys(params.blockData) : [],
-        hasWorkflowVariables: !!params?.workflowVariables,
       })
       throw new Error(
         `Failed to prepare request body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}. This may be due to circular references or data that is too large.`

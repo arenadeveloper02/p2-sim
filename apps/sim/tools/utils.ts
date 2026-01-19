@@ -64,20 +64,17 @@ export function safeStringify(value: any, context = 'unknown'): string {
 
     // Handle functions - replace with a placeholder
     if (typeof val === 'function') {
-      logger.warn(`Function detected in ${context} at key: ${key}, replacing with placeholder`)
       return '[Function]'
     }
 
     // Handle Symbols - replace with a placeholder
     if (typeof val === 'symbol') {
-      logger.warn(`Symbol detected in ${context} at key: ${key}, replacing with placeholder`)
       return '[Symbol]'
     }
 
     // Handle circular references
     if (val !== null && typeof val === 'object') {
       if (seen.has(val)) {
-        logger.warn(`Circular reference detected in ${context} at key: ${key}`)
         return '[Circular Reference]'
       }
       seen.add(val)
