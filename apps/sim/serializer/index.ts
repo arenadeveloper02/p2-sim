@@ -11,6 +11,7 @@ import {
   isSubBlockFeatureEnabled,
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks'
+import { registry } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
@@ -32,6 +33,57 @@ export class WorkflowValidationError extends Error {
     super(message)
     this.name = 'WorkflowValidationError'
   }
+}
+
+/**
+ * Evaluates a condition object against current field values.
+ * Used to determine if a conditionally-visible field should be included in params.
+ */
+function evaluateCondition(
+  condition:
+    | {
+        field: string
+        value: any
+        not?: boolean
+        and?: { field: string; value: any; not?: boolean }
+      }
+    | (() => {
+        field: string
+        value: any
+        not?: boolean
+        and?: { field: string; value: any; not?: boolean }
+      })
+    | undefined,
+  values: Record<string, any>
+): boolean {
+  if (!condition) return true
+
+  const actual = typeof condition === 'function' ? condition() : condition
+  const fieldValue = values[actual.field]
+
+  const valueMatch = Array.isArray(actual.value)
+    ? fieldValue != null &&
+      (actual.not ? !actual.value.includes(fieldValue) : actual.value.includes(fieldValue))
+    : actual.not
+      ? fieldValue !== actual.value
+      : fieldValue === actual.value
+
+  const andMatch = !actual.and
+    ? true
+    : (() => {
+        const andFieldValue = values[actual.and!.field]
+        const andValueMatch = Array.isArray(actual.and!.value)
+          ? andFieldValue != null &&
+            (actual.and!.not
+              ? !actual.and!.value.includes(andFieldValue)
+              : actual.and!.value.includes(andFieldValue))
+          : actual.and!.not
+            ? andFieldValue !== actual.and!.value
+            : andFieldValue === actual.and!.value
+        return andValueMatch
+      })()
+
+  return valueMatch && andMatch
 }
 
 /**
@@ -189,8 +241,21 @@ export class Serializer {
       accessibleBlocksMap: Map<string, Set<string>>
     }
   ): SerializedBlock {
+    // Migrate old block types before serialization
+    // Old gmail block was named gmail_v2, map it to current gmail
+    let blockType = block.type
+    if (blockType === 'gmail_v2') {
+      // Check if this is the old gmail block (not the new gmail_v2 API block)
+      const gmailBlock = getBlock('gmail')
+      const gmailV2Block = getBlock('gmail_v2')
+      // If gmail exists but gmail_v2 doesn't, this is likely the old gmail block
+      if (gmailBlock && !gmailV2Block) {
+        blockType = 'gmail'
+      }
+    }
+
     // Special handling for subflow blocks (loops, parallels, etc.)
-    if (block.type === 'loop' || block.type === 'parallel') {
+    if (blockType === 'loop' || blockType === 'parallel') {
       return {
         id: block.id,
         position: block.position,
@@ -201,23 +266,30 @@ export class Serializer {
         inputs: {},
         outputs: block.outputs,
         metadata: {
-          id: block.type,
+          id: blockType,
           name: block.name,
-          description: block.type === 'loop' ? 'Loop container' : 'Parallel container',
+          description: blockType === 'loop' ? 'Loop container' : 'Parallel container',
           category: 'subflow',
-          color: block.type === 'loop' ? '#3b82f6' : '#8b5cf6',
+          color: blockType === 'loop' ? '#3b82f6' : '#8b5cf6',
         },
         enabled: block.enabled,
       }
     }
 
-    const blockConfig = getBlock(block.type)
+    let blockConfig = getBlock(blockType)
+
+    // Fallback: Direct registry access if getBlock fails
     if (!blockConfig) {
-      throw new Error(`Invalid block type: ${block.type}`)
+      const normalizedType = blockType.replace(/-/g, '_')
+      blockConfig = registry[blockType] || registry[normalizedType]
     }
 
-    // Extract parameters from UI state
-    const params = this.extractParams(block)
+    if (!blockConfig) {
+      throw new Error(`Invalid block type: ${blockType}`)
+    }
+
+    // Extract parameters from UI state (use migrated blockType)
+    const params = this.extractParams({ ...block, type: blockType })
 
     const isTriggerCategory = blockConfig.category === 'triggers'
     if (block.triggerMode === true || isTriggerCategory) {
@@ -286,7 +358,7 @@ export class Serializer {
           : {}),
       },
       metadata: {
-        id: block.type,
+        id: blockType, // Use migrated blockType
         name: block.name,
         description: blockConfig.description,
         category: blockConfig.category,
@@ -301,7 +373,14 @@ export class Serializer {
       return {}
     }
 
-    const blockConfig = getBlock(block.type)
+    let blockConfig = getBlock(block.type)
+
+    // Fallback: Direct registry access if getBlock fails
+    if (!blockConfig) {
+      const normalizedType = block.type.replace(/-/g, '_')
+      blockConfig = registry[block.type] || registry[normalizedType]
+    }
+
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${block.type}`)
     }
@@ -605,7 +684,14 @@ export class Serializer {
       }
     }
 
-    const blockConfig = getBlock(blockType)
+    let blockConfig = getBlock(blockType)
+
+    // Fallback: Direct registry access if getBlock fails
+    if (!blockConfig) {
+      const normalizedType = blockType.replace(/-/g, '_')
+      blockConfig = registry[blockType] || registry[normalizedType]
+    }
+
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${blockType}`)
     }

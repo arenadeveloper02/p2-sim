@@ -114,6 +114,51 @@ export async function loadDeployedWorkflowState(workflowId: string): Promise<Dep
 }
 
 /**
+ * Migrates old block types to new block types
+ * Handles backward compatibility for renamed blocks (e.g., old gmail_v2 -> current gmail)
+ *
+ * @param blocks - Record of block states to migrate
+ * @returns Migrated blocks with updated block types
+ */
+export function migrateBlockTypes(blocks: Record<string, BlockState>): Record<string, BlockState> {
+  // Import getBlock dynamically to avoid circular dependencies
+  const { getBlock } = require('@/blocks')
+
+  const blockTypeMigrations: Record<string, string> = {
+    // Old gmail block was named gmail_v2, now it's just gmail
+    // The new gmail_v2 is a different block (v2 API version)
+    // So we map old gmail_v2 to current gmail
+    // Only migrate if the new type exists and old type doesn't (to avoid false migrations)
+    gmail_v2: 'gmail',
+  }
+
+  return Object.fromEntries(
+    Object.entries(blocks).map(([id, block]) => {
+      const newType = blockTypeMigrations[block.type]
+      if (newType) {
+        // Check if the new type exists in registry to avoid false migrations
+        const newBlockConfig = getBlock(newType)
+        const oldBlockConfig = getBlock(block.type)
+
+        // Only migrate if:
+        // 1. New type exists
+        // 2. Old type doesn't exist (or is the old gmail_v2 that should be migrated)
+        if (newBlockConfig && (!oldBlockConfig || block.type === 'gmail_v2')) {
+          return [
+            id,
+            {
+              ...block,
+              type: newType,
+            },
+          ]
+        }
+      }
+      return [id, block]
+    })
+  )
+}
+
+/**
  * Migrates agent blocks from old format (systemPrompt/userPrompt) to new format (messages array)
  * This ensures backward compatibility for workflows created before the messages-input refactor.
  *
@@ -206,7 +251,7 @@ export async function loadWorkflowFromNormalizedTables(
 
     // Convert blocks to the expected format
     const blocksMap: Record<string, BlockState> = {}
-    blocks.forEach((block) => {
+    blocks.forEach((block: (typeof blocks)[0]) => {
       const blockData = block.data || {}
 
       const assembled: BlockState = {
@@ -233,12 +278,16 @@ export async function loadWorkflowFromNormalizedTables(
     // Sanitize any invalid custom tools in agent blocks to prevent client crashes
     const { blocks: sanitizedBlocks } = sanitizeAgentToolsInBlocks(blocksMap)
 
+    // Migrate old block types to new block types (e.g., old gmail_v2 -> current gmail)
+    // This must happen before other migrations to ensure correct block types
+    const typeMigratedBlocks = migrateBlockTypes(sanitizedBlocks)
+
     // Migrate old agent block format (systemPrompt/userPrompt) to new messages array format
     // This ensures backward compatibility for workflows created before the messages-input refactor
-    const migratedBlocks = migrateAgentBlocksToMessagesFormat(sanitizedBlocks)
+    const migratedBlocks = migrateAgentBlocksToMessagesFormat(typeMigratedBlocks)
 
     // Convert edges to the expected format
-    const edgesArray: Edge[] = edges.map((edge) => ({
+    const edgesArray: Edge[] = edges.map((edge: (typeof edges)[0]) => ({
       id: edge.id,
       source: edge.sourceBlockId,
       target: edge.targetBlockId,
@@ -252,7 +301,7 @@ export async function loadWorkflowFromNormalizedTables(
     const loops: Record<string, Loop> = {}
     const parallels: Record<string, Parallel> = {}
 
-    subflows.forEach((subflow) => {
+    subflows.forEach((subflow: (typeof subflows)[0]) => {
       const config = (subflow.config ?? {}) as Partial<Loop & Parallel>
 
       if (subflow.type === SUBFLOW_TYPES.LOOP) {
@@ -334,7 +383,7 @@ export async function saveWorkflowToNormalizedTables(
     const canonicalParallels = generateParallelBlocks(blockRecords)
 
     // Start a transaction
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: DbOrTx) => {
       await Promise.all([
         tx.delete(workflowBlocks).where(eq(workflowBlocks.workflowId, workflowId)),
         tx.delete(workflowEdges).where(eq(workflowEdges.workflowId, workflowId)),
@@ -476,7 +525,7 @@ export async function deployWorkflow(params: {
 
     const now = new Date()
 
-    const deployedVersion = await db.transaction(async (tx) => {
+    const deployedVersion = await db.transaction(async (tx: DbOrTx) => {
       // Get next version number
       const [{ maxVersion }] = await tx
         .select({ maxVersion: sql`COALESCE(MAX("version"), 0)` })
@@ -739,7 +788,7 @@ export async function undeployWorkflow(params: { workflowId: string; tx?: DbOrTx
     if (tx) {
       await executeUndeploy(tx)
     } else {
-      await db.transaction(async (txn) => {
+      await db.transaction(async (txn: DbOrTx) => {
         await executeUndeploy(txn)
       })
     }
@@ -788,7 +837,7 @@ export async function activateWorkflowVersion(params: {
 
     const now = new Date()
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: DbOrTx) => {
       await tx
         .update(workflowDeploymentVersion)
         .set({ isActive: false })

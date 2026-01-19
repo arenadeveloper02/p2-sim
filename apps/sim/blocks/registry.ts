@@ -330,11 +330,18 @@ export const registry: Record<string, BlockConfig> = {
 }
 
 export const getBlock = (type: string): BlockConfig | undefined => {
+  // Direct lookup first
   if (registry[type]) {
     return registry[type]
   }
+
+  // Normalized lookup (handles hyphens vs underscores)
   const normalized = type.replace(/-/g, '_')
-  return registry[normalized]
+  if (registry[normalized]) {
+    return registry[normalized]
+  }
+
+  return undefined
 }
 
 export const getLatestBlock = (baseType: string): BlockConfig | undefined => {

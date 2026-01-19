@@ -435,7 +435,28 @@ export async function transformBlockTool(
 ): Promise<ProviderToolConfig | null> {
   const { selectedOperation, getAllBlocks, getTool, getToolAsync } = options
 
-  const blockDef = getAllBlocks().find((b: any) => b.type === block.type)
+  let blockDef = getAllBlocks().find((b: any) => b.type === block.type)
+
+  // Fallback: Direct registry access if getAllBlocks() doesn't include the block
+  if (!blockDef && block.type === 'gmail_v2') {
+    try {
+      const { registry } = require('@/blocks/registry')
+      if (registry?.gmail_v2) {
+        blockDef = registry.gmail_v2
+      }
+    } catch (e) {
+      // If require fails, try import
+      try {
+        const registryModule = await import('@/blocks/registry')
+        if (registryModule?.registry?.gmail_v2) {
+          blockDef = registryModule.registry.gmail_v2
+        }
+      } catch (importError) {
+        // Both failed, will return null below
+      }
+    }
+  }
+
   if (!blockDef) {
     logger.warn(`Block definition not found for type: ${block.type}`)
     return null

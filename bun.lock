@@ -3298,7 +3298,7 @@
 
     "selderee": ["selderee@0.11.0", "", { "dependencies": { "parseley": "^0.12.0" } }, "sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA=="],
 
-    "selenium-webdriver": ["selenium-webdriver@4.39.0", "", { "dependencies": { "@bazel/runfiles": "^6.5.0", "jszip": "^3.10.1", "tmp": "^0.2.5", "ws": "^8.18.3" } }, "sha512-NAs9jCU+UeZ/ZmRb8R6zOp7N8eMklefdBYASnaRmCNXdgFE8w3OCxxZmLixkwqnGDHY5VF7hCulfw1Mls43N/A=="],
+    "selenium-webdriver": ["selenium-webdriver@4.40.0", "", { "dependencies": { "@bazel/runfiles": "^6.5.0", "jszip": "^3.10.1", "tmp": "^0.2.5", "ws": "^8.18.3" } }, "sha512-dU0QbnVKdPmoNP8OtMCazRdtU2Ux6Wl4FEpG1iwUbDeajJK1dBAywBLrC1D7YFRtogHzN96AbXBgBAJaarcysw=="],
 
     "semver": ["semver@7.7.3", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q=="],
 

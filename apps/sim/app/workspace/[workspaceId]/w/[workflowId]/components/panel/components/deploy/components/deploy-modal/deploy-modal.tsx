@@ -18,7 +18,6 @@ import {
 } from '@/components/emcn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getInputFormatExample as getInputFormatExampleUtil } from '@/lib/workflows/operations/deployment-utils'
-import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
 import {
   deleteDeployedWorkflowCTAEvent,
   undeployDeployedWorkflowCTAEvent,
