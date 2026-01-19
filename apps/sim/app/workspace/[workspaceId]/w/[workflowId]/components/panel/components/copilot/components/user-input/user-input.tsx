@@ -666,6 +666,13 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
       [insertTriggerAndOpenMenu]
     )
 
+    const handleModelSelect = useCallback(
+      (model: string) => {
+        setSelectedModel(model as any)
+      },
+      [setSelectedModel]
+    )
+
     const canSubmit = message.trim().length > 0 && !disabled && !isLoading
     const showAbortButton = isLoading && onAbort
 
@@ -874,7 +881,7 @@ const UserInput = forwardRef<UserInputRef, UserInputProps>(
               <ModelSelector
                 selectedModel={selectedModel}
                 isNearTop={isNearTop}
-                onModelSelect={(model: string) => setSelectedModel(model as any)}
+                onModelSelect={handleModelSelect}
               />
             </div>
 
