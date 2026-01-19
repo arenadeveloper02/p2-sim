@@ -2727,9 +2727,6 @@ const WorkflowContent = React.memo(() => {
       const currentBlock = blocks[node.id]
       const currentParentId = currentBlock?.data?.parentId
 
-
-      // Calculate position - clamp if inside a container
-      let finalPosition = node.position
       if (currentParentId) {
         // Block is inside a container - clamp position to keep it fully inside
         const parentNode = getNodes().find((n) => n.id === currentParentId)
@@ -2750,6 +2747,7 @@ const WorkflowContent = React.memo(() => {
                   BLOCK_DIMENSIONS.MIN_HEIGHT
                 ),
           }
+        }
 
         // Process parent updates using shared helper
         executeBatchParentUpdate(
