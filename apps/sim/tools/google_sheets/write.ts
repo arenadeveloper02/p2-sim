@@ -117,19 +117,11 @@ export const writeTool: ToolConfig<GoogleSheetsToolParams, GoogleSheetsWriteResp
         processedValues = rows
       }
 
-      // Chunk data if too large (Google Sheets API limit: 10,000 rows per request)
-      const MAX_ROWS_PER_REQUEST = 10000
-      let finalValues = processedValues
-      
-      if (Array.isArray(processedValues) && processedValues.length > MAX_ROWS_PER_REQUEST) {
-        // Split into chunks of 10,000 rows each
-        finalValues = processedValues.slice(0, MAX_ROWS_PER_REQUEST)
-        console.warn(`Data truncated to ${MAX_ROWS_PER_REQUEST} rows (Google Sheets API limit)`)
-      }
+      // Send all data in one request
 
       const body: Record<string, any> = {
         majorDimension: params.majorDimension || 'ROWS',
-        values: finalValues,
+        values: processedValues,
       }
 
       // Only include range if it's provided
