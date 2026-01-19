@@ -25,16 +25,16 @@ const PROVIDER_PRIORITY: Array<{
     envKey: 'XAI_API_KEY',
   },
   {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
-    label: 'Claude',
-    envKey: 'ANTHROPIC_API_KEY',
-  },
-  {
     provider: 'openai',
     model: 'gpt-4o',
     label: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
+  },
+  {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    label: 'Claude',
+    envKey: 'ANTHROPIC_API_KEY',
   },
 ]
 

@@ -110,6 +110,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         ...(params.rerank ? { rerank: params.rerank } : {}),
         ...(structuredFilters.length > 0 && { tagFilters: structuredFilters }),
         ...(workflowId && { workflowId }),
+        ...(params.advancedMode && { advancedMode: params.advancedMode }),
       }
 
       return requestBody

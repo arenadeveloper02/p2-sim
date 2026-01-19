@@ -374,6 +374,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: actorUserId,
         workspaceId,
         variables: {},
+        conversationId: undefined,
       })
 
       await loggingSession.safeCompleteWithError({
