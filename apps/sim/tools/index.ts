@@ -12,6 +12,7 @@ import {
   formatRequestParams,
   getTool,
   getToolAsync,
+  safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
@@ -955,7 +956,48 @@ async function handleProxyRequest(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     await addInternalAuthIfNeeded(headers, true, requestId, `proxy:${toolId}`)
 
-    const body = JSON.stringify({ toolId, params, executionContext })
+    // Extract only the minimal executionContext fields needed by the proxy
+    // The proxy doesn't use the full executionContext, so we only send what's needed
+    // to avoid serializing large Maps, Sets, and accumulated loop data
+    const minimalExecutionContext = executionContext
+      ? {
+          workflowId: executionContext.workflowId,
+          workspaceId: executionContext.workspaceId,
+          executionId: executionContext.executionId,
+          userId: executionContext.userId,
+        }
+      : undefined
+
+    // Use safeStringify to handle circular references and large objects
+    let body: string
+    try {
+      body = safeStringify(
+        { toolId, params, executionContext: minimalExecutionContext },
+        `proxy:${toolId}`
+      )
+
+      // Log body size for debugging (only in development or if very large)
+      const bodySize = Buffer.byteLength(body, 'utf8')
+      if (bodySize > 1024 * 1024) {
+        // Log if larger than 1MB
+        logger.warn(`[${requestId}] Large request body for proxy:${toolId}`, {
+          bodySizeMB: (bodySize / (1024 * 1024)).toFixed(2),
+          toolId,
+        })
+      }
+    } catch (stringifyError) {
+      logger.error(`[${requestId}] Failed to stringify request body for proxy:${toolId}`, {
+        error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
+        toolId,
+        paramsKeys: Object.keys(params || {}),
+        hasBlockData: !!params?.blockData,
+        blockDataKeys: params?.blockData ? Object.keys(params.blockData) : [],
+        hasWorkflowVariables: !!params?.workflowVariables,
+      })
+      throw new Error(
+        `Failed to prepare request body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}. This may be due to circular references or data that is too large.`
+      )
+    }
 
     // Check request body size before sending
     validateRequestBodySize(body, requestId, `proxy:${toolId}`)
