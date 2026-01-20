@@ -10,6 +10,7 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
+  DateInput,
   DocumentSelector,
   DocumentTagEntry,
   Dropdown,
@@ -53,6 +54,8 @@ import { ArenaProjectSelector } from './components/arena/arena-projects-selector
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { SlackChannelSelector } from './components/slack-channel-selector'
+import { SlackClientSelector } from './components/slack-client-selector'
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs
@@ -595,6 +598,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
+            value={config.defaultValue as boolean}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -665,6 +669,18 @@ function SubBlockComponent({
       case 'time-input':
         return (
           <TimeInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isPreview={isPreview}
+            previewValue={previewValue as any}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'date-input':
+        return (
+          <DateInput
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
@@ -915,6 +931,29 @@ function SubBlockComponent({
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
+          />
+        )
+      case 'slack-client-selector':
+        return (
+          <SlackClientSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'slack-channel-selector':
+        return (
+          <SlackChannelSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+            dependsOn={config.dependsOn}
           />
         )
       case 'arena-states-selector':

@@ -8,6 +8,7 @@ import { slackListMembersTool } from '@/tools/slack/list_members'
 import { slackListUsersTool } from '@/tools/slack/list_users'
 import { slackMessageTool } from '@/tools/slack/message'
 import { slackMessageReaderTool } from '@/tools/slack/message_reader'
+import { slackSearchAllTool } from '@/tools/slack/search_all'
 import { slackUpdateMessageTool } from '@/tools/slack/update_message'
 
 export {
@@ -22,4 +23,5 @@ export {
   slackListMembersTool,
   slackListUsersTool,
   slackGetUserTool,
+  slackSearchAllTool,
 }
