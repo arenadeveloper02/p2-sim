@@ -69,13 +69,37 @@ export function ArenaStatesSelector({
   const [states, setStates] = React.useState<ArenaState[]>([])
   const [open, setOpen] = React.useState(false)
 
-  // Clear value when switching to advanced mode if it's an array
+  // Handle mode switching: convert array to string in advanced mode, clear variables in basic mode
   React.useEffect(() => {
-    if (fieldAdvancedMode && Array.isArray(storeValue) && storeValue.length > 0) {
+    if (fieldAdvancedMode) {
       // When switching to advanced mode, convert array to comma-separated string
-      const csvValue = storeValue.join(', ')
-      if (!isPreview && !disabled) {
-        setStoreValue(csvValue)
+      if (Array.isArray(storeValue) && storeValue.length > 0) {
+        const csvValue = storeValue.join(', ')
+        if (!isPreview && !disabled) {
+          setStoreValue(csvValue)
+        }
+      }
+    } else {
+      // Switching back to basic mode
+      if (typeof storeValue === 'string') {
+        const trimmed = storeValue.trim()
+
+        // Clear variables - they can't work in basic mode dropdowns
+        if (trimmed.startsWith('<')) {
+          if (!isPreview && !disabled) {
+            setStoreValue([])
+          }
+          return
+        }
+
+        // If it's a valid comma-separated string, convert to array
+        // (The component will handle this in its own logic)
+        // If conversion fails or it's invalid, clear it
+        if (!trimmed) {
+          if (!isPreview && !disabled) {
+            setStoreValue([])
+          }
+        }
       }
     }
   }, [fieldAdvancedMode, storeValue, isPreview, disabled, setStoreValue])
@@ -239,20 +263,20 @@ export function ArenaStatesSelector({
               <CommandGroup>
                 {Array.isArray(states) && states.length > 0
                   ? states.map((state) => (
-                  <CommandItem
-                    key={state.id}
-                    value={state.name}
-                    onSelect={() => handleSelect(state.name)}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  >
-                    {state.name}
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
+                      <CommandItem
+                        key={state.id}
+                        value={state.name}
+                        onSelect={() => handleSelect(state.name)}
+                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      >
+                        {state.name}
+                        <Check
+                          className={cn(
+                            'ml-auto h-4 w-4',
+                            selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                      </CommandItem>
                     ))
                   : null}
               </CommandGroup>

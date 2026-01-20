@@ -1086,12 +1086,39 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const block = get().blocks[id]
         if (!block) return
 
+        const newAdvancedMode = !block.advancedMode
+        let updatedFieldAdvancedMode = block.fieldAdvancedMode || {}
+
+        // For Arena blocks: sync fieldAdvancedMode when toggling advancedMode
+        if (block.type === 'arena') {
+          try {
+            const blockConfig = getBlock('arena')
+            if (blockConfig?.subBlocks) {
+              if (newAdvancedMode) {
+                // Enable advanced mode for all advancedModeSupported fields
+                updatedFieldAdvancedMode = {}
+                blockConfig.subBlocks.forEach((subBlock) => {
+                  if (subBlock.advancedModeSupported) {
+                    updatedFieldAdvancedMode[subBlock.id] = true
+                  }
+                })
+              } else {
+                // Disable advanced mode for all fields
+                updatedFieldAdvancedMode = {}
+              }
+            }
+          } catch (error) {
+            logger.warn(`Failed to sync fieldAdvancedMode for Arena block ${id}:`, error)
+          }
+        }
+
         const newState = {
           blocks: {
             ...get().blocks,
             [id]: {
               ...block,
-              advancedMode: !block.advancedMode,
+              advancedMode: newAdvancedMode,
+              fieldAdvancedMode: updatedFieldAdvancedMode,
             },
           },
           edges: [...get().edges],

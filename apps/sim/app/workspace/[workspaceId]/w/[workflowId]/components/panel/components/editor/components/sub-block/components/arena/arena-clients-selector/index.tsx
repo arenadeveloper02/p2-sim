@@ -216,17 +216,32 @@ export function ArenaClientsSelector({
       }
       // If it's a variable (<block.field>), keep as string - backend will resolve it
     } else {
-      // Switching back to basic mode - ensure we have the object
-      if (
-        typeof selectedValue === 'string' &&
-        selectedValue.trim() &&
-        !selectedValue.trim().startsWith('<')
-      ) {
-        const matchedClient = findClientByNameOrId(selectedValue)
-        if (matchedClient && !isPreview && !disabled) {
-          setStoreValue({ ...matchedClient, customDisplayValue: matchedClient.name })
+      // Switching back to basic mode
+      if (typeof selectedValue === 'string') {
+        const trimmed = selectedValue.trim()
+
+        // Clear variables - they can't work in basic mode dropdowns
+        if (trimmed.startsWith('<')) {
+          if (!isPreview && !disabled) {
+            setStoreValue(null)
+          }
+          return
+        }
+
+        // Try to convert valid ID/name to object
+        if (trimmed) {
+          const matchedClient = findClientByNameOrId(trimmed)
+          if (matchedClient && !isPreview && !disabled) {
+            setStoreValue({ ...matchedClient, customDisplayValue: matchedClient.name })
+          } else {
+            // If conversion fails, clear the value (invalid string)
+            if (!isPreview && !disabled) {
+              setStoreValue(null)
+            }
+          }
         }
       }
+      // If it's already an object, keep it
     }
   }, [fieldAdvancedMode, selectedValue, isPreview, disabled, setStoreValue, findClientByNameOrId])
 
@@ -494,22 +509,22 @@ export function ArenaClientsSelector({
               <CommandGroup>
                 {Array.isArray(clients) &&
                   clients.map((client) => (
-                  <CommandItem
-                    key={client.clientId}
-                    value={client.clientId}
-                    onSelect={() => handleSelect(client)}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    className='max-w-full whitespace-normal break-words'
-                  >
-                    <span className='max-w-[400px] truncate'>{client.name}</span>
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
+                    <CommandItem
+                      key={client.clientId}
+                      value={client.clientId}
+                      onSelect={() => handleSelect(client)}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      className='max-w-full whitespace-normal break-words'
+                    >
+                      <span className='max-w-[400px] truncate'>{client.name}</span>
+                      <Check
+                        className={cn(
+                          'ml-auto h-4 w-4',
+                          selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
               </CommandGroup>
             </CommandList>
           </Command>

@@ -195,17 +195,32 @@ export function ArenaAssigneeSelector({
       }
       // If it's a variable (<block.field>), keep as string - backend will resolve it
     } else {
-      // Switching back to basic mode - convert ID string to object if needed
-      if (
-        typeof selectedValue === 'string' &&
-        selectedValue.trim() &&
-        !selectedValue.trim().startsWith('<')
-      ) {
-        const matchedAssignee = findAssigneeByNameOrId(selectedValue)
-        if (matchedAssignee && !isPreview && !disabled) {
-          setStoreValue({ ...matchedAssignee, customDisplayValue: matchedAssignee.label })
+      // Switching back to basic mode
+      if (typeof selectedValue === 'string') {
+        const trimmed = selectedValue.trim()
+
+        // Clear variables - they can't work in basic mode dropdowns
+        if (trimmed.startsWith('<')) {
+          if (!isPreview && !disabled) {
+            setStoreValue(null)
+          }
+          return
+        }
+
+        // Try to convert valid ID/name to object
+        if (trimmed) {
+          const matchedAssignee = findAssigneeByNameOrId(trimmed)
+          if (matchedAssignee && !isPreview && !disabled) {
+            setStoreValue({ ...matchedAssignee, customDisplayValue: matchedAssignee.label })
+          } else {
+            // If conversion fails, clear the value (invalid string)
+            if (!isPreview && !disabled) {
+              setStoreValue(null)
+            }
+          }
         }
       }
+      // If it's already an object, keep it
     }
   }, [fieldAdvancedMode, selectedValue, isPreview, disabled, setStoreValue, findAssigneeByNameOrId])
 
@@ -440,7 +455,11 @@ export function ArenaAssigneeSelector({
               comboboxVariants(),
               'relative h-[32px] w-full cursor-pointer items-center justify-between'
             )}
-            disabled={disabled || loading || (!fieldAdvancedMode && (!clientId || (isCreateTask && !projectId)))}
+            disabled={
+              disabled ||
+              loading ||
+              (!fieldAdvancedMode && (!clientId || (isCreateTask && !projectId)))
+            }
           >
             {loading ? 'Loading...' : selectedLabel}
             <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />

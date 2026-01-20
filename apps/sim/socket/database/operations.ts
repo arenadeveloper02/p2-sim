@@ -615,10 +615,52 @@ async function handleBlockOperationTx(
         throw new Error('Missing required fields for update advanced mode operation')
       }
 
+      // Get current block to check type and existing data
+      const currentBlock = await tx
+        .select()
+        .from(workflowBlocks)
+        .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))
+        .limit(1)
+
+      if (currentBlock.length === 0) {
+        throw new Error(`Block ${payload.id} not found in workflow ${workflowId}`)
+      }
+
+      const block = currentBlock[0]
+      const blockData = (block.data || {}) as any
+
+      // For Arena blocks: sync fieldAdvancedMode when toggling advancedMode
+      const updatedData = { ...blockData }
+      if (block.type === 'arena') {
+        try {
+          const { getBlock } = await import('@/blocks/registry')
+          const blockConfig = getBlock('arena')
+
+          if (blockConfig?.subBlocks) {
+            if (payload.advancedMode) {
+              // Enable advanced mode for all advancedModeSupported fields
+              const fieldAdvancedMode: Record<string, boolean> = {}
+              blockConfig.subBlocks.forEach((subBlock) => {
+                if (subBlock.advancedModeSupported) {
+                  fieldAdvancedMode[subBlock.id] = true
+                }
+              })
+              updatedData.fieldAdvancedMode = fieldAdvancedMode
+            } else {
+              // Disable advanced mode for all fields
+              updatedData.fieldAdvancedMode = {}
+            }
+          }
+        } catch (error) {
+          logger.warn(`Failed to sync fieldAdvancedMode for Arena block ${payload.id}:`, error)
+        }
+      }
+
       const updateResult = await tx
         .update(workflowBlocks)
         .set({
           advancedMode: payload.advancedMode,
+          data: updatedData,
           updatedAt: new Date(),
         })
         .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))

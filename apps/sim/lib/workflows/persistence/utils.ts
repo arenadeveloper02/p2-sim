@@ -217,6 +217,78 @@ export async function loadWorkflowFromNormalizedTables(
         fieldAdvancedMode?: Record<string, boolean>
       }
 
+      const fieldAdvancedMode = blockData.fieldAdvancedMode || {}
+      const subBlocks = (block.subBlocks as BlockState['subBlocks']) || {}
+
+      // For Arena blocks: derive advancedMode from fieldAdvancedMode AND check actual values
+      let advancedMode = block.advancedMode
+      const updatedFieldAdvancedMode = { ...fieldAdvancedMode }
+      let shouldEnableAdvancedMode = false
+
+      if (block.type === 'arena') {
+        // First check fieldAdvancedMode flag
+        const hasAnyFieldAdvancedMode = Object.values(fieldAdvancedMode).some((v) => v === true)
+        if (hasAnyFieldAdvancedMode) {
+          shouldEnableAdvancedMode = true
+        }
+
+        // Also check actual values to detect advanced mode usage
+        // If any advancedModeSupported field has a value that indicates advanced mode
+        try {
+          const blockConfig = getBlock('arena')
+          if (blockConfig?.subBlocks) {
+            for (const subBlock of blockConfig.subBlocks) {
+              if (!subBlock.advancedModeSupported) continue
+
+              const subBlockState = subBlocks[subBlock.id]
+              if (!subBlockState?.value) continue
+
+              const value = subBlockState.value
+
+              // Check if value is a string (could be variable or ID from advanced mode)
+              if (typeof value === 'string') {
+                const trimmed = value.trim()
+                // If it's a variable (starts with <) or a non-empty string, it's likely advanced mode
+                if (trimmed.startsWith('<') || trimmed.length > 0) {
+                  shouldEnableAdvancedMode = true
+                  // Auto-enable this field's advanced mode
+                  updatedFieldAdvancedMode[subBlock.id] = true
+                }
+              }
+              // If value is not an object (for selectors), it might be from advanced mode
+              // Selectors in basic mode store objects like { id, name }, advanced mode stores strings
+              if (subBlock.type?.includes('selector') && typeof value !== 'object') {
+                shouldEnableAdvancedMode = true
+                updatedFieldAdvancedMode[subBlock.id] = true
+              }
+            }
+          }
+        } catch (error) {
+          logger.warn(`Failed to check advanced mode values for Arena block ${block.id}:`, error)
+        }
+
+        // If we detected advanced mode usage, enable it
+        if (shouldEnableAdvancedMode && !advancedMode) {
+          advancedMode = true
+          // Enable all advancedModeSupported fields
+          try {
+            const blockConfig = getBlock('arena')
+            if (blockConfig?.subBlocks) {
+              blockConfig.subBlocks.forEach((subBlock) => {
+                if (subBlock.advancedModeSupported) {
+                  updatedFieldAdvancedMode[subBlock.id] = true
+                }
+              })
+            }
+          } catch (error) {
+            logger.warn(
+              `Failed to enable all advanced mode fields for Arena block ${block.id}:`,
+              error
+            )
+          }
+        }
+      }
+
       const assembled: BlockState = {
         id: block.id,
         type: block.type,
@@ -227,13 +299,18 @@ export async function loadWorkflowFromNormalizedTables(
         },
         enabled: block.enabled,
         horizontalHandles: block.horizontalHandles,
-        advancedMode: block.advancedMode,
+        advancedMode: advancedMode,
         triggerMode: block.triggerMode,
         height: Number(block.height),
-        subBlocks: (block.subBlocks as BlockState['subBlocks']) || {},
+        subBlocks: subBlocks,
         outputs: (block.outputs as BlockState['outputs']) || {},
-        fieldAdvancedMode: blockData.fieldAdvancedMode || {},
-        data: blockData,
+        fieldAdvancedMode: updatedFieldAdvancedMode,
+        data: {
+          ...blockData,
+          fieldAdvancedMode: updatedFieldAdvancedMode,
+        } as BlockData & {
+          fieldAdvancedMode?: Record<string, boolean>
+        },
       }
 
       blocksMap[block.id] = assembled
@@ -360,6 +437,15 @@ function normalizeFieldAdvancedMode(
       if (block.type === 'arena') {
         const hasAnyAdvancedMode = Object.values(fieldAdvancedMode).some((v) => v === true)
         if (hasAnyAdvancedMode) {
+          // Derive block-level advancedMode from fieldAdvancedMode
+          if (!block.advancedMode) {
+            normalizedBlocks[block.id] = {
+              ...normalizedBlocks[block.id],
+              advancedMode: true,
+            }
+          }
+
+          // Enable all advancedModeSupported fields
           blockConfig.subBlocks.forEach((subBlock) => {
             if (subBlock.advancedModeSupported && !fieldAdvancedMode[subBlock.id]) {
               fieldAdvancedMode[subBlock.id] = true

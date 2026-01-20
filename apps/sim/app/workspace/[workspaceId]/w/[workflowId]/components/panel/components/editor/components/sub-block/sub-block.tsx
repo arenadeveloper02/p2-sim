@@ -417,6 +417,9 @@ function SubBlockComponent({
   )
   const setFieldAdvancedMode = useWorkflowStore((state) => state.setFieldAdvancedMode)
 
+  // Get block type to hide per-field toggles for Arena blocks
+  const currentBlockType = useWorkflowStore((state) => state.blocks[blockId]?.type)
+
   const handleAdvancedModeToggle = (e: MouseEvent) => {
     e.stopPropagation()
     if (!isPreview && !isDisabled) {
@@ -1003,28 +1006,29 @@ function SubBlockComponent({
   return (
     <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-[10px]'>
       <div className='flex items-center justify-between gap-[6px]'>
-      {renderLabel(
-        config,
-        isValidJson,
-        {
-          isSearchActive,
-          searchQuery,
-          isWandEnabled,
-          isPreview,
-          isStreaming: wandControlRef.current?.isWandStreaming ?? false,
-          disabled: isDisabled,
-          onSearchClick: handleSearchClick,
-          onSearchBlur: handleSearchBlur,
-          onSearchChange: handleSearchChange,
-          onSearchSubmit: handleSearchSubmit,
-          onSearchCancel: handleSearchCancel,
-          searchInputRef,
-        },
+        {renderLabel(
+          config,
+          isValidJson,
+          {
+            isSearchActive,
+            searchQuery,
+            isWandEnabled,
+            isPreview,
+            isStreaming: wandControlRef.current?.isWandStreaming ?? false,
+            disabled: isDisabled,
+            onSearchClick: handleSearchClick,
+            onSearchBlur: handleSearchBlur,
+            onSearchChange: handleSearchChange,
+            onSearchSubmit: handleSearchSubmit,
+            onSearchCancel: handleSearchCancel,
+            searchInputRef,
+          },
           blockId,
-        subBlockValues
-      )}
+          subBlockValues
+        )}
         {/* Per-field advanced mode toggle - positioned to the right */}
-        {config.advancedModeSupported && !isPreview && (
+        {/* Hide per-field toggles for Arena blocks (use block-level toggle instead) */}
+        {config.advancedModeSupported && !isPreview && currentBlockType !== 'arena' && (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <span className='inline-flex items-center'>

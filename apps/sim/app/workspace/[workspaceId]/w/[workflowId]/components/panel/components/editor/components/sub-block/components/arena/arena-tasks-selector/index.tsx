@@ -183,17 +183,32 @@ export function ArenaTaskSelector({
       }
       // If it's a variable (<block.field>), keep as string - backend will resolve it
     } else {
-      // Switching back to basic mode - ensure we have the object
-      if (
-        typeof selectedValue === 'string' &&
-        selectedValue.trim() &&
-        !selectedValue.trim().startsWith('<')
-      ) {
-        const matchedTask = findTaskByNameOrId(selectedValue)
-        if (matchedTask && !isPreview && !disabled) {
-          setStoreValue({ ...matchedTask, customDisplayValue: matchedTask.name })
+      // Switching back to basic mode
+      if (typeof selectedValue === 'string') {
+        const trimmed = selectedValue.trim()
+
+        // Clear variables - they can't work in basic mode dropdowns
+        if (trimmed.startsWith('<')) {
+          if (!isPreview && !disabled) {
+            setStoreValue(null)
+          }
+          return
+        }
+
+        // Try to convert valid ID/name to object
+        if (trimmed) {
+          const matchedTask = findTaskByNameOrId(trimmed)
+          if (matchedTask && !isPreview && !disabled) {
+            setStoreValue({ ...matchedTask, customDisplayValue: matchedTask.name })
+          } else {
+            // If conversion fails, clear the value (invalid string)
+            if (!isPreview && !disabled) {
+              setStoreValue(null)
+            }
+          }
         }
       }
+      // If it's already an object, keep it
     }
   }, [fieldAdvancedMode, selectedValue, isPreview, disabled, setStoreValue, findTaskByNameOrId])
 
