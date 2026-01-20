@@ -1709,6 +1709,8 @@ export const auth = betterAuth({
             'channels:history',
             'groups:read',
             'groups:history',
+            'mpim:read',
+            'mpim:history',
             'chat:write',
             'chat:write.public',
             'im:write',
@@ -1734,9 +1736,29 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
+              logger.info('Slack getUserInfo called', {
+                hasAccessToken: !!tokens.accessToken,
+                tokenKeys: Object.keys(tokens),
+                fullTokens: JSON.stringify(tokens, null, 2),
+                hasAuthedUser: !!(tokens as any).authed_user,
+                authedUserKeys: (tokens as any).authed_user
+                  ? Object.keys((tokens as any).authed_user)
+                  : [],
+              })
+
+              // Use user token for auth.test to get user-specific info, fallback to bot token
+              const userAccessToken = (tokens as any).authed_user?.access_token
+              const tokenToUse = userAccessToken || tokens.accessToken
+
+              logger.info('Using token for Slack auth.test', {
+                hasUserToken: !!userAccessToken,
+                usingUserToken: !!userAccessToken,
+                tokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none'
+              })
+
               const response = await fetch('https://slack.com/api/auth.test', {
                 headers: {
-                  Authorization: `Bearer ${tokens.accessToken}`,
+                  Authorization: `Bearer ${tokenToUse}`,
                 },
               })
 
@@ -1756,13 +1778,39 @@ export const auth = betterAuth({
               }
 
               const teamId = data.team_id || 'unknown'
-              const userId = data.user_id || data.bot_id || 'bot'
               const teamName = data.team || 'Slack Workspace'
+
+              // Determine if we're using a user token or bot token
+              const usingUserToken = !!userAccessToken
+              let userId: string
+
+              if (usingUserToken) {
+                // User token should return user_id
+                userId = data.user_id || 'unknown_user'
+                logger.info('Using user token - extracted user_id', { userId, teamId })
+              } else {
+                // Bot token returns bot_id
+                userId = data.bot_id || data.user_id || 'bot'
+                logger.info('Using bot token - extracted bot_id', { userId: userId.startsWith('B') ? userId : `B${userId}`, teamId })
+                // Ensure bot IDs start with 'B'
+                if (userId && !userId.startsWith('B')) {
+                  userId = `B${userId}`
+                }
+              }
 
               const uniqueId = `${teamId}-${userId}`
 
-              logger.info('Slack credential identifier', { teamId, userId, uniqueId, teamName })
+              logger.info('Slack user token extraction in getUserInfo', {
+                teamId,
+                userId,
+                uniqueId,
+                teamName,
+                hasUserToken: !!userAccessToken,
+                userTokenPrefix: userAccessToken ? `${userAccessToken.substring(0, 10)}...` : 'none',
+                authedUserData: (tokens as any).authed_user,
+              })
 
+              // Return user info with idToken containing user token
               return {
                 id: uniqueId,
                 name: teamName,
@@ -1770,6 +1818,8 @@ export const auth = betterAuth({
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
+                // Store user token in idToken field for later use
+                idToken: userAccessToken || null,
               }
             } catch (error) {
               logger.error('Error creating Slack bot profile:', { error })
