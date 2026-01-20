@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import {
   db,
+  webhook,
   workflow,
   workflowBlocks,
   workflowDeploymentVersion,
@@ -8,11 +9,10 @@ import {
   workflowSubflows,
 } from '@sim/db'
 import { createLogger } from '@sim/logger'
-import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
+import type { InferSelectModel } from 'drizzle-orm'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { v4 as uuidv4 } from 'uuid'
-import type { DbOrTx } from '@/lib/db/types'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/sanitization/validation'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
@@ -21,7 +21,6 @@ import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/w
 const logger = createLogger('WorkflowDBHelpers')
 
 export type WorkflowDeploymentVersion = InferSelectModel<typeof workflowDeploymentVersion>
-type SubflowInsert = InferInsertModel<typeof workflowSubflows>
 
 export interface WorkflowDeploymentVersionResponse {
   id: string
@@ -43,7 +42,7 @@ export interface NormalizedWorkflowData {
 
 export interface DeployedWorkflowData extends NormalizedWorkflowData {
   deploymentVersionId: string
-  variables?: Record<string, unknown>
+  variables?: Record<string, any>
 }
 
 export async function blockExistsInDeployment(
@@ -96,7 +95,7 @@ export async function loadDeployedWorkflowState(workflowId: string): Promise<Dep
       throw new Error(`Workflow ${workflowId} has no active deployment`)
     }
 
-    const state = active.state as WorkflowState & { variables?: Record<string, unknown> }
+    const state = active.state as WorkflowState & { variables?: Record<string, any> }
 
     return {
       blocks: state.blocks || {},
@@ -111,51 +110,6 @@ export async function loadDeployedWorkflowState(workflowId: string): Promise<Dep
     logger.error(`Error loading deployed workflow state ${workflowId}:`, error)
     throw error
   }
-}
-
-/**
- * Migrates old block types to new block types
- * Handles backward compatibility for renamed blocks (e.g., old gmail_v2 -> current gmail)
- *
- * @param blocks - Record of block states to migrate
- * @returns Migrated blocks with updated block types
- */
-export function migrateBlockTypes(blocks: Record<string, BlockState>): Record<string, BlockState> {
-  // Import getBlock dynamically to avoid circular dependencies
-  const { getBlock } = require('@/blocks')
-
-  const blockTypeMigrations: Record<string, string> = {
-    // Old gmail block was named gmail_v2, now it's just gmail
-    // The new gmail_v2 is a different block (v2 API version)
-    // So we map old gmail_v2 to current gmail
-    // Only migrate if the new type exists and old type doesn't (to avoid false migrations)
-    gmail_v2: 'gmail',
-  }
-
-  return Object.fromEntries(
-    Object.entries(blocks).map(([id, block]) => {
-      const newType = blockTypeMigrations[block.type]
-      if (newType) {
-        // Check if the new type exists in registry to avoid false migrations
-        const newBlockConfig = getBlock(newType)
-        const oldBlockConfig = getBlock(block.type)
-
-        // Only migrate if:
-        // 1. New type exists
-        // 2. Old type doesn't exist (or is the old gmail_v2 that should be migrated)
-        if (newBlockConfig && (!oldBlockConfig || block.type === 'gmail_v2')) {
-          return [
-            id,
-            {
-              ...block,
-              type: newType,
-            },
-          ]
-        }
-      }
-      return [id, block]
-    })
-  )
 }
 
 /**
@@ -251,7 +205,7 @@ export async function loadWorkflowFromNormalizedTables(
 
     // Convert blocks to the expected format
     const blocksMap: Record<string, BlockState> = {}
-    blocks.forEach((block: (typeof blocks)[0]) => {
+    blocks.forEach((block) => {
       const blockData = block.data || {}
 
       const assembled: BlockState = {
@@ -278,16 +232,12 @@ export async function loadWorkflowFromNormalizedTables(
     // Sanitize any invalid custom tools in agent blocks to prevent client crashes
     const { blocks: sanitizedBlocks } = sanitizeAgentToolsInBlocks(blocksMap)
 
-    // Migrate old block types to new block types (e.g., old gmail_v2 -> current gmail)
-    // This must happen before other migrations to ensure correct block types
-    const typeMigratedBlocks = migrateBlockTypes(sanitizedBlocks)
-
     // Migrate old agent block format (systemPrompt/userPrompt) to new messages array format
     // This ensures backward compatibility for workflows created before the messages-input refactor
-    const migratedBlocks = migrateAgentBlocksToMessagesFormat(typeMigratedBlocks)
+    const migratedBlocks = migrateAgentBlocksToMessagesFormat(sanitizedBlocks)
 
     // Convert edges to the expected format
-    const edgesArray: Edge[] = edges.map((edge: (typeof edges)[0]) => ({
+    const edgesArray: Edge[] = edges.map((edge) => ({
       id: edge.id,
       source: edge.sourceBlockId,
       target: edge.targetBlockId,
@@ -301,7 +251,7 @@ export async function loadWorkflowFromNormalizedTables(
     const loops: Record<string, Loop> = {}
     const parallels: Record<string, Parallel> = {}
 
-    subflows.forEach((subflow: (typeof subflows)[0]) => {
+    subflows.forEach((subflow) => {
       const config = (subflow.config ?? {}) as Partial<Loop & Parallel>
 
       if (subflow.type === SUBFLOW_TYPES.LOOP) {
@@ -383,7 +333,19 @@ export async function saveWorkflowToNormalizedTables(
     const canonicalParallels = generateParallelBlocks(blockRecords)
 
     // Start a transaction
-    await db.transaction(async (tx: DbOrTx) => {
+    await db.transaction(async (tx) => {
+      // Snapshot existing webhooks before deletion to preserve them through the cycle
+      let existingWebhooks: any[] = []
+      try {
+        existingWebhooks = await tx.select().from(webhook).where(eq(webhook.workflowId, workflowId))
+      } catch (webhookError) {
+        // Webhook table might not be available in test environments
+        logger.debug('Could not load webhooks before save, skipping preservation', {
+          error: webhookError instanceof Error ? webhookError.message : String(webhookError),
+        })
+      }
+
+      // Clear existing data for this workflow
       await Promise.all([
         tx.delete(workflowBlocks).where(eq(workflowBlocks.workflowId, workflowId)),
         tx.delete(workflowEdges).where(eq(workflowEdges.workflowId, workflowId)),
@@ -429,7 +391,7 @@ export async function saveWorkflowToNormalizedTables(
       }
 
       // Insert subflows (loops and parallels)
-      const subflowInserts: SubflowInsert[] = []
+      const subflowInserts: any[] = []
 
       // Add loops
       Object.values(canonicalLoops).forEach((loop) => {
@@ -453,6 +415,41 @@ export async function saveWorkflowToNormalizedTables(
 
       if (subflowInserts.length > 0) {
         await tx.insert(workflowSubflows).values(subflowInserts)
+      }
+
+      // Re-insert preserved webhooks if any exist and their blocks still exist
+      if (existingWebhooks.length > 0) {
+        try {
+          const webhookInserts = existingWebhooks
+            .filter((wh) => !!state.blocks?.[wh.blockId ?? ''])
+            .map((wh) => ({
+              id: wh.id,
+              workflowId: wh.workflowId,
+              blockId: wh.blockId,
+              path: wh.path,
+              provider: wh.provider,
+              providerConfig: wh.providerConfig,
+              isActive: wh.isActive,
+              createdAt: wh.createdAt,
+              updatedAt: new Date(),
+            }))
+
+          if (webhookInserts.length > 0) {
+            await tx.insert(webhook).values(webhookInserts)
+            logger.debug(`Preserved ${webhookInserts.length} webhook(s) through workflow save`, {
+              workflowId,
+            })
+          }
+        } catch (webhookInsertError) {
+          // Webhook preservation is optional - don't fail the entire save if it errors
+          logger.warn('Could not preserve webhooks during save', {
+            error:
+              webhookInsertError instanceof Error
+                ? webhookInsertError.message
+                : String(webhookInsertError),
+            workflowId,
+          })
+        }
       }
     })
 
@@ -494,7 +491,6 @@ export async function deployWorkflow(params: {
 }): Promise<{
   success: boolean
   version?: number
-  deploymentVersionId?: string
   deployedAt?: Date
   currentState?: any
   error?: string
@@ -525,7 +521,7 @@ export async function deployWorkflow(params: {
 
     const now = new Date()
 
-    const deployedVersion = await db.transaction(async (tx: DbOrTx) => {
+    const deployedVersion = await db.transaction(async (tx) => {
       // Get next version number
       const [{ maxVersion }] = await tx
         .select({ maxVersion: sql`COALESCE(MAX("version"), 0)` })
@@ -533,7 +529,6 @@ export async function deployWorkflow(params: {
         .where(eq(workflowDeploymentVersion.workflowId, workflowId))
 
       const nextVersion = Number(maxVersion) + 1
-      const deploymentVersionId = uuidv4()
 
       // Deactivate all existing versions
       await tx
@@ -543,7 +538,7 @@ export async function deployWorkflow(params: {
 
       // Create new deployment version
       await tx.insert(workflowDeploymentVersion).values({
-        id: deploymentVersionId,
+        id: uuidv4(),
         workflowId,
         version: nextVersion,
         state: currentState,
@@ -563,30 +558,31 @@ export async function deployWorkflow(params: {
       // Note: Templates are NOT automatically updated on deployment
       // Template updates must be done explicitly through the "Update Template" button
 
-      return { version: nextVersion, deploymentVersionId }
+      return nextVersion
     })
 
-    logger.info(`Deployed workflow ${workflowId} as v${deployedVersion.version}`)
+    logger.info(`Deployed workflow ${workflowId} as v${deployedVersion}`)
 
+    // Track deployment telemetry if workflow name is provided
     if (workflowName) {
       try {
-        const { PlatformEvents } = await import('@/lib/core/telemetry')
+        const { trackPlatformEvent } = await import('@/lib/core/telemetry')
 
         const blockTypeCounts: Record<string, number> = {}
         for (const block of Object.values(currentState.blocks)) {
-          const blockType = block.type || 'unknown'
+          const blockType = (block as any).type || 'unknown'
           blockTypeCounts[blockType] = (blockTypeCounts[blockType] || 0) + 1
         }
 
-        PlatformEvents.workflowDeployed({
-          workflowId,
-          workflowName,
-          blocksCount: Object.keys(currentState.blocks).length,
-          edgesCount: currentState.edges.length,
-          version: deployedVersion.version,
-          loopsCount: Object.keys(currentState.loops).length,
-          parallelsCount: Object.keys(currentState.parallels).length,
-          blockTypes: JSON.stringify(blockTypeCounts),
+        trackPlatformEvent('platform.workflow.deployed', {
+          'workflow.id': workflowId,
+          'workflow.name': workflowName,
+          'workflow.blocks_count': Object.keys(currentState.blocks).length,
+          'workflow.edges_count': currentState.edges.length,
+          'workflow.loops_count': Object.keys(currentState.loops).length,
+          'workflow.parallels_count': Object.keys(currentState.parallels).length,
+          'workflow.block_types': JSON.stringify(blockTypeCounts),
+          'deployment.version': deployedVersion,
         })
       } catch (telemetryError) {
         logger.warn(`Failed to track deployment telemetry for ${workflowId}`, telemetryError)
@@ -595,8 +591,7 @@ export async function deployWorkflow(params: {
 
     return {
       success: true,
-      version: deployedVersion.version,
-      deploymentVersionId: deployedVersion.deploymentVersionId,
+      version: deployedVersion,
       deployedAt: now,
       currentState,
     }
@@ -609,33 +604,11 @@ export async function deployWorkflow(params: {
   }
 }
 
-/** Input state for ID regeneration - partial to handle external sources */
-export interface RegenerateStateInput {
-  blocks?: Record<string, BlockState>
-  edges?: Edge[]
-  loops?: Record<string, Loop>
-  parallels?: Record<string, Parallel>
-  lastSaved?: number
-  variables?: Record<string, unknown>
-  metadata?: Record<string, unknown>
-}
-
-/** Output state after ID regeneration */
-interface RegenerateStateOutput {
-  blocks: Record<string, BlockState>
-  edges: Edge[]
-  loops: Record<string, Loop>
-  parallels: Record<string, Parallel>
-  lastSaved: number
-  variables?: Record<string, unknown>
-  metadata?: Record<string, unknown>
-}
-
 /**
  * Regenerates all IDs in a workflow state to avoid conflicts when duplicating or using templates
  * Returns a new state with all IDs regenerated and references updated
  */
-export function regenerateWorkflowStateIds(state: RegenerateStateInput): RegenerateStateOutput {
+export function regenerateWorkflowStateIds(state: any): any {
   // Create ID mappings
   const blockIdMapping = new Map<string, string>()
   const edgeIdMapping = new Map<string, string>()
@@ -650,7 +623,7 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
 
   // Map edge IDs
 
-  ;(state.edges || []).forEach((edge: Edge) => {
+  ;(state.edges || []).forEach((edge: any) => {
     edgeIdMapping.set(edge.id, crypto.randomUUID())
   })
 
@@ -665,28 +638,28 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
   })
 
   // Second pass: Create new state with regenerated IDs and updated references
-  const newBlocks: Record<string, BlockState> = {}
-  const newEdges: Edge[] = []
-  const newLoops: Record<string, Loop> = {}
-  const newParallels: Record<string, Parallel> = {}
+  const newBlocks: Record<string, any> = {}
+  const newEdges: any[] = []
+  const newLoops: Record<string, any> = {}
+  const newParallels: Record<string, any> = {}
 
   // Regenerate blocks with updated references
-  Object.entries(state.blocks || {}).forEach(([oldId, block]) => {
+  Object.entries(state.blocks || {}).forEach(([oldId, block]: [string, any]) => {
     const newId = blockIdMapping.get(oldId)!
-    const newBlock: BlockState = { ...block, id: newId }
+    const newBlock = { ...block, id: newId }
 
     // Update parentId reference if it exists
     if (newBlock.data?.parentId) {
       const newParentId = blockIdMapping.get(newBlock.data.parentId)
       if (newParentId) {
-        newBlock.data = { ...newBlock.data, parentId: newParentId }
+        newBlock.data.parentId = newParentId
       }
     }
 
     // Update any block references in subBlocks
     if (newBlock.subBlocks) {
-      const updatedSubBlocks: Record<string, BlockState['subBlocks'][string]> = {}
-      Object.entries(newBlock.subBlocks).forEach(([subId, subBlock]) => {
+      const updatedSubBlocks: Record<string, any> = {}
+      Object.entries(newBlock.subBlocks).forEach(([subId, subBlock]: [string, any]) => {
         const updatedSubBlock = { ...subBlock }
 
         // If subblock value contains block references, update them
@@ -694,7 +667,7 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
           typeof updatedSubBlock.value === 'string' &&
           blockIdMapping.has(updatedSubBlock.value)
         ) {
-          updatedSubBlock.value = blockIdMapping.get(updatedSubBlock.value) ?? updatedSubBlock.value
+          updatedSubBlock.value = blockIdMapping.get(updatedSubBlock.value)
         }
 
         updatedSubBlocks[subId] = updatedSubBlock
@@ -707,7 +680,7 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
 
   // Regenerate edges with updated source/target references
 
-  ;(state.edges || []).forEach((edge: Edge) => {
+  ;(state.edges || []).forEach((edge: any) => {
     const newId = edgeIdMapping.get(edge.id)!
     const newSource = blockIdMapping.get(edge.source) || edge.source
     const newTarget = blockIdMapping.get(edge.target) || edge.target
@@ -721,9 +694,9 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
   })
 
   // Regenerate loops with updated node references
-  Object.entries(state.loops || {}).forEach(([oldId, loop]) => {
+  Object.entries(state.loops || {}).forEach(([oldId, loop]: [string, any]) => {
     const newId = loopIdMapping.get(oldId)!
-    const newLoop: Loop = { ...loop, id: newId }
+    const newLoop = { ...loop, id: newId }
 
     // Update nodes array with new block IDs
     if (newLoop.nodes) {
@@ -734,9 +707,9 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
   })
 
   // Regenerate parallels with updated node references
-  Object.entries(state.parallels || {}).forEach(([oldId, parallel]) => {
+  Object.entries(state.parallels || {}).forEach(([oldId, parallel]: [string, any]) => {
     const newId = parallelIdMapping.get(oldId)!
-    const newParallel: Parallel = { ...parallel, id: newId }
+    const newParallel = { ...parallel, id: newId }
 
     // Update nodes array with new block IDs
     if (newParallel.nodes) {
@@ -757,159 +730,4 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
     ...(state.variables && { variables: state.variables }),
     ...(state.metadata && { metadata: state.metadata }),
   }
-}
-
-/**
- * Undeploy a workflow by deactivating all versions and clearing deployment state.
- * Handles schedule deletion and returns the result.
- */
-export async function undeployWorkflow(params: { workflowId: string; tx?: DbOrTx }): Promise<{
-  success: boolean
-  error?: string
-}> {
-  const { workflowId, tx } = params
-
-  const executeUndeploy = async (dbCtx: DbOrTx) => {
-    const { deleteSchedulesForWorkflow } = await import('@/lib/workflows/schedules/deploy')
-    await deleteSchedulesForWorkflow(workflowId, dbCtx)
-
-    await dbCtx
-      .update(workflowDeploymentVersion)
-      .set({ isActive: false })
-      .where(eq(workflowDeploymentVersion.workflowId, workflowId))
-
-    await dbCtx
-      .update(workflow)
-      .set({ isDeployed: false, deployedAt: null })
-      .where(eq(workflow.id, workflowId))
-  }
-
-  try {
-    if (tx) {
-      await executeUndeploy(tx)
-    } else {
-      await db.transaction(async (txn: DbOrTx) => {
-        await executeUndeploy(txn)
-      })
-    }
-
-    logger.info(`Undeployed workflow ${workflowId}`)
-    return { success: true }
-  } catch (error) {
-    logger.error(`Error undeploying workflow ${workflowId}:`, error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to undeploy workflow',
-    }
-  }
-}
-
-/**
- * Activate a specific deployment version for a workflow.
- * Deactivates the current active version and activates the specified one.
- */
-export async function activateWorkflowVersion(params: {
-  workflowId: string
-  version: number
-}): Promise<{
-  success: boolean
-  deployedAt?: Date
-  state?: unknown
-  error?: string
-}> {
-  const { workflowId, version } = params
-
-  try {
-    const [versionData] = await db
-      .select({ id: workflowDeploymentVersion.id, state: workflowDeploymentVersion.state })
-      .from(workflowDeploymentVersion)
-      .where(
-        and(
-          eq(workflowDeploymentVersion.workflowId, workflowId),
-          eq(workflowDeploymentVersion.version, version)
-        )
-      )
-      .limit(1)
-
-    if (!versionData) {
-      return { success: false, error: 'Deployment version not found' }
-    }
-
-    const now = new Date()
-
-    await db.transaction(async (tx: DbOrTx) => {
-      await tx
-        .update(workflowDeploymentVersion)
-        .set({ isActive: false })
-        .where(
-          and(
-            eq(workflowDeploymentVersion.workflowId, workflowId),
-            eq(workflowDeploymentVersion.isActive, true)
-          )
-        )
-
-      await tx
-        .update(workflowDeploymentVersion)
-        .set({ isActive: true })
-        .where(
-          and(
-            eq(workflowDeploymentVersion.workflowId, workflowId),
-            eq(workflowDeploymentVersion.version, version)
-          )
-        )
-
-      await tx
-        .update(workflow)
-        .set({ isDeployed: true, deployedAt: now })
-        .where(eq(workflow.id, workflowId))
-    })
-
-    logger.info(`Activated version ${version} for workflow ${workflowId}`)
-
-    return {
-      success: true,
-      deployedAt: now,
-      state: versionData.state,
-    }
-  } catch (error) {
-    logger.error(`Error activating version ${version} for workflow ${workflowId}:`, error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to activate version',
-    }
-  }
-}
-
-/**
- * List all deployment versions for a workflow.
- */
-export async function listWorkflowVersions(workflowId: string): Promise<{
-  versions: Array<{
-    id: string
-    version: number
-    name: string | null
-    isActive: boolean
-    createdAt: Date
-    createdBy: string | null
-    deployedByName: string | null
-  }>
-}> {
-  const { user } = await import('@sim/db')
-
-  const versions = await db
-    .select({
-      id: workflowDeploymentVersion.id,
-      version: workflowDeploymentVersion.version,
-      name: workflowDeploymentVersion.name,
-      isActive: workflowDeploymentVersion.isActive,
-      createdAt: workflowDeploymentVersion.createdAt,
-      createdBy: workflowDeploymentVersion.createdBy,
-      deployedByName: user.name,
-    })
-    .from(workflowDeploymentVersion)
-    .leftJoin(user, eq(workflowDeploymentVersion.createdBy, user.id))
-    .where(eq(workflowDeploymentVersion.workflowId, workflowId))
-    .orderBy(desc(workflowDeploymentVersion.version))
-
-  return { versions }
 }
