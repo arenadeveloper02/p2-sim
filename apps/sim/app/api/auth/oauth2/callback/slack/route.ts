@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
     const teamId = authTestData.team_id || 'unknown'
     const userId = authTestData.user_id || authTestData.bot_id || 'bot'
     const teamName = authTestData.team || 'Slack Workspace'
-    const uniqueId = `${teamId}-${userId}`
+    const uniqueId = `slack-bot-${Date.now()}`
 
     // Find or create account
     const existing = await db.query.account.findFirst({
