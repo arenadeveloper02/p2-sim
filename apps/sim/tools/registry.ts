@@ -332,6 +332,7 @@ import {
 } from '@/tools/google_groups'
 import {
   googleSheetsAppendTool,
+  googleSheetsDeleteTool,
   googleSheetsReadTool,
   googleSheetsUpdateTool,
   googleSheetsWriteTool,
@@ -1857,6 +1858,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
+  google_sheets_delete: googleSheetsDeleteTool,
   google_ads_query: googleAdsQueryTool,
   facebook_ads_query: facebookAdsQueryTool,
   google_slides_read: googleSlidesReadTool,

@@ -9,7 +9,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
   description: 'Read, write, and update data',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Sheets into the workflow. Can read, write, append, and update data.',
+    'Integrate Google Sheets into the workflow. Can read, write, append, update, and delete data.',
   docsLink: 'https://docs.sim.ai/tools/google_sheets',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -25,6 +25,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
         { label: 'Write Data', id: 'write' },
         { label: 'Update Data', id: 'update' },
         { label: 'Append Data', id: 'append' },
+        { label: 'Delete Row(s)', id: 'delete' },
       ],
       value: () => 'read',
     },
@@ -72,7 +73,9 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       id: 'range',
       title: 'Range',
       type: 'short-input',
-      placeholder: 'Sheet name and cell range (e.g., Sheet1!A1:D10)',
+      placeholder:
+        'Cell range (e.g., Sheet1!A1:D10) or row range for delete (e.g., Sheet1!5:5 or 5:7)',
+      condition: { field: 'operation', value: ['read', 'write', 'update', 'delete'] },
     },
     // Write-specific Fields
     {
@@ -144,6 +147,15 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       ],
       condition: { field: 'operation', value: 'append' },
     },
+    // Delete-specific Fields
+    {
+      id: 'rowNumber',
+      title: 'Row Number',
+      type: 'short-input',
+      placeholder: 'Single row number to delete (e.g., 5). Alternative to range.',
+      condition: { field: 'operation', value: 'delete' },
+      required: false,
+    },
   ],
   tools: {
     access: [
@@ -151,6 +163,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       'google_sheets_write',
       'google_sheets_update',
       'google_sheets_append',
+      'google_sheets_delete',
     ],
     config: {
       tool: (params) => {
@@ -163,6 +176,8 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
             return 'google_sheets_update'
           case 'append':
             return 'google_sheets_append'
+          case 'delete':
+            return 'google_sheets_delete'
           default:
             throw new Error(`Invalid Google Sheets operation: ${params.operation}`)
         }
@@ -175,17 +190,19 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
         // - If it's a non-empty string, try to JSON.parse it (same pattern you use for write)
         // - If it's empty/undefined, leave as undefined and let the tool's required validation handle it
         let parsedValues: unknown
-        if (Array.isArray(values) || (values && typeof values === 'object')) {
-          parsedValues = values
-        } else if (typeof values === 'string') {
-          const trimmed = values.trim()
-          if (trimmed) {
-            try {
-              parsedValues = JSON.parse(trimmed)
-            } catch (error) {
-              throw new Error(
-                'Values must be valid JSON (e.g. [["A","B"],["C","D"]] or [{"A":"B"},{"A":"B"}]).'
-              )
+        if (params.operation !== 'delete') {
+          if (Array.isArray(values) || (values && typeof values === 'object')) {
+            parsedValues = values
+          } else if (typeof values === 'string') {
+            const trimmed = values.trim()
+            if (trimmed) {
+              try {
+                parsedValues = JSON.parse(trimmed)
+              } catch (error) {
+                throw new Error(
+                  'Values must be valid JSON (e.g. [["A","B"],["C","D"]] or [{"A":"B"},{"A":"B"}]).'
+                )
+              }
             }
           }
         }
@@ -196,10 +213,23 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
           throw new Error('Spreadsheet ID is required.')
         }
 
+        // For delete operation, handle rowNumber conversion
+        let rowNumber: number | undefined
+        if (params.operation === 'delete' && params.rowNumber) {
+          const parsed =
+            typeof params.rowNumber === 'string'
+              ? Number.parseInt(params.rowNumber, 10)
+              : params.rowNumber
+          if (!Number.isNaN(parsed)) {
+            rowNumber = parsed
+          }
+        }
+
         return {
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
           values: parsedValues,
+          rowNumber,
           credential,
         }
       },
@@ -214,6 +244,7 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
     values: { type: 'string', description: 'Cell values data' },
     valueInputOption: { type: 'string', description: 'Value input option' },
     insertDataOption: { type: 'string', description: 'Data insertion option' },
+    rowNumber: { type: 'number', description: 'Row number to delete' },
   },
   outputs: {
     data: { type: 'json', description: 'Sheet data' },
@@ -223,5 +254,6 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
     updatedColumns: { type: 'number', description: 'Updated columns count' },
     updatedCells: { type: 'number', description: 'Updated cells count' },
     tableRange: { type: 'string', description: 'Table range' },
+    deletedRows: { type: 'number', description: 'Number of rows deleted' },
   },
 }
