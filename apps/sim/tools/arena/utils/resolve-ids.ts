@@ -488,45 +488,103 @@ export async function resolveTaskId(
       throw new Error('ARENA_BACKEND_BASE_URL not configured')
     }
 
-    // Fetch tasks/deliverables for the project
-    const url = `${arenaBackendBaseUrl}/sol/v1/tasks/users?cid=${clientId}&projectSysId=${projectId}&name=${encodeURIComponent(stringValue)}`
+    // Normalize the search value (trim and lowercase for comparison)
+    const normalizedSearchValue = stringValue.trim().toLowerCase()
 
-    const response = await fetch(url, {
-      headers: {
-        Authorisation: tokenObject.arenaToken,
-      },
-    })
+    // Helper function to search tasks in a specific project (or all projects if projectId is null)
+    const searchTasksInProject = async (searchProjectId: string | null): Promise<any[]> => {
+      const url = searchProjectId
+        ? `${arenaBackendBaseUrl}/sol/v1/tasks/users?cid=${clientId}&projectSysId=${searchProjectId}`
+        : `${arenaBackendBaseUrl}/sol/v1/tasks/users?cid=${clientId}`
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch tasks: ${response.statusText}`)
+      const response = await fetch(url, {
+        headers: {
+          Authorisation: tokenObject.arenaToken,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch tasks: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return Array.isArray(data.tasks)
+        ? data.tasks
+        : Array.isArray(data)
+          ? data
+          : Array.isArray(data.deliverables)
+            ? data.deliverables
+            : []
     }
 
-    const data = await response.json()
-    const tasks = Array.isArray(data.tasks)
-      ? data.tasks
-      : Array.isArray(data)
-        ? data
-        : Array.isArray(data.deliverables)
-          ? data.deliverables
-          : []
+    // Helper function to find task in a list
+    const findTaskInList = (tasks: any[]): any | null => {
+      // Try exact match first (case-insensitive, trimmed)
+      const exactMatch = tasks.find((t: any) => {
+        const taskName = String(t.name || '')
+          .trim()
+          .toLowerCase()
+        return taskName === normalizedSearchValue
+      })
+      if (exactMatch) {
+        console.log(
+          `[resolveTaskId] Found exact match: "${exactMatch.name}" (${exactMatch.sysId || exactMatch.id})`
+        )
+        return exactMatch
+      }
 
-    // Try exact match first (case-insensitive)
-    const exactMatch = tasks.find((t: any) => t.name?.toLowerCase() === stringValue.toLowerCase())
-    if (exactMatch) {
-      return exactMatch.sysId || exactMatch.id
+      // Try partial match (case-insensitive, trimmed)
+      const partialMatch = tasks.find((t: any) => {
+        const taskName = String(t.name || '')
+          .trim()
+          .toLowerCase()
+        return taskName.includes(normalizedSearchValue) || normalizedSearchValue.includes(taskName)
+      })
+      if (partialMatch) {
+        console.log(
+          `[resolveTaskId] Found partial match: "${partialMatch.name}" (${partialMatch.sysId || partialMatch.id})`
+        )
+        return partialMatch
+      }
+
+      return null
     }
 
-    // Try partial match
-    const partialMatch = tasks.find((t: any) =>
-      t.name?.toLowerCase().includes(stringValue.toLowerCase())
+    // Step 1: First try to find the task in the specified project
+    console.log(`[resolveTaskId] Searching for task "${stringValue}" in project "${projectId}"`)
+    const projectTasks = await searchTasksInProject(projectId)
+    const foundTask = findTaskInList(projectTasks)
+
+    if (foundTask) {
+      return foundTask.sysId || foundTask.id
+    }
+
+    // Step 2: If not found in specified project, search across ALL projects for the client
+    // This handles cases where task name comes from a previous loop iteration or different project
+    console.log(
+      `[resolveTaskId] Task not found in project "${projectId}", searching across all projects for client "${clientId}"`
     )
-    if (partialMatch) {
-      return partialMatch.sysId || partialMatch.id
+    const allClientTasks = await searchTasksInProject(null)
+    const foundTaskInClient = findTaskInList(allClientTasks)
+
+    if (foundTaskInClient) {
+      console.log(
+        `[resolveTaskId] Found task "${foundTaskInClient.name}" in different project (${foundTaskInClient.sysId || foundTaskInClient.id})`
+      )
+      return foundTaskInClient.sysId || foundTaskInClient.id
     }
 
-    // If no match found, throw an error
+    // If no match found, log available tasks for debugging and throw an error
+    console.error(`[resolveTaskId] Task not found: "${stringValue}" for client "${clientId}"`, {
+      searchValue: stringValue,
+      normalizedSearchValue: normalizedSearchValue,
+      searchedProjectId: projectId,
+      totalTasksInProject: projectTasks.length,
+      totalTasksInClient: allClientTasks.length,
+      availableTaskNames: allClientTasks.slice(0, 10).map((t: any) => t.name), // Log first 10 task names for debugging
+    })
     throw new Error(
-      `Task not found: "${stringValue}" for project "${projectId}". Please check the task name or use a valid task ID.`
+      `Task not found: "${stringValue}" for client "${clientId}". Please check the task name or use a valid task ID.`
     )
   } catch (error) {
     console.error('Error resolving task name to ID:', error)
