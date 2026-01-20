@@ -278,11 +278,14 @@ interface GmailReadV2Response {
     to?: string
     subject?: string
     date?: string
-    body?: string
+    content?: string
     hasAttachments?: boolean
     attachmentCount?: number
     attachments?: GmailAttachment[]
-    results?: Array<Record<string, any>>
+    metadata?: {
+      results?: Array<Record<string, any>>
+      [key: string]: any
+    }
   }
 }
 
@@ -316,11 +319,14 @@ export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailReadV2Response> =
         to: metadata.to,
         subject: metadata.subject,
         date: metadata.date,
-        body: legacy.output.content,
+        content: legacy.output.content,
         hasAttachments: metadata.hasAttachments,
         attachmentCount: metadata.attachmentCount,
         attachments: legacy.output.attachments || [],
-        results: metadata.results,
+        metadata: {
+          ...metadata,
+          results: metadata.results,
+        },
       },
     }
   },
@@ -337,7 +343,7 @@ export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailReadV2Response> =
     to: { type: 'string', description: 'Recipient email address', optional: true },
     subject: { type: 'string', description: 'Email subject', optional: true },
     date: { type: 'string', description: 'Email date', optional: true },
-    body: {
+    content: {
       type: 'string',
       description: 'Email body text (best-effort plain text)',
       optional: true,
@@ -353,9 +359,9 @@ export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailReadV2Response> =
       description: 'Downloaded attachments (if enabled)',
       optional: true,
     },
-    results: {
+    metadata: {
       type: 'json',
-      description: 'Summary results when reading multiple messages',
+      description: 'Metadata including results when reading multiple messages',
       optional: true,
     },
   },

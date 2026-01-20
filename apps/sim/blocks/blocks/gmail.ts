@@ -591,8 +591,8 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
     to: { type: 'string', description: 'To' },
     subject: { type: 'string', description: 'Subject' },
     date: { type: 'string', description: 'Date' },
-    body: { type: 'string', description: 'Email body text (best-effort)' },
-    results: { type: 'json', description: 'Search/read summary results' },
+    content: { type: 'string', description: 'Email body text (best-effort)' },
+    metadata: { type: 'json', description: 'Metadata including search/read summary results' },
     attachments: { type: 'json', description: 'Downloaded attachments (if enabled)' },
 
     // Trigger outputs (unchanged)
