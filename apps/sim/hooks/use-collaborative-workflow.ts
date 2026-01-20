@@ -1107,7 +1107,7 @@ export function useCollaborativeWorkflow() {
   )
 
   const collaborativeToggleBlockAdvancedMode = useCallback(
-    (id: string) => {
+    (id: string, options?: { alreadyToggled?: boolean }) => {
       const currentBlock = workflowStore.blocks[id]
       if (!currentBlock) return
 
@@ -1117,7 +1117,11 @@ export function useCollaborativeWorkflow() {
         'update-advanced-mode',
         'block',
         { id, advancedMode: newAdvancedMode },
-        () => workflowStore.toggleBlockAdvancedMode(id)
+        () => {
+          // If caller already applied the optimistic toggle, skip local toggle here
+          if (options?.alreadyToggled) return
+          workflowStore.toggleBlockAdvancedMode(id)
+        }
       )
     },
     [executeQueuedOperation, workflowStore]

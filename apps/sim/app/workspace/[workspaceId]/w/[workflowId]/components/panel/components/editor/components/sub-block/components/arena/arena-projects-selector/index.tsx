@@ -162,22 +162,18 @@ export function ArenaProjectSelector({
   React.useEffect(() => {
     if (fieldAdvancedMode) {
       // In advanced mode, keep the object if we have it (for ID extraction)
-      // Only convert to string if it's a variable
       if (typeof selectedValue === 'object' && selectedValue?.sysId) {
-        // Already an object - keep it, just update display
-        // No need to change stored value
-      } else if (
-        typeof selectedValue === 'string' &&
-        selectedValue.trim() &&
-        !selectedValue.trim().startsWith('<')
-      ) {
-        // String ID or name - look up and store as object (so we have ID for backend)
-        const matchedProject = findProjectByNameOrId(selectedValue)
-        if (matchedProject && !isPreview && !disabled) {
-          setStoreValue({ ...matchedProject, customDisplayValue: matchedProject.name })
+        // Already an object - keep it
+      } else if (typeof selectedValue === 'string' && selectedValue.trim()) {
+        // Keep strings (IDs/names); try to enrich to object if possible
+        if (!selectedValue.trim().startsWith('<')) {
+          const matchedProject = findProjectByNameOrId(selectedValue)
+          if (matchedProject && !isPreview && !disabled) {
+            setStoreValue({ ...matchedProject, customDisplayValue: matchedProject.name })
+          }
         }
+        // If variable (<...>), keep as string
       }
-      // If it's a variable (<block.field>), keep as string - backend will resolve it
     } else {
       // Switching back to basic mode
       if (typeof selectedValue === 'string') {
@@ -197,10 +193,7 @@ export function ArenaProjectSelector({
           if (matchedProject && !isPreview && !disabled) {
             setStoreValue({ ...matchedProject, customDisplayValue: matchedProject.name })
           } else {
-            // If conversion fails, clear the value (invalid string)
-            if (!isPreview && !disabled) {
-              setStoreValue(null)
-            }
+            // If conversion fails, keep the string (may be valid later)
           }
         }
       }
