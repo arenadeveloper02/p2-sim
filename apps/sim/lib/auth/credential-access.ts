@@ -35,18 +35,44 @@ export async function authorizeCredentialUse(
     return { ok: false, error: auth.error || 'Authentication required' }
   }
 
-  // Lookup credential owner
-  const [credRow] = await db
-    .select({ userId: account.userId })
+  // Lookup credential owner and provider
+  // Support both UUID id and alias for HubSpot
+  let [credRow] = await db
+    .select({ userId: account.userId, providerId: account.providerId, alias: account.alias })
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
+
+  if (!credRow) {
+    // If not found by ID, check if it's a HubSpot alias
+    const [aliasRow] = await db
+      .select({ userId: account.userId, providerId: account.providerId, alias: account.alias })
+      .from(account)
+      .where(eq(account.alias, credentialId))
+      .limit(1)
+
+    if (aliasRow && aliasRow.providerId === 'hubspot') {
+      credRow = aliasRow
+    }
+  }
 
   if (!credRow) {
     return { ok: false, error: 'Credential not found' }
   }
 
   const credentialOwnerUserId = credRow.userId
+
+  // HubSpot specific check for shared admin accounts via alias
+  const isSharedHubSpotAccount = credRow.providerId === 'hubspot' && !!credRow.alias
+
+  if (isSharedHubSpotAccount) {
+    return {
+      ok: true,
+      authType: auth.authType,
+      requesterUserId: auth.userId,
+      credentialOwnerUserId,
+    }
+  }
 
   // If requester owns the credential, allow immediately
   if (auth.authType !== 'internal_jwt' && auth.userId === credentialOwnerUserId) {

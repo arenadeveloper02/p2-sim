@@ -83,18 +83,32 @@ export async function getUserId(
  * Get a credential by ID and verify it belongs to the user
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
+  // First attempt ID lookup
   const credentials = await db
     .select()
     .from(account)
     .where(and(eq(account.id, credentialId), eq(account.userId, userId)))
     .limit(1)
 
-  if (!credentials.length) {
-    logger.warn(`[${requestId}] Credential not found`)
-    return undefined
+  if (credentials.length > 0) {
+    return credentials[0]
   }
 
-  return credentials[0]
+  // If not found, attempt HubSpot alias lookup (bypassing userId check if it's a known alias)
+  // The authorization is handled higher up in credential-access.ts
+  const aliasCredentials = await db
+    .select()
+    .from(account)
+    .where(and(eq(account.alias, credentialId), eq(account.providerId, 'hubspot')))
+    .limit(1)
+
+  if (aliasCredentials.length > 0) {
+    logger.info(`[${requestId}] Resolved HubSpot credential via alias`, { alias: credentialId })
+    return aliasCredentials[0]
+  }
+
+  logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
+  return undefined
 }
 
 export async function getOAuthToken(userId: string, providerId: string): Promise<string | null> {
@@ -105,6 +119,7 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
       refreshToken: account.refreshToken,
       accessTokenExpiresAt: account.accessTokenExpiresAt,
       idToken: account.idToken,
+      alias: account.alias,
     })
     .from(account)
     .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
@@ -132,7 +147,11 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
 
     try {
       // Use the existing refreshOAuthToken function
-      const refreshResult = await refreshOAuthToken(providerId, credential.refreshToken!)
+      const refreshResult = await refreshOAuthToken(
+        providerId,
+        credential.refreshToken!,
+        credential.alias || undefined
+      )
 
       if (!refreshResult) {
         logger.error(`Failed to refresh token for user ${userId}, provider ${providerId}`, {
@@ -217,7 +236,8 @@ export async function refreshAccessTokenIfNeeded(
     try {
       const refreshedToken = await refreshOAuthToken(
         credential.providerId,
-        credential.refreshToken!
+        credential.refreshToken!,
+        credential.alias || undefined
       )
 
       if (!refreshedToken) {
@@ -289,7 +309,7 @@ export async function refreshTokenIfNeeded(
   }
 
   try {
-    const refreshResult = await refreshOAuthToken(credential.providerId, credential.refreshToken!)
+    const refreshResult = await refreshOAuthToken(credential.providerId, credential.refreshToken!, credential.alias || undefined)
 
     if (!refreshResult) {
       logger.error(`[${requestId}] Failed to refresh token for credential`)

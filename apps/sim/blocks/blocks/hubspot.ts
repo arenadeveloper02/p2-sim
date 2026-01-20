@@ -57,10 +57,25 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       value: () => 'get_contacts',
     },
     {
+      id: 'accounts',
+      title: 'Accounts',
+      type: 'dropdown',
+      options: [
+        { label: 'Manual Connection', id: 'manual' },
+        { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
+        { label: 'Covalent Metrology', id: 'covalent_metrology' },
+      ],
+      value: () => 'manual',
+    },
+    {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
       serviceId: 'hubspot',
+      condition: {
+        field: 'accounts',
+        value: 'manual',
+      },
       requiredScopes: [
         'crm.objects.contacts.read',
         'crm.objects.contacts.write',
@@ -1403,6 +1418,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       },
       params: (params) => {
         const {
+          accounts,
           credential,
           operation,
           propertiesToSet,
@@ -1414,8 +1430,11 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           ...rest
         } = params
 
+        const useSharedAccount = accounts && accounts !== 'manual'
+        const effectiveCredential = useSharedAccount ? (accounts as string) : (credential as string)
+
         const cleanParams: Record<string, any> = {
-          credential,
+          credential: effectiveCredential,
         }
 
         const createUpdateOps = [
@@ -1481,6 +1500,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
+    accounts: { type: 'string', description: 'Selected shared account' },
     credential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
