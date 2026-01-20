@@ -1,127 +1,185 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { db } from '@sim/db'
+import { account } from '@sim/db/schema'
+import { eq } from 'drizzle-orm'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+
+export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackSearchAllAPI')
 
 const SlackSearchAllSchema = z.object({
-  accessToken: z.string(),
-  query: z.string(),
-  count: z.number().min(1).max(100).default(50),
-  page: z.number().min(1).default(1),
-  sort: z.enum(['timestamp', 'score', 'relevance']).default('timestamp'),
-  sort_dir: z.enum(['asc', 'desc']).default('desc'),
-  highlight: z.boolean().default(true),
+  query: z.string().min(1, 'Query is required'),
+  highlight: z.boolean().optional().nullable(),
+  page: z.coerce.number().int().min(1).optional().nullable(),
+  sort: z.enum(['score', 'timestamp']).optional().nullable(),
+  sort_dir: z.enum(['asc', 'desc']).optional().nullable(),
 })
-
-export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
 
   try {
+    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+
+    if (!authResult.success || !authResult.userId) {
+      logger.warn(`[${requestId}] Unauthorized Slack search.all attempt: ${authResult.error}`)
+      return NextResponse.json(
+        {
+          success: false,
+          error: authResult.error || 'Authentication required',
+        },
+        { status: 401 }
+      )
+    }
+
+    logger.info(
+      `[${requestId}] Authenticated Slack search.all request via ${authResult.authType}`,
+      {
+        userId: authResult.userId,
+      }
+    )
+
     const body = await request.json()
     const validatedData = SlackSearchAllSchema.parse(body)
 
-    const { accessToken, query, count, page, sort, sort_dir, highlight } = validatedData
-
-    logger.info(`[${requestId}] Starting Slack search`, {
-      query: query.substring(0, 50),
-      count,
-      page,
+    // Get user's Slack account directly from database and use idToken field
+    const slackAccount = await db.query.account.findFirst({
+      where: eq(account.userId, authResult.userId),
+      orderBy: (accounts, { desc }) => [desc(accounts.updatedAt)],
     })
 
-    // Check if bot token is being used instead of user token
-    if (accessToken.startsWith('xoxb-')) {
-      logger.error(`[${requestId}] Bot token provided instead of user token for search.all`, {
-        tokenPrefix: accessToken.substring(0, 10),
-      })
+    if (!slackAccount) {
+      logger.warn(`[${requestId}] No Slack account found for user: ${authResult.userId}`)
       return NextResponse.json(
         {
           success: false,
-          error:
-            'This search operation requires a user token, but a bot token was provided. Please re-authenticate your Slack account to enable search functionality. Go to Settings > Integrations > Slack and click "Reconnect" to grant user token permissions.',
-        },
-        { status: 403 }
-      )
-    }
-
-    // Make request to Slack API
-    const searchResponse = await fetch('https://slack.com/api/search.all', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: new URLSearchParams({
-        query,
-        count: count.toString(),
-        page: page.toString(),
-        sort,
-        sort_dir,
-        highlight: highlight.toString(),
-      }),
-    })
-
-    if (!searchResponse.ok) {
-      const errorData = await searchResponse.json().catch(() => ({}))
-      logger.error(`[${requestId}] Slack API error`, {
-        status: searchResponse.status,
-        error: errorData,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          error: errorData.error || 'Failed to search Slack',
-        },
-        { status: searchResponse.status }
-      )
-    }
-
-    const searchData = await searchResponse.json()
-
-    if (!searchData.ok) {
-      logger.error(`[${requestId}] Slack search failed`, {
-        error: searchData.error,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          error: searchData.error || 'Search failed',
+          error: 'No Slack account connected. Please connect your Slack account first.',
         },
         { status: 400 }
       )
     }
 
-    logger.info(`[${requestId}] Search completed successfully`, {
-      totalMessages: searchData.messages?.total || 0,
-      totalFiles: searchData.files?.total || 0,
+    logger.info(`[${requestId}] Found Slack account for user:`, {
+      accountId: slackAccount.id,
+      hasIdToken: !!slackAccount.idToken,
+      idTokenPrefix: slackAccount.idToken?.substring(0, 10) || 'none',
+      idTokenType: slackAccount.idToken?.startsWith('xoxp-')
+        ? 'user'
+        : slackAccount.idToken?.startsWith('xoxb-')
+          ? 'bot'
+          : 'unknown',
+      hasAccessToken: !!slackAccount.accessToken,
+      accessTokenPrefix: slackAccount.accessToken?.substring(0, 10) || 'none',
+      accessTokenType: slackAccount.accessToken?.startsWith('xoxp-')
+        ? 'user'
+        : slackAccount.accessToken?.startsWith('xoxb-')
+          ? 'bot'
+          : 'unknown',
     })
 
-    return NextResponse.json({
-      success: true,
-      output: {
-        ok: searchData.ok,
-        query: query,
-        messages: {
-          total: searchData.messages?.total || 0,
-          matches: searchData.messages?.matches || [],
-          pagination: searchData.messages?.pagination,
-          paging: searchData.messages?.paging,
+    // Use idToken field directly (this contains the user token for search operations)
+    let accessToken: string
+    if (slackAccount.idToken) {
+      accessToken = slackAccount.idToken
+      logger.info(`[${requestId}] Using token from idToken field for Slack search.all:`, {
+        tokenType: accessToken.startsWith('xoxp-') ? 'user' : accessToken.startsWith('xoxb-') ? 'bot' : 'unknown',
+        tokenPrefix: accessToken.substring(0, 10)
+      })
+    } else {
+      logger.warn(`[${requestId}] No idToken found in Slack account`)
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'No user token found in idToken field. Please reconnect your Slack account with search permissions.',
         },
-        files: {
-          total: searchData.files?.total || 0,
-          matches: searchData.files?.matches || [],
+        { status: 400 }
+      )
+    }
+
+    // Build form-encoded body for Slack API
+    const formData = new URLSearchParams()
+    formData.append('query', validatedData.query)
+
+    if (typeof validatedData.highlight === 'boolean') {
+      formData.append('highlight', String(validatedData.highlight))
+    }
+
+    if (validatedData.page != null) {
+      formData.append('page', String(validatedData.page))
+    }
+
+    if (validatedData.sort) {
+      formData.append('sort', validatedData.sort)
+    }
+
+    if (validatedData.sort_dir) {
+      formData.append('sort_dir', validatedData.sort_dir)
+    }
+
+    logger.info(`[${requestId}] Executing Slack search.all`, {
+      query: validatedData.query,
+      queryLength: validatedData.query.length,
+      hasHighlight: typeof validatedData.highlight === 'boolean',
+      page: validatedData.page,
+      sort: validatedData.sort,
+      sort_dir: validatedData.sort_dir,
+      hasChannelInQuery: validatedData.query.includes('in:'),
+      channelInQuery: validatedData.query.match(/in:(\S+)/)?.[1] || null,
+    })
+
+    const slackResponse = await fetch('https://slack.com/api/search.all', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData.toString(),
+    })
+
+    const data = await slackResponse.json()
+
+    if (!slackResponse.ok || !data.ok) {
+      logger.error(`[${requestId}] Slack search.all API error`, {
+        status: slackResponse.status,
+        statusText: slackResponse.statusText,
+        error: data.error,
+        needed: data.error === 'missing_scope' ? data.needed : undefined,
+        provided: data.error === 'missing_scope' ? data.provided : undefined,
+      })
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            data.error === 'missing_scope'
+              ? `Missing required Slack scope: ${data.needed}. Please reconnect your Slack account to grant the necessary permissions.`
+              : data.error ||
+                `Slack API error: ${slackResponse.status} ${slackResponse.statusText}`,
+        },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        output: {
+          query: validatedData.query,
+          files: data.files,
+          messages: data.messages,
+          posts: data.posts,
+          raw: data,
         },
       },
-    })
+      { status: 200 }
+    )
   } catch (error) {
-    logger.error(`[${requestId}] Unexpected error in Slack search`, {
-      error: error instanceof Error ? error.message : String(error),
-    })
-
     if (error instanceof z.ZodError) {
+      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
       return NextResponse.json(
         {
           success: false,
@@ -132,10 +190,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    logger.error(`[${requestId}] Unexpected error in Slack search.all`, {
+      error,
+    })
+
     return NextResponse.json(
       {
         success: false,
-        error: 'Internal server error',
+        error: 'Internal server error while searching Slack',
       },
       { status: 500 }
     )
