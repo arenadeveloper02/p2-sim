@@ -1,14 +1,11 @@
-import { createLogger } from '@sim/logger'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type {
   ChunkData,
   ChunksPagination,
   DocumentData,
   DocumentsPagination,
   KnowledgeBaseData,
-} from '@/stores/knowledge/store'
-
-const logger = createLogger('KnowledgeQueries')
+} from '@/lib/knowledge/types'
 
 export const knowledgeKeys = {
   all: ['knowledge'] as const,
@@ -19,14 +16,10 @@ export const knowledgeKeys = {
     [...knowledgeKeys.all, 'detail', knowledgeBaseId ?? ''] as const,
   documents: (knowledgeBaseId: string, paramsKey: string) =>
     [...knowledgeKeys.detail(knowledgeBaseId), 'documents', paramsKey] as const,
+  document: (knowledgeBaseId: string, documentId: string) =>
+    [...knowledgeKeys.detail(knowledgeBaseId), 'document', documentId] as const,
   chunks: (knowledgeBaseId: string, documentId: string, paramsKey: string) =>
-    [
-      ...knowledgeKeys.detail(knowledgeBaseId),
-      'document',
-      documentId,
-      'chunks',
-      paramsKey,
-    ] as const,
+    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunks', paramsKey] as const,
 }
 
 export async function fetchKnowledgeBases(workspaceId?: string): Promise<KnowledgeBaseData[]> {
@@ -80,6 +73,27 @@ export async function fetchKnowledgeBase(knowledgeBaseId: string): Promise<Knowl
   const result = await response.json()
   if (!result?.success || !result?.data) {
     throw new Error(result?.error || 'Failed to fetch knowledge base')
+  }
+
+  return result.data
+}
+
+export async function fetchDocument(
+  knowledgeBaseId: string,
+  documentId: string
+): Promise<DocumentData> {
+  const response = await fetch(`/api/knowledge/${knowledgeBaseId}/documents/${documentId}`)
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Document not found')
+    }
+    throw new Error(`Failed to fetch document: ${response.status} ${response.statusText}`)
+  }
+
+  const result = await response.json()
+  if (!result?.success || !result?.data) {
+    throw new Error(result?.error || 'Failed to fetch document')
   }
 
   return result.data
@@ -237,6 +251,15 @@ export function useKnowledgeBaseQuery(knowledgeBaseId?: string) {
   })
 }
 
+export function useDocumentQuery(knowledgeBaseId?: string, documentId?: string) {
+  return useQuery({
+    queryKey: knowledgeKeys.document(knowledgeBaseId ?? '', documentId ?? ''),
+    queryFn: () => fetchDocument(knowledgeBaseId as string, documentId as string),
+    enabled: Boolean(knowledgeBaseId && documentId),
+    staleTime: 60 * 1000,
+  })
+}
+
 export const serializeDocumentParams = (params: KnowledgeDocumentsParams) =>
   JSON.stringify({
     search: params.search ?? '',
@@ -250,6 +273,7 @@ export function useKnowledgeDocumentsQuery(
   params: KnowledgeDocumentsParams,
   options?: {
     enabled?: boolean
+    refetchInterval?: number | false
   }
 ) {
   const paramsKey = serializeDocumentParams(params)
@@ -257,7 +281,9 @@ export function useKnowledgeDocumentsQuery(
     queryKey: knowledgeKeys.documents(params.knowledgeBaseId, paramsKey),
     queryFn: () => fetchKnowledgeDocuments(params),
     enabled: (options?.enabled ?? true) && Boolean(params.knowledgeBaseId),
+    staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
+    refetchInterval: options?.refetchInterval ?? false,
   })
 }
 
@@ -279,64 +305,75 @@ export function useKnowledgeChunksQuery(
     queryKey: knowledgeKeys.chunks(params.knowledgeBaseId, params.documentId, paramsKey),
     queryFn: () => fetchKnowledgeChunks(params),
     enabled: (options?.enabled ?? true) && Boolean(params.knowledgeBaseId && params.documentId),
+    staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
   })
 }
 
-interface UpdateDocumentPayload {
+export interface DocumentChunkSearchParams {
   knowledgeBaseId: string
   documentId: string
-  updates: Partial<DocumentData>
+  search: string
 }
 
-export function useMutateKnowledgeDocument() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ knowledgeBaseId, documentId, updates }: UpdateDocumentPayload) => {
-      const response = await fetch(`/api/knowledge/${knowledgeBaseId}/documents/${documentId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
-      })
+/**
+ * Fetches all chunks matching a search query by paginating through results.
+ * This is used for search functionality where we need all matching chunks.
+ */
+export async function fetchAllDocumentChunks({
+  knowledgeBaseId,
+  documentId,
+  search,
+}: DocumentChunkSearchParams): Promise<ChunkData[]> {
+  const allResults: ChunkData[] = []
+  let hasMore = true
+  let offset = 0
+  const limit = 100
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to update document')
-      }
+  while (hasMore) {
+    const response = await fetchKnowledgeChunks({
+      knowledgeBaseId,
+      documentId,
+      search,
+      limit,
+      offset,
+    })
 
-      const result = await response.json()
-      if (!result?.success) {
-        throw new Error(result?.error || 'Failed to update document')
-      }
+    allResults.push(...response.chunks)
+    hasMore = response.pagination.hasMore
+    offset += limit
+  }
 
-      return result
-    },
-    onMutate: async ({ knowledgeBaseId, documentId, updates }) => {
-      await queryClient.cancelQueries({ queryKey: knowledgeKeys.detail(knowledgeBaseId) })
+  return allResults
+}
 
-      const documentQueries = queryClient
-        .getQueriesData<KnowledgeDocumentsResponse>({
-          queryKey: knowledgeKeys.detail(knowledgeBaseId),
-        })
-        .filter(([key]) => Array.isArray(key) && key.includes('documents'))
+export const serializeSearchParams = (params: DocumentChunkSearchParams) =>
+  JSON.stringify({
+    search: params.search,
+  })
 
-      documentQueries.forEach(([key, data]) => {
-        if (!data) return
-        queryClient.setQueryData(key, {
-          ...data,
-          documents: data.documents.map((doc) =>
-            doc.id === documentId ? { ...doc, ...updates } : doc
-          ),
-        })
-      })
-    },
-    onError: (error) => {
-      logger.error('Failed to mutate document', error)
-    },
-    onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: knowledgeKeys.detail(variables.knowledgeBaseId) })
-    },
+/**
+ * Hook to search for chunks in a document.
+ * Fetches all matching chunks and returns them for client-side pagination.
+ */
+export function useDocumentChunkSearchQuery(
+  params: DocumentChunkSearchParams,
+  options?: {
+    enabled?: boolean
+  }
+) {
+  const searchKey = serializeSearchParams(params)
+  return useQuery({
+    queryKey: [
+      ...knowledgeKeys.document(params.knowledgeBaseId, params.documentId),
+      'search',
+      searchKey,
+    ],
+    queryFn: () => fetchAllDocumentChunks(params),
+    enabled:
+      (options?.enabled ?? true) &&
+      Boolean(params.knowledgeBaseId && params.documentId && params.search.trim()),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
   })
 }

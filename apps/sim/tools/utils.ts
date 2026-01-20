@@ -2,35 +2,73 @@ import { createLogger } from '@sim/logger'
 import * as Papa from 'papaparse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { AGENT, isCustomTool } from '@/executor/constants'
-import { useCustomToolsStore } from '@/stores/custom-tools/store'
-import { useEnvironmentStore } from '@/stores/settings/environment/store'
+import { useCustomToolsStore } from '@/stores/custom-tools'
+import { useEnvironmentStore } from '@/stores/settings/environment'
+import { extractErrorMessage } from '@/tools/error-extractors'
 import { tools } from '@/tools/registry'
-import type { TableRow, ToolConfig, ToolResponse } from '@/tools/types'
+import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('ToolsUtils')
 
 /**
- * Transforms a table from the store format to a key-value object
- * @param table Array of table rows from the store
- * @returns Record of key-value pairs
+ * Strips version suffix (_v2, _v3, etc.) from a tool ID or name
+ * @example stripVersionSuffix('notion_search_v2') => 'notion_search'
+ * @example stripVersionSuffix('github_create_pr_v3') => 'github_create_pr'
  */
-export const transformTable = (table: TableRow[] | null): Record<string, any> => {
-  if (!table) return {}
+export function stripVersionSuffix(name: string): string {
+  return name.replace(/_v\d+$/, '')
+}
 
-  return table.reduce(
-    (acc, row) => {
-      if (row.cells?.Key && row.cells?.Value !== undefined) {
-        // Extract the Value cell as is - it should already be properly resolved
-        // by the InputResolver based on variable type (number, string, boolean etc.)
-        const value = row.cells.Value
+/**
+ * Filters a tools map to return only the latest version of each tool.
+ * If both `notion_search` and `notion_search_v2` exist, only `notion_search_v2` is returned.
+ * @param toolsMap Record of tool ID to ToolConfig
+ * @returns Filtered record containing only the latest version of each tool
+ */
+export function getLatestVersionTools(
+  toolsMap: Record<string, ToolConfig>
+): Record<string, ToolConfig> {
+  const latestTools: Record<string, ToolConfig> = {}
+  const baseNameToVersions: Record<string, { toolId: string; version: number }[]> = {}
 
-        // Store the correctly typed value in the result object
-        acc[row.cells.Key] = value
-      }
-      return acc
-    },
-    {} as Record<string, any>
-  )
+  for (const toolId of Object.keys(toolsMap)) {
+    const baseName = stripVersionSuffix(toolId)
+    const versionMatch = toolId.match(/_v(\d+)$/)
+    const version = versionMatch ? Number.parseInt(versionMatch[1], 10) : 1
+
+    if (!baseNameToVersions[baseName]) {
+      baseNameToVersions[baseName] = []
+    }
+    baseNameToVersions[baseName].push({ toolId, version })
+  }
+
+  for (const versions of Object.values(baseNameToVersions)) {
+    const latest = versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
+    latestTools[latest.toolId] = toolsMap[latest.toolId]
+  }
+
+  return latestTools
+}
+
+/**
+ * Resolves a tool name to its actual tool ID in the registry.
+ * Handles both stripped names (e.g., 'notion_search') and versioned names (e.g., 'notion_search_v2').
+ * @param toolName The tool name to resolve (may or may not have version suffix)
+ * @returns The actual tool ID in the registry, or the original name if not found
+ */
+export function resolveToolId(toolName: string): string {
+  if (tools[toolName]) {
+    return toolName
+  }
+
+  const latestTools = getLatestVersionTools(tools)
+  for (const toolId of Object.keys(latestTools)) {
+    if (stripVersionSuffix(toolId) === toolName) {
+      return toolId
+    }
+  }
+
+  return toolName
 }
 
 interface RequestParams {
@@ -38,6 +76,93 @@ interface RequestParams {
   method: string
   headers: Record<string, string>
   body?: string
+}
+
+/**
+ * Safely stringify a value to JSON, handling circular references and large objects
+ * @param value - The value to stringify
+ * @param context - Context for error messages (e.g., toolId)
+ * @returns Stringified JSON
+ * @throws Error if stringification fails
+ */
+export function safeStringify(value: any, context = 'unknown'): string {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  // Use a WeakSet to track circular references
+  const seen = new WeakSet()
+
+  // Create the replacer function that will be used in JSON.stringify
+  const replacer = (key: string, val: any): any => {
+    // Handle undefined - JSON.stringify omits undefined, but we want to be explicit
+    if (val === undefined) {
+      return undefined
+    }
+
+    // Handle functions - replace with a placeholder
+    if (typeof val === 'function') {
+      return '[Function]'
+    }
+
+    // Handle Symbols - replace with a placeholder
+    if (typeof val === 'symbol') {
+      return '[Symbol]'
+    }
+
+    // Handle circular references
+    if (val !== null && typeof val === 'object') {
+      if (seen.has(val)) {
+        return '[Circular Reference]'
+      }
+      seen.add(val)
+    }
+
+    return val
+  }
+
+  try {
+    return JSON.stringify(value, replacer)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+
+    // Check if it's a circular reference error
+    if (
+      errorMessage.includes('circular') ||
+      errorMessage.includes('Converting circular structure')
+    ) {
+      logger.error(`Circular reference detected during JSON stringify in ${context}`, {
+        error: errorMessage,
+      })
+      throw new Error(
+        `Cannot stringify data: circular reference detected. This may occur when data structures reference themselves.`
+      )
+    }
+
+    // Check if it's a size-related error
+    if (errorMessage.includes('Invalid string length') || errorMessage.includes('too large')) {
+      logger.error(`Data too large to stringify in ${context}`, {
+        error: errorMessage,
+        valueType: typeof value,
+        isArray: Array.isArray(value),
+        arrayLength: Array.isArray(value) ? value.length : undefined,
+      })
+      throw new Error(
+        `Cannot stringify data: data is too large. Try reducing the size of the data being sent.`
+      )
+    }
+
+    // Generic error
+    logger.error(`Failed to stringify JSON in ${context}`, {
+      error: errorMessage,
+      valueType: typeof value,
+      isArray: Array.isArray(value),
+      arrayLength: Array.isArray(value) ? value.length : undefined,
+    })
+    throw new Error(
+      `Failed to convert data to JSON: ${errorMessage}. The data may contain invalid values or be too large.`
+    )
+  }
 }
 
 /**
@@ -91,10 +216,29 @@ export async function formatRequestParams(
       }
       // Otherwise JSON stringify it
       else {
-        body = JSON.stringify(bodyResult)
+        body = safeStringify(bodyResult, tool.id || 'unknown')
       }
     } else {
-      body = typeof bodyResult === 'string' ? bodyResult : JSON.stringify(bodyResult)
+      body =
+        typeof bodyResult === 'string'
+          ? bodyResult
+          : safeStringify(bodyResult, tool.id || 'unknown')
+    }
+
+    // Validate the JSON is parseable before returning
+    if (body && !isPreformattedContent) {
+      try {
+        JSON.parse(body)
+      } catch (parseError) {
+        logger.error(`Generated invalid JSON in formatRequestParams for ${tool.id || 'unknown'}`, {
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+          bodyLength: body.length,
+          bodyPreview: body.substring(0, 200),
+        })
+        throw new Error(
+          `Failed to generate valid JSON for request body. This may be due to circular references or invalid data structures.`
+        )
+      }
     }
   }
 
@@ -115,14 +259,22 @@ export async function executeRequest(
     const externalResponse = await fetch(url, { method, headers, body })
 
     if (!externalResponse.ok) {
-      let errorContent
+      let errorData: any
       try {
-        errorContent = await externalResponse.json()
+        errorData = await externalResponse.json()
       } catch (_e) {
-        errorContent = { message: externalResponse.statusText }
+        try {
+          errorData = await externalResponse.text()
+        } catch (_e2) {
+          errorData = null
+        }
       }
 
-      const error = errorContent.message || `${toolId} API error: ${externalResponse.statusText}`
+      const error = extractErrorMessage({
+        status: externalResponse.status,
+        statusText: externalResponse.statusText,
+        data: errorData,
+      })
       logger.error(`${toolId} error:`, { error })
       throw new Error(error)
     }

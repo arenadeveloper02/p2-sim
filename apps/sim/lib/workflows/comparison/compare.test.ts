@@ -2290,7 +2290,7 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               webhookId: { value: null },
             },
           }),
@@ -2302,7 +2302,7 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               webhookId: { value: 'wh_123456' },
             },
           }),
@@ -2318,7 +2318,7 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               triggerPath: { value: '' },
             },
           }),
@@ -2330,64 +2330,8 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               triggerPath: { value: '/api/webhooks/abc123' },
-            },
-          }),
-        },
-      })
-
-      expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
-    })
-
-    it.concurrent('should not detect change when testUrl differs', () => {
-      const deployedState = createWorkflowState({
-        blocks: {
-          block1: createBlock('block1', {
-            type: 'starter',
-            subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
-              testUrl: { value: null },
-            },
-          }),
-        },
-      })
-
-      const currentState = createWorkflowState({
-        blocks: {
-          block1: createBlock('block1', {
-            type: 'starter',
-            subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
-              testUrl: { value: 'https://test.example.com/webhook' },
-            },
-          }),
-        },
-      })
-
-      expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
-    })
-
-    it.concurrent('should not detect change when testUrlExpiresAt differs', () => {
-      const deployedState = createWorkflowState({
-        blocks: {
-          block1: createBlock('block1', {
-            type: 'starter',
-            subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
-              testUrlExpiresAt: { value: null },
-            },
-          }),
-        },
-      })
-
-      const currentState = createWorkflowState({
-        blocks: {
-          block1: createBlock('block1', {
-            type: 'starter',
-            subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
-              testUrlExpiresAt: { value: '2025-12-31T23:59:59Z' },
             },
           }),
         },
@@ -2402,11 +2346,9 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               webhookId: { value: null },
               triggerPath: { value: '' },
-              testUrl: { value: null },
-              testUrlExpiresAt: { value: null },
             },
           }),
         },
@@ -2417,11 +2359,9 @@ describe('hasWorkflowChanged', () => {
           block1: createBlock('block1', {
             type: 'starter',
             subBlocks: {
-              triggerConfig: { value: { event: 'push' } },
+              model: { value: 'gpt-4' },
               webhookId: { value: 'wh_123456' },
               triggerPath: { value: '/api/webhooks/abc123' },
-              testUrl: { value: 'https://test.example.com/webhook' },
-              testUrlExpiresAt: { value: '2025-12-31T23:59:59Z' },
             },
           }),
         },
@@ -2431,14 +2371,18 @@ describe('hasWorkflowChanged', () => {
     })
 
     it.concurrent(
-      'should detect change when triggerConfig differs but runtime metadata also differs',
+      'should detect change when actual config differs but runtime metadata also differs',
       () => {
+        // Test that when a real config field changes along with runtime metadata,
+        // the change is still detected. Using 'model' as the config field since
+        // triggerConfig is now excluded from comparison (individual trigger fields
+        // are compared separately).
         const deployedState = createWorkflowState({
           blocks: {
             block1: createBlock('block1', {
               type: 'starter',
               subBlocks: {
-                triggerConfig: { value: { event: 'push' } },
+                model: { value: 'gpt-4' },
                 webhookId: { value: null },
               },
             }),
@@ -2450,7 +2394,7 @@ describe('hasWorkflowChanged', () => {
             block1: createBlock('block1', {
               type: 'starter',
               subBlocks: {
-                triggerConfig: { value: { event: 'pull_request' } },
+                model: { value: 'gpt-4o' },
                 webhookId: { value: 'wh_123456' },
               },
             }),
@@ -2462,8 +2406,12 @@ describe('hasWorkflowChanged', () => {
     )
 
     it.concurrent(
-      'should not detect change when runtime metadata is added to current state',
+      'should not detect change when triggerConfig differs (individual fields compared separately)',
       () => {
+        // triggerConfig is excluded from comparison because:
+        // 1. Individual trigger fields are stored as separate subblocks and compared individually
+        // 2. The client populates triggerConfig with default values from trigger definitions,
+        //    which aren't present in the deployed state, causing false positive change detection
         const deployedState = createWorkflowState({
           blocks: {
             block1: createBlock('block1', {
@@ -2480,7 +2428,36 @@ describe('hasWorkflowChanged', () => {
             block1: createBlock('block1', {
               type: 'starter',
               subBlocks: {
-                triggerConfig: { value: { event: 'push' } },
+                triggerConfig: { value: { event: 'pull_request', extraField: true } },
+              },
+            }),
+          },
+        })
+
+        expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
+      }
+    )
+
+    it.concurrent(
+      'should not detect change when runtime metadata is added to current state',
+      () => {
+        const deployedState = createWorkflowState({
+          blocks: {
+            block1: createBlock('block1', {
+              type: 'starter',
+              subBlocks: {
+                model: { value: 'gpt-4' },
+              },
+            }),
+          },
+        })
+
+        const currentState = createWorkflowState({
+          blocks: {
+            block1: createBlock('block1', {
+              type: 'starter',
+              subBlocks: {
+                model: { value: 'gpt-4' },
                 webhookId: { value: 'wh_123456' },
                 triggerPath: { value: '/api/webhooks/abc123' },
               },
@@ -2500,7 +2477,7 @@ describe('hasWorkflowChanged', () => {
             block1: createBlock('block1', {
               type: 'starter',
               subBlocks: {
-                triggerConfig: { value: { event: 'push' } },
+                model: { value: 'gpt-4' },
                 webhookId: { value: 'wh_old123' },
                 triggerPath: { value: '/api/webhooks/old' },
               },
@@ -2513,7 +2490,7 @@ describe('hasWorkflowChanged', () => {
             block1: createBlock('block1', {
               type: 'starter',
               subBlocks: {
-                triggerConfig: { value: { event: 'push' } },
+                model: { value: 'gpt-4' },
               },
             }),
           },
@@ -2522,5 +2499,182 @@ describe('hasWorkflowChanged', () => {
         expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
       }
     )
+  })
+
+  describe('Variables (UI-only fields should not trigger change)', () => {
+    it.concurrent('should not detect change when validationError differs', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'test',
+        },
+      }
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'test',
+          validationError: undefined,
+        },
+      }
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
+    })
+
+    it.concurrent('should not detect change when validationError has value vs missing', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'number',
+          value: 'invalid',
+        },
+      }
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'number',
+          value: 'invalid',
+          validationError: 'Not a valid number',
+        },
+      }
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
+    })
+
+    it.concurrent('should detect change when variable value differs', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'old value',
+        },
+      }
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'new value',
+          validationError: undefined,
+        },
+      }
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(true)
+    })
+
+    it.concurrent('should detect change when variable is added', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = {}
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'test',
+        },
+      }
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(true)
+    })
+
+    it.concurrent('should detect change when variable is removed', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = {
+        var1: {
+          id: 'var1',
+          workflowId: 'workflow1',
+          name: 'myVar',
+          type: 'plain',
+          value: 'test',
+        },
+      }
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {}
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(true)
+    })
+
+    it.concurrent('should not detect change when empty array vs empty object', () => {
+      const deployedState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(deployedState as any).variables = []
+
+      const currentState = createWorkflowState({
+        blocks: {
+          block1: createBlock('block1'),
+        },
+      })
+      ;(currentState as any).variables = {}
+
+      expect(hasWorkflowChanged(currentState, deployedState)).toBe(false)
+    })
   })
 })
