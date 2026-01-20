@@ -125,10 +125,10 @@ export const ArenaBlock: BlockConfig = {
     //search task blocks
     {
       id: 'search-task-name',
-      title: 'Task Name',
+      title: 'Task Name or Number',
       type: 'long-input',
       required: false,
-      placeholder: 'Enter task name or use <block.field>',
+      placeholder: 'Enter task name, task number, or use <block.field>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',

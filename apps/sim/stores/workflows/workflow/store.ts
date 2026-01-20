@@ -1161,7 +1161,23 @@ export const useWorkflowStore = create<WorkflowStore>()(
 
       getFieldAdvancedMode: (id: string, fieldId: string): boolean => {
         const block = get().blocks[id]
-        if (!block || !block.fieldAdvancedMode) return false
+        if (!block) return false
+
+        // For Arena blocks: if block.advancedMode is true, check if field supports it
+        if (block.type === 'arena' && block.advancedMode) {
+          try {
+            const blockConfig = getBlock('arena')
+            const subBlock = blockConfig?.subBlocks?.find((sb) => sb.id === fieldId)
+            if (subBlock?.advancedModeSupported) {
+              return true
+            }
+          } catch (error) {
+            // Fall through to fieldAdvancedMode check
+          }
+        }
+
+        // Otherwise, check fieldAdvancedMode
+        if (!block.fieldAdvancedMode) return false
         return block.fieldAdvancedMode[fieldId] || false
       },
 
