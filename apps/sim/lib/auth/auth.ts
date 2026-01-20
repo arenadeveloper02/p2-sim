@@ -1719,26 +1719,21 @@ export const auth = betterAuth({
             'files:read',
             'canvases:write',
             'reactions:write',
-            // User token scopes - for user-specific actions
-            'search:read',
+            // Note: search.all API requires user token, which is obtained from authed_user.access_token
+            // in the OAuth response. No additional scope is needed - the user token is automatically
+            // provided when the app is installed with bot scopes.
           ],
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
+          // Add user_scope parameter to request user token for search.all API
+          // Note: search.all requires 'search:read' user scope in addition to channels:read
+          authorizationUrlParams: {
+            user_scope: 'search:read,channels:read',
+          },
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
-              logger.info('Slack getUserInfo called', {
-                hasAccessToken: !!tokens.accessToken,
-                tokenKeys: Object.keys(tokens),
-                fullTokens: JSON.stringify(tokens, null, 2),
-                hasAuthedUser: !!(tokens as any).authed_user,
-                authedUserKeys: (tokens as any).authed_user
-                  ? Object.keys((tokens as any).authed_user)
-                  : [],
-              })
-
-              // Use auth.test to get bot info for user identification
               const response = await fetch('https://slack.com/api/auth.test', {
                 headers: {
                   Authorization: `Bearer ${tokens.accessToken}`,
@@ -1766,18 +1761,8 @@ export const auth = betterAuth({
 
               const uniqueId = `${teamId}-${userId}`
 
-              const userToken = (tokens as any).authed_user?.access_token
-              logger.info('Slack user token extraction in getUserInfo', {
-                teamId,
-                userId,
-                uniqueId,
-                teamName,
-                hasUserToken: !!userToken,
-                userTokenPrefix: userToken ? `${userToken.substring(0, 10)}...` : 'none',
-                authedUserData: (tokens as any).authed_user,
-              })
+              logger.info('Slack credential identifier', { teamId, userId, uniqueId, teamName })
 
-              // Return user info with idToken containing user token
               return {
                 id: uniqueId,
                 name: teamName,
@@ -1785,8 +1770,6 @@ export const auth = betterAuth({
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-                // Store user token in idToken field for later use
-                idToken: userToken || null,
               }
             } catch (error) {
               logger.error('Error creating Slack bot profile:', { error })
