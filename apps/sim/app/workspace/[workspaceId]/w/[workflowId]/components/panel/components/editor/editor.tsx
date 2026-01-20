@@ -200,47 +200,53 @@ export function Editor() {
 
   // Auto-enable advanced mode when values indicate it's being used
   const toggleBlockAdvancedMode = useWorkflowStore((state) => state.toggleBlockAdvancedMode)
+  // Optimistic local toggle for instant UI feedback
+  const toggleBlockAdvancedModeLocal = useWorkflowStore((state) => state.toggleBlockAdvancedMode)
 
   useEffect(() => {
     if (!isArenaBlock || !currentBlockId || !blockConfig || !userPermissions.canEdit) return
     if (arenaAdvancedMode) return // Already enabled
 
-    const block = useWorkflowStore.getState().blocks[currentBlockId]
-    if (!block || block.advancedMode) return // Block doesn't exist or already in advanced mode
+    const timeoutId = setTimeout(() => {
+      const block = useWorkflowStore.getState().blocks[currentBlockId]
+      if (!block || block.advancedMode) return // Block doesn't exist or already in advanced mode
 
-    // Check if any advancedModeSupported field has a value that indicates advanced mode
-    // Values are stored in blockSubBlockValues, not block.subBlocks
-    let shouldEnable = false
+      // Check if any advancedModeSupported field has a value that indicates advanced mode
+      // Values are stored in blockSubBlockValues, not block.subBlocks
+      let shouldEnable = false
 
-    try {
-      if (blockConfig.subBlocks && blockSubBlockValues) {
-        for (const subBlock of blockConfig.subBlocks) {
-          if (!subBlock.advancedModeSupported) continue
+      try {
+        if (blockConfig.subBlocks && blockSubBlockValues) {
+          for (const subBlock of blockConfig.subBlocks) {
+            if (!subBlock.advancedModeSupported) continue
 
-          const value = blockSubBlockValues[subBlock.id]
-          if (value === undefined || value === null) continue
+            const value = blockSubBlockValues[subBlock.id]
+            if (value === undefined || value === null) continue
 
-          // Only auto-enable when we see a variable (starts with <)
-          if (typeof value === 'string') {
-            const trimmed = value.trim()
-            if (trimmed.startsWith('<')) {
-              shouldEnable = true
-              break
+            // Only auto-enable when we see a variable (starts with <)
+            if (typeof value === 'string') {
+              const trimmed = value.trim()
+              if (trimmed.startsWith('<')) {
+                shouldEnable = true
+                break
+              }
             }
           }
         }
-      }
 
-      // Auto-enable advanced mode if we detected values that indicate it
-      if (shouldEnable) {
-        // Only toggle if currently OFF (toggleBlockAdvancedMode will turn it ON)
-        if (!block.advancedMode) {
-          toggleBlockAdvancedMode(currentBlockId)
+        // Auto-enable advanced mode if we detected values that indicate it
+        if (shouldEnable) {
+          // Only toggle if currently OFF (toggleBlockAdvancedMode will turn it ON)
+          if (!block.advancedMode) {
+            toggleBlockAdvancedMode(currentBlockId)
+          }
         }
+      } catch (error) {
+        // Silently fail - this is just an auto-enable feature
       }
-    } catch (error) {
-      // Silently fail - this is just an auto-enable feature
-    }
+    }, 100) // small delay to avoid race with manual toggles
+
+    return () => clearTimeout(timeoutId)
   }, [
     isArenaBlock,
     currentBlockId,
@@ -353,8 +359,12 @@ export function Editor() {
                     checked={Boolean(arenaAdvancedMode)}
                     onCheckedChange={(checked) => {
                       if (currentBlockId && userPermissions.canEdit) {
-                        // Use the existing toggle which now syncs fieldAdvancedMode for Arena
-                        collaborativeToggleBlockAdvancedMode(currentBlockId)
+                        // Optimistic update for instant UI feedback
+                        toggleBlockAdvancedModeLocal(currentBlockId)
+                        // Sync with collaborators/server but avoid double-toggle
+                        collaborativeToggleBlockAdvancedMode(currentBlockId, {
+                          alreadyToggled: true,
+                        })
                       }
                     }}
                     disabled={!userPermissions.canEdit}
