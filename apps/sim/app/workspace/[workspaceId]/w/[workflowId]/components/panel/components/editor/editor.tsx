@@ -220,20 +220,13 @@ export function Editor() {
           const value = blockSubBlockValues[subBlock.id]
           if (value === undefined || value === null) continue
 
-          // Check if value is a string (could be variable or ID from advanced mode)
+          // Only auto-enable when we see a variable (starts with <)
           if (typeof value === 'string') {
             const trimmed = value.trim()
-            // If it's a variable (starts with <), it's definitely advanced mode
             if (trimmed.startsWith('<')) {
               shouldEnable = true
               break
             }
-          }
-          // If value is not an object (for selectors), it might be from advanced mode
-          // Selectors in basic mode store objects like { id, name }, advanced mode stores strings
-          if (subBlock.type?.includes('selector') && typeof value !== 'object' && value !== null) {
-            shouldEnable = true
-            break
           }
         }
       }
