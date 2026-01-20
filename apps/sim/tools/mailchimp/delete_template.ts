@@ -11,6 +11,13 @@ export interface MailchimpDeleteTemplateParams {
 
 export interface MailchimpDeleteTemplateResponse {
   success: boolean
+  output: {
+    metadata: {
+      operation: 'delete_template'
+      templateId: string
+    }
+    success: boolean
+  }
 }
 
 export const mailchimpDeleteTemplateTool: ToolConfig<
@@ -54,10 +61,25 @@ export const mailchimpDeleteTemplateTool: ToolConfig<
 
     return {
       success: true,
+      output: {
+        metadata: {
+          operation: 'delete_template' as const,
+          templateId: '',
+        },
+        success: true,
+      },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the template was successfully deleted' },
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Deletion confirmation',
+      properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
+      },
+    },
   },
 }

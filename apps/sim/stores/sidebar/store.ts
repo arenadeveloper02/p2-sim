@@ -1,20 +1,38 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { SIDEBAR_WIDTH } from '@/stores/constants'
-import type { SidebarState } from './types'
+
+/**
+ * Sidebar state interface
+ */
+interface SidebarState {
+  workspaceDropdownOpen: boolean
+  sidebarWidth: number
+  isCollapsed: boolean
+  _hasHydrated: boolean
+  setWorkspaceDropdownOpen: (isOpen: boolean) => void
+  setSidebarWidth: (width: number) => void
+  setIsCollapsed: (isCollapsed: boolean) => void
+  setHasHydrated: (hasHydrated: boolean) => void
+}
+
+/**
+ * Sidebar width constraints
+ * Note: Maximum width is enforced dynamically at 30% of viewport width in the resize hook
+ */
+export const DEFAULT_SIDEBAR_WIDTH = 232
+export const MIN_SIDEBAR_WIDTH = 232
 
 export const useSidebarStore = create<SidebarState>()(
   persist(
     (set, get) => ({
       workspaceDropdownOpen: false,
-      sidebarWidth: SIDEBAR_WIDTH.DEFAULT,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       isCollapsed: false,
-      isResizing: false,
       _hasHydrated: false,
       setWorkspaceDropdownOpen: (isOpen) => set({ workspaceDropdownOpen: isOpen }),
       setSidebarWidth: (width) => {
         // Only enforce minimum - maximum is enforced dynamically by the resize hook
-        const clampedWidth = Math.max(SIDEBAR_WIDTH.MIN, width)
+        const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, width)
         set({ sidebarWidth: clampedWidth })
         // Update CSS variable for immediate visual feedback
         if (typeof window !== 'undefined') {
@@ -31,9 +49,6 @@ export const useSidebarStore = create<SidebarState>()(
           const currentWidth = get().sidebarWidth
           document.documentElement.style.setProperty('--sidebar-width', `${currentWidth}px`)
         }
-      },
-      setIsResizing: (isResizing) => {
-        set({ isResizing })
       },
       setHasHydrated: (hasHydrated) => set({ _hasHydrated: hasHydrated }),
     }),

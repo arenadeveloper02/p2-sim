@@ -17,7 +17,10 @@ export interface MailchimpAddMemberResponse {
   success: boolean
   output: {
     member: MailchimpMember
-    subscriber_hash: string
+    metadata: {
+      operation: 'add_member'
+      subscriberHash: string
+    }
     success: boolean
   }
 }
@@ -115,7 +118,10 @@ export const mailchimpAddMemberTool: ToolConfig<
       success: true,
       output: {
         member: data,
-        subscriber_hash: data.id,
+        metadata: {
+          operation: 'add_member' as const,
+          subscriberHash: data.id,
+        },
         success: true,
       },
     }
@@ -127,8 +133,8 @@ export const mailchimpAddMemberTool: ToolConfig<
       type: 'object',
       description: 'Added member data',
       properties: {
-        member: { type: 'json', description: 'Added member object' },
-        subscriber_hash: { type: 'string', description: 'Subscriber hash ID' },
+        member: { type: 'object', description: 'Added member object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

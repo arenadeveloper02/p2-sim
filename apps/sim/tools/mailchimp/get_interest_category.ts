@@ -15,7 +15,11 @@ export interface MailchimpGetInterestCategoryResponse {
   success: boolean
   output: {
     category: MailchimpInterestCategory
-    interest_category_id: string
+    metadata: {
+      operation: 'get_interest_category'
+      interestCategoryId: string
+    }
+    success: boolean
   }
 }
 
@@ -74,25 +78,24 @@ export const mailchimpGetInterestCategoryTool: ToolConfig<
       success: true,
       output: {
         category: data,
-        interest_category_id: data.id,
+        metadata: {
+          operation: 'get_interest_category' as const,
+          interestCategoryId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the interest category was successfully retrieved',
-    },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Interest category data',
+      description: 'Interest category data and metadata',
       properties: {
-        category: { type: 'json', description: 'Interest category object' },
-        interest_category_id: {
-          type: 'string',
-          description: 'The unique ID of the interest category',
-        },
+        category: { type: 'object', description: 'Interest category object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

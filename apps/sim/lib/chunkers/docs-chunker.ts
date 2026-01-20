@@ -16,7 +16,7 @@ interface HeaderInfo {
 interface Frontmatter {
   title?: string
   description?: string
-  [key: string]: unknown
+  [key: string]: any
 }
 
 const logger = createLogger('DocsChunker')

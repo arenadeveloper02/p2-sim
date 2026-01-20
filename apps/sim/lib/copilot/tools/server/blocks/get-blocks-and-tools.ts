@@ -6,19 +6,15 @@ import {
 } from '@/lib/copilot/tools/shared/schemas'
 import { registry as blockRegistry } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
 
 export const getBlocksAndToolsServerTool: BaseServerTool<
   ReturnType<typeof GetBlocksAndToolsInput.parse>,
   ReturnType<typeof GetBlocksAndToolsResult.parse>
 > = {
   name: 'get_blocks_and_tools',
-  async execute(_args: unknown, context?: { userId: string }) {
+  async execute() {
     const logger = createLogger('GetBlocksAndToolsServerTool')
     logger.debug('Executing get_blocks_and_tools')
-
-    const permissionConfig = context?.userId ? await getUserPermissionConfig(context.userId) : null
-    const allowedIntegrations = permissionConfig?.allowedIntegrations
 
     type BlockListItem = {
       type: string
@@ -29,11 +25,7 @@ export const getBlocksAndToolsServerTool: BaseServerTool<
     const blocks: BlockListItem[] = []
 
     Object.entries(blockRegistry)
-      .filter(([blockType, blockConfig]: [string, BlockConfig]) => {
-        if (blockConfig.hideFromToolbar) return false
-        if (allowedIntegrations != null && !allowedIntegrations.includes(blockType)) return false
-        return true
-      })
+      .filter(([, blockConfig]: [string, BlockConfig]) => !blockConfig.hideFromToolbar)
       .forEach(([blockType, blockConfig]: [string, BlockConfig]) => {
         blocks.push({
           type: blockType,

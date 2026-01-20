@@ -89,7 +89,10 @@ export const pipedriveGetPipelinesTool: ToolConfig<
       success: true,
       output: {
         pipelines,
-        total_items: pipelines.length,
+        metadata: {
+          operation: 'get_pipelines' as const,
+          totalItems: pipelines.length,
+        },
         success: true,
       },
     }
@@ -97,7 +100,7 @@ export const pipedriveGetPipelinesTool: ToolConfig<
 
   outputs: {
     pipelines: { type: 'array', description: 'Array of pipeline objects from Pipedrive' },
-    total_items: { type: 'number', description: 'Total number of pipelines returned' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

@@ -15,8 +15,12 @@ export interface MailchimpGetAudiencesResponse {
   success: boolean
   output: {
     lists: MailchimpAudience[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_audiences'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -80,24 +84,26 @@ export const mailchimpGetAudiencesTool: ToolConfig<
       success: true,
       output: {
         lists,
-        total_items: data.total_items || lists.length,
-        total_returned: lists.length,
+        totalItems: data.total_items || lists.length,
+        metadata: {
+          operation: 'get_audiences' as const,
+          totalReturned: lists.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the audiences were successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Audiences data',
+      description: 'Audiences data and metadata',
       properties: {
-        lists: { type: 'json', description: 'Array of audience/list objects' },
-        total_items: { type: 'number', description: 'Total number of lists' },
-        total_returned: {
-          type: 'number',
-          description: 'Number of lists returned in this response',
-        },
+        lists: { type: 'array', description: 'Array of audience/list objects' },
+        totalItems: { type: 'number', description: 'Total number of lists' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

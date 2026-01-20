@@ -110,12 +110,10 @@ export class TextChunker {
           chunks.push(currentChunk.trim())
         }
 
+        // Start new chunk with current part
         // If part itself is too large, split it further
         if (this.estimateTokens(part) > this.chunkSize) {
-          const subChunks = await this.splitRecursively(part, separatorIndex + 1)
-          for (const subChunk of subChunks) {
-            chunks.push(subChunk)
-          }
+          chunks.push(...(await this.splitRecursively(part, separatorIndex + 1)))
           currentChunk = ''
         } else {
           currentChunk = part

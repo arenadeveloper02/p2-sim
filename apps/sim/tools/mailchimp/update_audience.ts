@@ -18,7 +18,10 @@ export interface MailchimpUpdateAudienceResponse {
   success: boolean
   output: {
     list: MailchimpAudience
-    list_id: string
+    metadata: {
+      operation: 'update_audience'
+      listId: string
+    }
     success: boolean
   }
 }
@@ -110,7 +113,10 @@ export const mailchimpUpdateAudienceTool: ToolConfig<
       success: true,
       output: {
         list: data,
-        list_id: data.id,
+        metadata: {
+          operation: 'update_audience' as const,
+          listId: data.id,
+        },
         success: true,
       },
     }
@@ -123,7 +129,7 @@ export const mailchimpUpdateAudienceTool: ToolConfig<
       description: 'Updated audience data',
       properties: {
         list: { type: 'object', description: 'Updated audience/list object' },
-        list_id: { type: 'string', description: 'List ID' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

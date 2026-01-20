@@ -5,48 +5,31 @@ export interface GoogleVaultCommonParams {
   matterId: string
 }
 
-export interface GoogleVaultCreateMattersParams {
-  accessToken: string
-  name: string
-  description?: string
-}
-
-export interface GoogleVaultListMattersParams {
-  accessToken: string
-  pageSize?: number
-  pageToken?: string
-  matterId?: string
-}
-
-export interface GoogleVaultDownloadExportFileParams {
-  accessToken: string
-  matterId: string
-  bucketName: string
-  objectName: string
-  fileName?: string
-}
-
+// Exports
 export interface GoogleVaultCreateMattersExportParams extends GoogleVaultCommonParams {
   exportName: string
   corpus: GoogleVaultCorpus
-  accountEmails?: string
+  accountEmails?: string // Comma-separated list or array handled in the tool
   orgUnitId?: string
   terms?: string
   startTime?: string
   endTime?: string
+  timeZone?: string
   includeSharedDrives?: boolean
 }
 
 export interface GoogleVaultListMattersExportParams extends GoogleVaultCommonParams {
   pageSize?: number
   pageToken?: string
-  exportId?: string
+  exportId?: string // Short input to fetch a specific export
 }
 
 export interface GoogleVaultListMattersExportResponse extends ToolResponse {
   output: any
 }
 
+// Holds
+// Simplified: default to BASIC_HOLD by omission in requests
 export type GoogleVaultHoldView = 'BASIC_HOLD' | 'FULL_HOLD'
 
 export type GoogleVaultCorpus = 'MAIL' | 'DRIVE' | 'GROUPS' | 'HANGOUTS_CHAT' | 'VOICE'
@@ -54,18 +37,14 @@ export type GoogleVaultCorpus = 'MAIL' | 'DRIVE' | 'GROUPS' | 'HANGOUTS_CHAT' | 
 export interface GoogleVaultCreateMattersHoldsParams extends GoogleVaultCommonParams {
   holdName: string
   corpus: GoogleVaultCorpus
-  accountEmails?: string
+  accountEmails?: string // Comma-separated list or array handled in the tool
   orgUnitId?: string
-  terms?: string
-  startTime?: string
-  endTime?: string
-  includeSharedDrives?: boolean
 }
 
 export interface GoogleVaultListMattersHoldsParams extends GoogleVaultCommonParams {
   pageSize?: number
   pageToken?: string
-  holdId?: string
+  holdId?: string // Short input to fetch a specific hold
 }
 
 export interface GoogleVaultListMattersHoldsResponse extends ToolResponse {

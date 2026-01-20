@@ -1,13 +1,8 @@
-export { useCopilotStore } from './store'
+export { useCopilotStore } from '@/stores/panel/copilot/store'
 export type {
-  ChatContext,
   CopilotActions,
   CopilotChat,
   CopilotMessage,
-  CopilotMode,
   CopilotState,
   CopilotStore,
-  CopilotToolCall,
-  MessageFileAttachment,
-  ToolState,
-} from './types'
+} from '@/stores/panel/copilot/types'

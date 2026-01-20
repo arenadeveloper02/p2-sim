@@ -1,6 +1,12 @@
+/**
+ * MCP Tool Validation
+ *
+ * Shared logic for detecting issues with MCP tools across the platform.
+ * Used by both tool-input.tsx (workflow context) and MCP modal (workspace context).
+ */
+
 import isEqual from 'lodash/isEqual'
 import omit from 'lodash/omit'
-import type { McpToolSchema, StoredMcpToolReference } from '@/lib/mcp/types'
 
 export type McpToolIssueType =
   | 'server_not_found'
@@ -14,6 +20,13 @@ export interface McpToolIssue {
   message: string
 }
 
+export interface StoredMcpTool {
+  serverId: string
+  serverUrl?: string
+  toolName: string
+  schema?: Record<string, unknown>
+}
+
 export interface ServerState {
   id: string
   url?: string
@@ -24,12 +37,17 @@ export interface ServerState {
 export interface DiscoveredTool {
   serverId: string
   name: string
-  inputSchema?: McpToolSchema
+  inputSchema?: Record<string, unknown>
 }
 
+/**
+ * Compares two schemas to detect changes.
+ * Uses lodash isEqual for deep, key-order-independent comparison.
+ * Ignores description field which may be backfilled.
+ */
 export function hasSchemaChanged(
-  storedSchema: McpToolSchema | undefined,
-  serverSchema: McpToolSchema | undefined
+  storedSchema: Record<string, unknown> | undefined,
+  serverSchema: Record<string, unknown> | undefined
 ): boolean {
   if (!storedSchema || !serverSchema) return false
 
@@ -39,18 +57,23 @@ export function hasSchemaChanged(
   return !isEqual(storedWithoutDesc, serverWithoutDesc)
 }
 
+/**
+ * Detects issues with a stored MCP tool by comparing against current server/tool state.
+ */
 export function getMcpToolIssue(
-  storedTool: StoredMcpToolReference,
+  storedTool: StoredMcpTool,
   servers: ServerState[],
   discoveredTools: DiscoveredTool[]
 ): McpToolIssue | null {
   const { serverId, serverUrl, toolName, schema } = storedTool
 
+  // Check server exists
   const server = servers.find((s) => s.id === serverId)
   if (!server) {
     return { type: 'server_not_found', message: 'Server not found' }
   }
 
+  // Check server connection status
   if (server.connectionStatus === 'error') {
     return { type: 'server_error', message: server.lastError || 'Server connection error' }
   }
@@ -58,15 +81,18 @@ export function getMcpToolIssue(
     return { type: 'server_error', message: 'Server not connected' }
   }
 
+  // Check server URL changed (if we have stored URL)
   if (serverUrl && server.url && serverUrl !== server.url) {
-    return { type: 'url_changed', message: 'Server URL changed' }
+    return { type: 'url_changed', message: 'Server URL changed - tools may be different' }
   }
 
+  // Check tool exists on server
   const serverTool = discoveredTools.find((t) => t.serverId === serverId && t.name === toolName)
   if (!serverTool) {
     return { type: 'tool_not_found', message: 'Tool not found on server' }
   }
 
+  // Check schema changed
   if (schema && serverTool.inputSchema) {
     if (hasSchemaChanged(schema, serverTool.inputSchema)) {
       return { type: 'schema_changed', message: 'Tool schema changed' }
@@ -76,9 +102,13 @@ export function getMcpToolIssue(
   return null
 }
 
+/**
+ * Returns a user-friendly label for the issue badge
+ */
 export function getIssueBadgeLabel(issue: McpToolIssue): string {
   switch (issue.type) {
     case 'schema_changed':
+      return 'stale'
     case 'url_changed':
       return 'stale'
     default:
@@ -86,16 +116,9 @@ export function getIssueBadgeLabel(issue: McpToolIssue): string {
   }
 }
 
-export function getIssueBadgeVariant(issue: McpToolIssue): 'amber' | 'red' {
-  switch (issue.type) {
-    case 'schema_changed':
-    case 'url_changed':
-      return 'amber'
-    default:
-      return 'red'
-  }
-}
-
+/**
+ * Checks if an issue means the tool cannot be used (vs just being stale)
+ */
 export function isToolUnavailable(issue: McpToolIssue | null): boolean {
   if (!issue) return false
   return (

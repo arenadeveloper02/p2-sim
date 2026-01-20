@@ -1,8 +1,8 @@
-import { createEnvMock, createMockFetch, loggerMock } from '@sim/testing'
+import { createMockFetch, loggerMock } from '@sim/testing'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/core/config/env', () =>
-  createEnvMock({
+vi.mock('@/lib/core/config/env', () => ({
+  env: {
     GOOGLE_CLIENT_ID: 'google_client_id',
     GOOGLE_CLIENT_SECRET: 'google_client_secret',
     GITHUB_CLIENT_ID: 'github_client_id',
@@ -49,8 +49,8 @@ vi.mock('@/lib/core/config/env', () =>
     WORDPRESS_CLIENT_SECRET: 'wordpress_client_secret',
     SPOTIFY_CLIENT_ID: 'spotify_client_id',
     SPOTIFY_CLIENT_SECRET: 'spotify_client_secret',
-  })
-)
+  },
+}))
 
 vi.mock('@sim/logger', () => loggerMock)
 
@@ -138,10 +138,7 @@ describe('OAuth Token Refresh', () => {
             })
           )
 
-          const [, requestOptions] = mockFetch.mock.calls[0] as [
-            string,
-            { headers: Record<string, string>; body: string },
-          ]
+          const [, requestOptions] = mockFetch.mock.calls[0]
 
           const authHeader = requestOptions.headers.Authorization
           expect(authHeader).toMatch(/^Basic /)
@@ -254,10 +251,7 @@ describe('OAuth Token Refresh', () => {
             })
           )
 
-          const [, requestOptions] = mockFetch.mock.calls[0] as [
-            string,
-            { headers: Record<string, string>; body: string },
-          ]
+          const [, requestOptions] = mockFetch.mock.calls[0]
 
           expect(requestOptions.headers.Authorization).toBeUndefined()
 
@@ -285,10 +279,7 @@ describe('OAuth Token Refresh', () => {
 
       await withMockFetch(mockFetch, () => refreshOAuthToken('github', refreshToken))
 
-      const [, requestOptions] = mockFetch.mock.calls[0] as [
-        string,
-        { headers: Record<string, string>; body: string },
-      ]
+      const [, requestOptions] = mockFetch.mock.calls[0]
       expect(requestOptions.headers.Accept).toBe('application/json')
     })
 
@@ -298,10 +289,7 @@ describe('OAuth Token Refresh', () => {
 
       await withMockFetch(mockFetch, () => refreshOAuthToken('reddit', refreshToken))
 
-      const [, requestOptions] = mockFetch.mock.calls[0] as [
-        string,
-        { headers: Record<string, string>; body: string },
-      ]
+      const [, requestOptions] = mockFetch.mock.calls[0]
       expect(requestOptions.headers['User-Agent']).toBe(
         'sim-studio/1.0 (https://github.com/simstudioai/sim)'
       )

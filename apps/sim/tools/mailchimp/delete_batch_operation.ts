@@ -11,6 +11,13 @@ export interface MailchimpDeleteBatchOperationParams {
 
 export interface MailchimpDeleteBatchOperationResponse {
   success: boolean
+  output: {
+    metadata: {
+      operation: 'delete_batch_operation'
+      batchId: string
+    }
+    success: boolean
+  }
 }
 
 export const mailchimpDeleteBatchOperationTool: ToolConfig<
@@ -54,13 +61,25 @@ export const mailchimpDeleteBatchOperationTool: ToolConfig<
 
     return {
       success: true,
+      output: {
+        metadata: {
+          operation: 'delete_batch_operation' as const,
+          batchId: '',
+        },
+        success: true,
+      },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the batch operation was successfully deleted',
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Deletion confirmation',
+      properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
+      },
     },
   },
 }

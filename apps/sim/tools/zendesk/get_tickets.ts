@@ -24,13 +24,13 @@ export interface ZendeskGetTicketsResponse {
   output: {
     tickets: any[]
     paging?: {
-      next_page?: string | null
-      previous_page?: string | null
+      nextPage?: string | null
+      previousPage?: string | null
       count: number
     }
     metadata: {
-      total_returned: number
-      has_more: boolean
+      operation: 'get_tickets'
+      totalReturned: number
     }
     success: boolean
   }
@@ -185,13 +185,13 @@ export const zendeskGetTicketsTool: ToolConfig<ZendeskGetTicketsParams, ZendeskG
         output: {
           tickets,
           paging: {
-            next_page: data.next_page ?? null,
-            previous_page: data.previous_page ?? null,
+            nextPage: data.next_page,
+            previousPage: data.previous_page,
             count: data.count || tickets.length,
           },
           metadata: {
-            total_returned: tickets.length,
-            has_more: !!data.next_page,
+            operation: 'get_tickets' as const,
+            totalReturned: tickets.length,
           },
           success: true,
         },
@@ -200,33 +200,7 @@ export const zendeskGetTicketsTool: ToolConfig<ZendeskGetTicketsParams, ZendeskG
 
     outputs: {
       tickets: { type: 'array', description: 'Array of ticket objects' },
-      paging: {
-        type: 'object',
-        description: 'Pagination information',
-        properties: {
-          next_page: {
-            type: 'string',
-            description: 'URL for next page of results',
-            optional: true,
-          },
-          previous_page: {
-            type: 'string',
-            description: 'URL for previous page of results',
-            optional: true,
-          },
-          count: { type: 'number', description: 'Total count of tickets' },
-        },
-      },
-      metadata: {
-        type: 'object',
-        description: 'Response metadata',
-        properties: {
-          total_returned: {
-            type: 'number',
-            description: 'Number of tickets returned in this response',
-          },
-          has_more: { type: 'boolean', description: 'Whether more tickets are available' },
-        },
-      },
+      paging: { type: 'object', description: 'Pagination information' },
+      metadata: { type: 'object', description: 'Operation metadata' },
     },
   }

@@ -1,4 +1,3 @@
-import { createEnvMock, createMockLogger } from '@sim/testing'
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 /**
@@ -9,10 +8,6 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
  * Resend and EmailClient classes to return mock implementations that our
  * mock functions can intercept.
  */
-
-const loggerMock = vi.hoisted(() => ({
-  createLogger: () => createMockLogger(),
-}))
 
 const mockSend = vi.fn()
 const mockBatchSend = vi.fn()
@@ -49,15 +44,15 @@ vi.mock('@/lib/messaging/email/unsubscribe', () => ({
 }))
 
 // Mock env with valid API keys so the clients get initialized
-vi.mock('@/lib/core/config/env', () =>
-  createEnvMock({
+vi.mock('@/lib/core/config/env', () => ({
+  env: {
     RESEND_API_KEY: 'test-api-key',
     AZURE_ACS_CONNECTION_STRING: 'test-azure-connection-string',
     AZURE_COMMUNICATION_EMAIL_DOMAIN: 'test.azurecomm.net',
     NEXT_PUBLIC_APP_URL: 'https://test.sim.ai',
     FROM_EMAIL_ADDRESS: 'Sim <noreply@sim.ai>',
-  })
-)
+  },
+}))
 
 // Mock URL utilities
 vi.mock('@/lib/core/utils/urls', () => ({
@@ -71,7 +66,15 @@ vi.mock('@/lib/messaging/email/utils', () => ({
   getFromEmailAddress: vi.fn().mockReturnValue('Sim <noreply@sim.ai>'),
 }))
 
-vi.mock('@sim/logger', () => loggerMock)
+// Mock the logger
+vi.mock('@sim/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
 
 // Import after mocks are set up
 import {

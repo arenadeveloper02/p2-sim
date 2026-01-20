@@ -15,7 +15,10 @@ export interface ZendeskDeleteOrganizationResponse {
   success: boolean
   output: {
     deleted: boolean
-    organization_id: string
+    metadata: {
+      operation: 'delete_organization'
+      organizationId: string
+    }
     success: boolean
   }
 }
@@ -80,14 +83,17 @@ export const zendeskDeleteOrganizationTool: ToolConfig<
       success: true,
       output: {
         deleted: true,
-        organization_id: params?.organizationId || '',
+        metadata: {
+          operation: 'delete_organization' as const,
+          organizationId: params?.organizationId || '',
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    deleted: { type: 'boolean', description: 'Whether the organization was successfully deleted' },
-    organization_id: { type: 'string', description: 'The deleted organization ID' },
+    deleted: { type: 'boolean', description: 'Deletion success' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

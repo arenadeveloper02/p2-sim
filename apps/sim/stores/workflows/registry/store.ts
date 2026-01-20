@@ -2,8 +2,6 @@ import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { withOptimisticUpdate } from '@/lib/core/utils/optimistic-update'
-import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
-import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { useVariablesStore } from '@/stores/panel/variables/store'
 import type {
@@ -12,10 +10,9 @@ import type {
   WorkflowMetadata,
   WorkflowRegistry,
 } from '@/stores/workflows/registry/types'
+import { getNextWorkflowColor } from '@/stores/workflows/registry/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import { getUniqueBlockName, regenerateBlockIds } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowRegistry')
 const initialHydration: HydrationState = {
@@ -40,7 +37,9 @@ function resetWorkflowStores() {
     edges: [],
     loops: {},
     parallels: {},
-    deploymentStatuses: {},
+    isDeployed: false,
+    deployedAt: undefined,
+    deploymentStatuses: {}, // Reset deployment statuses map
     lastSaved: Date.now(),
   })
 
@@ -57,6 +56,7 @@ function resetWorkflowStores() {
 function setWorkspaceTransitioning(isTransitioning: boolean): void {
   isWorkspaceTransitioning = isTransitioning
 
+  // Set a safety timeout to prevent permanently stuck in transition state
   if (isTransitioning) {
     setTimeout(() => {
       if (isWorkspaceTransitioning) {
@@ -70,13 +70,12 @@ function setWorkspaceTransitioning(isTransitioning: boolean): void {
 export const useWorkflowRegistry = create<WorkflowRegistry>()(
   devtools(
     (set, get) => ({
+      // Store state
       workflows: {},
       activeWorkflowId: null,
       error: null,
       deploymentStatuses: {},
       hydration: initialHydration,
-      clipboard: null,
-      pendingSelection: null,
 
       beginMetadataLoad: (workspaceId: string) => {
         set((state) => ({
@@ -97,17 +96,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           return acc
         }, {})
 
-        set((state) => {
-          const shouldPreserveHydration =
-            state.hydration.phase === 'state-loading' ||
-            (state.hydration.phase === 'ready' &&
-              state.hydration.workflowId &&
-              mapped[state.hydration.workflowId])
-
-          return {
-            workflows: mapped,
-            error: null,
-            hydration: shouldPreserveHydration
+        set((state) => ({
+          workflows: mapped,
+          error: null,
+          hydration:
+            state.hydration.phase === 'state-loading'
               ? state.hydration
               : {
                   phase: 'metadata-ready',
@@ -116,8 +109,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
                   requestId: null,
                   error: null,
                 },
-          }
-        })
+        }))
       },
 
       failMetadataLoad: (workspaceId: string | null, errorMessage: string) => {
@@ -133,7 +125,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         }))
       },
 
+      // Switch to workspace - just clear state, let sidebar handle workflow loading
       switchToWorkspace: async (workspaceId: string) => {
+        // Prevent multiple simultaneous transitions
         if (isWorkspaceTransitioning) {
           logger.warn(
             `Ignoring workspace switch to ${workspaceId} - transition already in progress`
@@ -141,13 +135,16 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           return
         }
 
+        // Set transition flag
         setWorkspaceTransitioning(true)
 
         try {
           logger.info(`Switching to workspace: ${workspaceId}`)
 
+          // Clear current workspace state
           resetWorkflowStores()
 
+          // Update state - sidebar will load workflows when URL changes
           set({
             activeWorkflowId: null,
             workflows: {},
@@ -180,21 +177,26 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         }
       },
 
+      // Method to get deployment status for a specific workflow
       getWorkflowDeploymentStatus: (workflowId: string | null): DeploymentStatus | null => {
         if (!workflowId) {
+          // If no workflow ID provided, check the active workflow
           workflowId = get().activeWorkflowId
           if (!workflowId) return null
         }
 
         const { deploymentStatuses = {} } = get()
 
+        // Get from the workflow-specific deployment statuses in the registry
         if (deploymentStatuses[workflowId]) {
           return deploymentStatuses[workflowId]
         }
 
+        // No deployment status found
         return null
       },
 
+      // Method to set deployment status for a specific workflow
       setDeploymentStatus: (
         workflowId: string | null,
         isDeployed: boolean,
@@ -206,6 +208,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           if (!workflowId) return
         }
 
+        // Update the deployment statuses in the registry
         set((state) => ({
           deploymentStatuses: {
             ...state.deploymentStatuses,
@@ -213,6 +216,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               isDeployed,
               deployedAt: deployedAt || (isDeployed ? new Date() : undefined),
               apiKey,
+              // Preserve existing needsRedeployment flag if available, but reset if newly deployed
               needsRedeployment: isDeployed
                 ? false
                 : ((state.deploymentStatuses?.[workflowId as string] as any)?.needsRedeployment ??
@@ -220,14 +224,41 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
             },
           },
         }))
+
+        // Also update the workflow store if this is the active workflow
+        const { activeWorkflowId } = get()
+        if (workflowId === activeWorkflowId) {
+          // Update the workflow store for backward compatibility
+          useWorkflowStore.setState((state) => ({
+            isDeployed,
+            deployedAt: deployedAt || (isDeployed ? new Date() : undefined),
+            needsRedeployment: isDeployed ? false : state.needsRedeployment,
+            deploymentStatuses: {
+              ...state.deploymentStatuses,
+              [workflowId as string]: {
+                isDeployed,
+                deployedAt: deployedAt || (isDeployed ? new Date() : undefined),
+                apiKey,
+                needsRedeployment: isDeployed
+                  ? false
+                  : ((state.deploymentStatuses?.[workflowId as string] as any)?.needsRedeployment ??
+                    false),
+              },
+            },
+          }))
+        }
+
+        // Note: Socket.IO handles real-time sync automatically
       },
 
+      // Method to set the needsRedeployment flag for a specific workflow
       setWorkflowNeedsRedeployment: (workflowId: string | null, needsRedeployment: boolean) => {
         if (!workflowId) {
           workflowId = get().activeWorkflowId
           if (!workflowId) return
         }
 
+        // Update the registry's deployment status for this specific workflow
         set((state) => {
           const deploymentStatuses = state.deploymentStatuses || {}
           const currentStatus = deploymentStatuses[workflowId as string] || { isDeployed: false }
@@ -243,6 +274,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           }
         })
 
+        // Only update the global flag if this is the active workflow
         const { activeWorkflowId } = get()
         if (workflowId === activeWorkflowId) {
           useWorkflowStore.getState().setNeedsRedeploymentFlag(needsRedeployment)
@@ -287,6 +319,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               edges: workflowData.state.edges || [],
               loops: workflowData.state.loops || {},
               parallels: workflowData.state.parallels || {},
+              isDeployed: workflowData.isDeployed || false,
+              deployedAt: workflowData.deployedAt ? new Date(workflowData.deployedAt) : undefined,
+              apiKey: workflowData.apiKey,
               lastSaved: Date.now(),
               deploymentStatuses: {},
             }
@@ -296,6 +331,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
               edges: [],
               loops: {},
               parallels: {},
+              isDeployed: false,
+              deployedAt: undefined,
               deploymentStatuses: {},
               lastSaved: Date.now(),
             }
@@ -386,6 +423,7 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         }
       },
 
+      // Modified setActiveWorkflow to work with clean DB-only architecture
       setActiveWorkflow: async (id: string) => {
         const { activeWorkflowId, hydration } = get()
 
@@ -456,8 +494,10 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           return null
         }
 
+        // Use the server-generated ID
         const id = duplicatedWorkflow.id
 
+        // Generate new workflow metadata using the server-generated ID
         const newWorkflow: WorkflowMetadata = {
           id,
           name: `${sourceWorkflow.name} (Copy)`,
@@ -465,9 +505,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           createdAt: new Date(),
           description: sourceWorkflow.description,
           color: getNextWorkflowColor(),
-          workspaceId,
-          folderId: sourceWorkflow.folderId,
-          sortOrder: duplicatedWorkflow.sortOrder ?? 0,
+          workspaceId, // Include the workspaceId in the new workflow
+          folderId: sourceWorkflow.folderId, // Include the folderId from source workflow
         }
 
         // Get the current workflow state to copy from
@@ -501,6 +540,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           edges: sourceState.edges,
           loops: sourceState.loops,
           parallels: sourceState.parallels,
+          isDeployed: false,
+          deployedAt: undefined,
           workspaceId,
           deploymentStatuses: {},
           lastSaved: Date.now(),
@@ -578,6 +619,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
                   edges: [...useWorkflowStore.getState().edges],
                   loops: { ...useWorkflowStore.getState().loops },
                   parallels: { ...useWorkflowStore.getState().parallels },
+                  isDeployed: useWorkflowStore.getState().isDeployed,
+                  deployedAt: useWorkflowStore.getState().deployedAt,
                   lastSaved: useWorkflowStore.getState().lastSaved,
                 }
               : null,
@@ -600,6 +643,8 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
                 edges: [],
                 loops: {},
                 parallels: {},
+                isDeployed: false,
+                deployedAt: undefined,
                 lastSaved: Date.now(),
               })
 
@@ -727,113 +772,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           deploymentStatuses: {},
           error: null,
           hydration: initialHydration,
-          clipboard: null,
         })
 
         logger.info('Logout complete - all workflow data cleared')
-      },
-
-      copyBlocks: (blockIds: string[]) => {
-        if (blockIds.length === 0) return
-
-        const workflowStore = useWorkflowStore.getState()
-        const activeWorkflowId = get().activeWorkflowId
-        const subBlockStore = useSubBlockStore.getState()
-
-        const copiedBlocks: Record<string, BlockState> = {}
-        const copiedSubBlockValues: Record<string, Record<string, unknown>> = {}
-        const blockIdSet = new Set(blockIds)
-
-        // Auto-include nested nodes from selected subflows
-        blockIds.forEach((blockId) => {
-          const loop = workflowStore.loops[blockId]
-          if (loop?.nodes) loop.nodes.forEach((n) => blockIdSet.add(n))
-          const parallel = workflowStore.parallels[blockId]
-          if (parallel?.nodes) parallel.nodes.forEach((n) => blockIdSet.add(n))
-        })
-
-        blockIdSet.forEach((blockId) => {
-          const block = workflowStore.blocks[blockId]
-          if (block) {
-            copiedBlocks[blockId] = JSON.parse(JSON.stringify(block))
-            if (activeWorkflowId) {
-              const blockValues = subBlockStore.workflowValues[activeWorkflowId]?.[blockId]
-              if (blockValues) {
-                copiedSubBlockValues[blockId] = JSON.parse(JSON.stringify(blockValues))
-              }
-            }
-          }
-        })
-
-        const copiedEdges = workflowStore.edges.filter(
-          (edge) => blockIdSet.has(edge.source) && blockIdSet.has(edge.target)
-        )
-
-        const copiedLoops: Record<string, Loop> = {}
-        Object.entries(workflowStore.loops).forEach(([loopId, loop]) => {
-          if (blockIdSet.has(loopId)) {
-            copiedLoops[loopId] = JSON.parse(JSON.stringify(loop))
-          }
-        })
-
-        const copiedParallels: Record<string, Parallel> = {}
-        Object.entries(workflowStore.parallels).forEach(([parallelId, parallel]) => {
-          if (blockIdSet.has(parallelId)) {
-            copiedParallels[parallelId] = JSON.parse(JSON.stringify(parallel))
-          }
-        })
-
-        set({
-          clipboard: {
-            blocks: copiedBlocks,
-            edges: copiedEdges,
-            subBlockValues: copiedSubBlockValues,
-            loops: copiedLoops,
-            parallels: copiedParallels,
-            timestamp: Date.now(),
-          },
-        })
-
-        logger.info('Copied blocks to clipboard', { count: Object.keys(copiedBlocks).length })
-      },
-
-      preparePasteData: (positionOffset = DEFAULT_DUPLICATE_OFFSET) => {
-        const { clipboard, activeWorkflowId } = get()
-        if (!clipboard || Object.keys(clipboard.blocks).length === 0) return null
-        if (!activeWorkflowId) return null
-
-        const workflowStore = useWorkflowStore.getState()
-        const { blocks, edges, loops, parallels, subBlockValues } = regenerateBlockIds(
-          clipboard.blocks,
-          clipboard.edges,
-          clipboard.loops,
-          clipboard.parallels,
-          clipboard.subBlockValues,
-          positionOffset,
-          workflowStore.blocks,
-          getUniqueBlockName
-        )
-
-        return { blocks, edges, loops, parallels, subBlockValues }
-      },
-
-      hasClipboard: () => {
-        const { clipboard } = get()
-        return clipboard !== null && Object.keys(clipboard.blocks).length > 0
-      },
-
-      clearClipboard: () => {
-        set({ clipboard: null })
-      },
-
-      setPendingSelection: (blockIds: string[]) => {
-        set((state) => ({
-          pendingSelection: [...(state.pendingSelection ?? []), ...blockIds],
-        }))
-      },
-
-      clearPendingSelection: () => {
-        set({ pendingSelection: null })
       },
     }),
     { name: 'workflow-registry' }

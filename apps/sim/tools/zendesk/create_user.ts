@@ -22,7 +22,10 @@ export interface ZendeskCreateUserResponse {
   success: boolean
   output: {
     user: any
-    user_id: number
+    metadata: {
+      operation: 'create_user'
+      userId: string
+    }
     success: boolean
   }
 }
@@ -150,7 +153,10 @@ export const zendeskCreateUserTool: ToolConfig<ZendeskCreateUserParams, ZendeskC
         success: true,
         output: {
           user: data.user,
-          user_id: data.user?.id,
+          metadata: {
+            operation: 'create_user' as const,
+            userId: data.user?.id,
+          },
           success: true,
         },
       }
@@ -158,6 +164,6 @@ export const zendeskCreateUserTool: ToolConfig<ZendeskCreateUserParams, ZendeskC
 
     outputs: {
       user: { type: 'object', description: 'Created user object' },
-      user_id: { type: 'number', description: 'The created user ID' },
+      metadata: { type: 'object', description: 'Operation metadata' },
     },
   }

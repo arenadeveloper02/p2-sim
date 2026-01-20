@@ -102,10 +102,10 @@ export const createDeployTool: ToolConfig<SentryCreateDeployParams, SentryCreate
         deploy: {
           id: deploy.id,
           environment: deploy.environment,
-          name: deploy.name ?? null,
-          url: deploy.url ?? null,
+          name: deploy.name,
+          url: deploy.url,
           dateStarted: deploy.dateStarted,
-          dateFinished: deploy.dateFinished ?? null,
+          dateFinished: deploy.dateFinished,
         },
       },
     }
@@ -121,8 +121,8 @@ export const createDeployTool: ToolConfig<SentryCreateDeployParams, SentryCreate
           type: 'string',
           description: 'Environment name where the release was deployed',
         },
-        name: { type: 'string', description: 'Name of the deploy', optional: true },
-        url: { type: 'string', description: 'URL pointing to the deploy', optional: true },
+        name: { type: 'string', description: 'Name of the deploy' },
+        url: { type: 'string', description: 'URL pointing to the deploy' },
         dateStarted: {
           type: 'string',
           description: 'When the deploy started (ISO timestamp)',
@@ -130,7 +130,6 @@ export const createDeployTool: ToolConfig<SentryCreateDeployParams, SentryCreate
         dateFinished: {
           type: 'string',
           description: 'When the deploy finished (ISO timestamp)',
-          optional: true,
         },
       },
     },

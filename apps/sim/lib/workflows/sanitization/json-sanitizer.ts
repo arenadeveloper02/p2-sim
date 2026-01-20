@@ -53,24 +53,15 @@ export interface ExportWorkflowState {
     metadata?: {
       name?: string
       description?: string
-      color?: string
-      sortOrder?: number
       exportedAt?: string
     }
     variables?: Array<{
       id: string
       name: string
       type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'plain'
-      value: unknown
+      value: any
     }>
   }
-}
-
-/** Condition structure for sanitization */
-interface SanitizedCondition {
-  id: string
-  title: string
-  value: string
 }
 
 /**
@@ -79,18 +70,15 @@ interface SanitizedCondition {
  */
 function sanitizeConditions(conditionsJson: string): string {
   try {
-    const conditions: unknown = JSON.parse(conditionsJson)
+    const conditions = JSON.parse(conditionsJson)
     if (!Array.isArray(conditions)) return conditionsJson
 
     // Keep only id, title, and value - remove UI state
-    const cleaned: SanitizedCondition[] = conditions.map((cond: unknown) => {
-      const condition = cond as Record<string, unknown>
-      return {
-        id: String(condition.id ?? ''),
-        title: String(condition.title ?? ''),
-        value: String(condition.value ?? ''),
-      }
-    })
+    const cleaned = conditions.map((cond: any) => ({
+      id: cond.id,
+      title: cond.title,
+      value: cond.value || '',
+    }))
 
     return JSON.stringify(cleaned)
   } catch {
@@ -98,50 +86,11 @@ function sanitizeConditions(conditionsJson: string): string {
   }
 }
 
-/** Tool input structure for sanitization */
-interface ToolInput {
-  type: string
-  customToolId?: string
-  schema?: {
-    type?: string
-    function?: {
-      name: string
-      description?: string
-      parameters?: unknown
-    }
-  }
-  code?: string
-  title?: string
-  toolId?: string
-  usageControl?: string
-  isExpanded?: boolean
-  [key: string]: unknown
-}
-
-/** Sanitized tool output structure */
-interface SanitizedTool {
-  type: string
-  customToolId?: string
-  usageControl?: string
-  title?: string
-  toolId?: string
-  schema?: {
-    type: string
-    function: {
-      name: string
-      description?: string
-      parameters?: unknown
-    }
-  }
-  code?: string
-  [key: string]: unknown
-}
-
 /**
  * Sanitize tools array by removing UI state and redundant fields
  */
-function sanitizeTools(tools: ToolInput[]): SanitizedTool[] {
-  return tools.map((tool): SanitizedTool => {
+function sanitizeTools(tools: any[]): any[] {
+  return tools.map((tool) => {
     if (tool.type === 'custom-tool') {
       // New reference format: minimal fields only
       if (tool.customToolId && !tool.schema && !tool.code) {
@@ -153,7 +102,7 @@ function sanitizeTools(tools: ToolInput[]): SanitizedTool[] {
       }
 
       // Legacy inline format: include all fields
-      const sanitized: SanitizedTool = {
+      const sanitized: any = {
         type: tool.type,
         title: tool.title,
         toolId: tool.toolId,
@@ -180,24 +129,23 @@ function sanitizeTools(tools: ToolInput[]): SanitizedTool[] {
       return sanitized
     }
 
-    const { isExpanded: _isExpanded, ...cleanTool } = tool
-    return cleanTool as SanitizedTool
+    const { isExpanded, ...cleanTool } = tool
+    return cleanTool
   })
 }
 
 /**
  * Sort object keys recursively for consistent comparison
  */
-function sortKeysRecursively(item: unknown): unknown {
+function sortKeysRecursively(item: any): any {
   if (Array.isArray(item)) {
     return item.map(sortKeysRecursively)
   }
   if (item !== null && typeof item === 'object') {
-    const obj = item as Record<string, unknown>
-    return Object.keys(obj)
+    return Object.keys(item)
       .sort()
-      .reduce((result: Record<string, unknown>, key: string) => {
-        result[key] = sortKeysRecursively(obj[key])
+      .reduce((result: any, key: string) => {
+        result[key] = sortKeysRecursively(item[key])
         return result
       }, {})
   }
@@ -235,7 +183,7 @@ function sanitizeSubBlocks(
 
         // Sort keys for consistent comparison
         if (obj && typeof obj === 'object') {
-          sanitized[key] = sortKeysRecursively(obj) as Record<string, unknown>
+          sanitized[key] = sortKeysRecursively(obj)
           return
         }
       } catch {
@@ -253,7 +201,7 @@ function sanitizeSubBlocks(
     }
 
     if (key === 'tools' && Array.isArray(subBlock.value)) {
-      sanitized[key] = sanitizeTools(subBlock.value as unknown as ToolInput[])
+      sanitized[key] = sanitizeTools(subBlock.value)
       return
     }
 
@@ -269,127 +217,11 @@ function sanitizeSubBlocks(
 }
 
 /**
- * Convert internal condition handle (condition-{uuid}) to semantic format (condition-{blockId}-if)
- */
-function convertConditionHandleToSemantic(
-  handle: string,
-  blockId: string,
-  block: BlockState
-): string {
-  if (!handle.startsWith('condition-')) {
-    return handle
-  }
-
-  // Extract the condition UUID from the handle
-  const conditionId = handle.substring('condition-'.length)
-
-  // Get conditions from block subBlocks
-  const conditionsValue = block.subBlocks?.conditions?.value
-  if (!conditionsValue || typeof conditionsValue !== 'string') {
-    return handle
-  }
-
-  let conditions: Array<{ id: string; title: string }>
-  try {
-    conditions = JSON.parse(conditionsValue)
-  } catch {
-    return handle
-  }
-
-  if (!Array.isArray(conditions)) {
-    return handle
-  }
-
-  // Find the condition by ID and generate semantic handle
-  let elseIfCount = 0
-  for (const condition of conditions) {
-    const title = condition.title?.toLowerCase()
-    if (condition.id === conditionId) {
-      if (title === 'if') {
-        return `condition-${blockId}-if`
-      }
-      if (title === 'else if') {
-        elseIfCount++
-        return elseIfCount === 1
-          ? `condition-${blockId}-else-if`
-          : `condition-${blockId}-else-if-${elseIfCount}`
-      }
-      if (title === 'else') {
-        return `condition-${blockId}-else`
-      }
-    }
-    // Count else-ifs as we iterate
-    if (title === 'else if') {
-      elseIfCount++
-    }
-  }
-
-  // Fallback: return original handle if condition not found
-  return handle
-}
-
-/**
- * Convert internal router handle (router-{uuid}) to semantic format (router-{blockId}-route-N)
- */
-function convertRouterHandleToSemantic(handle: string, blockId: string, block: BlockState): string {
-  if (!handle.startsWith('router-')) {
-    return handle
-  }
-
-  // Extract the route UUID from the handle
-  const routeId = handle.substring('router-'.length)
-
-  // Get routes from block subBlocks
-  const routesValue = block.subBlocks?.routes?.value
-  if (!routesValue || typeof routesValue !== 'string') {
-    return handle
-  }
-
-  let routes: Array<{ id: string; title?: string }>
-  try {
-    routes = JSON.parse(routesValue)
-  } catch {
-    return handle
-  }
-
-  if (!Array.isArray(routes)) {
-    return handle
-  }
-
-  // Find the route by ID and generate semantic handle (1-indexed)
-  for (let i = 0; i < routes.length; i++) {
-    if (routes[i].id === routeId) {
-      return `router-${blockId}-route-${i + 1}`
-    }
-  }
-
-  // Fallback: return original handle if route not found
-  return handle
-}
-
-/**
- * Convert source handle to semantic format for condition and router blocks
- */
-function convertToSemanticHandle(handle: string, blockId: string, block: BlockState): string {
-  if (handle.startsWith('condition-') && block.type === 'condition') {
-    return convertConditionHandleToSemantic(handle, blockId, block)
-  }
-
-  if (handle.startsWith('router-') && block.type === 'router_v2') {
-    return convertRouterHandleToSemantic(handle, blockId, block)
-  }
-
-  return handle
-}
-
-/**
  * Extract connections for a block from edges and format as operations-style connections
- * Converts internal UUID handles to semantic format for training data
  */
 function extractConnectionsForBlock(
   blockId: string,
-  edges: WorkflowState['edges'],
-  block: BlockState
+  edges: WorkflowState['edges']
 ): Record<string, string | string[]> | undefined {
   const connections: Record<string, string[]> = {}
 
@@ -400,12 +232,9 @@ function extractConnectionsForBlock(
     return undefined
   }
 
-  // Group by source handle (converting to semantic format)
+  // Group by source handle
   for (const edge of outgoingEdges) {
-    let handle = edge.sourceHandle || 'source'
-
-    // Convert internal UUID handles to semantic format
-    handle = convertToSemanticHandle(handle, blockId, block)
+    const handle = edge.sourceHandle || 'source'
 
     if (!connections[handle]) {
       connections[handle] = []
@@ -440,7 +269,7 @@ export function sanitizeForCopilot(state: WorkflowState): CopilotWorkflowState {
 
   // Helper to recursively sanitize a block and its children
   const sanitizeBlock = (blockId: string, block: BlockState): CopilotBlockState => {
-    const connections = extractConnectionsForBlock(blockId, state.edges, block)
+    const connections = extractConnectionsForBlock(blockId, state.edges)
 
     // For loop/parallel blocks, extract config from block.data instead of subBlocks
     let inputs: Record<string, string | number | string[][] | object>
@@ -554,7 +383,7 @@ export function sanitizeForExport(state: WorkflowState): ExportWorkflowState {
   // Use unified sanitization with env var preservation for export
   const sanitizedState = sanitizeWorkflowForSharing(fullState, {
     preserveEnvVars: true, // Keep {{ENV_VAR}} references in exported workflows
-  }) as ExportWorkflowState['state']
+  })
 
   return {
     version: '1.0',

@@ -41,13 +41,15 @@ export const apolloEmailAccountsTool: ToolConfig<
       success: true,
       output: {
         email_accounts: data.email_accounts || [],
-        total: data.email_accounts?.length || 0,
+        metadata: {
+          total: data.email_accounts?.length || 0,
+        },
       },
     }
   },
 
   outputs: {
     email_accounts: { type: 'json', description: 'Array of team email accounts linked in Apollo' },
-    total: { type: 'number', description: 'Total count of email accounts' },
+    metadata: { type: 'json', description: 'Metadata including total count of email accounts' },
   },
 }

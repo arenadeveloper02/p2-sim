@@ -16,8 +16,12 @@ export interface MailchimpGetMembersResponse {
   success: boolean
   output: {
     members: MailchimpMember[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_members'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -94,24 +98,26 @@ export const mailchimpGetMembersTool: ToolConfig<
       success: true,
       output: {
         members,
-        total_items: data.total_items || members.length,
-        total_returned: members.length,
+        totalItems: data.total_items || members.length,
+        metadata: {
+          operation: 'get_members' as const,
+          totalReturned: members.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the members were successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Members data',
+      description: 'Members data and metadata',
       properties: {
-        members: { type: 'json', description: 'Array of member objects' },
-        total_items: { type: 'number', description: 'Total number of members' },
-        total_returned: {
-          type: 'number',
-          description: 'Number of members returned in this response',
-        },
+        members: { type: 'array', description: 'Array of member objects' },
+        totalItems: { type: 'number', description: 'Total number of members' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

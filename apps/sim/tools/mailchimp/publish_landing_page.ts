@@ -1,5 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildMailchimpUrl, handleMailchimpError } from './types'
+
+const logger = createLogger('MailchimpPublishLandingPage')
 
 export interface MailchimpPublishLandingPageParams {
   apiKey: string
@@ -9,6 +12,10 @@ export interface MailchimpPublishLandingPageParams {
 export interface MailchimpPublishLandingPageResponse {
   success: boolean
   output: {
+    metadata: {
+      operation: 'publish_landing_page'
+      pageId: string
+    }
     success: boolean
   }
 }
@@ -56,6 +63,10 @@ export const mailchimpPublishLandingPageTool: ToolConfig<
     return {
       success: true,
       output: {
+        metadata: {
+          operation: 'publish_landing_page' as const,
+          pageId: '',
+        },
         success: true,
       },
     }
@@ -67,6 +78,7 @@ export const mailchimpPublishLandingPageTool: ToolConfig<
       type: 'object',
       description: 'Publish confirmation',
       properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

@@ -88,12 +88,6 @@ export const getTaskDetailsTool: ToolConfig<
       type: 'string',
       description: 'The ETag value for this task details - use this for update operations',
     },
-    metadata: {
-      type: 'object',
-      description: 'Metadata including taskId',
-      properties: {
-        taskId: { type: 'string', description: 'Task ID' },
-      },
-    },
+    metadata: { type: 'object', description: 'Metadata including taskId' },
   },
 }

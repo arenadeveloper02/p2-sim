@@ -12,6 +12,13 @@ export interface MailchimpDeleteSegmentParams {
 
 export interface MailchimpDeleteSegmentResponse {
   success: boolean
+  output: {
+    metadata: {
+      operation: 'delete_segment'
+      segmentId: string
+    }
+    success: boolean
+  }
 }
 
 export const mailchimpDeleteSegmentTool: ToolConfig<
@@ -62,10 +69,25 @@ export const mailchimpDeleteSegmentTool: ToolConfig<
 
     return {
       success: true,
+      output: {
+        metadata: {
+          operation: 'delete_segment' as const,
+          segmentId: '',
+        },
+        success: true,
+      },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the segment was successfully deleted' },
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Deletion confirmation',
+      properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
+      },
+    },
   },
 }

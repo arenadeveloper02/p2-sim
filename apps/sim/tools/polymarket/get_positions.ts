@@ -28,13 +28,11 @@ export const polymarketGetPositionsTool: ToolConfig<
       type: 'string',
       required: true,
       description: 'User wallet address',
-      visibility: 'user-or-llm',
     },
     market: {
       type: 'string',
       required: false,
       description: 'Optional market ID to filter positions',
-      visibility: 'user-or-llm',
     },
   },
 

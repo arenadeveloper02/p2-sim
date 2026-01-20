@@ -294,21 +294,13 @@ describe('Socket Server Index Integration', () => {
       const { WorkflowOperationSchema } = await import('@/socket/validation/schemas')
 
       const validOperation = {
-        operation: 'batch-add-blocks',
-        target: 'blocks',
+        operation: 'add',
+        target: 'block',
         payload: {
-          blocks: [
-            {
-              id: 'test-block',
-              type: 'action',
-              name: 'Test Block',
-              position: { x: 100, y: 200 },
-            },
-          ],
-          edges: [],
-          loops: {},
-          parallels: {},
-          subBlockValues: {},
+          id: 'test-block',
+          type: 'action',
+          name: 'Test Block',
+          position: { x: 100, y: 200 },
         },
         timestamp: Date.now(),
       }
@@ -316,39 +308,30 @@ describe('Socket Server Index Integration', () => {
       expect(() => WorkflowOperationSchema.parse(validOperation)).not.toThrow()
     })
 
-    it.concurrent('should validate batch-add-blocks with edges', async () => {
+    it.concurrent('should validate block operations with autoConnectEdge', async () => {
       const { WorkflowOperationSchema } = await import('@/socket/validation/schemas')
 
-      const validOperationWithEdge = {
-        operation: 'batch-add-blocks',
-        target: 'blocks',
+      const validOperationWithAutoEdge = {
+        operation: 'add',
+        target: 'block',
         payload: {
-          blocks: [
-            {
-              id: 'test-block',
-              type: 'action',
-              name: 'Test Block',
-              position: { x: 100, y: 200 },
-            },
-          ],
-          edges: [
-            {
-              id: 'auto-edge-123',
-              source: 'source-block',
-              target: 'test-block',
-              sourceHandle: 'output',
-              targetHandle: 'target',
-              type: 'workflowEdge',
-            },
-          ],
-          loops: {},
-          parallels: {},
-          subBlockValues: {},
+          id: 'test-block',
+          type: 'action',
+          name: 'Test Block',
+          position: { x: 100, y: 200 },
+          autoConnectEdge: {
+            id: 'auto-edge-123',
+            source: 'source-block',
+            target: 'test-block',
+            sourceHandle: 'output',
+            targetHandle: 'target',
+            type: 'workflowEdge',
+          },
         },
         timestamp: Date.now(),
       }
 
-      expect(() => WorkflowOperationSchema.parse(validOperationWithEdge)).not.toThrow()
+      expect(() => WorkflowOperationSchema.parse(validOperationWithAutoEdge)).not.toThrow()
     })
 
     it.concurrent('should validate edge operations', async () => {

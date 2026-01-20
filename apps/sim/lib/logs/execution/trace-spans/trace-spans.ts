@@ -326,11 +326,6 @@ export function buildTraceSpans(result: ExecutionResult): {
       const childTraceSpans = log.output.childTraceSpans as TraceSpan[]
       const flattenedChildren = flattenWorkflowChildren(childTraceSpans)
       span.children = mergeTraceSpanChildren(span.children || [], flattenedChildren)
-
-      const { childTraceSpans: _, ...cleanOutput } = span.output as {
-        childTraceSpans?: TraceSpan[]
-      } & Record<string, unknown>
-      span.output = cleanOutput
     }
 
     spanMap.set(spanId, span)

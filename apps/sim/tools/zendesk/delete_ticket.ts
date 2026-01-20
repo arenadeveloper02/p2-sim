@@ -15,7 +15,10 @@ export interface ZendeskDeleteTicketResponse {
   success: boolean
   output: {
     deleted: boolean
-    ticket_id: string
+    metadata: {
+      operation: 'delete_ticket'
+      ticketId: string
+    }
     success: boolean
   }
 }
@@ -80,7 +83,10 @@ export const zendeskDeleteTicketTool: ToolConfig<
       success: true,
       output: {
         deleted: true,
-        ticket_id: params?.ticketId || '',
+        metadata: {
+          operation: 'delete_ticket' as const,
+          ticketId: params?.ticketId || '',
+        },
         success: true,
       },
     }
@@ -88,6 +94,6 @@ export const zendeskDeleteTicketTool: ToolConfig<
 
   outputs: {
     deleted: { type: 'boolean', description: 'Deletion success' },
-    ticket_id: { type: 'string', description: 'The deleted ticket ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

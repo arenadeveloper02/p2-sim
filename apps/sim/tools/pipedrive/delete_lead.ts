@@ -62,14 +62,18 @@ export const pipedriveDeleteLeadTool: ToolConfig<
     return {
       success: true,
       output: {
-        data: data.data ?? null,
+        data: data.data,
+        metadata: {
+          operation: 'delete_lead' as const,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    data: { type: 'object', description: 'Deletion confirmation data', optional: true },
+    data: { type: 'object', description: 'Deletion confirmation data' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

@@ -14,7 +14,11 @@ export interface MailchimpGetMemberResponse {
   success: boolean
   output: {
     member: MailchimpMember
-    subscriber_hash: string
+    metadata: {
+      operation: 'get_member'
+      subscriberHash: string
+    }
+    success: boolean
   }
 }
 
@@ -70,22 +74,24 @@ export const mailchimpGetMemberTool: ToolConfig<
       success: true,
       output: {
         member: data,
-        subscriber_hash: data.id,
+        metadata: {
+          operation: 'get_member' as const,
+          subscriberHash: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the member was successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Member data',
+      description: 'Member data and metadata',
       properties: {
-        member: { type: 'json', description: 'Member object' },
-        subscriber_hash: {
-          type: 'string',
-          description: 'The MD5 hash of the member email address',
-        },
+        member: { type: 'object', description: 'Member object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

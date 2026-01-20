@@ -96,7 +96,10 @@ export const hubspotUpdateContactTool: ToolConfig<
       success: true,
       output: {
         contact: data,
-        contactId: data.id,
+        metadata: {
+          operation: 'update_contact' as const,
+          contactId: data.id,
+        },
         success: true,
       },
     }
@@ -104,7 +107,7 @@ export const hubspotUpdateContactTool: ToolConfig<
 
   outputs: {
     contact: { type: 'object', description: 'Updated HubSpot contact object' },
-    contactId: { type: 'string', description: 'The updated contact ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

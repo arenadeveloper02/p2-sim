@@ -27,7 +27,6 @@ export const polymarketGetSeriesByIdTool: ToolConfig<
       type: 'string',
       required: true,
       description: 'The series ID',
-      visibility: 'user-or-llm',
     },
   },
 

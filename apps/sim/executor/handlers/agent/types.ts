@@ -22,9 +22,6 @@ export interface AgentInputs {
   vertexProject?: string
   vertexLocation?: string
   vertexCredential?: string
-  bedrockAccessKeyId?: string
-  bedrockSecretKey?: string
-  bedrockRegion?: string
   reasoningEffort?: string
   verbosity?: string
 }

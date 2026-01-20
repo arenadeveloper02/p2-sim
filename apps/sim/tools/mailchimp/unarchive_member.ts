@@ -1,5 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildMailchimpUrl, handleMailchimpError, type MailchimpMember } from './types'
+
+const logger = createLogger('MailchimpUnarchiveMember')
 
 export interface MailchimpUnarchiveMemberParams {
   apiKey: string
@@ -13,7 +16,10 @@ export interface MailchimpUnarchiveMemberResponse {
   success: boolean
   output: {
     member: MailchimpMember
-    subscriber_hash: string
+    metadata: {
+      operation: 'unarchive_member'
+      subscriberHash: string
+    }
     success: boolean
   }
 }
@@ -86,7 +92,10 @@ export const mailchimpUnarchiveMemberTool: ToolConfig<
       success: true,
       output: {
         member: data,
-        subscriber_hash: data.id,
+        metadata: {
+          operation: 'unarchive_member' as const,
+          subscriberHash: data.id,
+        },
         success: true,
       },
     }
@@ -99,7 +108,7 @@ export const mailchimpUnarchiveMemberTool: ToolConfig<
       description: 'Unarchived member data',
       properties: {
         member: { type: 'object', description: 'Unarchived member object' },
-        subscriber_hash: { type: 'string', description: 'Subscriber hash' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

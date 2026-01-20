@@ -343,11 +343,9 @@ export const mistralParserTool: ToolConfig<MistralParserInput, MistralParserOutp
                   ? mistralData.usage_info.pages_processed
                   : Number(mistralData.usage_info.pages_processed),
               docSizeBytes:
-                mistralData.usage_info.doc_size_bytes == null
-                  ? null
-                  : typeof mistralData.usage_info.doc_size_bytes === 'number'
-                    ? mistralData.usage_info.doc_size_bytes
-                    : Number(mistralData.usage_info.doc_size_bytes),
+                typeof mistralData.usage_info.doc_size_bytes === 'number'
+                  ? mistralData.usage_info.doc_size_bytes
+                  : Number(mistralData.usage_info.doc_size_bytes),
             }
           : undefined
 
@@ -396,22 +394,6 @@ export const mistralParserTool: ToolConfig<MistralParserInput, MistralParserOutp
     metadata: {
       type: 'object',
       description: 'Processing metadata including jobId, fileType, pageCount, and usage info',
-      properties: {
-        jobId: { type: 'string', description: 'Unique job identifier' },
-        fileType: { type: 'string', description: 'File type (e.g., pdf)' },
-        fileName: { type: 'string', description: 'Original file name' },
-        source: { type: 'string', description: 'Source type (url)' },
-        pageCount: { type: 'number', description: 'Number of pages processed' },
-        model: { type: 'string', description: 'Mistral model used' },
-        resultType: { type: 'string', description: 'Output format (markdown, text, json)' },
-        processedAt: { type: 'string', description: 'Processing timestamp' },
-        sourceUrl: { type: 'string', description: 'Source URL if applicable', optional: true },
-        usageInfo: {
-          type: 'object',
-          description: 'Usage statistics from OCR processing',
-          optional: true,
-        },
-      },
     },
   },
 }

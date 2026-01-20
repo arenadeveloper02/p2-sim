@@ -95,7 +95,6 @@ export interface GrainHook {
   id: string
   enabled: boolean
   hook_url: string
-  hook_type: 'recording_added' | 'upload_status'
   filter: GrainRecordingFilter
   include: GrainRecordingInclude
   inserted_at: string
@@ -193,7 +192,6 @@ export interface GrainListMeetingTypesResponse extends ToolResponse {
 export interface GrainCreateHookParams {
   apiKey: string
   hookUrl: string
-  hookType: 'recording_added' | 'upload_status'
   filterBeforeDatetime?: string
   filterAfterDatetime?: string
   filterParticipantScope?: 'internal' | 'external'

@@ -107,17 +107,20 @@ export const apolloPeopleSearchTool: ToolConfig<
       success: true,
       output: {
         people: data.people || [],
-        page: data.pagination?.page || 1,
-        per_page: data.pagination?.per_page || 25,
-        total_entries: data.pagination?.total_entries || 0,
+        metadata: {
+          page: data.pagination?.page || 1,
+          per_page: data.pagination?.per_page || 25,
+          total_entries: data.pagination?.total_entries || 0,
+        },
       },
     }
   },
 
   outputs: {
     people: { type: 'json', description: 'Array of people matching the search criteria' },
-    page: { type: 'number', description: 'Current page number' },
-    per_page: { type: 'number', description: 'Results per page' },
-    total_entries: { type: 'number', description: 'Total matching entries' },
+    metadata: {
+      type: 'json',
+      description: 'Pagination information including page, per_page, and total_entries',
+    },
   },
 }

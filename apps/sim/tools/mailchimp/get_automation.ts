@@ -14,7 +14,11 @@ export interface MailchimpGetAutomationResponse {
   success: boolean
   output: {
     automation: MailchimpAutomation
-    workflow_id: string
+    metadata: {
+      operation: 'get_automation'
+      workflowId: string
+    }
+    success: boolean
   }
 }
 
@@ -63,19 +67,24 @@ export const mailchimpGetAutomationTool: ToolConfig<
       success: true,
       output: {
         automation: data,
-        workflow_id: data.id,
+        metadata: {
+          operation: 'get_automation' as const,
+          workflowId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the automation was successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Automation data',
+      description: 'Automation data and metadata',
       properties: {
-        automation: { type: 'json', description: 'Automation object' },
-        workflow_id: { type: 'string', description: 'The unique ID of the automation workflow' },
+        automation: { type: 'object', description: 'Automation object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

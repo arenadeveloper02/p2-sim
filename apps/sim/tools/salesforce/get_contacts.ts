@@ -95,7 +95,10 @@ export const salesforceGetContactsTool: ToolConfig<
         success: true,
         output: {
           contact: data,
-          singleContact: true,
+          metadata: {
+            operation: 'get_contacts' as const,
+            singleContact: true,
+          },
           success: true,
         },
       }
@@ -108,15 +111,16 @@ export const salesforceGetContactsTool: ToolConfig<
       output: {
         contacts,
         paging: {
-          nextRecordsUrl: data.nextRecordsUrl ?? null,
+          nextRecordsUrl: data.nextRecordsUrl,
           totalSize: data.totalSize || contacts.length,
           done: data.done !== false,
         },
         metadata: {
+          operation: 'get_contacts' as const,
           totalReturned: contacts.length,
           hasMore: !data.done,
+          singleContact: false,
         },
-        singleContact: false,
         success: true,
       },
     }
@@ -130,29 +134,9 @@ export const salesforceGetContactsTool: ToolConfig<
       properties: {
         contacts: { type: 'array', description: 'Array of contacts (list query)' },
         contact: { type: 'object', description: 'Single contact (by ID)' },
-        paging: {
-          type: 'object',
-          description: 'Pagination information',
-          properties: {
-            nextRecordsUrl: {
-              type: 'string',
-              description: 'URL for next page of results',
-              optional: true,
-            },
-            totalSize: { type: 'number', description: 'Total number of records' },
-            done: { type: 'boolean', description: 'Whether all records returned' },
-          },
-        },
-        metadata: {
-          type: 'object',
-          description: 'Response metadata',
-          properties: {
-            totalReturned: { type: 'number', description: 'Number of contacts returned' },
-            hasMore: { type: 'boolean', description: 'Whether more records exist' },
-          },
-        },
-        singleContact: { type: 'boolean', description: 'Whether single contact was returned' },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
+        paging: { type: 'object', description: 'Pagination info (list query)' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

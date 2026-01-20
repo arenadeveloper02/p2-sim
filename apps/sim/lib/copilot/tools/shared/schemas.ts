@@ -57,13 +57,11 @@ export type GetBlockOptionsResultType = z.infer<typeof GetBlockOptionsResult>
 export const GetBlockConfigInput = z.object({
   blockType: z.string(),
   operation: z.string().optional(),
-  trigger: z.boolean().optional(),
 })
 export const GetBlockConfigResult = z.object({
   blockType: z.string(),
   blockName: z.string(),
   operation: z.string().optional(),
-  trigger: z.boolean().optional(),
   inputs: z.record(z.any()),
   outputs: z.record(z.any()),
 })
@@ -116,7 +114,6 @@ export const GetBlockOutputsResult = z.object({
       blockId: z.string(),
       blockName: z.string(),
       blockType: z.string(),
-      triggerMode: z.boolean().optional(),
       outputs: z.array(z.string()),
       insideSubflowOutputs: z.array(z.string()).optional(),
       outsideSubflowOutputs: z.array(z.string()).optional(),
@@ -158,7 +155,6 @@ export const GetBlockUpstreamReferencesResult = z.object({
           blockId: z.string(),
           blockName: z.string(),
           blockType: z.string(),
-          triggerMode: z.boolean().optional(),
           outputs: z.array(z.string()),
           accessContext: z.enum(['inside', 'outside']).optional(),
         })

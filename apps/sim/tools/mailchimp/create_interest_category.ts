@@ -16,7 +16,10 @@ export interface MailchimpCreateInterestCategoryResponse {
   success: boolean
   output: {
     category: MailchimpInterestCategory
-    interest_category_id: string
+    metadata: {
+      operation: 'create_interest_category'
+      interestCategoryId: string
+    }
     success: boolean
   }
 }
@@ -83,7 +86,10 @@ export const mailchimpCreateInterestCategoryTool: ToolConfig<
       success: true,
       output: {
         category: data,
-        interest_category_id: data.id,
+        metadata: {
+          operation: 'create_interest_category' as const,
+          interestCategoryId: data.id,
+        },
         success: true,
       },
     }
@@ -95,8 +101,8 @@ export const mailchimpCreateInterestCategoryTool: ToolConfig<
       type: 'object',
       description: 'Created interest category data',
       properties: {
-        category: { type: 'json', description: 'Created interest category object' },
-        interest_category_id: { type: 'string', description: 'Created interest category ID' },
+        category: { type: 'object', description: 'Created interest category object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

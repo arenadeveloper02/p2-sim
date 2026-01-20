@@ -227,7 +227,7 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
 
       if (resumeLinks) {
         output.url = resumeLinks.uiUrl
-        output.resumeEndpoint = resumeLinks.apiUrl
+        // output.apiUrl = resumeLinks.apiUrl // Hidden from output
       }
 
       return output
@@ -576,9 +576,9 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
       if (context.resumeLinks.uiUrl) {
         pauseOutput.url = context.resumeLinks.uiUrl
       }
-      if (context.resumeLinks.apiUrl) {
-        pauseOutput.resumeEndpoint = context.resumeLinks.apiUrl
-      }
+      // if (context.resumeLinks.apiUrl) {
+      //   pauseOutput.apiUrl = context.resumeLinks.apiUrl
+      // } // Hidden from output
     }
 
     if (Array.isArray(context.inputFormat)) {
@@ -627,7 +627,6 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
           _context: {
             workflowId: ctx.workflowId,
             workspaceId: ctx.workspaceId,
-            isDeployedContext: ctx.isDeployedContext,
           },
           blockData: blockDataWithPause,
           blockNameMapping: blockNameMappingWithPause,

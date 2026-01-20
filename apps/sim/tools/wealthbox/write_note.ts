@@ -65,16 +65,8 @@ export const wealthboxWriteNoteTool: ToolConfig<WealthboxWriteParams, WealthboxW
           type: 'object',
           description: 'Operation metadata',
           properties: {
-            itemId: {
-              type: 'string',
-              description: 'ID of the created/updated note',
-              optional: true,
-            },
-            noteId: {
-              type: 'string',
-              description: 'ID of the created/updated note',
-              optional: true,
-            },
+            operation: { type: 'string', description: 'The operation performed' },
+            itemId: { type: 'string', description: 'ID of the created/updated note' },
             itemType: { type: 'string', description: 'Type of item (note)' },
           },
         },

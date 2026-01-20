@@ -24,13 +24,11 @@ export const kalshiGetEventTool: ToolConfig<KalshiGetEventParams, KalshiGetEvent
     eventTicker: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'The event ticker',
     },
     withNestedMarkets: {
       type: 'string',
       required: false,
-      visibility: 'user-or-llm',
       description: 'Include nested markets in response (true/false)',
     },
   },

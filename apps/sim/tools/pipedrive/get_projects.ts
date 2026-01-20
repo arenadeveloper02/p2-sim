@@ -86,7 +86,10 @@ export const pipedriveGetProjectsTool: ToolConfig<
       return {
         success: true,
         output: {
-          project: data.data ?? null,
+          project: data.data,
+          metadata: {
+            operation: 'get_projects' as const,
+          },
           success: true,
         },
       }
@@ -99,28 +102,19 @@ export const pipedriveGetProjectsTool: ToolConfig<
       success: true,
       output: {
         projects,
-        total_items: projects.length,
+        metadata: {
+          operation: 'get_projects' as const,
+          totalItems: projects.length,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    projects: {
-      type: 'array',
-      description: 'Array of project objects (when listing all)',
-      optional: true,
-    },
-    project: {
-      type: 'object',
-      description: 'Single project object (when project_id is provided)',
-      optional: true,
-    },
-    total_items: {
-      type: 'number',
-      description: 'Total number of projects returned',
-      optional: true,
-    },
+    projects: { type: 'array', description: 'Array of project objects (when listing all)' },
+    project: { type: 'object', description: 'Single project object (when project_id is provided)' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

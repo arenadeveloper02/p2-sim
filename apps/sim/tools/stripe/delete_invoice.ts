@@ -38,6 +38,10 @@ export const stripeDeleteInvoiceTool: ToolConfig<DeleteInvoiceParams, InvoiceDel
       output: {
         deleted: data.deleted,
         id: data.id,
+        metadata: {
+          id: data.id,
+          deleted: data.deleted,
+        },
       },
     }
   },
@@ -50,6 +54,10 @@ export const stripeDeleteInvoiceTool: ToolConfig<DeleteInvoiceParams, InvoiceDel
     id: {
       type: 'string',
       description: 'The ID of the deleted invoice',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Deletion metadata',
     },
   },
 }

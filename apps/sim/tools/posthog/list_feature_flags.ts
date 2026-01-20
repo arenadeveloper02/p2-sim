@@ -91,8 +91,8 @@ export const listFeatureFlagsTool: ToolConfig<ListFeatureFlagsParams, ListFeatur
     return {
       results: data.results,
       count: data.count,
-      next: data.next ?? null,
-      previous: data.previous ?? null,
+      next: data.next,
+      previous: data.previous,
     }
   },
 
@@ -115,7 +115,6 @@ export const listFeatureFlagsTool: ToolConfig<ListFeatureFlagsParams, ListFeatur
           rollout_percentage: {
             type: 'number',
             description: 'Rollout percentage (if applicable)',
-            optional: true,
           },
           ensure_experience_continuity: {
             type: 'boolean',

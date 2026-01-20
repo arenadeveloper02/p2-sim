@@ -14,7 +14,11 @@ export interface MailchimpGetAudienceResponse {
   success: boolean
   output: {
     list: MailchimpAudience
-    list_id: string
+    metadata: {
+      operation: 'get_audience'
+      listId: string
+    }
+    success: boolean
   }
 }
 
@@ -63,19 +67,24 @@ export const mailchimpGetAudienceTool: ToolConfig<
       success: true,
       output: {
         list: data,
-        list_id: data.id,
+        metadata: {
+          operation: 'get_audience' as const,
+          listId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the audience was successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Audience data',
+      description: 'Audience data and metadata',
       properties: {
-        list: { type: 'json', description: 'Audience/list object' },
-        list_id: { type: 'string', description: 'The unique ID of the audience' },
+        list: { type: 'object', description: 'Audience/list object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

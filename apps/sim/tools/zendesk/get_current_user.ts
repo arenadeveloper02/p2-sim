@@ -14,7 +14,9 @@ export interface ZendeskGetCurrentUserResponse {
   success: boolean
   output: {
     user: any
-    user_id: number
+    metadata: {
+      operation: 'get_current_user'
+    }
     success: boolean
   }
 }
@@ -74,7 +76,9 @@ export const zendeskGetCurrentUserTool: ToolConfig<
       success: true,
       output: {
         user: data.user,
-        user_id: data.user?.id,
+        metadata: {
+          operation: 'get_current_user' as const,
+        },
         success: true,
       },
     }
@@ -82,6 +86,6 @@ export const zendeskGetCurrentUserTool: ToolConfig<
 
   outputs: {
     user: { type: 'object', description: 'Current user object' },
-    user_id: { type: 'number', description: 'The current user ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

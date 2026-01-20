@@ -1,8 +1,17 @@
-import type { GoogleVaultDownloadExportFileParams } from '@/tools/google_vault/types'
-import { enhanceGoogleVaultError } from '@/tools/google_vault/utils'
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 
-export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFileParams> = {
+const logger = createLogger('GoogleVaultDownloadExportFileTool')
+
+interface DownloadParams {
+  accessToken: string
+  matterId: string
+  bucketName: string
+  objectName: string
+  fileName?: string
+}
+
+export const downloadExportFileTool: ToolConfig<DownloadParams> = {
   id: 'google_vault_download_export_file',
   name: 'Vault Download Export File',
   description: 'Download a single file from a Google Vault export (GCS object)',
@@ -14,51 +23,28 @@ export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFilePar
   },
 
   params: {
-    accessToken: {
-      type: 'string',
-      required: true,
-      visibility: 'hidden',
-      description: 'OAuth access token',
-    },
-    matterId: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'The matter ID',
-    },
-    bucketName: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'GCS bucket name from cloudStorageSink.files.bucketName',
-    },
-    objectName: {
-      type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'GCS object name from cloudStorageSink.files.objectName',
-    },
-    fileName: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Optional filename override for the downloaded file',
-    },
+    accessToken: { type: 'string', required: true, visibility: 'hidden' },
+    matterId: { type: 'string', required: true, visibility: 'user-only' },
+    bucketName: { type: 'string', required: true, visibility: 'user-only' },
+    objectName: { type: 'string', required: true, visibility: 'user-only' },
+    fileName: { type: 'string', required: false, visibility: 'user-only' },
   },
 
   request: {
     url: (params) => {
       const bucket = encodeURIComponent(params.bucketName)
       const object = encodeURIComponent(params.objectName)
+      // Use GCS media endpoint directly; framework will prefetch token and inject accessToken
       return `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${object}?alt=media`
     },
     method: 'GET',
     headers: (params) => ({
+      // Access token is injected by the tools framework when 'credential' is present
       Authorization: `Bearer ${params.accessToken}`,
     }),
   },
 
-  transformResponse: async (response: Response, params?: GoogleVaultDownloadExportFileParams) => {
+  transformResponse: async (response: Response, params?: DownloadParams) => {
     if (!response.ok) {
       let details: any
       try {
@@ -71,11 +57,10 @@ export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFilePar
           details = undefined
         }
       }
-      const errorMessage =
-        details?.error || `Failed to download Vault export file (${response.status})`
-      throw new Error(enhanceGoogleVaultError(errorMessage))
+      throw new Error(details?.error || `Failed to download Vault export file (${response.status})`)
     }
 
+    // Since we're just doing a HEAD request to verify access, we need to fetch the actual file
     if (!params?.accessToken || !params?.bucketName || !params?.objectName) {
       throw new Error('Missing required parameters for download')
     }
@@ -84,6 +69,7 @@ export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFilePar
     const object = encodeURIComponent(params.objectName)
     const downloadUrl = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${object}?alt=media`
 
+    // Fetch the actual file content
     const downloadResponse = await fetch(downloadUrl, {
       method: 'GET',
       headers: {
@@ -93,8 +79,7 @@ export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFilePar
 
     if (!downloadResponse.ok) {
       const errorText = await downloadResponse.text().catch(() => '')
-      const errorMessage = `Failed to download file: ${errorText || downloadResponse.statusText}`
-      throw new Error(enhanceGoogleVaultError(errorMessage))
+      throw new Error(`Failed to download file: ${errorText || downloadResponse.statusText}`)
     }
 
     const contentType = downloadResponse.headers.get('content-type') || 'application/octet-stream'
@@ -119,6 +104,7 @@ export const downloadExportFileTool: ToolConfig<GoogleVaultDownloadExportFilePar
       }
     }
 
+    // Get the file as an array buffer and convert to Buffer
     const arrayBuffer = await downloadResponse.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 

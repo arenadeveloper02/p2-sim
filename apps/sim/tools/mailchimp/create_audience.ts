@@ -18,7 +18,10 @@ export interface MailchimpCreateAudienceResponse {
   success: boolean
   output: {
     list: MailchimpAudience
-    list_id: string
+    metadata: {
+      operation: 'create_audience'
+      listId: string
+    }
     success: boolean
   }
 }
@@ -117,7 +120,10 @@ export const mailchimpCreateAudienceTool: ToolConfig<
       success: true,
       output: {
         list: data,
-        list_id: data.id,
+        metadata: {
+          operation: 'create_audience' as const,
+          listId: data.id,
+        },
         success: true,
       },
     }
@@ -129,8 +135,8 @@ export const mailchimpCreateAudienceTool: ToolConfig<
       type: 'object',
       description: 'Created audience data',
       properties: {
-        list: { type: 'json', description: 'Created audience/list object' },
-        list_id: { type: 'string', description: 'Created audience/list ID' },
+        list: { type: 'object', description: 'Created audience/list object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

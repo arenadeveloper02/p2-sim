@@ -18,20 +18,18 @@ FROM base AS deps
 WORKDIR /app
 
 COPY package.json bun.lock turbo.json ./
-RUN mkdir -p apps packages/db packages/testing packages/logger packages/tsconfig
+RUN mkdir -p apps packages/db packages/testing packages/logger
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
-COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
 
 # Install turbo globally, then dependencies, then rebuild isolated-vm for Node.js
-# Use --linker=hoisted for flat node_modules layout (required for Docker multi-stage builds)
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     --mount=type=cache,id=npm-cache,target=/root/.npm \
     bun install -g turbo && \
-    HUSKY=0 bun install --omit=dev --ignore-scripts --linker=hoisted && \
-    cd node_modules/isolated-vm && npx node-gyp rebuild --release
+    HUSKY=0 bun install --omit=dev --ignore-scripts && \
+    cd $(readlink -f node_modules/isolated-vm) && npx node-gyp rebuild --release && cd /app
 
 # ========================================
 # Builder Stage (Next.js build)
@@ -63,7 +61,7 @@ COPY packages ./packages
 # Required for standalone build
 WORKDIR /app/apps/sim
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
-    HUSKY=0 bun install sharp --linker=hoisted
+    HUSKY=0 bun install sharp
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \

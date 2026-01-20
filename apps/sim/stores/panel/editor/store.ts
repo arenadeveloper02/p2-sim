@@ -2,8 +2,14 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { EDITOR_CONNECTIONS_HEIGHT } from '@/stores/constants'
 import { usePanelStore } from '../store'
+
+/**
+ * Connections height constraints
+ */
+const DEFAULT_CONNECTIONS_HEIGHT = 172
+const MIN_CONNECTIONS_HEIGHT = 30
+const MAX_CONNECTIONS_HEIGHT = 300
 
 /**
  * State for the Editor panel.
@@ -22,10 +28,6 @@ interface PanelEditorState {
   setConnectionsHeight: (height: number) => void
   /** Toggle connections between collapsed (min height) and expanded (default height) */
   toggleConnectionsCollapsed: () => void
-  /** Flag to signal the editor to focus the rename input */
-  shouldFocusRename: boolean
-  /** Sets the shouldFocusRename flag */
-  setShouldFocusRename: (value: boolean) => void
 }
 
 /**
@@ -36,9 +38,7 @@ export const usePanelEditorStore = create<PanelEditorState>()(
   persist(
     (set, get) => ({
       currentBlockId: null,
-      connectionsHeight: EDITOR_CONNECTIONS_HEIGHT.DEFAULT,
-      shouldFocusRename: false,
-      setShouldFocusRename: (value) => set({ shouldFocusRename: value }),
+      connectionsHeight: DEFAULT_CONNECTIONS_HEIGHT,
       setCurrentBlockId: (blockId) => {
         set({ currentBlockId: blockId })
 
@@ -53,8 +53,8 @@ export const usePanelEditorStore = create<PanelEditorState>()(
       },
       setConnectionsHeight: (height) => {
         const clampedHeight = Math.max(
-          EDITOR_CONNECTIONS_HEIGHT.MIN,
-          Math.min(EDITOR_CONNECTIONS_HEIGHT.MAX, height)
+          MIN_CONNECTIONS_HEIGHT,
+          Math.min(MAX_CONNECTIONS_HEIGHT, height)
         )
         set({ connectionsHeight: clampedHeight })
         // Update CSS variable for immediate visual feedback
@@ -68,9 +68,7 @@ export const usePanelEditorStore = create<PanelEditorState>()(
       toggleConnectionsCollapsed: () => {
         const currentState = get()
         const isAtMinHeight = currentState.connectionsHeight <= 35
-        const newHeight = isAtMinHeight
-          ? EDITOR_CONNECTIONS_HEIGHT.DEFAULT
-          : EDITOR_CONNECTIONS_HEIGHT.MIN
+        const newHeight = isAtMinHeight ? DEFAULT_CONNECTIONS_HEIGHT : MIN_CONNECTIONS_HEIGHT
 
         set({ connectionsHeight: newHeight })
 
@@ -85,16 +83,12 @@ export const usePanelEditorStore = create<PanelEditorState>()(
     }),
     {
       name: 'panel-editor-state',
-      partialize: (state) => ({
-        currentBlockId: state.currentBlockId,
-        connectionsHeight: state.connectionsHeight,
-      }),
       onRehydrateStorage: () => (state) => {
         // Sync CSS variables with stored state after rehydration
         if (state && typeof window !== 'undefined') {
           document.documentElement.style.setProperty(
             '--editor-connections-height',
-            `${state.connectionsHeight || EDITOR_CONNECTIONS_HEIGHT.DEFAULT}px`
+            `${state.connectionsHeight || DEFAULT_CONNECTIONS_HEIGHT}px`
           )
         }
       },

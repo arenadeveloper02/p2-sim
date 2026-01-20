@@ -18,7 +18,7 @@ import {
   trackForcedToolUsage,
 } from '@/providers/utils'
 import { createReadableStreamFromVLLMStream } from '@/providers/vllm/utils'
-import { useProvidersStore } from '@/stores/providers'
+import { useProvidersStore } from '@/stores/providers/store'
 import { executeTool } from '@/tools'
 
 const logger = createLogger('VLLMProvider')

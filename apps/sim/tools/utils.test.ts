@@ -1,6 +1,5 @@
 import { createMockFetch, loggerMock } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { transformTable } from '@/tools/shared/table'
 import type { ToolConfig } from '@/tools/types'
 import {
   createCustomToolRequestBody,
@@ -8,12 +7,13 @@ import {
   executeRequest,
   formatRequestParams,
   getClientEnvVars,
+  transformTable,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
 vi.mock('@sim/logger', () => loggerMock)
 
-vi.mock('@/stores/settings/environment', () => {
+vi.mock('@/stores/settings/environment/store', () => {
   const mockStore = {
     getAllVariables: vi.fn().mockReturnValue({
       API_KEY: { value: 'mock-api-key' },
@@ -90,25 +90,6 @@ describe('transformTable', () => {
       count: 0,
       enabled: false,
     })
-  })
-
-  it.concurrent('should parse JSON string inputs and transform rows', () => {
-    const table = [
-      { id: '1', cells: { Key: 'city', Value: 'SF' } },
-      { id: '2', cells: { Key: 'temp', Value: 64 } },
-    ]
-    const result = transformTable(JSON.stringify(table))
-
-    expect(result).toEqual({
-      city: 'SF',
-      temp: 64,
-    })
-  })
-
-  it.concurrent('should parse JSON string object inputs', () => {
-    const result = transformTable(JSON.stringify({ a: 1, b: 'two' }))
-
-    expect(result).toEqual({ a: 1, b: 'two' })
   })
 })
 

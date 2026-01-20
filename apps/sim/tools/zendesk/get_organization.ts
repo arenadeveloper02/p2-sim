@@ -15,7 +15,9 @@ export interface ZendeskGetOrganizationResponse {
   success: boolean
   output: {
     organization: any
-    organization_id: number
+    metadata: {
+      operation: 'get_organization'
+    }
     success: boolean
   }
 }
@@ -81,14 +83,16 @@ export const zendeskGetOrganizationTool: ToolConfig<
       success: true,
       output: {
         organization: data.organization,
-        organization_id: data.organization?.id,
+        metadata: {
+          operation: 'get_organization' as const,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    organization: { type: 'json', description: 'Organization object' },
-    organization_id: { type: 'number', description: 'The organization ID' },
+    organization: { type: 'object', description: 'Organization object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

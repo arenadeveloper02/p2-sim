@@ -25,7 +25,6 @@ export const spotifySaveShowsTool: ToolConfig<SpotifySaveShowsParams, SpotifySav
     showIds: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Comma-separated show IDs (max 50)',
     },
   },

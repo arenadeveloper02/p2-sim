@@ -27,6 +27,7 @@ export function validateCronExpression(
   }
 
   try {
+    // Validate with timezone if provided for accurate next run calculation
     const cron = new Cron(cronExpression, timezone ? { timezone } : undefined)
     const nextRun = cron.nextRun()
 
@@ -323,11 +324,13 @@ export function generateCronExpression(
  * Uses Croner library with timezone support for accurate scheduling across timezones and DST transitions
  * @param scheduleType - Type of schedule (minutes, hourly, daily, etc)
  * @param scheduleValues - Object with schedule configuration values
+ * @param lastRanAt - Optional last execution time (currently unused, Croner calculates from current time)
  * @returns Date object for next execution time
  */
 export function calculateNextRunTime(
   scheduleType: string,
-  scheduleValues: ReturnType<typeof getScheduleTimeValues>
+  scheduleValues: ReturnType<typeof getScheduleTimeValues>,
+  lastRanAt?: Date | null
 ): Date {
   // Get timezone (default to UTC)
   const timezone = scheduleValues.timezone || 'UTC'
@@ -338,7 +341,7 @@ export function calculateNextRunTime(
   // If we have both a start date and time, use them together with timezone awareness
   if (scheduleValues.scheduleStartAt && scheduleValues.scheduleTime) {
     try {
-      logger.debug(
+      logger.info(
         `Creating date with: startAt=${scheduleValues.scheduleStartAt}, time=${scheduleValues.scheduleTime}, timezone=${timezone}`
       )
 
@@ -348,7 +351,7 @@ export function calculateNextRunTime(
         timezone
       )
 
-      logger.debug(`Combined date result: ${combinedDate.toISOString()}`)
+      logger.info(`Combined date result: ${combinedDate.toISOString()}`)
 
       // If the combined date is in the future, use it as our next run time
       if (combinedDate > baseDate) {
@@ -409,10 +412,13 @@ export function calculateNextRunTime(
     }
   }
 
+  // For recurring schedules, use Croner with timezone support
+  // This ensures proper timezone handling and DST transitions
   try {
     const cronExpression = generateCronExpression(scheduleType, scheduleValues)
     logger.debug(`Using cron expression: ${cronExpression} with timezone: ${timezone}`)
 
+    // Create Croner instance with timezone support
     const cron = new Cron(cronExpression, {
       timezone,
     })
@@ -434,24 +440,23 @@ export function calculateNextRunTime(
 }
 
 /**
- * Helper function to get a friendly timezone abbreviation.
- * Uses Intl.DateTimeFormat to get the correct abbreviation for the current time,
- * automatically handling DST transitions.
+ * Helper function to get a friendly timezone abbreviation
  */
 function getTimezoneAbbreviation(timezone: string): string {
-  if (timezone === 'UTC') return 'UTC'
-
-  try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      timeZoneName: 'short',
-    })
-    const parts = formatter.formatToParts(new Date())
-    const tzPart = parts.find((p) => p.type === 'timeZoneName')
-    return tzPart?.value || timezone
-  } catch {
-    return timezone
+  const timezoneMap: Record<string, string> = {
+    'America/Los_Angeles': 'PT',
+    'America/Denver': 'MT',
+    'America/Chicago': 'CT',
+    'America/New_York': 'ET',
+    'Europe/London': 'GMT/BST',
+    'Europe/Paris': 'CET/CEST',
+    'Asia/Tokyo': 'JST',
+    'Asia/Singapore': 'SGT',
+    'Australia/Sydney': 'AEDT/AEST',
+    UTC: 'UTC',
   }
+
+  return timezoneMap[timezone] || timezone
 }
 
 /**
@@ -464,11 +469,13 @@ function getTimezoneAbbreviation(timezone: string): string {
  */
 export const parseCronToHumanReadable = (cronExpression: string, timezone?: string): string => {
   try {
+    // Use cronstrue for reliable cron expression parsing
     const baseDescription = cronstrue.toString(cronExpression, {
       use24HourTimeFormat: false, // Use 12-hour format with AM/PM
       verbose: false, // Keep it concise
     })
 
+    // Add timezone information if provided and not UTC
     if (timezone && timezone !== 'UTC') {
       const tzAbbr = getTimezoneAbbreviation(timezone)
       return `${baseDescription} (${tzAbbr})`
@@ -480,6 +487,7 @@ export const parseCronToHumanReadable = (cronExpression: string, timezone?: stri
       cronExpression,
       error: error instanceof Error ? error.message : String(error),
     })
+    // Fallback to displaying the raw cron expression
     return `Schedule: ${cronExpression}${timezone && timezone !== 'UTC' ? ` (${getTimezoneAbbreviation(timezone)})` : ''}`
   }
 }
@@ -509,6 +517,7 @@ export const getScheduleInfo = (
   let scheduleTiming = 'Unknown schedule'
 
   if (cronExpression) {
+    // Pass timezone to parseCronToHumanReadable for accurate display
     scheduleTiming = parseCronToHumanReadable(cronExpression, timezone || undefined)
   } else if (scheduleType) {
     scheduleTiming = `${scheduleType.charAt(0).toUpperCase() + scheduleType.slice(1)}`

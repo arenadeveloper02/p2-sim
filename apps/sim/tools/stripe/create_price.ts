@@ -94,7 +94,7 @@ export const stripeCreatePriceTool: ToolConfig<CreatePriceParams, PriceResponse>
         metadata: {
           id: data.id,
           product: data.product,
-          unit_amount: data.unit_amount ?? null,
+          unit_amount: data.unit_amount,
           currency: data.currency,
         },
       },
@@ -109,16 +109,6 @@ export const stripeCreatePriceTool: ToolConfig<CreatePriceParams, PriceResponse>
     metadata: {
       type: 'json',
       description: 'Price metadata',
-      properties: {
-        id: { type: 'string', description: 'Stripe unique identifier' },
-        product: { type: 'string', description: 'Associated product ID' },
-        unit_amount: {
-          type: 'number',
-          description: 'Amount in smallest currency unit (e.g., cents)',
-          optional: true,
-        },
-        currency: { type: 'string', description: 'Three-letter ISO currency code (lowercase)' },
-      },
     },
   },
 }

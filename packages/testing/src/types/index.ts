@@ -1,14 +1,8 @@
 /**
  * Core types for the testing package.
- *
- * These are intentionally loose/permissive types that accept any shape of data
- * from the app. The testing package should not try to mirror app types exactly -
- * that creates maintenance burden and type drift issues.
- *
- * Tests themselves provide type safety through their actual usage of app types.
+ * These are simplified versions of the actual types used in apps/sim,
+ * designed for test scenarios without requiring all dependencies.
  */
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export interface Position {
   x: number
@@ -17,26 +11,72 @@ export interface Position {
 
 export interface BlockData {
   parentId?: string
-  extent?: string
+  extent?: 'parent'
   width?: number
   height?: number
   count?: number
-  loopType?: string
-  parallelType?: string
+  loopType?: 'for' | 'forEach' | 'while' | 'doWhile'
+  parallelType?: 'count' | 'collection'
   collection?: any
   whileCondition?: string
   doWhileCondition?: string
   type?: string
-  [key: string]: any
 }
+
+/**
+ * SubBlockType union for testing.
+ * Matches the SubBlockType values from the app (apps/sim/blocks/types.ts).
+ */
+export type SubBlockType =
+  | 'short-input'
+  | 'long-input'
+  | 'dropdown'
+  | 'combobox'
+  | 'slider'
+  | 'table'
+  | 'code'
+  | 'switch'
+  | 'tool-input'
+  | 'checkbox-list'
+  | 'grouped-checkbox-list'
+  | 'condition-input'
+  | 'eval-input'
+  | 'time-input'
+  | 'oauth-input'
+  | 'webhook-config'
+  | 'schedule-info'
+  | 'file-selector'
+  | 'project-selector'
+  | 'channel-selector'
+  | 'user-selector'
+  | 'folder-selector'
+  | 'knowledge-base-selector'
+  | 'knowledge-tag-filters'
+  | 'document-selector'
+  | 'document-tag-entry'
+  | 'mcp-server-selector'
+  | 'mcp-tool-selector'
+  | 'mcp-dynamic-args'
+  | 'input-format'
 
 export interface SubBlockState {
   id: string
-  type: string
-  value: any
+  type: SubBlockType
+  value: string | number | string[][] | null
 }
 
-export type BlockOutput = any
+/**
+ * Primitive value types for block outputs.
+ */
+export type PrimitiveValueType = 'string' | 'number' | 'boolean'
+
+/**
+ * BlockOutput type matching the app's structure.
+ * Can be a primitive type or an object with string keys.
+ */
+export type BlockOutput =
+  | PrimitiveValueType
+  | { [key: string]: PrimitiveValueType | Record<string, any> }
 
 export interface BlockState {
   id: string
@@ -51,39 +91,38 @@ export interface BlockState {
   advancedMode?: boolean
   triggerMode?: boolean
   data?: BlockData
-  layout?: Record<string, any>
-  [key: string]: any
+  layout?: {
+    measuredWidth?: number
+    measuredHeight?: number
+  }
 }
 
 export interface Edge {
   id: string
   source: string
   target: string
-  sourceHandle?: string | null
-  targetHandle?: string | null
+  sourceHandle?: string
+  targetHandle?: string
   type?: string
   data?: Record<string, any>
-  [key: string]: any
 }
 
 export interface Loop {
   id: string
   nodes: string[]
   iterations: number
-  loopType: string
-  forEachItems?: any
+  loopType: 'for' | 'forEach' | 'while' | 'doWhile'
+  forEachItems?: any[] | Record<string, any> | string
   whileCondition?: string
   doWhileCondition?: string
-  [key: string]: any
 }
 
 export interface Parallel {
   id: string
   nodes: string[]
-  distribution?: any
+  distribution?: any[] | Record<string, any> | string
   count?: number
-  parallelType?: string
-  [key: string]: any
+  parallelType?: 'count' | 'collection'
 }
 
 export interface WorkflowState {
@@ -96,8 +135,12 @@ export interface WorkflowState {
   isDeployed?: boolean
   deployedAt?: Date
   needsRedeployment?: boolean
-  variables?: any[]
-  [key: string]: any
+  variables?: Array<{
+    id: string
+    name: string
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'plain'
+    value: any
+  }>
 }
 
 export interface ExecutionContext {
@@ -121,7 +164,6 @@ export interface ExecutionContext {
   completedLoops: Set<string>
   activeExecutionPath: Set<string>
   abortSignal?: AbortSignal
-  [key: string]: any
 }
 
 export interface User {
@@ -129,7 +171,6 @@ export interface User {
   email: string
   name?: string
   image?: string
-  [key: string]: any
 }
 
 export interface Workspace {
@@ -138,7 +179,6 @@ export interface Workspace {
   ownerId: string
   createdAt: Date
   updatedAt: Date
-  [key: string]: any
 }
 
 export interface Workflow {
@@ -149,5 +189,4 @@ export interface Workflow {
   createdAt: Date
   updatedAt: Date
   isDeployed?: boolean
-  [key: string]: any
 }

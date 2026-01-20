@@ -106,14 +106,18 @@ export const pipedriveUpdateActivityTool: ToolConfig<
     return {
       success: true,
       output: {
-        activity: data.data ?? null,
+        activity: data.data,
+        metadata: {
+          operation: 'update_activity' as const,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    activity: { type: 'object', description: 'The updated activity object', optional: true },
+    activity: { type: 'object', description: 'The updated activity object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

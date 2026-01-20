@@ -98,8 +98,8 @@ export const stripeCreateCustomerTool: ToolConfig<CreateCustomerParams, Customer
         customer: data,
         metadata: {
           id: data.id,
-          email: data.email ?? null,
-          name: data.name ?? null,
+          email: data.email,
+          name: data.name,
         },
       },
     }
@@ -113,11 +113,6 @@ export const stripeCreateCustomerTool: ToolConfig<CreateCustomerParams, Customer
     metadata: {
       type: 'json',
       description: 'Customer metadata',
-      properties: {
-        id: { type: 'string', description: 'Stripe unique identifier' },
-        email: { type: 'string', description: 'Customer email address', optional: true },
-        name: { type: 'string', description: 'Display name', optional: true },
-      },
     },
   },
 }

@@ -17,7 +17,6 @@ import {
   type GetBlockUpstreamReferencesResultType,
 } from '@/lib/copilot/tools/shared/schemas'
 import { BlockPathCalculator } from '@/lib/workflows/blocks/block-path-calculator'
-import { isValidStartBlockType } from '@/lib/workflows/triggers/start-block-types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { Loop, Parallel } from '@/stores/workflows/workflow/types'
@@ -141,7 +140,9 @@ export class GetBlockUpstreamReferencesClientTool extends BaseClientTool {
         const accessibleIds = new Set<string>(ancestorIds)
         accessibleIds.add(blockId)
 
-        const starterBlock = Object.values(blocks).find((b) => isValidStartBlockType(b.type))
+        const starterBlock = Object.values(blocks).find(
+          (b) => b.type === 'starter' || b.type === 'start_trigger'
+        )
         if (starterBlock && ancestorIds.includes(starterBlock.id)) {
           accessibleIds.add(starterBlock.id)
         }
@@ -190,11 +191,6 @@ export class GetBlockUpstreamReferencesClientTool extends BaseClientTool {
             blockName,
             blockType: block.type,
             outputs: formattedOutputs,
-          }
-
-          // Include triggerMode if the block is in trigger mode
-          if (block.triggerMode) {
-            entry.triggerMode = true
           }
 
           if (accessContext) entry.accessContext = accessContext

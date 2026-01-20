@@ -1,18 +1,9 @@
 import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
-import { parseResponseFormatSafely } from '@/lib/core/utils/response-format'
 import { BlockPathCalculator } from '@/lib/workflows/blocks/block-path-calculator'
-import {
-  buildCanonicalIndex,
-  buildSubBlockValues,
-  evaluateSubBlockCondition,
-  getCanonicalValues,
-  isNonEmptyValue,
-  isSubBlockFeatureEnabled,
-} from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks'
-import { registry } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
+import { REFERENCE } from '@/executor/constants'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
@@ -33,6 +24,19 @@ export class WorkflowValidationError extends Error {
     super(message)
     this.name = 'WorkflowValidationError'
   }
+}
+
+/**
+ * Helper function to check if a subblock should be included in serialization based on current mode
+ */
+function shouldIncludeField(subBlockConfig: SubBlockConfig, isAdvancedMode: boolean): boolean {
+  const fieldMode = subBlockConfig.mode
+
+  if (fieldMode === 'advanced' && !isAdvancedMode) {
+    return false // Skip advanced-only fields when in basic mode
+  }
+
+  return true
 }
 
 /**
@@ -84,40 +88,6 @@ function evaluateCondition(
       })()
 
   return valueMatch && andMatch
-}
-
-/**
- * Helper function to check if a subblock should be serialized.
- */
-function shouldSerializeSubBlock(
-  subBlockConfig: SubBlockConfig,
-  values: Record<string, unknown>,
-  displayAdvancedOptions: boolean,
-  isTriggerContext: boolean,
-  isTriggerCategory: boolean,
-  canonicalIndex: ReturnType<typeof buildCanonicalIndex>
-): boolean {
-  if (!isSubBlockFeatureEnabled(subBlockConfig)) return false
-
-  if (subBlockConfig.mode === 'trigger') {
-    if (!isTriggerContext && !isTriggerCategory) return false
-  } else if (isTriggerContext && !isTriggerCategory) {
-    return false
-  }
-
-  const isCanonicalMember = Boolean(canonicalIndex.canonicalIdBySubBlockId[subBlockConfig.id])
-  if (isCanonicalMember) {
-    return evaluateSubBlockCondition(subBlockConfig.condition, values)
-  }
-
-  if (subBlockConfig.mode === 'advanced' && !displayAdvancedOptions) {
-    return isNonEmptyValue(values[subBlockConfig.id])
-  }
-  if (subBlockConfig.mode === 'basic' && displayAdvancedOptions) {
-    return false
-  }
-
-  return evaluateSubBlockCondition(subBlockConfig.condition, values)
 }
 
 /**
@@ -241,62 +211,46 @@ export class Serializer {
       accessibleBlocksMap: Map<string, Set<string>>
     }
   ): SerializedBlock {
-    // Migrate old block types before serialization
-    // Old gmail block was named gmail_v2, map it to current gmail
-    let blockType = block.type
-    if (blockType === 'gmail_v2') {
-      // Check if this is the old gmail block (not the new gmail_v2 API block)
-      const gmailBlock = getBlock('gmail')
-      const gmailV2Block = getBlock('gmail_v2')
-      // If gmail exists but gmail_v2 doesn't, this is likely the old gmail block
-      if (gmailBlock && !gmailV2Block) {
-        blockType = 'gmail'
-      }
-    }
-
     // Special handling for subflow blocks (loops, parallels, etc.)
-    if (blockType === 'loop' || blockType === 'parallel') {
+    if (block.type === 'loop' || block.type === 'parallel') {
       return {
         id: block.id,
         position: block.position,
         config: {
           tool: '', // Loop blocks don't have tools
-          params: (block.data || {}) as Record<string, unknown>, // Preserve the block data (parallelType, count, etc.)
+          params: block.data || {}, // Preserve the block data (parallelType, count, etc.)
         },
         inputs: {},
         outputs: block.outputs,
         metadata: {
-          id: blockType,
+          id: block.type,
           name: block.name,
-          description: blockType === 'loop' ? 'Loop container' : 'Parallel container',
+          description: block.type === 'loop' ? 'Loop container' : 'Parallel container',
           category: 'subflow',
-          color: blockType === 'loop' ? '#3b82f6' : '#8b5cf6',
+          color: block.type === 'loop' ? '#3b82f6' : '#8b5cf6',
         },
         enabled: block.enabled,
       }
     }
 
-    let blockConfig = getBlock(blockType)
-
-    // Fallback: Direct registry access if getBlock fails
+    const blockConfig = getBlock(block.type)
     if (!blockConfig) {
-      const normalizedType = blockType.replace(/-/g, '_')
-      blockConfig = registry[blockType] || registry[normalizedType]
+      throw new Error(`Invalid block type: ${block.type}`)
     }
 
-    if (!blockConfig) {
-      throw new Error(`Invalid block type: ${blockType}`)
-    }
+    // Extract parameters from UI state
+    const params = this.extractParams(block)
 
-    // Extract parameters from UI state (use migrated blockType)
-    const params = this.extractParams({ ...block, type: blockType })
-
-    const isTriggerCategory = blockConfig.category === 'triggers'
-    if (block.triggerMode === true || isTriggerCategory) {
-      params.triggerMode = true
-    }
-    if (block.advancedMode === true) {
-      params.advancedMode = true
+    try {
+      const isTriggerCategory = blockConfig.category === 'triggers'
+      if (block.triggerMode === true || isTriggerCategory) {
+        params.triggerMode = true
+      }
+      if (block.advancedMode === true) {
+        params.advancedMode = true
+      }
+    } catch (_) {
+      // no-op: conservative, avoid blocking serialization if blockConfig is unexpected
     }
 
     // Validate required fields that only users can provide (before execution starts)
@@ -317,7 +271,16 @@ export class Serializer {
         // For non-custom tools, we determine the tool ID
         const nonCustomTools = tools.filter((tool: any) => tool.type !== 'custom-tool')
         if (nonCustomTools.length > 0) {
-          toolId = this.selectToolId(blockConfig, params)
+          try {
+            toolId = blockConfig.tools.config?.tool
+              ? blockConfig.tools.config.tool(params)
+              : blockConfig.tools.access[0]
+          } catch (error) {
+            logger.warn('Tool selection failed during serialization, using default:', {
+              error: error instanceof Error ? error.message : String(error),
+            })
+            toolId = blockConfig.tools.access[0]
+          }
         }
       } catch (error) {
         logger.error('Error processing tools in agent block:', { error })
@@ -326,7 +289,16 @@ export class Serializer {
       }
     } else {
       // For non-agent blocks, get tool ID from block config as usual
-      toolId = this.selectToolId(blockConfig, params)
+      try {
+        toolId = blockConfig.tools.config?.tool
+          ? blockConfig.tools.config.tool(params)
+          : blockConfig.tools.access[0]
+      } catch (error) {
+        logger.warn('Tool selection failed during serialization, using default:', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+        toolId = blockConfig.tools.access[0]
+      }
     }
 
     // Get inputs from block config
@@ -350,15 +322,12 @@ export class Serializer {
         // Include response format fields if available
         ...(params.responseFormat
           ? {
-              responseFormat:
-                parseResponseFormatSafely(params.responseFormat, block.id, {
-                  allowReferences: true,
-                }) ?? undefined,
+              responseFormat: this.parseResponseFormatSafely(params.responseFormat),
             }
           : {}),
       },
       metadata: {
-        id: blockType, // Use migrated blockType
+        id: block.type,
         name: block.name,
         description: blockConfig.description,
         category: blockConfig.category,
@@ -368,33 +337,71 @@ export class Serializer {
     }
   }
 
+  private parseResponseFormatSafely(responseFormat: any): any {
+    if (!responseFormat) {
+      return undefined
+    }
+
+    // If already an object, return as-is
+    if (typeof responseFormat === 'object' && responseFormat !== null) {
+      return responseFormat
+    }
+
+    // Handle string values
+    if (typeof responseFormat === 'string') {
+      const trimmedValue = responseFormat.trim()
+
+      // Check for variable references like <start.input>
+      if (trimmedValue.startsWith(REFERENCE.START) && trimmedValue.includes(REFERENCE.END)) {
+        // Keep variable references as-is
+        return trimmedValue
+      }
+
+      if (trimmedValue === '') {
+        return undefined
+      }
+
+      // Try to parse as JSON
+      try {
+        return JSON.parse(trimmedValue)
+      } catch (error) {
+        // If parsing fails, return undefined to avoid crashes
+        // This allows the workflow to continue without structured response format
+        logger.warn('Failed to parse response format as JSON in serializer, using undefined:', {
+          value: trimmedValue,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+      }
+    }
+
+    // For any other type, return undefined
+    return undefined
+  }
+
   private extractParams(block: BlockState): Record<string, any> {
+    // Special handling for subflow blocks (loops, parallels, etc.)
     if (block.type === 'loop' || block.type === 'parallel') {
-      return {}
+      return {} // Loop and parallel blocks don't have traditional params
     }
 
-    let blockConfig = getBlock(block.type)
-
-    // Fallback: Direct registry access if getBlock fails
-    if (!blockConfig) {
-      const normalizedType = block.type.replace(/-/g, '_')
-      blockConfig = registry[block.type] || registry[normalizedType]
-    }
-
+    const blockConfig = getBlock(block.type)
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${block.type}`)
     }
 
     const params: Record<string, any> = {}
-    const legacyAdvancedMode = block.advancedMode ?? false
-    const canonicalModeOverrides = block.data?.canonicalModes
+    const isAdvancedMode = block.advancedMode ?? false
     const isStarterBlock = block.type === 'starter'
     const isAgentBlock = block.type === 'agent'
-    const isTriggerContext = block.triggerMode ?? false
-    const isTriggerCategory = blockConfig.category === 'triggers'
-    const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks)
-    const allValues = buildSubBlockValues(block.subBlocks)
 
+    // First pass: collect ALL raw values for condition evaluation
+    const allValues: Record<string, any> = {}
+    Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
+      allValues[id] = subBlock.value
+    })
+
+    // Second pass: filter by mode and conditions
     Object.entries(block.subBlocks).forEach(([id, subBlock]) => {
       const matchingConfigs = blockConfig.subBlocks.filter((config) => config.id === id)
       // Find the corresponding subblock config to check its mode and condition
@@ -416,30 +423,29 @@ export class Serializer {
         }
       }
 
+      // Include field if it matches current mode OR if it's the starter inputFormat with values
       const hasStarterInputFormatValues =
         isStarterBlock &&
         id === 'inputFormat' &&
         Array.isArray(subBlock.value) &&
         subBlock.value.length > 0
 
+      // Include legacy agent block fields (systemPrompt, userPrompt, memories) even if not in current config
+      // This ensures backward compatibility with old workflows that were exported before the messages array migration
       const isLegacyAgentField =
         isAgentBlock && ['systemPrompt', 'userPrompt', 'memories'].includes(id)
 
-      const shouldInclude =
-        matchingConfigs.length === 0 ||
-        matchingConfigs.some((config) =>
-          shouldSerializeSubBlock(
-            config,
-            allValues,
-            legacyAdvancedMode,
-            isTriggerContext,
-            isTriggerCategory,
-            canonicalIndex
-          )
-        )
+      const anyConditionMet =
+        matchingConfigs.length === 0
+          ? true
+          : matchingConfigs.some(
+              (config) =>
+                shouldIncludeField(config, isAdvancedMode) &&
+                evaluateCondition(config.condition, allValues)
+            )
 
       if (
-        (matchingConfigs.length > 0 && shouldInclude) ||
+        (matchingConfigs.length > 0 && anyConditionMet) ||
         hasStarterInputFormatValues ||
         isLegacyAgentField
       ) {
@@ -447,38 +453,56 @@ export class Serializer {
       }
     })
 
+    // Then check for any subBlocks with default values
     blockConfig.subBlocks.forEach((subBlockConfig) => {
       const id = subBlockConfig.id
       if (
-        params[id] == null &&
+        (params[id] === null || params[id] === undefined) &&
         subBlockConfig.value &&
-        shouldSerializeSubBlock(
-          subBlockConfig,
-          allValues,
-          legacyAdvancedMode,
-          isTriggerContext,
-          isTriggerCategory,
-          canonicalIndex
-        )
+        shouldIncludeField(subBlockConfig, isAdvancedMode)
       ) {
+        // If the value is absent and there's a default value function, use it
         params[id] = subBlockConfig.value(params)
       }
     })
 
-    Object.values(canonicalIndex.groupsById).forEach((group) => {
-      const { basicValue, advancedValue } = getCanonicalValues(group, params)
-      const pairMode =
-        canonicalModeOverrides?.[group.canonicalId] ?? (legacyAdvancedMode ? 'advanced' : 'basic')
-      const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+    // Finally, consolidate canonical parameters (e.g., selector and manual ID into a single param)
+    const canonicalGroups: Record<string, { basic?: string; advanced: string[] }> = {}
+    blockConfig.subBlocks.forEach((sb) => {
+      if (!sb.canonicalParamId) return
+      const key = sb.canonicalParamId
+      if (!canonicalGroups[key]) canonicalGroups[key] = { basic: undefined, advanced: [] }
+      if (sb.mode === 'advanced') canonicalGroups[key].advanced.push(sb.id)
+      else canonicalGroups[key].basic = sb.id
+    })
 
-      const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
-      sourceIds.forEach((id) => {
-        if (id !== group.canonicalId) delete params[id]
-      })
+    Object.entries(canonicalGroups).forEach(([canonicalKey, group]) => {
+      const basicId = group.basic
+      const advancedIds = group.advanced
+      const basicVal = basicId ? params[basicId] : undefined
+      const advancedVal = advancedIds
+        .map((id) => params[id])
+        .find(
+          (v) => v !== undefined && v !== null && (typeof v !== 'string' || v.trim().length > 0)
+        )
 
-      if (chosen !== undefined) {
-        params[group.canonicalId] = chosen
+      let chosen: any
+      if (advancedVal !== undefined && basicVal !== undefined) {
+        chosen = isAdvancedMode ? advancedVal : basicVal
+      } else if (advancedVal !== undefined) {
+        chosen = advancedVal
+      } else if (basicVal !== undefined) {
+        chosen = isAdvancedMode ? undefined : basicVal
+      } else {
+        chosen = undefined
       }
+
+      const sourceIds = [basicId, ...advancedIds].filter(Boolean) as string[]
+      sourceIds.forEach((id) => {
+        if (id !== canonicalKey) delete params[id]
+      })
+      if (chosen !== undefined) params[canonicalKey] = chosen
+      else delete params[canonicalKey]
     })
 
     return params
@@ -514,7 +538,17 @@ export class Serializer {
     }
 
     // Determine the current tool ID using the same logic as the serializer
-    const currentToolId = this.selectToolId(blockConfig, params)
+    let currentToolId = ''
+    try {
+      currentToolId = blockConfig.tools.config?.tool
+        ? blockConfig.tools.config.tool(params)
+        : blockConfig.tools.access[0]
+    } catch (error) {
+      logger.warn('Tool selection failed during validation, using default:', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      currentToolId = blockConfig.tools.access[0]
+    }
 
     // Get the specific tool to validate against
     const currentTool = getTool(currentToolId)
@@ -522,11 +556,8 @@ export class Serializer {
       return // Tool not found, skip validation
     }
 
+    // Check required user-only parameters for the current tool
     const missingFields: string[] = []
-    const displayAdvancedOptions = block.advancedMode ?? false
-    const isTriggerContext = block.triggerMode ?? false
-    const isTriggerCategory = blockConfig.category === 'triggers'
-    const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks || [])
 
     // Iterate through the tool's parameters, not the block's subBlocks
     Object.entries(currentTool.params || {}).forEach(([paramId, paramConfig]) => {
@@ -536,23 +567,20 @@ export class Serializer {
         let shouldValidateParam = true
 
         if (matchingConfigs.length > 0) {
+          const isAdvancedMode = block.advancedMode ?? false
+
           shouldValidateParam = matchingConfigs.some((subBlockConfig: any) => {
-            const includedByMode = shouldSerializeSubBlock(
-              subBlockConfig,
-              params,
-              displayAdvancedOptions,
-              isTriggerContext,
-              isTriggerCategory,
-              canonicalIndex
-            )
+            const includedByMode = shouldIncludeField(subBlockConfig, isAdvancedMode)
+
+            const includedByCondition = evaluateCondition(subBlockConfig.condition, params)
 
             const isRequired = (() => {
               if (!subBlockConfig.required) return false
               if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-              return evaluateSubBlockCondition(subBlockConfig.required, params)
+              return evaluateCondition(subBlockConfig.required, params)
             })()
 
-            return includedByMode && isRequired
+            return includedByMode && includedByCondition && isRequired
           })
         }
 
@@ -562,15 +590,10 @@ export class Serializer {
 
         const fieldValue = params[paramId]
         if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
-          const activeConfig = matchingConfigs.find((config: any) =>
-            shouldSerializeSubBlock(
-              config,
-              params,
-              displayAdvancedOptions,
-              isTriggerContext,
-              isTriggerCategory,
-              canonicalIndex
-            )
+          const activeConfig = matchingConfigs.find(
+            (config: any) =>
+              shouldIncludeField(config, block.advancedMode ?? false) &&
+              evaluateCondition(config.condition, params)
           )
           const displayName = activeConfig?.title || paramId
           missingFields.push(displayName)
@@ -624,19 +647,6 @@ export class Serializer {
     return accessibleMap
   }
 
-  private selectToolId(blockConfig: any, params: Record<string, any>): string {
-    try {
-      return blockConfig.tools.config?.tool
-        ? blockConfig.tools.config.tool(params)
-        : blockConfig.tools.access[0]
-    } catch (error) {
-      logger.warn('Tool selection failed during serialization, using default:', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-      return blockConfig.tools.access[0]
-    }
-  }
-
   deserializeWorkflow(workflow: SerializedWorkflow): {
     blocks: Record<string, BlockState>
     edges: Edge[]
@@ -684,14 +694,7 @@ export class Serializer {
       }
     }
 
-    let blockConfig = getBlock(blockType)
-
-    // Fallback: Direct registry access if getBlock fails
-    if (!blockConfig) {
-      const normalizedType = blockType.replace(/-/g, '_')
-      blockConfig = registry[blockType] || registry[normalizedType]
-    }
-
+    const blockConfig = getBlock(blockType)
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${blockType}`)
     }

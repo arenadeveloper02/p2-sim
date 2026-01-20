@@ -1,5 +1,4 @@
 export {
-  cleanupDeploymentVersion,
   createSchedulesForDeploy,
   deleteSchedulesForWorkflow,
   type ScheduleDeployResult,

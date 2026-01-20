@@ -15,7 +15,9 @@ export interface ZendeskGetUserResponse {
   success: boolean
   output: {
     user: any
-    user_id: number
+    metadata: {
+      operation: 'get_user'
+    }
     success: boolean
   }
 }
@@ -78,7 +80,9 @@ export const zendeskGetUserTool: ToolConfig<ZendeskGetUserParams, ZendeskGetUser
       success: true,
       output: {
         user: data.user,
-        user_id: data.user?.id,
+        metadata: {
+          operation: 'get_user' as const,
+        },
         success: true,
       },
     }
@@ -86,6 +90,6 @@ export const zendeskGetUserTool: ToolConfig<ZendeskGetUserParams, ZendeskGetUser
 
   outputs: {
     user: { type: 'object', description: 'User object' },
-    user_id: { type: 'number', description: 'The user ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

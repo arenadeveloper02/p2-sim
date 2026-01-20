@@ -18,13 +18,13 @@ export interface ZendeskAutocompleteOrganizationsResponse {
   output: {
     organizations: any[]
     paging?: {
-      next_page?: string | null
-      previous_page?: string | null
+      nextPage?: string | null
+      previousPage?: string | null
       count: number
     }
     metadata: {
-      total_returned: number
-      has_more: boolean
+      operation: 'autocomplete_organizations'
+      totalReturned: number
     }
     success: boolean
   }
@@ -115,13 +115,13 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
       output: {
         organizations,
         paging: {
-          next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
+          nextPage: data.next_page,
+          previousPage: data.previous_page,
           count: data.count || organizations.length,
         },
         metadata: {
-          total_returned: organizations.length,
-          has_more: !!data.next_page,
+          operation: 'autocomplete_organizations' as const,
+          totalReturned: organizations.length,
         },
         success: true,
       },
@@ -130,29 +130,7 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
 
   outputs: {
     organizations: { type: 'array', description: 'Array of organization objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of organizations' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of organizations returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more organizations are available' },
-      },
-    },
+    paging: { type: 'object', description: 'Pagination information' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

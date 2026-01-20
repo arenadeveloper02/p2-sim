@@ -1,4 +1,3 @@
-import { loggerMock } from '@sim/testing'
 import { describe, expect, test, vi } from 'vitest'
 import {
   calculateCostSummary,
@@ -8,10 +7,18 @@ import {
 
 // Mock the billing constants
 vi.mock('@/lib/billing/constants', () => ({
-  BASE_EXECUTION_CHARGE: 0.005,
+  BASE_EXECUTION_CHARGE: 0.001,
 }))
 
-vi.mock('@sim/logger', () => loggerMock)
+// Mock the console logger
+vi.mock('@sim/logger', () => ({
+  createLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
+}))
 
 // Mock workflow persistence utils
 vi.mock('@/lib/workflows/persistence/utils', () => ({
@@ -148,7 +155,7 @@ describe('createEnvironmentObject', () => {
 })
 
 describe('calculateCostSummary', () => {
-  const BASE_EXECUTION_CHARGE = 0.005
+  const BASE_EXECUTION_CHARGE = 0.001
 
   test('should return base execution charge for empty trace spans', () => {
     const result = calculateCostSummary([])

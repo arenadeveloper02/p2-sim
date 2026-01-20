@@ -182,15 +182,11 @@ export class SnapshotService implements ISnapshotService {
       normalizedParallels[parallelId] = normalizeValue(parallel)
     }
 
-    // 4. Normalize variables (if present)
-    const normalizedVariables = state.variables ? normalizeValue(state.variables) : undefined
-
     return {
       blocks: normalizedBlocks,
       edges: normalizedEdges,
       loops: normalizedLoops,
       parallels: normalizedParallels,
-      ...(normalizedVariables !== undefined && { variables: normalizedVariables }),
     }
   }
 }

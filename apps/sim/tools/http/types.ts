@@ -4,7 +4,7 @@ export interface RequestParams {
   url: string
   method?: HttpMethod
   headers?: TableRow[]
-  body?: unknown
+  body?: any
   params?: TableRow[]
   pathParams?: Record<string, string>
   formData?: Record<string, string | Blob>
@@ -12,15 +12,8 @@ export interface RequestParams {
 
 export interface RequestResponse extends ToolResponse {
   output: {
-    data: unknown
+    data: any
     status: number
     headers: Record<string, string>
   }
-}
-
-export interface WebhookRequestParams {
-  url: string
-  body?: unknown
-  secret?: string
-  headers?: Record<string, string>
 }

@@ -1,4 +1,3 @@
-import { loggerMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const mockEnv = vi.hoisted(() => ({
@@ -7,13 +6,16 @@ const mockEnv = vi.hoisted(() => ({
 
 vi.mock('@/lib/core/config/env', () => ({
   env: mockEnv,
-  isTruthy: (value: string | boolean | number | undefined) =>
-    typeof value === 'string' ? value.toLowerCase() === 'true' || value === '1' : Boolean(value),
-  isFalsy: (value: string | boolean | number | undefined) =>
-    typeof value === 'string' ? value.toLowerCase() === 'false' || value === '0' : value === false,
 }))
 
-vi.mock('@sim/logger', () => loggerMock)
+vi.mock('@sim/logger', () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
 
 import { decryptSecret, encryptSecret, generatePassword } from './encryption'
 

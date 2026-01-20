@@ -51,10 +51,11 @@ export interface ExecutionEnvironment {
   workspaceId: string
 }
 
-import type { CoreTriggerType } from '@/stores/logs/filters/types'
+export const ALL_TRIGGER_TYPES = ['api', 'webhook', 'schedule', 'manual', 'chat'] as const
+export type TriggerType = (typeof ALL_TRIGGER_TYPES)[number]
 
 export interface ExecutionTrigger {
-  type: CoreTriggerType | string
+  type: TriggerType | string
   source: string
   data?: Record<string, unknown>
   timestamp: string
@@ -367,9 +368,5 @@ export interface ExecutionLoggerService {
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
-    workflowInput?: any
-    isResume?: boolean
-    level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<WorkflowExecutionLog>
 }

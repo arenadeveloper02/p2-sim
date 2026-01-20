@@ -15,7 +15,11 @@ export interface MailchimpGetSegmentResponse {
   success: boolean
   output: {
     segment: MailchimpSegment
-    segment_id: string
+    metadata: {
+      operation: 'get_segment'
+      segmentId: string
+    }
+    success: boolean
   }
 }
 
@@ -71,19 +75,24 @@ export const mailchimpGetSegmentTool: ToolConfig<
       success: true,
       output: {
         segment: data,
-        segment_id: data.id,
+        metadata: {
+          operation: 'get_segment' as const,
+          segmentId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the segment was successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Segment data',
+      description: 'Segment data and metadata',
       properties: {
-        segment: { type: 'json', description: 'Segment object' },
-        segment_id: { type: 'string', description: 'The unique ID of the segment' },
+        segment: { type: 'object', description: 'Segment object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

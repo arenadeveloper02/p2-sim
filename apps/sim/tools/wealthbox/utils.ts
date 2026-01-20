@@ -108,6 +108,7 @@ export const formatNoteResponse = (data: any): WealthboxWriteResponse => {
       output: {
         note: undefined,
         metadata: {
+          operation: 'write_note' as const,
           itemType: 'note' as const,
         },
       },
@@ -120,21 +121,25 @@ export const formatNoteResponse = (data: any): WealthboxWriteResponse => {
       note: data,
       success: true,
       metadata: {
-        itemId: data.id?.toString() ?? null,
-        noteId: data.id?.toString() ?? null,
+        operation: 'write_note' as const,
+        itemId: data.id?.toString() || '',
         itemType: 'note' as const,
       },
     },
   }
 }
 
-export const formatTaskResponse = (data: any): WealthboxWriteResponse => {
+export const formatTaskResponse = (
+  data: any,
+  params?: WealthboxWriteParams
+): WealthboxWriteResponse => {
   if (!data) {
     return {
       success: false,
       output: {
         task: undefined,
         metadata: {
+          operation: 'write_task' as const,
           itemType: 'task' as const,
         },
       },
@@ -147,8 +152,8 @@ export const formatTaskResponse = (data: any): WealthboxWriteResponse => {
       task: data,
       success: true,
       metadata: {
-        itemId: data.id?.toString() ?? null,
-        taskId: data.id?.toString() ?? null,
+        operation: 'write_task' as const,
+        itemId: data.id?.toString() || params?.taskId || '',
         itemType: 'task' as const,
       },
     },

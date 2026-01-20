@@ -16,7 +16,10 @@ export interface MailchimpCreateSegmentResponse {
   success: boolean
   output: {
     segment: MailchimpSegment
-    segment_id: string
+    metadata: {
+      operation: 'create_segment'
+      segmentId: string
+    }
     success: boolean
   }
 }
@@ -94,7 +97,10 @@ export const mailchimpCreateSegmentTool: ToolConfig<
       success: true,
       output: {
         segment: data,
-        segment_id: data.id,
+        metadata: {
+          operation: 'create_segment' as const,
+          segmentId: data.id,
+        },
         success: true,
       },
     }
@@ -106,8 +112,8 @@ export const mailchimpCreateSegmentTool: ToolConfig<
       type: 'object',
       description: 'Created segment data',
       properties: {
-        segment: { type: 'json', description: 'Created segment object' },
-        segment_id: { type: 'string', description: 'Created segment ID' },
+        segment: { type: 'object', description: 'Created segment object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

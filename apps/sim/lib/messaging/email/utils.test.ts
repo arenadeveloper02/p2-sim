@@ -1,4 +1,3 @@
-import { createEnvMock } from '@sim/testing'
 import { describe, expect, it, vi } from 'vitest'
 
 /**
@@ -9,12 +8,12 @@ import { describe, expect, it, vi } from 'vitest'
  */
 
 // Set up mocks at module level - these will be used for all tests in this file
-vi.mock('@/lib/core/config/env', () =>
-  createEnvMock({
+vi.mock('@/lib/core/config/env', () => ({
+  env: {
     FROM_EMAIL_ADDRESS: 'Sim <noreply@sim.ai>',
     EMAIL_DOMAIN: 'example.com',
-  })
-)
+  },
+}))
 
 vi.mock('@/lib/core/utils/urls', () => ({
   getEmailDomain: vi.fn().mockReturnValue('fallback.com'),

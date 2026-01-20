@@ -80,7 +80,10 @@ export const pipedriveGetMailMessagesTool: ToolConfig<
       success: true,
       output: {
         messages: threads,
-        total_items: threads.length,
+        metadata: {
+          operation: 'get_mail_messages' as const,
+          totalItems: threads.length,
+        },
         success: true,
       },
     }
@@ -88,7 +91,7 @@ export const pipedriveGetMailMessagesTool: ToolConfig<
 
   outputs: {
     messages: { type: 'array', description: 'Array of mail thread objects from Pipedrive mailbox' },
-    total_items: { type: 'number', description: 'Total number of mail threads returned' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

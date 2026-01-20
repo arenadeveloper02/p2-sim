@@ -67,15 +67,19 @@ export const apolloPeopleBulkEnrichTool: ToolConfig<
       success: true,
       output: {
         people: data.matches || [],
-        total: data.matches?.length || 0,
-        enriched: data.matches?.filter((p: any) => p).length || 0,
+        metadata: {
+          total: data.matches?.length || 0,
+          enriched: data.matches?.filter((p: any) => p).length || 0,
+        },
       },
     }
   },
 
   outputs: {
     people: { type: 'json', description: 'Array of enriched people data' },
-    total: { type: 'number', description: 'Total number of people processed' },
-    enriched: { type: 'number', description: 'Number of people successfully enriched' },
+    metadata: {
+      type: 'json',
+      description: 'Bulk enrichment metadata including total and enriched counts',
+    },
   },
 }

@@ -26,7 +26,6 @@ export const spotifySaveAlbumsTool: ToolConfig<SpotifySaveAlbumsParams, SpotifyS
       albumIds: {
         type: 'string',
         required: true,
-        visibility: 'user-or-llm',
         description: 'Comma-separated album IDs (max 20)',
       },
     },

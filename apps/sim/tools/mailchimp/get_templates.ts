@@ -15,8 +15,12 @@ export interface MailchimpGetTemplatesResponse {
   success: boolean
   output: {
     templates: MailchimpTemplate[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_templates'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -80,24 +84,26 @@ export const mailchimpGetTemplatesTool: ToolConfig<
       success: true,
       output: {
         templates,
-        total_items: data.total_items || templates.length,
-        total_returned: templates.length,
+        totalItems: data.total_items || templates.length,
+        metadata: {
+          operation: 'get_templates' as const,
+          totalReturned: templates.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the templates were successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Templates data',
+      description: 'Templates data and metadata',
       properties: {
-        templates: { type: 'json', description: 'Array of template objects' },
-        total_items: { type: 'number', description: 'Total number of templates' },
-        total_returned: {
-          type: 'number',
-          description: 'Number of templates returned in this response',
-        },
+        templates: { type: 'array', description: 'Array of template objects' },
+        totalItems: { type: 'number', description: 'Total number of templates' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

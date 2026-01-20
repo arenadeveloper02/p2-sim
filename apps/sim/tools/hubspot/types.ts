@@ -31,7 +31,10 @@ export interface HubSpotPaging {
 export interface HubSpotGetUsersResponse extends ToolResponse {
   output: {
     users: HubSpotUser[]
-    totalItems?: number
+    metadata: {
+      operation: 'get_users'
+      totalItems?: number
+    }
     success: boolean
   }
 }
@@ -47,6 +50,7 @@ export interface HubSpotListContactsResponse extends ToolResponse {
     contacts: HubSpotContact[]
     paging?: HubSpotPaging
     metadata: {
+      operation: 'list_contacts'
       totalReturned: number
       hasMore: boolean
     }
@@ -66,7 +70,10 @@ export interface HubSpotListContactsParams {
 export interface HubSpotGetContactResponse extends ToolResponse {
   output: {
     contact: HubSpotContact
-    contactId: string
+    metadata: {
+      operation: 'get_contact'
+      contactId: string
+    }
     success: boolean
   }
 }
@@ -83,7 +90,10 @@ export interface HubSpotGetContactParams {
 export interface HubSpotCreateContactResponse extends ToolResponse {
   output: {
     contact: HubSpotContact
-    contactId: string
+    metadata: {
+      operation: 'create_contact'
+      contactId: string
+    }
     success: boolean
   }
 }
@@ -104,7 +114,10 @@ export interface HubSpotCreateContactParams {
 export interface HubSpotUpdateContactResponse extends ToolResponse {
   output: {
     contact: HubSpotContact
-    contactId: string
+    metadata: {
+      operation: 'update_contact'
+      contactId: string
+    }
     success: boolean
   }
 }
@@ -118,15 +131,13 @@ export interface HubSpotUpdateContactParams {
 
 // Search Contacts
 export interface HubSpotSearchContactsResponse extends ToolResponse {
-  output: {
-    contacts: HubSpotContact[]
+  contacts: HubSpotContact[]
+  total: number
+  paging?: HubSpotPaging
+  metadata: {
+    operation: 'search_contacts'
+    totalReturned: number
     total: number
-    paging?: HubSpotPaging
-    metadata: {
-      totalReturned: number
-      hasMore: boolean
-    }
-    success: boolean
   }
 }
 
@@ -157,6 +168,7 @@ export type HubSpotListCompaniesResponse = Omit<HubSpotListContactsResponse, 'ou
     companies: HubSpotContact[]
     paging?: HubSpotPaging
     metadata: {
+      operation: 'list_companies'
       totalReturned: number
       hasMore: boolean
     }
@@ -167,7 +179,10 @@ export type HubSpotGetCompanyParams = HubSpotGetContactParams & { companyId: str
 export type HubSpotGetCompanyResponse = Omit<HubSpotGetContactResponse, 'output'> & {
   output: {
     company: HubSpotContact
-    companyId: string
+    metadata: {
+      operation: 'get_company'
+      companyId: string
+    }
     success: boolean
   }
 }
@@ -175,7 +190,10 @@ export type HubSpotCreateCompanyParams = HubSpotCreateContactParams
 export type HubSpotCreateCompanyResponse = Omit<HubSpotCreateContactResponse, 'output'> & {
   output: {
     company: HubSpotContact
-    companyId: string
+    metadata: {
+      operation: 'create_company'
+      companyId: string
+    }
     success: boolean
   }
 }
@@ -183,21 +201,22 @@ export type HubSpotUpdateCompanyParams = HubSpotUpdateContactParams & { companyI
 export type HubSpotUpdateCompanyResponse = Omit<HubSpotUpdateContactResponse, 'output'> & {
   output: {
     company: HubSpotContact
-    companyId: string
+    metadata: {
+      operation: 'update_company'
+      companyId: string
+    }
     success: boolean
   }
 }
 export type HubSpotSearchCompaniesParams = HubSpotSearchContactsParams
 export interface HubSpotSearchCompaniesResponse extends ToolResponse {
-  output: {
-    companies: HubSpotContact[]
+  companies: HubSpotContact[]
+  total: number
+  paging?: HubSpotPaging
+  metadata: {
+    operation: 'search_companies'
+    totalReturned: number
     total: number
-    paging?: HubSpotPaging
-    metadata: {
-      totalReturned: number
-      hasMore: boolean
-    }
-    success: boolean
   }
 }
 
@@ -209,6 +228,7 @@ export type HubSpotListDealsResponse = Omit<HubSpotListContactsResponse, 'output
     deals: HubSpotContact[]
     paging?: HubSpotPaging
     metadata: {
+      operation: 'list_deals'
       totalReturned: number
       hasMore: boolean
     }

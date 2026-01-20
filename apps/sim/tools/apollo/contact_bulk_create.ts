@@ -69,9 +69,11 @@ export const apolloContactBulkCreateTool: ToolConfig<
       output: {
         created_contacts: data.contacts || data.created_contacts || [],
         existing_contacts: data.existing_contacts || [],
-        total_submitted: data.contacts?.length || 0,
-        created: data.created_contacts?.length || data.contacts?.length || 0,
-        existing: data.existing_contacts?.length || 0,
+        metadata: {
+          total_submitted: data.contacts?.length || 0,
+          created: data.created_contacts?.length || data.contacts?.length || 0,
+          existing: data.existing_contacts?.length || 0,
+        },
       },
     }
   },
@@ -85,17 +87,9 @@ export const apolloContactBulkCreateTool: ToolConfig<
       type: 'json',
       description: 'Array of existing contacts (when deduplication is enabled)',
     },
-    total_submitted: {
-      type: 'number',
-      description: 'Total number of contacts submitted',
-    },
-    created: {
-      type: 'number',
-      description: 'Number of contacts successfully created',
-    },
-    existing: {
-      type: 'number',
-      description: 'Number of existing contacts found',
+    metadata: {
+      type: 'json',
+      description: 'Bulk creation metadata including counts of created and existing contacts',
     },
   },
 }

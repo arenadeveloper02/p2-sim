@@ -14,8 +14,12 @@ export interface MailchimpGetMemberTagsResponse {
   success: boolean
   output: {
     tags: MailchimpTag[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_member_tags'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -75,24 +79,26 @@ export const mailchimpGetMemberTagsTool: ToolConfig<
       success: true,
       output: {
         tags,
-        total_items: data.total_items || tags.length,
-        total_returned: tags.length,
+        totalItems: data.total_items || tags.length,
+        metadata: {
+          operation: 'get_member_tags' as const,
+          totalReturned: tags.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the member tags were successfully retrieved',
-    },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Member tags data',
+      description: 'Member tags data and metadata',
       properties: {
-        tags: { type: 'json', description: 'Array of tag objects' },
-        total_items: { type: 'number', description: 'Total number of tags' },
-        total_returned: { type: 'number', description: 'Number of tags returned in this response' },
+        tags: { type: 'array', description: 'Array of tag objects' },
+        totalItems: { type: 'number', description: 'Total number of tags' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

@@ -6,8 +6,7 @@ import {
   generateTempId,
 } from '@/hooks/queries/utils/optimistic-mutation'
 import { workflowKeys } from '@/hooks/queries/workflows'
-import { useFolderStore } from '@/stores/folders/store'
-import type { WorkflowFolder } from '@/stores/folders/types'
+import { useFolderStore, type WorkflowFolder } from '@/stores/folders/store'
 
 const logger = createLogger('FolderQueries')
 
@@ -68,7 +67,6 @@ interface CreateFolderVariables {
   name: string
   parentId?: string
   color?: string
-  sortOrder?: number
 }
 
 interface UpdateFolderVariables {
@@ -161,20 +159,18 @@ export function useCreateFolder() {
       parentId: variables.parentId || null,
       color: variables.color || '#808080',
       isExpanded: false,
-      sortOrder:
-        variables.sortOrder ??
-        getNextSortOrder(previousFolders, variables.workspaceId, variables.parentId),
+      sortOrder: getNextSortOrder(previousFolders, variables.workspaceId, variables.parentId),
       createdAt: new Date(),
       updatedAt: new Date(),
     })
   )
 
   return useMutation({
-    mutationFn: async ({ workspaceId, sortOrder, ...payload }: CreateFolderVariables) => {
+    mutationFn: async ({ workspaceId, ...payload }: CreateFolderVariables) => {
       const response = await fetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, workspaceId, sortOrder }),
+        body: JSON.stringify({ ...payload, workspaceId }),
       })
 
       if (!response.ok) {
@@ -288,66 +284,9 @@ export function useDuplicateFolderMutation() {
     },
     ...handlers,
     onSettled: (_data, _error, variables) => {
+      // Invalidate both folders and workflows (duplicated folder may contain workflows)
       queryClient.invalidateQueries({ queryKey: folderKeys.list(variables.workspaceId) })
       queryClient.invalidateQueries({ queryKey: workflowKeys.list(variables.workspaceId) })
-    },
-  })
-}
-
-interface ReorderFoldersVariables {
-  workspaceId: string
-  updates: Array<{
-    id: string
-    sortOrder: number
-    parentId?: string | null
-  }>
-}
-
-export function useReorderFolders() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (variables: ReorderFoldersVariables): Promise<void> => {
-      const response = await fetch('/api/folders/reorder', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(variables),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || 'Failed to reorder folders')
-      }
-    },
-    onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: folderKeys.list(variables.workspaceId) })
-
-      const snapshot = { ...useFolderStore.getState().folders }
-
-      useFolderStore.setState((state) => {
-        const updated = { ...state.folders }
-        for (const update of variables.updates) {
-          if (updated[update.id]) {
-            updated[update.id] = {
-              ...updated[update.id],
-              sortOrder: update.sortOrder,
-              parentId:
-                update.parentId !== undefined ? update.parentId : updated[update.id].parentId,
-            }
-          }
-        }
-        return { folders: updated }
-      })
-
-      return { snapshot }
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.snapshot) {
-        useFolderStore.setState({ folders: context.snapshot })
-      }
-    },
-    onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: folderKeys.list(variables.workspaceId) })
     },
   })
 }

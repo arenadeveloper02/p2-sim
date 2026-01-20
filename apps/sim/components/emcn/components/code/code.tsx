@@ -56,6 +56,8 @@ interface CodeContainerProps {
   className?: string
   /** Inline styles for the container */
   style?: React.CSSProperties
+  /** Whether editor is in streaming/AI generation state */
+  isStreaming?: boolean
   /** Drag and drop handler */
   onDragOver?: (e: React.DragEvent) => void
   /** Drop handler */
@@ -75,7 +77,14 @@ interface CodeContainerProps {
  * </Code.Container>
  * ```
  */
-function Container({ children, className, style, onDragOver, onDrop }: CodeContainerProps) {
+function Container({
+  children,
+  className,
+  style,
+  isStreaming = false,
+  onDragOver,
+  onDrop,
+}: CodeContainerProps) {
   return (
     <div
       className={cn(
@@ -85,6 +94,8 @@ function Container({ children, className, style, onDragOver, onDrop }: CodeConta
         'dark:bg-[#1F1F1F]',
         // Overflow handling for long content
         'overflow-x-auto overflow-y-auto',
+        // Streaming state
+        isStreaming && 'streaming-effect',
         className
       )}
       style={style}

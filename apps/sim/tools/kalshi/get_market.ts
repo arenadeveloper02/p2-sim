@@ -23,7 +23,6 @@ export const kalshiGetMarketTool: ToolConfig<KalshiGetMarketParams, KalshiGetMar
     ticker: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'The market ticker (e.g., "KXBTC-24DEC31")',
     },
   },

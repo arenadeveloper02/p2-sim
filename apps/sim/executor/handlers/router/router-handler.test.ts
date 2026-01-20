@@ -1,4 +1,4 @@
-import '@sim/testing/mocks/executor'
+import '@/executor/__test-utils__/mock-dependencies'
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { generateRouterPrompt } from '@/blocks/blocks/router'

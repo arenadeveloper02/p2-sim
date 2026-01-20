@@ -28,7 +28,6 @@ export const spotifyCheckSavedAlbumsTool: ToolConfig<
     albumIds: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Comma-separated album IDs (max 20)',
     },
   },

@@ -17,7 +17,6 @@ export const upsertPointsTool: ToolConfig<QdrantUpsertParams, QdrantResponse> = 
     apiKey: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
       description: 'Qdrant API key (optional)',
     },
     collection: {

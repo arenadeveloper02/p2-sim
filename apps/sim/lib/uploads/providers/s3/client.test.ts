@@ -31,15 +31,14 @@ describe('S3 Client', () => {
       getSignedUrl: mockGetSignedUrl,
     }))
 
-    vi.doMock('@/lib/core/config/env', async () => {
-      const { createEnvMock } = await import('@sim/testing')
-      return createEnvMock({
+    vi.doMock('@/lib/core/config/env', () => ({
+      env: {
         S3_BUCKET_NAME: 'test-bucket',
         AWS_REGION: 'test-region',
         AWS_ACCESS_KEY_ID: 'test-access-key',
         AWS_SECRET_ACCESS_KEY: 'test-secret-key',
-      })
-    })
+      },
+    }))
 
     vi.doMock('@sim/logger', () => ({
       createLogger: vi.fn().mockReturnValue({
@@ -299,15 +298,14 @@ describe('S3 Client', () => {
 
   describe('s3Client initialization', () => {
     it('should initialize with correct configuration when credentials are available', async () => {
-      vi.doMock('@/lib/core/config/env', async () => {
-        const { createEnvMock } = await import('@sim/testing')
-        return createEnvMock({
+      vi.doMock('@/lib/core/config/env', () => ({
+        env: {
           S3_BUCKET_NAME: 'test-bucket',
           AWS_REGION: 'test-region',
           AWS_ACCESS_KEY_ID: 'test-access-key',
           AWS_SECRET_ACCESS_KEY: 'test-secret-key',
-        })
-      })
+        },
+      }))
 
       vi.doMock('@/lib/uploads/setup', () => ({
         S3_CONFIG: {
@@ -333,15 +331,14 @@ describe('S3 Client', () => {
     })
 
     it('should initialize without credentials when env vars are not available', async () => {
-      vi.doMock('@/lib/core/config/env', async () => {
-        const { createEnvMock } = await import('@sim/testing')
-        return createEnvMock({
+      vi.doMock('@/lib/core/config/env', () => ({
+        env: {
           S3_BUCKET_NAME: 'test-bucket',
           AWS_REGION: 'test-region',
           AWS_ACCESS_KEY_ID: undefined,
           AWS_SECRET_ACCESS_KEY: undefined,
-        })
-      })
+        },
+      }))
 
       vi.doMock('@/lib/uploads/setup', () => ({
         S3_CONFIG: {

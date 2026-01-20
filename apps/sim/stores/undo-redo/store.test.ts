@@ -13,16 +13,16 @@
 import {
   createAddBlockEntry,
   createAddEdgeEntry,
-  createBatchRemoveEdgesEntry,
   createBlock,
+  createDuplicateBlockEntry,
   createMockStorage,
   createMoveBlockEntry,
   createRemoveBlockEntry,
+  createRemoveEdgeEntry,
   createUpdateParentEntry,
 } from '@sim/testing'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { runWithUndoRedoRecordingSuspended, useUndoRedoStore } from '@/stores/undo-redo/store'
-import type { UpdateParentOperation } from '@/stores/undo-redo/types'
 
 describe('useUndoRedoStore', () => {
   const workflowId = 'wf-test'
@@ -596,24 +596,79 @@ describe('useUndoRedoStore', () => {
       expect(getStackSizes(workflowId, userId).undoSize).toBe(2)
 
       const entry = undo(workflowId, userId)
-      expect(entry?.operation.type).toBe('batch-add-edges')
+      expect(entry?.operation.type).toBe('add-edge')
       expect(getStackSizes(workflowId, userId).redoSize).toBe(1)
 
       redo(workflowId, userId)
       expect(getStackSizes(workflowId, userId).undoSize).toBe(2)
     })
 
-    it('should handle batch-remove-edges operations', () => {
+    it('should handle remove-edge operations', () => {
       const { push, undo, getStackSizes } = useUndoRedoStore.getState()
 
-      const edgeSnapshot = { id: 'edge-1', source: 'block-1', target: 'block-2' }
-      push(workflowId, userId, createBatchRemoveEdgesEntry([edgeSnapshot], { workflowId, userId }))
+      push(workflowId, userId, createRemoveEdgeEntry('edge-1', null, { workflowId, userId }))
 
       expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
 
       const entry = undo(workflowId, userId)
-      expect(entry?.operation.type).toBe('batch-remove-edges')
-      expect(entry?.inverse.type).toBe('batch-add-edges')
+      expect(entry?.operation.type).toBe('remove-edge')
+      expect(entry?.inverse.type).toBe('add-edge')
+    })
+  })
+
+  describe('duplicate-block operations', () => {
+    it('should handle duplicate-block operations', () => {
+      const { push, undo, redo, getStackSizes } = useUndoRedoStore.getState()
+
+      const sourceBlock = createBlock({ id: 'source-block' })
+      const duplicatedBlock = createBlock({ id: 'duplicated-block' })
+
+      push(
+        workflowId,
+        userId,
+        createDuplicateBlockEntry('source-block', 'duplicated-block', duplicatedBlock, {
+          workflowId,
+          userId,
+        })
+      )
+
+      expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
+
+      const entry = undo(workflowId, userId)
+      expect(entry?.operation.type).toBe('duplicate-block')
+      expect(entry?.inverse.type).toBe('remove-block')
+      expect(getStackSizes(workflowId, userId).redoSize).toBe(1)
+
+      redo(workflowId, userId)
+      expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
+    })
+
+    it('should store the duplicated block snapshot correctly', () => {
+      const { push, undo } = useUndoRedoStore.getState()
+
+      const duplicatedBlock = createBlock({
+        id: 'duplicated-block',
+        name: 'Duplicated Agent',
+        type: 'agent',
+        position: { x: 200, y: 200 },
+      })
+
+      push(
+        workflowId,
+        userId,
+        createDuplicateBlockEntry('source-block', 'duplicated-block', duplicatedBlock, {
+          workflowId,
+          userId,
+        })
+      )
+
+      const entry = undo(workflowId, userId)
+      expect(entry?.operation.data.duplicatedBlockSnapshot).toMatchObject({
+        id: 'duplicated-block',
+        name: 'Duplicated Agent',
+        type: 'agent',
+        position: { x: 200, y: 200 },
+      })
     })
   })
 
@@ -661,11 +716,10 @@ describe('useUndoRedoStore', () => {
       )
 
       const entry = undo(workflowId, userId)
-      const inverse = entry?.inverse as UpdateParentOperation
-      expect(inverse.data.oldParentId).toBe('loop-2')
-      expect(inverse.data.newParentId).toBe('loop-1')
-      expect(inverse.data.oldPosition).toEqual({ x: 100, y: 100 })
-      expect(inverse.data.newPosition).toEqual({ x: 0, y: 0 })
+      expect(entry?.inverse.data.oldParentId).toBe('loop-2')
+      expect(entry?.inverse.data.newParentId).toBe('loop-1')
+      expect(entry?.inverse.data.oldPosition).toEqual({ x: 100, y: 100 })
+      expect(entry?.inverse.data.newPosition).toEqual({ x: 0, y: 0 })
     })
   })
 
@@ -673,10 +727,8 @@ describe('useUndoRedoStore', () => {
     it('should remove entries for non-existent edges', () => {
       const { push, pruneInvalidEntries, getStackSizes } = useUndoRedoStore.getState()
 
-      const edge1 = { id: 'edge-1', source: 'a', target: 'b' }
-      const edge2 = { id: 'edge-2', source: 'c', target: 'd' }
-      push(workflowId, userId, createBatchRemoveEdgesEntry([edge1], { workflowId, userId }))
-      push(workflowId, userId, createBatchRemoveEdgesEntry([edge2], { workflowId, userId }))
+      push(workflowId, userId, createRemoveEdgeEntry('edge-1', null, { workflowId, userId }))
+      push(workflowId, userId, createRemoveEdgeEntry('edge-2', null, { workflowId, userId }))
 
       expect(getStackSizes(workflowId, userId).undoSize).toBe(2)
 
@@ -689,8 +741,6 @@ describe('useUndoRedoStore', () => {
 
       pruneInvalidEntries(workflowId, userId, graph as any)
 
-      // edge-1 exists in graph, so we can't undo its removal (can't add it back) → pruned
-      // edge-2 doesn't exist, so we can undo its removal (can add it back) → kept
       expect(getStackSizes(workflowId, userId).undoSize).toBe(1)
     })
   })
@@ -756,7 +806,7 @@ describe('useUndoRedoStore', () => {
       expect(getStackSizes(workflowId, userId).undoSize).toBe(3)
 
       const moveEntry = undo(workflowId, userId)
-      expect(moveEntry?.operation.type).toBe('batch-move-blocks')
+      expect(moveEntry?.operation.type).toBe('move-block')
 
       const parentEntry = undo(workflowId, userId)
       expect(parentEntry?.operation.type).toBe('update-parent')

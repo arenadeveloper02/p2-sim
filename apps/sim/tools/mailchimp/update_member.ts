@@ -18,7 +18,10 @@ export interface MailchimpUpdateMemberResponse {
   success: boolean
   output: {
     member: MailchimpMember
-    subscriber_hash: string
+    metadata: {
+      operation: 'update_member'
+      subscriberHash: string
+    }
     success: boolean
   }
 }
@@ -123,7 +126,10 @@ export const mailchimpUpdateMemberTool: ToolConfig<
       success: true,
       output: {
         member: data,
-        subscriber_hash: data.id,
+        metadata: {
+          operation: 'update_member' as const,
+          subscriberHash: data.id,
+        },
         success: true,
       },
     }
@@ -136,7 +142,7 @@ export const mailchimpUpdateMemberTool: ToolConfig<
       description: 'Updated member data',
       properties: {
         member: { type: 'object', description: 'Updated member object' },
-        subscriber_hash: { type: 'string', description: 'Subscriber hash' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

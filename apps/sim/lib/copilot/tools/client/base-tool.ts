@@ -1,7 +1,6 @@
 // Lazy require in setState to avoid circular init issues
 import { createLogger } from '@sim/logger'
 import type { LucideIcon } from 'lucide-react'
-import type { ToolUIConfig } from './ui-config'
 
 const baseToolLogger = createLogger('BaseClientTool')
 
@@ -52,11 +51,6 @@ export interface BaseClientToolMetadata {
    * If provided, this will override the default text in displayNames
    */
   getDynamicText?: DynamicTextFormatter
-  /**
-   * UI configuration for how this tool renders in the tool-call component.
-   * This replaces hardcoded logic in tool-call.tsx with declarative config.
-   */
-  uiConfig?: ToolUIConfig
 }
 
 export class BaseClientTool {
@@ -263,13 +257,5 @@ export class BaseClientTool {
 
   hasInterrupt(): boolean {
     return !!this.metadata.interrupt
-  }
-
-  /**
-   * Get UI configuration for this tool.
-   * Used by tool-call component to determine rendering behavior.
-   */
-  getUIConfig(): ToolUIConfig | undefined {
-    return this.metadata.uiConfig
   }
 }

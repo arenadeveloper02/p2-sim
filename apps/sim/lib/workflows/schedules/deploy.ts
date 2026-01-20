@@ -1,12 +1,26 @@
-import { db, workflowSchedule } from '@sim/db'
+import { type db, workflowSchedule } from '@sim/db'
+import type * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
-import type { DbOrTx } from '@/lib/db/types'
-import { cleanupWebhooksForWorkflow } from '@/lib/webhooks/deploy'
+import type { ExtractTablesWithRelations } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
+import type { PgTransaction } from 'drizzle-orm/pg-core'
+import type { PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import type { BlockState } from '@/lib/workflows/schedules/utils'
 import { findScheduleBlocks, validateScheduleBlock } from '@/lib/workflows/schedules/validation'
 
 const logger = createLogger('ScheduleDeployUtils')
+
+/**
+ * Type for database or transaction context
+ * This allows the functions to work with either the db instance or a transaction
+ */
+type DbOrTx =
+  | typeof db
+  | PgTransaction<
+      PostgresJsQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >
 
 /**
  * Result of schedule creation during deploy
@@ -27,8 +41,7 @@ export interface ScheduleDeployResult {
 export async function createSchedulesForDeploy(
   workflowId: string,
   blocks: Record<string, BlockState>,
-  tx: DbOrTx,
-  deploymentVersionId?: string
+  tx: DbOrTx
 ): Promise<ScheduleDeployResult> {
   const scheduleBlocks = findScheduleBlocks(blocks)
 
@@ -63,7 +76,6 @@ export async function createSchedulesForDeploy(
     const values = {
       id: scheduleId,
       workflowId,
-      deploymentVersionId: deploymentVersionId || null,
       blockId,
       cronExpression: cronExpression!,
       triggerType: 'schedule',
@@ -78,7 +90,6 @@ export async function createSchedulesForDeploy(
     const setValues = {
       blockId,
       cronExpression: cronExpression!,
-      ...(deploymentVersionId ? { deploymentVersionId } : {}),
       updatedAt: now,
       nextRunAt: nextRunAt!,
       timezone: timezone!,
@@ -90,11 +101,7 @@ export async function createSchedulesForDeploy(
       .insert(workflowSchedule)
       .values(values)
       .onConflictDoUpdate({
-        target: [
-          workflowSchedule.workflowId,
-          workflowSchedule.blockId,
-          workflowSchedule.deploymentVersionId,
-        ],
+        target: [workflowSchedule.workflowId, workflowSchedule.blockId],
         set: setValues,
       })
 
@@ -117,36 +124,8 @@ export async function createSchedulesForDeploy(
  * Delete all schedules for a workflow
  * This should be called within a database transaction during undeploy
  */
-export async function deleteSchedulesForWorkflow(
-  workflowId: string,
-  tx: DbOrTx,
-  deploymentVersionId?: string
-): Promise<void> {
-  await tx
-    .delete(workflowSchedule)
-    .where(
-      deploymentVersionId
-        ? and(
-            eq(workflowSchedule.workflowId, workflowId),
-            eq(workflowSchedule.deploymentVersionId, deploymentVersionId)
-          )
-        : eq(workflowSchedule.workflowId, workflowId)
-    )
+export async function deleteSchedulesForWorkflow(workflowId: string, tx: DbOrTx): Promise<void> {
+  await tx.delete(workflowSchedule).where(eq(workflowSchedule.workflowId, workflowId))
 
-  logger.info(
-    deploymentVersionId
-      ? `Deleted schedules for workflow ${workflowId} deployment ${deploymentVersionId}`
-      : `Deleted all schedules for workflow ${workflowId}`
-  )
-}
-
-export async function cleanupDeploymentVersion(params: {
-  workflowId: string
-  workflow: Record<string, unknown>
-  requestId: string
-  deploymentVersionId: string
-}): Promise<void> {
-  const { workflowId, workflow, requestId, deploymentVersionId } = params
-  await cleanupWebhooksForWorkflow(workflowId, workflow, requestId, deploymentVersionId)
-  await deleteSchedulesForWorkflow(workflowId, db, deploymentVersionId)
+  logger.info(`Deleted all schedules for workflow ${workflowId}`)
 }

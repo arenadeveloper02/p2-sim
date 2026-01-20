@@ -127,15 +127,15 @@ export const updateEventDefinitionTool: ToolConfig<
       name: data.name,
       description: data.description || '',
       tags: data.tags || [],
-      volume_30_day: data.volume_30_day ?? null,
-      query_usage_30_day: data.query_usage_30_day ?? null,
+      volume_30_day: data.volume_30_day,
+      query_usage_30_day: data.query_usage_30_day,
       created_at: data.created_at,
-      last_seen_at: data.last_seen_at ?? null,
+      last_seen_at: data.last_seen_at,
       updated_at: data.updated_at,
-      updated_by: data.updated_by ?? null,
+      updated_by: data.updated_by,
       verified: data.verified || false,
-      verified_at: data.verified_at ?? null,
-      verified_by: data.verified_by ?? null,
+      verified_at: data.verified_at,
+      verified_by: data.verified_by,
     }
   },
 
@@ -159,12 +159,10 @@ export const updateEventDefinitionTool: ToolConfig<
     volume_30_day: {
       type: 'number',
       description: 'Number of events received in the last 30 days',
-      optional: true,
     },
     query_usage_30_day: {
       type: 'number',
       description: 'Number of times this event was queried in the last 30 days',
-      optional: true,
     },
     created_at: {
       type: 'string',
@@ -173,7 +171,6 @@ export const updateEventDefinitionTool: ToolConfig<
     last_seen_at: {
       type: 'string',
       description: 'ISO timestamp when the event was last seen',
-      optional: true,
     },
     updated_at: {
       type: 'string',
@@ -182,7 +179,6 @@ export const updateEventDefinitionTool: ToolConfig<
     updated_by: {
       type: 'object',
       description: 'User who last updated the event',
-      optional: true,
     },
     verified: {
       type: 'boolean',
@@ -191,12 +187,10 @@ export const updateEventDefinitionTool: ToolConfig<
     verified_at: {
       type: 'string',
       description: 'ISO timestamp when the event was verified',
-      optional: true,
     },
     verified_by: {
       type: 'string',
       description: 'User who verified the event',
-      optional: true,
     },
   },
 }

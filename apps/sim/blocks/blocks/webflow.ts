@@ -127,7 +127,6 @@ export const WebflowBlock: BlockConfig<WebflowResponse> = {
     ...getTrigger('webflow_collection_item_created').subBlocks,
     ...getTrigger('webflow_collection_item_changed').subBlocks,
     ...getTrigger('webflow_collection_item_deleted').subBlocks,
-    ...getTrigger('webflow_form_submission').subBlocks,
   ],
   tools: {
     access: [

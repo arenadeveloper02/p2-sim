@@ -16,13 +16,12 @@ export interface SliderProps extends React.ComponentPropsWithoutRef<typeof Slide
  * ```
  */
 const Slider = React.forwardRef<React.ElementRef<typeof SliderPrimitive.Root>, SliderProps>(
-  ({ className, disabled, ...props }, ref) => (
+  ({ className, ...props }, ref) => (
     <SliderPrimitive.Root
       ref={ref}
-      disabled={disabled}
       className={cn(
         'relative flex w-full touch-none select-none items-center',
-        'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+        'disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
       {...props}

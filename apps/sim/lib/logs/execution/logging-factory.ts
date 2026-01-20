@@ -1,5 +1,3 @@
-import { db, workflow } from '@sim/db'
-import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import type { ExecutionEnvironment, ExecutionTrigger, WorkflowState } from '@/lib/logs/types'
 import {
@@ -36,15 +34,7 @@ export function createEnvironmentObject(
 }
 
 export async function loadWorkflowStateForExecution(workflowId: string): Promise<WorkflowState> {
-  const [normalizedData, workflowRecord] = await Promise.all([
-    loadWorkflowFromNormalizedTables(workflowId),
-    db
-      .select({ variables: workflow.variables })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-      .then((rows) => rows[0]),
-  ])
+  const normalizedData = await loadWorkflowFromNormalizedTables(workflowId)
 
   if (!normalizedData) {
     throw new Error(
@@ -57,7 +47,6 @@ export async function loadWorkflowStateForExecution(workflowId: string): Promise
     edges: normalizedData.edges || [],
     loops: normalizedData.loops || {},
     parallels: normalizedData.parallels || {},
-    variables: (workflowRecord?.variables as WorkflowState['variables']) || undefined,
   }
 }
 
@@ -76,7 +65,6 @@ export async function loadDeployedWorkflowStateForLogging(
     edges: deployedData.edges || [],
     loops: deployedData.loops || {},
     parallels: deployedData.parallels || {},
-    variables: deployedData.variables as WorkflowState['variables'],
   }
 }
 

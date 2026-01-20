@@ -94,8 +94,9 @@ export const hubspotListDealsTool: ToolConfig<HubSpotListDealsParams, HubSpotLis
       success: true,
       output: {
         deals: data.results || [],
-        paging: data.paging ?? null,
+        paging: data.paging,
         metadata: {
+          operation: 'list_deals' as const,
           totalReturned: data.results?.length || 0,
           hasMore: !!data.paging?.next,
         },
@@ -106,8 +107,8 @@ export const hubspotListDealsTool: ToolConfig<HubSpotListDealsParams, HubSpotLis
 
   outputs: {
     deals: { type: 'array', description: 'Array of HubSpot deal objects' },
-    paging: { type: 'object', description: 'Pagination information', optional: true },
-    metadata: { type: 'object', description: 'Metadata with totalReturned and hasMore' },
+    paging: { type: 'object', description: 'Pagination information' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

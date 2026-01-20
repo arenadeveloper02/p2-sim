@@ -103,7 +103,10 @@ export const pipedriveGetActivitiesTool: ToolConfig<
       success: true,
       output: {
         activities,
-        total_items: activities.length,
+        metadata: {
+          operation: 'get_activities' as const,
+          totalItems: activities.length,
+        },
         success: true,
       },
     }
@@ -111,7 +114,7 @@ export const pipedriveGetActivitiesTool: ToolConfig<
 
   outputs: {
     activities: { type: 'array', description: 'Array of activity objects from Pipedrive' },
-    total_items: { type: 'number', description: 'Total number of activities returned' },
+    metadata: { type: 'object', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

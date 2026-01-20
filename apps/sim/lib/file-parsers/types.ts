@@ -1,22 +1,6 @@
-export interface FileParseMetadata {
-  characterCount?: number
-  pageCount?: number
-  extractionMethod?: string
-  warning?: string
-  messages?: unknown[]
-  html?: string
-  type?: string
-  headers?: string[]
-  totalRows?: number
-  rowCount?: number
-  sheetNames?: string[]
-  source?: string
-  [key: string]: unknown
-}
-
 export interface FileParseResult {
   content: string
-  metadata?: FileParseMetadata
+  metadata?: Record<string, any>
 }
 
 export interface FileParser {

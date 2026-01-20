@@ -1,4 +1,6 @@
 export { Alert, AlertDescription, AlertTitle } from './alert'
+export { Avatar, AvatarFallback, AvatarImage } from './avatar'
+export { Badge, badgeVariants } from './badge'
 export { Button, buttonVariants } from './button'
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card'
 export { Checkbox } from './checkbox'
@@ -52,6 +54,18 @@ export {
 } from './select'
 export { Separator } from './separator'
 export { Skeleton } from './skeleton'
+export { Slider } from './slider'
+export { Switch } from './switch'
+export {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './table'
 export { TagInput } from './tag-input'
 export { Textarea } from './textarea'
 export { ToolCallCompletion, ToolCallExecution } from './tool-call'

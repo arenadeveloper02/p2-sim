@@ -1,5 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildMailchimpUrl, handleMailchimpError } from './types'
+
+const logger = createLogger('MailchimpStartAutomation')
 
 export interface MailchimpStartAutomationParams {
   apiKey: string
@@ -9,6 +12,10 @@ export interface MailchimpStartAutomationParams {
 export interface MailchimpStartAutomationResponse {
   success: boolean
   output: {
+    metadata: {
+      operation: 'start_automation'
+      workflowId: string
+    }
     success: boolean
   }
 }
@@ -59,6 +66,10 @@ export const mailchimpStartAutomationTool: ToolConfig<
     return {
       success: true,
       output: {
+        metadata: {
+          operation: 'start_automation' as const,
+          workflowId: '',
+        },
         success: true,
       },
     }
@@ -70,6 +81,7 @@ export const mailchimpStartAutomationTool: ToolConfig<
       type: 'object',
       description: 'Start confirmation',
       properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

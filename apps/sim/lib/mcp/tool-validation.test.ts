@@ -7,8 +7,8 @@ import {
   isToolUnavailable,
   type McpToolIssue,
   type ServerState,
+  type StoredMcpTool,
 } from './tool-validation'
-import type { StoredMcpToolReference } from './types'
 
 describe('hasSchemaChanged', () => {
   it.concurrent('returns false when both schemas are undefined', () => {
@@ -24,78 +24,76 @@ describe('hasSchemaChanged', () => {
   })
 
   it.concurrent('returns false for identical schemas', () => {
-    const schema = { type: 'object' as const, properties: { name: { type: 'string' } } }
+    const schema = { type: 'object', properties: { name: { type: 'string' } } }
     expect(hasSchemaChanged(schema, { ...schema })).toBe(false)
   })
 
   it.concurrent('returns false when only description differs', () => {
     const stored = {
-      type: 'object' as const,
+      type: 'object',
       properties: { name: { type: 'string' } },
       description: 'Old description',
     }
     const server = {
-      type: 'object' as const,
+      type: 'object',
       properties: { name: { type: 'string' } },
       description: 'New description',
     }
     expect(hasSchemaChanged(stored, server)).toBe(false)
   })
 
+  it.concurrent('returns true when type differs', () => {
+    const stored = { type: 'object', properties: {} }
+    const server = { type: 'array', properties: {} }
+    expect(hasSchemaChanged(stored, server)).toBe(true)
+  })
+
   it.concurrent('returns true when properties differ', () => {
-    const stored = { type: 'object' as const, properties: { name: { type: 'string' } } }
-    const server = { type: 'object' as const, properties: { id: { type: 'number' } } }
+    const stored = { type: 'object', properties: { name: { type: 'string' } } }
+    const server = { type: 'object', properties: { id: { type: 'number' } } }
     expect(hasSchemaChanged(stored, server)).toBe(true)
   })
 
   it.concurrent('returns true when required fields differ', () => {
-    const stored = { type: 'object' as const, properties: {}, required: ['name'] }
-    const server = { type: 'object' as const, properties: {}, required: ['id'] }
+    const stored = { type: 'object', properties: {}, required: ['name'] }
+    const server = { type: 'object', properties: {}, required: ['id'] }
     expect(hasSchemaChanged(stored, server)).toBe(true)
   })
 
   it.concurrent('returns false for deep equal schemas with different key order', () => {
-    const stored = { type: 'object' as const, properties: { a: 1, b: 2 } }
-    const server = { properties: { b: 2, a: 1 }, type: 'object' as const }
+    const stored = { type: 'object', properties: { a: 1, b: 2 } }
+    const server = { properties: { b: 2, a: 1 }, type: 'object' }
     expect(hasSchemaChanged(stored, server)).toBe(false)
   })
 
   it.concurrent('returns true when nested properties differ', () => {
     const stored = {
-      type: 'object' as const,
+      type: 'object',
       properties: { config: { type: 'object', properties: { enabled: { type: 'boolean' } } } },
     }
     const server = {
-      type: 'object' as const,
+      type: 'object',
       properties: { config: { type: 'object', properties: { enabled: { type: 'string' } } } },
     }
     expect(hasSchemaChanged(stored, server)).toBe(true)
   })
 
   it.concurrent('returns true when additional properties setting differs', () => {
-    const stored = { type: 'object' as const, additionalProperties: true }
-    const server = { type: 'object' as const, additionalProperties: false }
+    const stored = { type: 'object', additionalProperties: true }
+    const server = { type: 'object', additionalProperties: false }
     expect(hasSchemaChanged(stored, server)).toBe(true)
   })
 
   it.concurrent('ignores description at property level', () => {
-    const stored = {
-      type: 'object' as const,
-      properties: { name: { type: 'string', description: 'Old' } },
-    }
-    const server = {
-      type: 'object' as const,
-      properties: { name: { type: 'string', description: 'New' } },
-    }
+    const stored = { type: 'object', properties: { name: { type: 'string', description: 'Old' } } }
+    const server = { type: 'object', properties: { name: { type: 'string', description: 'New' } } }
     // Only top-level description is ignored, not nested ones
     expect(hasSchemaChanged(stored, server)).toBe(true)
   })
 })
 
 describe('getMcpToolIssue', () => {
-  const createStoredTool = (
-    overrides?: Partial<StoredMcpToolReference>
-  ): StoredMcpToolReference => ({
+  const createStoredTool = (overrides?: Partial<StoredMcpTool>): StoredMcpTool => ({
     serverId: 'server-1',
     serverUrl: 'https://api.example.com/mcp',
     toolName: 'test-tool',
@@ -193,7 +191,7 @@ describe('getMcpToolIssue', () => {
 
       expect(result).toEqual({
         type: 'url_changed',
-        message: 'Server URL changed',
+        message: 'Server URL changed - tools may be different',
       })
     })
 
@@ -300,7 +298,7 @@ describe('getMcpToolIssue', () => {
     })
 
     it.concurrent('returns null when schemas match exactly', () => {
-      const schema = { type: 'object' as const, properties: { name: { type: 'string' } } }
+      const schema = { type: 'object', properties: { name: { type: 'string' } } }
       const storedTool = createStoredTool({ schema })
       const servers = [createServerState()]
       const tools = [createDiscoveredTool({ inputSchema: schema })]

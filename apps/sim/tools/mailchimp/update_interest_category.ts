@@ -1,6 +1,9 @@
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import type { MailchimpInterestCategory } from './types'
 import { buildMailchimpUrl, handleMailchimpError } from './types'
+
+const logger = createLogger('MailchimpUpdateInterestCategory')
 
 export interface MailchimpUpdateInterestCategoryParams {
   apiKey: string
@@ -13,7 +16,10 @@ export interface MailchimpUpdateInterestCategoryResponse {
   success: boolean
   output: {
     category: MailchimpInterestCategory
-    interest_category_id: string
+    metadata: {
+      operation: 'update_interest_category'
+      interestCategoryId: string
+    }
     success: boolean
   }
 }
@@ -86,7 +92,10 @@ export const mailchimpUpdateInterestCategoryTool: ToolConfig<
       success: true,
       output: {
         category: data,
-        interest_category_id: data.id,
+        metadata: {
+          operation: 'update_interest_category' as const,
+          interestCategoryId: data.id,
+        },
         success: true,
       },
     }
@@ -99,7 +108,7 @@ export const mailchimpUpdateInterestCategoryTool: ToolConfig<
       description: 'Updated interest category data',
       properties: {
         category: { type: 'object', description: 'Updated interest category object' },
-        interest_category_id: { type: 'string', description: 'Interest category ID' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

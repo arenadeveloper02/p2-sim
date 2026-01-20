@@ -54,12 +54,6 @@ export const stripeRetrieveProductTool: ToolConfig<RetrieveProductParams, Produc
     metadata: {
       type: 'json',
       description: 'Product metadata',
-
-      properties: {
-        id: { type: 'string', description: 'Stripe unique identifier' },
-        name: { type: 'string', description: 'Display name' },
-        active: { type: 'boolean', description: 'Whether the resource is currently active' },
-      },
     },
   },
 }

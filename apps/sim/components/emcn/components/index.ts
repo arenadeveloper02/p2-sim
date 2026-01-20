@@ -1,28 +1,6 @@
-export {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  type AvatarProps,
-  avatarStatusVariants,
-  avatarVariants,
-} from './avatar/avatar'
 export { Badge } from './badge/badge'
 export { Breadcrumb, type BreadcrumbItem, type BreadcrumbProps } from './breadcrumb/breadcrumb'
-export { Button, type ButtonProps, buttonVariants } from './button/button'
-export {
-  ButtonGroup,
-  ButtonGroupItem,
-  type ButtonGroupItemProps,
-  type ButtonGroupProps,
-  buttonGroupItemVariants,
-  buttonGroupVariants,
-} from './button-group/button-group'
-export {
-  Checkbox,
-  type CheckboxProps,
-  checkboxIconVariants,
-  checkboxVariants,
-} from './checkbox/checkbox'
+export { Button, buttonVariants } from './button/button'
 export {
   CODE_LINE_HEIGHT_PX,
   Code,
@@ -65,8 +43,6 @@ export {
   type PopoverBackButtonProps,
   PopoverContent,
   type PopoverContentProps,
-  PopoverDivider,
-  type PopoverDividerProps,
   PopoverFolder,
   type PopoverFolderProps,
   PopoverItem,
@@ -93,35 +69,9 @@ export {
   type SModalSidebarItemProps,
   SModalSidebarSection,
   SModalSidebarSectionTitle,
-  SModalTabs,
-  SModalTabsBody,
-  SModalTabsContent,
-  SModalTabsList,
-  SModalTabsTrigger,
   SModalTrigger,
 } from './s-modal/s-modal'
 export { Slider, type SliderProps } from './slider/slider'
 export { Switch } from './switch/switch'
-export {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './table/table'
-export {
-  type FileInputOptions,
-  Tag,
-  TagInput,
-  type TagInputProps,
-  type TagItem,
-  type TagProps,
-  tagInputVariants,
-  tagVariants,
-} from './tag-input/tag-input'
 export { Textarea } from './textarea/textarea'
-export { TimePicker, type TimePickerProps, timePickerVariants } from './time-picker/time-picker'
 export { Tooltip } from './tooltip/tooltip'

@@ -24,7 +24,10 @@ export interface ZendeskUpdateTicketResponse {
   success: boolean
   output: {
     ticket: any
-    ticket_id: number
+    metadata: {
+      operation: 'update_ticket'
+      ticketId: string
+    }
     success: boolean
   }
 }
@@ -168,7 +171,10 @@ export const zendeskUpdateTicketTool: ToolConfig<
       success: true,
       output: {
         ticket: data.ticket,
-        ticket_id: data.ticket?.id,
+        metadata: {
+          operation: 'update_ticket' as const,
+          ticketId: data.ticket?.id,
+        },
         success: true,
       },
     }
@@ -176,6 +182,6 @@ export const zendeskUpdateTicketTool: ToolConfig<
 
   outputs: {
     ticket: { type: 'object', description: 'Updated ticket object' },
-    ticket_id: { type: 'number', description: 'The updated ticket ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

@@ -27,13 +27,13 @@ describe('checkRolePermission', () => {
       }
     })
 
-    it('should allow batch-add-blocks operation', () => {
-      const result = checkRolePermission('admin', 'batch-add-blocks')
+    it('should allow add operation', () => {
+      const result = checkRolePermission('admin', 'add')
       expectPermissionAllowed(result)
     })
 
-    it('should allow batch-remove-blocks operation', () => {
-      const result = checkRolePermission('admin', 'batch-remove-blocks')
+    it('should allow remove operation', () => {
+      const result = checkRolePermission('admin', 'remove')
       expectPermissionAllowed(result)
     })
 
@@ -42,8 +42,8 @@ describe('checkRolePermission', () => {
       expectPermissionAllowed(result)
     })
 
-    it('should allow batch-update-positions operation', () => {
-      const result = checkRolePermission('admin', 'batch-update-positions')
+    it('should allow duplicate operation', () => {
+      const result = checkRolePermission('admin', 'duplicate')
       expectPermissionAllowed(result)
     })
 
@@ -63,13 +63,13 @@ describe('checkRolePermission', () => {
       }
     })
 
-    it('should allow batch-add-blocks operation', () => {
-      const result = checkRolePermission('write', 'batch-add-blocks')
+    it('should allow add operation', () => {
+      const result = checkRolePermission('write', 'add')
       expectPermissionAllowed(result)
     })
 
-    it('should allow batch-remove-blocks operation', () => {
-      const result = checkRolePermission('write', 'batch-remove-blocks')
+    it('should allow remove operation', () => {
+      const result = checkRolePermission('write', 'remove')
       expectPermissionAllowed(result)
     })
 
@@ -85,14 +85,14 @@ describe('checkRolePermission', () => {
       expectPermissionAllowed(result)
     })
 
-    it('should deny batch-add-blocks operation for read role', () => {
-      const result = checkRolePermission('read', 'batch-add-blocks')
+    it('should deny add operation for read role', () => {
+      const result = checkRolePermission('read', 'add')
       expectPermissionDenied(result, 'read')
-      expectPermissionDenied(result, 'batch-add-blocks')
+      expectPermissionDenied(result, 'add')
     })
 
-    it('should deny batch-remove-blocks operation for read role', () => {
-      const result = checkRolePermission('read', 'batch-remove-blocks')
+    it('should deny remove operation for read role', () => {
+      const result = checkRolePermission('read', 'remove')
       expectPermissionDenied(result, 'read')
     })
 
@@ -101,9 +101,9 @@ describe('checkRolePermission', () => {
       expectPermissionDenied(result, 'read')
     })
 
-    it('should allow batch-update-positions operation for read role', () => {
-      const result = checkRolePermission('read', 'batch-update-positions')
-      expectPermissionAllowed(result)
+    it('should deny duplicate operation for read role', () => {
+      const result = checkRolePermission('read', 'duplicate')
+      expectPermissionDenied(result, 'read')
     })
 
     it('should deny replace-state operation for read role', () => {
@@ -117,8 +117,7 @@ describe('checkRolePermission', () => {
     })
 
     it('should deny all write operations for read role', () => {
-      const readAllowedOps = ['update-position', 'batch-update-positions']
-      const writeOperations = SOCKET_OPERATIONS.filter((op) => !readAllowedOps.includes(op))
+      const writeOperations = SOCKET_OPERATIONS.filter((op) => op !== 'update-position')
 
       for (const operation of writeOperations) {
         const result = checkRolePermission('read', operation)
@@ -139,7 +138,7 @@ describe('checkRolePermission', () => {
     })
 
     it('should deny operations for empty role', () => {
-      const result = checkRolePermission('', 'batch-add-blocks')
+      const result = checkRolePermission('', 'add')
       expectPermissionDenied(result)
     })
   })
@@ -187,39 +186,35 @@ describe('checkRolePermission', () => {
 
     it('should verify read has minimal permissions', () => {
       const readOps = ROLE_ALLOWED_OPERATIONS.read
-      expect(readOps).toHaveLength(2)
+      expect(readOps).toHaveLength(1)
       expect(readOps).toContain('update-position')
-      expect(readOps).toContain('batch-update-positions')
     })
   })
 
   describe('specific operations', () => {
     const testCases = [
-      { operation: 'batch-add-blocks', adminAllowed: true, writeAllowed: true, readAllowed: false },
-      {
-        operation: 'batch-remove-blocks',
-        adminAllowed: true,
-        writeAllowed: true,
-        readAllowed: false,
-      },
+      { operation: 'add', adminAllowed: true, writeAllowed: true, readAllowed: false },
+      { operation: 'remove', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'update', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'update-position', adminAllowed: true, writeAllowed: true, readAllowed: true },
       { operation: 'update-name', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'toggle-enabled', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'update-parent', adminAllowed: true, writeAllowed: true, readAllowed: false },
+      { operation: 'update-wide', adminAllowed: true, writeAllowed: true, readAllowed: false },
       {
-        operation: 'update-canonical-mode',
+        operation: 'update-advanced-mode',
+        adminAllowed: true,
+        writeAllowed: true,
+        readAllowed: false,
+      },
+      {
+        operation: 'update-trigger-mode',
         adminAllowed: true,
         writeAllowed: true,
         readAllowed: false,
       },
       { operation: 'toggle-handles', adminAllowed: true, writeAllowed: true, readAllowed: false },
-      {
-        operation: 'batch-update-positions',
-        adminAllowed: true,
-        writeAllowed: true,
-        readAllowed: true,
-      },
+      { operation: 'duplicate', adminAllowed: true, writeAllowed: true, readAllowed: false },
       { operation: 'replace-state', adminAllowed: true, writeAllowed: true, readAllowed: false },
     ]
 
@@ -243,13 +238,13 @@ describe('checkRolePermission', () => {
 
   describe('reason messages', () => {
     it('should include role in denial reason', () => {
-      const result = checkRolePermission('read', 'batch-add-blocks')
+      const result = checkRolePermission('read', 'add')
       expect(result.reason).toContain("'read'")
     })
 
     it('should include operation in denial reason', () => {
-      const result = checkRolePermission('read', 'batch-add-blocks')
-      expect(result.reason).toContain("'batch-add-blocks'")
+      const result = checkRolePermission('read', 'add')
+      expect(result.reason).toContain("'add'")
     })
 
     it('should have descriptive denial message format', () => {

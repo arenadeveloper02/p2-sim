@@ -112,8 +112,8 @@ export const listSessionRecordingsTool: ToolConfig<
       output: {
         recordings: data.results || [],
         count: data.count || 0,
-        next: data.next ?? null,
-        previous: data.previous ?? null,
+        next: data.next,
+        previous: data.previous,
       },
     }
   },

@@ -16,7 +16,11 @@ export interface MailchimpGetInterestResponse {
   success: boolean
   output: {
     interest: MailchimpInterest
-    interest_id: string
+    metadata: {
+      operation: 'get_interest'
+      interestId: string
+    }
+    success: boolean
   }
 }
 
@@ -82,19 +86,24 @@ export const mailchimpGetInterestTool: ToolConfig<
       success: true,
       output: {
         interest: data,
-        interest_id: data.id,
+        metadata: {
+          operation: 'get_interest' as const,
+          interestId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the interest was successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Interest data',
+      description: 'Interest data and metadata',
       properties: {
-        interest: { type: 'json', description: 'Interest object' },
-        interest_id: { type: 'string', description: 'The unique ID of the interest' },
+        interest: { type: 'object', description: 'Interest object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

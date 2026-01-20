@@ -119,22 +119,22 @@ export const listPropertyDefinitionsTool: ToolConfig<
 
     return {
       count: data.count,
-      next: data.next ?? null,
-      previous: data.previous ?? null,
+      next: data.next,
+      previous: data.previous,
       results: data.results.map((property: any) => ({
         id: property.id,
         name: property.name,
         description: property.description || '',
         tags: property.tags || [],
         is_numerical: property.is_numerical || false,
-        is_seen_on_filtered_events: property.is_seen_on_filtered_events ?? null,
+        is_seen_on_filtered_events: property.is_seen_on_filtered_events,
         property_type: property.property_type,
         type: property.type,
-        volume_30_day: property.volume_30_day ?? null,
-        query_usage_30_day: property.query_usage_30_day ?? null,
+        volume_30_day: property.volume_30_day,
+        query_usage_30_day: property.query_usage_30_day,
         created_at: property.created_at,
         updated_at: property.updated_at,
-        updated_by: property.updated_by ?? null,
+        updated_by: property.updated_by,
       })),
     }
   },
@@ -147,12 +147,10 @@ export const listPropertyDefinitionsTool: ToolConfig<
     next: {
       type: 'string',
       description: 'URL for the next page of results',
-      optional: true,
     },
     previous: {
       type: 'string',
       description: 'URL for the previous page of results',
-      optional: true,
     },
     results: {
       type: 'array',
@@ -168,19 +166,16 @@ export const listPropertyDefinitionsTool: ToolConfig<
           is_seen_on_filtered_events: {
             type: 'boolean',
             description: 'Whether the property is seen on filtered events',
-            optional: true,
           },
           property_type: { type: 'string', description: 'The data type of the property' },
           type: { type: 'string', description: 'Property type: event, person, or group' },
           volume_30_day: {
             type: 'number',
             description: 'Number of times property was seen in the last 30 days',
-            optional: true,
           },
           query_usage_30_day: {
             type: 'number',
             description: 'Number of times this property was queried in the last 30 days',
-            optional: true,
           },
           created_at: {
             type: 'string',
@@ -190,11 +185,7 @@ export const listPropertyDefinitionsTool: ToolConfig<
             type: 'string',
             description: 'ISO timestamp when the property was updated',
           },
-          updated_by: {
-            type: 'object',
-            description: 'User who last updated the property',
-            optional: true,
-          },
+          updated_by: { type: 'object', description: 'User who last updated the property' },
         },
       },
     },

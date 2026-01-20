@@ -35,13 +35,11 @@ export const spotifyGetShowsTool: ToolConfig<SpotifyGetShowsParams, SpotifyGetSh
     showIds: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Comma-separated show IDs (max 50)',
     },
     market: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
       description: 'ISO country code for market',
     },
   },

@@ -26,7 +26,6 @@ export const kalshiGetSeriesByTickerTool: ToolConfig<
     seriesTicker: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Series ticker',
     },
   },

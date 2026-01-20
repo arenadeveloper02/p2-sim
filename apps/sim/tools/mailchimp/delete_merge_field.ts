@@ -12,6 +12,13 @@ export interface MailchimpDeleteMergeFieldParams {
 
 export interface MailchimpDeleteMergeFieldResponse {
   success: boolean
+  output: {
+    metadata: {
+      operation: 'delete_merge_field'
+      mergeId: string
+    }
+    success: boolean
+  }
 }
 
 export const mailchimpDeleteMergeFieldTool: ToolConfig<
@@ -62,10 +69,25 @@ export const mailchimpDeleteMergeFieldTool: ToolConfig<
 
     return {
       success: true,
+      output: {
+        metadata: {
+          operation: 'delete_merge_field' as const,
+          mergeId: '',
+        },
+        success: true,
+      },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the merge field was successfully deleted' },
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Deletion confirmation',
+      properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
+      },
+    },
   },
 }

@@ -143,18 +143,18 @@ export const updatePropertyDefinitionTool: ToolConfig<
       description: data.description || '',
       tags: data.tags || [],
       is_numerical: data.is_numerical || false,
-      is_seen_on_filtered_events: data.is_seen_on_filtered_events ?? null,
+      is_seen_on_filtered_events: data.is_seen_on_filtered_events,
       property_type: data.property_type,
       type: data.type,
-      volume_30_day: data.volume_30_day ?? null,
-      query_usage_30_day: data.query_usage_30_day ?? null,
+      volume_30_day: data.volume_30_day,
+      query_usage_30_day: data.query_usage_30_day,
       created_at: data.created_at,
       updated_at: data.updated_at,
-      updated_by: data.updated_by ?? null,
+      updated_by: data.updated_by,
       verified: data.verified || false,
-      verified_at: data.verified_at ?? null,
-      verified_by: data.verified_by ?? null,
-      example: data.example ?? null,
+      verified_at: data.verified_at,
+      verified_by: data.verified_by,
+      example: data.example,
     }
   },
 
@@ -182,7 +182,6 @@ export const updatePropertyDefinitionTool: ToolConfig<
     is_seen_on_filtered_events: {
       type: 'boolean',
       description: 'Whether the property is seen on filtered events',
-      optional: true,
     },
     property_type: {
       type: 'string',
@@ -195,12 +194,10 @@ export const updatePropertyDefinitionTool: ToolConfig<
     volume_30_day: {
       type: 'number',
       description: 'Number of times property was seen in the last 30 days',
-      optional: true,
     },
     query_usage_30_day: {
       type: 'number',
       description: 'Number of times this property was queried in the last 30 days',
-      optional: true,
     },
     created_at: {
       type: 'string',
@@ -213,7 +210,6 @@ export const updatePropertyDefinitionTool: ToolConfig<
     updated_by: {
       type: 'object',
       description: 'User who last updated the property',
-      optional: true,
     },
     verified: {
       type: 'boolean',
@@ -222,17 +218,14 @@ export const updatePropertyDefinitionTool: ToolConfig<
     verified_at: {
       type: 'string',
       description: 'ISO timestamp when the property was verified',
-      optional: true,
     },
     verified_by: {
       type: 'string',
       description: 'User who verified the property',
-      optional: true,
     },
     example: {
       type: 'string',
       description: 'Example value for the property',
-      optional: true,
     },
   },
 }

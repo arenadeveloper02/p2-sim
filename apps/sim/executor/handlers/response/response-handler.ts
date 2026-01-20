@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
+import type { BlockOutput } from '@/blocks/types'
 import { BlockType, HTTP, REFERENCE } from '@/executor/constants'
-import type { BlockHandler, ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
+import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 
 const logger = createLogger('ResponseBlockHandler')
@@ -22,7 +23,7 @@ export class ResponseBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     block: SerializedBlock,
     inputs: Record<string, any>
-  ): Promise<NormalizedBlockOutput> {
+  ): Promise<BlockOutput> {
     logger.info(`Executing response block: ${block.id}`)
 
     try {
@@ -37,19 +38,23 @@ export class ResponseBlockHandler implements BlockHandler {
       })
 
       return {
-        data: responseData,
-        status: statusCode,
-        headers: responseHeaders,
+        response: {
+          data: responseData,
+          status: statusCode,
+          headers: responseHeaders,
+        },
       }
     } catch (error: any) {
       logger.error('Response block execution failed:', error)
       return {
-        data: {
-          error: 'Response block execution failed',
-          message: error.message || 'Unknown error',
+        response: {
+          data: {
+            error: 'Response block execution failed',
+            message: error.message || 'Unknown error',
+          },
+          status: HTTP.STATUS.SERVER_ERROR,
+          headers: { 'Content-Type': HTTP.CONTENT_TYPE.JSON },
         },
-        status: HTTP.STATUS.SERVER_ERROR,
-        headers: { 'Content-Type': HTTP.CONTENT_TYPE.JSON },
       }
     }
   }

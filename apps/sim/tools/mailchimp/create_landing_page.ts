@@ -15,7 +15,10 @@ export interface MailchimpCreateLandingPageResponse {
   success: boolean
   output: {
     landingPage: MailchimpLandingPage
-    page_id: string
+    metadata: {
+      operation: 'create_landing_page'
+      pageId: string
+    }
     success: boolean
   }
 }
@@ -80,7 +83,10 @@ export const mailchimpCreateLandingPageTool: ToolConfig<
       success: true,
       output: {
         landingPage: data,
-        page_id: data.id,
+        metadata: {
+          operation: 'create_landing_page' as const,
+          pageId: data.id,
+        },
         success: true,
       },
     }
@@ -92,8 +98,8 @@ export const mailchimpCreateLandingPageTool: ToolConfig<
       type: 'object',
       description: 'Created landing page data',
       properties: {
-        landingPage: { type: 'json', description: 'Created landing page object' },
-        page_id: { type: 'string', description: 'Created landing page ID' },
+        landingPage: { type: 'object', description: 'Created landing page object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

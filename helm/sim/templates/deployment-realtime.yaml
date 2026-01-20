@@ -62,18 +62,15 @@ spec:
             {{- with .Values.extraEnvVars }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.postgresql.enabled }}
           envFrom:
-            # App secrets (authentication keys shared with main app)
             - secretRef:
-                name: {{ include "sim.appSecretName" . }}
-            # Database secrets
-            {{- if .Values.postgresql.enabled }}
+                name: {{ include "sim.fullname" . }}-postgresql-secret
+          {{- else if .Values.externalDatabase.enabled }}
+          envFrom:
             - secretRef:
-                name: {{ include "sim.postgresqlSecretName" . }}
-            {{- else if .Values.externalDatabase.enabled }}
-            - secretRef:
-                name: {{ include "sim.externalDbSecretName" . }}
-            {{- end }}
+                name: {{ include "sim.fullname" . }}-external-db-secret
+          {{- end }}
           {{- if .Values.realtime.livenessProbe }}
           livenessProbe:
             {{- toYaml .Values.realtime.livenessProbe | nindent 12 }}

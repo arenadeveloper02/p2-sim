@@ -24,7 +24,10 @@ export interface ZendeskCreateTicketResponse {
   success: boolean
   output: {
     ticket: any
-    ticket_id: number
+    metadata: {
+      operation: 'create_ticket'
+      ticketId: string
+    }
     success: boolean
   }
 }
@@ -170,7 +173,10 @@ export const zendeskCreateTicketTool: ToolConfig<
       success: true,
       output: {
         ticket: data.ticket,
-        ticket_id: data.ticket?.id,
+        metadata: {
+          operation: 'create_ticket' as const,
+          ticketId: data.ticket?.id,
+        },
         success: true,
       },
     }
@@ -178,6 +184,6 @@ export const zendeskCreateTicketTool: ToolConfig<
 
   outputs: {
     ticket: { type: 'object', description: 'Created ticket object' },
-    ticket_id: { type: 'number', description: 'The created ticket ID' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

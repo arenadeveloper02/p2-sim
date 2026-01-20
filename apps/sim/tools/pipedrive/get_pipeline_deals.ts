@@ -89,8 +89,9 @@ export const pipedriveGetPipelineDealsTool: ToolConfig<
       output: {
         deals,
         metadata: {
-          pipeline_id: params?.pipeline_id || '',
-          total_items: deals.length,
+          operation: 'get_pipeline_deals' as const,
+          pipelineId: params?.pipeline_id || '',
+          totalItems: deals.length,
         },
         success: true,
       },
@@ -99,10 +100,7 @@ export const pipedriveGetPipelineDealsTool: ToolConfig<
 
   outputs: {
     deals: { type: 'array', description: 'Array of deal objects from the pipeline' },
-    metadata: {
-      type: 'object',
-      description: 'Pipeline and pagination metadata',
-    },
+    metadata: { type: 'object', description: 'Operation metadata including pipeline ID' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

@@ -16,8 +16,12 @@ export interface MailchimpGetInterestsResponse {
   success: boolean
   output: {
     interests: any[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_interests'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -96,24 +100,26 @@ export const mailchimpGetInterestsTool: ToolConfig<
       success: true,
       output: {
         interests,
-        total_items: data.total_items || interests.length,
-        total_returned: interests.length,
+        totalItems: data.total_items || interests.length,
+        metadata: {
+          operation: 'get_interests' as const,
+          totalReturned: interests.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the interests were successfully retrieved' },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Interests data',
+      description: 'Interests data and metadata',
       properties: {
-        interests: { type: 'json', description: 'Array of interest objects' },
-        total_items: { type: 'number', description: 'Total number of interests' },
-        total_returned: {
-          type: 'number',
-          description: 'Number of interests returned in this response',
-        },
+        interests: { type: 'array', description: 'Array of interest objects' },
+        totalItems: { type: 'number', description: 'Total number of interests' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

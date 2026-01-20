@@ -15,7 +15,6 @@ export const StartTriggerBlock: BlockConfig = {
   `,
   category: 'triggers',
   bgColor: '#34B5FF',
-  docsLink: 'https://docs.sim.ai/triggers/start',
   icon: StartIcon,
   hideFromToolbar: false,
   subBlocks: [

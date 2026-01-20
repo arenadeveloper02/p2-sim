@@ -12,13 +12,23 @@ import {
   createSession,
   createWorkflowRecord,
   createWorkspaceRecord,
-  databaseMock,
   expectWorkflowAccessDenied,
   expectWorkflowAccessGranted,
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@sim/db', () => databaseMock)
+// Mock the database
+vi.mock('@sim/db', () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(),
+        })),
+      })),
+    })),
+  },
+}))
 
 // Mock the auth module
 vi.mock('@/lib/auth', () => ({

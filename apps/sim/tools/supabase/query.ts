@@ -27,12 +27,6 @@ export const queryTool: ToolConfig<SupabaseQueryParams, SupabaseQueryResponse> =
       description:
         'Database schema to query from (default: public). Use this to access tables in other schemas.',
     },
-    select: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Columns to return (comma-separated). Defaults to * (all columns)',
-    },
     filter: {
       type: 'string',
       required: false,
@@ -62,8 +56,7 @@ export const queryTool: ToolConfig<SupabaseQueryParams, SupabaseQueryResponse> =
   request: {
     url: (params) => {
       // Construct the URL for the Supabase REST API
-      const selectColumns = params.select?.trim() || '*'
-      let url = `https://${params.projectId}.supabase.co/rest/v1/${params.table}?select=${encodeURIComponent(selectColumns)}`
+      let url = `https://${params.projectId}.supabase.co/rest/v1/${params.table}?select=*`
 
       // Add filters if provided - using PostgREST syntax
       if (params.filter?.trim()) {

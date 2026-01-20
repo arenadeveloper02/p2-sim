@@ -4,7 +4,6 @@ import { createLogger } from '@sim/logger'
 import { and, count, eq } from 'drizzle-orm'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { getEffectiveSeats } from '@/lib/billing/subscriptions/utils'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 
 const logger = createLogger('SeatManagement')
@@ -35,20 +34,7 @@ export async function validateSeatAvailability(
   additionalSeats = 1
 ): Promise<SeatValidationResult> {
   try {
-    if (!isBillingEnabled) {
-      const memberCount = await db
-        .select({ count: count() })
-        .from(member)
-        .where(eq(member.organizationId, organizationId))
-      const currentSeats = memberCount[0]?.count || 0
-      return {
-        canInvite: true,
-        currentSeats,
-        maxSeats: Number.MAX_SAFE_INTEGER,
-        availableSeats: Number.MAX_SAFE_INTEGER,
-      }
-    }
-
+    // Get organization subscription directly (referenceId = organizationId)
     const subscription = await getOrganizationSubscription(organizationId)
 
     if (!subscription) {

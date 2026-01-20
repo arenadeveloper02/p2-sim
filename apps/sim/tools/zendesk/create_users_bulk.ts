@@ -14,8 +14,11 @@ export interface ZendeskCreateUsersBulkParams {
 export interface ZendeskCreateUsersBulkResponse {
   success: boolean
   output: {
-    job_status: any
-    job_id: string
+    jobStatus: any
+    metadata: {
+      operation: 'create_users_bulk'
+      jobId: string
+    }
     success: boolean
   }
 }
@@ -89,15 +92,18 @@ export const zendeskCreateUsersBulkTool: ToolConfig<
     return {
       success: true,
       output: {
-        job_status: data.job_status,
-        job_id: data.job_status?.id,
+        jobStatus: data.job_status,
+        metadata: {
+          operation: 'create_users_bulk' as const,
+          jobId: data.job_status?.id,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    job_status: { type: 'object', description: 'Job status object' },
-    job_id: { type: 'string', description: 'The bulk operation job ID' },
+    jobStatus: { type: 'object', description: 'Job status object' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

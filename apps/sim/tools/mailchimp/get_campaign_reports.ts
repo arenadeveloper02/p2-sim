@@ -14,8 +14,12 @@ export interface MailchimpGetCampaignReportsResponse {
   success: boolean
   output: {
     reports: MailchimpCampaignReport[]
-    total_items: number
-    total_returned: number
+    totalItems: number
+    metadata: {
+      operation: 'get_campaign_reports'
+      totalReturned: number
+    }
+    success: boolean
   }
 }
 
@@ -79,27 +83,26 @@ export const mailchimpGetCampaignReportsTool: ToolConfig<
       success: true,
       output: {
         reports,
-        total_items: data.total_items || reports.length,
-        total_returned: reports.length,
+        totalItems: data.total_items || reports.length,
+        metadata: {
+          operation: 'get_campaign_reports' as const,
+          totalReturned: reports.length,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the campaign reports were successfully retrieved',
-    },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Campaign reports data',
+      description: 'Campaign reports data and metadata',
       properties: {
-        reports: { type: 'json', description: 'Array of campaign report objects' },
-        total_items: { type: 'number', description: 'Total number of reports' },
-        total_returned: {
-          type: 'number',
-          description: 'Number of reports returned in this response',
-        },
+        reports: { type: 'array', description: 'Array of campaign report objects' },
+        totalItems: { type: 'number', description: 'Total number of reports' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

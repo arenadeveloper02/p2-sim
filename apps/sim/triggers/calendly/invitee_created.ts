@@ -48,18 +48,6 @@ export const calendlyInviteeCreatedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'calendly_invitee_created',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'calendly_invitee_created',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -77,6 +65,18 @@ export const calendlyInviteeCreatedTrigger: TriggerConfig = {
         )
         .join(''),
       mode: 'trigger',
+      condition: {
+        field: 'selectedTriggerId',
+        value: 'calendly_invitee_created',
+      },
+    },
+    {
+      id: 'triggerSave',
+      title: '',
+      type: 'trigger-save',
+      hideFromPreview: true,
+      mode: 'trigger',
+      triggerId: 'calendly_invitee_created',
       condition: {
         field: 'selectedTriggerId',
         value: 'calendly_invitee_created',

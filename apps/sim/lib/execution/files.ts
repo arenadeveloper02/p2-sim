@@ -112,10 +112,7 @@ export async function processExecutionFiles(
 type ValidatedInputFormatField = Required<Pick<InputFormatField, 'name' | 'type'>>
 
 function extractInputFormatFromBlock(block: SerializedBlock): ValidatedInputFormatField[] {
-  const metadata = block.metadata as { subBlocks?: Record<string, { value?: unknown }> } | undefined
-  const subBlocksValue = metadata?.subBlocks?.inputFormat?.value
-  const legacyValue = block.config?.params?.inputFormat
-  const inputFormatValue = subBlocksValue ?? legacyValue
+  const inputFormatValue = block.config?.params?.inputFormat
 
   if (!Array.isArray(inputFormatValue) || inputFormatValue.length === 0) {
     return []

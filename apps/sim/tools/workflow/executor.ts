@@ -33,23 +33,11 @@ export const workflowExecutorTool: ToolConfig<
     url: (params: WorkflowExecutorParams) => `/api/workflows/${params.workflowId}/execute`,
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params: WorkflowExecutorParams) => {
-      let inputData = params.inputMapping || {}
-      if (typeof inputData === 'string') {
-        try {
-          inputData = JSON.parse(inputData)
-        } catch {
-          inputData = {}
-        }
-      }
-      // Use draft state for manual runs (not deployed), deployed state for deployed runs
-      const isDeployedContext = params._context?.isDeployedContext
-      return {
-        input: inputData,
-        triggerType: 'api',
-        useDraftState: !isDeployedContext,
-      }
-    },
+    body: (params: WorkflowExecutorParams) => ({
+      input: params.inputMapping || {},
+      triggerType: 'api',
+      useDraftState: false,
+    }),
   },
   transformResponse: async (response: Response) => {
     const data = await response.json()

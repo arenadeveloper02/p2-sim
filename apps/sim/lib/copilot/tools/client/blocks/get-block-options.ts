@@ -10,7 +10,6 @@ import {
   GetBlockOptionsInput,
   GetBlockOptionsResult,
 } from '@/lib/copilot/tools/shared/schemas'
-import { getBlock } from '@/blocks/registry'
 
 interface GetBlockOptionsArgs {
   blockId: string
@@ -25,41 +24,34 @@ export class GetBlockOptionsClientTool extends BaseClientTool {
 
   static readonly metadata: BaseClientToolMetadata = {
     displayNames: {
-      [ClientToolCallState.generating]: { text: 'Getting block operations', icon: Loader2 },
-      [ClientToolCallState.pending]: { text: 'Getting block operations', icon: Loader2 },
-      [ClientToolCallState.executing]: { text: 'Getting block operations', icon: Loader2 },
-      [ClientToolCallState.success]: { text: 'Retrieved block operations', icon: ListFilter },
-      [ClientToolCallState.error]: { text: 'Failed to get block operations', icon: XCircle },
-      [ClientToolCallState.aborted]: { text: 'Aborted getting block operations', icon: XCircle },
+      [ClientToolCallState.generating]: { text: 'Getting block options', icon: Loader2 },
+      [ClientToolCallState.pending]: { text: 'Getting block options', icon: Loader2 },
+      [ClientToolCallState.executing]: { text: 'Getting block options', icon: Loader2 },
+      [ClientToolCallState.success]: { text: 'Got block options', icon: ListFilter },
+      [ClientToolCallState.error]: { text: 'Failed to get block options', icon: XCircle },
+      [ClientToolCallState.aborted]: { text: 'Aborted getting block options', icon: XCircle },
       [ClientToolCallState.rejected]: {
-        text: 'Skipped getting block operations',
+        text: 'Skipped getting block options',
         icon: MinusCircle,
       },
     },
     getDynamicText: (params, state) => {
-      const blockId =
-        (params as any)?.blockId ||
-        (params as any)?.blockType ||
-        (params as any)?.block_id ||
-        (params as any)?.block_type
-      if (typeof blockId === 'string') {
-        // Look up the block config to get the human-readable name
-        const blockConfig = getBlock(blockId)
-        const blockName = (blockConfig?.name ?? blockId.replace(/_/g, ' ')).toLowerCase()
+      if (params?.blockId && typeof params.blockId === 'string') {
+        const blockName = params.blockId.replace(/_/g, ' ')
 
         switch (state) {
           case ClientToolCallState.success:
-            return `Retrieved ${blockName} operations`
+            return `Got ${blockName} options`
           case ClientToolCallState.executing:
           case ClientToolCallState.generating:
           case ClientToolCallState.pending:
-            return `Retrieving ${blockName} operations`
+            return `Getting ${blockName} options`
           case ClientToolCallState.error:
-            return `Failed to retrieve ${blockName} operations`
+            return `Failed to get ${blockName} options`
           case ClientToolCallState.aborted:
-            return `Aborted retrieving ${blockName} operations`
+            return `Aborted getting ${blockName} options`
           case ClientToolCallState.rejected:
-            return `Skipped retrieving ${blockName} operations`
+            return `Skipped getting ${blockName} options`
         }
       }
       return undefined
@@ -71,20 +63,7 @@ export class GetBlockOptionsClientTool extends BaseClientTool {
     try {
       this.setState(ClientToolCallState.executing)
 
-      // Handle both camelCase and snake_case parameter names, plus blockType as an alias
-      const normalizedArgs = args
-        ? {
-            blockId:
-              args.blockId ||
-              (args as any).block_id ||
-              (args as any).blockType ||
-              (args as any).block_type,
-          }
-        : {}
-
-      logger.info('execute called', { originalArgs: args, normalizedArgs })
-
-      const { blockId } = GetBlockOptionsInput.parse(normalizedArgs)
+      const { blockId } = GetBlockOptionsInput.parse(args || {})
 
       const res = await fetch('/api/copilot/execute-copilot-server-tool', {
         method: 'POST',

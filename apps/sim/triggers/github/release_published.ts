@@ -76,18 +76,6 @@ export const githubReleasePublishedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'github_release_published',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'github_release_published',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -113,13 +101,21 @@ export const githubReleasePublishedTrigger: TriggerConfig = {
         value: 'github_release_published',
       },
     },
+    {
+      id: 'triggerSave',
+      title: '',
+      type: 'trigger-save',
+      hideFromPreview: true,
+      mode: 'trigger',
+      triggerId: 'github_release_published',
+      condition: {
+        field: 'selectedTriggerId',
+        value: 'github_release_published',
+      },
+    },
   ],
 
   outputs: {
-    event_type: {
-      type: 'string',
-      description: 'GitHub event type from X-GitHub-Event header (e.g., release)',
-    },
     action: {
       type: 'string',
       description:

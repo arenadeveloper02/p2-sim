@@ -60,21 +60,24 @@ export const salesforceListReportTypesTool: ToolConfig<
       success: true,
       output: {
         reportTypes: data,
-        totalReturned: Array.isArray(data) ? data.length : 0,
+        metadata: {
+          operation: 'list_report_types',
+          totalReturned: Array.isArray(data) ? data.length : 0,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
+    success: { type: 'boolean', description: 'Success status' },
     output: {
       type: 'object',
       description: 'Report types data',
       properties: {
         reportTypes: { type: 'array', description: 'Array of report type objects' },
-        totalReturned: { type: 'number', description: 'Number of report types returned' },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success status' },
       },
     },
   },

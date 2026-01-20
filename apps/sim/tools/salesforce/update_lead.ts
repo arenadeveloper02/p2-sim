@@ -98,19 +98,13 @@ export const salesforceUpdateLeadTool: ToolConfig<
       output: {
         id: params?.leadId || '',
         updated: true,
+        metadata: { operation: 'update_lead' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Updated lead data',
-      properties: {
-        id: { type: 'string', description: 'Updated lead ID' },
-        updated: { type: 'boolean', description: 'Whether lead was updated' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Updated lead' },
   },
 }

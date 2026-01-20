@@ -38,6 +38,10 @@ export const stripeDeleteCustomerTool: ToolConfig<DeleteCustomerParams, Customer
       output: {
         deleted: data.deleted,
         id: data.id,
+        metadata: {
+          id: data.id,
+          deleted: data.deleted,
+        },
       },
     }
   },
@@ -50,6 +54,10 @@ export const stripeDeleteCustomerTool: ToolConfig<DeleteCustomerParams, Customer
     id: {
       type: 'string',
       description: 'The ID of the deleted customer',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Deletion metadata',
     },
   },
 }

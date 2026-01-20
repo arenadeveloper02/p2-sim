@@ -26,7 +26,6 @@ export const kalshiGetOrderbookTool: ToolConfig<
     ticker: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Market ticker (e.g., KXBTC-24DEC31)',
     },
   },

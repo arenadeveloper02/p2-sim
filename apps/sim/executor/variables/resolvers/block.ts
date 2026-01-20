@@ -9,76 +9,14 @@ import {
   type ResolutionContext,
   type Resolver,
 } from '@/executor/variables/resolvers/reference'
-import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
-import { getTool } from '@/tools/utils'
-
-function isPathInOutputSchema(
-  outputs: Record<string, any> | undefined,
-  pathParts: string[]
-): boolean {
-  if (!outputs || pathParts.length === 0) {
-    return true
-  }
-
-  let current: any = outputs
-  for (let i = 0; i < pathParts.length; i++) {
-    const part = pathParts[i]
-
-    if (/^\d+$/.test(part)) {
-      continue
-    }
-
-    if (current === null || current === undefined) {
-      return false
-    }
-
-    if (part in current) {
-      current = current[part]
-      continue
-    }
-
-    if (current.properties && part in current.properties) {
-      current = current.properties[part]
-      continue
-    }
-
-    if (current.type === 'array' && current.items) {
-      if (current.items.properties && part in current.items.properties) {
-        current = current.items.properties[part]
-        continue
-      }
-      if (part in current.items) {
-        current = current.items[part]
-        continue
-      }
-    }
-
-    if ('type' in current && typeof current.type === 'string') {
-      if (!current.properties && !current.items) {
-        return false
-      }
-    }
-
-    return false
-  }
-
-  return true
-}
-
-function getSchemaFieldNames(outputs: Record<string, any> | undefined): string[] {
-  if (!outputs) return []
-  return Object.keys(outputs)
-}
+import type { SerializedWorkflow } from '@/serializer/types'
 
 export class BlockResolver implements Resolver {
   private nameToBlockId: Map<string, string>
-  private blockById: Map<string, SerializedBlock>
 
   constructor(private workflow: SerializedWorkflow) {
     this.nameToBlockId = new Map()
-    this.blockById = new Map()
     for (const block of workflow.blocks) {
-      this.blockById.set(block.id, block)
       if (block.metadata?.name) {
         this.nameToBlockId.set(normalizeName(block.metadata.name), block.id)
       }
@@ -94,7 +32,7 @@ export class BlockResolver implements Resolver {
       return false
     }
     const [type] = parts
-    return !(SPECIAL_REFERENCE_PREFIXES as readonly string[]).includes(type)
+    return !SPECIAL_REFERENCE_PREFIXES.includes(type as any)
   }
 
   resolve(reference: string, context: ResolutionContext): any {
@@ -109,7 +47,6 @@ export class BlockResolver implements Resolver {
       return undefined
     }
 
-    const block = this.blockById.get(blockId)
     const output = this.getBlockOutput(blockId, context)
 
     if (output === undefined) {
@@ -119,68 +56,16 @@ export class BlockResolver implements Resolver {
       return output
     }
 
-    // Try the original path first
-    let result = navigatePath(output, pathParts)
+    const result = navigatePath(output, pathParts)
 
-    // If successful, return it immediately
-    if (result !== undefined) {
-      return result
-    }
-
-    // Response block backwards compatibility:
-    // Old: <responseBlock.response.data> -> New: <responseBlock.data>
-    // Only apply fallback if:
-    // 1. Block type is 'response'
-    // 2. Path starts with 'response.'
-    // 3. Output doesn't have a 'response' key (confirming it's the new format)
-    if (
-      block?.metadata?.id === 'response' &&
-      pathParts[0] === 'response' &&
-      output?.response === undefined
-    ) {
-      const adjustedPathParts = pathParts.slice(1)
-      if (adjustedPathParts.length === 0) {
-        return output
-      }
-      result = navigatePath(output, adjustedPathParts)
-      if (result !== undefined) {
-        return result
-      }
-    }
-
-    // Workflow block backwards compatibility:
-    // Old: <workflowBlock.result.response.data> -> New: <workflowBlock.result.data>
-    // Only apply fallback if:
-    // 1. Block type is 'workflow' or 'workflow_input'
-    // 2. Path starts with 'result.response.'
-    // 3. output.result.response doesn't exist (confirming child used new format)
-    const isWorkflowBlock =
-      block?.metadata?.id === 'workflow' || block?.metadata?.id === 'workflow_input'
-    if (
-      isWorkflowBlock &&
-      pathParts[0] === 'result' &&
-      pathParts[1] === 'response' &&
-      output?.result?.response === undefined
-    ) {
-      const adjustedPathParts = ['result', ...pathParts.slice(2)]
-      result = navigatePath(output, adjustedPathParts)
-      if (result !== undefined) {
-        return result
-      }
-    }
-
-    const toolId = block?.config?.tool
-    const toolConfig = toolId ? getTool(toolId) : undefined
-    const outputSchema = toolConfig?.outputs ?? block?.outputs
-    const schemaFields = getSchemaFieldNames(outputSchema)
-    if (schemaFields.length > 0 && !isPathInOutputSchema(outputSchema, pathParts)) {
+    if (result === undefined) {
+      const availableKeys = output && typeof output === 'object' ? Object.keys(output) : []
       throw new Error(
-        `"${pathParts.join('.')}" doesn't exist on block "${blockName}". ` +
-          `Available fields: ${schemaFields.join(', ')}`
+        `No value found at path "${pathParts.join('.')}" in block "${blockName}". Available fields: ${availableKeys.join(', ')}`
       )
     }
 
-    return undefined
+    return result
   }
 
   private getBlockOutput(blockId: string, context: ResolutionContext): any {

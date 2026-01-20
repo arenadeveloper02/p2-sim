@@ -1,5 +1,8 @@
+import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { buildMailchimpUrl, handleMailchimpError } from './types'
+
+const logger = createLogger('MailchimpUnscheduleCampaign')
 
 export interface MailchimpUnscheduleCampaignParams {
   apiKey: string
@@ -9,6 +12,10 @@ export interface MailchimpUnscheduleCampaignParams {
 export interface MailchimpUnscheduleCampaignResponse {
   success: boolean
   output: {
+    metadata: {
+      operation: 'unschedule_campaign'
+      campaignId: string
+    }
     success: boolean
   }
 }
@@ -56,6 +63,10 @@ export const mailchimpUnscheduleCampaignTool: ToolConfig<
     return {
       success: true,
       output: {
+        metadata: {
+          operation: 'unschedule_campaign' as const,
+          campaignId: '',
+        },
         success: true,
       },
     }
@@ -67,6 +78,7 @@ export const mailchimpUnscheduleCampaignTool: ToolConfig<
       type: 'object',
       description: 'Unschedule confirmation',
       properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

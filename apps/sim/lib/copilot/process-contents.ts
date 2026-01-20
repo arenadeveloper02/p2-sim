@@ -5,7 +5,6 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { escapeRegExp } from '@/executor/constants'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
 import type { ChatContext } from '@/stores/panel/copilot/types'
 
 export type AgentContextType =
@@ -105,11 +104,7 @@ export async function processContextsServer(
         )
       }
       if (ctx.kind === 'blocks' && (ctx as any).blockId) {
-        return await processBlockMetadata(
-          (ctx as any).blockId,
-          ctx.label ? `@${ctx.label}` : '@',
-          userId
-        )
+        return await processBlockMetadata((ctx as any).blockId, ctx.label ? `@${ctx.label}` : '@')
       }
       if (ctx.kind === 'templates' && (ctx as any).templateId) {
         return await processTemplateFromDb(
@@ -360,21 +355,8 @@ async function processKnowledgeFromDb(
   }
 }
 
-async function processBlockMetadata(
-  blockId: string,
-  tag: string,
-  userId?: string
-): Promise<AgentContext | null> {
+async function processBlockMetadata(blockId: string, tag: string): Promise<AgentContext | null> {
   try {
-    if (userId) {
-      const permissionConfig = await getUserPermissionConfig(userId)
-      const allowedIntegrations = permissionConfig?.allowedIntegrations
-      if (allowedIntegrations != null && !allowedIntegrations.includes(blockId)) {
-        logger.debug('Block not allowed by permission group', { blockId, userId })
-        return null
-      }
-    }
-
     // Reuse registry to match get_blocks_metadata tool result
     const { registry: blockRegistry } = await import('@/blocks/registry')
     const { tools: toolsRegistry } = await import('@/tools/registry')

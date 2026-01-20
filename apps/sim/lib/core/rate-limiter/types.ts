@@ -1,8 +1,7 @@
 import { env } from '@/lib/core/config/env'
-import type { CoreTriggerType } from '@/stores/logs/filters/types'
 import type { TokenBucketConfig } from './storage'
 
-export type TriggerType = CoreTriggerType | 'form' | 'api-endpoint'
+export type TriggerType = 'api' | 'webhook' | 'schedule' | 'manual' | 'chat' | 'api-endpoint'
 
 export type RateLimitCounterType = 'sync' | 'async' | 'api-endpoint'
 

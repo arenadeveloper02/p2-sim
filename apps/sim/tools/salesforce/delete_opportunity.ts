@@ -48,19 +48,13 @@ export const salesforceDeleteOpportunityTool: ToolConfig<
       output: {
         id: params?.opportunityId || '',
         deleted: true,
+        metadata: { operation: 'delete_opportunity' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Deleted opportunity data',
-      properties: {
-        id: { type: 'string', description: 'Deleted opportunity ID' },
-        deleted: { type: 'boolean', description: 'Whether opportunity was deleted' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Deleted opportunity' },
   },
 }

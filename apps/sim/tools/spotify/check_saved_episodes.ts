@@ -28,7 +28,6 @@ export const spotifyCheckSavedEpisodesTool: ToolConfig<
     episodeIds: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
       description: 'Comma-separated episode IDs (max 50)',
     },
   },

@@ -1,7 +1,9 @@
 /**
- * MCP Types - for connecting to external MCP servers
+ * Model Context Protocol (MCP) Types
  */
 
+// MCP Transport Types
+// Modern MCP uses Streamable HTTP which handles both HTTP POST and SSE responses
 export type McpTransport = 'streamable-http'
 
 export interface McpServerStatusConfig {
@@ -14,8 +16,12 @@ export interface McpServerConfig {
   name: string
   description?: string
   transport: McpTransport
+
+  // HTTP/SSE transport config
   url?: string
   headers?: Record<string, string>
+
+  // Common config
   timeout?: number
   retries?: number
   enabled?: boolean
@@ -24,29 +30,31 @@ export interface McpServerConfig {
   updatedAt?: string
 }
 
+// Version negotiation support
 export interface McpVersionInfo {
-  supported: string[]
-  preferred: string
+  supported: string[] // List of supported protocol versions
+  preferred: string // Preferred version to use
 }
 
+// Security and Consent Framework
 export interface McpConsentRequest {
   type: 'tool_execution' | 'resource_access' | 'data_sharing'
   context: {
     serverId: string
     serverName: string
-    action: string
-    description?: string
-    dataAccess?: string[]
-    sideEffects?: string[]
+    action: string // Tool name or resource path
+    description?: string // Human-readable description
+    dataAccess?: string[] // Types of data being accessed
+    sideEffects?: string[] // Potential side effects
   }
-  expires?: number
+  expires?: number // Consent expiration timestamp
 }
 
 export interface McpConsentResponse {
   granted: boolean
   expires?: number
-  restrictions?: Record<string, unknown>
-  auditId?: string
+  restrictions?: Record<string, any> // Any access restrictions
+  auditId?: string // For audit trail
 }
 
 export interface McpSecurityPolicy {
@@ -57,20 +65,15 @@ export interface McpSecurityPolicy {
   auditLevel: 'none' | 'basic' | 'detailed'
 }
 
-/**
- * JSON Schema for tool input parameters.
- * Aligns with MCP SDK's Tool.inputSchema structure.
- */
+// MCP Tool Types
 export interface McpToolSchema {
-  type: 'object'
-  properties?: Record<string, unknown>
+  type: string
+  properties?: Record<string, any>
   required?: string[]
+  additionalProperties?: boolean
+  description?: string
 }
 
-/**
- * MCP Tool with server context.
- * Extends the SDK's Tool type with app-specific server tracking.
- */
 export interface McpTool {
   name: string
   description?: string
@@ -81,9 +84,10 @@ export interface McpTool {
 
 export interface McpToolCall {
   name: string
-  arguments: Record<string, unknown>
+  arguments: Record<string, any>
 }
 
+// Standard MCP protocol response format
 export interface McpToolResult {
   content?: Array<{
     type: 'text' | 'image' | 'resource'
@@ -92,9 +96,11 @@ export interface McpToolResult {
     mimeType?: string
   }>
   isError?: boolean
-  [key: string]: unknown
+  // Allow additional fields that some MCP servers return
+  [key: string]: any
 }
 
+// Connection and Error Types
 export interface McpConnectionStatus {
   connected: boolean
   lastConnected?: Date
@@ -105,7 +111,7 @@ export class McpError extends Error {
   constructor(
     message: string,
     public code?: number,
-    public data?: unknown
+    public data?: any
   ) {
     super(message)
     this.name = 'McpError'
@@ -132,7 +138,8 @@ export interface McpServerSummary {
   error?: string
 }
 
-export interface McpApiResponse<T = unknown> {
+// API Response Types
+export interface McpApiResponse<T = any> {
   success: boolean
   data?: T
   error?: string
@@ -142,24 +149,4 @@ export interface McpToolDiscoveryResponse {
   tools: McpTool[]
   totalCount: number
   byServer: Record<string, number>
-}
-
-/**
- * MCP tool reference stored in workflow blocks (for validation).
- * Minimal version used for comparing against discovered tools.
- */
-export interface StoredMcpToolReference {
-  serverId: string
-  serverUrl?: string
-  toolName: string
-  schema?: McpToolSchema
-}
-
-/**
- * Full stored MCP tool with workflow context (for API responses).
- * Extended version that includes which workflow the tool is used in.
- */
-export interface StoredMcpTool extends StoredMcpToolReference {
-  workflowId: string
-  workflowName: string
 }

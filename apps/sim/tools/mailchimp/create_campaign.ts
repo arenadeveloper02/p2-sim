@@ -15,7 +15,10 @@ export interface MailchimpCreateCampaignResponse {
   success: boolean
   output: {
     campaign: MailchimpCampaign
-    campaign_id: string
+    metadata: {
+      operation: 'create_campaign'
+      campaignId: string
+    }
     success: boolean
   }
 }
@@ -100,7 +103,10 @@ export const mailchimpCreateCampaignTool: ToolConfig<
       success: true,
       output: {
         campaign: data,
-        campaign_id: data.id,
+        metadata: {
+          operation: 'create_campaign' as const,
+          campaignId: data.id,
+        },
         success: true,
       },
     }
@@ -112,8 +118,8 @@ export const mailchimpCreateCampaignTool: ToolConfig<
       type: 'object',
       description: 'Created campaign data',
       properties: {
-        campaign: { type: 'json', description: 'Created campaign object' },
-        campaign_id: { type: 'string', description: 'Created campaign ID' },
+        campaign: { type: 'object', description: 'Created campaign object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

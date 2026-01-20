@@ -1,7 +1,7 @@
 import { createLogger, type Logger } from '@sim/logger'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
-import { env } from '@/lib/core/config/env'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { isCustomTool } from '@/executor/constants'
 import {
@@ -31,7 +31,6 @@ import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useCustomToolsStore } from '@/stores/custom-tools/store'
 import { useProvidersStore } from '@/stores/providers/store'
-import { mergeToolParameters } from '@/tools/params'
 
 const logger = createLogger('ProviderUtils')
 
@@ -95,7 +94,6 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   'azure-openai': buildProviderMetadata('azure-openai'),
   openrouter: buildProviderMetadata('openrouter'),
   ollama: buildProviderMetadata('ollama'),
-  bedrock: buildProviderMetadata('bedrock'),
 }
 
 export function updateOllamaProviderModels(models: string[]): void {
@@ -144,9 +142,6 @@ function filterBlacklistedModelsFromProviderMap(
 ): Record<string, ProviderId> {
   const filtered: Record<string, ProviderId> = {}
   for (const [model, providerId] of Object.entries(providerMap)) {
-    if (isProviderBlacklisted(providerId)) {
-      continue
-    }
     if (!isModelBlacklisted(model)) {
       filtered[model] = providerId
     }
@@ -168,39 +163,22 @@ export function getAllModelProviders(): Record<string, ProviderId> {
 
 export function getProviderFromModel(model: string): ProviderId {
   const normalizedModel = model.toLowerCase()
-
-  let providerId: ProviderId | null = null
-
   if (normalizedModel in getAllModelProviders()) {
-    providerId = getAllModelProviders()[normalizedModel]
-  } else {
-    for (const [id, config] of Object.entries(providers)) {
-      if (config.modelPatterns) {
-        for (const pattern of config.modelPatterns) {
-          if (pattern.test(normalizedModel)) {
-            providerId = id as ProviderId
-            break
-          }
+    return getAllModelProviders()[normalizedModel]
+  }
+
+  for (const [providerId, config] of Object.entries(providers)) {
+    if (config.modelPatterns) {
+      for (const pattern of config.modelPatterns) {
+        if (pattern.test(normalizedModel)) {
+          return providerId as ProviderId
         }
       }
-      if (providerId) break
     }
   }
 
-  if (!providerId) {
-    logger.warn(`No provider found for model: ${model}, defaulting to ollama`)
-    providerId = 'ollama'
-  }
-
-  if (isProviderBlacklisted(providerId)) {
-    throw new Error(`Provider "${providerId}" is not available`)
-  }
-
-  if (isModelBlacklisted(normalizedModel)) {
-    throw new Error(`Model "${model}" is not available`)
-  }
-
-  return providerId
+  logger.warn(`No provider found for model: ${model}, defaulting to ollama`)
+  return 'ollama'
 }
 
 export function getProvider(id: string): ProviderMetadata | undefined {
@@ -225,42 +203,35 @@ export function getProviderModels(providerId: ProviderId): string[] {
   return getProviderModelsFromDefinitions(providerId)
 }
 
-function getBlacklistedProviders(): string[] {
-  if (!env.BLACKLISTED_PROVIDERS) return []
-  return env.BLACKLISTED_PROVIDERS.split(',').map((p) => p.trim().toLowerCase())
+interface ModelBlacklist {
+  models: string[]
+  prefixes: string[]
+  envOverride?: string
 }
 
-export function isProviderBlacklisted(providerId: string): boolean {
-  const blacklist = getBlacklistedProviders()
-  return blacklist.includes(providerId.toLowerCase())
-}
-
-/**
- * Get the list of blacklisted models from env var.
- * BLACKLISTED_MODELS supports:
- * - Exact model names: "gpt-4,claude-3-opus"
- * - Prefix patterns with *: "claude-*,gpt-4-*" (matches models starting with that prefix)
- */
-function getBlacklistedModels(): { models: string[]; prefixes: string[] } {
-  if (!env.BLACKLISTED_MODELS) return { models: [], prefixes: [] }
-
-  const entries = env.BLACKLISTED_MODELS.split(',').map((m) => m.trim().toLowerCase())
-  const models = entries.filter((e) => !e.endsWith('*'))
-  const prefixes = entries.filter((e) => e.endsWith('*')).map((e) => e.slice(0, -1))
-
-  return { models, prefixes }
-}
+const MODEL_BLACKLISTS: ModelBlacklist[] = [
+  {
+    models: ['deepseek-chat', 'deepseek-v3', 'deepseek-r1'],
+    prefixes: ['openrouter/deepseek', 'openrouter/tngtech'],
+    envOverride: 'DEEPSEEK_MODELS_ENABLED',
+  },
+]
 
 function isModelBlacklisted(model: string): boolean {
   const lowerModel = model.toLowerCase()
-  const blacklist = getBlacklistedModels()
 
-  if (blacklist.models.includes(lowerModel)) {
-    return true
-  }
+  for (const blacklist of MODEL_BLACKLISTS) {
+    if (blacklist.envOverride && isTruthy(getEnv(blacklist.envOverride))) {
+      continue
+    }
 
-  if (blacklist.prefixes.some((prefix) => lowerModel.startsWith(prefix))) {
-    return true
+    if (blacklist.models.includes(lowerModel)) {
+      return true
+    }
+
+    if (blacklist.prefixes.some((prefix) => lowerModel.startsWith(prefix))) {
+      return true
+    }
   }
 
   return false
@@ -435,28 +406,7 @@ export async function transformBlockTool(
 ): Promise<ProviderToolConfig | null> {
   const { selectedOperation, getAllBlocks, getTool, getToolAsync } = options
 
-  let blockDef = getAllBlocks().find((b: any) => b.type === block.type)
-
-  // Fallback: Direct registry access if getAllBlocks() doesn't include the block
-  if (!blockDef && block.type === 'gmail_v2') {
-    try {
-      const { registry } = require('@/blocks/registry')
-      if (registry?.gmail_v2) {
-        blockDef = registry.gmail_v2
-      }
-    } catch (e) {
-      // If require fails, try import
-      try {
-        const registryModule = await import('@/blocks/registry')
-        if (registryModule?.registry?.gmail_v2) {
-          blockDef = registryModule.registry.gmail_v2
-        }
-      } catch (importError) {
-        // Both failed, will return null below
-      }
-    }
-  }
-
+  const blockDef = getAllBlocks().find((b: any) => b.type === block.type)
   if (!blockDef) {
     logger.warn(`Block definition not found for type: ${block.type}`)
     return null
@@ -666,12 +616,6 @@ export function getApiKey(
     provider === 'vllm' || useProvidersStore.getState().providers.vllm.models.includes(model)
   if (isVllmModel) {
     return userProvidedKey || 'empty'
-  }
-
-  // Bedrock uses its own credentials (bedrockAccessKeyId/bedrockSecretKey), not apiKey
-  const isBedrockModel = provider === 'bedrock' || model.startsWith('bedrock/')
-  if (isBedrockModel) {
-    return 'bedrock-uses-own-credentials'
   }
 
   const isOpenAIModel = provider === 'openai'
@@ -1070,21 +1014,31 @@ export function prepareToolExecution(
   llmArgs: Record<string, any>,
   request: {
     workflowId?: string
-    workspaceId?: string
+    workspaceId?: string // Add workspaceId for MCP tools
     chatId?: string
     userId?: string
     environmentVariables?: Record<string, any>
     workflowVariables?: Record<string, any>
     blockData?: Record<string, any>
     blockNameMapping?: Record<string, string>
-    isDeployedContext?: boolean
   }
 ): {
   toolParams: Record<string, any>
   executionParams: Record<string, any>
 } {
-  // Use centralized merge logic from tools/params
-  const toolParams = mergeToolParameters(tool.params || {}, llmArgs) as Record<string, any>
+  const filteredUserParams: Record<string, any> = {}
+  if (tool.params) {
+    for (const [key, value] of Object.entries(tool.params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        filteredUserParams[key] = value
+      }
+    }
+  }
+
+  const toolParams = {
+    ...llmArgs,
+    ...filteredUserParams,
+  }
 
   const executionParams = {
     ...toolParams,
@@ -1095,9 +1049,6 @@ export function prepareToolExecution(
             ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
             ...(request.chatId ? { chatId: request.chatId } : {}),
             ...(request.userId ? { userId: request.userId } : {}),
-            ...(request.isDeployedContext !== undefined
-              ? { isDeployedContext: request.isDeployedContext }
-              : {}),
           },
         }
       : {}),

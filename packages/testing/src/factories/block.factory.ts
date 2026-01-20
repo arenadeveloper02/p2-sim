@@ -1,18 +1,15 @@
-import type { BlockData, BlockOutput, Position } from '../types'
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { BlockData, BlockOutput, BlockState, Position, SubBlockState } from '../types'
 
 /**
  * Options for creating a mock block.
  * All fields are optional - sensible defaults are provided.
- * Uses `any` for subBlocks to accept any app type without conflicts.
  */
 export interface BlockFactoryOptions {
   id?: string
   type?: string
   name?: string
   position?: Position
-  subBlocks?: Record<string, any>
+  subBlocks?: Record<string, SubBlockState>
   outputs?: Record<string, BlockOutput>
   enabled?: boolean
   horizontalHandles?: boolean
@@ -46,7 +43,7 @@ function generateBlockId(prefix = 'block'): string {
  * const block = createBlock({ type: 'function', parentId: 'loop-1' })
  * ```
  */
-export function createBlock(options: BlockFactoryOptions = {}): any {
+export function createBlock(options: BlockFactoryOptions = {}): BlockState {
   const id = options.id ?? generateBlockId(options.type ?? 'block')
 
   const data: BlockData = options.data ?? {}
@@ -75,7 +72,7 @@ export function createBlock(options: BlockFactoryOptions = {}): any {
 /**
  * Creates a starter block (workflow entry point).
  */
-export function createStarterBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createStarterBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'starter',
@@ -86,7 +83,7 @@ export function createStarterBlock(options: Omit<BlockFactoryOptions, 'type'> = 
 /**
  * Creates an agent block (AI agent execution).
  */
-export function createAgentBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createAgentBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'agent',
@@ -97,7 +94,7 @@ export function createAgentBlock(options: Omit<BlockFactoryOptions, 'type'> = {}
 /**
  * Creates a function block (code execution).
  */
-export function createFunctionBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createFunctionBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'function',
@@ -108,7 +105,7 @@ export function createFunctionBlock(options: Omit<BlockFactoryOptions, 'type'> =
 /**
  * Creates a condition block (branching logic).
  */
-export function createConditionBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createConditionBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'condition',
@@ -124,7 +121,7 @@ export function createLoopBlock(
     loopType?: 'for' | 'forEach' | 'while' | 'doWhile'
     count?: number
   } = {}
-): any {
+): BlockState {
   const data: BlockData = {
     ...options.data,
     loopType: options.loopType ?? 'for',
@@ -148,7 +145,7 @@ export function createParallelBlock(
     parallelType?: 'count' | 'collection'
     count?: number
   } = {}
-): any {
+): BlockState {
   const data: BlockData = {
     ...options.data,
     parallelType: options.parallelType ?? 'count',
@@ -167,7 +164,7 @@ export function createParallelBlock(
 /**
  * Creates a router block (output routing).
  */
-export function createRouterBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createRouterBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'router',
@@ -178,7 +175,7 @@ export function createRouterBlock(options: Omit<BlockFactoryOptions, 'type'> = {
 /**
  * Creates an API block (HTTP requests).
  */
-export function createApiBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createApiBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'api',
@@ -189,7 +186,7 @@ export function createApiBlock(options: Omit<BlockFactoryOptions, 'type'> = {}):
 /**
  * Creates a response block (workflow output).
  */
-export function createResponseBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createResponseBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'response',
@@ -200,7 +197,7 @@ export function createResponseBlock(options: Omit<BlockFactoryOptions, 'type'> =
 /**
  * Creates a webhook trigger block.
  */
-export function createWebhookBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createWebhookBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'webhook',
@@ -211,7 +208,7 @@ export function createWebhookBlock(options: Omit<BlockFactoryOptions, 'type'> = 
 /**
  * Creates a knowledge block (vector search).
  */
-export function createKnowledgeBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): any {
+export function createKnowledgeBlock(options: Omit<BlockFactoryOptions, 'type'> = {}): BlockState {
   return createBlock({
     ...options,
     type: 'knowledge',

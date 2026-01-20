@@ -41,9 +41,7 @@ export interface SlackBaseParams {
 }
 
 export interface SlackMessageParams extends SlackBaseParams {
-  destinationType?: 'channel' | 'dm'
   channel?: string
-  dmUserId?: string
   userId?: string
   text: string
   thread_ts?: string
@@ -58,9 +56,7 @@ export interface SlackCanvasParams extends SlackBaseParams {
 }
 
 export interface SlackMessageReaderParams extends SlackBaseParams {
-  destinationType?: 'channel' | 'dm'
   channel?: string
-  dmUserId?: string
   userId?: string
   limit?: number
   oldest?: string
@@ -112,17 +108,6 @@ export interface SlackListUsersParams extends SlackBaseParams {
 
 export interface SlackGetUserParams extends SlackBaseParams {
   userId: string
-}
-
-export interface SlackGetMessageParams extends SlackBaseParams {
-  channel: string
-  timestamp: string
-}
-
-export interface SlackGetThreadParams extends SlackBaseParams {
-  channel: string
-  threadTs: string
-  limit?: number
 }
 
 export interface SlackSearchAllParams extends SlackBaseParams {
@@ -368,22 +353,6 @@ export interface SlackGetUserResponse extends ToolResponse {
   }
 }
 
-export interface SlackGetMessageResponse extends ToolResponse {
-  output: {
-    message: SlackMessage
-  }
-}
-
-export interface SlackGetThreadResponse extends ToolResponse {
-  output: {
-    parentMessage: SlackMessage
-    replies: SlackMessage[]
-    messages: SlackMessage[]
-    replyCount: number
-    hasMore: boolean
-  }
-}
-
 export interface SlackSearchAllResponse extends ToolResponse {
   output: {
     ok: boolean
@@ -413,6 +382,4 @@ export type SlackResponse =
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
-  | SlackGetMessageResponse
-  | SlackGetThreadResponse
   | SlackSearchAllResponse

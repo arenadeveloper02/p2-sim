@@ -103,26 +103,18 @@ describe('Socket Server Integration Tests', () => {
 
       const operationPromise = new Promise<void>((resolve) => {
         client2.once('workflow-operation', (data) => {
-          expect(data.operation).toBe('batch-add-blocks')
-          expect(data.target).toBe('blocks')
-          expect(data.payload.blocks[0].id).toBe('block-123')
+          expect(data.operation).toBe('add')
+          expect(data.target).toBe('block')
+          expect(data.payload.id).toBe('block-123')
           resolve()
         })
       })
 
       clientSocket.emit('workflow-operation', {
         workflowId,
-        operation: 'batch-add-blocks',
-        target: 'blocks',
-        payload: {
-          blocks: [
-            { id: 'block-123', type: 'action', name: 'Test Block', position: { x: 0, y: 0 } },
-          ],
-          edges: [],
-          loops: {},
-          parallels: {},
-          subBlockValues: {},
-        },
+        operation: 'add',
+        target: 'block',
+        payload: { id: 'block-123', type: 'action', name: 'Test Block' },
         timestamp: Date.now(),
       })
 
@@ -178,17 +170,9 @@ describe('Socket Server Integration Tests', () => {
 
       clients[0].emit('workflow-operation', {
         workflowId,
-        operation: 'batch-add-blocks',
-        target: 'blocks',
-        payload: {
-          blocks: [
-            { id: 'stress-block', type: 'action', name: 'Stress Block', position: { x: 0, y: 0 } },
-          ],
-          edges: [],
-          loops: {},
-          parallels: {},
-          subBlockValues: {},
-        },
+        operation: 'add',
+        target: 'block',
+        payload: { id: 'stress-block', type: 'action' },
         timestamp: Date.now(),
       })
 
@@ -227,7 +211,7 @@ describe('Socket Server Integration Tests', () => {
       const operationsPromise = new Promise<void>((resolve) => {
         client2.on('workflow-operation', (data) => {
           receivedCount++
-          receivedOperations.add(data.payload.blocks[0].id)
+          receivedOperations.add(data.payload.id)
 
           if (receivedCount === numOperations) {
             resolve()
@@ -238,22 +222,9 @@ describe('Socket Server Integration Tests', () => {
       for (let i = 0; i < numOperations; i++) {
         clientSocket.emit('workflow-operation', {
           workflowId,
-          operation: 'batch-add-blocks',
-          target: 'blocks',
-          payload: {
-            blocks: [
-              {
-                id: `rapid-block-${i}`,
-                type: 'action',
-                name: `Rapid Block ${i}`,
-                position: { x: 0, y: 0 },
-              },
-            ],
-            edges: [],
-            loops: {},
-            parallels: {},
-            subBlockValues: {},
-          },
+          operation: 'add',
+          target: 'block',
+          payload: { id: `rapid-block-${i}`, type: 'action' },
           timestamp: Date.now(),
         })
       }

@@ -26,7 +26,15 @@ export interface IntercomReplyConversationResponse {
   }
 }
 
-const replyConversationBase = {
+export const intercomReplyConversationTool: ToolConfig<
+  IntercomReplyConversationParams,
+  IntercomReplyConversationResponse
+> = {
+  id: 'intercom_reply_conversation',
+  name: 'Reply to Conversation in Intercom',
+  description: 'Reply to a conversation as an admin in Intercom',
+  version: '1.0.0',
+
   params: {
     accessToken: {
       type: 'string',
@@ -73,16 +81,16 @@ const replyConversationBase = {
         'Unix timestamp for when the reply was created. If not provided, current time is used.',
     },
   },
+
   request: {
-    url: (params: IntercomReplyConversationParams) =>
-      buildIntercomUrl(`/conversations/${params.conversationId}/reply`),
+    url: (params) => buildIntercomUrl(`/conversations/${params.conversationId}/reply`),
     method: 'POST',
-    headers: (params: IntercomReplyConversationParams) => ({
+    headers: (params) => ({
       Authorization: `Bearer ${params.accessToken}`,
       'Content-Type': 'application/json',
       'Intercom-Version': '2.14',
     }),
-    body: (params: IntercomReplyConversationParams) => {
+    body: (params) => {
       const reply: any = {
         message_type: params.message_type,
         type: 'admin',
@@ -103,18 +111,6 @@ const replyConversationBase = {
       return reply
     },
   },
-} satisfies Pick<ToolConfig<IntercomReplyConversationParams, any>, 'params' | 'request'>
-
-export const intercomReplyConversationTool: ToolConfig<
-  IntercomReplyConversationParams,
-  IntercomReplyConversationResponse
-> = {
-  id: 'intercom_reply_conversation',
-  name: 'Reply to Conversation in Intercom',
-  description: 'Reply to a conversation as an admin in Intercom',
-  version: '1.0.0',
-
-  ...replyConversationBase,
 
   transformResponse: async (response: Response) => {
     if (!response.ok) {
@@ -144,23 +140,19 @@ export const intercomReplyConversationTool: ToolConfig<
       properties: {
         id: { type: 'string', description: 'Unique identifier for the conversation' },
         type: { type: 'string', description: 'Object type (conversation)' },
-        title: { type: 'string', description: 'Title of the conversation', optional: true },
+        title: { type: 'string', description: 'Title of the conversation' },
         created_at: { type: 'number', description: 'Unix timestamp when conversation was created' },
         updated_at: {
           type: 'number',
           description: 'Unix timestamp when conversation was last updated',
         },
-        waiting_since: {
-          type: 'number',
-          description: 'Unix timestamp when waiting for reply',
-          optional: true,
-        },
+        waiting_since: { type: 'number', description: 'Unix timestamp when waiting for reply' },
         open: { type: 'boolean', description: 'Whether the conversation is open' },
         state: { type: 'string', description: 'State of the conversation' },
         read: { type: 'boolean', description: 'Whether the conversation has been read' },
         priority: { type: 'string', description: 'Priority of the conversation' },
-        admin_assignee_id: { type: 'number', description: 'ID of assigned admin', optional: true },
-        team_assignee_id: { type: 'string', description: 'ID of assigned team', optional: true },
+        admin_assignee_id: { type: 'number', description: 'ID of assigned admin' },
+        team_assignee_id: { type: 'string', description: 'ID of assigned team' },
         tags: { type: 'object', description: 'Tags on the conversation' },
         source: { type: 'object', description: 'Source of the conversation' },
         contacts: { type: 'object', description: 'Contacts in the conversation' },
@@ -175,78 +167,6 @@ export const intercomReplyConversationTool: ToolConfig<
         conversationId: { type: 'string', description: 'ID of the conversation' },
       },
     },
-    success: { type: 'boolean', description: 'Operation success status' },
-  },
-}
-
-interface IntercomReplyConversationV2Response {
-  success: boolean
-  output: {
-    conversation: any
-    conversationId: string
-    success: boolean
-  }
-}
-
-export const intercomReplyConversationV2Tool: ToolConfig<
-  IntercomReplyConversationParams,
-  IntercomReplyConversationV2Response
-> = {
-  ...replyConversationBase,
-  id: 'intercom_reply_conversation_v2',
-  name: 'Reply to Conversation in Intercom',
-  description: 'Reply to a conversation as an admin in Intercom',
-  version: '2.0.0',
-
-  transformResponse: async (response: Response) => {
-    if (!response.ok) {
-      const data = await response.json()
-      handleIntercomError(data, response.status, 'reply_conversation')
-    }
-
-    const data = await response.json()
-
-    return {
-      success: true,
-      output: {
-        conversation: data,
-        conversationId: data.id,
-        success: true,
-      },
-    }
-  },
-
-  outputs: {
-    conversation: {
-      type: 'object',
-      description: 'Updated conversation object',
-      properties: {
-        id: { type: 'string', description: 'Unique identifier for the conversation' },
-        type: { type: 'string', description: 'Object type (conversation)' },
-        title: { type: 'string', description: 'Title of the conversation', optional: true },
-        created_at: { type: 'number', description: 'Unix timestamp when conversation was created' },
-        updated_at: {
-          type: 'number',
-          description: 'Unix timestamp when conversation was last updated',
-        },
-        waiting_since: {
-          type: 'number',
-          description: 'Unix timestamp when waiting for reply',
-          optional: true,
-        },
-        open: { type: 'boolean', description: 'Whether the conversation is open' },
-        state: { type: 'string', description: 'State of the conversation' },
-        read: { type: 'boolean', description: 'Whether the conversation has been read' },
-        priority: { type: 'string', description: 'Priority of the conversation' },
-        admin_assignee_id: { type: 'number', description: 'ID of assigned admin', optional: true },
-        team_assignee_id: { type: 'string', description: 'ID of assigned team', optional: true },
-        tags: { type: 'object', description: 'Tags on the conversation' },
-        source: { type: 'object', description: 'Source of the conversation' },
-        contacts: { type: 'object', description: 'Contacts in the conversation' },
-        conversation_parts: { type: 'object', description: 'Parts of the conversation' },
-      },
-    },
-    conversationId: { type: 'string', description: 'ID of the conversation' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

@@ -11,17 +11,15 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json bun.lock turbo.json ./
-RUN mkdir -p apps packages/db packages/testing packages/logger packages/tsconfig
+RUN mkdir -p apps packages/db packages/testing packages/logger
 COPY apps/sim/package.json ./apps/sim/package.json
 COPY packages/db/package.json ./packages/db/package.json
 COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
-COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
 
-# Install dependencies with hoisted layout for Docker compatibility
-# Using --linker=hoisted to avoid .bun directory symlinks that don't copy between stages
+# Install dependencies with cache mount for faster builds
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
-    bun install --omit=dev --ignore-scripts --linker=hoisted
+    bun install --omit=dev --ignore-scripts
 
 # ========================================
 # Builder Stage: Prepare source code

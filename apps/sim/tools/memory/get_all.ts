@@ -10,10 +10,21 @@ export const memoryGetAllTool: ToolConfig<any, MemoryResponse> = {
   params: {},
 
   request: {
-    url: (params) => {
+    url: (params): any => {
       const workspaceId = params._context?.workspaceId
+
       if (!workspaceId) {
-        throw new Error('workspaceId is required in execution context')
+        return {
+          _errorResponse: {
+            status: 400,
+            data: {
+              success: false,
+              error: {
+                message: 'workspaceId is required and must be provided in execution context',
+              },
+            },
+          },
+        }
       }
 
       return `/api/memory?workspaceId=${encodeURIComponent(workspaceId)}`

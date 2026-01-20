@@ -9,7 +9,6 @@ import { deleteIndexTool } from '@/tools/elasticsearch/delete_index'
 import { getDocumentTool } from '@/tools/elasticsearch/get_document'
 import { getIndexTool } from '@/tools/elasticsearch/get_index'
 import { indexDocumentTool } from '@/tools/elasticsearch/index_document'
-import { listIndicesTool } from '@/tools/elasticsearch/list_indices'
 import { searchTool } from '@/tools/elasticsearch/search'
 import { updateDocumentTool } from '@/tools/elasticsearch/update_document'
 
@@ -24,6 +23,5 @@ export const elasticsearchCountTool = countTool
 export const elasticsearchCreateIndexTool = createIndexTool
 export const elasticsearchDeleteIndexTool = deleteIndexTool
 export const elasticsearchGetIndexTool = getIndexTool
-export const elasticsearchListIndicesTool = listIndicesTool
 export const elasticsearchClusterHealthTool = clusterHealthTool
 export const elasticsearchClusterStatsTool = clusterStatsTool

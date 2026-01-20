@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -49,6 +50,27 @@ export function createRequestTracker(short = true): RequestTracker {
     getDuration(): number {
       return Date.now() - startTime
     },
+  }
+}
+
+export async function authenticateCopilotRequest(req: NextRequest): Promise<CopilotAuthResult> {
+  const session = await getSession()
+  let userId: string | null = session?.user?.id || null
+
+  if (!userId) {
+    const apiKeyHeader = req.headers.get('x-api-key')
+    if (apiKeyHeader) {
+      const result = await authenticateApiKeyFromHeader(apiKeyHeader)
+      if (result.success) {
+        userId = result.userId!
+        await updateApiKeyLastUsed(result.keyId!)
+      }
+    }
+  }
+
+  return {
+    userId,
+    isAuthenticated: userId !== null,
   }
 }
 

@@ -72,16 +72,19 @@ export const salesforceRefreshDashboardTool: ToolConfig<
         dashboard: data,
         dashboardId: params?.dashboardId || '',
         components: data.componentData || [],
-        status: data.status ?? null,
-        dashboardName: data.name ?? null,
-        refreshDate: data.refreshDate ?? null,
+        status: data.status,
+        metadata: {
+          operation: 'refresh_dashboard',
+          dashboardName: data.name,
+          refreshDate: data.refreshDate,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
+    success: { type: 'boolean', description: 'Success status' },
     output: {
       type: 'object',
       description: 'Refreshed dashboard data',
@@ -89,14 +92,9 @@ export const salesforceRefreshDashboardTool: ToolConfig<
         dashboard: { type: 'object', description: 'Dashboard details' },
         dashboardId: { type: 'string', description: 'Dashboard ID' },
         components: { type: 'array', description: 'Dashboard component data' },
-        status: { type: 'object', description: 'Dashboard status', optional: true },
-        dashboardName: { type: 'string', description: 'Dashboard name', optional: true },
-        refreshDate: {
-          type: 'string',
-          description: 'Date when dashboard was refreshed',
-          optional: true,
-        },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
+        status: { type: 'object', description: 'Dashboard status' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success status' },
       },
     },
   },

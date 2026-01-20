@@ -19,13 +19,13 @@ export interface ZendeskGetUsersResponse {
   output: {
     users: any[]
     paging?: {
-      next_page?: string | null
-      previous_page?: string | null
+      nextPage?: string | null
+      previousPage?: string | null
       count: number
     }
     metadata: {
-      total_returned: number
-      has_more: boolean
+      operation: 'get_users'
+      totalReturned: number
     }
     success: boolean
   }
@@ -119,13 +119,13 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
       output: {
         users,
         paging: {
-          next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
+          nextPage: data.next_page,
+          previousPage: data.previous_page,
           count: data.count || users.length,
         },
         metadata: {
-          total_returned: users.length,
-          has_more: !!data.next_page,
+          operation: 'get_users' as const,
+          totalReturned: users.length,
         },
         success: true,
       },
@@ -134,29 +134,7 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
 
   outputs: {
     users: { type: 'array', description: 'Array of user objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of users' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of users returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more users are available' },
-      },
-    },
+    paging: { type: 'object', description: 'Pagination information' },
+    metadata: { type: 'object', description: 'Operation metadata' },
   },
 }

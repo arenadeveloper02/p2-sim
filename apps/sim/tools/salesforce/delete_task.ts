@@ -62,19 +62,13 @@ export const salesforceDeleteTaskTool: ToolConfig<
       output: {
         id: params?.taskId || '',
         deleted: true,
+        metadata: { operation: 'delete_task' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Deleted task data',
-      properties: {
-        id: { type: 'string', description: 'Deleted task ID' },
-        deleted: { type: 'boolean', description: 'Whether task was deleted' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Deleted task' },
   },
 }

@@ -13,6 +13,10 @@ export interface MailchimpArchiveMemberParams {
 export interface MailchimpArchiveMemberResponse {
   success: boolean
   output: {
+    metadata: {
+      operation: 'archive_member'
+      subscriberHash: string
+    }
     success: boolean
   }
 }
@@ -69,6 +73,10 @@ export const mailchimpArchiveMemberTool: ToolConfig<
     return {
       success: true,
       output: {
+        metadata: {
+          operation: 'archive_member' as const,
+          subscriberHash: '',
+        },
         success: true,
       },
     }
@@ -80,6 +88,7 @@ export const mailchimpArchiveMemberTool: ToolConfig<
       type: 'object',
       description: 'Archive confirmation',
       properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
         success: { type: 'boolean', description: 'Operation success' },
       },
     },

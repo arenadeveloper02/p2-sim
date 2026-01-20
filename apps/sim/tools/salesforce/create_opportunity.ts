@@ -99,20 +99,13 @@ export const salesforceCreateOpportunityTool: ToolConfig<
         id: data.id,
         success: data.success,
         created: true,
+        metadata: { operation: 'create_opportunity' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Created opportunity data',
-      properties: {
-        id: { type: 'string', description: 'Created opportunity ID' },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
-        created: { type: 'boolean', description: 'Whether opportunity was created' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Created opportunity' },
   },
 }

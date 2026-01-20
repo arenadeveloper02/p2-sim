@@ -1,15 +1,8 @@
 import { db } from '@sim/db'
-import {
-  account,
-  credentialSet,
-  webhook,
-  workflow,
-  workflowDeploymentVersion,
-} from '@sim/db/schema'
+import { account, webhook, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
-import { isOrganizationOnTeamOrEnterprisePlan } from '@/lib/billing'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getOAuthToken, refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
@@ -117,22 +110,11 @@ export async function pollGmailWebhooks() {
       .select({ webhook })
       .from(webhook)
       .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
-      .leftJoin(
-        workflowDeploymentVersion,
-        and(
-          eq(workflowDeploymentVersion.workflowId, workflow.id),
-          eq(workflowDeploymentVersion.isActive, true)
-        )
-      )
       .where(
         and(
           eq(webhook.provider, 'gmail'),
           eq(webhook.isActive, true),
-          eq(workflow.isDeployed, true),
-          or(
-            eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
-            and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
-          )
+          eq(workflow.isDeployed, true)
         )
       )
 
@@ -161,42 +143,15 @@ export async function pollGmailWebhooks() {
         const metadata = webhookData.providerConfig as any
         const credentialId: string | undefined = metadata?.credentialId
         const userId: string | undefined = metadata?.userId
-        const credentialSetId: string | undefined = metadata?.credentialSetId
 
         if (!credentialId && !userId) {
-          logger.error(`[${requestId}] Missing credential info for webhook ${webhookId}`)
+          logger.error(`[${requestId}] Missing credentialId and userId for webhook ${webhookId}`)
           await markWebhookFailed(webhookId)
           failureCount++
           return
         }
 
-        if (credentialSetId) {
-          const [cs] = await db
-            .select({ organizationId: credentialSet.organizationId })
-            .from(credentialSet)
-            .where(eq(credentialSet.id, credentialSetId))
-            .limit(1)
-
-          if (cs?.organizationId) {
-            const hasAccess = await isOrganizationOnTeamOrEnterprisePlan(cs.organizationId)
-            if (!hasAccess) {
-              logger.error(
-                `[${requestId}] Polling Group plan restriction: Your current plan does not support Polling Groups. Upgrade to Team or Enterprise to use this feature.`,
-                {
-                  webhookId,
-                  credentialSetId,
-                  organizationId: cs.organizationId,
-                }
-              )
-              await markWebhookFailed(webhookId)
-              failureCount++
-              return
-            }
-          }
-        }
-
         let accessToken: string | null = null
-
         if (credentialId) {
           const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
           if (rows.length === 0) {
@@ -210,12 +165,13 @@ export async function pollGmailWebhooks() {
           const ownerUserId = rows[0].userId
           accessToken = await refreshAccessTokenIfNeeded(credentialId, ownerUserId, requestId)
         } else if (userId) {
-          // Legacy fallback for webhooks without credentialId
           accessToken = await getOAuthToken(userId, 'google-email')
         }
 
         if (!accessToken) {
-          logger.error(`[${requestId}] Failed to get Gmail access token for webhook ${webhookId}`)
+          logger.error(
+            `[${requestId}] Failed to get Gmail access token for webhook ${webhookId} (cred or fallback)`
+          )
           await markWebhookFailed(webhookId)
           failureCount++
           return
@@ -282,20 +238,18 @@ export async function pollGmailWebhooks() {
     }
 
     for (const webhookData of activeWebhooks) {
-      const promise: Promise<void> = enqueue(webhookData)
+      const promise = enqueue(webhookData)
+        .then(() => {})
         .catch((err) => {
           logger.error('Unexpected error in webhook processing:', err)
           failureCount++
-        })
-        .finally(() => {
-          const idx = running.indexOf(promise)
-          if (idx !== -1) running.splice(idx, 1)
         })
 
       running.push(promise)
 
       if (running.length >= CONCURRENCY) {
-        await Promise.race(running)
+        const completedIdx = await Promise.race(running.map((p, i) => p.then(() => i)))
+        running.splice(completedIdx, 1)
       }
     }
 
@@ -698,7 +652,7 @@ async function processEmails(
             headers: {
               'Content-Type': 'application/json',
               'X-Webhook-Secret': webhookData.secret || '',
-              'User-Agent': 'Sim/1.0',
+              'User-Agent': 'SimStudio/1.0',
             },
             body: JSON.stringify(payload),
           })

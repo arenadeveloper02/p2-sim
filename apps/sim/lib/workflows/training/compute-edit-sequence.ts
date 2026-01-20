@@ -1,7 +1,4 @@
-import type {
-  CopilotBlockState,
-  CopilotWorkflowState,
-} from '@/lib/workflows/sanitization/json-sanitizer'
+import type { CopilotWorkflowState } from '@/lib/workflows/sanitization/json-sanitizer'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 
 export interface EditOperation {
@@ -10,12 +7,13 @@ export interface EditOperation {
   params?: {
     type?: string
     name?: string
+    outputs?: Record<string, any>
     enabled?: boolean
     triggerMode?: boolean
     advancedMode?: boolean
-    inputs?: Record<string, unknown>
-    connections?: Record<string, unknown>
-    nestedNodes?: Record<string, CopilotBlockState>
+    inputs?: Record<string, any>
+    connections?: Record<string, any>
+    nestedNodes?: Record<string, any>
     subflowId?: string
   }
 }
@@ -36,11 +34,11 @@ export interface WorkflowDiff {
  * Returns map of blockId -> {block, parentId}
  */
 function flattenBlocks(
-  blocks: Record<string, CopilotBlockState>
-): Record<string, { block: CopilotBlockState; parentId?: string }> {
-  const flattened: Record<string, { block: CopilotBlockState; parentId?: string }> = {}
+  blocks: Record<string, any>
+): Record<string, { block: any; parentId?: string }> {
+  const flattened: Record<string, { block: any; parentId?: string }> = {}
 
-  const processBlock = (blockId: string, block: CopilotBlockState, parentId?: string) => {
+  const processBlock = (blockId: string, block: any, parentId?: string) => {
     flattened[blockId] = { block, parentId }
 
     // Recursively process nested nodes
@@ -58,20 +56,23 @@ function flattenBlocks(
   return flattened
 }
 
-interface ExtractedEdge {
+/**
+ * Extract all edges from blocks with embedded connections (including nested)
+ */
+function extractAllEdgesFromBlocks(blocks: Record<string, any>): Array<{
   source: string
   target: string
   sourceHandle?: string | null
   targetHandle?: string | null
-}
+}> {
+  const edges: Array<{
+    source: string
+    target: string
+    sourceHandle?: string | null
+    targetHandle?: string | null
+  }> = []
 
-/**
- * Extract all edges from blocks with embedded connections (including nested)
- */
-function extractAllEdgesFromBlocks(blocks: Record<string, CopilotBlockState>): ExtractedEdge[] {
-  const edges: ExtractedEdge[] = []
-
-  const processBlockConnections = (block: CopilotBlockState, blockId: string) => {
+  const processBlockConnections = (block: any, blockId: string) => {
     if (block.connections) {
       Object.entries(block.connections).forEach(([sourceHandle, targets]) => {
         const targetArray = Array.isArray(targets) ? targets : [targets]
@@ -190,6 +191,7 @@ export function computeEditSequence(
           subflowId: parentId,
           type: block.type,
           name: block.name,
+          outputs: block.outputs,
           enabled: block.enabled !== undefined ? block.enabled : true,
         }
 
@@ -294,6 +296,7 @@ export function computeEditSequence(
             subflowId: endParentId,
             type: endBlock.type,
             name: endBlock.name,
+            outputs: endBlock.outputs,
             enabled: endBlock.enabled !== undefined ? endBlock.enabled : true,
           }
 
@@ -356,22 +359,33 @@ export function computeEditSequence(
  * Extract input values from a block
  * Works with sanitized format where inputs is Record<string, value>
  */
-function extractInputValues(block: CopilotBlockState): Record<string, unknown> {
+function extractInputValues(block: any): Record<string, any> {
   // New sanitized format uses 'inputs' field
   if (block.inputs) {
     return { ...block.inputs }
   }
 
+  // Fallback for any legacy data
+  if (block.subBlocks) {
+    return { ...block.subBlocks }
+  }
+
   return {}
 }
-
-type ConnectionTarget = string | { block: string; handle: string }
 
 /**
  * Extract connections for a specific block from edges
  */
-function extractConnections(blockId: string, edges: ExtractedEdge[]): Record<string, unknown> {
-  const connections: Record<string, ConnectionTarget[]> = {}
+function extractConnections(
+  blockId: string,
+  edges: Array<{
+    source: string
+    target: string
+    sourceHandle?: string | null
+    targetHandle?: string | null
+  }>
+): Record<string, any> {
+  const connections: Record<string, any> = {}
 
   // Find all edges where this block is the source
   const outgoingEdges = edges.filter((edge) => edge.source === blockId)
@@ -396,29 +410,36 @@ function extractConnections(blockId: string, edges: ExtractedEdge[]): Record<str
   }
 
   // Simplify single-element arrays to just the element
-  const result: Record<string, unknown> = {}
   for (const handle in connections) {
-    if (connections[handle].length === 1) {
-      result[handle] = connections[handle][0]
-    } else {
-      result[handle] = connections[handle]
+    if (Array.isArray(connections[handle]) && connections[handle].length === 1) {
+      connections[handle] = connections[handle][0]
     }
   }
 
-  return result
+  return connections
 }
 
 /**
  * Compute what changed in a block between two states
  */
 function computeBlockChanges(
-  startBlock: CopilotBlockState,
-  endBlock: CopilotBlockState,
+  startBlock: any,
+  endBlock: any,
   blockId: string,
-  startEdges: ExtractedEdge[],
-  endEdges: ExtractedEdge[]
-): Record<string, unknown> | null {
-  const changes: Record<string, unknown> = {}
+  startEdges: Array<{
+    source: string
+    target: string
+    sourceHandle?: string | null
+    targetHandle?: string | null
+  }>,
+  endEdges: Array<{
+    source: string
+    target: string
+    sourceHandle?: string | null
+    targetHandle?: string | null
+  }>
+): Record<string, any> | null {
+  const changes: Record<string, any> = {}
   let hasChanges = false
 
   // Check type change
@@ -476,10 +497,10 @@ function computeBlockChanges(
  * Only returns fields that actually changed or were added
  */
 function computeInputDelta(
-  startInputs: Record<string, unknown>,
-  endInputs: Record<string, unknown>
-): Record<string, unknown> {
-  const delta: Record<string, unknown> = {}
+  startInputs: Record<string, any>,
+  endInputs: Record<string, any>
+): Record<string, any> {
+  const delta: Record<string, any> = {}
 
   for (const key in endInputs) {
     if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(key)) {

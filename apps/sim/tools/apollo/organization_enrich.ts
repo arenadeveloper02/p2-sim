@@ -71,16 +71,15 @@ export const apolloOrganizationEnrichTool: ToolConfig<
       success: true,
       output: {
         organization: data.organization || {},
-        enriched: !!data.organization,
+        metadata: {
+          enriched: !!data.organization,
+        },
       },
     }
   },
 
   outputs: {
     organization: { type: 'json', description: 'Enriched organization data from Apollo' },
-    enriched: {
-      type: 'boolean',
-      description: 'Whether the organization was successfully enriched',
-    },
+    metadata: { type: 'json', description: 'Enrichment metadata including enriched status' },
   },
 }

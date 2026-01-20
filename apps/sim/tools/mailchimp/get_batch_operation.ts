@@ -14,7 +14,11 @@ export interface MailchimpGetBatchOperationResponse {
   success: boolean
   output: {
     batch: MailchimpBatchOperation
-    batch_id: string
+    metadata: {
+      operation: 'get_batch_operation'
+      batchId: string
+    }
+    success: boolean
   }
 }
 
@@ -63,22 +67,24 @@ export const mailchimpGetBatchOperationTool: ToolConfig<
       success: true,
       output: {
         batch: data,
-        batch_id: data.id,
+        metadata: {
+          operation: 'get_batch_operation' as const,
+          batchId: data.id,
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the batch operation was successfully retrieved',
-    },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
-      description: 'Batch operation data',
+      description: 'Batch operation data and metadata',
       properties: {
-        batch: { type: 'json', description: 'Batch operation object' },
-        batch_id: { type: 'string', description: 'The unique ID of the batch operation' },
+        batch: { type: 'object', description: 'Batch operation object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

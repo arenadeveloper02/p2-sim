@@ -75,21 +75,24 @@ export const salesforceListDashboardsTool: ToolConfig<
       success: true,
       output: {
         dashboards,
-        totalReturned: dashboards.length,
+        metadata: {
+          operation: 'list_dashboards',
+          totalReturned: dashboards.length,
+        },
         success: true,
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
+    success: { type: 'boolean', description: 'Success status' },
     output: {
       type: 'object',
       description: 'Dashboards data',
       properties: {
         dashboards: { type: 'array', description: 'Array of dashboard objects' },
-        totalReturned: { type: 'number', description: 'Number of dashboards returned' },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success status' },
       },
     },
   },

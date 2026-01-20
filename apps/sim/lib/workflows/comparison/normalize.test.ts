@@ -2,7 +2,6 @@
  * Tests for workflow normalization utilities
  */
 import { describe, expect, it } from 'vitest'
-import type { Loop, Parallel } from '@/stores/workflows/workflow/types'
 import {
   normalizedStringify,
   normalizeEdge,
@@ -40,7 +39,7 @@ describe('Workflow Normalization Utilities', () => {
 
     it.concurrent('should sort object keys alphabetically', () => {
       const input = { zebra: 1, apple: 2, mango: 3 }
-      const result = normalizeValue(input) as Record<string, unknown>
+      const result = normalizeValue(input)
 
       expect(Object.keys(result)).toEqual(['apple', 'mango', 'zebra'])
     })
@@ -56,10 +55,7 @@ describe('Workflow Normalization Utilities', () => {
         },
         first: 'value',
       }
-      const result = normalizeValue(input) as {
-        first: string
-        outer: { z: number; a: { y: number; b: number } }
-      }
+      const result = normalizeValue(input)
 
       expect(Object.keys(result)).toEqual(['first', 'outer'])
       expect(Object.keys(result.outer)).toEqual(['a', 'z'])
@@ -76,11 +72,11 @@ describe('Workflow Normalization Utilities', () => {
 
     it.concurrent('should handle arrays with mixed types', () => {
       const input = [1, 'string', { b: 2, a: 1 }, null, [3, 2, 1]]
-      const result = normalizeValue(input) as unknown[]
+      const result = normalizeValue(input)
 
       expect(result[0]).toBe(1)
       expect(result[1]).toBe('string')
-      expect(Object.keys(result[2] as Record<string, unknown>)).toEqual(['a', 'b'])
+      expect(Object.keys(result[2])).toEqual(['a', 'b'])
       expect(result[3]).toBe(null)
       expect(result[4]).toEqual([3, 2, 1]) // Array order preserved
     })
@@ -98,9 +94,7 @@ describe('Workflow Normalization Utilities', () => {
           },
         },
       }
-      const result = normalizeValue(input) as {
-        level1: { level2: { level3: { level4: { z: string; a: string } } } }
-      }
+      const result = normalizeValue(input)
 
       expect(Object.keys(result.level1.level2.level3.level4)).toEqual(['a', 'z'])
     })
@@ -149,7 +143,7 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "for" loop type', () => {
-      const loop: Loop & { extraField?: string } = {
+      const loop = {
         id: 'loop1',
         nodes: ['block1', 'block2'],
         loopType: 'for',
@@ -170,7 +164,7 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "forEach" loop type', () => {
-      const loop: Loop = {
+      const loop = {
         id: 'loop2',
         nodes: ['block1'],
         loopType: 'forEach',
@@ -189,11 +183,10 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "while" loop type', () => {
-      const loop: Loop = {
+      const loop = {
         id: 'loop3',
         nodes: ['block1', 'block2', 'block3'],
         loopType: 'while',
-        iterations: 0,
         whileCondition: '<block.condition> === true',
         doWhileCondition: 'should-be-excluded',
       }
@@ -208,11 +201,10 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "doWhile" loop type', () => {
-      const loop: Loop = {
+      const loop = {
         id: 'loop4',
         nodes: ['block1'],
         loopType: 'doWhile',
-        iterations: 0,
         doWhileCondition: '<counter.value> < 100',
         whileCondition: 'should-be-excluded',
       }
@@ -226,11 +218,11 @@ describe('Workflow Normalization Utilities', () => {
       })
     })
 
-    it.concurrent('should extract only relevant fields for for loop type', () => {
-      const loop: Loop = {
+    it.concurrent('should handle unknown loop type with base fields only', () => {
+      const loop = {
         id: 'loop5',
         nodes: ['block1'],
-        loopType: 'for',
+        loopType: 'unknown',
         iterations: 5,
         forEachItems: 'items',
       }
@@ -239,8 +231,7 @@ describe('Workflow Normalization Utilities', () => {
       expect(result).toEqual({
         id: 'loop5',
         nodes: ['block1'],
-        loopType: 'for',
-        iterations: 5,
+        loopType: 'unknown',
       })
     })
   })
@@ -252,7 +243,7 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "count" parallel type', () => {
-      const parallel: Parallel & { extraField?: string } = {
+      const parallel = {
         id: 'parallel1',
         nodes: ['block1', 'block2'],
         parallelType: 'count',
@@ -271,7 +262,7 @@ describe('Workflow Normalization Utilities', () => {
     })
 
     it.concurrent('should normalize "collection" parallel type', () => {
-      const parallel: Parallel = {
+      const parallel = {
         id: 'parallel2',
         nodes: ['block1'],
         parallelType: 'collection',
@@ -288,11 +279,11 @@ describe('Workflow Normalization Utilities', () => {
       })
     })
 
-    it.concurrent('should include base fields for undefined parallel type', () => {
-      const parallel: Parallel = {
+    it.concurrent('should handle unknown parallel type with base fields only', () => {
+      const parallel = {
         id: 'parallel3',
         nodes: ['block1'],
-        parallelType: undefined,
+        parallelType: 'unknown',
         count: 5,
         distribution: 'items',
       }
@@ -301,7 +292,7 @@ describe('Workflow Normalization Utilities', () => {
       expect(result).toEqual({
         id: 'parallel3',
         nodes: ['block1'],
-        parallelType: undefined,
+        parallelType: 'unknown',
       })
     })
   })
@@ -321,7 +312,7 @@ describe('Workflow Normalization Utilities', () => {
       const tools = [
         { id: 'tool1', name: 'Search', isExpanded: true },
         { id: 'tool2', name: 'Calculator', isExpanded: false },
-        { id: 'tool3', name: 'Weather' },
+        { id: 'tool3', name: 'Weather' }, // No isExpanded field
       ]
       const result = sanitizeTools(tools)
 
@@ -374,7 +365,7 @@ describe('Workflow Normalization Utilities', () => {
       const inputFormat = [
         { id: 'input1', name: 'Name', value: 'John', collapsed: true },
         { id: 'input2', name: 'Age', value: 25, collapsed: false },
-        { id: 'input3', name: 'Email' },
+        { id: 'input3', name: 'Email' }, // No value or collapsed
       ]
       const result = sanitizeInputFormat(inputFormat)
 

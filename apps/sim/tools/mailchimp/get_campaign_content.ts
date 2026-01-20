@@ -13,6 +13,11 @@ export interface MailchimpGetCampaignContentResponse {
   success: boolean
   output: {
     content: MailchimpCampaignContent
+    metadata: {
+      operation: 'get_campaign_content'
+      campaignId: string
+    }
+    success: boolean
   }
 }
 
@@ -61,20 +66,24 @@ export const mailchimpGetCampaignContentTool: ToolConfig<
       success: true,
       output: {
         content: data,
+        metadata: {
+          operation: 'get_campaign_content' as const,
+          campaignId: '',
+        },
+        success: true,
       },
     }
   },
 
   outputs: {
-    success: {
-      type: 'boolean',
-      description: 'Whether the campaign content was successfully retrieved',
-    },
+    success: { type: 'boolean', description: 'Operation success status' },
     output: {
       type: 'object',
       description: 'Campaign content data',
       properties: {
-        content: { type: 'json', description: 'Campaign content object' },
+        content: { type: 'object', description: 'Campaign content object' },
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
       },
     },
   },

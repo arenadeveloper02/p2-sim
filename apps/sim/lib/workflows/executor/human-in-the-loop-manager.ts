@@ -2,14 +2,13 @@ import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { pausedExecutions, resumeQueue, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, desc, eq, inArray, lt, type SQL, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionResult, PausePoint, SerializedSnapshot } from '@/executor/types'
-import type { SerializedConnection } from '@/serializer/types'
 
 const logger = createLogger('HumanInTheLoopManager')
 
@@ -19,7 +18,7 @@ interface ResumeQueueEntrySummary {
   parentExecutionId: string
   newExecutionId: string
   contextId: string
-  resumeInput: unknown
+  resumeInput: any
   status: string
   queuedAt: string | null
   claimedAt: string | null
@@ -70,7 +69,7 @@ interface PersistPauseResultArgs {
 interface EnqueueResumeArgs {
   executionId: string
   contextId: string
-  resumeInput: unknown
+  resumeInput: any
   userId: string
 }
 
@@ -86,7 +85,7 @@ type EnqueueResumeResult =
       resumeEntryId: string
       pausedExecution: typeof pausedExecutions.$inferSelect
       contextId: string
-      resumeInput: unknown
+      resumeInput: any
       userId: string
     }
 
@@ -95,7 +94,7 @@ interface StartResumeExecutionArgs {
   resumeExecutionId: string
   pausedExecution: typeof pausedExecutions.$inferSelect
   contextId: string
-  resumeInput: unknown
+  resumeInput: any
   userId: string
 }
 
@@ -155,6 +154,11 @@ export class PauseResumeManager {
           updatedAt: now,
         },
       })
+
+    await db
+      .update(workflowExecutionLogs)
+      .set({ status: 'pending' })
+      .where(eq(workflowExecutionLogs.executionId, executionId))
 
     await PauseResumeManager.processQueuedResumes(executionId)
   }
@@ -298,34 +302,18 @@ export class PauseResumeManager {
       })
 
       if (result.status === 'paused') {
-        const effectiveExecutionId = result.metadata?.executionId ?? resumeExecutionId
         if (!result.snapshotSeed) {
           logger.error('Missing snapshot seed for paused resume execution', {
             resumeExecutionId,
           })
-          await LoggingSession.markExecutionAsFailed(
-            effectiveExecutionId,
-            'Missing snapshot seed for paused execution'
-          )
         } else {
-          try {
-            await PauseResumeManager.persistPauseResult({
-              workflowId: pausedExecution.workflowId,
-              executionId: effectiveExecutionId,
-              pausePoints: result.pausePoints || [],
-              snapshotSeed: result.snapshotSeed,
-              executorUserId: result.metadata?.userId,
-            })
-          } catch (pauseError) {
-            logger.error('Failed to persist pause result for resumed execution', {
-              resumeExecutionId,
-              error: pauseError instanceof Error ? pauseError.message : String(pauseError),
-            })
-            await LoggingSession.markExecutionAsFailed(
-              effectiveExecutionId,
-              `Failed to persist pause state: ${pauseError instanceof Error ? pauseError.message : String(pauseError)}`
-            )
-          }
+          await PauseResumeManager.persistPauseResult({
+            workflowId: pausedExecution.workflowId,
+            executionId: result.metadata?.executionId ?? resumeExecutionId,
+            pausePoints: result.pausePoints || [],
+            snapshotSeed: result.snapshotSeed,
+            executorUserId: result.metadata?.userId,
+          })
         }
       } else {
         await PauseResumeManager.updateSnapshotAfterResume({
@@ -366,7 +354,7 @@ export class PauseResumeManager {
     resumeExecutionId: string
     pausedExecution: typeof pausedExecutions.$inferSelect
     contextId: string
-    resumeInput: unknown
+    resumeInput: any
     userId: string
   }): Promise<ExecutionResult> {
     const { resumeExecutionId, pausedExecution, contextId, resumeInput, userId } = args
@@ -409,8 +397,9 @@ export class PauseResumeManager {
     const rawPauseBlockId = pausePoint.blockId ?? contextId
     const pauseBlockId = PauseResumeManager.normalizePauseBlockId(rawPauseBlockId)
 
-    const dagIncomingEdgesFromSnapshot: Record<string, string[]> | undefined =
-      baseSnapshot.state?.dagIncomingEdges
+    const dagIncomingEdgesFromSnapshot: Record<string, string[]> | undefined = (
+      baseSnapshot.state as any
+    )?.dagIncomingEdges
 
     const downstreamBlocks = dagIncomingEdgesFromSnapshot
       ? Object.entries(dagIncomingEdgesFromSnapshot)
@@ -424,10 +413,9 @@ export class PauseResumeManager {
           .map(([nodeId]) => nodeId)
       : baseSnapshot.workflow.connections
           .filter(
-            (conn: SerializedConnection) =>
-              PauseResumeManager.normalizePauseBlockId(conn.source) === pauseBlockId
+            (conn: any) => PauseResumeManager.normalizePauseBlockId(conn.source) === pauseBlockId
           )
-          .map((conn: SerializedConnection) => conn.target)
+          .map((conn: any) => conn.target)
 
     logger.info('Found downstream blocks', {
       pauseBlockId,
@@ -449,7 +437,7 @@ export class PauseResumeManager {
 
     if (stateCopy) {
       const dagIncomingEdges: Record<string, string[]> | undefined =
-        stateCopy.dagIncomingEdges || dagIncomingEdgesFromSnapshot
+        (stateCopy as any)?.dagIncomingEdges || dagIncomingEdgesFromSnapshot
 
       // Calculate the pause duration (time from pause to resume)
       const pauseDurationMs = pausedExecution.pausedAt
@@ -539,15 +527,15 @@ export class PauseResumeManager {
 
       mergedOutput.resume = mergedOutput.resume ?? mergedResponse.resume
 
-      // Preserve url and resumeEndpoint from resume links
+      // Preserve url from resume links (apiUrl hidden from output)
       const resumeLinks = mergedOutput.resume ?? mergedResponse.resume
       if (resumeLinks && typeof resumeLinks === 'object') {
         if (resumeLinks.uiUrl) {
           mergedOutput.url = resumeLinks.uiUrl
         }
-        if (resumeLinks.apiUrl) {
-          mergedOutput.resumeEndpoint = resumeLinks.apiUrl
-        }
+        // if (resumeLinks.apiUrl) {
+        //   mergedOutput.apiUrl = resumeLinks.apiUrl
+        // } // Hidden from output
       }
 
       for (const [key, value] of Object.entries(submissionPayload)) {
@@ -618,11 +606,11 @@ export class PauseResumeManager {
         // If we didn't find any edges via the DAG snapshot, fall back to workflow connections
         if (edgesToRemove.length === 0 && baseSnapshot.workflow.connections?.length) {
           edgesToRemove = baseSnapshot.workflow.connections
-            .filter((conn: SerializedConnection) =>
+            .filter((conn: any) =>
               completedPauseContexts.has(PauseResumeManager.normalizePauseBlockId(conn.source))
             )
-            .map((conn: SerializedConnection) => ({
-              id: `${conn.source}→${conn.target}`,
+            .map((conn: any) => ({
+              id: conn.id ?? `${conn.source}→${conn.target}`,
               source: conn.source,
               target: conn.target,
               sourceHandle: conn.sourceHandle,
@@ -631,11 +619,11 @@ export class PauseResumeManager {
         }
       } else {
         edgesToRemove = baseSnapshot.workflow.connections
-          .filter((conn: SerializedConnection) =>
+          .filter((conn: any) =>
             completedPauseContexts.has(PauseResumeManager.normalizePauseBlockId(conn.source))
           )
-          .map((conn: SerializedConnection) => ({
-            id: `${conn.source}→${conn.target}`,
+          .map((conn: any) => ({
+            id: conn.id ?? `${conn.source}→${conn.target}`,
             source: conn.source,
             target: conn.target,
             sourceHandle: conn.sourceHandle,
@@ -914,7 +902,7 @@ export class PauseResumeManager {
   }): Promise<PausedExecutionSummary[]> {
     const { workflowId, status } = options
 
-    let whereClause: SQL<unknown> | undefined = eq(pausedExecutions.workflowId, workflowId)
+    let whereClause: any = eq(pausedExecutions.workflowId, workflowId)
 
     if (status) {
       const statuses = Array.isArray(status)
@@ -925,7 +913,7 @@ export class PauseResumeManager {
       if (statuses.length === 1) {
         whereClause = and(whereClause, eq(pausedExecutions.status, statuses[0]))
       } else if (statuses.length > 1) {
-        whereClause = and(whereClause, inArray(pausedExecutions.status, statuses))
+        whereClause = and(whereClause, inArray(pausedExecutions.status, statuses as any))
       }
     }
 
@@ -1130,16 +1118,16 @@ export class PauseResumeManager {
   }
 
   private static mapPausePoints(
-    pausePoints: unknown,
+    pausePoints: any,
     queuePositions?: Map<string, number | null>,
     latestEntries?: Map<string, ResumeQueueEntrySummary>
   ): PausePointWithQueue[] {
-    const record = pausePoints as Record<string, PausePoint> | null
+    const record = pausePoints as Record<string, any>
     if (!record) {
       return []
     }
 
-    return Object.values(record).map((point: PausePoint) => {
+    return Object.values(record).map((point: any) => {
       const queuePosition = queuePositions?.get(point.contextId ?? '') ?? null
       const latestEntry = latestEntries?.get(point.contextId ?? '')
 

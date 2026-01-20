@@ -2,9 +2,7 @@
  * Sim OpenTelemetry - Server-side Instrumentation
  */
 
-import type { Attributes, Context, Link, SpanKind } from '@opentelemetry/api'
 import { DiagConsoleLogger, DiagLogLevel, diag } from '@opentelemetry/api'
-import type { Sampler, SamplingResult } from '@opentelemetry/sdk-trace-base'
 import { createLogger } from '@sim/logger'
 import { env } from './lib/core/config/env'
 
@@ -26,25 +24,8 @@ const DEFAULT_TELEMETRY_CONFIG = {
 }
 
 /**
- * Span name prefixes we want to KEEP
+ * Initialize OpenTelemetry SDK with proper configuration
  */
-const ALLOWED_SPAN_PREFIXES = [
-  'platform.', // Our platform events
-  'gen_ai.', // GenAI semantic convention spans
-  'workflow.', // Workflow execution spans
-  'block.', // Block execution spans
-  'http.client.', // Our API block HTTP calls
-  'function.', // Function block execution
-  'router.', // Router block evaluation
-  'condition.', // Condition block evaluation
-  'loop.', // Loop block execution
-  'parallel.', // Parallel block execution
-]
-
-function isBusinessSpan(spanName: string): boolean {
-  return ALLOWED_SPAN_PREFIXES.some((prefix) => spanName.startsWith(prefix))
-}
-
 async function initializeOpenTelemetry() {
   try {
     if (env.NEXT_TELEMETRY_DISABLED === '1') {
@@ -71,43 +52,18 @@ async function initializeOpenTelemetry() {
     )
     const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
     const { BatchSpanProcessor } = await import('@opentelemetry/sdk-trace-node')
-    const { ParentBasedSampler, TraceIdRatioBasedSampler, SamplingDecision } = await import(
+    const { ParentBasedSampler, TraceIdRatioBasedSampler } = await import(
       '@opentelemetry/sdk-trace-base'
     )
-
-    const createBusinessSpanSampler = (baseSampler: Sampler): Sampler => ({
-      shouldSample(
-        context: Context,
-        traceId: string,
-        spanName: string,
-        spanKind: SpanKind,
-        attributes: Attributes,
-        links: Link[]
-      ): SamplingResult {
-        if (attributes['next.span_type']) {
-          return { decision: SamplingDecision.NOT_RECORD }
-        }
-
-        if (isBusinessSpan(spanName)) {
-          return baseSampler.shouldSample(context, traceId, spanName, spanKind, attributes, links)
-        }
-
-        return { decision: SamplingDecision.NOT_RECORD }
-      },
-
-      toString(): string {
-        return `BusinessSpanSampler{baseSampler=${baseSampler.toString()}}`
-      },
-    })
 
     const exporter = new OTLPTraceExporter({
       url: telemetryConfig.endpoint,
       headers: {},
-      timeoutMillis: Math.min(telemetryConfig.batchSettings.exportTimeoutMillis, 10000),
+      timeoutMillis: Math.min(telemetryConfig.batchSettings.exportTimeoutMillis, 10000), // Max 10s
       keepAlive: false,
     })
 
-    const batchProcessor = new BatchSpanProcessor(exporter, {
+    const spanProcessor = new BatchSpanProcessor(exporter, {
       maxQueueSize: telemetryConfig.batchSettings.maxQueueSize,
       maxExportBatchSize: telemetryConfig.batchSettings.maxExportBatchSize,
       scheduledDelayMillis: telemetryConfig.batchSettings.scheduledDelayMillis,
@@ -126,14 +82,13 @@ async function initializeOpenTelemetry() {
       })
     )
 
-    const baseSampler = new ParentBasedSampler({
-      root: new TraceIdRatioBasedSampler(0.1),
+    const sampler = new ParentBasedSampler({
+      root: new TraceIdRatioBasedSampler(0.1), // 10% sampling for root spans
     })
-    const sampler = createBusinessSpanSampler(baseSampler)
 
     const sdk = new NodeSDK({
       resource,
-      spanProcessor: batchProcessor,
+      spanProcessor,
       sampler,
       traceExporter: exporter,
     })
@@ -152,7 +107,7 @@ async function initializeOpenTelemetry() {
     process.on('SIGTERM', shutdownHandler)
     process.on('SIGINT', shutdownHandler)
 
-    logger.info('OpenTelemetry instrumentation initialized with business span filtering')
+    logger.info('OpenTelemetry instrumentation initialized')
   } catch (error) {
     logger.error('Failed to initialize OpenTelemetry instrumentation', error)
   }

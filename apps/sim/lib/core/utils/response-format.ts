@@ -53,25 +53,14 @@ export function extractFieldsFromSchema(schema: any): Field[] {
  * Helper function to safely parse response format
  * Handles both string and object formats
  */
-export function parseResponseFormatSafely(
-  responseFormatValue: any,
-  blockId: string,
-  options?: { allowReferences?: boolean }
-): any {
+export function parseResponseFormatSafely(responseFormatValue: any, blockId: string): any {
   if (!responseFormatValue) {
     return null
   }
 
-  const allowReferences = options?.allowReferences ?? false
-
   try {
     if (typeof responseFormatValue === 'string') {
-      const trimmedValue = responseFormatValue.trim()
-      if (trimmedValue === '') return null
-      if (allowReferences && trimmedValue.startsWith('<') && trimmedValue.includes('>')) {
-        return trimmedValue
-      }
-      return JSON.parse(trimmedValue)
+      return JSON.parse(responseFormatValue)
     }
     return responseFormatValue
   } catch (error) {

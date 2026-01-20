@@ -16,6 +16,7 @@ import {
   GetBlockOutputsResult,
   type GetBlockOutputsResultType,
 } from '@/lib/copilot/tools/shared/schemas'
+import { normalizeName } from '@/executor/constants'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -89,17 +90,16 @@ export class GetBlockOutputsClientTool extends BaseClientTool {
         if (!block?.type) continue
 
         const blockName = block.name || block.type
+        const normalizedBlockName = normalizeName(blockName)
+
+        let insideSubflowOutputs: string[] | undefined
+        let outsideSubflowOutputs: string[] | undefined
 
         const blockOutput: GetBlockOutputsResultType['blocks'][0] = {
           blockId,
           blockName,
           blockType: block.type,
           outputs: [],
-        }
-
-        // Include triggerMode if the block is in trigger mode
-        if (block.triggerMode) {
-          blockOutput.triggerMode = true
         }
 
         if (block.type === 'loop' || block.type === 'parallel') {

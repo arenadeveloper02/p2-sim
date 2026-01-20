@@ -108,20 +108,13 @@ export const salesforceCreateTaskTool: ToolConfig<
         id: data.id,
         success: data.success,
         created: true,
+        metadata: { operation: 'create_task' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Created task data',
-      properties: {
-        id: { type: 'string', description: 'Created task ID' },
-        success: { type: 'boolean', description: 'Salesforce operation success' },
-        created: { type: 'boolean', description: 'Whether task was created' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Created task' },
   },
 }

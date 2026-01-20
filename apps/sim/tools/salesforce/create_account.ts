@@ -203,6 +203,9 @@ export const salesforceCreateAccountTool: ToolConfig<
         id: data.id,
         success: data.success,
         created: true,
+        metadata: {
+          operation: 'create_account' as const,
+        },
       },
     }
   },
@@ -216,6 +219,7 @@ export const salesforceCreateAccountTool: ToolConfig<
         id: { type: 'string', description: 'Created account ID' },
         success: { type: 'boolean', description: 'Salesforce operation success' },
         created: { type: 'boolean', description: 'Whether account was created' },
+        metadata: { type: 'object', description: 'Operation metadata' },
       },
     },
   },

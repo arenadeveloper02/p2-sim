@@ -66,9 +66,9 @@ export const wealthboxWriteTaskTool: ToolConfig<WealthboxWriteParams, WealthboxW
     },
   },
 
-  transformResponse: async (response: Response) => {
+  transformResponse: async (response: Response, params?: WealthboxWriteParams) => {
     const data = await response.json()
-    return formatTaskResponse(data)
+    return formatTaskResponse(data, params)
   },
 
   outputs: {
@@ -83,16 +83,8 @@ export const wealthboxWriteTaskTool: ToolConfig<WealthboxWriteParams, WealthboxW
           type: 'object',
           description: 'Operation metadata',
           properties: {
-            itemId: {
-              type: 'string',
-              description: 'ID of the created/updated task',
-              optional: true,
-            },
-            taskId: {
-              type: 'string',
-              description: 'ID of the created/updated task',
-              optional: true,
-            },
+            operation: { type: 'string', description: 'The operation performed' },
+            itemId: { type: 'string', description: 'ID of the created/updated task' },
             itemType: { type: 'string', description: 'Type of item (task)' },
           },
         },

@@ -20,11 +20,9 @@ export type SelectorKey =
   | 'onedrive.folders'
   | 'sharepoint.sites'
   | 'microsoft.excel'
-  | 'microsoft.excel.sheets'
   | 'microsoft.word'
   | 'microsoft.planner'
   | 'google.drive'
-  | 'google.sheets'
   | 'knowledge.documents'
   | 'webflow.sites'
   | 'webflow.collections'
@@ -51,7 +49,6 @@ export interface SelectorContext {
   fileId?: string
   siteId?: string
   collectionId?: string
-  spreadsheetId?: string
 }
 
 export interface SelectorQueryArgs {

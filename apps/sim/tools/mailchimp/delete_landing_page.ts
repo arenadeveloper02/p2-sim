@@ -11,6 +11,13 @@ export interface MailchimpDeleteLandingPageParams {
 
 export interface MailchimpDeleteLandingPageResponse {
   success: boolean
+  output: {
+    metadata: {
+      operation: 'delete_landing_page'
+      pageId: string
+    }
+    success: boolean
+  }
 }
 
 export const mailchimpDeleteLandingPageTool: ToolConfig<
@@ -54,10 +61,25 @@ export const mailchimpDeleteLandingPageTool: ToolConfig<
 
     return {
       success: true,
+      output: {
+        metadata: {
+          operation: 'delete_landing_page' as const,
+          pageId: '',
+        },
+        success: true,
+      },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Whether the landing page was successfully deleted' },
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Deletion confirmation',
+      properties: {
+        metadata: { type: 'object', description: 'Operation metadata' },
+        success: { type: 'boolean', description: 'Operation success' },
+      },
+    },
   },
 }

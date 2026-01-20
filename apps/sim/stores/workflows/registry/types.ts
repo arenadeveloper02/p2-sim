@@ -1,20 +1,8 @@
-import type { Edge } from 'reactflow'
-import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
-
 export interface DeploymentStatus {
   isDeployed: boolean
   deployedAt?: Date
   apiKey?: string
   needsRedeployment?: boolean
-}
-
-export interface ClipboardData {
-  blocks: Record<string, BlockState>
-  edges: Edge[]
-  subBlockValues: Record<string, Record<string, unknown>>
-  loops: Record<string, Loop>
-  parallels: Record<string, Parallel>
-  timestamp: number
 }
 
 export interface WorkflowMetadata {
@@ -26,7 +14,6 @@ export interface WorkflowMetadata {
   color: string
   workspaceId?: string
   folderId?: string | null
-  sortOrder: number
 }
 
 export type HydrationPhase =
@@ -51,8 +38,6 @@ export interface WorkflowRegistryState {
   error: string | null
   deploymentStatuses: Record<string, DeploymentStatus>
   hydration: HydrationState
-  clipboard: ClipboardData | null
-  pendingSelection: string[] | null
 }
 
 export interface WorkflowRegistryActions {
@@ -73,19 +58,6 @@ export interface WorkflowRegistryActions {
     apiKey?: string
   ) => void
   setWorkflowNeedsRedeployment: (workflowId: string | null, needsRedeployment: boolean) => void
-  copyBlocks: (blockIds: string[]) => void
-  preparePasteData: (positionOffset?: { x: number; y: number }) => {
-    blocks: Record<string, BlockState>
-    edges: Edge[]
-    loops: Record<string, Loop>
-    parallels: Record<string, Parallel>
-    subBlockValues: Record<string, Record<string, unknown>>
-  } | null
-  hasClipboard: () => boolean
-  clearClipboard: () => void
-  setPendingSelection: (blockIds: string[]) => void
-  clearPendingSelection: () => void
-  logout: () => void
 }
 
 export type WorkflowRegistry = WorkflowRegistryState & WorkflowRegistryActions

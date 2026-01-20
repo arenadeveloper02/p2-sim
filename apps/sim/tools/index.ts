@@ -12,7 +12,6 @@ import {
   formatRequestParams,
   getTool,
   getToolAsync,
-  safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
@@ -122,7 +121,6 @@ function handleBodySizeLimitError(error: unknown, requestId: string, context: st
  */
 const MCP_SYSTEM_PARAMETERS = new Set([
   'serverId',
-  'serverUrl',
   'toolName',
   'serverName',
   '_context',
@@ -254,8 +252,9 @@ export async function executeTool(
       try {
         const baseUrl = getBaseUrl()
 
+        // Prepare the token payload
         const tokenPayload: OAuthTokenPayload = {
-          credentialId: contextParams.credential as string,
+          credentialId: contextParams.credential,
         }
 
         // Add workflowId if it exists in params, context, or executionContext
@@ -956,34 +955,7 @@ async function handleProxyRequest(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     await addInternalAuthIfNeeded(headers, true, requestId, `proxy:${toolId}`)
 
-    // Extract only the minimal executionContext fields needed by the proxy
-    // The proxy doesn't use the full executionContext, so we only send what's needed
-    // to avoid serializing large Maps, Sets, and accumulated loop data
-    const minimalExecutionContext = executionContext
-      ? {
-          workflowId: executionContext.workflowId,
-          workspaceId: executionContext.workspaceId,
-          executionId: executionContext.executionId,
-          userId: executionContext.userId,
-        }
-      : undefined
-
-    // Use safeStringify to handle circular references and large objects
-    let body: string
-    try {
-      body = safeStringify(
-        { toolId, params, executionContext: minimalExecutionContext },
-        `proxy:${toolId}`
-      )
-    } catch (stringifyError) {
-      logger.error(`[${requestId}] Failed to stringify request body for proxy:${toolId}`, {
-        error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
-        toolId,
-      })
-      throw new Error(
-        `Failed to prepare request body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}. This may be due to circular references or data that is too large.`
-      )
-    }
+    const body = JSON.stringify({ toolId, params, executionContext })
 
     // Check request body size before sending
     validateRequestBodySize(body, requestId, `proxy:${toolId}`)

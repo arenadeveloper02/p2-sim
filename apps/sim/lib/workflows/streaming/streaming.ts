@@ -7,16 +7,8 @@ import {
 import { encodeSSE } from '@/lib/core/utils/sse'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
-import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
-import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
-
-/**
- * Extended streaming execution type that includes blockId on the execution.
- * The runtime passes blockId but the base StreamingExecution type doesn't declare it.
- */
-interface StreamingExecutionWithBlockId extends Omit<StreamingExecution, 'execution'> {
-  execution?: StreamingExecution['execution'] & { blockId?: string }
-}
+import type { ExecutionResult } from '@/executor/types'
+import { executeWorkflow } from '../executor/execute-workflow'
 
 const logger = createLogger('WorkflowStreaming')
 
@@ -35,9 +27,9 @@ export interface StreamingResponseOptions {
     userId: string
     workspaceId?: string | null
     isDeployed?: boolean
-    variables?: Record<string, unknown>
+    variables?: Record<string, any>
   }
-  input: unknown
+  input: any
   executingUserId: string
   streamConfig: StreamingConfig
   executionId?: string
@@ -49,8 +41,12 @@ interface StreamingState {
   streamCompletionTimes: Map<string, number>
 }
 
-function extractOutputValue(output: unknown, path: string): unknown {
-  return traverseObjectPath(output, path)
+function extractOutputValue(output: any, path: string): any {
+  let value = traverseObjectPath(output, path)
+  if (value === undefined && output?.response) {
+    value = traverseObjectPath(output.response, path)
+  }
+  return value
 }
 
 function isDangerousKey(key: string): boolean {
@@ -98,7 +94,7 @@ function buildMinimalResult(
       continue
     }
 
-    const blockLog = result.logs.find((log: BlockLog) => log.blockId === blockId)
+    const blockLog = result.logs.find((log: any) => log.blockId === blockId)
     if (!blockLog?.output) {
       continue
     }
@@ -109,16 +105,16 @@ function buildMinimalResult(
     }
 
     if (!minimalResult.output[blockId]) {
-      minimalResult.output[blockId] = Object.create(null) as Record<string, unknown>
+      minimalResult.output[blockId] = Object.create(null)
     }
-    ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = value
+    minimalResult.output[blockId][path] = value
   }
 
   return minimalResult
 }
 
-function updateLogsWithStreamedContent(logs: BlockLog[], state: StreamingState): BlockLog[] {
-  return logs.map((log: BlockLog) => {
+function updateLogsWithStreamedContent(logs: any[], state: StreamingState): any[] {
+  return logs.map((log: any) => {
     if (!state.streamedContent.has(log.blockId)) {
       return log
     }
@@ -178,10 +174,10 @@ export async function createStreamingResponse(
         state.processedOutputs.add(blockId)
       }
 
-      /**
-       * Callback for handling streaming execution events.
-       */
-      const onStreamCallback = async (streamingExec: StreamingExecutionWithBlockId) => {
+      const onStreamCallback = async (streamingExec: {
+        stream: ReadableStream
+        execution?: { blockId?: string }
+      }) => {
         const blockId = streamingExec.execution?.blockId
         if (!blockId) {
           logger.warn(`[${requestId}] Streaming execution missing blockId`)
@@ -225,7 +221,7 @@ export async function createStreamingResponse(
         }
       }
 
-      const onBlockCompleteCallback = async (blockId: string, output: unknown) => {
+      const onBlockCompleteCallback = async (blockId: string, output: any) => {
         if (!streamConfig.selectedOutputs?.length) {
           return
         }

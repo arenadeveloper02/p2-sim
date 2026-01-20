@@ -48,19 +48,13 @@ export const salesforceDeleteLeadTool: ToolConfig<
       output: {
         id: params?.leadId || '',
         deleted: true,
+        metadata: { operation: 'delete_lead' },
       },
     }
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Deleted lead data',
-      properties: {
-        id: { type: 'string', description: 'Deleted lead ID' },
-        deleted: { type: 'boolean', description: 'Whether lead was deleted' },
-      },
-    },
+    success: { type: 'boolean', description: 'Success' },
+    output: { type: 'object', description: 'Deleted lead' },
   },
 }

@@ -67,8 +67,9 @@ export const pipedriveGetMailThreadTool: ToolConfig<
       output: {
         messages,
         metadata: {
-          thread_id: params?.thread_id || '',
-          total_items: messages.length,
+          operation: 'get_mail_thread' as const,
+          threadId: params?.thread_id || '',
+          totalItems: messages.length,
         },
         success: true,
       },
@@ -77,10 +78,7 @@ export const pipedriveGetMailThreadTool: ToolConfig<
 
   outputs: {
     messages: { type: 'array', description: 'Array of mail message objects from the thread' },
-    metadata: {
-      type: 'object',
-      description: 'Thread and pagination metadata',
-    },
+    metadata: { type: 'object', description: 'Operation metadata including thread ID' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

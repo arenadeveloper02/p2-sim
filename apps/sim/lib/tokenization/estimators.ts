@@ -58,40 +58,6 @@ export function getAccurateTokenCount(text: string, modelName = 'text-embedding-
 }
 
 /**
- * Get individual tokens as strings for visualization
- * Returns an array of token strings that can be displayed with colors
- */
-export function getTokenStrings(text: string, modelName = 'text-embedding-3-small'): string[] {
-  if (!text || text.length === 0) {
-    return []
-  }
-
-  try {
-    const encoding = getEncoding(modelName)
-    const tokenIds = encoding.encode(text)
-
-    const textChars = [...text]
-    const result: string[] = []
-    let prevCharCount = 0
-
-    for (let i = 0; i < tokenIds.length; i++) {
-      const decoded = encoding.decode(tokenIds.slice(0, i + 1))
-      const currentCharCount = [...decoded].length
-      const tokenCharCount = currentCharCount - prevCharCount
-
-      const tokenStr = textChars.slice(prevCharCount, prevCharCount + tokenCharCount).join('')
-      result.push(tokenStr)
-      prevCharCount = currentCharCount
-    }
-
-    return result
-  } catch (error) {
-    logger.error('Error getting token strings:', error)
-    return text.split(/(\s+)/).filter((s) => s.length > 0)
-  }
-}
-
-/**
  * Truncate text to a maximum token count
  * Useful for handling texts that exceed model limits
  */
@@ -125,6 +91,24 @@ export function truncateToTokenLimit(
     const maxChars = maxTokens * 4
     return text.slice(0, maxChars)
   }
+}
+
+/**
+ * Get token count for multiple texts (for batching decisions)
+ * Returns array of token counts in same order as input
+ */
+export function getTokenCountsForBatch(
+  texts: string[],
+  modelName = 'text-embedding-3-small'
+): number[] {
+  return texts.map((text) => getAccurateTokenCount(text, modelName))
+}
+
+/**
+ * Calculate total tokens across multiple texts
+ */
+export function getTotalTokenCount(texts: string[], modelName = 'text-embedding-3-small'): number {
+  return texts.reduce((total, text) => total + getAccurateTokenCount(text, modelName), 0)
 }
 
 /**

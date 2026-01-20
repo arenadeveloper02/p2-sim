@@ -3,7 +3,6 @@
  *
  * @vitest-environment node
  */
-import { loggerMock } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -35,21 +34,21 @@ vi.mock('@sim/db', () => ({
   workflowSchedule: {
     workflowId: 'workflow_id',
     blockId: 'block_id',
-    deploymentVersionId: 'deployment_version_id',
   },
 }))
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((...args) => ({ type: 'eq', args })),
-  and: vi.fn((...args) => ({ type: 'and', args })),
-  sql: vi.fn((strings, ...values) => ({ type: 'sql', strings, values })),
 }))
 
-vi.mock('@/lib/webhooks/deploy', () => ({
-  cleanupWebhooksForWorkflow: vi.fn().mockResolvedValue(undefined),
+vi.mock('@sim/logger', () => ({
+  createLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
 }))
-
-vi.mock('@sim/logger', () => loggerMock)
 
 vi.mock('./utils', async (importOriginal) => {
   const original = await importOriginal<typeof import('./utils')>()

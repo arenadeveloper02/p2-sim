@@ -15,7 +15,7 @@ export interface PostHogQueryResponse {
     columns?: string[]
     types?: string[]
     hogql?: string
-    has_more?: boolean
+    hasMore?: boolean
   }
 }
 
@@ -121,7 +121,7 @@ export const queryTool: ToolConfig<PostHogQueryParams, PostHogQueryResponse> = {
         columns: data.columns || undefined,
         types: data.types || undefined,
         hogql: data.hogql || undefined,
-        has_more: data.hasMore || false,
+        hasMore: data.hasMore || false,
       },
     }
   },
@@ -156,7 +156,7 @@ export const queryTool: ToolConfig<PostHogQueryParams, PostHogQueryResponse> = {
       description: 'The actual HogQL query that was executed',
       optional: true,
     },
-    has_more: {
+    hasMore: {
       type: 'boolean',
       description: 'Whether there are more results available',
       optional: true,

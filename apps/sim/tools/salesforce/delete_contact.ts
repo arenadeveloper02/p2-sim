@@ -56,6 +56,7 @@ export const salesforceDeleteContactTool: ToolConfig<
       output: {
         id: params?.contactId || '',
         deleted: true,
+        metadata: { operation: 'delete_contact' as const },
       },
     }
   },
@@ -68,6 +69,7 @@ export const salesforceDeleteContactTool: ToolConfig<
       properties: {
         id: { type: 'string', description: 'Deleted contact ID' },
         deleted: { type: 'boolean', description: 'Whether contact was deleted' },
+        metadata: { type: 'object', description: 'Operation metadata' },
       },
     },
   },

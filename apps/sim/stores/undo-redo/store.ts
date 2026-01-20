@@ -2,16 +2,12 @@ import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { UNDO_REDO_OPERATIONS } from '@/socket/constants'
 import type {
-  BatchAddBlocksOperation,
-  BatchAddEdgesOperation,
-  BatchMoveBlocksOperation,
-  BatchRemoveBlocksOperation,
-  BatchRemoveEdgesOperation,
-  BatchUpdateParentOperation,
+  MoveBlockOperation,
   Operation,
   OperationEntry,
+  RemoveBlockOperation,
+  RemoveEdgeOperation,
   UndoRedoState,
 } from '@/stores/undo-redo/types'
 import type { BlockState } from '@/stores/workflows/workflow/types'
@@ -87,33 +83,40 @@ function isOperationApplicable(
   graph: { blocksById: Record<string, BlockState>; edgesById: Record<string, Edge> }
 ): boolean {
   switch (operation.type) {
-    case UNDO_REDO_OPERATIONS.BATCH_REMOVE_BLOCKS: {
-      const op = operation as BatchRemoveBlocksOperation
-      return op.data.blockSnapshots.every((block) => Boolean(graph.blocksById[block.id]))
+    case 'remove-block': {
+      const op = operation as RemoveBlockOperation
+      return Boolean(graph.blocksById[op.data.blockId])
     }
-    case UNDO_REDO_OPERATIONS.BATCH_ADD_BLOCKS: {
-      const op = operation as BatchAddBlocksOperation
-      return op.data.blockSnapshots.every((block) => !graph.blocksById[block.id])
+    case 'add-block': {
+      const blockId = operation.data.blockId
+      return !graph.blocksById[blockId]
     }
-    case UNDO_REDO_OPERATIONS.BATCH_MOVE_BLOCKS: {
-      const op = operation as BatchMoveBlocksOperation
-      return op.data.moves.every((move) => Boolean(graph.blocksById[move.blockId]))
+    case 'move-block': {
+      const op = operation as MoveBlockOperation
+      return Boolean(graph.blocksById[op.data.blockId])
     }
-    case UNDO_REDO_OPERATIONS.UPDATE_PARENT: {
+    case 'update-parent': {
       const blockId = operation.data.blockId
       return Boolean(graph.blocksById[blockId])
     }
-    case UNDO_REDO_OPERATIONS.BATCH_UPDATE_PARENT: {
-      const op = operation as BatchUpdateParentOperation
-      return op.data.updates.every((u) => Boolean(graph.blocksById[u.blockId]))
+    case 'duplicate-block': {
+      const duplicatedId = operation.data.duplicatedBlockId
+      return Boolean(graph.blocksById[duplicatedId])
     }
-    case UNDO_REDO_OPERATIONS.BATCH_REMOVE_EDGES: {
-      const op = operation as BatchRemoveEdgesOperation
-      return op.data.edgeSnapshots.every((edge) => Boolean(graph.edgesById[edge.id]))
+    case 'remove-edge': {
+      const op = operation as RemoveEdgeOperation
+      return Boolean(graph.edgesById[op.data.edgeId])
     }
-    case UNDO_REDO_OPERATIONS.BATCH_ADD_EDGES: {
-      const op = operation as BatchAddEdgesOperation
-      return op.data.edgeSnapshots.every((edge) => !graph.edgesById[edge.id])
+    case 'add-edge': {
+      const edgeId = operation.data.edgeId
+      return !graph.edgesById[edgeId]
+    }
+    case 'add-subflow':
+    case 'remove-subflow': {
+      const subflowId = operation.data.subflowId
+      return operation.type === 'remove-subflow'
+        ? Boolean(graph.blocksById[subflowId])
+        : !graph.blocksById[subflowId]
     }
     default:
       return true
@@ -198,82 +201,62 @@ export const useUndoRedoStore = create<UndoRedoState>()(
           }
         }
 
-        // Coalesce consecutive batch-move-blocks operations for overlapping blocks
-        if (entry.operation.type === 'batch-move-blocks') {
-          const incoming = entry.operation as BatchMoveBlocksOperation
+        // Coalesce consecutive move-block operations for the same block
+        if (entry.operation.type === 'move-block') {
+          const incoming = entry.operation as MoveBlockOperation
           const last = stack.undo[stack.undo.length - 1]
 
-          // Skip no-op moves (all moves have same before/after)
-          const allNoOp = incoming.data.moves.every((move) => {
-            const sameParent = (move.before.parentId ?? null) === (move.after.parentId ?? null)
-            return move.before.x === move.after.x && move.before.y === move.after.y && sameParent
-          })
-          if (allNoOp) {
-            logger.debug('Skipped no-op batch move push')
+          // Skip no-op moves
+          const b1 = incoming.data.before
+          const a1 = incoming.data.after
+          const sameParent = (b1.parentId ?? null) === (a1.parentId ?? null)
+          if (b1.x === a1.x && b1.y === a1.y && sameParent) {
+            logger.debug('Skipped no-op move push')
             return
           }
 
-          if (
-            last &&
-            last.operation.type === 'batch-move-blocks' &&
-            last.inverse.type === 'batch-move-blocks'
-          ) {
-            const prev = last.operation as BatchMoveBlocksOperation
-            const prevBlockIds = new Set(prev.data.moves.map((m) => m.blockId))
-            const incomingBlockIds = new Set(incoming.data.moves.map((m) => m.blockId))
+          if (last && last.operation.type === 'move-block' && last.inverse.type === 'move-block') {
+            const prev = last.operation as MoveBlockOperation
+            if (prev.data.blockId === incoming.data.blockId) {
+              // Merge: keep earliest before, latest after
+              const mergedBefore = prev.data.before
+              const mergedAfter = incoming.data.after
 
-            // Check if same set of blocks
-            const sameBlocks =
-              prevBlockIds.size === incomingBlockIds.size &&
-              [...prevBlockIds].every((id) => incomingBlockIds.has(id))
+              const sameAfter =
+                mergedBefore.x === mergedAfter.x &&
+                mergedBefore.y === mergedAfter.y &&
+                (mergedBefore.parentId ?? null) === (mergedAfter.parentId ?? null)
 
-            if (sameBlocks) {
-              // Merge: keep earliest before, latest after for each block
-              const mergedMoves = incoming.data.moves.map((incomingMove) => {
-                const prevMove = prev.data.moves.find((m) => m.blockId === incomingMove.blockId)!
-                return {
-                  blockId: incomingMove.blockId,
-                  before: prevMove.before,
-                  after: incomingMove.after,
-                }
-              })
-
-              // Check if all moves result in same position (net no-op)
-              const allSameAfter = mergedMoves.every((move) => {
-                const sameParent = (move.before.parentId ?? null) === (move.after.parentId ?? null)
-                return (
-                  move.before.x === move.after.x && move.before.y === move.after.y && sameParent
-                )
-              })
-
-              const newUndoCoalesced: OperationEntry[] = allSameAfter
+              const newUndoCoalesced: OperationEntry[] = sameAfter
                 ? stack.undo.slice(0, -1)
                 : (() => {
-                    const op = entry.operation as BatchMoveBlocksOperation
-                    const inv = entry.inverse as BatchMoveBlocksOperation
+                    const op = entry.operation as MoveBlockOperation
+                    const inv = entry.inverse as MoveBlockOperation
                     const newEntry: OperationEntry = {
                       id: entry.id,
                       createdAt: entry.createdAt,
                       operation: {
                         id: op.id,
-                        type: 'batch-move-blocks',
+                        type: 'move-block',
                         timestamp: op.timestamp,
                         workflowId,
                         userId,
-                        data: { moves: mergedMoves },
+                        data: {
+                          blockId: incoming.data.blockId,
+                          before: mergedBefore,
+                          after: mergedAfter,
+                        },
                       },
                       inverse: {
                         id: inv.id,
-                        type: 'batch-move-blocks',
+                        type: 'move-block',
                         timestamp: inv.timestamp,
                         workflowId,
                         userId,
                         data: {
-                          moves: mergedMoves.map((m) => ({
-                            blockId: m.blockId,
-                            before: m.after,
-                            after: m.before,
-                          })),
+                          blockId: incoming.data.blockId,
+                          before: mergedAfter,
+                          after: mergedBefore,
                         },
                       },
                     }
@@ -288,10 +271,10 @@ export const useUndoRedoStore = create<UndoRedoState>()(
 
               set({ stacks: currentStacks })
 
-              logger.debug('Coalesced consecutive batch move operations', {
+              logger.debug('Coalesced consecutive move operations', {
                 workflowId,
                 userId,
-                blockCount: mergedMoves.length,
+                blockId: incoming.data.blockId,
                 undoSize: newUndoCoalesced.length,
               })
               return
