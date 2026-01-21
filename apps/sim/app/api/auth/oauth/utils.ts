@@ -30,6 +30,12 @@ export async function safeAccountInsert(
   context: { provider: string; identifier?: string }
 ): Promise<void> {
   try {
+    logger.info(`Inserting new account for provider ${context.provider}`, {
+      userId: data.userId,
+      providerId: data.providerId,
+      expiresAt: data.accessTokenExpiresAt,
+      hasRefreshToken: !!data.refreshToken,
+    })
     await db.insert(account).values(data)
     logger.info(`Created new ${context.provider} account for user`, { userId: data.userId })
   } catch (error: any) {
@@ -204,8 +210,16 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
 
       // Update the token in the correct database table
       if (sourceTable === 'account_tokens') {
+        logger.info(`Updating account_tokens for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
         await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
       } else {
+        logger.info(`Updating account for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
         await db.update(account).set(updateData).where(eq(account.id, credential.id))
       }
 
@@ -297,13 +311,21 @@ export async function refreshAccessTokenIfNeeded(
       const [inAccountTokens] = await db
         .select({ id: accountTokens.id })
         .from(accountTokens)
-        .where(eq(accountTokens.id, credentialId))
+        .where(eq(accountTokens.id, credential.id))
         .limit(1)
 
       if (inAccountTokens) {
-        await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credentialId))
+        logger.info(`[${requestId}] Updating account_tokens for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
       } else {
-        await db.update(account).set(updateData).where(eq(account.id, credentialId))
+        logger.info(`[${requestId}] Updating account for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(account).set(updateData).where(eq(account.id, credential.id))
       }
 
       logger.info(`[${requestId}] Successfully refreshed access token for credential`)
@@ -375,13 +397,21 @@ export async function refreshTokenIfNeeded(
     const [inAccountTokens] = await db
       .select({ id: accountTokens.id })
       .from(accountTokens)
-      .where(eq(accountTokens.id, credentialId))
+      .where(eq(accountTokens.id, credential.id))
       .limit(1)
 
     if (inAccountTokens) {
-      await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credentialId))
+      logger.info(`[${requestId}] Updating account_tokens for credential ${credential.id}`, {
+        expiresAt: updateData.accessTokenExpiresAt,
+        hasNewRefreshToken: !!updateData.refreshToken,
+      })
+      await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
     } else {
-      await db.update(account).set(updateData).where(eq(account.id, credentialId))
+      logger.info(`[${requestId}] Updating account for credential ${credential.id}`, {
+        expiresAt: updateData.accessTokenExpiresAt,
+        hasNewRefreshToken: !!updateData.refreshToken,
+      })
+      await db.update(account).set(updateData).where(eq(account.id, credential.id))
     }
 
     logger.info(`[${requestId}] Successfully refreshed access token`)
