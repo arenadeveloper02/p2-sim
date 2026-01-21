@@ -1249,10 +1249,20 @@ export async function refreshOAuthToken(
     const config = getProviderAuthConfig(provider)
 
     const { headers, bodyParams } = buildAuthRequest(config, refreshToken)
+    logger.info('Token refresh request:', {
+      provider,
+      config,
+      headers,
+      bodyParams,
+    })
 
     const response = await fetch(config.tokenEndpoint, {
       method: 'POST',
       headers,
+      body: new URLSearchParams(bodyParams).toString(),
+    })
+
+    logger.info('Token refresh body:', {
       body: new URLSearchParams(bodyParams).toString(),
     })
 
