@@ -7,11 +7,11 @@ import type { AIProviderConfig } from './types'
 
 /**
  * Resolves AI provider with Grok first, then GPT-4o fallback
- * 
+ *
  * Priority order:
  * 1. Grok (XAI) - grok-3-fast-latest
  * 2. GPT-4o (OpenAI) - gpt-4o
- * 
+ *
  * @param logger - Logger instance
  * @returns Provider configuration
  * @throws Error if no provider is available

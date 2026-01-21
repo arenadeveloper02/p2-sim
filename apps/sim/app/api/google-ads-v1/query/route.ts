@@ -16,13 +16,13 @@ const logger = createLogger('GoogleAdsV1API')
 
 /**
  * POST /api/google-ads-v1/query
- * 
+ *
  * Handles Google Ads V1 query requests
- * 
+ *
  * Request body:
  * - query: Natural language query (e.g., "show campaign performance last 7 days")
  * - accounts: Account key from GOOGLE_ADS_ACCOUNTS
- * 
+ *
  * Response:
  * - success: boolean
  * - query: Original user query

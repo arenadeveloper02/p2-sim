@@ -5,27 +5,31 @@
 import { createLogger } from '@sim/logger'
 import { executeProviderRequest } from '@/providers'
 import { resolveAIProvider } from './ai-provider'
-import { GAQL_SYSTEM_PROMPT } from './prompt'
 import { DEFAULT_DATE_RANGE_DAYS } from './constants'
+import { GAQL_SYSTEM_PROMPT } from './prompt'
 import type { GAQLResponse } from './types'
 
 const logger = createLogger('GoogleAdsV1QueryGen')
 
 /**
  * Adds default date filter to GAQL query if missing
- * 
+ *
  * @param query - GAQL query string
  * @returns Query with date filter added
  */
-function addDefaultDateFilter(query: string): { query: string; startDate: string; endDate: string } {
+function addDefaultDateFilter(query: string): {
+  query: string
+  startDate: string
+  endDate: string
+} {
   // Calculate last 30 days ending yesterday
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
-  
+
   const thirtyDaysAgo = new Date(yesterday)
   thirtyDaysAgo.setDate(yesterday.getDate() - (DEFAULT_DATE_RANGE_DAYS - 1))
-  
+
   const endDate = yesterday.toISOString().split('T')[0]
   const startDate = thirtyDaysAgo.toISOString().split('T')[0]
   const defaultDateFilter = `segments.date BETWEEN '${startDate}' AND '${endDate}'`
@@ -52,7 +56,7 @@ function addDefaultDateFilter(query: string): { query: string; startDate: string
 
 /**
  * Parses AI response and extracts GAQL query
- * 
+ *
  * @param aiResponse - Response from AI provider
  * @returns Parsed GAQL response
  * @throws Error if response is invalid
@@ -68,9 +72,7 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 
   // Try to extract JSON from response
   const jsonMatch = responseContent.match(/\{[\s\S]*\}/)
-  const parsed: GAQLResponse = jsonMatch
-    ? JSON.parse(jsonMatch[0])
-    : JSON.parse(responseContent)
+  const parsed: GAQLResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
 
   if (!parsed.gaql_query) {
     throw new Error('AI did not return a GAQL query')
@@ -81,14 +83,13 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 
 /**
  * Validates and fixes GAQL query date filtering
- * 
+ *
  * @param response - Parsed GAQL response
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: GAQLResponse): GAQLResponse {
   const hasDateFilter =
-    response.gaql_query.includes('segments.date') &&
-    response.gaql_query.includes('BETWEEN')
+    response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
 
   if (!hasDateFilter) {
     logger.warn('Query missing BETWEEN date filter, adding default last 30 days ending yesterday', {
@@ -96,7 +97,7 @@ function validateDateFiltering(response: GAQLResponse): GAQLResponse {
     })
 
     const { query, startDate, endDate } = addDefaultDateFilter(response.gaql_query)
-    
+
     logger.info('Updated query with default BETWEEN date filter (last 30 days ending yesterday)', {
       updatedQuery: query,
       startDate,
@@ -114,13 +115,13 @@ function validateDateFiltering(response: GAQLResponse): GAQLResponse {
 
 /**
  * Generates GAQL query using AI
- * 
+ *
  * This function:
  * - Resolves the appropriate AI provider (Grok or GPT-4o)
  * - Sends the user prompt to the AI with the GAQL system prompt
  * - Parses and validates the response
  * - Ensures proper date filtering is present
- * 
+ *
  * @param userPrompt - Natural language query from user
  * @returns GAQL query response with metadata
  * @throws Error if generation fails
