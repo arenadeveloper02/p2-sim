@@ -957,11 +957,12 @@ const SPECIAL_BLOCKS_METADATA: Record<string, any> = {
     bestPractices: `
     - Set reasonable limits for iterations.
     - Use forEach for collection processing, for loops for fixed iterations.
-    - Cannot have loops/parallels inside a loop block.
+    - Nested loops are supported. Inner loops execute within each iteration of outer loops.
     - For yaml it needs to connect blocks inside to the start field of the block.
     - IMPORTANT for while/doWhile: The condition is evaluated BEFORE each iteration starts, so blocks INSIDE the loop cannot be referenced in the condition (their outputs don't exist yet when the condition runs).
     - For while/doWhile conditions, use: <loop.index> for iteration count, workflow variables (set by blocks OUTSIDE the loop), or references to blocks OUTSIDE the loop.
     - To break a while/doWhile loop based on internal block results, use a variables block OUTSIDE the loop and update it from inside, then reference that variable in the condition.
+    - When using nested loops, loop variables like <loop.index> refer to the innermost containing loop.
     `,
     inputs: {
       loopType: {
@@ -1080,7 +1081,7 @@ const SPECIAL_BLOCKS_METADATA: Record<string, any> = {
         type: 'number',
         required: false,
         minimum: 1,
-        maximum: 100,
+        maximum: 500,
         description: "Number of parallel branches (for 'count' type)",
         example: 3,
       },
@@ -1125,7 +1126,7 @@ const SPECIAL_BLOCKS_METADATA: Record<string, any> = {
         title: 'Count',
         type: 'slider',
         min: 1,
-        max: 100,
+        max: 500,
         integer: true,
         condition: { field: 'parallelType', value: 'count' },
       },
