@@ -10,6 +10,27 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackReadMessagesAPI')
 
+// Helper function to extract user IDs from Slack mention patterns in text
+function extractMentionedUserIds(text: string): string[] {
+  const mentionPattern = /<@([A-Z0-9]+)(?:\|[^>]+)?>/g
+  const userIds: string[] = []
+  let match
+
+  while ((match = mentionPattern.exec(text)) !== null) {
+    userIds.push(match[1]) // Capture group 1 is the user ID
+  }
+
+  return userIds
+}
+
+// Helper function to replace Slack mentions with usernames in text
+function replaceMentionsWithUsernames(text: string, userNames: Record<string, string>): string {
+  return text.replace(/<@([A-Z0-9]+)(?:\|[^>]+)?>/g, (match, userId) => {
+    const username = userNames[userId]
+    return username ? `@${username}` : match // Keep original if username not found
+  })
+}
+
 // Helper function to fetch user information for multiple users
 async function fetchUserInfo(
   userIds: string[],
@@ -138,7 +159,7 @@ async function fetchThreadReplies(
     const replies = rawReplies.map((message: any) => ({
       type: message.type || 'message',
       ts: message.ts,
-      text: message.text || '',
+      text: replaceMentionsWithUsernames(message.text || '', replyUserNames),
       user: message.user,
       user_name: message.user ? replyUserNames[message.user] || '' : '',
       bot_id: message.bot_id,
@@ -435,61 +456,20 @@ export async function POST(request: NextRequest) {
           message.reactions?.forEach((reaction: any) => {
             if (reaction.users) pageUserIds.push(...reaction.users)
           })
+          // Extract user IDs from mentions in message text
+          if (message.text) {
+            const mentionedUserIds = extractMentionedUserIds(message.text)
+            pageUserIds.push(...mentionedUserIds)
+          }
         })
 
         // Add to global user IDs collection
         allUserIds.push(...pageUserIds)
 
-        const pageMessages = pageRawMessages.map((message: any) => ({
-          type: message.type || 'message',
-          ts: message.ts,
-          text: message.text || '',
-          user: message.user,
-          user_name: '', // Will be filled after user info fetch
-          bot_id: message.bot_id,
-          username: message.username,
-          channel: message.channel,
-          team: message.team,
-          thread_ts: message.thread_ts,
-          parent_user_id: message.parent_user_id,
-          reply_count: message.reply_count,
-          reply_users_count: message.reply_users_count,
-          latest_reply: message.latest_reply,
-          subscribed: message.subscribed,
-          last_read: message.last_read,
-          unread_count: message.unread_count,
-          subtype: message.subtype,
-          reactions: message.reactions?.map((reaction: any) => ({
-            name: reaction.name,
-            count: reaction.count,
-            users: reaction.users || [],
-            user_names: [], // Will be filled after user info fetch
-          })),
-          is_starred: message.is_starred,
-          pinned_to: message.pinned_to,
-          files: message.files?.map((file: any) => ({
-            id: file.id,
-            name: file.name,
-            mimetype: file.mimetype,
-            size: file.size,
-            url_private: file.url_private,
-            permalink: file.permalink,
-            mode: file.mode,
-          })),
-          attachments: message.attachments,
-          blocks: message.blocks,
-          edited: message.edited
-            ? {
-                user: message.edited.user,
-                user_name: '', // Will be filled after user info fetch
-                ts: message.edited.ts,
-              }
-            : undefined,
-          permalink: message.permalink,
-        }))
+        // Store raw messages for later processing
+        allMessages.push(...pageRawMessages)
 
-        logger.info(`[${requestId}] Page ${pagesFetched}: got ${pageMessages.length} messages`)
-        allMessages.push(...pageMessages)
+        logger.info(`[${requestId}] Page ${pagesFetched}: got ${pageRawMessages.length} messages`)
 
         // Check if we've reached the message limit
         if (allMessages.length >= maxTotalMessages) {
@@ -529,22 +509,60 @@ export async function POST(request: NextRequest) {
         logger
       )
 
-      // Update all messages with user names
-      allMessages.forEach((message: any) => {
-        if (message.user) {
-          message.user_name = userNames[message.user] || ''
-        }
-        if (message.edited?.user) {
-          message.edited.user_name = userNames[message.edited.user] || ''
-        }
-        if (message.reactions) {
-          message.reactions.forEach((reaction: any) => {
-            if (reaction.users) {
-              reaction.user_names = reaction.users.map((userId: string) => userNames[userId] || '')
+      // Map all raw messages to formatted messages with user names and mention replacement
+      const formattedMessages = allMessages.map((message: any) => ({
+        type: message.type || 'message',
+        ts: message.ts,
+        text: replaceMentionsWithUsernames(message.text || '', userNames),
+        user: message.user,
+        user_name: message.user ? userNames[message.user] || '' : '',
+        bot_id: message.bot_id,
+        username: message.username,
+        channel: message.channel,
+        team: message.team,
+        thread_ts: message.thread_ts,
+        parent_user_id: message.parent_user_id,
+        reply_count: message.reply_count,
+        reply_users_count: message.reply_users_count,
+        latest_reply: message.latest_reply,
+        subscribed: message.subscribed,
+        last_read: message.last_read,
+        unread_count: message.unread_count,
+        subtype: message.subtype,
+        reactions: message.reactions?.map((reaction: any) => ({
+          name: reaction.name,
+          count: reaction.count,
+          users: reaction.users || [],
+          user_names: reaction.users
+            ? reaction.users.map((userId: string) => userNames[userId] || '')
+            : [],
+        })),
+        is_starred: message.is_starred,
+        pinned_to: message.pinned_to,
+        files: message.files?.map((file: any) => ({
+          id: file.id,
+          name: file.name,
+          mimetype: file.mimetype,
+          size: file.size,
+          url_private: file.url_private,
+          permalink: file.permalink,
+          mode: file.mode,
+        })),
+        attachments: message.attachments,
+        blocks: message.blocks,
+        edited: message.edited
+          ? {
+              user: message.edited.user,
+              user_name: message.edited.user ? userNames[message.edited.user] || '' : '',
+              ts: message.edited.ts,
             }
-          })
-        }
-      })
+          : undefined,
+        permalink: message.permalink,
+      }))
+
+      // Replace allMessages with formatted messages
+      allMessages.length = 0
+      allMessages.push(...formattedMessages)
 
       // Fetch thread replies if requested
       if (validatedData.includeThreads && allMessages.length > 0) {
@@ -715,6 +733,11 @@ export async function POST(request: NextRequest) {
       message.reactions?.forEach((reaction: any) => {
         if (reaction.users) singlePageUserIds.push(...reaction.users)
       })
+      // Extract user IDs from mentions in message text
+      if (message.text) {
+        const mentionedUserIds = extractMentionedUserIds(message.text)
+        singlePageUserIds.push(...mentionedUserIds)
+      }
     })
 
     // Fetch user information for all collected user IDs
@@ -728,7 +751,7 @@ export async function POST(request: NextRequest) {
     const messages = rawMessages.map((message: any) => ({
       type: message.type || 'message',
       ts: message.ts,
-      text: message.text || '',
+      text: replaceMentionsWithUsernames(message.text || '', userNames),
       user: message.user,
       user_name: message.user ? userNames[message.user] || '' : '',
       bot_id: message.bot_id,
