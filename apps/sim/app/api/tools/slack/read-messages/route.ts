@@ -293,7 +293,8 @@ export async function POST(request: NextRequest) {
 
     if (validatedData.fromDate) {
       try {
-        const fromDate = new Date(validatedData.fromDate)
+        // Parse date in UTC to avoid timezone issues - set to start of day (00:00:00 UTC)
+        const fromDate = new Date(`${validatedData.fromDate}T00:00:00.000Z`)
         if (Number.isNaN(fromDate.getTime())) {
           throw new Error('Invalid from date format')
         }
@@ -308,18 +309,22 @@ export async function POST(request: NextRequest) {
 
     if (validatedData.toDate) {
       try {
-        let toDate = new Date(validatedData.toDate)
-        if (Number.isNaN(toDate.getTime())) {
-          throw new Error('Invalid to date format')
-        }
+        let toDate: Date
 
-        // If fromDate and toDate are the same day, set toDate to end of that day
+        // If fromDate and toDate are the same day, set toDate to end of that day (23:59:59.999 UTC)
         // to include all messages from the entire day
         if (validatedData.fromDate && validatedData.fromDate === validatedData.toDate) {
-          toDate.setHours(23, 59, 59, 999)
+          toDate = new Date(`${validatedData.toDate}T23:59:59.999Z`)
           logger.info(
             `[${requestId}] Same day range detected - setting toDate to end of day for "${validatedData.toDate}"`
           )
+        } else {
+          // For different days, set toDate to end of the specified day (23:59:59.999 UTC)
+          toDate = new Date(`${validatedData.toDate}T23:59:59.999Z`)
+        }
+
+        if (Number.isNaN(toDate.getTime())) {
+          throw new Error('Invalid to date format')
         }
 
         latestTimestamp = Math.floor(toDate.getTime() / 1000).toString()
