@@ -2318,7 +2318,7 @@ export const auth = betterAuth({
               const userId = data.user_id || data.bot_id || 'bot'
               const teamName = data.team || 'Slack Workspace'
 
-              const uniqueId = `${teamId}-${userId}`
+              const uniqueId = `slack-bot-${Date.now()}`
 
               logger.info('Slack credential identifier', { teamId, userId, uniqueId, teamName })
 
