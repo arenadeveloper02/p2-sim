@@ -30,6 +30,11 @@ function formatResultRow(row: any): any {
     const formatted: any = {}
 
     for (const [key, value] of Object.entries(row)) {
+      // Skip resourceName field
+      if (key === 'resourceName') {
+        continue
+      }
+
       if (value === null || value === undefined) {
         formatted[key] = value
         continue
@@ -46,7 +51,7 @@ function formatResultRow(row: any): any {
       // Convert string numbers to actual numbers for metrics
       else if (typeof value === 'string' && !Number.isNaN(Number(value)) && value !== '') {
         // Keep as string for IDs, convert to number for metrics
-        if (key === 'id' || key.endsWith('Id') || key === 'resourceName') {
+        if (key === 'id' || key.endsWith('Id')) {
           formatted[key] = value
         } else {
           formatted[key] = Number.parseFloat(value)
