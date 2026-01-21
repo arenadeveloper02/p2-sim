@@ -44,6 +44,10 @@ export interface AccountResult {
     conversion_rate: number
     cost_per_conversion: number
   }
+  // Pagination metadata
+  totalResults?: number
+  pagesRetrieved?: number
+  paginationComplete?: boolean
   error?: string
 }
 
@@ -70,4 +74,8 @@ export interface ProcessedResults {
     conversions: number
     conversions_value: number
   }
+  // Pagination metadata
+  totalResults?: number
+  pagesRetrieved?: number
+  paginationComplete?: boolean
 }

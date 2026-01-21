@@ -3,7 +3,27 @@
  * Used by extractDateRanges to handle natural language date queries
  */
 
-export type DateRange = { start: string; end: string }
+export type DateRange = { start: string; end: string; gaql?: string }
+
+/**
+ * Generates dynamic date range for GAQL queries
+ * Returns exact dates for "last N days" queries
+ */
+export function generateDynamicDateRange(days: number): DateRange & { gaql: string } {
+  const today = new Date()
+  const endDate = new Date(today)
+  const startDate = new Date(today)
+  startDate.setDate(startDate.getDate() - days + 1)
+  
+  const start = formatDate(startDate)
+  const end = formatDate(endDate)
+  
+  return {
+    start,
+    end,
+    gaql: `segments.date BETWEEN '${start}' AND '${end}'`
+  }
+}
 
 export const MONTH_MAP: Record<string, string> = {
   jan: '01',

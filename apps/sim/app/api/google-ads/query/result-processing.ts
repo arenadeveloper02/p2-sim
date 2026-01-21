@@ -121,5 +121,9 @@ export function processGoogleAdsResults(
       conversions: accountConversions,
       conversions_value: Math.round(accountConversionsValue * 100) / 100,
     },
+    // Pass through pagination metadata if available
+    totalResults: apiResult.totalResults || result.length,
+    pagesRetrieved: apiResult.pagesRetrieved || 1,
+    paginationComplete: apiResult.paginationComplete !== false,
   }
 }

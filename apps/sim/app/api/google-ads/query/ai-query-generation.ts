@@ -134,19 +134,10 @@ Please re-run the agent with a clearer date specification.`
         (new Date(range.end).getTime() - new Date(range.start).getTime()) / (1000 * 60 * 60 * 24)
       ) + 1
 
-    // Map to DURING clause based on days
-    let duringClause = ''
-    if (daysDiff <= 7) {
-      duringClause = 'LAST_7_DAYS'
-    } else if (daysDiff <= 14) {
-      duringClause = 'LAST_14_DAYS'
-    } else if (daysDiff <= 30) {
-      duringClause = 'LAST_30_DAYS'
-    } else {
-      duringClause = `BETWEEN '${range.start}' AND '${range.end}'`
-    }
+    // ALWAYS use exact date ranges with BETWEEN syntax for dynamic dates
+    const duringClause = `BETWEEN '${range.start}' AND '${range.end}'`
 
-    modifiedInput = `${userInput}\n\n**CRITICAL: You MUST use this exact date filter in your GAQL query: segments.date DURING ${duringClause}. Do NOT use any other date range.**`
+    modifiedInput = `${userInput}\n\n**CRITICAL: You MUST use this exact date filter in your GAQL query: segments.date ${duringClause}. Do NOT use any other date range.**`
 
     logger.info('Added explicit date range instruction to AI prompt', {
       originalInput: userInput,
@@ -231,15 +222,7 @@ Please re-run the agent with a clearer date specification.`
       : 30
 
     let defaultPeriodType = 'last_30_days'
-    if (daysDiff <= 7) {
-      defaultPeriodType = 'last_7_days'
-    } else if (daysDiff <= 14) {
-      defaultPeriodType = 'last_14_days'
-    } else if (daysDiff <= 30) {
-      defaultPeriodType = 'last_30_days'
-    } else {
-      defaultPeriodType = 'custom'
-    }
+    // Always use last_30_days as default since we use exact date ranges
 
     return {
       gaqlQuery: parsed.gaqlQuery,

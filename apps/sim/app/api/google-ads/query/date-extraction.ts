@@ -3,6 +3,7 @@ import { MAX_DAYS_FOR_LAST_N_DAYS, MAX_MONTHS_FOR_LAST_N_MONTHS } from './consta
 import {
   type DateRange,
   formatDate,
+  generateDynamicDateRange,
   getCurrentWeekStart,
   getLastMonthRange,
   getLastNDaysRange,
@@ -175,17 +176,17 @@ export function extractDateRanges(input: string): Array<DateRange> {
   }
 
   // ============================================
-  // PRIORITY 5: Relative period queries ("last N days")
+  // PRIORITY 5: Relative period queries ("last N days") - DYNAMIC DATE RANGES
   // ============================================
   // "last 7 days", "last 30 days", "last 90 days", "last N days"
   const lastNDaysMatch = lower.match(/\blast\s+(\d+)\s+days?\b/)
   if (lastNDaysMatch) {
     const days = Number.parseInt(lastNDaysMatch[1])
     if (days > 0 && days <= MAX_DAYS_FOR_LAST_N_DAYS) {
-      const range = getLastNDaysRange(days)
-      if (isValidDateRange(range)) {
-        logger.info('Extracted "last N days" date range', { days, range })
-        return [range]
+      const range = generateDynamicDateRange(days)
+      if (isValidDateRange({ start: range.start, end: range.end })) {
+        logger.info('Extracted "last N days" dynamic date range', { days, range })
+        return [{ start: range.start, end: range.end, gaql: range.gaql }]
       }
     }
   }

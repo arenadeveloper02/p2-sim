@@ -50,6 +50,10 @@ export function buildAccountResult(
             ) / 100
           : 0,
     },
+    // Include pagination metadata
+    totalResults: primaryResults.totalResults,
+    pagesRetrieved: primaryResults.pagesRetrieved,
+    paginationComplete: primaryResults.paginationComplete,
   }
 }
 
