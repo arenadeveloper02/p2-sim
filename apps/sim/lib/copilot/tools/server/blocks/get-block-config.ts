@@ -228,6 +228,7 @@ function mapSubBlockTypeToSchemaType(type: string): string {
     'condition-input': 'json',
     'eval-input': 'json',
     'time-input': 'string',
+    'date-input': 'string',
     'oauth-input': 'credential',
     'file-selector': 'string',
     'project-selector': 'string',

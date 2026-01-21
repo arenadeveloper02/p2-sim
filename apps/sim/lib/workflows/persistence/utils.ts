@@ -14,7 +14,14 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { v4 as uuidv4 } from 'uuid'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/sanitization/validation'
-import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
+import { getBlock } from '@/blocks/registry'
+import type {
+  BlockData,
+  BlockState,
+  Loop,
+  Parallel,
+  WorkflowState,
+} from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 
@@ -206,7 +213,81 @@ export async function loadWorkflowFromNormalizedTables(
     // Convert blocks to the expected format
     const blocksMap: Record<string, BlockState> = {}
     blocks.forEach((block) => {
-      const blockData = block.data || {}
+      const blockData = (block.data || {}) as BlockData & {
+        fieldAdvancedMode?: Record<string, boolean>
+      }
+
+      const fieldAdvancedMode = blockData.fieldAdvancedMode || {}
+      const subBlocks = (block.subBlocks as BlockState['subBlocks']) || {}
+
+      // For Arena blocks: derive advancedMode from fieldAdvancedMode AND check actual values
+      let advancedMode = block.advancedMode
+      const updatedFieldAdvancedMode = { ...fieldAdvancedMode }
+      let shouldEnableAdvancedMode = false
+
+      if (block.type === 'arena') {
+        // First check fieldAdvancedMode flag
+        const hasAnyFieldAdvancedMode = Object.values(fieldAdvancedMode).some((v) => v === true)
+        if (hasAnyFieldAdvancedMode) {
+          shouldEnableAdvancedMode = true
+        }
+
+        // Also check actual values to detect advanced mode usage
+        // If any advancedModeSupported field has a value that indicates advanced mode
+        try {
+          const blockConfig = getBlock('arena')
+          if (blockConfig?.subBlocks) {
+            for (const subBlock of blockConfig.subBlocks) {
+              if (!subBlock.advancedModeSupported) continue
+
+              const subBlockState = subBlocks[subBlock.id]
+              if (!subBlockState?.value) continue
+
+              const value = subBlockState.value
+
+              // Check if value is a string (could be variable or ID from advanced mode)
+              if (typeof value === 'string') {
+                const trimmed = value.trim()
+                // If it's a variable (starts with <) or a non-empty string, it's likely advanced mode
+                if (trimmed.startsWith('<') || trimmed.length > 0) {
+                  shouldEnableAdvancedMode = true
+                  // Auto-enable this field's advanced mode
+                  updatedFieldAdvancedMode[subBlock.id] = true
+                }
+              }
+              // If value is not an object (for selectors), it might be from advanced mode
+              // Selectors in basic mode store objects like { id, name }, advanced mode stores strings
+              if (subBlock.type?.includes('selector') && typeof value !== 'object') {
+                shouldEnableAdvancedMode = true
+                updatedFieldAdvancedMode[subBlock.id] = true
+              }
+            }
+          }
+        } catch (error) {
+          logger.warn(`Failed to check advanced mode values for Arena block ${block.id}:`, error)
+        }
+
+        // If we detected advanced mode usage, enable it
+        if (shouldEnableAdvancedMode && !advancedMode) {
+          advancedMode = true
+          // Enable all advancedModeSupported fields
+          try {
+            const blockConfig = getBlock('arena')
+            if (blockConfig?.subBlocks) {
+              blockConfig.subBlocks.forEach((subBlock) => {
+                if (subBlock.advancedModeSupported) {
+                  updatedFieldAdvancedMode[subBlock.id] = true
+                }
+              })
+            }
+          } catch (error) {
+            logger.warn(
+              `Failed to enable all advanced mode fields for Arena block ${block.id}:`,
+              error
+            )
+          }
+        }
+      }
 
       const assembled: BlockState = {
         id: block.id,
@@ -218,12 +299,18 @@ export async function loadWorkflowFromNormalizedTables(
         },
         enabled: block.enabled,
         horizontalHandles: block.horizontalHandles,
-        advancedMode: block.advancedMode,
+        advancedMode: advancedMode,
         triggerMode: block.triggerMode,
         height: Number(block.height),
-        subBlocks: (block.subBlocks as BlockState['subBlocks']) || {},
+        subBlocks: subBlocks,
         outputs: (block.outputs as BlockState['outputs']) || {},
-        data: blockData,
+        fieldAdvancedMode: updatedFieldAdvancedMode,
+        data: {
+          ...blockData,
+          fieldAdvancedMode: updatedFieldAdvancedMode,
+        } as BlockData & {
+          fieldAdvancedMode?: Record<string, boolean>
+        },
       }
 
       blocksMap[block.id] = assembled
@@ -307,8 +394,12 @@ export async function loadWorkflowFromNormalizedTables(
       }
     })
 
+    // Normalize fieldAdvancedMode: for Arena blocks, if ANY field is in advanced mode,
+    // ensure ALL advancedModeSupported fields are also in advanced mode
+    const normalizedBlocks = normalizeFieldAdvancedMode(migratedBlocks)
+
     return {
-      blocks: migratedBlocks,
+      blocks: normalizedBlocks,
       edges: edgesArray,
       loops,
       parallels,
@@ -318,6 +409,89 @@ export async function loadWorkflowFromNormalizedTables(
     logger.error(`Error loading workflow ${workflowId} from normalized tables:`, error)
     return null
   }
+}
+
+/**
+ * Normalize fieldAdvancedMode when loading from database
+ * For Arena blocks: if ANY field is in advanced mode, enable ALL advancedModeSupported fields
+ * For other blocks: cascade based on dependencies
+ */
+function normalizeFieldAdvancedMode(
+  blocks: Record<string, BlockState>
+): Record<string, BlockState> {
+  const normalizedBlocks = { ...blocks }
+
+  Object.values(normalizedBlocks).forEach((block) => {
+    if (!block.fieldAdvancedMode || Object.keys(block.fieldAdvancedMode).length === 0) {
+      return
+    }
+
+    try {
+      const blockConfig = getBlock(block.type)
+      if (!blockConfig?.subBlocks) return
+
+      const fieldAdvancedMode = { ...block.fieldAdvancedMode }
+      let changed = false
+
+      // Special handling for Arena blocks: if ANY field is in advanced mode, enable ALL
+      if (block.type === 'arena') {
+        const hasAnyAdvancedMode = Object.values(fieldAdvancedMode).some((v) => v === true)
+        if (hasAnyAdvancedMode) {
+          // Derive block-level advancedMode from fieldAdvancedMode
+          if (!block.advancedMode) {
+            normalizedBlocks[block.id] = {
+              ...normalizedBlocks[block.id],
+              advancedMode: true,
+            }
+          }
+
+          // Enable all advancedModeSupported fields
+          blockConfig.subBlocks.forEach((subBlock) => {
+            if (subBlock.advancedModeSupported && !fieldAdvancedMode[subBlock.id]) {
+              fieldAdvancedMode[subBlock.id] = true
+              changed = true
+            }
+          })
+        }
+      } else {
+        // For other blocks, cascade based on dependencies
+        Object.entries(fieldAdvancedMode).forEach(([fieldId, isAdvanced]) => {
+          if (!isAdvanced) return
+
+          const dependentFields = blockConfig.subBlocks.filter((subBlock) => {
+            if (!subBlock.dependsOn || !subBlock.advancedModeSupported) return false
+            if (fieldAdvancedMode[subBlock.id]) return false
+
+            if (Array.isArray(subBlock.dependsOn)) {
+              return subBlock.dependsOn.includes(fieldId)
+            }
+            if (typeof subBlock.dependsOn === 'object' && 'all' in subBlock.dependsOn) {
+              return subBlock.dependsOn.all?.includes(fieldId) || false
+            }
+            return false
+          })
+
+          dependentFields.forEach((depField) => {
+            if (!fieldAdvancedMode[depField.id]) {
+              fieldAdvancedMode[depField.id] = true
+              changed = true
+            }
+          })
+        })
+      }
+
+      if (changed) {
+        normalizedBlocks[block.id] = {
+          ...block,
+          fieldAdvancedMode,
+        }
+      }
+    } catch (error) {
+      logger.warn(`Failed to normalize fieldAdvancedMode for block ${block.type}:`, error)
+    }
+  })
+
+  return normalizedBlocks
 }
 
 /**
@@ -368,7 +542,10 @@ export async function saveWorkflowToNormalizedTables(
           height: String(block.height || 0),
           subBlocks: block.subBlocks || {},
           outputs: block.outputs || {},
-          data: block.data || {},
+          data: {
+            ...(block.data || {}),
+            fieldAdvancedMode: block.fieldAdvancedMode || {},
+          },
           parentId: block.data?.parentId || null,
           extent: block.data?.extent || null,
         }))

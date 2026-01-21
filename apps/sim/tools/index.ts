@@ -12,7 +12,6 @@ import {
   formatRequestParams,
   getTool,
   getToolAsync,
-  safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
@@ -302,15 +301,40 @@ export async function executeTool(
         }
 
         const data = await response.json()
-        contextParams.accessToken = data.accessToken
-        if (data.idToken) {
-          contextParams.idToken = data.idToken
+
+        // Check if tool requires user token instead of bot token
+        const useUserToken = tool.oauth?.useUserToken
+        const hasIdToken = data.idToken && data.idToken.trim() !== ''
+
+        logger.info(`[${requestId}] Token selection debug for ${toolId}:`, {
+          hasToolOauth: !!tool.oauth,
+          useUserToken: useUserToken,
+          hasIdToken: hasIdToken,
+          idTokenLength: data.idToken ? data.idToken.length : 0,
+          idTokenPrefix: data.idToken ? `${data.idToken.substring(0, 10)}...` : 'none',
+          accessTokenPrefix: data.accessToken ? `${data.accessToken.substring(0, 10)}...` : 'none',
+        })
+
+        if (useUserToken && hasIdToken) {
+          // Use user token for tools that require it
+          contextParams.accessToken = data.idToken
+          contextParams.userToken = data.idToken
+          logger.info(
+            `[${requestId}] Using user token for ${toolId} (${data.idToken.substring(0, 10)}...)`
+          )
+        } else {
+          // Use bot token (default behavior)
+          contextParams.accessToken = data.accessToken
+          if (data.idToken) {
+            contextParams.idToken = data.idToken
+          }
+          const tokenType = useUserToken && !hasIdToken ? 'user (fallback to bot)' : 'bot'
+          logger.info(`[${requestId}] Using ${tokenType} token for ${toolId}`)
         }
+
         if (data.instanceUrl) {
           contextParams.instanceUrl = data.instanceUrl
         }
-
-        logger.info(`[${requestId}] Successfully got access token for ${toolId}`)
 
         // Preserve credential for downstream transforms while removing it from request payload
         // so we don't leak it to external services.
@@ -654,7 +678,7 @@ async function handleInternalRequest(
     const fullUrl = fullUrlObj.toString()
 
     if (isCustomTool(toolId) && tool.request.body) {
-      const requestBody = tool.request.body(params)
+      const requestBody = await tool.request.body(params)
       if (
         typeof requestBody === 'object' &&
         requestBody !== null &&
@@ -931,34 +955,7 @@ async function handleProxyRequest(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     await addInternalAuthIfNeeded(headers, true, requestId, `proxy:${toolId}`)
 
-    // Extract only the minimal executionContext fields needed by the proxy
-    // The proxy doesn't use the full executionContext, so we only send what's needed
-    // to avoid serializing large Maps, Sets, and accumulated loop data
-    const minimalExecutionContext = executionContext
-      ? {
-          workflowId: executionContext.workflowId,
-          workspaceId: executionContext.workspaceId,
-          executionId: executionContext.executionId,
-          userId: executionContext.userId,
-        }
-      : undefined
-
-    // Use safeStringify to handle circular references and large objects
-    let body: string
-    try {
-      body = safeStringify(
-        { toolId, params, executionContext: minimalExecutionContext },
-        `proxy:${toolId}`
-      )
-    } catch (stringifyError) {
-      logger.error(`[${requestId}] Failed to stringify request body for proxy:${toolId}`, {
-        error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
-        toolId,
-      })
-      throw new Error(
-        `Failed to prepare request body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}. This may be due to circular references or data that is too large.`
-      )
-    }
+    const body = JSON.stringify({ toolId, params, executionContext })
 
     // Check request body size before sending
     validateRequestBodySize(body, requestId, `proxy:${toolId}`)

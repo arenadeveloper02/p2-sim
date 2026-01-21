@@ -40,12 +40,15 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
         'Content-Type': 'application/json',
       }
     },
-    body: (params: ArenaSaveSummaryParams) => {
+    body: async (params: ArenaSaveSummaryParams) => {
+      // Dynamic import to avoid client-side bundling issues
+      const { resolveClientId } = await import('./utils/resolve-ids')
+
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
 
-      const clientValue = params['save-summary-client']
-      const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+      const workflowId = params._context.workflowId
+      const clientId = await resolveClientId(params['save-summary-client'] as any, workflowId)
       if (!clientId) throw new Error('Missing required field: Client')
 
       if (!params['save-summary-text']) throw new Error('Missing required field: Summary')
@@ -65,11 +68,19 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
     params?: ArenaSaveSummaryParams
   ): Promise<ArenaSaveSummaryResponse> => {
     const data = await response.json()
+
+    // Extract IDs from params for variable referencing
+    const clientValue = params?.['save-summary-client']
+    const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+
     return {
       success: true,
       output: {
         success: true,
         output: data,
+        // Expose IDs for variable referencing
+        client_id: clientId,
+        customerId: clientId,
       },
     }
   },
@@ -77,5 +88,7 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
   outputs: {
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'object', description: 'Output from Arena' },
+    client_id: { type: 'string', description: 'Client ID (customerId)' },
+    customerId: { type: 'string', description: 'Customer ID' },
   },
 }

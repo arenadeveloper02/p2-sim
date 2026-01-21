@@ -1086,12 +1086,198 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const block = get().blocks[id]
         if (!block) return
 
+        const newAdvancedMode = !block.advancedMode
+        let updatedFieldAdvancedMode = block.fieldAdvancedMode || {}
+
+        // For Arena blocks: sync fieldAdvancedMode when toggling advancedMode
+        if (block.type === 'arena') {
+          try {
+            const blockConfig = getBlock('arena')
+            if (blockConfig?.subBlocks) {
+              if (newAdvancedMode) {
+                // Enable advanced mode for all advancedModeSupported fields
+                updatedFieldAdvancedMode = {}
+                blockConfig.subBlocks.forEach((subBlock) => {
+                  if (subBlock.advancedModeSupported) {
+                    updatedFieldAdvancedMode[subBlock.id] = true
+                  }
+                })
+              } else {
+                // Disable advanced mode for all fields
+                updatedFieldAdvancedMode = {}
+              }
+            }
+          } catch (error) {
+            logger.warn(`Failed to sync fieldAdvancedMode for Arena block ${id}:`, error)
+          }
+        }
+
         const newState = {
           blocks: {
             ...get().blocks,
             [id]: {
               ...block,
-              advancedMode: !block.advancedMode,
+              advancedMode: newAdvancedMode,
+              fieldAdvancedMode: updatedFieldAdvancedMode,
+            },
+          },
+          edges: [...get().edges],
+          loops: { ...get().loops },
+        }
+
+        set(newState)
+
+        get().triggerUpdate()
+        // Note: Socket.IO handles real-time sync automatically
+      },
+
+      toggleFieldAdvancedMode: (id: string, fieldId: string) => {
+        const block = get().blocks[id]
+        if (!block) return
+
+        const currentFieldAdvancedMode = block.fieldAdvancedMode || {}
+        const currentValue = currentFieldAdvancedMode[fieldId] || false
+
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...block,
+              fieldAdvancedMode: {
+                ...currentFieldAdvancedMode,
+                [fieldId]: !currentValue,
+              },
+            },
+          },
+          edges: [...get().edges],
+          loops: { ...get().loops },
+        }
+
+        set(newState)
+
+        get().triggerUpdate()
+        // Note: Socket.IO handles real-time sync automatically
+      },
+
+      getFieldAdvancedMode: (id: string, fieldId: string): boolean => {
+        const block = get().blocks[id]
+        if (!block) return false
+
+        // For Arena blocks: if block.advancedMode is true, check if field supports it
+        if (block.type === 'arena' && block.advancedMode) {
+          try {
+            const blockConfig = getBlock('arena')
+            const subBlock = blockConfig?.subBlocks?.find((sb) => sb.id === fieldId)
+            if (subBlock?.advancedModeSupported) {
+              return true
+            }
+          } catch (error) {
+            // Fall through to fieldAdvancedMode check
+          }
+        }
+
+        // Otherwise, check fieldAdvancedMode
+        if (!block.fieldAdvancedMode) return false
+        return block.fieldAdvancedMode[fieldId] || false
+      },
+
+      setFieldAdvancedMode: (id: string, fieldId: string, value: boolean) => {
+        const block = get().blocks[id]
+        if (!block) return
+
+        const currentFieldAdvancedMode = block.fieldAdvancedMode || {}
+        const updatedFieldAdvancedMode = {
+          ...currentFieldAdvancedMode,
+          [fieldId]: value,
+        }
+
+        // If enabling advanced mode, for Arena blocks: enable ALL fields with advancedModeSupported
+        // For other blocks: cascade to dependent fields recursively
+        if (value) {
+          try {
+            const blockConfig = getBlock(block.type)
+            if (blockConfig?.subBlocks) {
+              // Special handling for Arena blocks: enable ALL advancedModeSupported fields
+              if (block.type === 'arena') {
+                blockConfig.subBlocks.forEach((subBlock) => {
+                  if (subBlock.advancedModeSupported && !updatedFieldAdvancedMode[subBlock.id]) {
+                    updatedFieldAdvancedMode[subBlock.id] = true
+                  }
+                })
+              } else {
+                // For other blocks, use the existing cascading logic
+                const enableDependentFields = (
+                  parentFieldId: string,
+                  fieldAdvancedMode: Record<string, boolean>
+                ): Record<string, boolean> => {
+                  const fieldsToCheck = [parentFieldId]
+                  const processedFields = new Set<string>()
+
+                  while (fieldsToCheck.length > 0) {
+                    const currentFieldId = fieldsToCheck.shift()!
+                    if (processedFields.has(currentFieldId)) continue
+                    processedFields.add(currentFieldId)
+
+                    // Find all fields that depend on the current field
+                    const dependentFields = blockConfig.subBlocks.filter((subBlock) => {
+                      if (!subBlock.dependsOn || !subBlock.advancedModeSupported) return false
+                      if (processedFields.has(subBlock.id)) return false
+
+                      // Parse dependsOn to get dependency fields
+                      let dependsOnFields: string[] = []
+                      if (typeof subBlock.dependsOn === 'object' && 'all' in subBlock.dependsOn) {
+                        // For 'all' dependencies, check if current field is in the list
+                        dependsOnFields = subBlock.dependsOn.all || []
+                        // Only cascade if current field is in dependencies AND all other dependencies are already enabled
+                        if (dependsOnFields.includes(currentFieldId)) {
+                          const otherDependencies = dependsOnFields.filter(
+                            (f) => f !== currentFieldId
+                          )
+                          // Check if all other dependencies are already enabled
+                          const allOtherDepsEnabled = otherDependencies.every(
+                            (dep) => fieldAdvancedMode[dep] === true
+                          )
+                          return allOtherDepsEnabled
+                        }
+                        return false
+                      }
+                      if (Array.isArray(subBlock.dependsOn)) {
+                        // For simple array dependencies, check if current field is in the list
+                        dependsOnFields = subBlock.dependsOn
+                        return dependsOnFields.includes(currentFieldId)
+                      }
+
+                      return false
+                    })
+
+                    // Enable advanced mode for dependent fields and add them to the queue
+                    for (const dependentField of dependentFields) {
+                      if (!fieldAdvancedMode[dependentField.id]) {
+                        fieldAdvancedMode[dependentField.id] = true
+                        fieldsToCheck.push(dependentField.id)
+                      }
+                    }
+                  }
+
+                  return fieldAdvancedMode
+                }
+
+                // Recursively enable all dependent fields
+                enableDependentFields(fieldId, updatedFieldAdvancedMode)
+              }
+            }
+          } catch (error) {
+            // If block config can't be loaded, continue without cascading
+            logger.warn(`Failed to cascade advanced mode for block ${block.type}:`, error)
+          }
+        }
+
+        const newState = {
+          blocks: {
+            ...get().blocks,
+            [id]: {
+              ...block,
+              fieldAdvancedMode: updatedFieldAdvancedMode,
             },
           },
           edges: [...get().edges],

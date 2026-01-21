@@ -166,18 +166,83 @@ export async function POST(req: NextRequest) {
 
         if (accounts.length > 0) {
           const acc = accounts[0]
+          logger.info(`[${tracker.requestId}] Found account for ${provider}`, {
+            accountId: acc.id,
+            hasAccessToken: !!acc.accessToken,
+            hasIdToken: !!acc.idToken,
+            idTokenLength: acc.idToken ? acc.idToken.length : 0,
+            idTokenIsEmpty: acc.idToken === '',
+            accessTokenPrefix: acc.accessToken ? `${acc.accessToken.substring(0, 10)}...` : 'none',
+            idTokenPrefix: acc.idToken ? `${acc.idToken.substring(0, 10)}...` : 'none',
+            idTokenType: acc.idToken
+              ? acc.idToken.startsWith('xoxp-')
+                ? 'user'
+                : acc.idToken.startsWith('xoxb-')
+                  ? 'bot'
+                  : 'unknown'
+              : 'none',
+          })
           const requestId = generateRequestId()
           const { accessToken } = await refreshTokenIfNeeded(requestId, acc as any, acc.id)
 
-          if (accessToken) {
-            executionParams.accessToken = accessToken
-            logger.info(`[${tracker.requestId}] OAuth token resolved`, { provider })
+          // Check if tool requires user token instead of bot token
+          const useUserToken = (toolConfig.oauth as any)?.useUserToken
+          const hasIdToken = acc.idToken && acc.idToken.trim() !== ''
+          const tokenToUse = useUserToken && hasIdToken ? acc.idToken : accessToken
+
+          logger.info(`[${tracker.requestId}] Token resolution details`, {
+            provider,
+            toolName,
+            useUserToken,
+            hasIdToken,
+            hasAccessToken: !!accessToken,
+            usingUserToken: useUserToken && hasIdToken,
+            tokenToUseType: useUserToken && hasIdToken ? 'idToken' : 'accessToken',
+            selectedTokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none',
+            selectedTokenType: tokenToUse
+              ? tokenToUse.startsWith('xoxp-')
+                ? 'user'
+                : tokenToUse.startsWith('xoxb-')
+                  ? 'bot'
+                  : 'unknown'
+              : 'none',
+            idTokenPrefix: acc.idToken ? `${acc.idToken.substring(0, 10)}...` : 'none',
+            accessTokenPrefix: accessToken ? `${accessToken.substring(0, 10)}...` : 'none',
+          })
+
+          if (tokenToUse) {
+            executionParams.accessToken = tokenToUse
+            if (useUserToken) {
+              executionParams.userToken = tokenToUse // Also set userToken for clarity
+            }
+            logger.info(`[${tracker.requestId}] OAuth token resolved successfully`, {
+              provider,
+              toolName,
+              finalTokenType: useUserToken && hasIdToken ? 'user' : 'bot',
+              tokenLength: tokenToUse.length,
+              tokenPrefix: tokenToUse.substring(0, 10),
+              isBotToken: tokenToUse.startsWith('xoxb-'),
+              isUserToken: tokenToUse.startsWith('xoxp-'),
+            })
           } else {
-            logger.warn(`[${tracker.requestId}] No access token available`, { provider })
+            const expectedTokenType = useUserToken ? 'user' : 'bot'
+            const errorMessage =
+              useUserToken && !hasIdToken && accessToken
+                ? `User token not available for ${provider}. This tool requires a user token, but only a bot token is stored. Please re-authenticate your Slack account to grant user token permissions.`
+                : `${expectedTokenType === 'user' ? 'User' : 'Bot'} token not available for ${provider}. Please reconnect your account.`
+
+            logger.error(`[${tracker.requestId}] No ${expectedTokenType} token available`, {
+              provider,
+              toolName,
+              useUserToken,
+              hasIdToken,
+              hasAccessToken: !!accessToken,
+              errorMessage,
+            })
             return NextResponse.json(
               {
                 success: false,
-                error: `OAuth token not available for ${provider}. Please reconnect your account.`,
+                error: errorMessage,
                 toolCallId,
               },
               { status: 400 }

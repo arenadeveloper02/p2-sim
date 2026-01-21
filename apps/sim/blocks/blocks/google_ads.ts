@@ -45,7 +45,6 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
   wolf_river: { id: '6445143850', name: 'Wolf River' },
   youngshc: { id: '3240333229', name: 'Youngshc.com' },
-  ricoobene: { id: '2848955239', name: 'Ricoobene' },
 }
 
 export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {

@@ -82,6 +82,7 @@ export interface BlockState {
   height?: number
   advancedMode?: boolean
   triggerMode?: boolean
+  fieldAdvancedMode?: Record<string, boolean> // Per-field advanced mode: subBlockId -> boolean
   data?: BlockData
   layout?: BlockLayoutState
 }
@@ -223,6 +224,9 @@ export interface WorkflowActions {
   revertToDeployedState: (deployedState: WorkflowState) => void
   toggleBlockAdvancedMode: (id: string) => void
   toggleBlockTriggerMode: (id: string) => void
+  toggleFieldAdvancedMode: (id: string, fieldId: string) => void
+  getFieldAdvancedMode: (id: string, fieldId: string) => boolean
+  setFieldAdvancedMode: (id: string, fieldId: string, value: boolean) => void
   setDragStartPosition: (position: DragStartPosition | null) => void
   getDragStartPosition: () => DragStartPosition | null
   getWorkflowState: () => WorkflowState

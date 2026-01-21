@@ -76,7 +76,7 @@ export const createTool: ToolConfig<PresentationCreateParams, PresentationCreate
     },
     body: (params: PresentationCreateParams) => {
       // Validate slides_markdown if provided
-      if (params.slides_markdown) {
+      if (params.slides_markdown !== undefined) {
         // Parse if it's a string
         let slidesArray = params.slides_markdown
         if (typeof params.slides_markdown === 'string') {

@@ -274,6 +274,12 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
 
   transformResponse: async (response: Response, params?: GoogleAdsQueryParams) => {
     try {
+      logger.info('Processing Google Ads response', {
+        status: response.status,
+        account: params?.accounts,
+        url: response.url,
+      })
+
       if (!response.ok) {
         const errorText = await response.text()
         logger.error('Response not ok', { status: response.status, errorText })
@@ -283,6 +289,11 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
       }
 
       const data = await response.json()
+      logger.info('Response data received', {
+        dataKeys: Object.keys(data),
+        hasResults: !!data.results,
+        resultsLength: data.results?.length,
+      })
 
       // Check for API errors
       if (data.error) {
@@ -290,10 +301,26 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
         throw new Error(`Google Ads API error: ${data.error}`)
       }
 
+      logger.info('Google Ads query completed successfully', {
+        accounts_found: data.accounts_found,
+        total_campaigns: data.results?.reduce(
+          (sum: number, account: any) => sum + (account.total_campaigns || 0),
+          0
+        ),
+        grand_total_cost: data.grand_totals?.cost,
+      })
+
       const finalResult = {
         success: true,
         output: data,
       }
+
+      logger.info('Returning final result', {
+        finalResultKeys: Object.keys(finalResult),
+        success: finalResult.success,
+        hasOutput: !!finalResult.output,
+        outputKeys: finalResult.output ? Object.keys(finalResult.output) : [],
+      })
 
       return finalResult
     } catch (error) {

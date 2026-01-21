@@ -1920,3 +1920,19 @@ export const usageLog = pgTable(
     workflowIdIdx: index('usage_log_workflow_id_idx').on(table.workflowId),
   })
 )
+
+export const clientChannelMapping = pgTable(
+  'client_channel_mapping',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: text('client_id').notNull(),
+    channelId: text('channel_id').notNull(),
+    channelName: text('channel_name').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    clientIdIdx: index('client_channel_mapping_client_id_idx').on(table.clientId),
+    channelIdIdx: index('client_channel_mapping_channel_id_idx').on(table.channelId),
+  })
+)

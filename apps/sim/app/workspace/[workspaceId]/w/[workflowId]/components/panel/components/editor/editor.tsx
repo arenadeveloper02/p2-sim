@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { BookOpen, Check, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
 import { Button, Tooltip } from '@/components/emcn'
+import { Switch as EmcnSwitch } from '@/components/emcn/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   ConnectionBlocks,
@@ -23,6 +24,7 @@ import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePanelEditorStore } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Editor')
 
@@ -182,6 +184,79 @@ export function Editor() {
   // Check if block has advanced mode or trigger mode available
   const hasAdvancedMode = blockConfig?.subBlocks?.some((sb) => sb.mode === 'advanced')
 
+  // Check if Arena block has advancedModeSupported fields
+  const isArenaBlock = currentBlock?.type === 'arena'
+  // Show toggle for Arena blocks - they always support advanced mode
+  const hasArenaFieldAdvancedMode = isArenaBlock
+
+  // For Arena blocks: check if advanced mode is enabled
+  // Subscribe directly to the block's advancedMode property for reactivity
+  const arenaAdvancedMode = useWorkflowStore((state) => {
+    if (!currentBlockId) return false
+    const block = state.blocks[currentBlockId]
+    // Access advancedMode directly - Zustand tracks this nested property
+    return block?.advancedMode === true
+  })
+
+  // Auto-enable advanced mode when values indicate it's being used
+  const toggleBlockAdvancedMode = useWorkflowStore((state) => state.toggleBlockAdvancedMode)
+  // Optimistic local toggle for instant UI feedback
+  const toggleBlockAdvancedModeLocal = useWorkflowStore((state) => state.toggleBlockAdvancedMode)
+
+  useEffect(() => {
+    if (!isArenaBlock || !currentBlockId || !blockConfig || !userPermissions.canEdit) return
+    if (arenaAdvancedMode) return // Already enabled
+
+    const timeoutId = setTimeout(() => {
+      const block = useWorkflowStore.getState().blocks[currentBlockId]
+      if (!block || block.advancedMode) return // Block doesn't exist or already in advanced mode
+
+      // Check if any advancedModeSupported field has a value that indicates advanced mode
+      // Values are stored in blockSubBlockValues, not block.subBlocks
+      let shouldEnable = false
+
+      try {
+        if (blockConfig.subBlocks && blockSubBlockValues) {
+          for (const subBlock of blockConfig.subBlocks) {
+            if (!subBlock.advancedModeSupported) continue
+
+            const value = blockSubBlockValues[subBlock.id]
+            if (value === undefined || value === null) continue
+
+            // Only auto-enable when we see a variable (starts with <)
+            if (typeof value === 'string') {
+              const trimmed = value.trim()
+              if (trimmed.startsWith('<')) {
+                shouldEnable = true
+                break
+              }
+            }
+          }
+        }
+
+        // Auto-enable advanced mode if we detected values that indicate it
+        if (shouldEnable) {
+          // Only toggle if currently OFF (toggleBlockAdvancedMode will turn it ON)
+          if (!block.advancedMode) {
+            toggleBlockAdvancedMode(currentBlockId)
+          }
+        }
+      } catch (error) {
+        // Silently fail - this is just an auto-enable feature
+      }
+    }, 100) // small delay to avoid race with manual toggles
+
+    return () => clearTimeout(timeoutId)
+  }, [
+    isArenaBlock,
+    currentBlockId,
+    blockConfig,
+    arenaAdvancedMode,
+    blockSubBlockValues,
+    toggleBlockAdvancedMode,
+    userPermissions.canEdit,
+  ])
+
   // Determine if connections are at minimum height (collapsed state)
   const isConnectionsAtMinHeight = connectionsHeight <= 35
 
@@ -275,7 +350,42 @@ export function Editor() {
             </Tooltip.Root>
           )} */}
           {/* Mode toggles - Only show for regular blocks, not subflows */}
-          {currentBlock && !isSubflow && hasAdvancedMode && (
+          {/* Arena blocks: Show Switch for block-level advanced mode */}
+          {currentBlock && !isSubflow && hasArenaFieldAdvancedMode && (
+            <Tooltip.Root key={`arena-switch-${currentBlockId}-${arenaAdvancedMode}`}>
+              <Tooltip.Trigger asChild>
+                <span className='inline-flex items-center'>
+                  <EmcnSwitch
+                    checked={Boolean(arenaAdvancedMode)}
+                    onCheckedChange={(checked) => {
+                      if (currentBlockId && userPermissions.canEdit) {
+                        // Optimistic update for instant UI feedback
+                        toggleBlockAdvancedModeLocal(currentBlockId)
+                        // Sync with collaborators/server but avoid double-toggle
+                        collaborativeToggleBlockAdvancedMode(currentBlockId, {
+                          alreadyToggled: true,
+                        })
+                      }
+                    }}
+                    disabled={!userPermissions.canEdit}
+                    aria-label={
+                      arenaAdvancedMode ? 'Disable advanced mode' : 'Enable advanced mode'
+                    }
+                  />
+                </span>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>
+                <p>{arenaAdvancedMode ? 'Advanced mode: ON' : 'Advanced mode: OFF'}</p>
+                <p className='text-[11px] text-[var(--text-muted)]'>
+                  {arenaAdvancedMode
+                    ? 'All fields support variables like <block.field>'
+                    : 'Click to enable variable references for all fields'}
+                </p>
+              </Tooltip.Content>
+            </Tooltip.Root>
+          )}
+          {/* Other blocks: Show Settings icon for existing advanced mode */}
+          {currentBlock && !isSubflow && hasAdvancedMode && !hasArenaFieldAdvancedMode && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button

@@ -1058,6 +1058,7 @@ import {
   slackListUsersTool,
   slackMessageReaderTool,
   slackMessageTool,
+  slackSearchAllTool,
   slackUpdateMessageTool,
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
@@ -1565,6 +1566,7 @@ export const tools: Record<string, ToolConfig> = {
   polymarket_get_trades: polymarketGetTradesTool,
   slack_message: slackMessageTool,
   slack_message_reader: slackMessageReaderTool,
+  slack_search_all: slackSearchAllTool,
   slack_list_channels: slackListChannelsTool,
   slack_list_members: slackListMembersTool,
   slack_list_users: slackListUsersTool,

@@ -45,6 +45,7 @@ export interface SearchTaskApiResponse {
 export interface SearchTaskQueryParams {
   operation: string
   'search-task-name': string
+  'search-task-number': string
   'search-task-client': {
     clientId: string
     name: string

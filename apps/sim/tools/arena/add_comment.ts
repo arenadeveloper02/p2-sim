@@ -65,23 +65,39 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
         'Content-Type': 'application/json',
       }
     },
-    body: (params: ArenaCommentsParams) => {
+    body: async (params: ArenaCommentsParams) => {
+      // Dynamic import to avoid client-side bundling issues
+      const { resolveClientId, resolveProjectId, resolveTaskId } = await import(
+        './utils/resolve-ids'
+      )
+
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
+      const workflowId = params._context.workflowId
 
-      const clientValue = params['comment-client']
-      const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+      // Resolve client ID (supports name/id from advanced mode or variables)
+      const clientId = await resolveClientId(params['comment-client'] as any, workflowId)
       if (!clientId) throw new Error('Missing required field: Client')
 
-      const projectValue = params['comment-project']
-      const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+      // Resolve project ID (supports name/id from advanced mode or variables)
+      const projectId = await resolveProjectId(
+        params['comment-project'] as any,
+        clientId,
+        workflowId
+      )
       if (!projectId) throw new Error('Missing required field: Project')
+      const projectName =
+        typeof params['comment-project'] === 'object'
+          ? (params['comment-project'] as any)?.name || ''
+          : ''
 
-      const projectName = typeof projectValue === 'string' ? '' : projectValue?.name || ''
-
-      const taskValue = params['comment-task']
-      const elementId =
-        typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
+      // Resolve task ID (supports name/id from advanced mode or variables)
+      const elementId = await resolveTaskId(
+        params['comment-task'] as any,
+        clientId,
+        projectId,
+        workflowId
+      )
       if (!elementId) throw new Error('Missing required field: Task')
 
       if (!params['comment-text']) throw new Error('Missing required field: Comment Text')
@@ -138,11 +154,35 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
     params?: ArenaCommentsParams
   ): Promise<ArenaCommentsResponse> => {
     const data = await response.json()
+
+    // Extract IDs from params for variable referencing
+    const clientValue = params?.['comment-client']
+    const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
+
+    const projectValue = params?.['comment-project']
+    const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+
+    const groupValue = params?.['comment-group']
+    const groupId = groupValue?.id
+
+    const taskValue = params?.['comment-task']
+    const taskId = typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
+
     return {
       success: true,
       output: {
         success: true,
         output: data,
+        // Expose IDs for variable referencing
+        client_id: clientId,
+        customerId: clientId,
+        project_id: projectId,
+        projectId: projectId,
+        group_id: groupId,
+        epicId: groupId,
+        task_id: taskId,
+        id: taskId,
+        sysId: taskId,
       },
     }
   },
@@ -150,5 +190,14 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
   outputs: {
     success: { type: 'boolean', description: 'Indicates if transform was successful' },
     output: { type: 'object', description: 'Output from Arena' },
+    client_id: { type: 'string', description: 'Client ID (customerId)' },
+    customerId: { type: 'string', description: 'Customer ID' },
+    project_id: { type: 'string', description: 'Project ID' },
+    projectId: { type: 'string', description: 'Project ID' },
+    group_id: { type: 'string', description: 'Group ID (epicId)' },
+    epicId: { type: 'string', description: 'Epic/Group ID' },
+    task_id: { type: 'string', description: 'Task ID (sysId)' },
+    id: { type: 'string', description: 'Task ID (id field)' },
+    sysId: { type: 'string', description: 'Task system ID' },
   },
 }
