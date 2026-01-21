@@ -61,21 +61,17 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'Accounts',
       type: 'dropdown',
       options: [
-        { label: 'Manual Connection', id: 'manual' },
         { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
         { label: 'Covalent Metrology', id: 'covalent_metrology' },
       ],
-      value: () => 'manual',
+      value: () => 'northstar_anesthesia',
     },
     {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
       serviceId: 'hubspot',
-      condition: {
-        field: 'accounts',
-        value: 'manual',
-      },
+      hidden: true,
       requiredScopes: [
         'crm.objects.contacts.read',
         'crm.objects.contacts.write',
