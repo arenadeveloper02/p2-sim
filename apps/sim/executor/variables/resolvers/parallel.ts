@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { isReference, parseReferencePath, REFERENCE } from '@/executor/constants'
+import { isReference, normalizeName, parseReferencePath, REFERENCE } from '@/executor/constants'
 import { extractBaseBlockId, extractBranchIndex } from '@/executor/utils/subflow-utils'
 import {
   navigatePath,
@@ -11,7 +11,22 @@ import type { SerializedWorkflow } from '@/serializer/types'
 const logger = createLogger('ParallelResolver')
 
 export class ParallelResolver implements Resolver {
-  constructor(private workflow: SerializedWorkflow) {}
+  private nameToParallelId: Map<string, string>
+
+  constructor(private workflow: SerializedWorkflow) {
+    // Build a map from normalized parallel block names to parallel IDs
+    // This allows references like <Batch.currentItem> to work
+    this.nameToParallelId = new Map()
+    for (const block of workflow.blocks) {
+      if (block.metadata?.id === 'parallel' && block.metadata?.name) {
+        const normalizedName = normalizeName(block.metadata.name)
+        // The parallel block's ID matches the parallelId in the parallels record
+        if (workflow.parallels?.[block.id]) {
+          this.nameToParallelId.set(normalizedName, block.id)
+        }
+      }
+    }
+  }
 
   canResolve(reference: string): boolean {
     if (!isReference(reference)) {
@@ -22,7 +37,12 @@ export class ParallelResolver implements Resolver {
       return false
     }
     const [type] = parts
-    return type === REFERENCE.PREFIX.PARALLEL
+    // Support both "parallel." prefix and block name-based references for parallel blocks
+    if (type === REFERENCE.PREFIX.PARALLEL) {
+      return true
+    }
+    // Check if the first part is a parallel block name
+    return this.nameToParallelId.has(type)
   }
 
   resolve(reference: string, context: ResolutionContext): any {
@@ -32,10 +52,26 @@ export class ParallelResolver implements Resolver {
       return undefined
     }
 
-    const [_, property, ...pathParts] = parts
-    const parallelId = this.findParallelForBlock(context.currentNodeId)
-    if (!parallelId) {
-      return undefined
+    const [firstPart, property, ...pathParts] = parts
+    let parallelId: string | undefined
+    let parallelScope = context.executionContext.parallelExecutions?.get(context.currentNodeId)
+
+    // Check if this is a block name-based reference (e.g., <Batch.currentItem>)
+    if (firstPart !== REFERENCE.PREFIX.PARALLEL) {
+      parallelId = this.nameToParallelId.get(firstPart)
+      if (!parallelId) {
+        logger.warn('Parallel block name not found', { reference, firstPart })
+        return undefined
+      }
+      // Get the parallel scope for this specific parallel
+      parallelScope = context.executionContext.parallelExecutions?.get(parallelId)
+    } else {
+      // This is a "parallel." prefix reference - find the parallel for current block
+      parallelId = this.findParallelForBlock(context.currentNodeId)
+      if (!parallelId) {
+        return undefined
+      }
+      parallelScope = context.executionContext.parallelExecutions?.get(parallelId)
     }
 
     const parallelConfig = this.workflow.parallels?.[parallelId]
@@ -44,6 +80,23 @@ export class ParallelResolver implements Resolver {
       return undefined
     }
 
+    // Special handling for 'results' - can be accessed from outside the parallel
+    if (property === 'results') {
+      const blockOutput = context.executionState.getBlockOutput(
+        parallelId || '',
+        context.currentNodeId
+      )
+      if (blockOutput && 'results' in blockOutput) {
+        const value = blockOutput.results
+        if (pathParts.length > 0) {
+          return navigatePath(value, pathParts)
+        }
+        return value
+      }
+      return undefined
+    }
+
+    // For other properties, we need to be inside a parallel branch
     const branchIndex = extractBranchIndex(context.currentNodeId)
     if (branchIndex === null) {
       return undefined
@@ -51,7 +104,6 @@ export class ParallelResolver implements Resolver {
 
     // First try to get items from the parallel scope (resolved at runtime)
     // This is the same pattern as LoopResolver reading from loopScope.items
-    const parallelScope = context.executionContext.parallelExecutions?.get(parallelId)
     const distributionItems = parallelScope?.items ?? this.getDistributionItems(parallelConfig)
 
     let value: any
