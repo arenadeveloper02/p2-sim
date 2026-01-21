@@ -929,7 +929,7 @@ const TagDropdownBackButton: React.FC = () => {
         'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base',
         size === 'sm' ? 'h-[22px] text-[11px]' : 'h-[26px] text-[13px]',
         colorScheme === 'inverted'
-          ? 'text-white hover:bg-[#363636] hover:text-white dark:text-[var(--text-primary)] dark:hover:bg-[var(--surface-5)]'
+          ? 'text-white dark:hover:bg-[#363636] dark:hover:text-white text-[var(--text-primary)] hover:bg-[var(--border-1)]'
           : 'text-[var(--text-primary)] hover:bg-[var(--border-1)]'
       )}
       role='button'
