@@ -119,6 +119,7 @@ function validateDateFiltering(response: BingAdsQueryResponse): BingAdsQueryResp
  * This function:
  * - Resolves the appropriate AI provider (Grok or GPT-4o)
  * - Sends the user prompt to the AI with the Bing Ads system prompt
+ * - AI calculates dates from CURRENT_DATE (same as Google Ads v1)
  * - Parses and validates the response
  * - Ensures proper date filtering is present
  *
