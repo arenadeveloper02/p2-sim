@@ -33,6 +33,9 @@ import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import LeftNavThread from './leftNavThread'
+import { FeedbackView } from './FeedbackView'
+import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
+import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('ChatClient')
 
@@ -172,6 +175,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
+
+  // Feedback view state
+  const [showFeedbackView, setShowFeedbackView] = useState(false)
+  const [feedbackData, setFeedbackData] = useState<any[]>([])
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -994,6 +1003,78 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     })
   }, [updateUrlChatId, chatConfig?.inputFormat])
 
+  const handleViewFeedback = useCallback(async () => {
+    if (!identifier) {
+      logger.error('No workflow ID available for feedback')
+      return
+    }
+
+    setIsFeedbackLoading(true)
+    setFeedbackError(null)
+    setShowFeedbackView(true)
+
+    try {
+      const arenaToken = await getArenaToken()
+      if (!arenaToken) {
+        throw new Error('Failed to get Arena token')
+      }
+
+      const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+      if (!arenaBackendBaseUrl) {
+        throw new Error('Arena backend base URL not configured')
+      }
+
+      const url = `${arenaBackendBaseUrl}/sol/v1/agentic/feedback?pageSize=10&page=1&workflowId=${identifier}`
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          authorisation: arenaToken,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
+      }
+
+      const data = await response.json()
+      
+      // Transform the API response to match FeedbackView interface
+      // Handle different response formats: array, object with data/items/content property
+      let feedbackItems: any[] = []
+      
+      if (Array.isArray(data)) {
+        feedbackItems = data
+      } else if (data.data && Array.isArray(data.data)) {
+        feedbackItems = data.data
+      } else if (data.items && Array.isArray(data.items)) {
+        feedbackItems = data.items
+      } else if (data.content && Array.isArray(data.content)) {
+        feedbackItems = data.content
+      } else if (data.feedback && Array.isArray(data.feedback)) {
+        feedbackItems = data.feedback
+      } else if (typeof data === 'object' && Object.keys(data).length > 0) {
+        // If it's a single object, wrap it in an array
+        feedbackItems = [data]
+      }
+      
+      logger.info('Fetched feedback items:', { count: feedbackItems.length })
+      setFeedbackData(feedbackItems)
+    } catch (err: any) {
+      logger.error('Error fetching feedback:', err)
+      setFeedbackError(err.message || 'Failed to load feedback')
+    } finally {
+      setIsFeedbackLoading(false)
+    }
+  }, [identifier])
+
+  const handleBackFromFeedback = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
+  }, [])
+
   if (isAutoLoginInProgress) {
     return (
       <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
@@ -1088,7 +1169,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )}
 
       {/* Header component */}
-      <ArenaChatHeader chatConfig={chatConfig} starCount={starCount} />
+      <ArenaChatHeader chatConfig={chatConfig} starCount={starCount} showFeedbackView={showFeedbackView} />
 
       <LeftNavThread
         threads={threads}
@@ -1101,44 +1182,60 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         workflowId={identifier}
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
+        onViewFeedback={handleViewFeedback}
       />
-      {/* Message Container component */}
-      <ChatMessageContainer
-        messages={messages}
-        isLoading={isLoading}
-        showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-        messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
-        chatConfig={chatConfig}
-        setMessages={setMessages}
-      />
-
-      {/* Input area (free-standing at the bottom) */}
-      <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(
-              value: string,
-              isVoiceInput?: boolean,
-              files?: Array<{
-                id: string
-                name: string
-                size: number
-                type: string
-                file: File
-                dataUrl?: string
-              }>
-            ) => {
-              void handleSendMessage(value, isVoiceInput, files)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
+      
+      {showFeedbackView ? (
+        <div className='absolute inset-0 top-[86px] left-[320px]'>
+          <FeedbackView
+            feedbackData={feedbackData}
+            isLoading={isFeedbackLoading}
+            error={feedbackError}
+            workflowTitle={chatConfig?.title}
+            onBack={handleBackFromFeedback}
           />
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Message Container component */}
+          <ChatMessageContainer
+            messages={messages}
+            isLoading={isLoading}
+            showScrollButton={showScrollButton}
+            messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+            messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+            scrollToBottom={scrollToBottom}
+            scrollToMessage={scrollToMessage}
+            chatConfig={chatConfig}
+            setMessages={setMessages}
+          />
+
+          {/* Input area (free-standing at the bottom) */}
+          <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+            <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+              <ChatInput
+                onSubmit={(
+                  value: string,
+                  isVoiceInput?: boolean,
+                  files?: Array<{
+                    id: string
+                    name: string
+                    size: number
+                    type: string
+                    file: File
+                    dataUrl?: string
+                  }>
+                ) => {
+                  void handleSendMessage(value, isVoiceInput, files)
+                }}
+                isStreaming={isStreamingResponse}
+                onStopStreaming={() => stopStreaming(setMessages)}
+                onVoiceStart={handleVoiceStart}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Start Block Input Modal */}
       {customFields.length > 0 && (

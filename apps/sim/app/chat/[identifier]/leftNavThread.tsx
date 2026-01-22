@@ -1,5 +1,5 @@
 'use client'
-import { ArrowLeft, CirclePlus, MessageSquareText, RefreshCw } from 'lucide-react'
+import { ArrowLeft, CirclePlus, FileText, MessageSquareText, RefreshCw } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -23,6 +23,7 @@ interface LeftNavThreadProps {
   workflowId?: string
   showReRun?: boolean
   onReRun?: () => void
+  onViewFeedback?: () => void
 }
 
 const LeftNavThread = ({
@@ -36,6 +37,7 @@ const LeftNavThread = ({
   workflowId,
   showReRun = false,
   onReRun,
+  onViewFeedback,
 }: LeftNavThreadProps) => {
   const params = new URLSearchParams(window.location.search)
   const workspaceId = params.get('workspaceId')
@@ -155,21 +157,35 @@ const LeftNavThread = ({
       </div>
 
       <hr className='my-6 text-[#E2E3E5] ' />
-      <div className='flex items-center gap-4 text-center font-normal text-[#2C2D33] text-sm'>
-        {/* <Link href={getExitUrl()}> */}
-        <Button
-          variant='outline'
-          className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
-          onClick={() => {
-            deployedChatExitEvent({})
-            const exitUrl = getExitUrl()
-            window.location.replace(exitUrl)
-          }}
-        >
-          <ArrowLeft className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
-        </Button>
-        {/* </Link> */}
-        Exit Agent
+      <div className='flex flex-col gap-2'>
+        <div className='flex items-center gap-4 text-center font-normal text-[#2C2D33] text-sm'>
+          <Button
+            variant='outline'
+            className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
+            onClick={() => {
+              onViewFeedback?.()
+            }}
+          >
+            <FileText className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
+          </Button>
+          View Feedback
+        </div>
+        <div className='flex items-center gap-4 text-center font-normal text-[#2C2D33] text-sm'>
+          {/* <Link href={getExitUrl()}> */}
+          <Button
+            variant='outline'
+            className='group flex h-[32px] w-[32px] items-center justify-center border-[#E2E3E5] bg-white hover:bg-white hover:shadow-md'
+            onClick={() => {
+              deployedChatExitEvent({})
+              const exitUrl = getExitUrl()
+              window.location.replace(exitUrl)
+            }}
+          >
+            <ArrowLeft className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
+          </Button>
+          {/* </Link> */}
+          Exit Agent
+        </div>
       </div>
     </div>
   )
