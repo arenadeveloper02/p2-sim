@@ -17,27 +17,34 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
     },
     'comment-client': {
       type: 'object',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Client associated with the comment',
+      description: 'Client associated with the comment (basic mode)',
     },
     'comment-project': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Project under which the task belongs',
+      description: 'Project under which the task belongs (basic mode)',
     },
     'comment-group': {
       type: 'object',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Optional task group with id and name',
+      description: 'Optional task group with id and name (basic mode)',
     },
     'comment-task': {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Task to add comment to',
+      description: 'Task to add comment to (basic mode)',
+    },
+    'comment-task-number': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Task number (advanced mode) - accepts dynamic values like <function.result.task_number>',
     },
     'comment-text': {
       type: 'string',
@@ -55,7 +62,9 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
 
   request: {
     url: (params: ArenaCommentsParams) => {
-      const url = `/api/tools/arena/comments`
+      // Use advanced mode endpoint if task number is provided
+      const isAdvancedMode = !!params['comment-task-number']
+      const url = isAdvancedMode ? `/api/tools/arena/comments-updated` : `/api/tools/arena/comments`
       return url
     },
     method: 'POST',
@@ -69,6 +78,57 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
 
+      if (!params['comment-text']) throw new Error('Missing required field: Comment Text')
+
+      // Handle client note toggle: if true, internal=false and showToClient=true
+      // If false or undefined, internal=true and showToClient=false
+      const clientNote = Boolean(params['comment-client-note'])
+
+      const commentText = params['comment-text'] || ''
+
+      // Check if we're in advanced mode (task number provided)
+      const isAdvancedMode = !!params['comment-task-number']
+
+      // Extract user mentioned IDs from HTML content (only for basic mode)
+      let userMentionedIds: string[] = []
+      if (!isAdvancedMode) {
+        userMentionedIds = extractMentionedUserIds(commentText)
+
+        // Debug logging to help identify issues
+        if (commentText?.includes('@') && userMentionedIds.length === 0) {
+          const hasMentionTag =
+            commentText.includes('class="mention"') || commentText.includes("class='mention'")
+          const hasDataUserId = commentText.includes('data-user-id')
+
+          if (hasMentionTag || hasDataUserId) {
+            console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
+              commentTextLength: commentText.length,
+              commentTextPreview: commentText.substring(0, 300),
+              hasMentionClass: hasMentionTag,
+              hasDataUserId: hasDataUserId,
+              extractedIds: userMentionedIds,
+            })
+          }
+        }
+      }
+
+      if (isAdvancedMode) {
+        // Advanced mode: use task number (no @ mentions extraction)
+        const taskNumber = params['comment-task-number']
+        if (!taskNumber) throw new Error('Missing required field: Task Number')
+
+        const body: Record<string, any> = {
+          workflowId: params._context.workflowId,
+          taskNumber: taskNumber,
+          comment: commentText,
+          userMentionedIds: [],
+          showToClient: clientNote,
+        }
+
+        return body
+      }
+
+      // Basic mode: use existing logic with client, project, group, task
       const clientValue = params['comment-client']
       const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
       if (!clientId) throw new Error('Missing required field: Client')
@@ -83,33 +143,6 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       const elementId =
         typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
       if (!elementId) throw new Error('Missing required field: Task')
-
-      if (!params['comment-text']) throw new Error('Missing required field: Comment Text')
-
-      // Handle client note toggle: if true, internal=false and showToClient=true
-      // If false or undefined, internal=true and showToClient=false
-      const clientNote = Boolean(params['comment-client-note'])
-
-      // Extract user mentioned IDs from HTML content
-      const commentText = params['comment-text'] || ''
-      const userMentionedIds = extractMentionedUserIds(commentText)
-
-      // Debug logging to help identify issues
-      if (commentText?.includes('@') && userMentionedIds.length === 0) {
-        const hasMentionTag =
-          commentText.includes('class="mention"') || commentText.includes("class='mention'")
-        const hasDataUserId = commentText.includes('data-user-id')
-
-        if (hasMentionTag || hasDataUserId) {
-          console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
-            commentTextLength: commentText.length,
-            commentTextPreview: commentText.substring(0, 300),
-            hasMentionClass: hasMentionTag,
-            hasDataUserId: hasDataUserId,
-            extractedIds: userMentionedIds,
-          })
-        }
-      }
 
       const body: Record<string, any> = {
         workflowId: params._context.workflowId,

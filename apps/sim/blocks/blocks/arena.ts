@@ -256,13 +256,14 @@ export const ArenaBlock: BlockConfig = {
       },
     },
 
-    //comments blocks
+    //comments blocks - basic mode
     {
       id: 'comment-client',
       title: 'Client',
       type: 'arena-client-selector',
       required: true,
       placeholder: 'Enter client name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -275,6 +276,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-project-selector',
       required: true,
       placeholder: 'Enter project name',
+      mode: 'basic',
       dependsOn: ['operation', 'comment-client'],
       condition: {
         field: 'operation',
@@ -287,6 +289,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-group-selector',
       required: true,
       placeholder: 'Enter group name',
+      mode: 'basic',
       dependsOn: ['operation', 'comment-client', 'comment-project'],
       condition: {
         field: 'operation',
@@ -299,12 +302,28 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-task-selector',
       required: true,
       placeholder: 'Enter task name',
+      mode: 'basic',
       dependsOn: ['operation', 'comment-project'],
       condition: {
         field: 'operation',
         value: ['arena_comments'],
       },
     },
+    //comments blocks - advanced mode
+    {
+      id: 'comment-task-number',
+      title: 'Task Number',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter task number or use <function.result.task_number>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    //comments blocks - both modes
     {
       id: 'comment-client-note',
       title: 'Client Note',

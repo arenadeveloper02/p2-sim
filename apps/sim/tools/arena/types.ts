@@ -76,17 +76,20 @@ export interface ArenaSaveSummaryResponse extends ToolResponse {}
 
 export type ArenaCommentsParams = {
   operation: string
-  'comment-client': {
+  'comment-client'?: {
     clientId: string
     name: string
   }
-  'comment-project': string | { sysId: string; name: string; customDisplayValue?: string }
+  'comment-project'?: string | { sysId: string; name: string; customDisplayValue?: string }
   'comment-group'?: {
     id: string
     name: string
     customDisplayValue?: string
   }
-  'comment-task': string | { sysId: string; id?: string; name: string; customDisplayValue?: string }
+  'comment-task'?:
+    | string
+    | { sysId: string; id?: string; name: string; customDisplayValue?: string }
+  'comment-task-number'?: string
   'comment-text': string
   'comment-client-note'?: boolean
   _context: {
