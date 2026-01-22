@@ -42,6 +42,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
   howell_chase: { id: '1890712343', name: 'Howell Chase' },
   garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
+  riccobene: { id: 'PLACEHOLDER_ID', name: 'Riccobene' },
 }
 
 // Position2 Manager MCC for login

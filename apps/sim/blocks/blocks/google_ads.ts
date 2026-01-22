@@ -25,6 +25,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   holmdel_nj: { id: '3507263995', name: 'Holmdel-NJ' },
   howell_chase: { id: '1890712343', name: 'Howell Chase' },
   idi_fl: { id: '1890773395', name: 'IDI-FL' },
+  riccobene: { id: 'PLACEHOLDER_ID', name: 'Riccobene' },
   inspire_aesthetics: { id: '1887900641', name: 'Inspire Aesthetics' },
   marietta_plastic_surgery: { id: '6374556990', name: 'Marietta Plastic Surgery' },
   monster_transmission: { id: '2680354698', name: 'Monster Transmission' },
