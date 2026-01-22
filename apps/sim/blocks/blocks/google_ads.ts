@@ -11,6 +11,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   careadvantage: { id: '9059182052', name: 'CareAdvantage' },
   chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
   covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
+  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
   cpic: { id: '1757492986', name: 'CPIC' },
   daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
   dental_care_associates: { id: '2771541197', name: 'Dental Care Associates' },
