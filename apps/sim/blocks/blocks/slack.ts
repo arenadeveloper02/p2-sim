@@ -267,6 +267,21 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       },
     },
     {
+      id: 'dateRange',
+      title: 'Quick Date Range',
+      type: 'dropdown',
+      placeholder: 'Select date range',
+      options: [
+        { label: 'Today', id: '1' },
+        { label: 'Last 7 days', id: '7' },
+        { label: 'Last 14 days', id: '14' },
+      ],
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
       id: 'cursor',
       title: 'Cursor',
       type: 'short-input',
@@ -655,6 +670,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           oldest,
           fromDate,
           toDate,
+          dateRange,
           cursor,
           autoPaginate,
           includeThreads,
@@ -774,23 +790,37 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             }
             baseParams.limit = parsedLimit
 
-            // Handle date conversion to timestamps
-            if (fromDate) {
-              const fromTimestamp = Math.floor(new Date(fromDate).getTime() / 1000).toString()
-              baseParams.oldest = fromTimestamp
-            } else if (oldest) {
-              baseParams.oldest = oldest
-            }
-
-            if (toDate) {
-              let toDateObj = new Date(toDate)
-              // If fromDate and toDate are the same day, set toDate to end of that day
-              // to include all messages from the entire day
-              if (fromDate && fromDate === toDate) {
-                toDateObj.setHours(23, 59, 59, 999)
+            // Handle date range presets
+            if (dateRange) {
+              const days = Number.parseInt(dateRange, 10)
+              if (!Number.isNaN(days) && days > 0) {
+                const now = new Date()
+                const oldestDate = new Date(now)
+                oldestDate.setDate(now.getDate() - (days - 1))
+                const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
+                const latestTimestamp = Math.floor(now.getTime() / 1000).toString()
+                baseParams.oldest = oldestTimestamp
+                baseParams.latest = latestTimestamp
               }
-              const toTimestamp = Math.floor(toDateObj.getTime() / 1000).toString()
-              baseParams.latest = toTimestamp
+            } else {
+              // Handle date conversion to timestamps
+              if (fromDate) {
+                const fromTimestamp = Math.floor(new Date(fromDate).getTime() / 1000).toString()
+                baseParams.oldest = fromTimestamp
+              } else if (oldest) {
+                baseParams.oldest = oldest
+              }
+
+              if (toDate) {
+                let toDateObj = new Date(toDate)
+                // If fromDate and toDate are the same day, set toDate to end of that day
+                // to include all messages from the entire day
+                if (fromDate && fromDate === toDate) {
+                  toDateObj.setHours(23, 59, 59, 999)
+                }
+                const toTimestamp = Math.floor(toDateObj.getTime() / 1000).toString()
+                baseParams.latest = toTimestamp
+              }
             }
 
             console.log(`[Slack Block] cursor value: "${cursor}", type: ${typeof cursor}`)
@@ -962,6 +992,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             baseParams.useUserToken = true // Flag to indicate user token should be used
             break
           }
+
         }
 
         return baseParams
@@ -985,6 +1016,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     oldest: { type: 'string', description: 'Oldest timestamp' },
     fromDate: { type: 'string', description: 'From date (YYYY-MM-DD)' },
     toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
+    dateRange: { type: 'string', description: 'Quick date range preset (1, 7, or 14 days)' },
     cursor: { type: 'string', description: 'Pagination cursor from previous response' },
     autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
     includeThreads: {
