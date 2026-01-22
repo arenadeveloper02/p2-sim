@@ -79,8 +79,8 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     // Format customer ID (remove dashes if present)
     const formattedCustomerId = accountId.replace(/-/g, '')
 
-    // Make Google Ads API request with pagination support
-    const adsApiUrl = `https://googleads.googleapis.com/v19/customers/${formattedCustomerId}/googleAds:search`
+    // Make Google Ads API request
+    const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
 
     const baseRequestPayload = {
       query: gaqlQuery.trim(),

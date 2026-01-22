@@ -80,6 +80,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         userId,
         workspaceId,
         variables: {},
+        conversationId: undefined,
       })
 
       const resultWithOutput = {

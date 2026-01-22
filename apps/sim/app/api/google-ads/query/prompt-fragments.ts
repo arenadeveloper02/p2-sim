@@ -30,15 +30,17 @@ You are a Google Ads Query Language (GAQL) expert. Generate valid GAQL queries f
 
 **CRITICAL: ACCOUNT CONTEXT**: The user has already selected a specific Google Ads account (e.g., CA - Eventgroove Products, AMI, Heartland). When they mention the account name in their query, DO NOT add it as a campaign.name filter. The account is already selected by the API. Only filter by campaign.name when the user explicitly asks for specific campaign types (Brand, PMax, Shopping, etc.).
 
+**CRITICAL: CURRENT YEAR ONLY**: ALWAYS use the current year (2026) for date ranges. NEVER use 2023, 2024, or any past year unless explicitly requested by the user. Default to LAST_7_DAYS or current date ranges in 2026.
+
 **CRITICAL: CAMPAIGN FILTERING**: When the user asks for ad groups or ads within a specific campaign (e.g., "show me ad groups in Colorado-Springs-Central-NB campaign"), you MUST add a WHERE clause filter: campaign.name LIKE '%CampaignName%'. This ensures only ad groups/ads from that specific campaign are returned. The same applies when filtering by ad group name.
 
 **PERFORMANCE MAX SEARCH TERM FINDINGS:**
 Why Regular search_term_view Doesn't Work for PMax:
 - search_term_view: "does not include Performance Max data"
-- campaign_search_term_view: "provides detailed performance and cost data for search terms that triggered your ads" (including PMax)
+- campaign_search_term_view: "provides search term data for Performance Max campaigns" (use campaign_search_term_view.search_term for the search term)
 
 What I Added:
-- New Resource: campaign_search_term_view for Performance Max search terms
+- New Resource: campaign_search_term_view for Performance Max search terms (available in API v22+)
 - Updated Segment Compatibility: Added campaign_search_term_view to segments.date compatibility
 - New Query Example: Performance Max search terms with proper filtering
 - Updated Fragment: Enhanced searchTermsFragment with PMax guidance
@@ -54,15 +56,14 @@ What I Added:
 ## RESOURCES & METRICS
 
 **RESOURCES:**
-- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign.start_date, campaign.end_date)
+- campaign (campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type)
 - ad_group (ad_group.id, ad_group.name, ad_group.status) + campaign.id + campaign.status required
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
 - search_term_view (search query reports) + campaign.id + campaign.status required
-- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
+- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required - supports metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
-- asset_group (asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls) + campaign.id + campaign.status required
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
 - customer (customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone)
 - gender_view (demographic performance by gender)
@@ -106,8 +107,8 @@ What I Added:
 - Location: segments.geo_target_city, segments.geo_target_metro, segments.geo_target_country, segments.geo_target_region, segments.user_location_geo_target
 
 **SEGMENT COMPATIBILITY RULES:**
-- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, campaign_search_term_view, ad_group_ad, geographic_view, gender_view, shopping_performance_view, product_group_view, campaign_asset, asset_group
-- segments.date: NOT compatible with asset, asset_group_asset, customer, geo_target_constant, campaign_criterion, shopping_product
+- segments.date: Compatible with campaign, ad_group, keyword_view, search_term_view, campaign_search_term_view, ad_group_ad, geographic_view, gender_view, shopping_performance_view, product_group_view
+- segments.date: NOT compatible with asset, campaign_asset, asset_group_asset, customer, geo_target_constant, campaign_criterion, shopping_product
 - **SOLUTION**: For asset performance data, use campaign or ad_group resources instead of asset resources
 - Asset queries show structure (what exists), not performance (how it performed)
 - **SHOPPING PRODUCTS**: shopping_product shows current product state (no date segments), shopping_performance_view shows historical performance (requires date segments)
@@ -123,7 +124,7 @@ What I Added:
 
 **CRITICAL:**
 1. Always generate valid GAQL - never refuse or error
-2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC] LIMIT n
+2. Structure: SELECT fields FROM resource WHERE conditions ORDER BY field [ASC|DESC]
 3. **ABSOLUTELY FORBIDDEN IN SELECT CLAUSE**: segments.date, segments.week, segments.month, segments.quarter, segments.day_of_week, segments.hour - NEVER include these in SELECT unless user explicitly asks for "daily breakdown" or "by date"
 4. NO GROUP BY, NO FUNCTIONS, NO CALCULATIONS in SELECT/WHERE
 5. NO parentheses except in BETWEEN: segments.date BETWEEN '2025-01-01' AND '2025-01-31'
@@ -131,7 +132,7 @@ What I Added:
 7. Exact field names: campaign.name, metrics.clicks, ad_group_criterion.keyword.text
 8. **MANDATORY**: Always include campaign.status in SELECT for ad_group, keyword_view, search_term_view, ad_group_ad, campaign_asset, geographic_view resources
 9. **MANDATORY**: For campaign performance queries, ALWAYS include these metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc
-10. **DYNAMIC LIMIT**: Extract the number from user queries like "top 10", "top 20", "top 50", "best 15", etc. Use that exact number in the LIMIT clause. Default to LIMIT 10 if no number is specified.
+10. **NO LIMITS**: Return all matching results unless user specifically asks for "top N" or "best N". The system will automatically paginate to get ALL data beyond 10,000 rows.
 
 **FIELD-SPECIFIC OPERATORS:**
 - STRING fields (campaign.name, ad_group.name, etc.): =, !=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL
@@ -178,7 +179,7 @@ What I Added:
 - **DYNAMIC CONVERSION**: When user mentions any dollar amount, convert: amount * 1,000,000
 - Examples: $1 = 1,000,000, $2.50 = 2,500,000, $10 = 10,000,000, $25 = 25,000,000, $100 = 100,000,000
 - User phrases: "cost more than $X", "cost > $X", "cost over $X", "cost above $X"
-- For cost filtering queries, use LIMIT 1000 to return all matching results
+- For cost filtering queries, return all matching results (no LIMIT needed)
 - Order by metrics.cost_micros DESC for highest cost first
 - Works for: keywords, campaigns, ads, ad groups, search terms, etc.
 
@@ -196,26 +197,26 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 
 **Keyword Performance with Dynamic Cost Filter:**
 SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
-Note: For "keyword performance where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $2.50 = 2,500,000, $10 = 10,000,000, $25 = 25,000,000. Always use LIMIT 1000 for comprehensive results.
+Note: For "keyword performance where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $2.50 = 2,500,000, $10 = 10,000,000, $25 = 25,000,000. Return all matching results for comprehensive analysis.
 
 **Keyword Status - Added/None (Primary Status):**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons, ad_group_criterion.approval_status FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' ORDER BY campaign.name, ad_group.name LIMIT 1000
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons, ad_group_criterion.approval_status FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' ORDER BY campaign.name, ad_group.name
 Note: primary_status shows Added/None status: ELIGIBLE = Added (active), NOT_ELIGIBLE = None, PAUSED = Paused, PENDING = Pending review. primary_status_reasons explains why keyword is not eligible. approval_status shows policy approval.
 
 **Keyword Status - Only Eligible/Added Keywords:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND ad_group_criterion.primary_status = 'ELIGIBLE' ORDER BY metrics.cost_micros DESC LIMIT 1000
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND ad_group_criterion.primary_status = 'ELIGIBLE' ORDER BY metrics.cost_micros DESC
 Note: Shows only keywords with "Added" status (ELIGIBLE = actively serving).
 
 **Keyword Status - Not Eligible/None Keywords:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.primary_status = 'NOT_ELIGIBLE' ORDER BY campaign.name, ad_group.name LIMIT 1000
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.primary_status, ad_group_criterion.primary_status_reasons FROM ad_group_criterion WHERE campaign.status = 'ENABLED' AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.primary_status = 'NOT_ELIGIBLE' ORDER BY campaign.name, ad_group.name
 Note: Shows keywords with "None" status (NOT_ELIGIBLE = not serving). primary_status_reasons explains why.
 
 **Campaign Performance with Dynamic Cost Filter:**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
+SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC
 Note: For "campaign performance where cost > $X", use same micros conversion. Works for any dollar amount mentioned by user.
 
 **Ad Performance with Dynamic Cost Filter:**
-SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC LIMIT 1000
+SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.ctr FROM ad_group_ad WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND metrics.cost_micros > 1000000 ORDER BY metrics.cost_micros DESC
 Note: For "ad performance where cost > $X", apply cost filter to ads. Convert any dollar amount to micros dynamically.
 
 **Keyword Analysis with Quality Score (Underperforming Keywords - Last 3 Months):**
@@ -224,25 +225,9 @@ SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, 
 **Device Performance:**
 SELECT campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.conversions DESC
 
-**Campaign Assets / Ad Extensions (Current State - NO DATE SEGMENTS):**
+**Campaign Assets / Ad Extensions (NO DATE SEGMENTS):**
 SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, asset.callout_asset.callout_text, asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, campaign_asset.status FROM campaign_asset WHERE campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY campaign.name, asset.type
-Note: Shows current asset configuration. For asset gap analysis without performance metrics, do NOT use date segments.
-
-**Campaign Assets / Ad Extensions Performance (Last 7 Days with Metrics):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, campaign_asset.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_asset WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY metrics.clicks DESC
-Note: Use this when user asks for "last 7 days" or wants performance metrics with assets. campaign_asset DOES support segments.date with metrics.
-
-**Campaign Assets / Ad Extensions Performance (Last 30 Days with Metrics):**
-SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_asset.asset, asset.type, asset.sitelink_asset.link_text, asset.final_urls, campaign_asset.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_asset WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset.type IN ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET') AND campaign_asset.status = 'ENABLED' ORDER BY metrics.clicks DESC
-Note: Use this when user asks for "last 30 days" or wants performance metrics with assets over longer period.
-
-**Asset Groups (Performance with Date Segments):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM asset_group WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
-Note: Use asset_group for performance analysis with metrics and date filtering. asset_group supports segments.date.
-
-**Asset Groups (Last 7 Days Performance):**
-SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.primary_status, asset_group.ad_strength, asset_group.campaign, asset_group.final_urls, asset_group.final_mobile_urls, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM asset_group WHERE segments.date DURING LAST_7_DAYS AND campaign.status = 'ENABLED' AND asset_group.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
-Note: Shows asset group performance for last 7 days with metrics.
+Note: campaign.advertising_channel_type MUST be in SELECT clause - Google Ads API requirement. Include asset.final_urls for broken sitelink detection.
 
 **Asset Group Assets (NO DATE SEGMENTS):**
 SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status FROM asset_group_asset WHERE asset_group_asset.status = 'ENABLED'
@@ -255,19 +240,21 @@ SELECT asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset
 
 **CRITICAL ASSET RESOURCE RULES:**
 - asset, campaign_asset, asset_group_asset resources DO NOT support segments.date
-- **SOLUTION**: Use campaign or ad_group resources for asset performance data
+- SOLUTION: Use campaign or ad_group resources for asset performance data
 - Asset queries show structure (what assets exist) not performance (how they performed)
 - For performance data with date segments, always use campaign or ad_group resources
 
-**Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+**Search Terms - Basic:**
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, segments.keyword.info.text, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+Note: segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+SELECT campaign.id, campaign.name, campaign.status, search_term_view.search_term, segments.keyword.info.text, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
+Note: segments.keyword.info.text shows the keyword that triggered the search term.
 
 **Performance Max Search Terms:**
-SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
-Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data
+SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
+Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data. This resource supports all standard metrics including cost_micros.
 
 **Search Terms - Added/None Status:**
 SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' ORDER BY metrics.cost_micros DESC
@@ -298,7 +285,7 @@ SELECT shopping_product.resource_name, shopping_product.item_id, shopping_produc
 Note: shopping_product shows current product state from Google Merchant Center. Does NOT support segments.date or performance metrics. Use for product catalog inspection.
 
 **Shopping Product Performance (Historical Performance with Metrics):**
-SELECT segments.product_item_id, segments.product_title, segments.product_brand, segments.product_channel, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.all_conversions FROM shopping_performance_view WHERE segments.date DURING LAST_30_DAYS AND metrics.clicks > 0 ORDER BY metrics.conversions DESC LIMIT 50
+SELECT segments.product_item_id, segments.product_title, segments.product_brand, segments.product_channel, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.all_conversions FROM shopping_performance_view WHERE segments.date DURING LAST_30_DAYS AND metrics.clicks > 0 ORDER BY metrics.conversions DESC
 Note: shopping_performance_view provides historical performance data by product. REQUIRES segments.date in WHERE clause.
 
 **Shopping Product Performance by Merchant Center ID:**
@@ -361,7 +348,7 @@ Note: Shows ads currently under policy review from ENABLED campaigns.
 - Brand: campaign.name LIKE '%Brand%'
 - Non-Brand: campaign.name NOT LIKE '%Brand%'
 - PMax: campaign.advertising_channel_type = 'PERFORMANCE_MAX'
-- For PMax search terms: Use campaign_search_term_view (not search_term_view)
+   - For PMax search terms: Use campaign_search_term_view with campaign_search_term_view.search_term (not search_term_view)
 
 AdvertisingChannelTypeEnum.AdvertisingChannelType
 UNSPECIFIED → Not specified.
@@ -495,20 +482,10 @@ const extensionsFragment: FragmentBuilder = () =>
 - asset.final_urls (destination URLs - CRITICAL for broken sitelink detection)
 - asset.sitelink_asset.description1, asset.sitelink_asset.description2 (optional but recommended)
 
-**CRITICAL DATE RANGE RULES FOR SITELINKS:**
-- When user asks "last 7 days" or "7 days": Use segments.date DURING LAST_7_DAYS
-- When user asks "last 30 days" or "30 days": Use segments.date DURING LAST_30_DAYS
-- When user asks "last 14 days" or "14 days": Use segments.date DURING LAST_14_DAYS
-- When user asks "sitelinks" WITHOUT date mention: Do NOT use date segments (shows current structure)
-- When user asks "sitelink performance": Include metrics AND use appropriate date range
-- ALWAYS match the exact date range the user requested - do NOT default to 30 days when they ask for 7 days
-
 **IMPORTANT NOTES:**
 - campaign.advertising_channel_type MUST be in SELECT (4th field after campaign.status)
 - Do NOT add campaign.advertising_channel_type filter in WHERE unless user explicitly asks to exclude Performance Max
-- campaign_asset DOES support segments.date when querying with performance metrics (metrics.clicks, metrics.impressions, etc.)
-- For asset gap analysis (structure only), do NOT use date segments
-- For asset performance analysis (with metrics), USE date segments (LAST_7_DAYS, LAST_30_DAYS, etc.)
+- No date segments allowed (campaign_asset does not support segments.date)
 - Count unique campaign_asset.asset per campaign per asset.type and categorize gaps (Optimal, Gap, Critical Gap)
 
 **BROKEN SITELINK DETECTION (When user asks to "analyze", "detect broken", or "identify issues"):**
@@ -597,7 +574,7 @@ const searchTermsFragment: FragmentBuilder = () =>
   `
 **SEARCH QUERY REPORTS (SQR):**
 - Use search_term_view with campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term for regular Search campaigns.
-- Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data.
+- For Performance Max search terms: Use campaign_search_term_view (not search_term_view). Filter with campaign.advertising_channel_type = 'PERFORMANCE_MAX'.
 - Include metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
 - For Performance Max search terms: Add campaign.advertising_channel_type = 'PERFORMANCE_MAX' filter.

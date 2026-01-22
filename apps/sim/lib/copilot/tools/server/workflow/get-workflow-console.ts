@@ -241,6 +241,7 @@ export const getWorkflowConsoleServerTool: BaseServerTool<GetWorkflowConsoleArgs
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         executionData: workflowExecutionLogs.executionData,
         cost: workflowExecutionLogs.cost,
+        conversationId: workflowExecutionLogs.conversationId,
       })
       .from(workflowExecutionLogs)
       .where(eq(workflowExecutionLogs.workflowId, workflowId))

@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
 import { EDGE } from '@/executor/constants'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { BlockExecutor } from '@/executor/execution/block-executor'
@@ -41,15 +42,85 @@ export class NodeExecutionOrchestrator {
     }
 
     const loopId = node.metadata.loopId
-    if (loopId && !this.loopOrchestrator.getLoopScope(ctx, loopId)) {
-      this.loopOrchestrator.initializeLoopScope(ctx, loopId)
-    }
+    if (loopId) {
+      // For sentinel start nodes of nested loops: check if the loop has completed
+      // and needs to be reset for a new outer loop iteration
+      if (node.metadata.isSentinel && node.metadata.sentinelType === 'start') {
+        const existingScope = this.loopOrchestrator.getLoopScope(ctx, loopId)
+        if (existingScope) {
+          // Check if this is a nested forEach loop that was reset by resetNestedLoopScopes
+          // but needs re-initialization with fresh data. This happens when:
+          // - Loop is a forEach loop
+          // - Loop has items but iteration is 0 (was reset by outer loop)
+          // - Loop has completed previous iterations (allIterationOutputs not empty),
+          //   indicating it was reset mid-execution, not on first run
+          const isNestedForEachNeedingRefresh =
+            existingScope.loopType === 'forEach' &&
+            existingScope.items &&
+            existingScope.items.length > 0 &&
+            existingScope.iteration === 0 &&
+            existingScope.allIterationOutputs.length > 0 // Has completed iterations, so was reset
 
-    if (loopId && !this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
-      return {
-        nodeId,
-        output: {},
-        isFinalOutput: false,
+          const needsReset =
+            (existingScope.loopType === 'for' &&
+              existingScope.maxIterations !== undefined &&
+              existingScope.allIterationOutputs.length >= existingScope.maxIterations) ||
+            (existingScope.loopType === 'forEach' &&
+              existingScope.items &&
+              existingScope.allIterationOutputs.length >= existingScope.items.length) ||
+            isNestedForEachNeedingRefresh
+
+          if (needsReset) {
+            logger.info('Resetting nested loop scope for new outer loop iteration', {
+              loopId,
+              loopType: existingScope.loopType,
+              isNestedForEachNeedingRefresh,
+              completedIterations: existingScope.allIterationOutputs.length,
+              maxIterations: existingScope.maxIterations || existingScope.items?.length,
+            })
+            // Clear execution state for all nodes in the loop so they can execute again
+            this.loopOrchestrator.clearLoopExecutionState(loopId)
+            // Restore loop edges that may have been deactivated
+            this.loopOrchestrator.restoreLoopEdges(loopId)
+            // Re-initialize the loop scope with fresh state
+            // This will re-resolve forEach items (e.g., <api.results>) from current block outputs
+            this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+          }
+        }
+      }
+
+      // Initialize this loop's scope if needed
+      if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
+        // Check for cancellation before starting a new loop iteration
+        const useRedis = isRedisCancellationEnabled() && !!ctx.executionId
+        let isCancelled = false
+        if (useRedis) {
+          isCancelled = await isExecutionCancelled(ctx.executionId!)
+        } else {
+          isCancelled = ctx.abortSignal?.aborted ?? false
+        }
+        if (isCancelled) {
+          logger.info('Loop iteration cancelled before initialization', { loopId, nodeId })
+          // Return empty output to prevent further execution
+          return {
+            nodeId,
+            output: {},
+            isFinalOutput: false,
+          }
+        }
+        this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+      }
+
+      // For nested loops, ensure all outer loop scopes are also initialized
+      // This ensures loop variables from outer loops are available
+      this.initializeContainingLoopScopes(ctx, nodeId, loopId)
+
+      if (!this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
+        return {
+          nodeId,
+          output: {},
+          isFinalOutput: false,
+        }
       }
     }
 
@@ -95,6 +166,9 @@ export class NodeExecutionOrchestrator {
     switch (sentinelType) {
       case 'start': {
         if (loopId) {
+          // Note: Loop scope reset for nested loops is handled in executeNode() before handleSentinel is called
+          // This ensures the scope is reset before any other loop logic runs
+
           const shouldExecute = await this.loopOrchestrator.evaluateInitialCondition(ctx, loopId)
           if (!shouldExecute) {
             logger.info('While loop initial condition false, skipping loop body', { loopId })
@@ -119,6 +193,16 @@ export class NodeExecutionOrchestrator {
         if (continuationResult.shouldContinue) {
           return {
             shouldContinue: true,
+            shouldExit: false,
+            selectedRoute: continuationResult.selectedRoute,
+          }
+        }
+
+        // If shouldExit is false, the loop is waiting for nested loops to complete
+        // Don't exit yet - the nested loop will re-trigger this sentinel end when it completes
+        if (!continuationResult.shouldExit) {
+          return {
+            shouldContinue: false,
             shouldExit: false,
             selectedRoute: continuationResult.selectedRoute,
           }
@@ -263,5 +347,45 @@ export class NodeExecutionOrchestrator {
   private findParallelIdForNode(nodeId: string): string | undefined {
     const baseId = extractBaseBlockId(nodeId)
     return this.parallelOrchestrator.findParallelIdForNode(baseId)
+  }
+
+  /**
+   * Initialize scopes for all loops containing this node.
+   * Traverses up the loop hierarchy using metadata to find ancestors.
+   */
+  private initializeContainingLoopScopes(
+    ctx: ExecutionContext,
+    nodeId: string,
+    currentLoopId: string
+  ): void {
+    const ancestors: string[] = []
+    let pointer = currentLoopId
+
+    // Traverse up the loop hierarchy
+    // We start from the current loop and search for its parent
+    while (pointer) {
+      const loopNode = this.dag.nodes.get(pointer)
+      if (!loopNode) break
+
+      const parentLoopId = loopNode.metadata.loopId
+      if (parentLoopId) {
+        ancestors.push(parentLoopId)
+        pointer = parentLoopId
+
+        // Safety break to prevent infinite loops in malformed graphs
+        if (ancestors.length > 50) break
+      } else {
+        break
+      }
+    }
+
+    // Initialize from outermost to innermost
+    // ancestors is [Parent, GrandParent...] -> Reverse to [GrandParent, Parent]
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const loopId = ancestors[i]
+      if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
+        this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+      }
+    }
   }
 }
