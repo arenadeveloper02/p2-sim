@@ -108,7 +108,7 @@ export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, on
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      <div className='flex items-center gap-4 border-b border-gray-200 bg-white px-6 py-4'>
+      < div className='flex items-center gap-4 border-b border-gray-200 bg-[#F3F8FE] px-6 py-4'>
         <Button
           variant='ghost'
           size='icon'
@@ -118,7 +118,7 @@ export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, on
           <ArrowLeft className='h-4 w-4' />
         </Button>
         <h1 className='text-base font-semibold text-gray-900'>
-          {workflowTitle || 'Feedback'}
+          {'BACK'}
         </h1>
       </div>
 
