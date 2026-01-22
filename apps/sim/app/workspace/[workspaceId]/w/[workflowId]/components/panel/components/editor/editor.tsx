@@ -188,6 +188,11 @@ export function Editor() {
   // Check if current block is arena type
   const isArenaBlock = currentBlock?.type === 'arena'
 
+  // Get current operation to check if advanced mode should be disabled
+  const currentOperation = blockSubBlockValues.operation
+  const isSaveSummaryOperation = currentOperation === 'arena_save_summary'
+  const shouldDisableAdvancedMode = isArenaBlock && isSaveSummaryOperation
+
   // Determine if connections are at minimum height (collapsed state)
   const isConnectionsAtMinHeight = connectionsHeight <= 35
 
@@ -290,7 +295,11 @@ export function Editor() {
                       <Switch
                         checked={advancedMode}
                         onCheckedChange={() => {
-                          if (currentBlockId && userPermissions.canEdit) {
+                          if (
+                            currentBlockId &&
+                            userPermissions.canEdit &&
+                            !shouldDisableAdvancedMode
+                          ) {
                             // If switching from advanced to basic mode, clear advanced-only field values
                             if (advancedMode && blockConfig) {
                               const advancedOnlySubBlocks = blockConfig.subBlocks?.filter(
@@ -308,7 +317,7 @@ export function Editor() {
                             collaborativeToggleBlockAdvancedMode(currentBlockId)
                           }
                         }}
-                        disabled={!userPermissions.canEdit}
+                        disabled={!userPermissions.canEdit || shouldDisableAdvancedMode}
                         aria-label='Toggle advanced mode'
                       />
                     </div>

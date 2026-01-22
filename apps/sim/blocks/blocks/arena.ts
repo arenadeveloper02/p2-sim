@@ -38,7 +38,7 @@ export const ArenaBlock: BlockConfig = {
       value: () => 'arena_create_task',
     },
 
-    //create task blocks
+    //create task blocks - basic mode
     {
       id: 'task-name',
       title: 'Task Name',
@@ -69,6 +69,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-client-selector',
       required: true,
       placeholder: 'Enter client name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task', 'arena_create_sub_task'] },
     },
@@ -78,6 +79,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-project-selector',
       required: true,
       placeholder: 'Enter project name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -90,6 +92,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-group-selector',
       required: true,
       placeholder: 'Enter group name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task'] },
     },
@@ -99,6 +102,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-task-selector',
       required: true,
       placeholder: 'Enter task name',
+      mode: 'basic',
       condition: {
         field: 'operation',
         value: ['arena_create_sub_task'],
@@ -110,32 +114,101 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-assignee-selector',
       required: true,
       placeholder: 'Enter assignee name',
+      mode: 'basic',
       dependsOn: ['operation', 'task-client', 'task-project'],
       condition: {
         field: 'operation',
         value: ['arena_create_task', 'arena_create_sub_task'],
       },
     },
+    //create task blocks - advanced mode
+    {
+      id: 'task-client-name',
+      title: 'Client Name',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter client name or use <function.result.client_name>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_create_task', 'arena_create_sub_task'],
+      },
+    },
+    {
+      id: 'task-project-name',
+      title: 'Project Name',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter project name or use <function.result.project_name>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_create_task', 'arena_create_sub_task'],
+      },
+    },
+    {
+      id: 'task-epic-name',
+      title: 'Group Name',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter group name or use <function.result.group_name>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_create_task'],
+      },
+    },
+    {
+      id: 'task-assignee-email',
+      title: 'Assignee Email',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter assignee email or use <function.result.assignee_email>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_create_task', 'arena_create_sub_task'],
+      },
+    },
+    {
+      id: 'task-number',
+      title: 'Task Number',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter task number or use <function.result.task_number>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_create_sub_task'],
+      },
+    },
 
     //search task blocks
     {
       id: 'search-task-name',
-      title: 'Task Name',
+      title: 'Task Name or Task Number',
       type: 'long-input',
       required: false,
-      placeholder: 'Enter task name',
+      placeholder: 'Enter task name or task number or use <function.result.task_name>',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_search_task'],
       },
     },
+    //search task blocks - basic mode only
     {
       id: 'search-task-client',
       title: 'Client',
       type: 'arena-client-selector',
       required: false,
       placeholder: 'Enter client name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -148,6 +221,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-project-selector',
       required: false,
       placeholder: 'Enter project name',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -160,6 +234,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-states-selector',
       required: false,
       placeholder: 'Enter state',
+      mode: 'basic',
       //value: () => 'open',
       condition: {
         field: 'operation',
@@ -172,6 +247,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'combobox',
       required: false,
       placeholder: 'Enter visibility',
+      mode: 'basic',
       dependsOn: ['operation'],
       options: [
         { label: 'Internal', id: 'Internal' },
@@ -189,6 +265,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'combobox',
       required: false,
       placeholder: 'Enter due date',
+      mode: 'basic',
       dependsOn: ['operation'],
       options: [
         { label: 'Yesterday', id: 'Yesterday' },
@@ -215,6 +292,7 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-assignee-selector',
       required: false,
       placeholder: 'Enter assignee name',
+      mode: 'basic',
       dependsOn: ['search-task-client'],
       condition: {
         field: 'operation',
@@ -226,6 +304,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'Max Results',
       type: 'short-input',
       placeholder: '10',
+      mode: 'basic',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'arena_search_task' },
     },

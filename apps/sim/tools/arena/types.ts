@@ -4,21 +4,25 @@ export type ArenaCreateTaskParams = {
   operation: string
   'task-name': string
   'task-description': string
-  'planned-start-date': Date
-  'planned-end-date': Date
-  'task-type': string
-  'task-client': {
+  // Basic mode fields (optional when in advanced mode)
+  'task-client'?: {
     clientId: string
     name: string
   }
-  'task-project': string | { sysId: string; name: string; customDisplayValue?: string }
+  'task-project'?: string | { sysId: string; name: string; customDisplayValue?: string }
   'task-group'?: {
     id: string
     name: string
     customDisplayValue?: string
   }
   'task-task'?: string | { sysId: string; id?: string; name: string; customDisplayValue?: string }
-  'task-assignee': string | { value: string; label: string; customDisplayValue?: string }
+  'task-assignee'?: string | { value: string; label: string; customDisplayValue?: string }
+  // Advanced mode fields
+  'task-client-name'?: string
+  'task-project-name'?: string
+  'task-epic-name'?: string
+  'task-assignee-email'?: string
+  'task-number'?: string
   _context: {
     workflowId: string
   }
