@@ -153,40 +153,39 @@ export const gmailSearchTool: ToolConfig<GmailSearchParams, GmailToolResponse> =
   },
 }
 
-interface GmailSearchV2Response {
-  success: boolean
-  output: {
-    results: Array<Record<string, any>>
-  }
-}
-
-export const gmailSearchV2Tool: ToolConfig<GmailSearchParams, GmailSearchV2Response> = {
+export const gmailSearchV2Tool: ToolConfig<GmailSearchParams, GmailToolResponse> = {
   id: 'gmail_search_v2',
   name: 'Gmail Search',
-  description: 'Search emails in Gmail. Returns API-aligned fields only.',
+  description: 'Search emails in Gmail',
   version: '2.0.0',
   oauth: gmailSearchTool.oauth,
   params: gmailSearchTool.params,
   request: gmailSearchTool.request,
   transformResponse: async (response: Response, params?: GmailSearchParams) => {
-    const legacy = await gmailSearchTool.transformResponse!(response, params)
-    if (!legacy.success) {
-      return {
-        success: false,
-        output: { results: [] },
-        error: legacy.error,
-      }
-    }
-
-    const metadata = (legacy.output.metadata || {}) as any
-    return {
-      success: true,
-      output: {
-        results: metadata.results || [],
-      },
-    }
+    return await gmailSearchTool.transformResponse!(response, params)
   },
   outputs: {
-    results: { type: 'json', description: 'Array of search results' },
+    content: { type: 'string', description: 'Search results summary' },
+    metadata: {
+      type: 'object',
+      description: 'Search metadata',
+      properties: {
+        results: {
+          type: 'array',
+          description: 'Array of search results',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Gmail message ID' },
+              threadId: { type: 'string', description: 'Gmail thread ID' },
+              subject: { type: 'string', description: 'Email subject' },
+              from: { type: 'string', description: 'Sender email address' },
+              date: { type: 'string', description: 'Email date' },
+              snippet: { type: 'string', description: 'Email snippet/preview' },
+            },
+          },
+        },
+      },
+    },
   },
 }

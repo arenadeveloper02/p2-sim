@@ -134,51 +134,27 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   },
 }
 
-interface GmailSendV2Response {
-  success: boolean
-  output: {
-    id?: string
-    threadId?: string
-    labelIds?: string[]
-  }
-}
-
-export const gmailSendV2Tool: ToolConfig<GmailSendParams, GmailSendV2Response> = {
+export const gmailSendV2Tool: ToolConfig<GmailSendParams, GmailToolResponse> = {
   id: 'gmail_send_v2',
   name: 'Gmail Send',
-  description: 'Send emails using Gmail. Returns API-aligned fields only.',
+  description: 'Send emails using Gmail',
   version: '2.0.0',
   oauth: gmailSendTool.oauth,
   params: gmailSendTool.params,
   request: gmailSendTool.request,
   transformResponse: async (response) => {
-    const legacy = await gmailSendTool.transformResponse!(response)
-    if (!legacy.success) {
-      return {
-        success: false,
-        output: {},
-        error: legacy.error,
-      }
-    }
-
-    const metadata = legacy.output.metadata as any
-    return {
-      success: true,
-      output: {
-        id: metadata?.id ?? null,
-        threadId: metadata?.threadId ?? null,
-        labelIds: metadata?.labelIds ?? null,
-      },
-    }
+    return await gmailSendTool.transformResponse!(response)
   },
   outputs: {
-    id: { type: 'string', description: 'Gmail message ID', optional: true },
-    threadId: { type: 'string', description: 'Gmail thread ID', optional: true },
-    labelIds: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Email labels',
-      optional: true,
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Email labels' },
+      },
     },
   },
 }

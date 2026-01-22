@@ -90,46 +90,27 @@ export const gmailMoveTool: ToolConfig<GmailMoveParams, GmailToolResponse> = {
   },
 }
 
-interface GmailModifyV2Response {
-  success: boolean
-  output: {
-    id?: string
-    threadId?: string
-    labelIds?: string[]
-  }
-}
-
-export const gmailMoveV2Tool: ToolConfig<GmailMoveParams, GmailModifyV2Response> = {
+export const gmailMoveV2Tool: ToolConfig<GmailMoveParams, GmailToolResponse> = {
   id: 'gmail_move_v2',
   name: 'Gmail Move',
-  description: 'Move emails between labels/folders in Gmail. Returns API-aligned fields only.',
+  description: 'Move emails between Gmail labels/folders',
   version: '2.0.0',
   oauth: gmailMoveTool.oauth,
   params: gmailMoveTool.params,
   request: gmailMoveTool.request,
   transformResponse: async (response: Response, params?: GmailMoveParams) => {
-    const legacy = await gmailMoveTool.transformResponse!(response, params)
-    if (!legacy.success) {
-      return { success: false, output: {}, error: legacy.error }
-    }
-    const metadata = legacy.output.metadata as any
-    return {
-      success: true,
-      output: {
-        id: metadata?.id ?? null,
-        threadId: metadata?.threadId ?? null,
-        labelIds: metadata?.labelIds ?? null,
-      },
-    }
+    return await gmailMoveTool.transformResponse!(response, params)
   },
   outputs: {
-    id: { type: 'string', description: 'Gmail message ID', optional: true },
-    threadId: { type: 'string', description: 'Gmail thread ID', optional: true },
-    labelIds: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Email labels',
-      optional: true,
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
     },
   },
 }

@@ -76,44 +76,27 @@ export const gmailArchiveTool: ToolConfig<GmailMarkReadParams, GmailToolResponse
   },
 }
 
-interface GmailModifyV2Response {
-  success: boolean
-  output: {
-    id?: string
-    threadId?: string
-    labelIds?: string[]
-  }
-}
-
-export const gmailArchiveV2Tool: ToolConfig<GmailMarkReadParams, GmailModifyV2Response> = {
+export const gmailArchiveV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
   id: 'gmail_archive_v2',
   name: 'Gmail Archive',
-  description: 'Archive a Gmail message (remove from inbox). Returns API-aligned fields only.',
+  description: 'Archive a Gmail message (remove from inbox)',
   version: '2.0.0',
   oauth: gmailArchiveTool.oauth,
   params: gmailArchiveTool.params,
   request: gmailArchiveTool.request,
   transformResponse: async (response) => {
-    const legacy = await gmailArchiveTool.transformResponse!(response)
-    if (!legacy.success) return { success: false, output: {}, error: legacy.error }
-    const metadata = legacy.output.metadata as any
-    return {
-      success: true,
-      output: {
-        id: metadata?.id ?? null,
-        threadId: metadata?.threadId ?? null,
-        labelIds: metadata?.labelIds ?? null,
-      },
-    }
+    return await gmailArchiveTool.transformResponse!(response)
   },
   outputs: {
-    id: { type: 'string', description: 'Gmail message ID', optional: true },
-    threadId: { type: 'string', description: 'Gmail thread ID', optional: true },
-    labelIds: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Updated email labels',
-      optional: true,
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
     },
   },
 }
