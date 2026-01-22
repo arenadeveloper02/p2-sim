@@ -8,7 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
-import { generateGAQLQuery } from './query-generation'
+import { generateGAQLQuery, extractDateRange } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
 
@@ -96,7 +96,10 @@ export async function POST(request: NextRequest) {
 
     const executionTime = Date.now() - startTime
 
-    // Build response
+    // Extract date range from GAQL query
+    const dateRange = extractDateRange(queryResult.gaql_query)
+
+    // Build response with pagination info
     const response = {
       success: true,
       query: query,
@@ -108,17 +111,18 @@ export async function POST(request: NextRequest) {
       query_type: queryResult.query_type,
       tables_used: queryResult.tables_used,
       metrics_used: queryResult.metrics_used,
+      date_range: dateRange
+        ? {
+            start_date: dateRange.startDate,
+            end_date: dateRange.endDate,
+          }
+        : null,
       results: processedResults.rows,
       row_count: processedResults.row_count,
       total_rows: processedResults.total_rows,
       totals: processedResults.totals,
       execution_time_ms: executionTime,
     }
-
-    logger.info(`[${requestId}] Returning response`, {
-      rowsReturned: processedResults.row_count,
-      executionTime,
-    })
 
     return NextResponse.json(response)
   } catch (error) {

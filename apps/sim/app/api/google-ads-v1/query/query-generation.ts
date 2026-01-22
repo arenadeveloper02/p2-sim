@@ -12,6 +12,31 @@ import type { GAQLResponse } from './types'
 const logger = createLogger('GoogleAdsV1QueryGen')
 
 /**
+ * Extracts date range from GAQL query
+ *
+ * @param query - GAQL query string
+ * @returns Date range with start and end dates, or null if not found
+ */
+export function extractDateRange(query: string): {
+  startDate: string
+  endDate: string
+} | null {
+  // Match segments.date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+  const datePattern =
+    /segments\.date\s+BETWEEN\s+'(\d{4}-\d{2}-\d{2})'\s+AND\s+'(\d{4}-\d{2}-\d{2})'/i
+  const match = query.match(datePattern)
+
+  if (match && match[1] && match[2]) {
+    return {
+      startDate: match[1],
+      endDate: match[2],
+    }
+  }
+
+  return null
+}
+
+/**
  * Adds default date filter to GAQL query if missing
  *
  * @param query - GAQL query string

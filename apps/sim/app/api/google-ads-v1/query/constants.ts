@@ -10,12 +10,13 @@ export const MICROS_PER_DOLLAR = 1000000
 
 /**
  * Current date reference for GAQL query generation
- * Dynamically calculated to always reflect the actual current date
+ * Dynamically calculated to always reflect the actual current date in IST (Indian Standard Time)
  */
 export const CURRENT_DATE = new Date().toLocaleDateString('en-US', {
   year: 'numeric',
   month: 'long',
   day: 'numeric',
+  timeZone: 'Asia/Kolkata',
 })
 
 /**
