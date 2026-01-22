@@ -154,8 +154,33 @@ export const ArenaClientChatMessage = memo(
 
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
+
       setIsFeedbackPending(true)
       try {
+        // If already liked, unlike it (send null to backend)
+        if (message.liked === true) {
+          await fetch(`/api/chat/feedback/${currentExecutionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              comment: '',
+              inComplete: false,
+              inAccurate: false,
+              outOfDate: false,
+              tooLong: false,
+              tooShort: false,
+              liked: null,
+            }),
+          })
+          setMessages?.((prev: any) =>
+            prev.map((msg: any) =>
+              msg.executionId === currentExecutionId ? { ...msg, liked: null } : msg
+            )
+          )
+          return
+        }
+
+        // Otherwise, like it
         await fetch(`/api/chat/feedback/${currentExecutionId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -187,7 +212,41 @@ export const ArenaClientChatMessage = memo(
       }
     }
 
-    const handleDislike = (currentExecutionId: string) => {
+    const handleDislike = async (currentExecutionId: string) => {
+      // If already disliked, undislike it (send null to backend)
+      if (message.liked === false) {
+        setIsFeedbackPending(true)
+        try {
+          await fetch(`/api/chat/feedback/${currentExecutionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              comment: '',
+              inComplete: false,
+              inAccurate: false,
+              outOfDate: false,
+              tooLong: false,
+              tooShort: false,
+              liked: null,
+            }),
+          })
+          setMessages?.((prev: any) =>
+            prev.map((msg: any) =>
+              msg.executionId === currentExecutionId ? { ...msg, liked: null } : msg
+            )
+          )
+        } catch {
+          // toastError('Error', {
+          //   description: 'Something went wrong!',
+          // })
+        } finally {
+          setIsFeedbackOpen(false)
+          setIsFeedbackPending(false)
+        }
+        return
+      }
+
+      // Otherwise, open feedback popover
       try {
         // Close any other open feedback boxes across messages
         if (typeof window !== 'undefined') {
@@ -314,9 +373,6 @@ export const ArenaClientChatMessage = memo(
                                   <button
                                     className='text-muted-foreground transition-colors hover:bg-muted'
                                     onClick={() => {
-                                      if (message?.liked === true) {
-                                        return
-                                      }
                                       handleLike(message?.executionId || '')
                                     }}
                                   >
@@ -330,7 +386,7 @@ export const ArenaClientChatMessage = memo(
                                 </Tooltip.Trigger>
 
                                 <Tooltip.Content>
-                                  {message?.liked === true ? 'Liked' : 'Like'}
+                                  {message?.liked === true ? 'Unlike' : 'Like'}
                                 </Tooltip.Content>
                               </Tooltip.Root>
                             </Tooltip.Provider>
@@ -349,9 +405,6 @@ export const ArenaClientChatMessage = memo(
                                         ref={dislikeButtonRef}
                                         className='text-muted-foreground transition-colors hover:bg-muted'
                                         onClick={() => {
-                                          if (message?.liked === false) {
-                                            return
-                                          }
                                           handleDislike(message?.executionId || '')
                                         }}
                                       >
@@ -384,7 +437,7 @@ export const ArenaClientChatMessage = memo(
                                   </PopoverContent>
                                 </Popover>
                                 <Tooltip.Content side='top' align='center' sideOffset={5}>
-                                  {message?.liked === false ? 'Disliked' : 'Dislike'}
+                                  {message?.liked === false ? 'Remove dislike' : 'Dislike'}
                                 </Tooltip.Content>
                               </Tooltip.Root>
                             </Tooltip.Provider>

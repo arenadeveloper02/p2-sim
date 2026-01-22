@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { chatPromptFeedback, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
@@ -19,7 +19,7 @@ const feedbackSchema = z.object({
   outOfDate: z.boolean().default(false),
   tooLong: z.boolean().default(false),
   tooShort: z.boolean().default(false),
-  liked: z.boolean().default(false),
+  liked: z.union([z.boolean(), z.null()]),
 })
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return createErrorResponse('Invalid execution Id', 400)
       }
 
-      // Create the chat deployment
+      // If liked is null, delete existing feedback records for this executionId+userId (unlike action)
+      if (body.liked === null) {
+        await db
+          .delete(chatPromptFeedback)
+          .where(
+            and(
+              eq(chatPromptFeedback.executionId, executionId),
+              eq(chatPromptFeedback.userId, session.user.id)
+            )
+          )
+
+        return createSuccessResponse({
+          message: 'Feedback removed successfully',
+        })
+      }
+
+      // Otherwise, create a new feedback record
       const id = uuidv4()
 
       await db.insert(chatPromptFeedback).values({
