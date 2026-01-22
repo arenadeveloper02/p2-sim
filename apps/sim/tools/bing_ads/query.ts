@@ -87,7 +87,7 @@ export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
     },
   },
   request: {
-    url: () => '/api/bing-ads/query',
+    url: () => '/api/bing-ads-v1/query',
     method: 'POST',
     headers: () => ({
       'Content-Type': 'application/json',
