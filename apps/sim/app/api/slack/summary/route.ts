@@ -151,18 +151,18 @@ export async function POST(request: NextRequest) {
       try {
         console.log('Checking existing record...')
 
-        // First, check if record exists
+        // First, check if record exists for today (same client, channel, date)
         const existingRecord = await db
           .select()
           .from(slackSummary)
-          .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id}`)
+          .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`)
           .limit(1)
 
         const recordExists = existingRecord.length > 0
 
         if (recordExists) {
-          // Update existing record
-          console.log('Updating existing record')
+          // Update existing record for today
+          console.log('Updating existing record for today')
 
           await db
             .update(slackSummary)
@@ -175,14 +175,13 @@ export async function POST(request: NextRequest) {
               fourteenDaySummary: fourteen_day_summary || undefined,
               updatedDate: now,
               status: 'STARTED',
-              runDate: todayDate,
             })
-            .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id}`)
+            .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`)
 
-          console.log('Record update successful')
+          console.log('Record update successful for today')
         } else {
-          // Insert new record
-          console.log('Inserting new record')
+          // Insert new record for today
+          console.log('Inserting new record for today')
 
           await db.insert(slackSummary).values({
             id,
@@ -203,7 +202,7 @@ export async function POST(request: NextRequest) {
             runDate: todayDate,
           })
 
-          console.log('Record insert successful')
+          console.log('Record insert successful for today')
         }
       } catch (sqlError: any) {
         console.log('Raw SQL failed, trying Drizzle...', sqlError.message)
