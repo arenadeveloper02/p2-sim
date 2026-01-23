@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = new URL(request.url)
-    const clientId = url.searchParams.get('client_id')
+    const clientId = url.searchParams.get('cid')
 
     if (!clientId) {
       return NextResponse.json(
-        { success: false, error: { message: 'client_id parameter is required' } },
+        { success: false, error: { message: 'cid parameter is required' } },
         { status: 400 }
       )
     }
