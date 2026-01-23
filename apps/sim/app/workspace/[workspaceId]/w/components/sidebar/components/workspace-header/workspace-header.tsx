@@ -497,6 +497,7 @@ export function WorkspaceHeader({
                               value={editingName}
                               onChange={(e) => setEditingName(e.target.value)}
                               onKeyDown={async (e) => {
+                                e.stopPropagation()
                                 if (e.key === 'Enter') {
                                   e.preventDefault()
                                   setIsListRenaming(true)

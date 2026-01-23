@@ -23,10 +23,10 @@ import {
   type TagDefinition,
   useKnowledgeBaseTagDefinitions,
 } from '@/hooks/kb/use-knowledge-base-tag-definitions'
+import { useCreateTagDefinition, useDeleteTagDefinition } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('BaseTagsModal')
 
-/** Field type display labels */
 const FIELD_TYPE_LABELS: Record<string, string> = {
   text: 'Text',
   number: 'Number',
@@ -46,7 +46,6 @@ interface DocumentListProps {
   totalCount: number
 }
 
-/** Displays a list of documents affected by tag operations */
 function DocumentList({ documents, totalCount }: DocumentListProps) {
   const displayLimit = 5
   const hasMore = totalCount > displayLimit
@@ -102,13 +101,14 @@ export function BaseTagsModal({
   const { tagDefinitions: kbTagDefinitions, fetchTagDefinitions: refreshTagDefinitions } =
     useKnowledgeBaseTagDefinitions(knowledgeBaseId)
 
+  const createTagMutation = useCreateTagDefinition()
+  const deleteTagMutation = useDeleteTagDefinition()
+
   const [deleteTagDialogOpen, setDeleteTagDialogOpen] = useState(false)
   const [selectedTag, setSelectedTag] = useState<TagDefinition | null>(null)
   const [viewDocumentsDialogOpen, setViewDocumentsDialogOpen] = useState(false)
-  const [isDeletingTag, setIsDeletingTag] = useState(false)
   const [tagUsageData, setTagUsageData] = useState<TagUsageData[]>([])
   const [isCreatingTag, setIsCreatingTag] = useState(false)
-  const [isSavingTag, setIsSavingTag] = useState(false)
   const [createTagForm, setCreateTagForm] = useState({
     displayName: '',
     fieldType: 'text',
@@ -184,13 +184,12 @@ export function BaseTagsModal({
   }
 
   const tagNameConflict =
-    isCreatingTag && !isSavingTag && hasTagNameConflict(createTagForm.displayName)
+    isCreatingTag && !createTagMutation.isPending && hasTagNameConflict(createTagForm.displayName)
 
   const canSaveTag = () => {
     return createTagForm.displayName.trim() && !hasTagNameConflict(createTagForm.displayName)
   }
 
-  /** Get slot usage counts per field type */
   const getSlotUsageByFieldType = (fieldType: string): { used: number; max: number } => {
     const config = TAG_SLOT_CONFIG[fieldType as keyof typeof TAG_SLOT_CONFIG]
     if (!config) return { used: 0, max: 0 }
@@ -198,13 +197,11 @@ export function BaseTagsModal({
     return { used, max: config.maxSlots }
   }
 
-  /** Check if a field type has available slots */
   const hasAvailableSlots = (fieldType: string): boolean => {
     const { used, max } = getSlotUsageByFieldType(fieldType)
     return used < max
   }
 
-  /** Field type options for Combobox */
   const fieldTypeOptions: ComboboxOption[] = useMemo(() => {
     return SUPPORTED_FIELD_TYPES.filter((type) => hasAvailableSlots(type)).map((type) => {
       const { used, max } = getSlotUsageByFieldType(type)
@@ -218,42 +215,16 @@ export function BaseTagsModal({
   const saveTagDefinition = async () => {
     if (!canSaveTag()) return
 
-    setIsSavingTag(true)
     try {
-      // Check if selected field type has available slots
       if (!hasAvailableSlots(createTagForm.fieldType)) {
         throw new Error(`No available slots for ${createTagForm.fieldType} type`)
       }
 
-      // Get the next available slot from the API
-      const slotResponse = await fetch(
-        `/api/knowledge/${knowledgeBaseId}/next-available-slot?fieldType=${createTagForm.fieldType}`
-      )
-      if (!slotResponse.ok) {
-        throw new Error('Failed to get available slot')
-      }
-      const slotResult = await slotResponse.json()
-      if (!slotResult.success || !slotResult.data?.nextAvailableSlot) {
-        throw new Error('No available tag slots for this field type')
-      }
-
-      const newTagDefinition = {
-        tagSlot: slotResult.data.nextAvailableSlot,
+      await createTagMutation.mutateAsync({
+        knowledgeBaseId,
         displayName: createTagForm.displayName.trim(),
         fieldType: createTagForm.fieldType,
-      }
-
-      const response = await fetch(`/api/knowledge/${knowledgeBaseId}/tag-definitions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newTagDefinition),
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to create tag definition')
-      }
 
       await Promise.all([refreshTagDefinitions(), fetchTagUsage()])
 
@@ -270,27 +241,17 @@ export function BaseTagsModal({
       setIsCreatingTag(false)
     } catch (error) {
       logger.error('Error creating tag definition:', error)
-    } finally {
-      setIsSavingTag(false)
     }
   }
 
   const confirmDeleteTag = async () => {
     if (!selectedTag) return
 
-    setIsDeletingTag(true)
     try {
-      const response = await fetch(
-        `/api/knowledge/${knowledgeBaseId}/tag-definitions/${selectedTag.id}`,
-        {
-          method: 'DELETE',
-        }
-      )
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to delete tag definition: ${response.status} ${errorText}`)
-      }
+      await deleteTagMutation.mutateAsync({
+        knowledgeBaseId,
+        tagDefinitionId: selectedTag.id,
+      })
 
       await Promise.all([refreshTagDefinitions(), fetchTagUsage()])
 
@@ -298,8 +259,6 @@ export function BaseTagsModal({
       setSelectedTag(null)
     } catch (error) {
       logger.error('Error deleting tag definition:', error)
-    } finally {
-      setIsDeletingTag(false)
     }
   }
 
@@ -446,11 +405,11 @@ export function BaseTagsModal({
                         className='flex-1'
                         disabled={
                           !canSaveTag() ||
-                          isSavingTag ||
+                          createTagMutation.isPending ||
                           !hasAvailableSlots(createTagForm.fieldType)
                         }
                       >
-                        {isSavingTag ? 'Creating...' : 'Create Tag'}
+                        {createTagMutation.isPending ? 'Creating...' : 'Create Tag'}
                       </Button>
                     </div>
                   </div>
@@ -494,13 +453,17 @@ export function BaseTagsModal({
           <ModalFooter>
             <Button
               variant='default'
-              disabled={isDeletingTag}
+              disabled={deleteTagMutation.isPending}
               onClick={() => setDeleteTagDialogOpen(false)}
             >
               Cancel
             </Button>
-            <Button variant='destructive' onClick={confirmDeleteTag} disabled={isDeletingTag}>
-              {isDeletingTag ? <>Deleting...</> : 'Delete Tag'}
+            <Button
+              variant='destructive'
+              onClick={confirmDeleteTag}
+              disabled={deleteTagMutation.isPending}
+            >
+              {deleteTagMutation.isPending ? 'Deleting...' : 'Delete Tag'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -512,7 +475,7 @@ export function BaseTagsModal({
           <ModalHeader>Documents using "{selectedTag?.displayName}"</ModalHeader>
           <ModalBody>
             <div className='space-y-[8px]'>
-              <p className='text-[12px] text-[var(--text-tertiary)]'>
+              <p className='text-[12px] text-[var(--text-secondary)]'>
                 {selectedTagUsage?.documentCount || 0} document
                 {selectedTagUsage?.documentCount !== 1 ? 's are' : ' is'} currently using this tag
                 definition.
@@ -520,7 +483,7 @@ export function BaseTagsModal({
 
               {selectedTagUsage?.documentCount === 0 ? (
                 <div className='rounded-[6px] border p-[16px] text-center'>
-                  <p className='text-[12px] text-[var(--text-tertiary)]'>
+                  <p className='text-[12px] text-[var(--text-secondary)]'>
                     This tag definition is not being used by any documents. You can safely delete it
                     to free up the tag slot.
                   </p>

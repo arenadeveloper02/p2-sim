@@ -18,8 +18,8 @@ import {
 import { Skeleton } from '@/components/ui'
 import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
 import {
-  BlockDetailsSidebar,
   getLeftmostBlockId,
+  PreviewEditor,
   WorkflowPreview,
 } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { useDeploymentVersionState, useRevertToVersion } from '@/hooks/queries/workflows'
@@ -283,7 +283,7 @@ export function GeneralDeploy({
         <ModalContent size='sm'>
           <ModalHeader>Promote to live</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-tertiary)]'>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
               Are you sure you want to promote{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {versionToPromoteInfo?.name || `v${versionToPromote}`}
@@ -337,7 +337,7 @@ export function GeneralDeploy({
                   />
                 </div>
                 {expandedSelectedBlockId && workflowToShow.blocks?.[expandedSelectedBlockId] && (
-                  <BlockDetailsSidebar
+                  <PreviewEditor
                     block={workflowToShow.blocks[expandedSelectedBlockId]}
                     workflowVariables={workflowToShow.variables}
                     loops={workflowToShow.loops}

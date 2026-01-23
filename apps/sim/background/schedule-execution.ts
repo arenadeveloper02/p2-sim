@@ -460,6 +460,8 @@ async function runWorkflowExecution({
       snapshot,
       callbacks: {},
       loggingSession,
+      includeFileBase64: true,
+      base64MaxBytes: undefined,
     })
 
     if (executionResult.status === 'paused') {

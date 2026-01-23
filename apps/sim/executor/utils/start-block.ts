@@ -1,4 +1,4 @@
-import { isUserFile } from '@/lib/core/utils/display-filters'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
   classifyStartBlockType,
   getLegacyStarterMode,
@@ -234,7 +234,7 @@ function getFilesFromWorkflowInput(workflowInput: unknown): UserFile[] | undefin
     return undefined
   }
   const files = workflowInput.files
-  if (Array.isArray(files) && files.every(isUserFile)) {
+  if (Array.isArray(files) && files.every(isUserFileWithMetadata)) {
     return files
   }
   return undefined
@@ -404,10 +404,7 @@ function buildManualTriggerOutput(
   return mergeFilesIntoOutput(output, workflowInput)
 }
 
-function buildIntegrationTriggerOutput(
-  _finalInput: unknown,
-  workflowInput: unknown
-): NormalizedBlockOutput {
+function buildIntegrationTriggerOutput(workflowInput: unknown): NormalizedBlockOutput {
   return isPlainObject(workflowInput) ? (workflowInput as NormalizedBlockOutput) : {}
 }
 
@@ -459,7 +456,7 @@ export function buildStartBlockOutput(options: StartBlockOutputOptions): Normali
       return buildManualTriggerOutput(finalInput, workflowInput)
 
     case StartBlockPath.EXTERNAL_TRIGGER:
-      return buildIntegrationTriggerOutput(finalInput, workflowInput)
+      return buildIntegrationTriggerOutput(workflowInput)
 
     case StartBlockPath.LEGACY_STARTER:
       return buildLegacyStarterOutput(

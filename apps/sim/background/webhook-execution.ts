@@ -240,6 +240,8 @@ async function executeWebhookJobInternal(
           snapshot,
           callbacks: {},
           loggingSession,
+          includeFileBase64: true, // Enable base64 hydration
+          base64MaxBytes: undefined, // Use default limit
         })
 
         if (executionResult.status === 'paused') {
@@ -495,6 +497,7 @@ async function executeWebhookJobInternal(
       snapshot,
       callbacks: {},
       loggingSession,
+      includeFileBase64: true,
     })
 
     if (executionResult.status === 'paused') {

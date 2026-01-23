@@ -356,7 +356,7 @@ export class AgentBlockHandler implements BlockHandler {
       base.executeFunction = async (callParams: Record<string, any>) => {
         const mergedParams = mergeToolParameters(userProvidedParams, callParams)
 
-        const { blockData, blockNameMapping } = collectBlockData(ctx)
+        const { blockData, blockNameMapping, blockOutputSchemas } = collectBlockData(ctx)
 
         const result = await executeTool(
           'function_execute',
@@ -368,6 +368,7 @@ export class AgentBlockHandler implements BlockHandler {
             workflowVariables: ctx.workflowVariables || {},
             blockData,
             blockNameMapping,
+            blockOutputSchemas,
             isCustomTool: true,
             _context: {
               workflowId: ctx.workflowId,
@@ -375,7 +376,6 @@ export class AgentBlockHandler implements BlockHandler {
               isDeployedContext: ctx.isDeployedContext,
             },
           },
-          false,
           false,
           ctx
         )
@@ -399,8 +399,8 @@ export class AgentBlockHandler implements BlockHandler {
   ): Promise<{ schema: any; code: string; title: string } | null> {
     if (typeof window !== 'undefined') {
       try {
-        const { useCustomToolsStore } = await import('@/stores/custom-tools')
-        const tool = useCustomToolsStore.getState().getTool(customToolId)
+        const { getCustomTool } = await import('@/hooks/queries/custom-tools')
+        const tool = getCustomTool(customToolId, ctx.workspaceId)
         if (tool) {
           return {
             schema: tool.schema,
@@ -408,9 +408,9 @@ export class AgentBlockHandler implements BlockHandler {
             title: tool.title,
           }
         }
-        logger.warn(`Custom tool not found in store: ${customToolId}`)
+        logger.warn(`Custom tool not found in cache: ${customToolId}`)
       } catch (error) {
-        logger.error('Error accessing custom tools store:', { error })
+        logger.error('Error accessing custom tools cache:', { error })
       }
     }
 

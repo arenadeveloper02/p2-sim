@@ -29,6 +29,7 @@ import {
   type OAuthProvider,
   type OAuthService,
 } from '@/lib/oauth'
+import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   CheckboxList,
@@ -65,7 +66,7 @@ import { useForceRefreshMcpTools, useMcpServers, useStoredMcpTools } from '@/hoo
 import {
   useChildDeploymentStatus,
   useDeployChildWorkflow,
-  useWorkflowInputFields,
+  useWorkflowState,
   useWorkflows,
 } from '@/hooks/queries/workflows'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -771,7 +772,11 @@ function WorkflowInputMapperSyncWrapper({
   disabled: boolean
   workflowId: string
 }) {
-  const { data: inputFields = [], isLoading } = useWorkflowInputFields(workflowId)
+  const { data: workflowState, isLoading } = useWorkflowState(workflowId)
+  const inputFields = useMemo(
+    () => (workflowState?.blocks ? extractInputFieldsFromBlocks(workflowState.blocks) : []),
+    [workflowState?.blocks]
+  )
 
   const parsedValue = useMemo(() => {
     try {
@@ -2069,6 +2074,7 @@ export const ToolInput = memo(function ToolInput({
               placeholder: uiComponent.placeholder,
               requiredScopes: uiComponent.requiredScopes,
               dependsOn: uiComponent.dependsOn,
+              canonicalParamId: uiComponent.canonicalParamId ?? param.id,
             }}
             onProjectSelect={onChange}
             disabled={disabled}
