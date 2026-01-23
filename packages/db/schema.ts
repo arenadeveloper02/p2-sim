@@ -1896,6 +1896,35 @@ export const usageLog = pgTable(
   })
 )
 
+export const slackSummary = pgTable(
+  'slack_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    channelIdRef: text('channel_id_ref').notNull(),
+    channelName: text('channel_name').notNull(),
+    channelType: text('channel_type').notNull(),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('slack_summary_client_id_ref_idx').on(table.clientIdRef),
+    channelIdRefIdx: index('slack_summary_channel_id_ref_idx').on(table.channelIdRef),
+    statusIdx: index('slack_summary_status_idx').on(table.status),
+    runDateIdx: index('slack_summary_run_date_idx').on(table.runDate),
+    clientChannelIdx: index('slack_summary_client_channel_idx').on(table.clientIdRef, table.channelIdRef),
+  })
+)
+
 export const clientChannelMapping = pgTable(
   'client_channel_mapping',
   {
