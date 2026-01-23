@@ -13,71 +13,104 @@ export async function GET(request: NextRequest) {
   const requestId = generateRequestId()
 
   try {
-    // Test database connection with raw SQL
+    const url = new URL(request.url)
+    const clientId = url.searchParams.get('client_id')
+
+    if (!clientId) {
+      return NextResponse.json(
+        { success: false, error: { message: 'client_id parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest summaries for client`, { clientId })
+
     const { sql } = await import('drizzle-orm')
-    const result = await db.execute(sql`SELECT 1 as test`)
-    console.log('Database connection test successful:', result)
 
-    // Check if slack_summary table exists
-    const tableCheck = await db.execute(sql`
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-        AND table_name = 'slack_summary'
-      ) as table_exists
-    `)
-    console.log('Table exists check:', tableCheck)
+    // Get the most recent run_date for this client
+    const latestDateResult = await db
+      .select({ runDate: slackSummary.runDate })
+      .from(slackSummary)
+      .where(sql`${slackSummary.clientIdRef} = ${clientId}`)
+      .orderBy(sql`${slackSummary.runDate} DESC`)
+      .limit(1)
 
-    const tableExists = (tableCheck as any)[0]?.table_exists === true
-
-    if (tableExists) {
-      // Try to select from the table
-      const testQuery = await db.select().from(slackSummary).limit(1)
-      console.log('Table query successful, found', testQuery.length, 'records')
-
+    if (latestDateResult.length === 0) {
       return NextResponse.json(
         {
           success: true,
           data: {
-            message: 'Database connection and table access successful',
-            tableExists: true,
-            recordCount: testQuery.length,
-            schema: 'matches'
-          },
-        },
-        { status: 200 }
-      )
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          data: {
-            message: 'Database connection works but table does not exist',
-            tableExists: false,
-            schema: 'table missing'
-          },
+            client_id: clientId,
+            message: 'No summary data found for this client',
+            summaries: []
+          }
         },
         { status: 200 }
       )
     }
-  } catch (error: any) {
-    logger.error(`[${requestId}] Database connection test failed`, {
-      error: error.message || String(error),
-      errorCode: error.code,
-      errorDetails: error,
+
+    const latestRunDate = latestDateResult[0].runDate
+
+    // Get all summaries for this client on the latest run_date
+    const summaries = await db
+      .select({
+        id: slackSummary.id,
+        clientIdRef: slackSummary.clientIdRef,
+        clientName: slackSummary.clientName,
+        channelIdRef: slackSummary.channelIdRef,
+        channelName: slackSummary.channelName,
+        channelType: slackSummary.channelType,
+        oneDaySummary: slackSummary.oneDaySummary,
+        sevenDaySummary: slackSummary.sevenDaySummary,
+        fourteenDaySummary: slackSummary.fourteenDaySummary,
+        runDate: slackSummary.runDate,
+        status: slackSummary.status,
+        createdDate: slackSummary.createdDate,
+        updatedDate: slackSummary.updatedDate
+      })
+      .from(slackSummary)
+      .where(sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.runDate} = ${latestRunDate}`)
+      .orderBy(slackSummary.channelType, slackSummary.channelName)
+
+    logger.info(`[${requestId}] Found summaries for client`, {
+      clientId,
+      runDate: latestRunDate,
+      recordCount: summaries.length
     })
 
-    console.error('Full error details:', error)
+    // Group by channel type for better organization
+    const groupedSummaries = {
+      internal: summaries.filter(s => s.channelType === 'internal'),
+      external: summaries.filter(s => s.channelType === 'external')
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          client_id: clientId,
+          run_date: latestRunDate,
+          total_channels: summaries.length,
+          summaries: groupedSummaries,
+          summary: {
+            internal_channels: groupedSummaries.internal.length,
+            external_channels: groupedSummaries.external.length,
+            total_records: summaries.length
+          }
+        }
+      },
+      { status: 200 }
+    )
+  } catch (error: any) {
+    logger.error(`[${requestId}] Error fetching summaries`, {
+      error: error.message || String(error),
+      errorCode: error.code,
+    })
 
     return NextResponse.json(
       {
         success: false,
-        error: {
-          message: 'Database connection or table access failed',
-          details: error.message,
-          code: error.code
-        },
+        error: { message: error.message || 'Failed to fetch summaries' },
       },
       { status: 500 }
     )
