@@ -18,6 +18,7 @@ import {
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -202,6 +203,77 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+/**
+ * Converts plain text to HTML while preserving dynamic values like <function1.result.comment>
+ * Wraps each line in <p> tags but doesn't escape dynamic variable references
+ */
+function textToHtmlPreservingVariables(text: string): string {
+  if (!text) return ''
+
+  // Split by lines and wrap in <p> tags
+  const lines = text.split('\n')
+  return lines
+    .map((line) => {
+      if (!line) return '<p>&nbsp;</p>'
+
+      // Pattern to match dynamic variables (like <function1.result.comment>)
+      // Must contain a dot or be longer than 3 chars to distinguish from HTML tags
+      const variablePattern = /<([a-zA-Z_][a-zA-Z0-9_.]*[a-zA-Z0-9_])>/g
+
+      // Find all matches first
+      const matches: Array<{ match: string; index: number }> = []
+      let match: RegExpExecArray | null
+      variablePattern.lastIndex = 0 // Reset regex
+
+      while ((match = variablePattern.exec(line)) !== null) {
+        const varName = match[1]
+        // Check if this looks like a variable (contains dot or is longer than typical HTML tags)
+        const isLikelyVariable = varName.includes('.') || varName.length > 3
+
+        if (isLikelyVariable) {
+          // Check if it's not part of an HTML tag attribute
+          const afterMatch = line.substring(
+            match.index + match[0].length,
+            match.index + match[0].length + 5
+          )
+          const isInHtmlTag = /^\s*[>=]/.test(afterMatch)
+
+          if (!isInHtmlTag) {
+            matches.push({ match: match[0], index: match.index })
+          }
+        }
+      }
+
+      if (matches.length > 0) {
+        // Has dynamic variables, preserve them by only escaping non-variable parts
+        let result = ''
+        let lastIndex = 0
+
+        for (const { match: varMatch, index } of matches) {
+          // Escape text before the variable
+          if (index > lastIndex) {
+            const textBefore = line.substring(lastIndex, index)
+            result += escapeHtml(textBefore)
+          }
+          // Add the variable as-is (don't escape)
+          result += varMatch
+          lastIndex = index + varMatch.length
+        }
+
+        // Escape remaining text after last variable
+        if (lastIndex < line.length) {
+          result += escapeHtml(line.substring(lastIndex))
+        }
+
+        return `<p>${result}</p>`
+      }
+
+      // No variables, escape normally
+      return `<p>${escapeHtml(line)}</p>`
+    })
+    .join('')
 }
 
 /**
@@ -425,10 +497,8 @@ export function ArenaCommentInput({
             }
           } else {
             // No users loaded yet or no mentions, store as plain text wrapped in <p> tags
-            const plainHtml = baseValueString
-              .split('\n')
-              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-              .join('')
+            // Preserve dynamic variables when converting
+            const plainHtml = textToHtmlPreservingVariables(baseValueString)
             setHtmlContent(plainHtml)
             setLocalContent(plainHtml)
             setDisplayText(baseValueString)
@@ -510,10 +580,7 @@ export function ArenaCommentInput({
       const newHtml =
         mentionsMap.current.size > 0
           ? textToHtml(newDisplayText, mentionsMap.current)
-          : newDisplayText
-              .split('\n')
-              .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-              .join('')
+          : textToHtmlPreservingVariables(newDisplayText)
       setHtmlContent(newHtml)
       setLocalContent(newHtml)
 
@@ -813,10 +880,7 @@ export function ArenaCommentInput({
           const newHtml =
             mentionsMap.current.size > 0
               ? textToHtml(newDisplayText, mentionsMap.current)
-              : newDisplayText
-                  .split('\n')
-                  .map((line) => `<p>${escapeHtml(line || '&nbsp;')}</p>`)
-                  .join('')
+              : textToHtmlPreservingVariables(newDisplayText)
           setHtmlContent(newHtml)
           setLocalContent(newHtml)
 
@@ -894,7 +958,10 @@ export function ArenaCommentInput({
                   height: `${height}px`,
                 }}
               >
-                {value}
+                {formatDisplayText(value, {
+                  accessiblePrefixes,
+                  highlightAll: !accessiblePrefixes,
+                })}
               </div>
 
               {/* Mention Menu */}

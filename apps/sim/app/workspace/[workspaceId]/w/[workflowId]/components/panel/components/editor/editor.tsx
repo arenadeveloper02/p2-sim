@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isEqual } from 'lodash'
-import { BookOpen, Check, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { Button, Tooltip } from '@/components/emcn'
+import { Button, Tooltip, Switch } from '@/components/emcn'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
@@ -196,6 +196,7 @@ export function Editor() {
     collaborativeSetBlockCanonicalMode,
     collaborativeUpdateBlockName,
     collaborativeToggleBlockAdvancedMode,
+    collaborativeSetSubblockValue
   } = useCollaborativeWorkflow()
 
   // Advanced mode toggle handler
@@ -276,6 +277,17 @@ export function Editor() {
       window.open(docsLink, '_blank', 'noopener,noreferrer')
     }
   }
+
+  // Check if block has advanced mode or trigger mode available
+  const hasAdvancedMode = blockConfig?.subBlocks?.some((sb) => sb.mode === 'advanced')
+
+  // Check if current block is arena type
+  const isArenaBlock = currentBlock?.type === 'arena'
+
+  // Get current operation to check if advanced mode should be disabled
+  const currentOperation = blockSubBlockValues.operation
+  const isSaveSummaryOperation = currentOperation === 'arena_save_summary'
+  const shouldDisableAdvancedMode = isArenaBlock && isSaveSummaryOperation
 
   // Determine if connections are at minimum height (collapsed state)
   const isConnectionsAtMinHeight = connectionsHeight <= 35
@@ -369,7 +381,68 @@ export function Editor() {
               </Tooltip.Content>
             </Tooltip.Root>
           )} */}
-          {currentBlock && (isSubflow ? subflowConfig?.docsLink : blockConfig?.docsLink) && (
+          {/* Mode toggles - Only show for regular blocks, not subflows */}
+          {currentBlock && !isSubflow && hasAdvancedMode && (
+            <>
+              {isArenaBlock ? (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <div className='flex items-center gap-[6px]'>
+                      <Switch
+                        checked={advancedMode}
+                        onCheckedChange={() => {
+                          if (
+                            currentBlockId &&
+                            userPermissions.canEdit &&
+                            !shouldDisableAdvancedMode
+                          ) {
+                            // If switching from advanced to basic mode, clear advanced-only field values
+                            if (advancedMode && blockConfig) {
+                              const advancedOnlySubBlocks = blockConfig.subBlocks?.filter(
+                                (sb) => sb.mode === 'advanced'
+                              )
+                              if (advancedOnlySubBlocks && advancedOnlySubBlocks.length > 0) {
+                                // Clear values for all advanced-only sub-blocks
+                                advancedOnlySubBlocks.forEach((subBlock) => {
+                                  collaborativeSetSubblockValue(currentBlockId, subBlock.id, '')
+                                })
+                              }
+                            }
+
+                            // Toggle the mode
+                            collaborativeToggleBlockAdvancedMode(currentBlockId)
+                          }
+                        }}
+                        disabled={!userPermissions.canEdit || shouldDisableAdvancedMode}
+                        aria-label='Toggle advanced mode'
+                      />
+                    </div>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='top'>
+                    <p>Advanced mode</p>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              ) : (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      variant='ghost'
+                      className='p-0'
+                      onClick={handleToggleAdvancedMode}
+                      disabled={!userPermissions.canEdit}
+                      aria-label='Toggle advanced mode'
+                    >
+                      <Settings className='h-[14px] w-[14px]' />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='top'>
+                    <p>Advanced mode</p>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              )}
+            </>
+          )}
+          {currentBlock && !isSubflow && blockConfig?.docsLink && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button
