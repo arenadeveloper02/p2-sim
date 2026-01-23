@@ -102,8 +102,24 @@ export const useSubBlockStore = create<SubBlockStore>()(
       Object.entries(blocks).forEach(([blockId, block]) => {
         values[blockId] = {}
         Object.entries(block.subBlocks || {}).forEach(([subBlockId, subBlock]) => {
-          values[blockId][subBlockId] = (subBlock as SubBlockConfig).value
+          // Handle both SubBlockState format { id, type, value } and legacy format
+          const subBlockValue =
+            (subBlock as any)?.value !== undefined
+              ? (subBlock as any).value
+              : (subBlock as SubBlockConfig).value
+          if (subBlockValue !== undefined && subBlockValue !== null) {
+            values[blockId][subBlockId] = subBlockValue
+          }
         })
+      })
+
+      logger.debug('Initializing sub-block values from workflow', {
+        workflowId,
+        blocksCount: Object.keys(blocks).length,
+        valuesCount: Object.keys(values).reduce(
+          (sum, blockId) => sum + Object.keys(values[blockId] || {}).length,
+          0
+        ),
       })
 
       set((state) => ({
