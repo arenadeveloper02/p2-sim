@@ -160,21 +160,21 @@ export const createTask: ToolConfig<ArenaCreateTaskParams, ArenaCreateTaskRespon
 
         const body: Record<string, any> = {
           workflowId: params._context.workflowId,
-          name: taskName,
-          taskDescription: taskDescription,
-          clientName: params['task-client-name'],
-          projectName: params['task-project-name'],
+          name: taskName?.trim(),
+          taskDescription: taskDescription?.trim(),
+          clientName: params['task-client-name']?.trim(),
+          projectName: params['task-project-name']?.trim(),
           plannedStartDate: startOfDayTimestamp(today),
           plannedEndDate: startOfDayTimestamp(nextWeekDay),
           taskType: isTask ? 'MILESTONE' : 'SHOW-ON-TIMELINE',
-          assignee: params['task-assignee-email'],
+          assignee: params['task-assignee-email']?.trim(),
           // taskNumber: empty string for tasks, actual value for subtasks
-          taskNumber: isTask ? '' : params['task-number'] || '',
+          taskNumber: isTask ? '' : params['task-number']?.trim() || '',
         }
 
         // epicName: only for create task, not for subtask
         if (isTask) {
-          body.epicName = params['task-epic-name']
+          body.epicName = params['task-epic-name']?.trim()
         }
 
         return body

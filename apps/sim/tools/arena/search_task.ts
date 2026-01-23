@@ -74,13 +74,24 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
   request: {
     url: (params: SearchTaskQueryParams) => {
       let url = `/api/tools/arena/search-tasks`
+      let hasQueryParam = false
 
       const isSearchTask = params.operation === 'arena_search_task'
       if (isSearchTask) {
-        url += `?name=${params['search-task-name']}`
+        const taskName = params['search-task-name']?.trim()
+        if (taskName) {
+          url += `?name=${encodeURIComponent(taskName)}`
+          hasQueryParam = true
+        }
       }
       if (params['search-task-client']?.name) {
-        url += `&account=${params['search-task-client'].name}`
+        const clientName = params['search-task-client'].name?.trim()
+        if (clientName) {
+          url += hasQueryParam
+            ? `&account=${encodeURIComponent(clientName)}`
+            : `?account=${encodeURIComponent(clientName)}`
+          hasQueryParam = true
+        }
       }
       if (params['search-task-project']) {
         const projectId =

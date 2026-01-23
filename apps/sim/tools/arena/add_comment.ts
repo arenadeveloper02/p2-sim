@@ -114,7 +114,7 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
 
       if (isAdvancedMode) {
         // Advanced mode: use task number (no @ mentions extraction)
-        const taskNumber = params['comment-task-number']
+        const taskNumber = params['comment-task-number']?.trim()
         if (!taskNumber) throw new Error('Missing required field: Task Number')
 
         const body: Record<string, any> = {
