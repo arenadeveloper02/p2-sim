@@ -384,7 +384,7 @@ export function Editor() {
           {/* Mode toggles - Only show for regular blocks, not subflows */}
           {currentBlock && !isSubflow && hasAdvancedMode && (
             <>
-              {isArenaBlock ? (
+              {isArenaBlock && (
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <div className='flex items-center gap-[6px]'>
@@ -417,23 +417,6 @@ export function Editor() {
                         aria-label='Toggle advanced mode'
                       />
                     </div>
-                  </Tooltip.Trigger>
-                  <Tooltip.Content side='top'>
-                    <p>Advanced mode</p>
-                  </Tooltip.Content>
-                </Tooltip.Root>
-              ) : (
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <Button
-                      variant='ghost'
-                      className='p-0'
-                      onClick={handleToggleAdvancedMode}
-                      disabled={!userPermissions.canEdit}
-                      aria-label='Toggle advanced mode'
-                    >
-                      <Settings className='h-[14px] w-[14px]' />
-                    </Button>
                   </Tooltip.Trigger>
                   <Tooltip.Content side='top'>
                     <p>Advanced mode</p>
