@@ -180,6 +180,21 @@ function mapEdgesByNode(edges: Edge[], nodeIds: Set<string>): Map<string, Edge[]
   return result
 }
 
+/**
+ * Syncs the panel editor with the current selection state.
+ * Shows block details when exactly one block is selected, clears otherwise.
+ */
+function syncPanelWithSelection(selectedIds: string[]) {
+  const { currentBlockId, clearCurrentBlock, setCurrentBlockId } = usePanelEditorStore.getState()
+  if (selectedIds.length === 1 && selectedIds[0] !== currentBlockId) {
+    setCurrentBlockId(selectedIds[0])
+  } else if (selectedIds.length === 0 && currentBlockId) {
+    clearCurrentBlock()
+  } else if (selectedIds.length > 1 && currentBlockId) {
+    clearCurrentBlock()
+  }
+}
+
 /** Custom node types for ReactFlow. */
 const nodeTypes: NodeTypes = {
   workflowBlock: WorkflowBlock,
@@ -692,7 +707,8 @@ const WorkflowContent = React.memo(() => {
       parentId?: string,
       extent?: 'parent',
       autoConnectEdge?: Edge,
-      triggerMode?: boolean
+      triggerMode?: boolean,
+      presetSubBlockValues?: Record<string, unknown>
     ) => {
       setPendingSelection([id])
       setSelectedEdges(new Map())
@@ -720,6 +736,14 @@ const WorkflowContent = React.memo(() => {
             subBlockValues[id][subBlockId] = subBlock.value
           }
         }
+      }
+
+      // Apply preset subblock values (e.g., from tool-operation search)
+      if (presetSubBlockValues) {
+        if (!subBlockValues[id]) {
+          subBlockValues[id] = {}
+        }
+        Object.assign(subBlockValues[id], presetSubBlockValues)
       }
 
       collaborativeBatchAddBlocks(
@@ -1489,7 +1513,7 @@ const WorkflowContent = React.memo(() => {
         return
       }
 
-      const { type, enableTriggerMode } = event.detail
+      const { type, enableTriggerMode, presetOperation } = event.detail
 
       if (!type) return
       if (type === 'connectionBlock') return
@@ -1552,7 +1576,8 @@ const WorkflowContent = React.memo(() => {
         undefined,
         undefined,
         autoConnectEdge,
-        enableTriggerMode
+        enableTriggerMode,
+        presetOperation ? { operation: presetOperation } : undefined
       )
     }
 
@@ -2065,7 +2090,10 @@ const WorkflowContent = React.memo(() => {
         ...node,
         selected: pendingSet.has(node.id),
       }))
-      setDisplayNodes(resolveParentChildSelectionConflicts(withSelection, blocks))
+      const resolved = resolveParentChildSelectionConflicts(withSelection, blocks)
+      setDisplayNodes(resolved)
+      const selectedIds = resolved.filter((node) => node.selected).map((node) => node.id)
+      syncPanelWithSelection(selectedIds)
       return
     }
 
@@ -2165,13 +2193,7 @@ const WorkflowContent = React.memo(() => {
       })
       const selectedIds = selectedIdsRef.current as string[] | null
       if (selectedIds !== null) {
-        const { currentBlockId, clearCurrentBlock, setCurrentBlockId } =
-          usePanelEditorStore.getState()
-        if (selectedIds.length === 1 && selectedIds[0] !== currentBlockId) {
-          setCurrentBlockId(selectedIds[0])
-        } else if (selectedIds.length === 0 && currentBlockId) {
-          clearCurrentBlock()
-        }
+        syncPanelWithSelection(selectedIds)
       }
     },
     [blocks]
@@ -3313,15 +3335,12 @@ const WorkflowContent = React.memo(() => {
               onOpenLogs={handleContextOpenLogs}
               onToggleVariables={handleContextToggleVariables}
               onToggleChat={handleContextToggleChat}
-              onInvite={handleContextInvite}
               isVariablesOpen={isVariablesOpen}
               isChatOpen={isChatOpen}
               hasClipboard={hasClipboard()}
               disableEdit={!effectivePermissions.canEdit}
-              disableAdmin={!effectivePermissions.canAdmin}
               canUndo={canUndo}
               canRedo={canRedo}
-              isInvitationsDisabled={isInvitationsDisabled}
             />
           </>
         )}
