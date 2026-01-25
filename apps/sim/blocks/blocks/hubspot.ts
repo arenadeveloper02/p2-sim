@@ -1460,7 +1460,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         Object.entries(rest).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '' && !excludeKeys.includes(key)) {
             if (key === 'campaignGuids') {
-              cleanParams['campaignGuid'] = value
+              //JSON.parse is needed as safeStirng method is giving circular
+              cleanParams['campaignGuid'] = JSON.parse(JSON.stringify(value))
             } else {
               cleanParams[key] = value
             }
