@@ -233,6 +233,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'Accounts',
       type: 'dropdown',
       options: [
+        { label: 'Position2', id: 'position2' },
         { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
         { label: 'Covalent Metrology', id: 'covalent_metrology' },
       ],
@@ -468,6 +469,22 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Required to fetch a specific budget item',
       condition: { field: 'operation', value: ['get_campaign_budget_item'] },
+    },
+    {
+      id: 'startDate',
+      title: 'Start Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'operation', value: ['get_campaign_revenue'] },
+      required: true,
+    },
+    {
+      id: 'endDate',
+      title: 'End Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'operation', value: ['get_campaign_revenue'] },
+      required: true,
     },
     {
       id: 'contactType',
