@@ -67,7 +67,8 @@ export async function authorizeCredentialUse(
   const credentialOwnerUserId = credRow.userId
 
   // HubSpot specific check for shared admin accounts via alias
-  const isSharedHubSpotAccount = credRow.providerId === 'hubspot' && 'alias' in credRow && !!(credRow as any).alias
+  const isSharedHubSpotAccount =
+    credRow.providerId === 'hubspot' && 'alias' in credRow && !!(credRow as any).alias
 
   if (isSharedHubSpotAccount) {
     return {

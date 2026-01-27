@@ -1093,7 +1093,8 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       // If an alias is provided, try to find specific credentials for that alias
       // Expected env pattern: HUBSPOT_NORTHSTAR_ANESTHESIA_CLIENT_ID
       const aliasPrefix = alias ? `${alias.toUpperCase()}_` : ''
-      const clientId = (alias && process.env[`HUBSPOT_${aliasPrefix}CLIENT_ID`]) || env.HUBSPOT_CLIENT_ID
+      const clientId =
+        (alias && process.env[`HUBSPOT_${aliasPrefix}CLIENT_ID`]) || env.HUBSPOT_CLIENT_ID
       const clientSecret =
         (alias && process.env[`HUBSPOT_${aliasPrefix}CLIENT_SECRET`]) || env.HUBSPOT_CLIENT_SECRET
 

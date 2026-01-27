@@ -40,16 +40,12 @@ interface RequestParams {
   body?: string
 }
 
-
 /**
  * Values that are guaranteed to be JSON.stringify-compatible
  */
 export type JSONSafePrimitive = string | number | boolean | null
 
-export type JSONSafeValue =
-  | JSONSafePrimitive
-  | JSONSafeValue[]
-  | { [key: string]: JSONSafeValue }
+export type JSONSafeValue = JSONSafePrimitive | JSONSafeValue[] | { [key: string]: JSONSafeValue }
 
 /**
  * Internal helper that:
@@ -103,7 +99,7 @@ function decycle(
 
   if (Array.isArray(value)) {
     const arr = value as unknown[]
-    result = arr.map(item => {
+    result = arr.map((item) => {
       const processed = decycle(item, stack, true)
       return processed === undefined ? null : processed
     })
@@ -137,10 +133,7 @@ function decycle(
  * - Objects never contain `undefined` keys
  * - Circular references are replaced
  */
-export function safeStringify(
-  value: unknown,
-  context: string = 'unknown'
-): string | undefined {
+export function safeStringify(value: unknown, context = 'unknown'): string | undefined {
   if (value === undefined) {
     return undefined
   }
@@ -150,11 +143,7 @@ export function safeStringify(
   }
 
   try {
-    const safeValue: JSONSafeValue | undefined = decycle(
-      value,
-      new WeakSet<object>(),
-      false
-    )
+    const safeValue: JSONSafeValue | undefined = decycle(value, new WeakSet<object>(), false)
 
     if (safeValue === undefined) {
       return undefined
@@ -162,46 +151,32 @@ export function safeStringify(
 
     return JSON.stringify(safeValue)
   } catch (error: unknown) {
-    const errorMessage: string =
-      error instanceof Error ? error.message : String(error)
+    const errorMessage: string = error instanceof Error ? error.message : String(error)
 
     if (
       errorMessage.includes('circular') ||
       errorMessage.includes('Converting circular structure')
     ) {
-      logger.error(
-        `Circular reference detected during JSON stringify in ${context}`,
-        { error: errorMessage }
-      )
-      throw new Error(
-        'Cannot stringify data: circular reference detected.'
-      )
+      logger.error(`Circular reference detected during JSON stringify in ${context}`, {
+        error: errorMessage,
+      })
+      throw new Error('Cannot stringify data: circular reference detected.')
     }
 
-    if (
-      errorMessage.includes('Invalid string length') ||
-      errorMessage.includes('too large')
-    ) {
+    if (errorMessage.includes('Invalid string length') || errorMessage.includes('too large')) {
       logger.error(`Data too large to stringify in ${context}`, {
         error: errorMessage,
       })
-      throw new Error(
-        'Cannot stringify data: data is too large.'
-      )
+      throw new Error('Cannot stringify data: data is too large.')
     }
 
     logger.error(`Failed to stringify JSON in ${context}`, {
       error: errorMessage,
     })
 
-    throw new Error(
-      `Failed to convert data to JSON: ${errorMessage}`
-    )
+    throw new Error(`Failed to convert data to JSON: ${errorMessage}`)
   }
 }
-
-
-
 
 /**
  * Format request parameters based on tool configuration and provided params

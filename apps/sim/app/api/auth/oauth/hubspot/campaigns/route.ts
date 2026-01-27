@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if the credential belongs to the user or is a shared HubSpot account
-    const isSharedHubSpotAccount = credential.providerId === 'hubspot' && !!(credential as any).alias
+    const isSharedHubSpotAccount =
+      credential.providerId === 'hubspot' && !!(credential as any).alias
     if (!isSharedHubSpotAccount && credential.userId !== session.user.id) {
       logger.warn(`[${requestId}] Unauthorized credential access attempt`, {
         credentialUserId: credential.userId,

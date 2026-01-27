@@ -94,7 +94,6 @@ const fetchCampaignOptions = async (
     campaignInFlightRequests.set(credentialId, requestPromise)
 
     return requestPromise
-    return requestPromise
   } catch (error) {
     // Try to return cached data on error
     try {
@@ -389,7 +388,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'dropdown',
       placeholder: 'Select campaigns...',
       options: [], // Fallback empty array to prevent undefined errors
-     dependsOn: { any: ['credential', 'accounts'] },
+      dependsOn: { any: ['credential', 'accounts'] },
       multiSelect: true,
       selectAllOption: true,
       condition: {
@@ -1421,7 +1420,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           if (value !== undefined && value !== null && value !== '' && !excludeKeys.includes(key)) {
             if (key === 'campaignGuids') {
               //JSON.parse is needed as safeStirng method is giving circular
-              cleanParams['campaignGuid'] = JSON.parse(JSON.stringify(value))
+              cleanParams.campaignGuid = JSON.parse(JSON.stringify(value))
             } else {
               cleanParams[key] = value
             }
