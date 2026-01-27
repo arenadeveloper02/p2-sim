@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { account, workflow } from '@sim/db/schema'
+import { account, accountTokens, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
 import { refreshOAuthToken } from '@/lib/oauth'
 
@@ -30,6 +30,12 @@ export async function safeAccountInsert(
   context: { provider: string; identifier?: string }
 ): Promise<void> {
   try {
+    logger.info(`Inserting new account for provider ${context.provider}`, {
+      userId: data.userId,
+      providerId: data.providerId,
+      expiresAt: data.accessTokenExpiresAt,
+      hasRefreshToken: !!data.refreshToken,
+    })
     await db.insert(account).values(data)
     logger.info(`Created new ${context.provider} account for user`, { userId: data.userId })
   } catch (error: any) {
@@ -83,18 +89,33 @@ export async function getUserId(
  * Get a credential by ID and verify it belongs to the user
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
+  // First attempt ID lookup
   const credentials = await db
     .select()
     .from(account)
     .where(and(eq(account.id, credentialId), eq(account.userId, userId)))
     .limit(1)
 
-  if (!credentials.length) {
-    logger.warn(`[${requestId}] Credential not found`)
-    return undefined
+  if (credentials.length > 0) {
+    return credentials[0]
   }
 
-  return credentials[0]
+  // If not found in account table, attempt HubSpot alias lookup in accountTokens table
+  const manualAliasCredentials = await db
+    .select()
+    .from(accountTokens)
+    .where(and(eq(accountTokens.alias, credentialId), eq(accountTokens.providerId, 'hubspot')))
+    .limit(1)
+
+  if (manualAliasCredentials.length > 0) {
+    logger.info(`[${requestId}] Resolved manual HubSpot credential via alias from accountTokens`, {
+      alias: credentialId,
+    })
+    return manualAliasCredentials[0]
+  }
+
+  logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
+  return undefined
 }
 
 export async function getOAuthToken(userId: string, providerId: string): Promise<string | null> {
@@ -112,12 +133,37 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
     .orderBy(desc(account.updatedAt))
     .limit(1)
 
-  if (connections.length === 0) {
+  let credential
+  let sourceTable: 'account' | 'account_tokens' = 'account'
+
+  if (connections.length > 0) {
+    credential = connections[0]
+  } else if (providerId === 'hubspot') {
+    // For HubSpot, fallback to checking accountTokens if no user-specific connection found
+    const manualConnections = await db
+      .select({
+        id: accountTokens.id,
+        accessToken: accountTokens.accessToken,
+        refreshToken: accountTokens.refreshToken,
+        accessTokenExpiresAt: accountTokens.accessTokenExpiresAt,
+        idToken: sql<string | null>`NULL`.as('id_token'),
+        alias: accountTokens.alias,
+      })
+      .from(accountTokens)
+      .where(eq(accountTokens.providerId, providerId))
+      .orderBy(desc(accountTokens.updatedAt))
+      .limit(1)
+
+    if (manualConnections.length > 0) {
+      credential = manualConnections[0]
+      sourceTable = 'account_tokens'
+    }
+  }
+
+  if (!credential) {
     logger.warn(`No OAuth token found for user ${userId}, provider ${providerId}`)
     return null
   }
-
-  const credential = connections[0]
 
   // Determine whether we should refresh: missing token OR expired token
   const now = new Date()
@@ -132,7 +178,11 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
 
     try {
       // Use the existing refreshOAuthToken function
-      const refreshResult = await refreshOAuthToken(providerId, credential.refreshToken!)
+      const refreshResult = await refreshOAuthToken(
+        providerId,
+        credential.refreshToken!,
+        (credential as any).alias || undefined
+      )
 
       if (!refreshResult) {
         logger.error(`Failed to refresh token for user ${userId}, provider ${providerId}`, {
@@ -158,8 +208,20 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
         updateData.refreshToken = newRefreshToken
       }
 
-      // Update the token in the database with the actual expiration time from the provider
-      await db.update(account).set(updateData).where(eq(account.id, credential.id))
+      // Update the token in the correct database table
+      if (sourceTable === 'account_tokens') {
+        logger.info(`Updating account_tokens for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
+      } else {
+        logger.info(`Updating account for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(account).set(updateData).where(eq(account.id, credential.id))
+      }
 
       logger.info(`Successfully refreshed token for user ${userId}, provider ${providerId}`)
       return accessToken
@@ -217,7 +279,8 @@ export async function refreshAccessTokenIfNeeded(
     try {
       const refreshedToken = await refreshOAuthToken(
         credential.providerId,
-        credential.refreshToken!
+        credential.refreshToken!,
+        (credential as any).alias || undefined
       )
 
       if (!refreshedToken) {
@@ -244,7 +307,26 @@ export async function refreshAccessTokenIfNeeded(
       }
 
       // Update the token in the database
-      await db.update(account).set(updateData).where(eq(account.id, credentialId))
+      // Check which table to update
+      const [inAccountTokens] = await db
+        .select({ id: accountTokens.id })
+        .from(accountTokens)
+        .where(eq(accountTokens.id, credential.id))
+        .limit(1)
+
+      if (inAccountTokens) {
+        logger.info(`[${requestId}] Updating account_tokens for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
+      } else {
+        logger.info(`[${requestId}] Updating account for credential ${credential.id}`, {
+          expiresAt: updateData.accessTokenExpiresAt,
+          hasNewRefreshToken: !!updateData.refreshToken,
+        })
+        await db.update(account).set(updateData).where(eq(account.id, credential.id))
+      }
 
       logger.info(`[${requestId}] Successfully refreshed access token for credential`)
       return refreshedToken.accessToken
@@ -289,7 +371,11 @@ export async function refreshTokenIfNeeded(
   }
 
   try {
-    const refreshResult = await refreshOAuthToken(credential.providerId, credential.refreshToken!)
+    const refreshResult = await refreshOAuthToken(
+      credential.providerId,
+      credential.refreshToken!,
+      (credential as any).alias || undefined
+    )
 
     if (!refreshResult) {
       logger.error(`[${requestId}] Failed to refresh token for credential`)
@@ -311,7 +397,26 @@ export async function refreshTokenIfNeeded(
       updateData.refreshToken = newRefreshToken
     }
 
-    await db.update(account).set(updateData).where(eq(account.id, credentialId))
+    // Check which table to update
+    const [inAccountTokens] = await db
+      .select({ id: accountTokens.id })
+      .from(accountTokens)
+      .where(eq(accountTokens.id, credential.id))
+      .limit(1)
+
+    if (inAccountTokens) {
+      logger.info(`[${requestId}] Updating account_tokens for credential ${credential.id}`, {
+        expiresAt: updateData.accessTokenExpiresAt,
+        hasNewRefreshToken: !!updateData.refreshToken,
+      })
+      await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, credential.id))
+    } else {
+      logger.info(`[${requestId}] Updating account for credential ${credential.id}`, {
+        expiresAt: updateData.accessTokenExpiresAt,
+        hasNewRefreshToken: !!updateData.refreshToken,
+      })
+      await db.update(account).set(updateData).where(eq(account.id, credential.id))
+    }
 
     logger.info(`[${requestId}] Successfully refreshed access token`)
     return { accessToken: refreshedToken, refreshed: true }

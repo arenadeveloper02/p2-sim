@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { account, workflow as workflowTable } from '@sim/db/schema'
+import { account, accountTokens, workflow as workflowTable } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
@@ -35,18 +35,49 @@ export async function authorizeCredentialUse(
     return { ok: false, error: auth.error || 'Authentication required' }
   }
 
-  // Lookup credential owner
-  const [credRow] = await db
-    .select({ userId: account.userId })
+  // Lookup credential owner and provider
+  // Support both UUID id and alias for HubSpot
+  let [credRow] = await db
+    .select({ userId: account.userId, providerId: account.providerId })
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
+
+  if (!credRow) {
+    // If not found by ID, check if it's a HubSpot alias in the new accountTokens table first
+    const [tokenRow] = await db
+      .select({
+        userId: accountTokens.userId,
+        providerId: accountTokens.providerId,
+        alias: accountTokens.alias,
+      })
+      .from(accountTokens)
+      .where(eq(accountTokens.alias, credentialId))
+      .limit(1)
+
+    if (tokenRow && tokenRow.providerId === 'hubspot') {
+      credRow = tokenRow as any // Compatible enough for these fields
+    }
+  }
 
   if (!credRow) {
     return { ok: false, error: 'Credential not found' }
   }
 
   const credentialOwnerUserId = credRow.userId
+
+  // HubSpot specific check for shared admin accounts via alias
+  const isSharedHubSpotAccount =
+    credRow.providerId === 'hubspot' && 'alias' in credRow && !!(credRow as any).alias
+
+  if (isSharedHubSpotAccount) {
+    return {
+      ok: true,
+      authType: auth.authType,
+      requesterUserId: auth.userId,
+      credentialOwnerUserId,
+    }
+  }
 
   // If requester owns the credential, allow immediately
   if (auth.authType !== 'internal_jwt' && auth.userId === credentialOwnerUserId) {

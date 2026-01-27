@@ -14,6 +14,120 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 // Track in-flight requests to deduplicate concurrent calls
 const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; id: string }>>>()
 
+const fetchCampaignOptions = async (
+  blockId: string
+): Promise<Array<{ label: string; id: string }>> => {
+  try {
+    const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+    const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+
+    const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+    if (!activeWorkflowId) {
+      return []
+    }
+
+    const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+    const blockValues = workflowValues?.[blockId]
+
+    const accounts = blockValues?.accounts
+    const credential = blockValues?.credential
+
+    const useSharedAccount = accounts && accounts !== 'manual'
+    const credentialId = (useSharedAccount ? accounts : credential) as string
+
+    if (!credentialId) {
+      return []
+    }
+
+    // Check cache first
+    const cached = campaignCache.get(credentialId)
+    const now = Date.now()
+    if (cached && now - cached.timestamp < CACHE_TTL) {
+      return cached.data
+    }
+
+    // Check if there's already a request in flight for this credential
+    const inFlightRequest = campaignInFlightRequests.get(credentialId)
+    if (inFlightRequest) {
+      return inFlightRequest
+    }
+
+    // Create a new request and track it
+    const requestPromise = (async () => {
+      try {
+        // Fetch campaigns from server-side API which uses fetchHubSpotCampaigns internally
+        // This avoids CORS issues since the API call happens on the server
+        const response = await fetch(
+          `/api/auth/oauth/hubspot/campaigns?credentialId=${encodeURIComponent(
+            credentialId
+          )}&limit=100`
+        )
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}) as any)
+          throw new Error(
+            (errorData as { error?: string }).error || 'Failed to fetch campaigns from HubSpot'
+          )
+        }
+
+        const data = await response.json()
+        // The API route uses fetchHubSpotCampaigns internally and returns the campaigns
+        const options = (data.campaigns || []) as Array<{ label: string; id: string }>
+
+        // Cache the results
+        campaignCache.set(credentialId, { data: options, timestamp: now })
+
+        return options
+      } catch (error) {
+        // Try to return cached data on error
+        if (cached) {
+          return cached.data
+        }
+        return []
+      } finally {
+        // Remove from in-flight requests when done
+        campaignInFlightRequests.delete(credentialId)
+      }
+    })()
+
+    // Store the in-flight request
+    campaignInFlightRequests.set(credentialId, requestPromise)
+
+    return requestPromise
+  } catch (error) {
+    // Try to return cached data on error
+    try {
+      const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
+      const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+      const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+      if (activeWorkflowId) {
+        const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+        const blockValues = workflowValues?.[blockId]
+        const accounts = blockValues?.accounts
+        const credential = blockValues?.credential
+        const useSharedAccount = accounts && accounts !== 'manual'
+        const credentialId = (useSharedAccount ? accounts : credential) as string
+
+        if (credentialId) {
+          const cached = campaignCache.get(credentialId)
+          if (cached) {
+            return cached.data
+          }
+        }
+      }
+    } catch {
+      // Ignore errors in error handler
+    }
+    // Always return an array, even on error
+    return []
+  }
+}
+
+const validateCampaignValue = (params: Record<string, any>, isMulti: boolean): string => {
+  // No validation logic - just return undefined to let the system handle the value
+  return undefined as unknown as string
+}
+
 export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
   type: 'hubspot',
   name: 'HubSpot',
@@ -57,10 +171,22 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       value: () => 'get_contacts',
     },
     {
+      id: 'accounts',
+      title: 'Accounts',
+      type: 'dropdown',
+      options: [
+        { label: 'Position2', id: 'position2' },
+        { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
+        { label: 'Covalent Metrology', id: 'covalent_metrology' },
+      ],
+      value: () => 'northstar_anesthesia',
+    },
+    {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
       serviceId: 'hubspot',
+      hidden: true,
       requiredScopes: [
         'crm.objects.contacts.read',
         'crm.objects.contacts.write',
@@ -241,7 +367,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'dropdown',
       placeholder: 'Select a campaign...',
       options: [], // Fallback empty array to prevent undefined errors
-      dependsOn: ['credential'],
+      dependsOn: { any: ['credential', 'accounts'] },
       multiSelect: false,
       condition: {
         field: 'operation',
@@ -253,212 +379,24 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
           'get_campaign_assets',
         ],
       },
-      fetchOptions: async (blockId: string): Promise<Array<{ label: string; id: string }>> => {
-        try {
-          const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
-
-          const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
-          if (!activeWorkflowId) {
-            return []
-          }
-
-          const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
-          const blockValues = workflowValues?.[blockId]
-          const credentialId = blockValues?.credential as string
-
-          if (!credentialId) {
-            return []
-          }
-
-          // Check cache first
-          const cached = campaignCache.get(credentialId)
-          const now = Date.now()
-          if (cached && now - cached.timestamp < CACHE_TTL) {
-            return cached.data
-          }
-
-          // Check if there's already a request in flight for this credential
-          const inFlightRequest = campaignInFlightRequests.get(credentialId)
-          if (inFlightRequest) {
-            return inFlightRequest
-          }
-
-          // Create a new request and track it
-          const requestPromise = (async () => {
-            try {
-              // Fetch campaigns from server-side API which uses fetchHubSpotCampaigns internally
-              // This avoids CORS issues since the API call happens on the server
-              const response = await fetch(
-                `/api/auth/oauth/hubspot/campaigns?credentialId=${encodeURIComponent(credentialId)}&limit=100`
-              )
-
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}))
-                throw new Error(
-                  (errorData as { error?: string }).error ||
-                    'Failed to fetch campaigns from HubSpot'
-                )
-              }
-
-              const data = await response.json()
-              // The API route uses fetchHubSpotCampaigns internally and returns the campaigns
-              const options = (data.campaigns || []) as Array<{ label: string; id: string }>
-
-              // Cache the results
-              campaignCache.set(credentialId, { data: options, timestamp: now })
-
-              return options
-            } catch (error) {
-              // Try to return cached data on error
-              if (cached) {
-                return cached.data
-              }
-              return []
-            } finally {
-              // Remove from in-flight requests when done
-              campaignInFlightRequests.delete(credentialId)
-            }
-          })()
-
-          // Store the in-flight request
-          campaignInFlightRequests.set(credentialId, requestPromise)
-
-          return requestPromise
-        } catch (error) {
-          // Try to return cached data on error
-          try {
-            const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-            const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
-            const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
-            if (activeWorkflowId) {
-              const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
-              const blockValues = workflowValues?.[blockId]
-              const credentialId = blockValues?.credential as string
-              if (credentialId) {
-                const cached = campaignCache.get(credentialId)
-                if (cached) {
-                  return cached.data
-                }
-              }
-            }
-          } catch {
-            // Ignore errors in error handler
-          }
-          // Always return an array, even on error
-          return []
-        }
-      },
+      fetchOptions: fetchCampaignOptions,
+      value: (params) => validateCampaignValue(params, false),
     },
     {
-      id: 'campaignGuid',
+      id: 'campaignGuids',
       title: 'Campaigns',
       type: 'dropdown',
       placeholder: 'Select campaigns...',
       options: [], // Fallback empty array to prevent undefined errors
-      dependsOn: ['credential'],
+      dependsOn: { any: ['credential', 'accounts'] },
       multiSelect: true,
       selectAllOption: true,
       condition: {
         field: 'operation',
         value: ['get_campaign_metrics', 'get_campaign_revenue', 'get_campaign_spend'],
       },
-      fetchOptions: async (blockId: string): Promise<Array<{ label: string; id: string }>> => {
-        try {
-          const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
-
-          const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
-          if (!activeWorkflowId) {
-            return []
-          }
-
-          const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
-          const blockValues = workflowValues?.[blockId]
-          const credentialId = blockValues?.credential as string
-
-          if (!credentialId) {
-            return []
-          }
-
-          // Check cache first
-          const cached = campaignCache.get(credentialId)
-          const now = Date.now()
-          if (cached && now - cached.timestamp < CACHE_TTL) {
-            return cached.data
-          }
-
-          // Check if there's already a request in flight for this credential
-          const inFlightRequest = campaignInFlightRequests.get(credentialId)
-          if (inFlightRequest) {
-            return inFlightRequest
-          }
-
-          // Create a new request and track it
-          const requestPromise = (async () => {
-            try {
-              // Fetch campaigns from server-side API which uses fetchHubSpotCampaigns internally
-              // This avoids CORS issues since the API call happens on the server
-              const response = await fetch(
-                `/api/auth/oauth/hubspot/campaigns?credentialId=${encodeURIComponent(credentialId)}&limit=100`
-              )
-
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}))
-                throw new Error(
-                  (errorData as { error?: string }).error ||
-                    'Failed to fetch campaigns from HubSpot'
-                )
-              }
-
-              const data = await response.json()
-              // The API route uses fetchHubSpotCampaigns internally and returns the campaigns
-              const options = (data.campaigns || []) as Array<{ label: string; id: string }>
-
-              // Cache the results
-              campaignCache.set(credentialId, { data: options, timestamp: now })
-
-              return options
-            } catch (error) {
-              // Try to return cached data on error
-              if (cached) {
-                return cached.data
-              }
-              return []
-            } finally {
-              // Remove from in-flight requests when done
-              campaignInFlightRequests.delete(credentialId)
-            }
-          })()
-
-          // Store the in-flight request
-          campaignInFlightRequests.set(credentialId, requestPromise)
-
-          return requestPromise
-        } catch (error) {
-          // Try to return cached data on error
-          try {
-            const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-            const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
-            const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
-            if (activeWorkflowId) {
-              const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
-              const blockValues = workflowValues?.[blockId]
-              const credentialId = blockValues?.credential as string
-              if (credentialId) {
-                const cached = campaignCache.get(credentialId)
-                if (cached) {
-                  return cached.data
-                }
-              }
-            }
-          } catch {
-            // Ignore errors in error handler
-          }
-          // Always return an array, even on error
-          return []
-        }
-      },
+      fetchOptions: fetchCampaignOptions,
+      value: (params) => validateCampaignValue(params, true),
     },
     {
       id: 'spendId',
@@ -473,6 +411,22 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Required to fetch a specific budget item',
       condition: { field: 'operation', value: ['get_campaign_budget_item'] },
+    },
+    {
+      id: 'startDate',
+      title: 'Start Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'operation', value: ['get_campaign_revenue'] },
+      required: true,
+    },
+    {
+      id: 'endDate',
+      title: 'End Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'operation', value: ['get_campaign_revenue'] },
+      required: true,
     },
     {
       id: 'contactType',
@@ -1403,6 +1357,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       },
       params: (params) => {
         const {
+          accounts,
           credential,
           operation,
           propertiesToSet,
@@ -1414,8 +1369,11 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           ...rest
         } = params
 
+        const useSharedAccount = accounts && accounts !== 'manual'
+        const effectiveCredential = useSharedAccount ? (accounts as string) : (credential as string)
+
         const cleanParams: Record<string, any> = {
-          credential,
+          credential: effectiveCredential,
         }
 
         const createUpdateOps = [
@@ -1460,15 +1418,9 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         ]
         Object.entries(rest).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '' && !excludeKeys.includes(key)) {
-            // Handle multi-select campaignGuid for get_campaign_metrics, get_campaign_revenue, and get_campaign_spend
-            if (
-              key === 'campaignGuid' &&
-              (operation === 'get_campaign_metrics' ||
-                operation === 'get_campaign_revenue' ||
-                operation === 'get_campaign_spend') &&
-              Array.isArray(value)
-            ) {
-              cleanParams[key] = value
+            if (key === 'campaignGuids') {
+              //JSON.parse is needed as safeStirng method is giving circular
+              cleanParams.campaignGuid = JSON.parse(JSON.stringify(value))
             } else {
               cleanParams[key] = value
             }
@@ -1481,13 +1433,17 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
+    accounts: { type: 'string', description: 'Selected shared account' },
     credential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
     campaignGuid: {
       type: 'string',
-      description:
-        'Campaign GUID for marketing operations (or array for get_campaign_metrics, get_campaign_revenue, get_campaign_spend)',
+      description: 'Campaign GUID for marketing operations',
+    },
+    campaignGuids: {
+      type: 'string',
+      description: 'List of Campaign GUIDs for metrics/revenue/spend operations',
     },
     spendId: { type: 'string', description: 'Spend ID for campaign spend retrieval' },
     budgetId: { type: 'string', description: 'Budget ID for campaign budget retrieval' },

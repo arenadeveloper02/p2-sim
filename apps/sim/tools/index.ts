@@ -944,7 +944,7 @@ async function handleProxyRequest(
       : undefined
 
     // Use safeStringify to handle circular references and large objects
-    let body: string
+    let body: string | undefined
     try {
       body = safeStringify(
         { toolId, params, executionContext: minimalExecutionContext },
