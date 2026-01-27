@@ -158,6 +158,85 @@ async function initializeOpenTelemetry() {
   }
 }
 
+/**
+ * Start local scheduler for development environment
+ * In production, this is handled by Kubernetes CronJobs
+ */
+async function startLocalScheduler() {
+  // Only run in development and when not in a serverless environment
+  if (env.NODE_ENV === 'production' || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return
+  }
+
+  try {
+    const { Cron } = await import('croner')
+    const { env: envConfig } = await import('./lib/core/config/env')
+
+    const cronSecret = envConfig.CRON_SECRET
+    if (!cronSecret) {
+      logger.warn('CRON_SECRET not configured, local scheduler will not start')
+      return
+    }
+
+    // Run every minute to check for due schedules
+    const cron = new Cron(
+      '*/1 * * * *',
+      {
+        timezone: 'UTC',
+        startAt: new Date(Date.now() + 10000), // Start 10 seconds after initialization to ensure app is ready
+      },
+      async () => {
+        try {
+          const baseUrl = envConfig.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+          const url = `${baseUrl}/api/schedules/execute`
+
+          // Use built-in fetch (Node.js 18+)
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${cronSecret}`,
+              'Content-Type': 'application/json',
+            },
+          })
+
+          if (!response.ok) {
+            const text = await response.text()
+            logger.warn(`Schedule execution API returned ${response.status}: ${text}`)
+          } else {
+            const result = (await response.json()) as { executedCount?: number }
+            if (result.executedCount && result.executedCount > 0) {
+              logger.info(
+                `Schedule execution completed: ${result.executedCount} schedules executed`
+              )
+            } else {
+              logger.debug('Schedule execution completed: no schedules due')
+            }
+          }
+        } catch (error) {
+          // Don't log fetch errors during startup - app might not be ready yet
+          if (error instanceof Error && !error.message.includes('ECONNREFUSED')) {
+            logger.error('Error executing scheduled workflows', error)
+          }
+        }
+      }
+    )
+
+    logger.info('Local scheduler started (runs every minute)')
+
+    // Cleanup on process exit
+    const shutdown = () => {
+      cron.stop()
+      logger.info('Local scheduler stopped')
+    }
+
+    process.on('SIGTERM', shutdown)
+    process.on('SIGINT', shutdown)
+  } catch (error) {
+    logger.error('Failed to start local scheduler', error)
+  }
+}
+
 export async function register() {
   await initializeOpenTelemetry()
+  await startLocalScheduler()
 }

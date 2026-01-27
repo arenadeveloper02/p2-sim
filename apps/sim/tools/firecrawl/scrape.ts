@@ -1,6 +1,7 @@
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
+import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
 
 export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
@@ -66,7 +67,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
         body.zeroDataRetention = params.zeroDataRetention
 
       if (params.scrapeOptions) {
-        Object.assign(body, params.scrapeOptions)
+        safeAssign(body, params.scrapeOptions as Record<string, unknown>)
       }
 
       return body

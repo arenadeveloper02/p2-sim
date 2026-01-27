@@ -218,7 +218,7 @@ import {
   figmaPostCommentTool,
   figmaToHTMLAITool,
 } from '@/tools/figma'
-import { fileParseTool, fileParserV2Tool } from '@/tools/file'
+import { fileParserV2Tool, fileParseTool } from '@/tools/file'
 import {
   firecrawlAgentTool,
   firecrawlCrawlTool,

@@ -4,9 +4,7 @@ import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { eq } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
-import type { ZodRecord, ZodString } from 'zod'
 import { decryptSecret } from '@/lib/core/security/encryption'
-import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -25,7 +23,7 @@ import {
 import { REFERENCE } from '@/executor/constants'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
-import type { ExecutionResult } from '@/executor/types'
+import { hasExecutionResult } from '@/executor/utils/errors'
 import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { mergeSubblockState } from '@/stores/workflows/server-utils'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
@@ -278,7 +276,6 @@ async function runWorkflowExecution({
   loggingSession,
   requestId,
   executionId,
-  EnvVarsSchema,
 }: {
   payload: ScheduleExecutionPayload
   workflowRecord: WorkflowRecord
@@ -286,7 +283,6 @@ async function runWorkflowExecution({
   loggingSession: LoggingSession
   requestId: string
   executionId: string
-  EnvVarsSchema: ZodRecord<ZodString, ZodString>
 }): Promise<RunWorkflowResult> {
   try {
     logger.debug(`[${requestId}] Loading deployed workflow ${payload.workflowId}`)
@@ -314,124 +310,11 @@ async function runWorkflowExecution({
       throw new Error(`Workflow ${payload.workflowId} has no associated workspace`)
     }
 
-    const personalEnvUserId = workflowRecord.userId
-
-    const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
-      await getPersonalAndWorkspaceEnv(personalEnvUserId, workflowRecord.workspaceId || undefined)
-
-    // Get server environment variables and merge with user/workspace vars
-    // Priority: Server env vars > Workspace env vars > Personal env vars
-    const { env } = await import('@/lib/core/config/env')
-    const serverEnvVars: Record<string, string> = {}
-
-    // Extract known server environment variables
-    const serverEnvVarNames = [
-      'OPENAI_API_KEY',
-      'OPENAI_API_KEY_1',
-      'OPENAI_API_KEY_2',
-      'OPENAI_API_KEY_3',
-      'ANTHROPIC_API_KEY',
-      'ANTHROPIC_API_KEY_1',
-      'ANTHROPIC_API_KEY_2',
-      'ANTHROPIC_API_KEY_3',
-      'GEMINI_API_KEY',
-      'SAMBANOVA_API_KEY',
-      'SAMBANOVA_API_KEY_1',
-      'SAMBANOVA_API_KEY_2',
-      'SAMBANOVA_API_KEY_3',
-      'XAI_API_KEY',
-      'XAI_API_KEY_1',
-      'XAI_API_KEY_2',
-      'XAI_API_KEY_3',
-      'AZURE_OPENAI_API_KEY',
-      'SEMRUSH_API_KEY',
-      'BROWSERBASE_API_KEY',
-      'PRESENTATION_API_BASE_URL',
-      'EXA_API_KEY',
-      'COPILOT_API_KEY',
-      'S3_PROFILE_PICTURES_BUCKET_NAME',
-      'S3_COPILOT_BUCKET_NAME',
-      'S3_CHAT_BUCKET_NAME',
-      'S3_EXECUTION_FILES_BUCKET_NAME',
-      'S3_KB_BUCKET_NAME',
-      'S3_LOGS_BUCKET_NAME',
-      'NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS',
-      'CRON_SECRET',
-      'FB_CLIENT_SECRET',
-      'FB_CLIENT_ID',
-      'FB_ACCESS_TOKEN',
-      'FROM_EMAIL_ADDRESS',
-      'NEXT_PUBLIC_FIRECRAWL_API_KEY',
-      'FIRECRAWL_API_KEY',
-      'BROWSER_USE_API_KEY',
-      'SPYFU_API_PASSWORD',
-      'SPYFU_API_USERNAME',
-      'CHROMEDRIVER_PATH',
-      'FIGMA_API_KEY',
-      'GOOGLE_ADS_REFRESH_TOKEN',
-      'GOOGLE_ADS_CLIENT_SECRET',
-      'GOOGLE_ADS_CLIENT_ID',
-      'GOOGLE_ADS_DEVELOPER_TOKEN',
-      'S3_COPILOT_BUCKET_NAME',
-      'INTERNAL_API_SECRET',
-      'S3_KB_BUCKET_NAME',
-      'AWS_SECRET_ACCESS_KEY',
-      'AWS_ACCESS_KEY_ID',
-      'AWS_REGION',
-      'S3_BUCKET_NAME',
-      'SLACK_CLIENT_ID',
-      'SLACK_CLIENT_SECRET',
-      'GOOGLE_CLIENT_SECRET',
-      'GOOGLE_CLIENT_ID',
-    ]
-
-    for (const varName of serverEnvVarNames) {
-      const value = env[varName as keyof typeof env]
-      if (value && typeof value === 'string') {
-        serverEnvVars[varName] = value
-      }
-    }
-
-    // Merge: Server env vars take priority, then workspace, then personal
-    // For encrypted vars (for validation), we still need encrypted values
-    const variables = EnvVarsSchema.parse({
-      ...personalEncrypted,
-      ...workspaceEncrypted,
-      ...serverEnvVars, // Server vars override user/workspace vars
-    })
-
-    // For decrypted vars (for execution), merge decrypted values with server vars
-    const decryptedEnvVars: Record<string, string> = {
-      ...personalDecrypted,
-      ...workspaceDecrypted,
-      ...serverEnvVars, // Server vars override user/workspace vars
-    }
-
-    // Note: ensureBlockVariablesResolvable will skip server env vars validation
-    // since they're now included in the variables object
-    await ensureBlockVariablesResolvable(mergedStates, variables, requestId)
-
-    // Only validate decryptable for non-server env vars (user/workspace vars)
-    // Server env vars don't need decryption as they're already plain text
-    const userWorkspaceVars = EnvVarsSchema.parse({
-      ...personalEncrypted,
-      ...workspaceEncrypted,
-    })
-    await ensureEnvVarsDecryptable(userWorkspaceVars, requestId)
-
     const input = {
       _context: {
         workflowId: payload.workflowId,
       },
     }
-
-    await loggingSession.safeStart({
-      userId: actorUserId,
-      workspaceId,
-      variables: variables || {},
-      conversationId: undefined,
-      deploymentVersionId,
-    })
 
     const metadata: ExecutionMetadata = {
       requestId,
@@ -506,8 +389,7 @@ async function runWorkflowExecution({
   } catch (error: unknown) {
     logger.error(`[${requestId}] Early failure in scheduled workflow ${payload.workflowId}`, error)
 
-    const errorWithResult = error as { executionResult?: ExecutionResult }
-    const executionResult = errorWithResult?.executionResult
+    const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
     const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
 
     await loggingSession.safeCompleteWithError({
@@ -531,7 +413,6 @@ export type ScheduleExecutionPayload = {
   failedCount?: number
   now: string
   scheduledFor?: string
-  preflighted?: boolean
 }
 
 function calculateNextRunTime(
@@ -571,9 +452,6 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
     executionId,
   })
 
-  const zod = await import('zod')
-  const EnvVarsSchema = zod.z.record(zod.z.string())
-
   try {
     const loggingSession = new LoggingSession(
       payload.workflowId,
@@ -591,7 +469,6 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
       checkRateLimit: true,
       checkDeployment: true,
       loggingSession,
-      preflightEnvVars: !payload.preflighted,
     })
 
     if (!preprocessResult.success) {
@@ -734,7 +611,6 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         loggingSession,
         requestId,
         executionId,
-        EnvVarsSchema,
       })
 
       if (executionResult.status === 'skip') {

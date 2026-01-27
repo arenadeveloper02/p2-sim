@@ -13,7 +13,6 @@ import {
   formatRequestParams,
   getTool,
   getToolAsync,
-  safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
@@ -648,12 +647,11 @@ async function executeToolRequest(
         body: requestParams.body,
       })
 
-       contentType = response.headers.get('content-type') || ''
-       hasTransformResponse = Boolean(tool.transformResponse)
-       prefersTextTransform =
+      contentType = response.headers.get('content-type') || ''
+      hasTransformResponse = Boolean(tool.transformResponse)
+      prefersTextTransform =
         hasTransformResponse &&
         (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
-  
     } else {
       const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
       if (!urlValidation.isValid) {

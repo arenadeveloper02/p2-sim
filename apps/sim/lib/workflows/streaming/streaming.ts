@@ -68,7 +68,7 @@ async function buildMinimalResult(
   selectedOutputs: string[] | undefined,
   streamedContent: Map<string, string>,
   requestId: string,
-  executionId?: string,  
+  executionId?: string,
   includeFileBase64?: boolean,
   base64MaxBytes?: number | undefined
 ): Promise<{ success: boolean; error?: string; output: Record<string, unknown> }> {

@@ -14,7 +14,7 @@ import {
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
-import { Button, Tooltip, Switch } from '@/components/emcn'
+import { Button, Switch, Tooltip } from '@/components/emcn'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
@@ -217,7 +217,7 @@ export function Editor() {
     collaborativeSetBlockCanonicalMode,
     collaborativeUpdateBlockName,
     collaborativeToggleBlockAdvancedMode,
-    collaborativeSetSubblockValue
+    collaborativeSetSubblockValue,
   } = useCollaborativeWorkflow()
 
   // Advanced mode toggle handler
@@ -282,12 +282,12 @@ export function Editor() {
     }
   }, [shouldFocusRename, currentBlock, handleStartRename, setShouldFocusRename])
 
-    // Sync editedName when currentBlock.name changes (e.g., from collaborative updates)
-    useEffect(() => {
-      if (!isRenaming && currentBlock?.name) {
-        setEditedName(currentBlock.name)
-      }
-    }, [currentBlock?.name, isRenaming])
+  // Sync editedName when currentBlock.name changes (e.g., from collaborative updates)
+  useEffect(() => {
+    if (!isRenaming && currentBlock?.name) {
+      setEditedName(currentBlock.name)
+    }
+  }, [currentBlock?.name, isRenaming])
   /**
    * Handles opening documentation link in a new secure tab.
    */

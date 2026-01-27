@@ -149,7 +149,12 @@ export class EdgeManager {
     return true
   }
 
-  private shouldActivateEdge(edge: DAGEdge, output: NormalizedBlockOutput, sourceNode: DAGNode, ctx?: ExecutionContext): boolean {
+  private shouldActivateEdge(
+    edge: DAGEdge,
+    output: NormalizedBlockOutput,
+    sourceNode: DAGNode,
+    ctx?: ExecutionContext
+  ): boolean {
     const handle = edge.sourceHandle
 
     // CRITICAL: For LOOP_EXIT edges, only activate when shouldExit is explicitly true

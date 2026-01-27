@@ -774,8 +774,6 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
             return 'google_drive_upload'
           case 'download':
             return 'google_drive_download'
-          case 'list':
-            return 'google_drive_list'
           case 'search':
             return 'google_drive_search'
           case 'copy':

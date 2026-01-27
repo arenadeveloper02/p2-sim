@@ -18,7 +18,7 @@ import {
   getTriggersForSidebar,
   hasTriggerCapability,
 } from '@/lib/workflows/triggers/trigger-utils'
-import { selectBlockEvent, selectTriggerEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { selectTriggerEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ToolbarItemContextMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/components'
 import {
   calculateTriggerHeights,
@@ -81,8 +81,12 @@ const ToolbarItem = memo(function ToolbarItem({
       })
       selectTriggerEvent({
         'Element Name': item?.name ?? '',
-        'Element Type':  isTrigger ? 'Trigger' : 'Block',
-        Source: searchQuery?.trim() ? "Workflow's Search" : isTrigger ? "Trigger's List" : "Block's List",
+        'Element Type': isTrigger ? 'Trigger' : 'Block',
+        Source: searchQuery?.trim()
+          ? "Workflow's Search"
+          : isTrigger
+            ? "Trigger's List"
+            : "Block's List",
       })
     },
     [item.type, item.name, item.bgColor, isTriggerCapable, onDragStart, isTrigger]
@@ -98,8 +102,12 @@ const ToolbarItem = memo(function ToolbarItem({
     onClick(item.type, isTriggerCapable)
     selectTriggerEvent({
       'Element Name': item?.name ?? '',
-      'Element Type':  isTrigger ? 'Trigger' : 'Block',
-      Source: searchQuery?.trim() ? "Workflow's Search" : isTrigger ? "Trigger's List" : "Block's List",
+      'Element Type': isTrigger ? 'Trigger' : 'Block',
+      Source: searchQuery?.trim()
+        ? "Workflow's Search"
+        : isTrigger
+          ? "Trigger's List"
+          : "Block's List",
     })
   }, [item.type, isTriggerCapable, onClick])
 
@@ -118,8 +126,12 @@ const ToolbarItem = memo(function ToolbarItem({
         onClick(item.type, isTriggerCapable)
         selectTriggerEvent({
           'Element Name': item?.name ?? '',
-          'Element Type':  isTrigger ? 'Trigger' : 'Block',
-          Source: searchQuery?.trim() ? "Workflow's Search" : isTrigger ? "Trigger's List" : "Block's List",
+          'Element Type': isTrigger ? 'Trigger' : 'Block',
+          Source: searchQuery?.trim()
+            ? "Workflow's Search"
+            : isTrigger
+              ? "Trigger's List"
+              : "Block's List",
         })
       }
     },

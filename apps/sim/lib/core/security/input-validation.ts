@@ -1,6 +1,4 @@
-import dns from 'dns/promises'
-import http from 'http'
-import https from 'https'
+import type { AgentOptions, RequestOptions } from 'http'
 import type { LookupFunction } from 'net'
 import { createLogger } from '@sim/logger'
 import * as ipaddr from 'ipaddr.js'
@@ -799,6 +797,8 @@ export async function validateUrlWithDNS(
   const hostname = parsedUrl.hostname
 
   try {
+    // Dynamic import to avoid client-side bundle issues
+    const dns = await import('dns/promises')
     const { address } = await dns.lookup(hostname)
 
     if (isPrivateOrReservedIP(address)) {
@@ -899,6 +899,12 @@ export async function secureFetchWithPinnedIP(
 ): Promise<SecureFetchResponse> {
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
 
+  // Dynamic imports to avoid client-side bundle issues
+  const [httpModule, httpsModule] = await Promise.all([import('http'), import('https')])
+  // Type assertions for Node.js built-in modules
+  const http = httpModule as unknown as typeof import('http')
+  const https = httpsModule as unknown as typeof import('https')
+
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
     const isHttps = parsed.protocol === 'https:'
@@ -916,7 +922,7 @@ export async function secureFetchWithPinnedIP(
       }
     }
 
-    const agentOptions: http.AgentOptions = { lookup }
+    const agentOptions: AgentOptions = { lookup }
 
     const agent = isHttps ? new https.Agent(agentOptions) : new http.Agent(agentOptions)
 
@@ -924,7 +930,7 @@ export async function secureFetchWithPinnedIP(
     // Headers are lowercase due to Web Headers API normalization in executeToolRequest
     const { 'accept-encoding': _, ...sanitizedHeaders } = options.headers ?? {}
 
-    const requestOptions: http.RequestOptions = {
+    const requestOptions: RequestOptions = {
       hostname: parsed.hostname,
       port,
       path: parsed.pathname + parsed.search,

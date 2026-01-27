@@ -97,7 +97,9 @@ export default function Logs() {
   const [previewLogId, setPreviewLogId] = useState<string | null>(null)
 
   const activeLogId = isPreviewOpen ? previewLogId : selectedLogId
-  const activeLogQuery = useLogDetail(activeLogId ?? undefined)
+  const activeLogQuery = useLogDetail(activeLogId ?? undefined, {
+    refetchInterval: isLive ? 3000 : false,
+  })
 
   const logFilters = useMemo(
     () => ({
@@ -116,7 +118,7 @@ export default function Logs() {
 
   const logsQuery = useLogsList(workspaceId, logFilters, {
     enabled: Boolean(workspaceId) && isInitialized.current,
-    refetchInterval: isLive ? 5000 : false,
+    refetchInterval: isLive ? 3000 : false,
   })
 
   const dashboardFilters = useMemo(
@@ -135,7 +137,7 @@ export default function Logs() {
 
   const dashboardStatsQuery = useDashboardStats(workspaceId, dashboardFilters, {
     enabled: Boolean(workspaceId) && isInitialized.current,
-    refetchInterval: isLive ? 5000 : false,
+    refetchInterval: isLive ? 3000 : false,
   })
 
   const logs = useMemo(() => {
@@ -324,8 +326,11 @@ export default function Logs() {
       setIsVisuallyRefreshing(true)
       setTimeout(() => setIsVisuallyRefreshing(false), REFRESH_SPINNER_DURATION_MS)
       logsQuery.refetch()
+      if (selectedLogId) {
+        activeLogQuery.refetch()
+      }
     }
-  }, [isLive, logsQuery])
+  }, [isLive, logsQuery, activeLogQuery, selectedLogId])
 
   const prevIsFetchingRef = useRef(logsQuery.isFetching)
   useEffect(() => {
