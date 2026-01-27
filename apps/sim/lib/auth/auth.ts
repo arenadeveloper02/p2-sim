@@ -1751,7 +1751,7 @@ export const auth = betterAuth({
               logger.info('Using token for Slack auth.test', {
                 hasUserToken: !!userAccessToken,
                 usingUserToken: !!userAccessToken,
-                tokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none'
+                tokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none',
               })
 
               const response = await fetch('https://slack.com/api/auth.test', {
@@ -1789,7 +1789,10 @@ export const auth = betterAuth({
               } else {
                 // Bot token returns bot_id
                 userId = data.bot_id || data.user_id || 'bot'
-                logger.info('Using bot token - extracted bot_id', { userId: userId.startsWith('B') ? userId : `B${userId}`, teamId })
+                logger.info('Using bot token - extracted bot_id', {
+                  userId: userId.startsWith('B') ? userId : `B${userId}`,
+                  teamId,
+                })
                 // Ensure bot IDs start with 'B'
                 if (userId && !userId.startsWith('B')) {
                   userId = `B${userId}`
@@ -1804,7 +1807,9 @@ export const auth = betterAuth({
                 uniqueId,
                 teamName,
                 hasUserToken: !!userAccessToken,
-                userTokenPrefix: userAccessToken ? `${userAccessToken.substring(0, 10)}...` : 'none',
+                userTokenPrefix: userAccessToken
+                  ? `${userAccessToken.substring(0, 10)}...`
+                  : 'none',
                 authedUserData: (tokens as any).authed_user,
               })
 

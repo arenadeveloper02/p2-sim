@@ -42,8 +42,8 @@ export async function GET(request: NextRequest) {
           data: {
             client_id: clientId,
             message: 'No summary data found for this client',
-            summaries: []
-          }
+            summaries: [],
+          },
         },
         { status: 200 }
       )
@@ -66,22 +66,24 @@ export async function GET(request: NextRequest) {
         runDate: slackSummary.runDate,
         status: slackSummary.status,
         createdDate: slackSummary.createdDate,
-        updatedDate: slackSummary.updatedDate
+        updatedDate: slackSummary.updatedDate,
       })
       .from(slackSummary)
-      .where(sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.runDate} = ${latestRunDate}`)
+      .where(
+        sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.runDate} = ${latestRunDate}`
+      )
       .orderBy(slackSummary.channelType, slackSummary.channelName)
 
     logger.info(`[${requestId}] Found summaries for client`, {
       clientId,
       runDate: latestRunDate,
-      recordCount: summaries.length
+      recordCount: summaries.length,
     })
 
     // Group by channel type for better organization
     const groupedSummaries = {
-      internal: summaries.filter(s => s.channelType === 'internal'),
-      external: summaries.filter(s => s.channelType === 'external')
+      internal: summaries.filter((s) => s.channelType === 'internal'),
+      external: summaries.filter((s) => s.channelType === 'external'),
     }
 
     return NextResponse.json(
@@ -95,9 +97,9 @@ export async function GET(request: NextRequest) {
           summary: {
             internal_channels: groupedSummaries.internal.length,
             external_channels: groupedSummaries.external.length,
-            total_records: summaries.length
-          }
-        }
+            total_records: summaries.length,
+          },
+        },
       },
       { status: 200 }
     )
@@ -152,7 +154,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: { message: 'At least one summary field is required (one_day_summary, seven_day_summary, or fourteen_day_summary)' }
+          error: {
+            message:
+              'At least one summary field is required (one_day_summary, seven_day_summary, or fourteen_day_summary)',
+          },
         },
         { status: 400 }
       )
@@ -188,7 +193,9 @@ export async function POST(request: NextRequest) {
         const existingRecord = await db
           .select()
           .from(slackSummary)
-          .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`)
+          .where(
+            sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`
+          )
           .limit(1)
 
         const recordExists = existingRecord.length > 0
@@ -209,7 +216,9 @@ export async function POST(request: NextRequest) {
               updatedDate: now,
               status: 'STARTED',
             })
-            .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`)
+            .where(
+              sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`
+            )
 
           console.log('Record update successful for today')
         } else {
@@ -290,7 +299,9 @@ export async function POST(request: NextRequest) {
       const record = await db
         .select()
         .from(slackSummary)
-        .where(sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id}`)
+        .where(
+          sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id}`
+        )
         .limit(1)
 
       const action = record.length > 0 ? 'updated' : 'created'
@@ -333,7 +344,7 @@ export async function POST(request: NextRequest) {
         success: false,
         error: {
           message: error.message || 'Failed to save slack summary',
-          code: error.code
+          code: error.code,
         },
       },
       { status: 500 }

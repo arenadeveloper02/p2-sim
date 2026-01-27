@@ -812,7 +812,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               }
 
               if (toDate) {
-                let toDateObj = new Date(toDate)
+                const toDateObj = new Date(toDate)
                 // If fromDate and toDate are the same day, set toDate to end of that day
                 // to include all messages from the entire day
                 if (fromDate && fromDate === toDate) {
@@ -992,7 +992,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             baseParams.useUserToken = true // Flag to indicate user token should be used
             break
           }
-
         }
 
         return baseParams

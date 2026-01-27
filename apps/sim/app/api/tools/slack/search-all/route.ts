@@ -1,9 +1,9 @@
-import { createLogger } from '@sim/logger'
-import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -86,15 +86,20 @@ export async function POST(request: NextRequest) {
     if (slackAccount.idToken) {
       accessToken = slackAccount.idToken
       logger.info(`[${requestId}] Using token from idToken field for Slack search.all:`, {
-        tokenType: accessToken.startsWith('xoxp-') ? 'user' : accessToken.startsWith('xoxb-') ? 'bot' : 'unknown',
-        tokenPrefix: accessToken.substring(0, 10)
+        tokenType: accessToken.startsWith('xoxp-')
+          ? 'user'
+          : accessToken.startsWith('xoxb-')
+            ? 'bot'
+            : 'unknown',
+        tokenPrefix: accessToken.substring(0, 10),
       })
     } else {
       logger.warn(`[${requestId}] No idToken found in Slack account`)
       return NextResponse.json(
         {
           success: false,
-          error: 'No user token found in idToken field. Please reconnect your Slack account with search permissions.',
+          error:
+            'No user token found in idToken field. Please reconnect your Slack account with search permissions.',
         },
         { status: 400 }
       )

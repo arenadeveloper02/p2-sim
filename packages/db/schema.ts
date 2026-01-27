@@ -1921,7 +1921,10 @@ export const slackSummary = pgTable(
     channelIdRefIdx: index('slack_summary_channel_id_ref_idx').on(table.channelIdRef),
     statusIdx: index('slack_summary_status_idx').on(table.status),
     runDateIdx: index('slack_summary_run_date_idx').on(table.runDate),
-    clientChannelIdx: index('slack_summary_client_channel_idx').on(table.clientIdRef, table.channelIdRef),
+    clientChannelIdx: index('slack_summary_client_channel_idx').on(
+      table.clientIdRef,
+      table.channelIdRef
+    ),
   })
 )
 
