@@ -833,6 +833,8 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
 
             baseParams.autoPaginate = autoPaginate
             baseParams.includeThreads = includeThreads
+
+            // Set maxThreads - default to 10 if includeThreads is true and maxThreads is not set
             if (maxThreads) {
               const parsedMaxThreads = Number.parseInt(maxThreads, 10)
               if (
@@ -842,6 +844,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               ) {
                 baseParams.maxThreads = parsedMaxThreads
               }
+            } else if (includeThreads) {
+              // Default maxThreads to 10 when includeThreads is true but maxThreads is not specified
+              baseParams.maxThreads = 10
             }
             if (maxRepliesPerThread) {
               const parsedMaxReplies = Number.parseInt(maxRepliesPerThread, 10)
@@ -852,6 +857,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
               ) {
                 baseParams.maxRepliesPerThread = parsedMaxReplies
               }
+            } else if (includeThreads) {
+              // Default maxRepliesPerThread to 100 when includeThreads is true but maxRepliesPerThread is not specified
+              baseParams.maxRepliesPerThread = 100
             }
 
             break
