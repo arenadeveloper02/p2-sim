@@ -171,6 +171,9 @@ export function Editor() {
     return false
   }, [subBlocksForCanonical, canonicalIndex.canonicalIdBySubBlockId, blockSubBlockValues])
 
+  // Check if current block is arena type (needed for field ordering)
+  const isArenaBlock = currentBlock?.type === 'arena'
+
   // Get subblock layout using custom hook
   const { subBlocks, stateToUse: subBlockState } = useEditorSubblockLayout(
     blockConfig || ({} as any),
@@ -185,6 +188,7 @@ export function Editor() {
   /**
    * Partitions subBlocks into regular fields and standalone advanced-only fields.
    * Standalone advanced fields have mode 'advanced' and are not part of a canonical swap pair.
+   * For Arena blocks, we merge them back to maintain the original config order.
    */
   const { regularSubBlocks, advancedOnlySubBlocks } = useMemo(() => {
     const regular: typeof subBlocks = []
@@ -201,8 +205,26 @@ export function Editor() {
       }
     }
 
+    // For Arena blocks, merge advanced-only fields back into regular fields to maintain config order
+    if (isArenaBlock && advancedOnly.length > 0) {
+      // Create a map for quick lookup
+      const advancedMap = new Map(advancedOnly.map((sb) => [sb.id, sb]))
+      const merged: typeof subBlocks = []
+
+      // Reconstruct in original order from subBlocks
+      for (const subBlock of subBlocks) {
+        if (advancedMap.has(subBlock.id)) {
+          merged.push(advancedMap.get(subBlock.id)!)
+        } else if (!subBlock.mode || subBlock.mode !== 'advanced') {
+          merged.push(subBlock)
+        }
+      }
+
+      return { regularSubBlocks: merged, advancedOnlySubBlocks: [] }
+    }
+
     return { regularSubBlocks: regular, advancedOnlySubBlocks: advancedOnly }
-  }, [subBlocks, canonicalIndex.canonicalIdBySubBlockId])
+  }, [subBlocks, canonicalIndex.canonicalIdBySubBlockId, isArenaBlock])
 
   // Get block connections
   const { incomingConnections, hasIncomingConnections } = useBlockConnections(currentBlockId || '')
@@ -300,9 +322,6 @@ export function Editor() {
 
   // Check if block has advanced mode or trigger mode available
   const hasAdvancedMode = blockConfig?.subBlocks?.some((sb) => sb.mode === 'advanced')
-
-  // Check if current block is arena type
-  const isArenaBlock = currentBlock?.type === 'arena'
 
   // Get current operation to check if advanced mode should be disabled
   const currentOperation = blockSubBlockValues.operation
@@ -592,8 +611,11 @@ export function Editor() {
                           )
                         : undefined
 
+                    // For Arena blocks, always show divider if there are advanced-only fields coming after
+                    // For other blocks, show divider if not the last regular field or if no advanced fields
                     const showDivider =
                       index < regularSubBlocks.length - 1 ||
+                      (isArenaBlock && hasAdvancedOnlyFields && advancedOnlySubBlocks.length > 0) ||
                       (!hasAdvancedOnlyFields && index < subBlocks.length - 1)
 
                     return (
@@ -640,7 +662,7 @@ export function Editor() {
                     )
                   })}
 
-                  {hasAdvancedOnlyFields && userPermissions.canEdit && (
+                  {hasAdvancedOnlyFields && userPermissions.canEdit && !isArenaBlock && (
                     <div className='flex items-center gap-[10px] px-[2px] pt-[14px] pb-[12px]'>
                       <div
                         className='h-[1.25px] flex-1'
@@ -678,6 +700,9 @@ export function Editor() {
                       subBlockState
                     )
 
+                    // Always show divider between advanced-only fields, and after the last one if there are more regular fields after
+                    const showDivider = index < advancedOnlySubBlocks.length - 1
+
                     return (
                       <div key={stableKey} className='subblock-row'>
                         <SubBlock
@@ -689,7 +714,7 @@ export function Editor() {
                           fieldDiffStatus={undefined}
                           allowExpandInPreview={false}
                         />
-                        {index < advancedOnlySubBlocks.length - 1 && (
+                        {showDivider && (
                           <div className='subblock-divider px-[2px] pt-[16px] pb-[13px]'>
                             <div
                               className='h-[1.25px]'
