@@ -125,64 +125,7 @@ const fetchCampaignOptions = async (
 }
 
 const validateCampaignValue = (params: Record<string, any>, isMulti: boolean): string => {
-  const accounts = params.accounts
-  const credential = params.credential
-
-  const useSharedAccount = accounts && accounts !== 'manual'
-  const credentialId = (useSharedAccount ? accounts : credential) as string
-
-  // If no credential ID, we can't validate.
-  // Ideally we clear the value, but if it's just loading, we shouldn't.
-  // However, if we switched from Account A (valid) to Account B (loading),
-  // we technically don't know if the value is valid for B yet.
-  // But usually this function runs synchronously.
-  if (!credentialId) {
-    return isMulti ? '[]' : ''
-  }
-
-  const cached = campaignCache.get(credentialId)
-
-  // If we have cached data for this credential, we MUST validate against it.
-  if (cached) {
-    const validIds = new Set(cached.data.map((o) => o.id))
-
-    if (isMulti) {
-      // Params value might be an array or stringified array or JSON
-      let currentValues: string[] = []
-      const rawValue = params.campaignGuids
-      if (Array.isArray(rawValue)) {
-        currentValues = rawValue
-      } else if (typeof rawValue === 'string' && rawValue) {
-        // Might be just a string if it's a single value acting as array?
-        // Or if it's JSON stringified?
-        // Usually multi-select values come as arrays in params if processed, but key updates might send them raw.
-        // Let's assume array if properly handled by framework.
-        // For safety, let's treat string as single ID or try to parse if it looks like JSON?
-        // Simpler: just check if it's in the set.
-        currentValues = [rawValue]
-      }
-
-      if (currentValues.length === 0) return '[]'
-
-      // Check if ALL current values are valid
-      const allValid = currentValues.every((id) => validIds.has(id))
-      return allValid ? (undefined as unknown as string) : '[]'
-    } else {
-      const currentValue = params.campaignGuid
-      if (!currentValue) return ''
-      return validIds.has(currentValue) ? (undefined as unknown as string) : ''
-    }
-  }
-
-  // If cache is missing (e.g. first load, or fresh account switch pending fetch),
-  // we CANNOT validate yet.
-  // If we clear it now, we might clear a valid saved value before it loads.
-  // BUT, if we switched accounts, the value from the OLD account is definitely invalid for the NEW account (HubSpot GUIDs are unique).
-  // Detecting "account switch" vs "initial load" is hard here stateless-ly.
-  // Strategy: If cache is missing, we assume it's loading.
-  // Risk: Stale value persists until fetch completes.
-  // Once fetch completes, this function should technically re-run if dependecies trigger it?
-  // Or fetch completion triggers a render which calls this.
+  // No validation logic - just return undefined to let the system handle the value
   return undefined as unknown as string
 }
 
