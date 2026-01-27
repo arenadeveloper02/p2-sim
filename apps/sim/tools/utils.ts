@@ -79,54 +79,118 @@ interface RequestParams {
 }
 
 /**
- * Safely stringify a value to JSON, handling circular references and large objects
- * @param value - The value to stringify
- * @param context - Context for error messages (e.g., toolId)
- * @returns Stringified JSON
- * @throws Error if stringification fails
+ * Values that are guaranteed to be JSON.stringify-compatible
  */
-export function safeStringify(value: any, context = 'unknown'): string {
+export type JSONSafePrimitive = string | number | boolean | null
+
+export type JSONSafeValue = JSONSafePrimitive | JSONSafeValue[] | { [key: string]: JSONSafeValue }
+
+/**
+ * Internal helper that:
+ * - Removes real circular references
+ * - Preserves shared references
+ * - Converts `undefined → null` ONLY inside arrays
+ * - Drops `undefined` inside objects
+ */
+function decycle(
+  value: unknown,
+  stack: WeakSet<object>,
+  inArray: boolean
+): JSONSafeValue | undefined {
+  // Preserve top-level undefined (caller decides)
+  if (value === undefined) {
+    return inArray ? null : undefined
+  }
+
+  // JSON primitives
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value
+  }
+
+  // Unsupported JSON values
+  if (typeof value === 'function') {
+    return '[Function]'
+  }
+
+  if (typeof value === 'symbol') {
+    return '[Symbol]'
+  }
+
+  // Non-object, non-JSON values
+  if (typeof value !== 'object') {
+    return inArray ? null : undefined
+  }
+
+  // Circular reference detection (path-based)
+  if (stack.has(value)) {
+    return '[Circular Reference]'
+  }
+
+  stack.add(value)
+
+  let result: JSONSafeValue
+
+  if (Array.isArray(value)) {
+    const arr = value as unknown[]
+    result = arr.map((item) => {
+      const processed = decycle(item, stack, true)
+      return processed === undefined ? null : processed
+    })
+  } else {
+    const obj = value as Record<string, unknown>
+    const cloned: Record<string, JSONSafeValue> = {}
+
+    for (const key of Object.keys(obj)) {
+      const processed = decycle(obj[key], stack, false)
+      if (processed !== undefined) {
+        cloned[key] = processed
+      }
+    }
+
+    result = cloned
+  }
+
+  stack.delete(value)
+  return result
+}
+
+/**
+ * Safely stringifies data for:
+ * - Logging
+ * - APIs
+ * - Google Sheets (2D arrays)
+ *
+ * Guarantees:
+ * - Top-level `undefined` → returns undefined
+ * - Arrays never contain `undefined`
+ * - Objects never contain `undefined` keys
+ * - Circular references are replaced
+ */
+export function safeStringify(value: unknown, context = 'unknown'): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
   if (typeof value === 'string') {
     return value
   }
 
-  // Use a WeakSet to track circular references
-  const seen = new WeakSet()
+  try {
+    const safeValue: JSONSafeValue | undefined = decycle(value, new WeakSet<object>(), false)
 
-  // Create the replacer function that will be used in JSON.stringify
-  const replacer = (key: string, val: any): any => {
-    // Handle undefined - JSON.stringify omits undefined, but we want to be explicit
-    if (val === undefined) {
+    if (safeValue === undefined) {
       return undefined
     }
 
-    // Handle functions - replace with a placeholder
-    if (typeof val === 'function') {
-      return '[Function]'
-    }
+    return JSON.stringify(safeValue)
+  } catch (error: unknown) {
+    const errorMessage: string = error instanceof Error ? error.message : String(error)
 
-    // Handle Symbols - replace with a placeholder
-    if (typeof val === 'symbol') {
-      return '[Symbol]'
-    }
-
-    // Handle circular references
-    if (val !== null && typeof val === 'object') {
-      if (seen.has(val)) {
-        return '[Circular Reference]'
-      }
-      seen.add(val)
-    }
-
-    return val
-  }
-
-  try {
-    return JSON.stringify(value, replacer)
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-
-    // Check if it's a circular reference error
     if (
       errorMessage.includes('circular') ||
       errorMessage.includes('Converting circular structure')
@@ -134,34 +198,21 @@ export function safeStringify(value: any, context = 'unknown'): string {
       logger.error(`Circular reference detected during JSON stringify in ${context}`, {
         error: errorMessage,
       })
-      throw new Error(
-        `Cannot stringify data: circular reference detected. This may occur when data structures reference themselves.`
-      )
+      throw new Error('Cannot stringify data: circular reference detected.')
     }
 
-    // Check if it's a size-related error
     if (errorMessage.includes('Invalid string length') || errorMessage.includes('too large')) {
       logger.error(`Data too large to stringify in ${context}`, {
         error: errorMessage,
-        valueType: typeof value,
-        isArray: Array.isArray(value),
-        arrayLength: Array.isArray(value) ? value.length : undefined,
       })
-      throw new Error(
-        `Cannot stringify data: data is too large. Try reducing the size of the data being sent.`
-      )
+      throw new Error('Cannot stringify data: data is too large.')
     }
 
-    // Generic error
     logger.error(`Failed to stringify JSON in ${context}`, {
       error: errorMessage,
-      valueType: typeof value,
-      isArray: Array.isArray(value),
-      arrayLength: Array.isArray(value) ? value.length : undefined,
     })
-    throw new Error(
-      `Failed to convert data to JSON: ${errorMessage}. The data may contain invalid values or be too large.`
-    )
+
+    throw new Error(`Failed to convert data to JSON: ${errorMessage}`)
   }
 }
 

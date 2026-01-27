@@ -13,6 +13,7 @@ import {
   formatRequestParams,
   getTool,
   getToolAsync,
+  safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 
@@ -896,7 +897,123 @@ function validateClientSideParams(
 }
 
 /**
- * Execute an MCP tool via the server-side MCP endpoint
+ * Handle a request via the proxy
+ */
+async function handleProxyRequest(
+  toolId: string,
+  params: Record<string, any>,
+  executionContext?: ExecutionContext
+): Promise<ToolResponse> {
+  const requestId = generateRequestId()
+
+  const baseUrl = getBaseUrl()
+  const proxyUrl = new URL('/api/proxy', baseUrl).toString()
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    await addInternalAuthIfNeeded(headers, true, requestId, `proxy:${toolId}`)
+
+    // Extract only the minimal executionContext fields needed by the proxy
+    // The proxy doesn't use the full executionContext, so we only send what's needed
+    // to avoid serializing large Maps, Sets, and accumulated loop data
+    const minimalExecutionContext = executionContext
+      ? {
+          workflowId: executionContext.workflowId,
+          workspaceId: executionContext.workspaceId,
+          executionId: executionContext.executionId,
+          userId: executionContext.userId,
+        }
+      : undefined
+
+    // Use safeStringify to handle circular references and large objects
+    let body: string | undefined
+    try {
+      body = safeStringify(
+        { toolId, params, executionContext: minimalExecutionContext },
+        `proxy:${toolId}`
+      )
+    } catch (stringifyError) {
+      logger.error(`[${requestId}] Failed to stringify request body for proxy:${toolId}`, {
+        error: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
+        toolId,
+      })
+      throw new Error(
+        `Failed to prepare request body: ${stringifyError instanceof Error ? stringifyError.message : String(stringifyError)}. This may be due to circular references or data that is too large.`
+      )
+    }
+
+    // Check request body size before sending
+    validateRequestBodySize(body, requestId, `proxy:${toolId}`)
+
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers,
+      body,
+    })
+
+    if (!response.ok) {
+      // Check for 413 (Entity Too Large) - body size limit exceeded
+      if (response.status === 413) {
+        logger.error(`[${requestId}] Request body too large for proxy:${toolId} (HTTP 413)`)
+        throw new Error(BODY_SIZE_LIMIT_ERROR_MESSAGE)
+      }
+
+      const errorText = await response.text()
+      logger.error(`[${requestId}] Proxy request failed for ${toolId}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText.substring(0, 200), // Limit error text length
+      })
+
+      let errorMessage = `HTTP error ${response.status}: ${response.statusText}`
+
+      try {
+        const errorJson = JSON.parse(errorText)
+        errorMessage =
+          // Primary error patterns
+          errorJson.errors?.[0]?.message ||
+          errorJson.errors?.[0]?.detail ||
+          errorJson.error?.message ||
+          (typeof errorJson.error === 'string' ? errorJson.error : undefined) ||
+          errorJson.message ||
+          errorJson.error_description ||
+          errorJson.fault?.faultstring ||
+          errorJson.faultstring ||
+          // Fallback
+          (typeof errorJson.error === 'object'
+            ? `API Error: ${response.status} ${response.statusText}`
+            : `HTTP error ${response.status}: ${response.statusText}`)
+      } catch (parseError) {
+        // If not JSON, use the raw text
+        if (errorText) {
+          errorMessage = `${errorMessage}: ${errorText}`
+        }
+      }
+
+      throw new Error(errorMessage)
+    }
+
+    // Parse the successful response
+    const result = await response.json()
+    return result
+  } catch (error: any) {
+    // Check if this is a body size limit error and throw user-friendly message
+    handleBodySizeLimitError(error, requestId, `proxy:${toolId}`)
+
+    logger.error(`[${requestId}] Proxy request error for ${toolId}:`, {
+      error: error instanceof Error ? error.message : String(error),
+    })
+
+    return {
+      success: false,
+      output: {},
+      error: error.message || 'Proxy request failed',
+    }
+  }
+}
+
+/**
+ * Execute an MCP tool via the server-side proxy
  *
  * @param toolId - MCP tool ID in format "mcp-serverId-toolName"
  * @param params - Tool parameters

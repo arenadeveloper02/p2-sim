@@ -910,7 +910,7 @@ interface ProviderAuthConfig {
 /**
  * Get OAuth provider configuration for token refresh
  */
-function getProviderAuthConfig(provider: string): ProviderAuthConfig {
+function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthConfig {
   const getCredentials = (clientId: string | undefined, clientSecret: string | undefined) => {
     if (!clientId || !clientSecret) {
       throw new Error(`Missing client credentials for provider: ${provider}`)
@@ -1124,14 +1124,23 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
       }
     }
     case 'hubspot': {
-      const { clientId, clientSecret } = getCredentials(
-        env.HUBSPOT_CLIENT_ID,
-        env.HUBSPOT_CLIENT_SECRET
+      // If an alias is provided, try to find specific credentials for that alias
+      // Expected env pattern: HUBSPOT_NORTHSTAR_ANESTHESIA_CLIENT_ID
+      const aliasPrefix = alias ? `${alias.toUpperCase()}_` : ''
+      const clientId =
+        (alias && process.env[`HUBSPOT_${aliasPrefix}CLIENT_ID`]) || env.HUBSPOT_CLIENT_ID
+      const clientSecret =
+        (alias && process.env[`HUBSPOT_${aliasPrefix}CLIENT_SECRET`]) || env.HUBSPOT_CLIENT_SECRET
+
+      const { clientId: finalClientId, clientSecret: finalClientSecret } = getCredentials(
+        clientId,
+        clientSecret
       )
+
       return {
         tokenEndpoint: 'https://api.hubapi.com/oauth/v1/token',
-        clientId,
-        clientSecret,
+        clientId: finalClientId,
+        clientSecret: finalClientSecret,
         useBasicAuth: false,
         supportsRefreshTokenRotation: true,
       }
@@ -1275,18 +1284,29 @@ function getBaseProviderForService(providerId: string): string {
 
 export async function refreshOAuthToken(
   providerId: string,
-  refreshToken: string
+  refreshToken: string,
+  alias?: string
 ): Promise<{ accessToken: string; expiresIn: number; refreshToken: string } | null> {
   try {
     const provider = getBaseProviderForService(providerId)
 
-    const config = getProviderAuthConfig(provider)
+    const config = getProviderAuthConfig(provider, alias)
 
     const { headers, bodyParams } = buildAuthRequest(config, refreshToken)
+    logger.info('Token refresh request:', {
+      provider,
+      config,
+      headers,
+      bodyParams,
+    })
 
     const response = await fetch(config.tokenEndpoint, {
       method: 'POST',
       headers,
+      body: new URLSearchParams(bodyParams).toString(),
+    })
+
+    logger.info('Token refresh body:', {
       body: new URLSearchParams(bodyParams).toString(),
     })
 

@@ -309,7 +309,10 @@ export interface HubSpotGetCampaignSpendResponse extends ToolResponse {
   }
 }
 
-export interface HubSpotGetCampaignMetricsParams extends HubSpotGetCampaignParams {}
+export interface HubSpotGetCampaignMetricsParams extends HubSpotGetCampaignParams {
+  startDate?: string
+  endDate?: string
+}
 
 export interface HubSpotGetCampaignMetricsResponse extends ToolResponse {
   output: {
@@ -322,7 +325,10 @@ export interface HubSpotGetCampaignMetricsResponse extends ToolResponse {
   }
 }
 
-export interface HubSpotGetCampaignRevenueParams extends HubSpotGetCampaignParams {}
+export interface HubSpotGetCampaignRevenueParams extends HubSpotGetCampaignParams {
+  startDate?: string
+  endDate?: string
+}
 
 export interface HubSpotGetCampaignRevenueResponse extends ToolResponse {
   output: {

@@ -395,11 +395,18 @@ export const Dropdown = memo(function Dropdown({
       ) {
         setFetchedOptions([])
         setHydratedOption(null)
+        // Clear the selected value when dependencies change (e.g., switching accounts)
+        // This prevents stale values from the previous account from persisting
+        if (multiSelect) {
+          setStoreValue([])
+        } else {
+          setStoreValue('')
+        }
       }
 
       previousDependencyValuesRef.current = currentDependencyValuesStr
     }
-  }, [dependencyValues, fetchOptions, dependsOnFields.length])
+  }, [dependencyValues, fetchOptions, dependsOnFields.length, multiSelect, setStoreValue])
 
   /**
    * Effect to fetch options when needed (on mount, when enabled, or when dependencies change)

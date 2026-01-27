@@ -542,7 +542,11 @@ function SubBlockComponent({
               blockId={blockId}
               subBlockId={config.id}
               options={config.options as { label: string; id: string }[]}
-              defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
+              defaultValue={
+                typeof config.value === 'function'
+                  ? config.value(subBlockValues || {})
+                  : config.value
+              }
               placeholder={config.placeholder}
               isPreview={isPreview}
               previewValue={previewValue}
@@ -564,7 +568,11 @@ function SubBlockComponent({
               blockId={blockId}
               subBlockId={config.id}
               options={config.options as { label: string; id: string }[]}
-              defaultValue={typeof config.value === 'function' ? config.value({}) : config.value}
+              defaultValue={
+                typeof config.value === 'function'
+                  ? config.value(subBlockValues || {})
+                  : config.value
+              }
               placeholder={config.placeholder}
               isPreview={isPreview}
               previewValue={previewValue as any}

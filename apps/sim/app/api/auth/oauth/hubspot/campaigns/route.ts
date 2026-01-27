@@ -1,11 +1,8 @@
-import { db } from '@sim/db'
-import { account } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import { getCredential, refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { fetchHubSpotCampaigns } from '@/tools/hubspot/campaigns'
 
 export const dynamic = 'force-dynamic'
@@ -38,18 +35,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
     }
 
-    // Get the credential from the database
-    const credentials = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
+    // Get the credential from the database using the utility (handles alias and multiple tables)
+    const credential = await getCredential(requestId, credentialId, session.user.id)
 
-    if (!credentials.length) {
+    if (!credential) {
       logger.warn(`[${requestId}] Credential not found`, { credentialId })
       return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
     }
 
-    const credential = credentials[0]
-
-    // Check if the credential belongs to the user
-    if (credential.userId !== session.user.id) {
+    // Check if the credential belongs to the user or is a shared HubSpot account
+    const isSharedHubSpotAccount =
+      credential.providerId === 'hubspot' && !!(credential as any).alias
+    if (!isSharedHubSpotAccount && credential.userId !== session.user.id) {
       logger.warn(`[${requestId}] Unauthorized credential access attempt`, {
         credentialUserId: credential.userId,
         requestUserId: session.user.id,

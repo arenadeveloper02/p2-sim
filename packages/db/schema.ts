@@ -97,6 +97,31 @@ export const account = pgTable(
   })
 )
 
+export const accountTokens = pgTable(
+  'account_tokens',
+  {
+    id: text('id').primaryKey(),
+    providerId: text('provider_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at'),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    idToken: text('id_token'),
+    scope: text('scope'),
+    alias: text('alias'),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    aliasIdx: index('account_tokens_alias_idx').on(table.alias),
+    providerAliasIdx: uniqueIndex('idx_account_tokens_on_provider_alias').on(
+      table.providerId,
+      table.alias
+    ),
+  })
+)
+
 export const verification = pgTable(
   'verification',
   {
