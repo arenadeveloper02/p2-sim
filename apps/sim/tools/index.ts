@@ -42,7 +42,7 @@ function normalizeToolId(toolId: string): string {
  * Maximum request body size in bytes before we warn/error about size limits.
  * Next.js 16 has a default middleware/proxy body limit of 10MB.
  */
-const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024 // 10MB
+const MAX_REQUEST_BODY_SIZE_BYTES = 2000 * 1024 * 1024 // 10MB
 
 /**
  * User-friendly error message for body size limit exceeded

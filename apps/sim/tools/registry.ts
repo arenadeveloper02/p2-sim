@@ -300,6 +300,7 @@ import {
 } from '@/tools/gmail'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
+import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   googleCalendarCreateTool,
   googleCalendarGetTool,
@@ -1858,6 +1859,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_update: googleSheetsUpdateTool,
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
+  google_ads_v1_query: googleAdsV1QueryTool,
   facebook_ads_query: facebookAdsQueryTool,
   google_slides_read: googleSlidesReadTool,
   google_slides_write: googleSlidesWriteTool,
