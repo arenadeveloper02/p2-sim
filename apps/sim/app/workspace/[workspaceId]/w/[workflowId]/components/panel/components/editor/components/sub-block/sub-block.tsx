@@ -284,22 +284,37 @@ const renderLabel = (
           </>
         )}
         {showCanonicalToggle && (
-          <button
-            type='button'
-            className='flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
-            onClick={canonicalToggle?.onToggle}
-            disabled={canonicalToggleDisabledResolved}
-            aria-label={canonicalToggle?.mode === 'advanced' ? 'Use selector' : 'Enter manual ID'}
-          >
-            <ArrowLeftRight
-              className={cn(
-                '!h-[12px] !w-[12px]',
-                canonicalToggle?.mode === 'advanced'
-                  ? 'text-[var(--text-primary)]'
-                  : 'text-[var(--text-secondary)]'
-              )}
-            />
-          </button>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                className='flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
+                onClick={canonicalToggle?.onToggle}
+                disabled={canonicalToggleDisabledResolved}
+                aria-label={
+                  canonicalToggle?.mode === 'advanced'
+                    ? 'Switch to selector'
+                    : 'Switch to manual ID'
+                }
+              >
+                <ArrowLeftRight
+                  className={cn(
+                    '!h-[12px] !w-[12px]',
+                    canonicalToggle?.mode === 'advanced'
+                      ? 'text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)]'
+                  )}
+                />
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              <p>
+                {canonicalToggle?.mode === 'advanced'
+                  ? 'Switch to selector'
+                  : 'Switch to manual ID'}
+              </p>
+            </Tooltip.Content>
+          </Tooltip.Root>
         )}
       </div>
     </div>
@@ -323,6 +338,11 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
   const configEqual =
     prevProps.config.id === nextProps.config.id && prevProps.config.type === nextProps.config.type
 
+  const canonicalToggleEqual =
+    !!prevProps.canonicalToggle === !!nextProps.canonicalToggle &&
+    prevProps.canonicalToggle?.mode === nextProps.canonicalToggle?.mode &&
+    prevProps.canonicalToggle?.disabled === nextProps.canonicalToggle?.disabled
+
   return (
     prevProps.blockId === nextProps.blockId &&
     configEqual &&
@@ -331,8 +351,7 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
     prevProps.disabled === nextProps.disabled &&
     prevProps.fieldDiffStatus === nextProps.fieldDiffStatus &&
     prevProps.allowExpandInPreview === nextProps.allowExpandInPreview &&
-    prevProps.canonicalToggle?.mode === nextProps.canonicalToggle?.mode &&
-    prevProps.canonicalToggle?.disabled === nextProps.canonicalToggle?.disabled
+    canonicalToggleEqual
   )
 }
 

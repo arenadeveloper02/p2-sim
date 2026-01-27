@@ -29,10 +29,10 @@ app:
   # Resource limits and requests
   resources:
     limits:
-      memory: "4Gi"
+      memory: "8Gi"
       cpu: "2000m"
     requests:
-      memory: "2Gi"
+      memory: "4Gi"
       cpu: "1000m"
 
   # Node selector for pod scheduling (leave empty to allow scheduling on any node)
@@ -232,24 +232,24 @@ app:
 realtime:
   # Enable/disable the realtime service
   enabled: true
-  
+
   # Image configuration
   image:
     repository: simstudioai/realtime
     tag: latest
     pullPolicy: Always
-  
+
   # Number of replicas
   replicaCount: 1
-  
+
   # Resource limits and requests
   resources:
     limits:
-      memory: "2Gi"
-      cpu: "1000m"
-    requests:
       memory: "1Gi"
       cpu: "500m"
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
   
   # Node selector for pod scheduling (leave empty to allow scheduling on any node)
   nodeSelector: {}
@@ -552,35 +552,69 @@ ollama:
   extraVolumeMounts: []
 
 # Ingress configuration
+# When services share the same host, paths are consolidated into a single rule.
+# Path order: realtime paths, copilot paths, then app paths (most specific first).
+# Ensure specific paths (e.g., /socket.io, /copilot) come before catch-all paths (/).
 ingress:
-  # Enable/disable ingress
   enabled: false
-  
-  # Ingress class name
   className: nginx
-  
-  # Annotations
+
   annotations:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-  
-  # Main application host configuration
+
+  # Main application (use / as catch-all)
   app:
     host: sim.local
     paths:
       - path: /
         pathType: Prefix
-  
-  # Realtime service host configuration
+
+  # Realtime service (use /socket.io when sharing host with app)
   realtime:
     host: sim-ws.local
     paths:
       - path: /
         pathType: Prefix
-  
-  # TLS configuration
+
+  # Copilot service (optional, use /copilot when sharing host)
+  # copilot:
+  #   host: sim.local
+  #   paths:
+  #     - path: /copilot
+  #       pathType: Prefix
+
   tls:
     enabled: false
     secretName: sim-tls-secret
+
+# Internal Ingress configuration
+# Same path ordering rules apply as above.
+ingressInternal:
+  enabled: false
+  className: nginx
+  annotations: {}
+
+  app:
+    host: sim-internal.local
+    paths:
+      - path: /
+        pathType: Prefix
+
+  realtime:
+    host: sim-internal.local
+    paths:
+      - path: /socket.io
+        pathType: Prefix
+
+  # copilot:
+  #   host: sim-internal.local
+  #   paths:
+  #     - path: /copilot
+  #       pathType: Prefix
+
+  tls:
+    enabled: false
+    secretName: sim-internal-tls-secret
 
 # Service Account configuration
 serviceAccount:

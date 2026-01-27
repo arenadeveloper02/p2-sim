@@ -11,10 +11,11 @@ import { extractAndPersistCustomTools } from '@/lib/workflows/persistence/custom
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { isValidKey } from '@/lib/workflows/sanitization/key-validation'
 import { validateWorkflowState } from '@/lib/workflows/sanitization/validation'
+import { buildCanonicalIndex, isCanonicalPair } from '@/lib/workflows/subblocks/visibility'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { getAllBlocks, getBlock } from '@/blocks/registry'
-import type { SubBlockConfig } from '@/blocks/types'
-import { EDGE, normalizeName } from '@/executor/constants'
+import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
+import { EDGE, normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { getUserPermissionConfig } from '@/executor/utils/permission-check'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
@@ -63,6 +64,7 @@ type SkippedItemType =
   | 'invalid_subflow_parent'
   | 'nested_subflow_not_allowed'
   | 'duplicate_block_name'
+  | 'reserved_block_name'
   | 'duplicate_trigger'
   | 'duplicate_single_instance_block'
 
@@ -666,9 +668,45 @@ function createBlockFromParams(
         }
       }
     })
+
+    if (validatedInputs) {
+      updateCanonicalModesForInputs(blockState, Object.keys(validatedInputs), blockConfig)
+    }
   }
 
   return blockState
+}
+
+function updateCanonicalModesForInputs(
+  block: { data?: { canonicalModes?: Record<string, 'basic' | 'advanced'> } },
+  inputKeys: string[],
+  blockConfig: BlockConfig
+): void {
+  if (!blockConfig.subBlocks?.length) return
+
+  const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks)
+  const canonicalModeUpdates: Record<string, 'basic' | 'advanced'> = {}
+
+  for (const inputKey of inputKeys) {
+    const canonicalId = canonicalIndex.canonicalIdBySubBlockId[inputKey]
+    if (!canonicalId) continue
+
+    const group = canonicalIndex.groupsById[canonicalId]
+    if (!group || !isCanonicalPair(group)) continue
+
+    const isAdvanced = group.advancedIds.includes(inputKey)
+    const existingMode = canonicalModeUpdates[canonicalId]
+
+    if (!existingMode || isAdvanced) {
+      canonicalModeUpdates[canonicalId] = isAdvanced ? 'advanced' : 'basic'
+    }
+  }
+
+  if (Object.keys(canonicalModeUpdates).length > 0) {
+    if (!block.data) block.data = {}
+    if (!block.data.canonicalModes) block.data.canonicalModes = {}
+    Object.assign(block.data.canonicalModes, canonicalModeUpdates)
+  }
 }
 
 /**
@@ -1653,6 +1691,15 @@ function applyOperationsToWorkflowState(
               block.data.collection = params.inputs.collection
             }
           }
+
+          const editBlockConfig = getBlock(block.type)
+          if (editBlockConfig) {
+            updateCanonicalModesForInputs(
+              block,
+              Object.keys(validationResult.validInputs),
+              editBlockConfig
+            )
+          }
         }
 
         // Update basic properties
@@ -1683,12 +1730,21 @@ function applyOperationsToWorkflowState(
           }
         }
         if (params?.name !== undefined) {
-          if (!normalizeName(params.name)) {
+          const normalizedName = normalizeName(params.name)
+          if (!normalizedName) {
             logSkippedItem(skippedItems, {
               type: 'missing_required_params',
               operationType: 'edit',
               blockId: block_id,
               reason: `Cannot rename to empty name`,
+              details: { requestedName: params.name },
+            })
+          } else if ((RESERVED_BLOCK_NAMES as readonly string[]).includes(normalizedName)) {
+            logSkippedItem(skippedItems, {
+              type: 'reserved_block_name',
+              operationType: 'edit',
+              blockId: block_id,
+              reason: `Cannot rename to "${params.name}" - this is a reserved name`,
               details: { requestedName: params.name },
             })
           } else {
@@ -1911,13 +1967,25 @@ function applyOperationsToWorkflowState(
       }
 
       case 'add': {
-        if (!params?.type || !params?.name || !normalizeName(params.name)) {
+        const addNormalizedName = params?.name ? normalizeName(params.name) : ''
+        if (!params?.type || !params?.name || !addNormalizedName) {
           logSkippedItem(skippedItems, {
             type: 'missing_required_params',
             operationType: 'add',
             blockId: block_id,
             reason: `Missing required params (type or name) for adding block "${block_id}"`,
             details: { hasType: !!params?.type, hasName: !!params?.name },
+          })
+          break
+        }
+
+        if ((RESERVED_BLOCK_NAMES as readonly string[]).includes(addNormalizedName)) {
+          logSkippedItem(skippedItems, {
+            type: 'reserved_block_name',
+            operationType: 'add',
+            blockId: block_id,
+            reason: `Block name "${params.name}" is a reserved name and cannot be used`,
+            details: { requestedName: params.name },
           })
           break
         }
@@ -2234,6 +2302,15 @@ function applyOperationsToWorkflowState(
                 existingBlock.subBlocks[key].value = sanitizedValue
               }
             })
+
+            const existingBlockConfig = getBlock(existingBlock.type)
+            if (existingBlockConfig) {
+              updateCanonicalModesForInputs(
+                existingBlock,
+                Object.keys(validationResult.validInputs),
+                existingBlockConfig
+              )
+            }
           }
         } else {
           // Special container types (loop, parallel) are not in the block registry but are valid
