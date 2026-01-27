@@ -38,7 +38,7 @@ export type UserKnowledgeBaseAccess = Pick<
 export interface CreateKnowledgeBaseData {
   name: string
   description?: string
-  workspaceId?: string
+  workspaceId: string
   embeddingModel: 'text-embedding-3-small'
   embeddingDimension: 1536
   chunkingConfig: ChunkingConfig

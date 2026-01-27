@@ -8,6 +8,7 @@ const logger = createLogger('EdgeManager')
 
 export class EdgeManager {
   private deactivatedEdges = new Set<string>()
+  private nodesWithActivatedEdge = new Set<string>()
 
   constructor(private dag: DAG) {}
 
@@ -34,6 +35,11 @@ export class EdgeManager {
       }
 
       activatedTargets.push(edge.target)
+    }
+
+    // Track nodes that have received at least one activated edge
+    for (const targetId of activatedTargets) {
+      this.nodesWithActivatedEdge.add(targetId)
     }
 
     const cascadeTargets = new Set<string>()
@@ -72,6 +78,18 @@ export class EdgeManager {
       }
     }
 
+    // Check if any deactivation targets that previously received an activated edge are now ready
+    for (const { target } of edgesToDeactivate) {
+      if (
+        !readyNodes.includes(target) &&
+        !activatedTargets.includes(target) &&
+        this.nodesWithActivatedEdge.has(target) &&
+        this.isTargetReady(target)
+      ) {
+        readyNodes.push(target)
+      }
+    }
+
     return readyNodes
   }
 
@@ -91,6 +109,7 @@ export class EdgeManager {
 
   clearDeactivatedEdges(): void {
     this.deactivatedEdges.clear()
+    this.nodesWithActivatedEdge.clear()
   }
 
   /**
@@ -108,6 +127,10 @@ export class EdgeManager {
     }
     for (const edgeKey of edgesToRemove) {
       this.deactivatedEdges.delete(edgeKey)
+    }
+    // Also clear activated edge tracking for these nodes
+    for (const nodeId of nodeIds) {
+      this.nodesWithActivatedEdge.delete(nodeId)
     }
   }
 
@@ -225,7 +248,11 @@ export class EdgeManager {
       cascadeTargets?.add(targetId)
     }
 
-    if (this.hasActiveIncomingEdges(targetNode, edgeKey)) {
+    // Don't cascade if node has active incoming edges OR has received an activated edge
+    if (
+      this.hasActiveIncomingEdges(targetNode, edgeKey) ||
+      this.nodesWithActivatedEdge.has(targetId)
+    ) {
       return
     }
 

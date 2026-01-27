@@ -37,7 +37,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
 import { useTemplateEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/preview'
+import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { getBlock } from '@/blocks/registry'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
 
@@ -331,7 +331,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
 
     try {
       return (
-        <WorkflowPreview
+        <PreviewWorkflow
           workflowState={template.state}
           height='100%'
           width='100%'

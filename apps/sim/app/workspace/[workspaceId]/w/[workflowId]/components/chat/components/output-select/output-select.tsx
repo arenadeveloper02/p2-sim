@@ -162,8 +162,14 @@ export function OutputSelect({
         }
 
         const toolOutputs = blockConfig ? getToolOutputs(blockConfig, subBlocks) : {}
+        // Prefer block outputs when they exist, as they define the user-facing API
+        // Fall back to tool outputs only if block outputs are not defined
         outputsToProcess =
-          Object.keys(toolOutputs).length > 0 ? toolOutputs : blockConfig?.outputs || {}
+          blockConfig?.outputs && Object.keys(blockConfig.outputs).length > 0
+            ? blockConfig.outputs
+            : Object.keys(toolOutputs).length > 0
+              ? toolOutputs
+              : {}
       }
 
       if (Object.keys(outputsToProcess).length === 0) return
