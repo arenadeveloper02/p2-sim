@@ -29,6 +29,7 @@ import type {
 } from '@/executor/types'
 import { streamingResponseFormatProcessor } from '@/executor/utils'
 import { buildBlockExecutionError, normalizeError } from '@/executor/utils/errors'
+import { isJSONString } from '@/executor/utils/json'
 import { filterOutputForLog } from '@/executor/utils/output-filter'
 import { validateBlockType } from '@/executor/utils/permission-check'
 import type { VariableResolver } from '@/executor/variables/resolver'
@@ -118,7 +119,7 @@ export class BlockExecutor {
       resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
 
       if (blockLog) {
-        blockLog.input = resolvedInputs
+        blockLog.input = this.parseJsonInputs(resolvedInputs)
       }
     } catch (error) {
       cleanupSelfReference?.()
@@ -245,7 +246,14 @@ export class BlockExecutor {
         const displayOutput = filterOutputForLog(block.metadata?.id || '', normalizedOutput, {
           block,
         })
-        this.callOnBlockComplete(ctx, node, block, resolvedInputs, displayOutput, duration)
+        this.callOnBlockComplete(
+          ctx,
+          node,
+          block,
+          this.parseJsonInputs(resolvedInputs),
+          displayOutput,
+          duration
+        )
       }
 
       return normalizedOutput
@@ -321,7 +329,7 @@ export class BlockExecutor {
       blockLog.durationMs = duration
       blockLog.success = false
       blockLog.error = errorMessage
-      blockLog.input = input
+      blockLog.input = this.parseJsonInputs(input)
       blockLog.output = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
     }
 
@@ -336,7 +344,14 @@ export class BlockExecutor {
 
     if (!isSentinel) {
       const displayOutput = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
-      this.callOnBlockComplete(ctx, node, block, input, displayOutput, duration)
+      this.callOnBlockComplete(
+        ctx,
+        node,
+        block,
+        this.parseJsonInputs(input),
+        displayOutput,
+        duration
+      )
     }
 
     const hasErrorPort = this.hasErrorPortEdge(node)
@@ -440,7 +455,7 @@ export class BlockExecutor {
       return filtered
     }
 
-    if (isTriggerBehavior(block)) {
+    if (isWorkflowBlockType(block.metadata?.id)) {
       const filtered: NormalizedBlockOutput = {}
       const internalKeys = ['webhook', 'workflowId']
       for (const [key, value] of Object.entries(output)) {
