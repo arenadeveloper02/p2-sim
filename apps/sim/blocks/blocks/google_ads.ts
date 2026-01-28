@@ -5,12 +5,14 @@ import type { GoogleAdsResponse } from '@/tools/google_ads/types'
 // Google Ads accounts configuration
 export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   ami: { id: '7284380454', name: 'AMI' },
+  bc_engine_brake: { id: '8577930930', name: 'B.C. LTD. (BD Engine Brake)' },
   au_eventgroove_products: { id: '3365918329', name: 'AU - Eventgroove Products' },
   ca_eventgroove_products: { id: '5197514377', name: 'CA - Eventgroove Products' },
   capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
   careadvantage: { id: '9059182052', name: 'CareAdvantage' },
   chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
   covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
+  d_j_precision_machine: { id: '1369614', name: 'D&J Precision Machine LLC' },
   cpic: { id: '1757492986', name: 'CPIC' },
   daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
   dental_care_associates: { id: '2771541197', name: 'Dental Care Associates' },

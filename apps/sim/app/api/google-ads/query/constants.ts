@@ -1,6 +1,7 @@
 // Google Ads accounts configuration - matching Python script
 export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   ami: { id: '7284380454', name: 'AMI' },
+  bc_engine_brake: { id: '8577930930', name: 'B.C. LTD. (BD Engine Brake)' },
   heartland: { id: '4479015711', name: 'Heartland' },
   nhi: { id: '2998186794', name: 'NHI' },
   oic_culpeper: { id: '8226685899', name: 'OIC-Culpeper' },
@@ -32,6 +33,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   plastic_surgery_center_hr: { id: '1105892184', name: 'Plastic Surgery Center of Hampton Roads' },
   epstein: { id: '1300586568', name: 'EPSTEIN' },
   covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
+  d_j_precision_machine: { id: '1369614', name: 'D&J Precision Machine LLC' },
   gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
   great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
   dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
