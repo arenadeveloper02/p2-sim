@@ -29,7 +29,14 @@ export class LoopResolver implements Resolver {
     }
   }
 
-  private static KNOWN_PROPERTIES = ['iteration', 'index', 'item', 'currentItem', 'items']
+  private static KNOWN_PROPERTIES = [
+    'iteration',
+    'index',
+    'item',
+    'currentItem',
+    'items',
+    'results',
+  ]
 
   canResolve(reference: string): boolean {
     if (!isReference(reference)) {
@@ -114,7 +121,9 @@ export class LoopResolver implements Resolver {
 
     // property and pathParts are already destructured on line 58
     if (!LoopResolver.KNOWN_PROPERTIES.includes(property)) {
-      const availableFields = isForEach ? ['index', 'currentItem', 'items'] : ['index']
+      const availableFields = isForEach
+        ? ['index', 'currentItem', 'items', 'results']
+        : ['index', 'results']
       throw new InvalidFieldError('loop', property, availableFields)
     }
 

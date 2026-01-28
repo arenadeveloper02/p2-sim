@@ -6,6 +6,7 @@ import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { getHostedModels } from '@/providers/models'
+import { getApiKey } from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers/store'
 
 const logger = createLogger('BYOKKeys')
@@ -99,7 +100,8 @@ export async function getApiKeyWithBYOK(
 
       if (isModelHosted) {
         try {
-          const serverKey = getRotatingApiKey(isGeminiModel ? 'gemini' : provider)
+          // Use Google rotation namespace for Gemini models
+          const serverKey = getRotatingApiKey(isGeminiModel ? 'google' : provider)
           return { apiKey: serverKey, isBYOK: false }
         } catch (_error) {
           if (userProvidedKey) {
@@ -112,6 +114,15 @@ export async function getApiKeyWithBYOK(
   }
 
   if (!userProvidedKey) {
+    const isBYOKSupportedProvider =
+      isOpenAIModel || isClaudeModel || isGeminiModel || isMistralModel
+
+    // For non-BYOK providers (e.g. xai, sambanova, groq, etc.), fall back to env-based key resolution
+    if (!isBYOKSupportedProvider) {
+      const apiKey = getApiKey(provider, model)
+      return { apiKey, isBYOK: false }
+    }
+
     logger.debug('BYOK not applicable, no user key provided', {
       provider,
       model,
