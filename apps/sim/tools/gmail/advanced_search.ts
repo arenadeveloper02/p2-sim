@@ -20,7 +20,7 @@ function extractClientDomain(query: string): string | null {
   if (matches && matches.length > 0) {
     // Extract domain from first email found
     const domainMatch = matches[0].match(/@([\w.-]+\.[\w.-]+)/i)
-    if (domainMatch && domainMatch[1]) {
+    if (domainMatch?.[1]) {
       return domainMatch[1]
     }
   }
