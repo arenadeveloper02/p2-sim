@@ -1176,7 +1176,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'cerebras',
     name: 'Cerebras',
     description: 'Cerebras Cloud LLMs',
-    defaultModel: 'cerebras/llama-3.3-70b',
+    defaultModel: 'cerebras/gpt-oss-120b',
     modelPatterns: [/^cerebras/],
     icon: CerebrasIcon,
     capabilities: {
@@ -1184,44 +1184,64 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
-        id: 'cerebras/llama-3.1-8b',
+        id: 'cerebras/gpt-oss-120b',
+        pricing: {
+          input: 0.35,
+          output: 0.75,
+          updatedAt: '2026-01-27',
+        },
+        capabilities: {},
+        contextWindow: 131000,
+      },
+      {
+        id: 'cerebras/llama3.1-8b',
         pricing: {
           input: 0.1,
           output: 0.1,
-          updatedAt: '2025-10-11',
+          updatedAt: '2026-01-27',
         },
         capabilities: {},
         contextWindow: 32000,
       },
       {
-        id: 'cerebras/llama-3.1-70b',
-        pricing: {
-          input: 0.6,
-          output: 0.6,
-          updatedAt: '2025-10-11',
-        },
-        capabilities: {},
-        contextWindow: 128000,
-      },
-      {
         id: 'cerebras/llama-3.3-70b',
         pricing: {
-          input: 0.6,
-          output: 0.6,
-          updatedAt: '2025-10-11',
+          input: 0.85,
+          output: 1.2,
+          updatedAt: '2026-01-27',
         },
         capabilities: {},
         contextWindow: 128000,
       },
       {
-        id: 'cerebras/llama-4-scout-17b-16e-instruct',
+        id: 'cerebras/qwen-3-32b',
         pricing: {
-          input: 0.11,
-          output: 0.34,
-          updatedAt: '2025-10-11',
+          input: 0.4,
+          output: 0.8,
+          updatedAt: '2026-01-27',
         },
         capabilities: {},
-        contextWindow: 10000000,
+        contextWindow: 131000,
+      },
+      {
+        id: 'cerebras/qwen-3-235b-a22b-instruct-2507',
+        pricing: {
+          input: 0.6,
+          output: 1.2,
+          updatedAt: '2026-01-27',
+        },
+        capabilities: {},
+        contextWindow: 131000,
+      },
+      {
+        id: 'cerebras/zai-glm-4.7',
+        pricing: {
+          input: 2.25,
+          output: 2.75,
+          updatedAt: '2026-01-27',
+        },
+        capabilities: {},
+        contextWindow: 131000,
       },
     ],
   },
