@@ -89,3 +89,28 @@ export const gmailMoveTool: ToolConfig<GmailMoveParams, GmailToolResponse> = {
     },
   },
 }
+
+export const gmailMoveV2Tool: ToolConfig<GmailMoveParams, GmailToolResponse> = {
+  id: 'gmail_move_v2',
+  name: 'Gmail Move',
+  description: 'Move emails between Gmail labels/folders',
+  version: '2.0.0',
+  oauth: gmailMoveTool.oauth,
+  params: gmailMoveTool.params,
+  request: gmailMoveTool.request,
+  transformResponse: async (response: Response, params?: GmailMoveParams) => {
+    return await gmailMoveTool.transformResponse!(response, params)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

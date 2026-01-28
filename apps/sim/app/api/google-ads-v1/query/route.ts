@@ -8,7 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
-import { generateGAQLQuery, extractDateRange } from './query-generation'
+import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
 

@@ -1,36 +1,45 @@
 import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useQuery } from '@tanstack/react-query'
 import { Loader2, WrenchIcon, XIcon } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
   Badge,
   Combobox,
+  type ComboboxOption,
   type ComboboxOptionGroup,
   Popover,
   PopoverContent,
   PopoverItem,
   PopoverTrigger,
+  Switch,
   Tooltip,
 } from '@/components/emcn'
-import { McpIcon } from '@/components/icons'
-import { Switch } from '@/components/ui/switch'
+import { McpIcon, WorkflowIcon } from '@/components/icons'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  getIssueBadgeLabel,
+  getIssueBadgeVariant,
+  isToolUnavailable,
+  getMcpToolIssue as validateMcpTool,
+} from '@/lib/mcp/tool-validation'
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
   type OAuthProvider,
   type OAuthService,
 } from '@/lib/oauth'
+import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   CheckboxList,
   Code,
-  ComboBox,
   FileSelectorInput,
   FileUpload,
+  FolderSelectorInput,
   LongInput,
   ProjectSelectorInput,
+  SheetSelectorInput,
   ShortInput,
   SlackSelectorInput,
   SliderInput,
@@ -38,7 +47,9 @@ import {
   TimeInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
 import { DocumentSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/document-selector/document-selector'
+import { DocumentTagEntry } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/document-tag-entry/document-tag-entry'
 import { KnowledgeBaseSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/knowledge-base-selector/knowledge-base-selector'
+import { KnowledgeTagFilters } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/knowledge-tag-filters/knowledge-tag-filters'
 import {
   type CustomTool,
   CustomToolModal,
@@ -46,15 +57,21 @@ import {
 import { ToolCredentialSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tool-credential-selector'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { getAllBlocks } from '@/blocks'
+import { useMcpTools } from '@/hooks/mcp/use-mcp-tools'
 import {
   type CustomTool as CustomToolDefinition,
   useCustomTools,
 } from '@/hooks/queries/custom-tools'
-import { useMcpServers } from '@/hooks/queries/mcp'
-import { useWorkflows } from '@/hooks/queries/workflows'
-import { useMcpTools } from '@/hooks/use-mcp-tools'
+import { useForceRefreshMcpTools, useMcpServers, useStoredMcpTools } from '@/hooks/queries/mcp'
+import {
+  useChildDeploymentStatus,
+  useDeployChildWorkflow,
+  useWorkflowState,
+  useWorkflows,
+} from '@/hooks/queries/workflows'
+import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { getProviderFromModel, supportsToolUsageControl } from '@/providers/utils'
-import { useSettingsModalStore } from '@/stores/settings-modal/store'
+import { useSettingsModalStore } from '@/stores/modals/settings/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import {
   formatParameterLabel,
@@ -62,6 +79,13 @@ import {
   isPasswordParameter,
   type ToolParameterConfig,
 } from '@/tools/params'
+import {
+  buildCanonicalIndex,
+  buildPreviewContextValues,
+  type CanonicalIndex,
+  evaluateSubBlockCondition,
+  type SubBlockCondition,
+} from '@/tools/params-resolver'
 
 const logger = createLogger('ToolInput')
 
@@ -205,7 +229,7 @@ function GenericSyncWrapper<T = unknown>({
   const [storeValue] = useSubBlockValue(blockId, paramId)
 
   useEffect(() => {
-    if (storeValue) {
+    if (storeValue != null) {
       const transformedValue = transformer ? transformer(storeValue) : String(storeValue)
       if (transformedValue !== value) {
         onChange(transformedValue)
@@ -254,6 +278,79 @@ function FileSelectorSyncWrapper({
   )
 }
 
+function SheetSelectorSyncWrapper({
+  blockId,
+  paramId,
+  value,
+  onChange,
+  uiComponent,
+  disabled,
+  previewContextValues,
+}: {
+  blockId: string
+  paramId: string
+  value: string
+  onChange: (value: string) => void
+  uiComponent: any
+  disabled: boolean
+  previewContextValues?: Record<string, any>
+}) {
+  return (
+    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
+      <SheetSelectorInput
+        blockId={blockId}
+        subBlock={{
+          id: paramId,
+          type: 'sheet-selector' as const,
+          title: paramId,
+          serviceId: uiComponent.serviceId,
+          requiredScopes: uiComponent.requiredScopes || [],
+          placeholder: uiComponent.placeholder,
+          dependsOn: uiComponent.dependsOn,
+        }}
+        disabled={disabled}
+        previewContextValues={previewContextValues}
+      />
+    </GenericSyncWrapper>
+  )
+}
+
+function FolderSelectorSyncWrapper({
+  blockId,
+  paramId,
+  value,
+  onChange,
+  uiComponent,
+  disabled,
+  previewContextValues,
+}: {
+  blockId: string
+  paramId: string
+  value: string
+  onChange: (value: string) => void
+  uiComponent: any
+  disabled: boolean
+  previewContextValues?: Record<string, any>
+}) {
+  return (
+    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
+      <FolderSelectorInput
+        blockId={blockId}
+        subBlock={{
+          id: paramId,
+          type: 'folder-selector' as const,
+          title: paramId,
+          serviceId: uiComponent.serviceId,
+          requiredScopes: uiComponent.requiredScopes || [],
+          placeholder: uiComponent.placeholder,
+          dependsOn: uiComponent.dependsOn,
+        }}
+        disabled={disabled}
+      />
+    </GenericSyncWrapper>
+  )
+}
+
 function KnowledgeBaseSelectorSyncWrapper({
   blockId,
   paramId,
@@ -292,6 +389,7 @@ function DocumentSelectorSyncWrapper({
   onChange,
   uiComponent,
   disabled,
+  previewContextValues,
 }: {
   blockId: string
   paramId: string
@@ -299,6 +397,7 @@ function DocumentSelectorSyncWrapper({
   onChange: (value: string) => void
   uiComponent: any
   disabled: boolean
+  previewContextValues?: Record<string, any>
 }) {
   return (
     <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
@@ -311,6 +410,67 @@ function DocumentSelectorSyncWrapper({
           dependsOn: ['knowledgeBaseId'],
         }}
         disabled={disabled}
+        previewContextValues={previewContextValues}
+      />
+    </GenericSyncWrapper>
+  )
+}
+
+function DocumentTagEntrySyncWrapper({
+  blockId,
+  paramId,
+  value,
+  onChange,
+  disabled,
+  previewContextValues,
+}: {
+  blockId: string
+  paramId: string
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+  previewContextValues?: Record<string, any>
+}) {
+  return (
+    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
+      <DocumentTagEntry
+        blockId={blockId}
+        subBlock={{
+          id: paramId,
+          type: 'document-tag-entry',
+        }}
+        disabled={disabled}
+        previewContextValues={previewContextValues}
+      />
+    </GenericSyncWrapper>
+  )
+}
+
+function KnowledgeTagFiltersSyncWrapper({
+  blockId,
+  paramId,
+  value,
+  onChange,
+  disabled,
+  previewContextValues,
+}: {
+  blockId: string
+  paramId: string
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+  previewContextValues?: Record<string, any>
+}) {
+  return (
+    <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
+      <KnowledgeTagFilters
+        blockId={blockId}
+        subBlock={{
+          id: paramId,
+          type: 'knowledge-tag-filters',
+        }}
+        disabled={disabled}
+        previewContextValues={previewContextValues}
       />
     </GenericSyncWrapper>
   )
@@ -461,18 +621,17 @@ function ComboboxSyncWrapper({
   uiComponent: any
   disabled: boolean
 }) {
+  const options = (uiComponent.options || []).map((opt: any) =>
+    typeof opt === 'string' ? { label: opt, value: opt } : { label: opt.label, value: opt.id }
+  )
+
   return (
     <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
-      <ComboBox
-        blockId={blockId}
-        subBlockId={paramId}
-        options={uiComponent.options || []}
-        placeholder={uiComponent.placeholder}
-        config={{
-          id: paramId,
-          type: 'combobox' as const,
-          title: paramId,
-        }}
+      <Combobox
+        options={options}
+        value={value}
+        onChange={onChange}
+        placeholder={uiComponent.placeholder || 'Select option'}
         disabled={disabled}
       />
     </GenericSyncWrapper>
@@ -514,7 +673,7 @@ function FileUploadSyncWrapper({
   )
 }
 
-function ChannelSelectorSyncWrapper({
+function SlackSelectorSyncWrapper({
   blockId,
   paramId,
   value,
@@ -522,6 +681,7 @@ function ChannelSelectorSyncWrapper({
   uiComponent,
   disabled,
   previewContextValues,
+  selectorType,
 }: {
   blockId: string
   paramId: string
@@ -530,6 +690,7 @@ function ChannelSelectorSyncWrapper({
   uiComponent: any
   disabled: boolean
   previewContextValues?: Record<string, any>
+  selectorType: 'channel-selector' | 'user-selector'
 }) {
   return (
     <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
@@ -537,7 +698,7 @@ function ChannelSelectorSyncWrapper({
         blockId={blockId}
         subBlock={{
           id: paramId,
-          type: 'channel-selector' as const,
+          type: selectorType,
           title: paramId,
           serviceId: uiComponent.serviceId,
           placeholder: uiComponent.placeholder,
@@ -578,24 +739,19 @@ function WorkflowSelectorSyncWrapper({
 
   const options = availableWorkflows.map((workflow) => ({
     label: workflow.name,
-    id: workflow.id,
+    value: workflow.id,
   }))
 
   return (
     <GenericSyncWrapper blockId={blockId} paramId={paramId} value={value} onChange={onChange}>
-      <ComboBox
-        blockId={blockId}
-        subBlockId={paramId}
+      <Combobox
         options={options}
         value={value}
+        onChange={onChange}
         placeholder={uiComponent.placeholder || 'Select workflow'}
         disabled={disabled || isLoading}
-        config={{
-          id: paramId,
-          type: 'combobox',
-          options: options,
-          placeholder: uiComponent.placeholder || 'Select workflow',
-        }}
+        searchable
+        searchPlaceholder='Search workflows...'
       />
     </GenericSyncWrapper>
   )
@@ -616,56 +772,11 @@ function WorkflowInputMapperSyncWrapper({
   disabled: boolean
   workflowId: string
 }) {
-  const { data: workflowData, isLoading } = useQuery({
-    queryKey: ['workflow-input-fields', workflowId],
-    queryFn: async () => {
-      const response = await fetch(`/api/workflows/${workflowId}`)
-      if (!response.ok) throw new Error('Failed to fetch workflow')
-      const { data } = await response.json()
-      return data
-    },
-    enabled: Boolean(workflowId),
-    staleTime: 60 * 1000,
-  })
-
-  const inputFields = useMemo(() => {
-    if (!workflowData?.state?.blocks) return []
-
-    const blocks = workflowData.state.blocks as Record<string, any>
-
-    const triggerEntry = Object.entries(blocks).find(
-      ([, block]) =>
-        block.type === 'start_trigger' || block.type === 'input_trigger' || block.type === 'starter'
-    )
-
-    if (!triggerEntry) return []
-
-    const triggerBlock = triggerEntry[1]
-
-    const inputFormat = triggerBlock.subBlocks?.inputFormat?.value
-
-    if (Array.isArray(inputFormat)) {
-      return inputFormat
-        .filter((field: any) => field.name && typeof field.name === 'string')
-        .map((field: any) => ({
-          name: field.name,
-          type: field.type || 'string',
-        }))
-    }
-
-    const legacyFormat = triggerBlock.config?.params?.inputFormat
-
-    if (Array.isArray(legacyFormat)) {
-      return legacyFormat
-        .filter((field: any) => field.name && typeof field.name === 'string')
-        .map((field: any) => ({
-          name: field.name,
-          type: field.type || 'string',
-        }))
-    }
-
-    return []
-  }, [workflowData])
+  const { data: workflowState, isLoading } = useWorkflowState(workflowId)
+  const inputFields = useMemo(
+    () => (workflowState?.blocks ? extractInputFieldsFromBlocks(workflowState.blocks) : []),
+    [workflowState?.blocks]
+  )
 
   const parsedValue = useMemo(() => {
     try {
@@ -685,7 +796,7 @@ function WorkflowInputMapperSyncWrapper({
 
   if (!workflowId) {
     return (
-      <div className='rounded-md border border-gray-600/50 bg-gray-900/20 p-4 text-center text-gray-400 text-sm'>
+      <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
         Select a workflow to configure its inputs
       </div>
     )
@@ -693,15 +804,15 @@ function WorkflowInputMapperSyncWrapper({
 
   if (isLoading) {
     return (
-      <div className='flex items-center justify-center rounded-md border border-gray-600/50 bg-gray-900/20 p-8'>
-        <Loader2 className='h-5 w-5 animate-spin text-gray-400' />
+      <div className='flex items-center justify-center rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-8'>
+        <Loader2 className='h-5 w-5 animate-spin text-[var(--text-muted)]' />
       </div>
     )
   }
 
   if (inputFields.length === 0) {
     return (
-      <div className='rounded-md border border-gray-600/50 bg-gray-900/20 p-4 text-center text-gray-400 text-sm'>
+      <div className='rounded-md border border-[var(--border-1)] border-dashed bg-[var(--surface-3)] p-4 text-center text-[var(--text-muted)] text-sm'>
         This workflow has no custom input fields
       </div>
     )
@@ -768,6 +879,77 @@ function CodeEditorSyncWrapper({
 }
 
 /**
+ * Badge component showing deployment status for workflow tools
+ */
+function WorkflowToolDeployBadge({
+  workflowId,
+  onDeploySuccess,
+}: {
+  workflowId: string
+  onDeploySuccess?: () => void
+}) {
+  const { data, isLoading } = useChildDeploymentStatus(workflowId)
+  const deployMutation = useDeployChildWorkflow()
+  const userPermissions = useUserPermissionsContext()
+
+  const isDeployed = data?.isDeployed ?? null
+  const needsRedeploy = data?.needsRedeploy ?? false
+  const isDeploying = deployMutation.isPending
+
+  const deployWorkflow = useCallback(() => {
+    if (isDeploying || !workflowId || !userPermissions.canAdmin) return
+
+    deployMutation.mutate(
+      { workflowId },
+      {
+        onSuccess: () => {
+          onDeploySuccess?.()
+        },
+      }
+    )
+  }, [isDeploying, workflowId, userPermissions.canAdmin, deployMutation, onDeploySuccess])
+
+  if (isLoading || (isDeployed && !needsRedeploy)) {
+    return null
+  }
+
+  if (typeof isDeployed !== 'boolean') {
+    return null
+  }
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <Badge
+          variant={!isDeployed ? 'red' : 'amber'}
+          className={userPermissions.canAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}
+          size='sm'
+          dot
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation()
+            e.preventDefault()
+            if (!isDeploying && userPermissions.canAdmin) {
+              deployWorkflow()
+            }
+          }}
+        >
+          {isDeploying ? 'Deploying...' : !isDeployed ? 'undeployed' : 'redeploy'}
+        </Badge>
+      </Tooltip.Trigger>
+      <Tooltip.Content>
+        <span className='text-sm'>
+          {!userPermissions.canAdmin
+            ? 'Admin permission required to deploy'
+            : !isDeployed
+              ? 'Click to deploy'
+              : 'Click to redeploy'}
+        </span>
+      </Tooltip.Content>
+    </Tooltip.Root>
+  )
+}
+
+/**
  * Set of built-in tool types that are core platform tools.
  *
  * @remarks
@@ -775,6 +957,7 @@ function CodeEditorSyncWrapper({
  * in the tool selection dropdown.
  */
 const BUILT_IN_TOOL_TYPES = new Set([
+  'api',
   'file',
   'function',
   'knowledge',
@@ -787,6 +970,7 @@ const BUILT_IN_TOOL_TYPES = new Set([
   'tts',
   'stt',
   'memory',
+  'webhook_request',
   'workflow',
 ])
 
@@ -819,7 +1003,7 @@ function createToolIcon(bgColor: string, IconComponent: any) {
  * - Allows drag-and-drop reordering of selected tools
  * - Supports tool usage control (auto/force/none) for compatible LLM providers
  */
-export function ToolInput({
+export const ToolInput = memo(function ToolInput({
   blockId,
   subBlockId,
   isPreview = false,
@@ -837,7 +1021,22 @@ export function ToolInput({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [usageControlPopoverIndex, setUsageControlPopoverIndex] = useState<number | null>(null)
-  const { data: customTools = [] } = useCustomTools(workspaceId)
+
+  const value = isPreview ? previewValue : storeValue
+
+  const selectedTools: StoredTool[] =
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value[0] !== null &&
+    typeof value[0]?.type === 'string'
+      ? (value as StoredTool[])
+      : []
+
+  const hasReferenceOnlyCustomTools = selectedTools.some(
+    (tool) => tool.type === 'custom-tool' && tool.customToolId && !tool.code
+  )
+  const shouldFetchCustomTools = !isPreview || hasReferenceOnlyCustomTools
+  const { data: customTools = [] } = useCustomTools(shouldFetchCustomTools ? workspaceId : '')
 
   const {
     mcpTools,
@@ -847,30 +1046,63 @@ export function ToolInput({
   } = useMcpTools(workspaceId)
 
   const { data: mcpServers = [], isLoading: mcpServersLoading } = useMcpServers(workspaceId)
+  const { data: storedMcpTools = [] } = useStoredMcpTools(workspaceId)
+  const forceRefreshMcpTools = useForceRefreshMcpTools()
   const openSettingsModal = useSettingsModalStore((state) => state.openModal)
   const mcpDataLoading = mcpLoading || mcpServersLoading
 
+  // Fetch workflows for the Workflows section in the dropdown
+  const { data: workflowsList = [] } = useWorkflows(workspaceId, { syncRegistry: false })
+  const availableWorkflows = useMemo(
+    () => workflowsList.filter((w) => w.id !== workflowId),
+    [workflowsList, workflowId]
+  )
+  const hasRefreshedRef = useRef(false)
+
+  const hasMcpTools = selectedTools.some((tool) => tool.type === 'mcp')
+
+  useEffect(() => {
+    if (isPreview) return
+    if (hasMcpTools && !hasRefreshedRef.current) {
+      hasRefreshedRef.current = true
+      forceRefreshMcpTools(workspaceId)
+    }
+  }, [hasMcpTools, forceRefreshMcpTools, workspaceId, isPreview])
+
   /**
-   * Returns issue info for an MCP tool using shared validation logic.
+   * Returns issue info for an MCP tool.
+   * Uses DB schema (storedMcpTools) when available for real-time updates after refresh,
+   * otherwise falls back to Zustand schema (tool.schema) which is always available.
    */
   const getMcpToolIssue = useCallback(
     (tool: StoredTool) => {
       if (tool.type !== 'mcp') return null
 
-      const { getMcpToolIssue: validateTool } = require('@/lib/mcp/tool-validation')
+      const serverId = tool.params?.serverId as string
+      const toolName = tool.params?.toolName as string
 
-      return validateTool(
+      // Try to get fresh schema from DB (enables real-time updates after MCP refresh)
+      const storedTool =
+        storedMcpTools.find(
+          (st) =>
+            st.serverId === serverId && st.toolName === toolName && st.workflowId === workflowId
+        ) || storedMcpTools.find((st) => st.serverId === serverId && st.toolName === toolName)
+
+      // Use DB schema if available, otherwise use Zustand schema
+      const schema = storedTool?.schema ?? tool.schema
+
+      return validateMcpTool(
         {
-          serverId: tool.params?.serverId as string,
+          serverId,
           serverUrl: tool.params?.serverUrl as string | undefined,
-          toolName: tool.params?.toolName as string,
-          schema: tool.schema,
+          toolName,
+          schema,
         },
         mcpServers.map((s) => ({
           id: s.id,
           url: s.url,
           connectionStatus: s.connectionStatus,
-          lastError: s.lastError,
+          lastError: s.lastError ?? undefined,
         })),
         mcpTools.map((t) => ({
           serverId: t.serverId,
@@ -879,20 +1111,12 @@ export function ToolInput({
         }))
       )
     },
-    [mcpTools, mcpServers]
+    [mcpTools, mcpServers, storedMcpTools, workflowId]
   )
 
   const isMcpToolUnavailable = useCallback(
     (tool: StoredTool): boolean => {
-      const { isToolUnavailable } = require('@/lib/mcp/tool-validation')
       return isToolUnavailable(getMcpToolIssue(tool))
-    },
-    [getMcpToolIssue]
-  )
-
-  const hasMcpToolIssue = useCallback(
-    (tool: StoredTool): boolean => {
-      return getMcpToolIssue(tool) !== null
     },
     [getMcpToolIssue]
   )
@@ -911,23 +1135,40 @@ export function ToolInput({
   const provider = model ? getProviderFromModel(model) : ''
   const supportsToolControl = provider ? supportsToolUsageControl(provider) : false
 
-  const toolBlocks = getAllBlocks().filter(
-    (block) =>
-      (block.category === 'tools' ||
-        block.type === 'workflow' ||
-        block.type === 'knowledge' ||
-        block.type === 'function') &&
-      block.type !== 'evaluator' &&
-      block.type !== 'mcp' &&
-      block.type !== 'file'
-  )
+  const { filterBlocks, config: permissionConfig } = usePermissionConfig()
 
-  const value = isPreview ? previewValue : storeValue
+  const toolBlocks = useMemo(() => {
+    const allToolBlocks = getAllBlocks().filter(
+      (block) =>
+        !block.hideFromToolbar &&
+        (block.category === 'tools' ||
+          block.type === 'api' ||
+          block.type === 'webhook_request' ||
+          block.type === 'workflow' ||
+          block.type === 'workflow_input' ||
+          block.type === 'knowledge' ||
+          block.type === 'function') &&
+        block.type !== 'evaluator' &&
+        block.type !== 'mcp' &&
+        block.type !== 'file'
+    )
+    return filterBlocks(allToolBlocks)
+  }, [filterBlocks])
 
-  const selectedTools: StoredTool[] =
-    Array.isArray(value) && value.length > 0 && typeof value[0] === 'object'
-      ? (value as unknown as StoredTool[])
-      : []
+  const customFilter = useCallback((value: string, search: string) => {
+    if (!search.trim()) return 1
+
+    const normalizedValue = value.toLowerCase()
+    const normalizedSearch = search.toLowerCase()
+
+    if (normalizedValue === normalizedSearch) return 1
+
+    if (normalizedValue.startsWith(normalizedSearch)) return 0.8
+
+    if (normalizedValue.includes(normalizedSearch)) return 0.6
+
+    return 0
+  }, [])
 
   const hasBackfilledRef = useRef(false)
   useEffect(() => {
@@ -1500,33 +1741,37 @@ export function ToolInput({
     const groups: ComboboxOptionGroup[] = []
 
     // Actions group (no section header)
-    groups.push({
-      items: [
-        {
-          label: 'Create Tool',
-          value: 'action-create-tool',
-          icon: WrenchIcon,
-          onSelect: () => {
-            setCustomToolModalOpen(true)
-            setOpen(false)
-          },
-          disabled: isPreview,
+    const actionItems: ComboboxOption[] = []
+    if (!permissionConfig.disableCustomTools) {
+      actionItems.push({
+        label: 'Create Tool',
+        value: 'action-create-tool',
+        icon: WrenchIcon,
+        onSelect: () => {
+          setCustomToolModalOpen(true)
+          setOpen(false)
         },
-        {
-          label: 'Add MCP Server',
-          value: 'action-add-mcp',
-          icon: McpIcon,
-          onSelect: () => {
-            setOpen(false)
-            window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'mcp' } }))
-          },
-          disabled: isPreview,
+        disabled: isPreview,
+      })
+    }
+    if (!permissionConfig.disableMcpTools) {
+      actionItems.push({
+        label: 'Add MCP Server',
+        value: 'action-add-mcp',
+        icon: McpIcon,
+        onSelect: () => {
+          setOpen(false)
+          window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'mcp' } }))
         },
-      ],
-    })
+        disabled: isPreview,
+      })
+    }
+    if (actionItems.length > 0) {
+      groups.push({ items: actionItems })
+    }
 
     // Custom Tools section
-    if (customTools.length > 0) {
+    if (!permissionConfig.disableCustomTools && customTools.length > 0) {
       groups.push({
         section: 'Custom Tools',
         items: customTools.map((customTool) => ({
@@ -1551,7 +1796,7 @@ export function ToolInput({
     }
 
     // MCP Tools section
-    if (availableMcpTools.length > 0) {
+    if (!permissionConfig.disableMcpTools && availableMcpTools.length > 0) {
       groups.push({
         section: 'MCP Tools',
         items: availableMcpTools.map((mcpTool) => {
@@ -1616,6 +1861,36 @@ export function ToolInput({
       })
     }
 
+    // Workflows section - shows available workflows that can be executed as tools
+    if (availableWorkflows.length > 0) {
+      groups.push({
+        section: 'Workflows',
+        items: availableWorkflows.map((workflow) => ({
+          label: workflow.name,
+          value: `workflow-${workflow.id}`,
+          iconElement: createToolIcon('#6366F1', WorkflowIcon),
+          onSelect: () => {
+            const newTool: StoredTool = {
+              type: 'workflow_input',
+              title: 'Workflow',
+              toolId: 'workflow_executor',
+              params: {
+                workflowId: workflow.id,
+              },
+              isExpanded: true,
+              usageControl: 'auto',
+            }
+            setStoreValue([
+              ...selectedTools.map((tool) => ({ ...tool, isExpanded: false })),
+              newTool,
+            ])
+            setOpen(false)
+          },
+          disabled: isPreview || disabled,
+        })),
+      })
+    }
+
     return groups
   }, [
     customTools,
@@ -1628,6 +1903,9 @@ export function ToolInput({
     setStoreValue,
     handleMcpToolSelect,
     handleSelectTool,
+    permissionConfig.disableCustomTools,
+    permissionConfig.disableMcpTools,
+    availableWorkflows,
   ])
 
   const toolRequiresOAuth = (toolId: string): boolean => {
@@ -1640,57 +1918,13 @@ export function ToolInput({
     return toolParams?.toolConfig?.oauth
   }
 
-  /**
-   * Evaluates parameter conditions to determine if a parameter should be visible.
-   *
-   * @remarks
-   * Supports field value matching with arrays, negation via `not`, and
-   * compound conditions via `and`. Used for conditional parameter visibility.
-   *
-   * @param param - The parameter configuration with optional condition
-   * @param tool - The current tool instance with its parameter values
-   * @returns `true` if the parameter should be shown based on its condition
-   */
   const evaluateParameterCondition = (param: any, tool: StoredTool): boolean => {
     if (!('uiComponent' in param) || !param.uiComponent?.condition) return true
-
-    const condition = param.uiComponent.condition
-    const currentValues: Record<string, any> = {
-      operation: tool.operation,
-      ...tool.params,
-    }
-
-    const fieldValue = currentValues[condition.field]
-    let result = false
-
-    if (Array.isArray(condition.value)) {
-      result = condition.value.includes(fieldValue)
-    } else {
-      result = fieldValue === condition.value
-    }
-
-    if (condition.not) {
-      result = !result
-    }
-
-    if (condition.and) {
-      const andFieldValue = currentValues[condition.and.field]
-      let andResult = false
-
-      if (Array.isArray(condition.and.value)) {
-        andResult = condition.and.value.includes(andFieldValue)
-      } else {
-        andResult = andFieldValue === condition.and.value
-      }
-
-      if (condition.and.not) {
-        andResult = !andResult
-      }
-
-      result = result && andResult
-    }
-
-    return result
+    const currentValues: Record<string, any> = { operation: tool.operation, ...tool.params }
+    return evaluateSubBlockCondition(
+      param.uiComponent.condition as SubBlockCondition,
+      currentValues
+    )
   }
 
   /**
@@ -1802,14 +2036,29 @@ export function ToolInput({
 
       case 'channel-selector':
         return (
-          <ChannelSelectorSyncWrapper
+          <SlackSelectorSyncWrapper
             blockId={blockId}
             paramId={param.id}
             value={value}
             onChange={onChange}
             uiComponent={uiComponent}
             disabled={disabled}
-            previewContextValues={currentToolParams as any}
+            previewContextValues={currentToolParams}
+            selectorType='channel-selector'
+          />
+        )
+
+      case 'user-selector':
+        return (
+          <SlackSelectorSyncWrapper
+            blockId={blockId}
+            paramId={param.id}
+            value={value}
+            onChange={onChange}
+            uiComponent={uiComponent}
+            disabled={disabled}
+            previewContextValues={currentToolParams}
+            selectorType='user-selector'
           />
         )
 
@@ -1825,10 +2074,11 @@ export function ToolInput({
               placeholder: uiComponent.placeholder,
               requiredScopes: uiComponent.requiredScopes,
               dependsOn: uiComponent.dependsOn,
+              canonicalParamId: uiComponent.canonicalParamId ?? param.id,
             }}
             onProjectSelect={onChange}
             disabled={disabled}
-            previewContextValues={currentToolParams as any}
+            previewContextValues={currentToolParams}
           />
         )
 
@@ -1853,7 +2103,33 @@ export function ToolInput({
             onChange={onChange}
             uiComponent={uiComponent}
             disabled={disabled}
-            previewContextValues={currentToolParams as any}
+            previewContextValues={currentToolParams}
+          />
+        )
+
+      case 'sheet-selector':
+        return (
+          <SheetSelectorSyncWrapper
+            blockId={blockId}
+            paramId={param.id}
+            value={value}
+            onChange={onChange}
+            uiComponent={uiComponent}
+            disabled={disabled}
+            previewContextValues={currentToolParams}
+          />
+        )
+
+      case 'folder-selector':
+        return (
+          <FolderSelectorSyncWrapper
+            blockId={blockId}
+            paramId={param.id}
+            value={value}
+            onChange={onChange}
+            uiComponent={uiComponent}
+            disabled={disabled}
+            previewContextValues={currentToolParams}
           />
         )
 
@@ -1991,6 +2267,31 @@ export function ToolInput({
             onChange={onChange}
             uiComponent={uiComponent}
             disabled={disabled}
+            previewContextValues={currentToolParams}
+          />
+        )
+
+      case 'document-tag-entry':
+        return (
+          <DocumentTagEntrySyncWrapper
+            blockId={blockId}
+            paramId={param.id}
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            previewContextValues={currentToolParams}
+          />
+        )
+
+      case 'knowledge-tag-filters':
+        return (
+          <KnowledgeTagFiltersSyncWrapper
+            blockId={blockId}
+            paramId={param.id}
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            previewContextValues={currentToolParams}
           />
         )
 
@@ -2031,9 +2332,10 @@ export function ToolInput({
       {/* Selected Tools List */}
       {selectedTools.length > 0 &&
         selectedTools.map((tool, toolIndex) => {
-          // Handle custom tools and MCP tools differently
+          // Handle custom tools, MCP tools, and workflow tools differently
           const isCustomTool = tool.type === 'custom-tool'
           const isMcpTool = tool.type === 'mcp'
+          const isWorkflowTool = tool.type === 'workflow'
           const toolBlock =
             !isCustomTool && !isMcpTool
               ? toolBlocks.find((block) => block.type === tool.type)
@@ -2048,8 +2350,26 @@ export function ToolInput({
           // Get tool parameters using the new utility with block type for UI components
           const toolParams =
             !isCustomTool && !isMcpTool && currentToolId
-              ? getToolParametersConfig(currentToolId, tool.type)
+              ? getToolParametersConfig(currentToolId, tool.type, {
+                  operation: tool.operation,
+                  ...tool.params,
+                })
               : null
+
+          // Build canonical index for proper dependency resolution
+          const toolCanonicalIndex: CanonicalIndex | null = toolBlock?.subBlocks
+            ? buildCanonicalIndex(toolBlock.subBlocks)
+            : null
+
+          // Build preview context with canonical resolution
+          const toolContextValues = toolCanonicalIndex
+            ? buildPreviewContextValues(tool.params || {}, {
+                blockType: tool.type,
+                subBlocks: toolBlock!.subBlocks,
+                canonicalIndex: toolCanonicalIndex,
+                values: { operation: tool.operation, ...tool.params },
+              })
+            : tool.params || {}
 
           // For custom tools, resolve from reference (new format) or use inline (legacy)
           const resolvedCustomTool = isCustomTool
@@ -2140,7 +2460,7 @@ export function ToolInput({
             >
               <div
                 className={cn(
-                  'flex items-center justify-between gap-[8px] bg-[var(--surface-4)] px-[8px] py-[6.5px]',
+                  'flex items-center justify-between gap-[8px] rounded-t-[4px] bg-[var(--surface-4)] px-[8px] py-[6.5px]',
                   (isCustomTool || hasToolBody) && 'cursor-pointer'
                 )}
                 onClick={() => {
@@ -2159,13 +2479,17 @@ export function ToolInput({
                         ? '#3B82F6'
                         : isMcpTool
                           ? mcpTool?.bgColor || '#6366F1'
-                          : toolBlock?.bgColor,
+                          : isWorkflowTool
+                            ? '#6366F1'
+                            : toolBlock?.bgColor,
                     }}
                   >
                     {isCustomTool ? (
                       <WrenchIcon className='h-[10px] w-[10px] text-white' />
                     ) : isMcpTool ? (
                       <IconComponent icon={McpIcon} className='h-[10px] w-[10px] text-white' />
+                    ) : isWorkflowTool ? (
+                      <IconComponent icon={WorkflowIcon} className='h-[10px] w-[10px] text-white' />
                     ) : (
                       <IconComponent
                         icon={toolBlock?.icon}
@@ -2181,13 +2505,12 @@ export function ToolInput({
                     (() => {
                       const issue = getMcpToolIssue(tool)
                       if (!issue) return null
-                      const { getIssueBadgeLabel } = require('@/lib/mcp/tool-validation')
                       const serverId = tool.params?.serverId
                       return (
                         <Tooltip.Root>
                           <Tooltip.Trigger asChild>
                             <Badge
-                              variant='amber'
+                              variant={getIssueBadgeVariant(issue)}
                               className='cursor-pointer'
                               size='sm'
                               dot
@@ -2200,10 +2523,16 @@ export function ToolInput({
                               {getIssueBadgeLabel(issue)}
                             </Badge>
                           </Tooltip.Trigger>
-                          <Tooltip.Content>{issue.message}: click to open settings</Tooltip.Content>
+                          <Tooltip.Content>
+                            <span className='text-sm'>{issue.message}: click to open settings</span>
+                          </Tooltip.Content>
                         </Tooltip.Root>
                       )
                     })()}
+                  {(tool.type === 'workflow' || tool.type === 'workflow_input') &&
+                    tool.params?.workflowId && (
+                      <WorkflowToolDeployBadge workflowId={tool.params.workflowId} />
+                    )}
                 </div>
                 <div className='flex flex-shrink-0 items-center gap-[8px]'>
                   {supportsToolControl && !(isMcpTool && isMcpToolUnavailable(tool)) && (
@@ -2404,7 +2733,7 @@ export function ToolInput({
                             {param.required && param.visibility === 'user-only' && (
                               <span className='ml-1'>*</span>
                             )}
-                            {(!param.required || param.visibility !== 'user-only') && (
+                            {param.visibility === 'user-or-llm' && (
                               <span className='ml-[6px] text-[12px] text-[var(--text-tertiary)]'>
                                 (optional)
                               </span>
@@ -2417,7 +2746,7 @@ export function ToolInput({
                                 tool.params?.[param.id] || '',
                                 (value) => handleParamChange(toolIndex, param.id, value),
                                 toolIndex,
-                                tool.params || {}
+                                toolContextValues as Record<string, string>
                               )
                             ) : (
                               <ShortInput
@@ -2496,4 +2825,4 @@ export function ToolInput({
       />
     </div>
   )
-}
+})

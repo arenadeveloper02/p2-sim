@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/emcn'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -13,11 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { cn } from '@/lib/core/utils/cn'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
+import { BrandedButton } from '@/app/(auth)/components/branded-button'
 import Footer from '@/app/(landing)/components/footer/footer'
 import Nav from '@/app/(landing)/components/nav/nav'
 
@@ -493,18 +493,17 @@ export default function CareersPage() {
 
               {/* Submit Button */}
               <div className='flex justify-end pt-2'>
-                <Button
+                <BrandedButton
                   type='submit'
                   disabled={isSubmitting || submitStatus === 'success'}
-                  className='min-w-[200px] rounded-[10px] border border-[#6F3DFA] bg-gradient-to-b from-[#8357FF] to-[#6F3DFA] text-white shadow-[inset_0_2px_4px_0_#9B77FF] transition-all duration-300 hover:opacity-90 disabled:opacity-50'
-                  size='lg'
+                  loading={isSubmitting}
+                  loadingText='Submitting'
+                  showArrow={false}
+                  fullWidth={false}
+                  className='min-w-[200px]'
                 >
-                  {isSubmitting
-                    ? 'Submitting...'
-                    : submitStatus === 'success'
-                      ? 'Submitted'
-                      : 'Submit Application'}
-                </Button>
+                  {submitStatus === 'success' ? 'Submitted' : 'Submit Application'}
+                </BrandedButton>
               </div>
             </form>
           </section>

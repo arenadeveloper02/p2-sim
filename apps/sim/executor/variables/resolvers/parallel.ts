@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { isReference, normalizeName, parseReferencePath, REFERENCE } from '@/executor/constants'
+import { InvalidFieldError } from '@/executor/utils/block-reference'
 import { extractBaseBlockId, extractBranchIndex } from '@/executor/utils/subflow-utils'
 import {
   navigatePath,
@@ -28,6 +29,8 @@ export class ParallelResolver implements Resolver {
     }
   }
 
+  private static KNOWN_PROPERTIES = ['index', 'currentItem', 'items']
+
   canResolve(reference: string): boolean {
     if (!isReference(reference)) {
       return false
@@ -47,8 +50,8 @@ export class ParallelResolver implements Resolver {
 
   resolve(reference: string, context: ResolutionContext): any {
     const parts = parseReferencePath(reference)
-    if (parts.length < 2) {
-      logger.warn('Invalid parallel reference - missing property', { reference })
+    if (parts.length === 0) {
+      logger.warn('Invalid parallel reference', { reference })
       return undefined
     }
 
@@ -106,6 +109,30 @@ export class ParallelResolver implements Resolver {
     // This is the same pattern as LoopResolver reading from loopScope.items
     const distributionItems = parallelScope?.items ?? this.getDistributionItems(parallelConfig)
 
+    if (parts.length === 1) {
+      const result: Record<string, any> = {
+        index: branchIndex,
+      }
+      if (distributionItems !== undefined) {
+        result.items = distributionItems
+        if (Array.isArray(distributionItems)) {
+          result.currentItem = distributionItems[branchIndex]
+        } else if (typeof distributionItems === 'object' && distributionItems !== null) {
+          const keys = Object.keys(distributionItems)
+          const key = keys[branchIndex]
+          result.currentItem = key !== undefined ? distributionItems[key] : undefined
+        }
+      }
+      return result
+    }
+
+    // property and pathParts are already destructured from parts at line 58
+    if (!ParallelResolver.KNOWN_PROPERTIES.includes(property)) {
+      const isCollection = parallelConfig.parallelType === 'collection'
+      const availableFields = isCollection ? ['index', 'currentItem', 'items'] : ['index']
+      throw new InvalidFieldError('parallel', property, availableFields)
+    }
+
     let value: any
     switch (property) {
       case 'index':
@@ -125,12 +152,8 @@ export class ParallelResolver implements Resolver {
       case 'items':
         value = distributionItems
         break
-      default:
-        logger.warn('Unknown parallel property', { property })
-        return undefined
     }
 
-    // If there are additional path parts, navigate deeper
     if (pathParts.length > 0) {
       return navigatePath(value, pathParts)
     }

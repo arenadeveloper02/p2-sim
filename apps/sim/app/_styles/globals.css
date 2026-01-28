@@ -5,13 +5,16 @@
 /**
  * CSS-based sidebar and panel widths to prevent SSR hydration mismatches.
  * Default widths are set here and updated via blocking script before React hydrates.
+ *
+ * @important These values must stay in sync with stores/constants.ts
+ * @see stores/constants.ts for the source of truth
  */
 :root {
-  --sidebar-width: 232px;
-  --panel-width: 260px;
-  --toolbar-triggers-height: 300px;
-  --editor-connections-height: 200px;
-  --terminal-height: 196px;
+  --sidebar-width: 232px; /* SIDEBAR_WIDTH.DEFAULT */
+  --panel-width: 320px; /* PANEL_WIDTH.DEFAULT */
+  --toolbar-triggers-height: 300px; /* TOOLBAR_TRIGGERS_HEIGHT.DEFAULT */
+  --editor-connections-height: 172px; /* EDITOR_CONNECTIONS_HEIGHT.DEFAULT */
+  --terminal-height: 155px; /* TERMINAL_HEIGHT.DEFAULT */
 }
 
 .sidebar-container {
@@ -40,6 +43,41 @@
 }
 
 /**
+ * React Flow selection box styling
+ * Uses brand-secondary color for selection highlighting
+ */
+.react-flow__selection {
+  background: rgba(51, 180, 255, 0.08) !important;
+  border: 1px solid var(--brand-secondary) !important;
+}
+
+.react-flow__nodesselection-rect,
+.react-flow__nodesselection {
+  background: transparent !important;
+  border: none !important;
+  pointer-events: none !important;
+}
+
+/**
+ * Workflow canvas cursor styles
+ * Override React Flow's default selection cursor based on canvas mode
+ */
+.workflow-container.canvas-mode-cursor .react-flow__pane,
+.workflow-container.canvas-mode-cursor .react-flow__selectionpane {
+  cursor: default !important;
+}
+
+.workflow-container.canvas-mode-hand .react-flow__pane,
+.workflow-container.canvas-mode-hand .react-flow__selectionpane {
+  cursor: grab !important;
+}
+
+.workflow-container.canvas-mode-hand .react-flow__pane:active,
+.workflow-container.canvas-mode-hand .react-flow__selectionpane:active {
+  cursor: grabbing !important;
+}
+
+/**
  * Color tokens - single source of truth for all colors
  * Light mode: Warm theme
  * Dark mode: Dark neutral theme
@@ -47,32 +85,33 @@
 @layer base {
   :root,
   .light {
-    --bg: #f9faf8; /* main canvas - near white */
-    --surface-1: #f9faf8; /* sidebar, panels - light warm gray */
-    --surface-2: #fdfdfb; /* blocks, cards, modals - soft warm white */
-    --surface-3: #f4f5f1; /* popovers, headers - more contrast */
-    --surface-4: #f2f3ef; /* buttons base */
-    --border: #d7dcda; /* primary border */
-    --surface-5: #f0f1ed; /* inputs, form elements - subtle */
-    --border-1: #d7dcda; /* stronger border - sage gray */
-    --surface-6: #eceee9; /* popovers, elevated surfaces */
-    --surface-7: #e8e9e4;
+    --bg: #fefefe; /* main canvas - neutral near-white */
+    --surface-1: #fefefe; /* sidebar, panels */
+    --surface-2: #ffffff; /* blocks, cards, modals - pure white */
+    --surface-3: #f7f7f7; /* popovers, headers */
+    --surface-4: #f5f5f5; /* buttons base */
+    --border: #e0e0e0; /* primary border */
+    --surface-5: #f3f3f3; /* inputs, form elements */
+    --border-1: #e0e0e0; /* stronger border */
+    --surface-6: #f0f0f0; /* popovers, elevated surfaces */
+    --surface-7: #ececec;
 
-    --workflow-edge: #d7dcda; /* workflow handles/edges - matches border-1 */
+    --workflow-edge: #e0e0e0; /* workflow handles/edges - matches border-1 */
 
-    /* Text - warm neutrals */
+    /* Text - neutral */
     --text-primary: #2d2d2d;
     --text-secondary: #404040;
     --text-tertiary: #5c5c5c;
     --text-muted: #737373;
     --text-subtle: #8c8c8c;
-    --text-inverse: #f0fff6;
+    --text-inverse: #ffffff;
+    --text-muted-inverse: #a0a0a0;
     --text-error: #ef4444;
 
     /* Borders / dividers */
-    --divider: #e8e9e4;
-    --border-muted: #dfe0db;
-    --border-success: #d7dcda;
+    --divider: #ededed;
+    --border-muted: #e4e4e4;
+    --border-success: #e0e0e0;
 
     /* Brand & state */
     --brand-400: var(--brand-primary-hex, #1a73e8);
@@ -153,13 +192,13 @@
     --c-883827: #7c2d12;
 
     /* Terminal status badges */
-    --terminal-status-error-bg: #feeeee;
+    --terminal-status-error-bg: #fef2f2;
     --terminal-status-error-border: #f87171;
-    --terminal-status-info-bg: #f5f5f4;
-    --terminal-status-info-border: #a8a29e;
-    --terminal-status-info-color: #57534e;
-    --terminal-status-warning-bg: #fef9e7;
-    --terminal-status-warning-border: #f5c842;
+    --terminal-status-info-bg: #f7f7f7;
+    --terminal-status-info-border: #a3a3a3;
+    --terminal-status-info-color: #525252;
+    --terminal-status-warning-bg: #fefce8;
+    --terminal-status-warning-border: #facc15;
     --terminal-status-warning-color: #a16207;
   }
   .dark {
@@ -184,6 +223,7 @@
     --text-muted: #787878;
     --text-subtle: #7d7d7d;
     --text-inverse: #1b1b1b;
+    --text-muted-inverse: #b3b3b3;
     --text-error: #ef4444;
 
     /* --border-strong: #303030; */
@@ -329,38 +369,38 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: var(--surface-1);
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: var(--surface-7);
+    background-color: #c0c0c0;
     border-radius: var(--radius);
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--surface-7);
+    background-color: #a8a8a8;
   }
 
   /* Dark Mode Global Scrollbar */
   .dark ::-webkit-scrollbar-track {
-    background: var(--surface-4);
+    background: transparent;
   }
 
   .dark ::-webkit-scrollbar-thumb {
-    background-color: var(--surface-7);
+    background-color: #5a5a5a;
   }
 
   .dark ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--surface-7);
+    background-color: #6a6a6a;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--surface-7) var(--surface-1);
+    scrollbar-color: #c0c0c0 transparent;
   }
 
   .dark * {
-    scrollbar-color: var(--surface-7) var(--surface-4);
+    scrollbar-color: #5a5a5a transparent;
   }
 
   .copilot-scrollable {
@@ -519,57 +559,29 @@ input[type="search"]::-ms-clear {
     transition-duration: 300ms;
   }
 
-  .streaming-effect {
-    @apply relative overflow-hidden;
-  }
-
-  .streaming-effect::after {
-    content: "";
-    @apply pointer-events-none absolute left-0 top-0 h-full w-full;
-    background: linear-gradient(
-      90deg,
-      rgba(128, 128, 128, 0) 0%,
-      rgba(128, 128, 128, 0.1) 50%,
-      rgba(128, 128, 128, 0) 100%
-    );
-    animation: code-shimmer 1.5s infinite;
-    z-index: 10;
-  }
-
-  .dark .streaming-effect::after {
-    background: linear-gradient(
-      90deg,
-      rgba(180, 180, 180, 0) 0%,
-      rgba(180, 180, 180, 0.1) 50%,
-      rgba(180, 180, 180, 0) 100%
-    );
-  }
-
   .loading-placeholder::placeholder {
     animation: placeholder-pulse 1.5s ease-in-out infinite;
   }
 
-  .auth-button-gradient {
-    background: linear-gradient(to bottom, var(--brand-primary-hex), var(--brand-400)) !important;
-    border-color: var(--brand-400) !important;
-    box-shadow: inset 0 2px 4px 0 var(--brand-400) !important;
+  .branded-button-gradient {
+    background: linear-gradient(to bottom, #8357ff, #6f3dfa) !important;
+    border-color: #6f3dfa !important;
+    box-shadow: inset 0 2px 4px 0 #9b77ff !important;
   }
 
-  .auth-button-gradient:hover {
-    background: linear-gradient(to bottom, var(--brand-primary-hex), var(--brand-400)) !important;
+  .branded-button-gradient:hover {
+    background: linear-gradient(to bottom, #8357ff, #6f3dfa) !important;
     opacity: 0.9;
   }
 
-  .auth-button-custom {
+  .branded-button-custom {
     background: var(--brand-primary-hex) !important;
     border-color: var(--brand-primary-hex) !important;
-    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.1) !important;
   }
 
-  .auth-button-custom:hover {
+  .branded-button-custom:hover {
     background: var(--brand-primary-hover-hex) !important;
     border-color: var(--brand-primary-hover-hex) !important;
-    opacity: 1;
   }
 
   /**
@@ -618,6 +630,20 @@ input[type="search"]::-ms-clear {
   html[data-panel-active-tab="editor"] .panel-container [data-tab-button="toolbar"] {
     background-color: transparent !important;
     color: var(--text-tertiary) !important;
+  }
+}
+
+/**
+ * Notification toast enter animation
+ */
+@keyframes notification-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(var(--stack-offset, 0px));
   }
 }
 

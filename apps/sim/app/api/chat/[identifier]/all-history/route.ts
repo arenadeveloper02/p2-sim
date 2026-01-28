@@ -5,8 +5,8 @@ import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { addCorsHeaders } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import { addCorsHeaders } from '../../utils'
 
 const logger = createLogger('ChatAllHistoryAPI')
 

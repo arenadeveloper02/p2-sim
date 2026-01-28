@@ -13,7 +13,7 @@ export interface Variable {
   workflowId: string
   name: string // Must be unique per workflow
   type: VariableType
-  value: any
+  value: unknown
   validationError?: string // Tracks format validation errors
 }
 
@@ -42,12 +42,6 @@ export interface VariablesStore {
   updateVariable: (id: string, update: Partial<Omit<Variable, 'id' | 'workflowId'>>) => void
 
   deleteVariable: (id: string) => void
-
-  /**
-   * Duplicates a variable with a "(copy)" suffix, ensuring name uniqueness
-   * Optionally accepts a predetermined ID for collaborative operations
-   */
-  duplicateVariable: (id: string, providedId?: string) => string
 
   /**
    * Returns all variables for a specific workflow

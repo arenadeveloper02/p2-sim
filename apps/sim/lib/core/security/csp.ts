@@ -1,5 +1,5 @@
 import { env, getEnv } from '../config/env'
-import { isDev } from '../config/feature-flags'
+import { isDev, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
  * Content Security Policy (CSP) configuration builder
@@ -40,6 +40,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.google.com',
     'https://apis.google.com',
     'https://assets.onedollarstats.com',
+    ...(isReactGrabEnabled ? ['https://unpkg.com'] : []),
   ],
 
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
@@ -109,7 +110,12 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
   ],
 
-  'frame-src': ['https://drive.google.com', 'https://docs.google.com', 'https://*.google.com'],
+  'frame-src': [
+    "'self'",
+    'https://drive.google.com',
+    'https://docs.google.com',
+    'https://*.google.com',
+  ],
 
   'frame-ancestors': ["'self'"],
   'form-action': ["'self'"],
@@ -163,10 +169,11 @@ export function generateRuntimeCSP(): string {
   const dynamicDomainsStr = uniqueDynamicDomains.join(' ')
   const brandLogoDomain = brandLogoDomains[0] || ''
   const brandFaviconDomain = brandFaviconDomains[0] || ''
+  const reactGrabScript = isReactGrabEnabled ? 'https://unpkg.com' : ''
 
   return `
     default-src 'self';
-    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com;
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com ${reactGrabScript};
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com https://*.s3.amazonaws.com https://s3.amazonaws.com https://*.amazonaws.com https://*.blob.core.windows.net https://github.com/* https://collector.onedollarstats.com ${brandLogoDomain} ${brandFaviconDomain};
     media-src 'self' blob:;
@@ -194,6 +201,18 @@ export function getMainCSPPolicy(): string {
  */
 export function getWorkflowExecutionCSPPolicy(): string {
   return "default-src * 'unsafe-inline' 'unsafe-eval'; connect-src *;"
+}
+
+/**
+ * CSP for embeddable form pages
+ * Allows embedding in iframes from any origin while maintaining other security policies
+ */
+export function getFormEmbedCSPPolicy(): string {
+  const basePolicy = buildCSPString({
+    ...buildTimeCSPDirectives,
+    'frame-ancestors': ['*'],
+  })
+  return basePolicy
 }
 
 /**

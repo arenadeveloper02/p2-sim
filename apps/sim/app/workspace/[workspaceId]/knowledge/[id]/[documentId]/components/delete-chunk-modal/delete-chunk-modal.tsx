@@ -1,11 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { createLogger } from '@sim/logger'
 import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
-import type { ChunkData } from '@/stores/knowledge/store'
-
-const logger = createLogger('DeleteChunkModal')
+import type { ChunkData } from '@/lib/knowledge/types'
+import { useDeleteChunk } from '@/hooks/queries/knowledge'
 
 interface DeleteChunkModalProps {
   chunk: ChunkData | null
@@ -13,7 +10,6 @@ interface DeleteChunkModalProps {
   documentId: string
   isOpen: boolean
   onClose: () => void
-  onChunkDeleted?: () => void
 }
 
 export function DeleteChunkModal({
@@ -22,44 +18,13 @@ export function DeleteChunkModal({
   documentId,
   isOpen,
   onClose,
-  onChunkDeleted,
 }: DeleteChunkModalProps) {
-  const [isDeleting, setIsDeleting] = useState(false)
+  const { mutate: deleteChunk, isPending: isDeleting } = useDeleteChunk()
 
-  const handleDeleteChunk = async () => {
+  const handleDeleteChunk = () => {
     if (!chunk || isDeleting) return
 
-    try {
-      setIsDeleting(true)
-
-      const response = await fetch(
-        `/api/knowledge/${knowledgeBaseId}/documents/${documentId}/chunks/${chunk.id}`,
-        {
-          method: 'DELETE',
-        }
-      )
-
-      if (!response.ok) {
-        throw new Error('Failed to delete chunk')
-      }
-
-      const result = await response.json()
-
-      if (result.success) {
-        logger.info('Chunk deleted successfully:', chunk.id)
-        if (onChunkDeleted) {
-          onChunkDeleted()
-        }
-        onClose()
-      } else {
-        throw new Error(result.error || 'Failed to delete chunk')
-      }
-    } catch (err) {
-      logger.error('Error deleting chunk:', err)
-      // You might want to show an error state here
-    } finally {
-      setIsDeleting(false)
-    }
+    deleteChunk({ knowledgeBaseId, documentId, chunkId: chunk.id }, { onSuccess: onClose })
   }
 
   if (!chunk) return null
@@ -75,7 +40,7 @@ export function DeleteChunkModal({
           </p>
         </ModalBody>
         <ModalFooter>
-          <Button variant='active' disabled={isDeleting} onClick={onClose}>
+          <Button variant='default' disabled={isDeleting} onClick={onClose}>
             Cancel
           </Button>
           <Button variant='destructive' onClick={handleDeleteChunk} disabled={isDeleting}>

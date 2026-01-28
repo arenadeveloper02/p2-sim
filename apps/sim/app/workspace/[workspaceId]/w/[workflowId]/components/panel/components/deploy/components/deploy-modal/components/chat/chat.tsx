@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { AlertTriangle, Check, Clipboard, Eye, EyeOff, Loader2, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, Check, Clipboard, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react'
 import {
   Button,
   Input,
@@ -12,6 +12,8 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  TagInput,
+  type TagItem,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
@@ -21,15 +23,17 @@ import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
 import { cn } from '@/lib/core/utils/cn'
-import { getEmailDomain } from '@/lib/core/utils/urls'
+import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import {
   type AuthType,
   type ChatFormData,
-  useChatDeployment,
-  useIdentifierValidation,
-} from './hooks'
+  useCreateChat,
+  useDeleteChat,
+  useUpdateChat,
+} from '@/hooks/queries/chats'
+import { useIdentifierValidation } from './hooks'
 
 const logger = createLogger('ChatDeploy')
 
@@ -44,7 +48,6 @@ interface ChatDeployProps {
   existingChat: ExistingChat | null
   isLoadingChat: boolean
   onRefetchChat: () => Promise<void>
-  onChatExistsChange?: (exists: boolean) => void
   chatSubmitting: boolean
   setChatSubmitting: (submitting: boolean) => void
   onValidationChange?: (isValid: boolean) => void
@@ -112,7 +115,6 @@ export function ChatDeploy({
   existingChat,
   isLoadingChat,
   onRefetchChat,
-  onChatExistsChange,
   chatSubmitting,
   setChatSubmitting,
   onValidationChange,
@@ -137,8 +139,11 @@ export function ChatDeploy({
 
   const [formData, setFormData] = useState<ChatFormData>(initialFormData)
   const [errors, setErrors] = useState<FormErrors>({})
-  const { deployChat } = useChatDeployment()
   const formRef = useRef<HTMLFormElement>(null)
+
+  const createChatMutation = useCreateChat()
+  const updateChatMutation = useUpdateChat()
+  const deleteChatMutation = useDeleteChat()
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
   const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
@@ -218,6 +223,13 @@ export function ChatDeploy({
 
   useEffect(() => {
     if (existingChat && !hasInitializedForm) {
+      // Deduplicate emails when initializing from existingChat
+      const allowedEmails = Array.isArray(existingChat.allowedEmails)
+        ? existingChat.allowedEmails
+        : []
+      const normalizedEmails = allowedEmails.map((e) => e.toLowerCase().trim())
+      const uniqueEmails = Array.from(new Set(normalizedEmails))
+
       setFormData({
         identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
@@ -225,7 +237,7 @@ export function ChatDeploy({
         department: existingChat.department || '',
         authType: existingChat.authType || 'public',
         password: '',
-        emails: Array.isArray(existingChat.allowedEmails) ? [...existingChat.allowedEmails] : [],
+        emails: uniqueEmails,
         welcomeMessage:
           existingChat.customizations?.welcomeMessage || 'Hi there! How can I help you today?',
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
@@ -266,15 +278,26 @@ export function ChatDeploy({
         return
       }
 
-      const chatUrl = await deployChat(
-        workflowId,
-        formData,
-        deploymentInfo,
-        existingChat?.id,
-        imageUrl
-      )
+      let chatUrl: string
 
-      onChatExistsChange?.(true)
+      if (existingChat?.id) {
+        const result = await updateChatMutation.mutateAsync({
+          chatId: existingChat.id,
+          workflowId,
+          formData,
+          imageUrl,
+        })
+        chatUrl = result.chatUrl
+      } else {
+        const result = await createChatMutation.mutateAsync({
+          workflowId,
+          formData,
+          apiKey: deploymentInfo?.apiKey,
+          imageUrl,
+        })
+        chatUrl = result.chatUrl
+      }
+
       onDeployed?.()
       onVersionActivated?.()
 
@@ -301,18 +324,13 @@ export function ChatDeploy({
     try {
       setIsDeleting(true)
 
-      const response = await fetch(`/api/chat/manage/${existingChat.id}`, {
-        method: 'DELETE',
+      await deleteChatMutation.mutateAsync({
+        chatId: existingChat.id,
+        workflowId,
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to delete chat')
-      }
 
       setImageUrl(null)
       setHasInitializedForm(false)
-      onChatExistsChange?.(false)
       await onRefetchChat()
 
       onDeploymentComplete?.()
@@ -422,6 +440,7 @@ export function ChatDeploy({
           </div>
 
           <AuthSelector
+            key={existingChat?.id ?? 'new'}
             authType={formData.authType}
             password={formData.password}
             emails={formData.emails}
@@ -468,7 +487,11 @@ export function ChatDeploy({
           <ModalHeader>Delete Chat</ModalHeader>
           <ModalBody>
             <p className='text-[12px] text-[var(--text-secondary)]'>
-              Are you sure you want to delete this chat?{' '}
+              Are you sure you want to delete{' '}
+              <span className='font-medium text-[var(--text-primary)]'>
+                {existingChat?.title || 'this chat'}
+              </span>
+              ?{' '}
               <span className='text-[var(--text-error)]'>
                 This will remove the chat at "{getEmailDomain()}/chat/{existingChat?.identifier}"
                 and make it unavailable to all users.
@@ -561,7 +584,7 @@ function IdentifierInput({
     onChange(lowercaseValue)
   }
 
-  const fullUrl = `${getEnv('NEXT_PUBLIC_APP_URL')}/chat/${value}`
+  const fullUrl = `${getBaseUrl()}/chat/${value}`
   const displayUrl = fullUrl.replace(/^https?:\/\//, '')
 
   return (
@@ -578,30 +601,45 @@ function IdentifierInput({
           error && 'border-[var(--text-error)]'
         )}
       >
-        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] px-[8px] font-medium text-[var(--text-secondary)] text-sm dark:bg-[var(--surface-5)]'>
+        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-[6px] pl-[8px] font-medium text-[var(--text-secondary)] text-sm dark:bg-[var(--surface-5)]'>
           {getDomainPrefix()}
         </div>
         <div className='relative flex-1'>
           <Input
             id='chat-url'
-            placeholder='company-name'
+            placeholder='my-chat'
             value={value}
             onChange={(e) => handleChange(e.target.value)}
             required
             disabled={disabled}
             className={cn(
               'rounded-none border-0 pl-0 shadow-none disabled:bg-transparent disabled:opacity-100',
-              isChecking && 'pr-[32px]'
+              (isChecking || (isValid && value)) && 'pr-[32px]'
             )}
           />
-          {isChecking && (
+          {isChecking ? (
             <div className='-translate-y-1/2 absolute top-1/2 right-2'>
               <Loader2 className='h-4 w-4 animate-spin text-[var(--text-tertiary)]' />
             </div>
+          ) : (
+            isValid &&
+            value &&
+            value !== originalIdentifier && (
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <div className='-translate-y-1/2 absolute top-1/2 right-2'>
+                    <Check className='h-4 w-4 text-[var(--brand-tertiary-2)]' />
+                  </div>
+                </Tooltip.Trigger>
+                <Tooltip.Content>
+                  <span>Name is available</span>
+                </Tooltip.Content>
+              </Tooltip.Root>
+            )
           )}
         </div>
       </div>
-      {error && <p className='mt-[6.5px] text-[11px] text-[var(--text-error)]'>{error}</p>}
+      {error && <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{error}</p>}
       <p className='mt-[6.5px] truncate text-[11px] text-[var(--text-secondary)]'>
         {isEditingExisting && value ? (
           <>
@@ -657,7 +695,6 @@ function AuthSelector({
 }: AuthSelectorProps) {
   const { data: session } = useSession()
   const [showPassword, setShowPassword] = useState(false)
-  const [emailInputValue, setEmailInputValue] = useState('')
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [invalidEmails, setInvalidEmails] = useState<string[]>([])
@@ -666,6 +703,45 @@ function AuthSelector({
   useEffect(() => {
     onInvalidEmailsChange?.(invalidEmails.length > 0)
   }, [invalidEmails, onInvalidEmailsChange])
+  const [emailItems, setEmailItems] = useState<TagItem[]>(() =>
+    emails.map((email) => ({ value: email, isValid: true }))
+  )
+
+  // Sync emailItems with emails prop and deduplicate
+  // Keep invalid items in emailItems even if not in emails (to show red badges)
+  useEffect(() => {
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+    const uniqueEmails = Array.from(new Set(normalizedEmails))
+    const currentValues = new Set(emailItems.map((item) => item.value.toLowerCase().trim()))
+
+    // Create a map of existing items to preserve isValid state
+    const existingItemsMap = new Map(
+      emailItems.map((item) => [item.value.toLowerCase().trim(), item])
+    )
+
+    // Include invalid emails in the items to display (for red badges)
+    const invalidEmailValues = new Set(invalidEmails.map((e) => e.toLowerCase().trim()))
+    const allEmailValues = new Set([...uniqueEmails, ...invalidEmailValues])
+
+    // Only update if there's a mismatch
+    const needsUpdate =
+      allEmailValues.size !== emailItems.length ||
+      !Array.from(allEmailValues).every((email) => currentValues.has(email)) ||
+      !emailItems.every((item) => allEmailValues.has(item.value.toLowerCase().trim()))
+
+    if (needsUpdate) {
+      setEmailItems(
+        Array.from(allEmailValues).map((email) => {
+          const existing = existingItemsMap.get(email)
+          // If email is in invalidEmails, mark as invalid
+          const isInvalid = invalidEmailValues.has(email)
+          return existing
+            ? { ...existing, isValid: isInvalid ? false : existing.isValid }
+            : { value: email, isValid: !isInvalid }
+        })
+      )
+    }
+  }, [emails, invalidEmails])
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
@@ -686,21 +762,21 @@ function AuthSelector({
     const validation = quickValidateEmail(normalized)
     const isValid = validation.isValid || isDomainPattern
 
-    if (emails.includes(normalized) || invalidEmails.includes(normalized)) {
+    if (emailItems.some((item) => item.value === normalized)) {
       return false
     }
 
-    if (!isValid) {
-      setInvalidEmails((prev) => [...prev, normalized])
-      setEmailInputValue('')
-      return false
+    setEmailItems((prev) => [...prev, { value: normalized, isValid }])
+
+    if (isValid) {
+      setEmailError('')
+      onEmailsChange([...emails, normalized])
     }
 
     // Skip validation for domain emails (starting with @)
     if (normalized.startsWith('@')) {
       setEmailError('')
       onEmailsChange([...emails, normalized])
-      setEmailInputValue('')
       return true
     }
 
@@ -720,35 +796,134 @@ function AuthSelector({
 
       const data = await response.json()
 
+      // If validation fails, mark email as invalid and show error
+      if (data.valid === false) {
+        // Remove from emails state
+        onEmailsChange(emails.filter((e) => e !== normalized))
+
+        // Update emailItems to mark as invalid (red badge)
+        setEmailItems((prev) =>
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
+        )
+
+        // Show error message with email address
+        const errorMessage =
+          data.missingEmails?.includes(normalized) ||
+          (data.missingEmails && data.missingEmails.length > 0)
+            ? `The user "${normalized}" does not exist in the system. Please add a user that exists.`
+            : `The user "${normalized}" does not have access to Agentic AI.`
+
+        setEmailError(errorMessage)
+        setEmailValidationErrors((prev) => {
+          const next = new Map(prev)
+          next.set(normalized, errorMessage)
+          return next
+        })
+        setInvalidEmails((prev) => {
+          if (!prev.includes(normalized)) {
+            return [...prev, normalized]
+          }
+          return prev
+        })
+        return false
+      }
+
+      // Email is valid and exists
       if (data.valid && data.existingEmails.includes(normalized)) {
-        // Email is valid and exists
         setEmailError('')
         setEmailValidationErrors((prev) => {
           const next = new Map(prev)
           next.delete(normalized)
           return next
         })
+        // Remove from invalidEmails if it was there
+        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        // Update emailItems to mark as valid
+        setEmailItems((prev) =>
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
+        )
         onEmailsChange([...emails, normalized])
-        setEmailInputValue('')
         return true
       }
-      // Email doesn't exist in the system
-      setEmailValidationErrors((prev) => {
-        const next = new Map(prev)
-        next.set(normalized, 'User does not have access to Agentic AI')
-        return next
+
+      // If valid is true but email not in existingEmails, still keep it
+      if (data.valid) {
+        setEmailError('')
+        setEmailValidationErrors((prev) => {
+          const next = new Map(prev)
+          next.delete(normalized)
+          return next
+        })
+        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        setEmailItems((prev) =>
+          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
+        )
+        onEmailsChange([...emails, normalized])
+        return true
+      }
+
+      // Fallback: mark as invalid
+      onEmailsChange(emails.filter((e) => e !== normalized))
+      setEmailItems((prev) =>
+        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
+      )
+      setEmailError(
+        `The user "${normalized}" does not exist in the system. Please add a user that exists.`
+      )
+      setInvalidEmails((prev) => {
+        if (!prev.includes(normalized)) {
+          return [...prev, normalized]
+        }
+        return prev
       })
-      setInvalidEmails((prev) => [...prev, normalized])
-      setEmailInputValue('')
       return false
     } catch (error) {
       logger.error('Error validating email', { error, email: normalized })
-      // On error, still add the email but show a warning
-      setEmailError('Failed to validate email. Please verify it exists.')
-      onEmailsChange([...emails, normalized])
-      setEmailInputValue('')
-      return true
+      // On error, remove from emails and mark as invalid
+      onEmailsChange(emails.filter((e) => e !== normalized))
+      setEmailItems((prev) =>
+        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
+      )
+      setEmailError(
+        `Failed to validate "${normalized}". Please verify the email exists and try again.`
+      )
+      setInvalidEmails((prev) => {
+        if (!prev.includes(normalized)) {
+          return [...prev, normalized]
+        }
+        return prev
+      })
+      return false
     }
+  }
+
+  const handleRemoveEmailItem = (_value: string, index: number, isValid: boolean) => {
+    setEmailError('')
+    const itemToRemove = emailItems[index]
+    if (!itemToRemove) return
+
+    const emailToRemove = itemToRemove.value.toLowerCase().trim()
+
+    // Remove from emailItems
+    setEmailItems((prev) => prev.filter((_, i) => i !== index))
+
+    // Remove from emails if it was valid
+    if (isValid) {
+      onEmailsChange(emails.filter((e) => e.toLowerCase().trim() !== emailToRemove))
+    }
+
+    // Also remove from invalidEmails and emailValidationErrors to prevent re-adding
+    setInvalidEmails((prev) => prev.filter((e) => e.toLowerCase().trim() !== emailToRemove))
+    setEmailValidationErrors((prev) => {
+      const next = new Map(prev)
+      // Remove any entries that match this email (case-insensitive)
+      for (const [key] of Array.from(next.entries())) {
+        if (typeof key === 'string' && key.toLowerCase().trim() === emailToRemove) {
+          next.delete(key)
+        }
+      }
+      return next
+    })
   }
 
   const handleRemoveEmail = (emailToRemove: string) => {
@@ -770,55 +945,26 @@ function AuthSelector({
     })
   }
 
-  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (['Enter', ',', ' '].includes(e.key) && emailInputValue.trim()) {
-      e.preventDefault()
-      await addEmail(emailInputValue)
-    }
-
-    if (e.key === 'Backspace' && !emailInputValue) {
-      if (invalidEmails.length > 0) {
-        handleRemoveInvalidEmail(invalidEmails.length - 1)
-      } else if (emails.length > 0) {
-        const lastEmail = emails[emails.length - 1]
-        const sessionEmail = session?.user?.email?.toLowerCase()
-        // Only remove if it's not the session email
-        if (!sessionEmail || lastEmail.toLowerCase() !== sessionEmail) {
-          handleRemoveEmail(lastEmail)
-        }
-      }
-    }
-  }
-
-  const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault()
-    const pastedText = e.clipboardData.getData('text')
-    const pastedEmails = pastedText.split(/[\s,;]+/).filter(Boolean)
-
-    let addedCount = 0
-    for (const email of pastedEmails) {
-      if (await addEmail(email)) {
-        addedCount++
-      }
-    }
-
-    if (addedCount === 0 && pastedEmails.length === 1) {
-      setEmailInputValue(emailInputValue + pastedEmails[0])
-    }
-  }
-
   // Prefill session.email on mount
   useEffect(() => {
     if (session?.user?.email && !isExistingChat) {
-      const sessionEmail = session.user.email.toLowerCase()
-      if (!emails.includes(sessionEmail) && !invalidEmails.includes(sessionEmail)) {
+      const sessionEmail = session.user.email.toLowerCase().trim()
+      const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+      const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
+      const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
+
+      if (
+        !normalizedEmails.includes(sessionEmail) &&
+        !normalizedInvalidEmails.includes(sessionEmail) &&
+        !normalizedEmailItems.includes(sessionEmail)
+      ) {
         addEmail(sessionEmail).catch((error) => {
           logger.error('Error prefilling session email', { error })
         })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.email, isExistingChat])
+  }, [session?.user?.email, isExistingChat, emails, emailItems])
 
   const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
   const authOptions = ssoEnabled
@@ -831,27 +977,18 @@ function AuthSelector({
         <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
           Access control
         </Label>
-        <div className='inline-flex gap-[2px]'>
-          {authOptions.map((type, index, arr) => (
-            <Button
-              key={type}
-              type='button'
-              variant={authType === type ? 'active' : 'default'}
-              onClick={() => !disabled && onAuthTypeChange(type)}
-              disabled={disabled}
-              className={`px-[8px] py-[4px] text-[12px] ${
-                index === 0
-                  ? 'rounded-r-none'
-                  : index === arr.length - 1
-                    ? 'rounded-l-none'
-                    : 'rounded-none'
-              }`}
-            >
+        <ButtonGroup
+          value={authType}
+          onValueChange={(val) => onAuthTypeChange(val as AuthType)}
+          disabled={disabled}
+        >
+          {authOptions.map((type) => (
+            <ButtonGroupItem key={type} value={type}>
               {AUTH_LABELS[type]}
-            </Button>
+            </ButtonGroupItem>
           ))}
-        </div>
-      </div> */}
+        </ButtonGroup>
+      </div>*/}
 
       {authType === 'password' && (
         <div>
@@ -940,58 +1077,20 @@ function AuthSelector({
           <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
             {authType === 'email' ? 'Allowed emails' : 'Allowed SSO emails'}
           </Label>
-          <div className='scrollbar-hide flex max-h-32 flex-wrap items-center gap-x-[8px] gap-y-[4px] overflow-y-auto rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] py-[6px] focus-within:outline-none dark:bg-[var(--surface-5)]'>
-            {invalidEmails.map((email, index) => (
-              <div key={`invalid-${index}`} className='flex flex-col items-start'>
-                <EmailTag
-                  email={email}
-                  onRemove={() => handleRemoveInvalidEmail(index)}
-                  disabled={disabled}
-                  isInvalid={true}
-                />
-                {emailValidationErrors.has(email) && (
-                  <p className='mt-[2px] whitespace-nowrap text-[11px] text-[var(--text-error)]'>
-                    {emailValidationErrors.get(email)}
-                  </p>
-                )}
-              </div>
-            ))}
-            {emails.map((email, index) => {
-              const sessionEmail = session?.user?.email?.toLowerCase()
-              const isSessionEmail = Boolean(sessionEmail && email.toLowerCase() === sessionEmail)
-              return (
-                <EmailTag
-                  key={`valid-${index}`}
-                  email={email}
-                  onRemove={() => handleRemoveEmail(email)}
-                  disabled={disabled || isSessionEmail}
-                />
-              )
-            })}
-            <input
-              type='text'
-              value={emailInputValue}
-              onChange={(e) => setEmailInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onBlur={() => {
-                if (emailInputValue.trim()) {
-                  addEmail(emailInputValue).catch((error) => {
-                    logger.error('Error adding email on blur', { error })
-                  })
-                }
-              }}
-              placeholder={
-                emails.length > 0 || invalidEmails.length > 0
-                  ? 'Add another email'
-                  : 'Enter emails or domains (@example.com)'
-              }
-              className='min-w-[180px] flex-1 border-none bg-transparent p-0 font-medium font-sans text-foreground text-sm outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-50'
-              disabled={disabled}
-            />
-          </div>
+          <TagInput
+            items={emailItems}
+            onAdd={(value) => addEmail(value)}
+            onRemove={handleRemoveEmailItem}
+            placeholder={
+              emails.length > 0 || invalidEmails.length > 0
+                ? 'Add another email'
+                : 'Enter emails or domains (@example.com)'
+            }
+            placeholderWithTags='Add email'
+            disabled={disabled}
+          />
           {emailError && (
-            <p className='mt-[6.5px] text-[11px] text-[var(--text-error)]'>{emailError}</p>
+            <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{emailError}</p>
           )}
           <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
             {authType === 'email'
@@ -1001,44 +1100,7 @@ function AuthSelector({
         </div>
       )}
 
-      {error && <p className='mt-[6.5px] text-[11px] text-[var(--text-error)]'>{error}</p>}
-    </div>
-  )
-}
-
-interface EmailTagProps {
-  email: string
-  onRemove: () => void
-  disabled?: boolean
-  isInvalid?: boolean
-}
-
-function EmailTag({ email, onRemove, disabled, isInvalid }: EmailTagProps) {
-  return (
-    <div
-      className={cn(
-        'flex w-auto items-center gap-[4px] rounded-[4px] border px-[6px] py-[2px] text-[12px]',
-        isInvalid
-          ? 'border-[var(--text-error)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] text-[var(--text-error)] dark:bg-[color-mix(in_srgb,var(--text-error)_16%,transparent)]'
-          : 'border-[var(--border-1)] bg-[var(--surface-4)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-      )}
-    >
-      <span className='max-w-[200px] truncate'>{email}</span>
-      {!disabled && (
-        <button
-          type='button'
-          onClick={onRemove}
-          className={cn(
-            'flex-shrink-0 transition-colors focus:outline-none',
-            isInvalid
-              ? 'text-[var(--text-error)] hover:text-[var(--text-error)]'
-              : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'
-          )}
-          aria-label={`Remove ${email}`}
-        >
-          <X className='h-[12px] w-[12px] translate-y-[0.2px]' />
-        </button>
-      )}
+      {error && <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{error}</p>}
     </div>
   )
 }

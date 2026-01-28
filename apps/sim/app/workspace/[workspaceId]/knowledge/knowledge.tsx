@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { createLogger } from '@sim/logger'
 import { ChevronDown, Database, Search } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -12,10 +13,12 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { Input } from '@/components/ui/input'
+import type { KnowledgeBaseData } from '@/lib/knowledge/types'
 import {
   BaseCard,
   BaseCardSkeletonGrid,
   CreateBaseModal,
+  KnowledgeListContextMenu,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
 import {
   SORT_OPTIONS,
@@ -27,9 +30,12 @@ import {
   sortKnowledgeBases,
 } from '@/app/workspace/[workspaceId]/knowledge/utils/sort'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
+import { useKnowledgeBasesList } from '@/hooks/kb/use-knowledge'
+import { useDeleteKnowledgeBase, useUpdateKnowledgeBase } from '@/hooks/queries/knowledge'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useKnowledgeBasesList } from '@/hooks/use-knowledge'
-import type { KnowledgeBaseData } from '@/stores/knowledge/store'
+
+const logger = createLogger('Knowledge')
 
 /**
  * Extended knowledge base data with document count
@@ -46,9 +52,11 @@ export function Knowledge() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
-  const { knowledgeBases, isLoading, error, addKnowledgeBase, refreshList } =
-    useKnowledgeBasesList(workspaceId)
+  const { knowledgeBases, isLoading, error } = useKnowledgeBasesList(workspaceId)
   const userPermissions = useUserPermissionsContext()
+
+  const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
+  const { mutateAsync: deleteKnowledgeBaseMutation } = useDeleteKnowledgeBase(workspaceId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
@@ -56,6 +64,37 @@ export function Knowledge() {
   const [isSortPopoverOpen, setIsSortPopoverOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('updatedAt')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
+  const {
+    isOpen: isListContextMenuOpen,
+    position: listContextMenuPosition,
+    menuRef: listMenuRef,
+    handleContextMenu: handleListContextMenu,
+    closeMenu: closeListContextMenu,
+  } = useContextMenu()
+
+  /**
+   * Handle context menu on the content area - only show menu when clicking on empty space
+   */
+  const handleContentContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement
+      const isOnCard = target.closest('[data-kb-card]')
+      const isOnInteractive = target.closest('button, input, a, [role="button"]')
+
+      if (!isOnCard && !isOnInteractive) {
+        handleListContextMenu(e)
+      }
+    },
+    [handleListContextMenu]
+  )
+
+  /**
+   * Handle add knowledge base from context menu
+   */
+  const handleAddKnowledgeBase = useCallback(() => {
+    setIsCreateModalOpen(true)
+  }, [])
 
   const currentSortValue = `${sortBy}-${sortOrder}`
   const currentSortLabel =
@@ -72,22 +111,32 @@ export function Knowledge() {
   }
 
   /**
-   * Callback when a new knowledge base is created
+   * Updates a knowledge base name and description
    */
-  const handleKnowledgeBaseCreated = (newKnowledgeBase: KnowledgeBaseData) => {
-    addKnowledgeBase(newKnowledgeBase)
-  }
+  const handleUpdateKnowledgeBase = useCallback(
+    async (id: string, name: string, description: string) => {
+      await updateKnowledgeBaseMutation({
+        knowledgeBaseId: id,
+        updates: { name, description },
+      })
+      logger.info(`Knowledge base updated: ${id}`)
+    },
+    [updateKnowledgeBaseMutation]
+  )
 
   /**
-   * Retry loading knowledge bases after an error
+   * Deletes a knowledge base
    */
-  const handleRetry = () => {
-    refreshList()
-  }
+  const handleDeleteKnowledgeBase = useCallback(
+    async (id: string) => {
+      await deleteKnowledgeBaseMutation({ knowledgeBaseId: id })
+      logger.info(`Knowledge base deleted: ${id}`)
+    },
+    [deleteKnowledgeBaseMutation]
+  )
 
   /**
    * Filter and sort knowledge bases based on search query and sort options
-   * Memoized to prevent unnecessary recalculations on render
    */
   const filteredAndSortedKnowledgeBases = useMemo(() => {
     const filtered = filterKnowledgeBases(knowledgeBases, debouncedSearchQuery)
@@ -108,7 +157,6 @@ export function Knowledge() {
 
   /**
    * Get empty state content based on current filters
-   * Memoized to prevent unnecessary recalculations on render
    */
   const emptyState = useMemo(() => {
     if (debouncedSearchQuery) {
@@ -131,7 +179,10 @@ export function Knowledge() {
     <>
       <div className='flex h-full flex-1 flex-col'>
         <div className='flex flex-1 overflow-hidden'>
-          <div className='flex flex-1 flex-col overflow-auto px-[24px] pt-[28px] pb-[24px]'>
+          <div
+            className='flex flex-1 flex-col overflow-auto bg-white px-[24px] pt-[28px] pb-[24px] dark:bg-[var(--bg)]'
+            onContextMenu={handleContentContextMenu}
+          >
             <div>
               <div className='flex items-start gap-[12px]'>
                 <div className='flex h-[26px] w-[26px] items-center justify-center rounded-[6px] border border-[#5BB377] bg-[#E8F7EE] dark:border-[#1E5A3E] dark:bg-[#0F3D2C]'>
@@ -235,6 +286,8 @@ export function Knowledge() {
                       createdAt={displayData.createdAt}
                       updatedAt={displayData.updatedAt}
                       searchQuery={searchQuery}
+                      onUpdate={handleUpdateKnowledgeBase}
+                      onDelete={handleDeleteKnowledgeBase}
                     />
                   )
                 })
@@ -244,11 +297,16 @@ export function Knowledge() {
         </div>
       </div>
 
-      <CreateBaseModal
-        open={isCreateModalOpen}
-        onOpenChange={setIsCreateModalOpen}
-        onKnowledgeBaseCreated={handleKnowledgeBaseCreated}
+      <KnowledgeListContextMenu
+        isOpen={isListContextMenuOpen}
+        position={listContextMenuPosition}
+        menuRef={listMenuRef}
+        onClose={closeListContextMenu}
+        onAddKnowledgeBase={handleAddKnowledgeBase}
+        disableAdd={userPermissions.canEdit !== true}
       />
+
+      <CreateBaseModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} />
     </>
   )
 }

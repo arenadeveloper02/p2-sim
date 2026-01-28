@@ -82,3 +82,28 @@ export const gmailAddLabelTool: ToolConfig<GmailLabelParams, GmailToolResponse> 
     },
   },
 }
+
+export const gmailAddLabelV2Tool: ToolConfig<GmailLabelParams, GmailToolResponse> = {
+  id: 'gmail_add_label_v2',
+  name: 'Gmail Add Label',
+  description: 'Add label(s) to a Gmail message',
+  version: '2.0.0',
+  oauth: gmailAddLabelTool.oauth,
+  params: gmailAddLabelTool.params,
+  request: gmailAddLabelTool.request,
+  transformResponse: async (response) => {
+    return await gmailAddLabelTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

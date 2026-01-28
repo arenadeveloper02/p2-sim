@@ -21,6 +21,7 @@ import {
   PopoverItem,
   PopoverScrollArea,
   PopoverTrigger,
+  Tooltip,
   Trash,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
@@ -51,12 +52,13 @@ import {
   useFloatBoundarySync,
   useFloatDrag,
   useFloatResize,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-float'
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
-import { getChatPosition, useChatStore } from '@/stores/chat/store'
-import { useExecutionStore } from '@/stores/execution/store'
+import { useChatStore } from '@/stores/chat/store'
+import { getChatPosition } from '@/stores/chat/utils'
+import { useExecutionStore } from '@/stores/execution'
 import { useOperationQueue } from '@/stores/operation-queue/store'
 import { useTerminalConsoleStore } from '@/stores/terminal'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -99,6 +101,9 @@ interface ProcessedAttachment {
   dataUrl: string
 }
 
+/** Timeout for FileReader operations in milliseconds */
+const FILE_READ_TIMEOUT_MS = 60000
+
 /**
  * Reads files and converts them to data URLs for image display
  * @param chatFiles - Array of chat files to process
@@ -112,8 +117,37 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ProcessedA
         try {
           dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = reject
+            let settled = false
+
+            const timeoutId = setTimeout(() => {
+              if (!settled) {
+                settled = true
+                reader.abort()
+                reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
+              }
+            }, FILE_READ_TIMEOUT_MS)
+
+            reader.onload = () => {
+              if (!settled) {
+                settled = true
+                clearTimeout(timeoutId)
+                resolve(reader.result as string)
+              }
+            }
+            reader.onerror = () => {
+              if (!settled) {
+                settled = true
+                clearTimeout(timeoutId)
+                reject(reader.error)
+              }
+            }
+            reader.onabort = () => {
+              if (!settled) {
+                settled = true
+                clearTimeout(timeoutId)
+                reject(new Error('File read aborted'))
+              }
+            }
             reader.readAsDataURL(file.file)
           })
         } catch (error) {
@@ -212,7 +246,6 @@ export function Chat() {
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
-  // Chat state (UI and messages from unified store)
   const {
     isChatOpen,
     chatPosition,
@@ -232,13 +265,14 @@ export function Chat() {
     exportChatCSV,
   } = useChatStore()
 
-  const { entries } = useTerminalConsoleStore()
+  const hasConsoleHydrated = useTerminalConsoleStore((state) => state._hasHydrated)
+  const entriesFromStore = useTerminalConsoleStore((state) => state.entries)
+  const entries = hasConsoleHydrated ? entriesFromStore : []
   const { isExecuting } = useExecutionStore()
   const { handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
   const { data: session } = useSession()
   const { addToQueue } = useOperationQueue()
 
-  // Local state
   const [chatMessage, setChatMessage] = useState('')
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -246,7 +280,6 @@ export function Chat() {
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
-  // Refs
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -255,7 +288,6 @@ export function Chat() {
   const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const preventZoomRef = usePreventZoom()
 
-  // File upload hook
   const {
     chatFiles,
     uploadErrors,
@@ -269,6 +301,38 @@ export function Chat() {
     handleDragLeave,
     handleDrop,
   } = useChatFileUpload()
+
+  const filePreviewUrls = useRef<Map<string, string>>(new Map())
+
+  const getFilePreviewUrl = useCallback((file: ChatFile): string | null => {
+    if (!file.type.startsWith('image/')) return null
+
+    const existing = filePreviewUrls.current.get(file.id)
+    if (existing) return existing
+
+    const url = URL.createObjectURL(file.file)
+    filePreviewUrls.current.set(file.id, url)
+    return url
+  }, [])
+
+  useEffect(() => {
+    const currentFileIds = new Set(chatFiles.map((f) => f.id))
+    const urlMap = filePreviewUrls.current
+
+    for (const [fileId, url] of urlMap.entries()) {
+      if (!currentFileIds.has(fileId)) {
+        URL.revokeObjectURL(url)
+        urlMap.delete(fileId)
+      }
+    }
+
+    return () => {
+      for (const url of urlMap.values()) {
+        URL.revokeObjectURL(url)
+      }
+      urlMap.clear()
+    }
+  }, [chatFiles])
 
   /**
    * Resolves the unified start block for chat execution, if available.
@@ -335,13 +399,11 @@ export function Chat() {
   const shouldShowConfigureStartInputsButton =
     Boolean(startBlockId) && missingStartReservedFields.length > 0
 
-  // Get actual position (default if not set)
   const actualPosition = useMemo(
     () => getChatPosition(chatPosition, chatWidth, chatHeight),
     [chatPosition, chatWidth, chatHeight]
   )
 
-  // Drag hook
   const { handleMouseDown } = useFloatDrag({
     position: actualPosition,
     width: chatWidth,
@@ -349,7 +411,6 @@ export function Chat() {
     onPositionChange: setChatPosition,
   })
 
-  // Boundary sync hook - keeps chat within bounds when layout changes
   useFloatBoundarySync({
     isOpen: isChatOpen,
     position: actualPosition,
@@ -358,7 +419,6 @@ export function Chat() {
     onPositionChange: setChatPosition,
   })
 
-  // Resize hook - enables resizing from all edges and corners
   const {
     cursor: resizeCursor,
     handleMouseMove: handleResizeMouseMove,
@@ -372,13 +432,11 @@ export function Chat() {
     onDimensionsChange: setChatDimensions,
   })
 
-  // Get output entries from console
   const outputEntries = useMemo(() => {
     if (!activeWorkflowId) return []
     return entries.filter((entry) => entry.workflowId === activeWorkflowId && entry.output)
   }, [entries, activeWorkflowId])
 
-  // Get filtered messages for current workflow
   const workflowMessages = useMemo(() => {
     if (!activeWorkflowId) return []
     return messages
@@ -386,16 +444,14 @@ export function Chat() {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
   }, [messages, activeWorkflowId])
 
-  // Check if any message is currently streaming
   const isStreaming = useMemo(() => {
-    // Match copilot semantics: only treat as streaming if the LAST message is streaming
     const lastMessage = workflowMessages[workflowMessages.length - 1]
     return Boolean(lastMessage?.isStreaming)
   }, [workflowMessages])
 
   // Get custom fields (excluding reserved fields: input, conversationId, files)
   const customFields = useMemo(() => {
-    return getCustomInputFields(startBlockInputFormat)
+    return getCustomInputFields(startBlockInputFormat as InputFormatField[])
   }, [startBlockInputFormat])
 
   // Reset modal flags when workflow changes or messages are added
@@ -436,8 +492,6 @@ export function Chat() {
     }))
   }, [workflowMessages])
 
-  // Scroll management hook - reuse copilot's implementation
-  // Use immediate scroll behavior to keep the view pinned to the bottom during streaming
   const { scrollAreaRef, scrollToBottom } = useScrollManagement(
     messagesForScrollHook,
     isStreaming,
@@ -446,7 +500,6 @@ export function Chat() {
     }
   )
 
-  // Memoize user messages for performance
   const userMessages = useMemo(() => {
     return workflowMessages
       .filter((msg) => msg.type === 'user')
@@ -454,7 +507,6 @@ export function Chat() {
       .filter((content): content is string => typeof content === 'string')
   }, [workflowMessages])
 
-  // Update prompt history when workflow changes
   useEffect(() => {
     if (!activeWorkflowId) {
       setPromptHistory([])
@@ -467,7 +519,7 @@ export function Chat() {
   }, [activeWorkflowId, userMessages])
 
   /**
-   * Auto-scroll to bottom when messages load
+   * Auto-scroll to bottom when messages load and chat is open
    */
   useEffect(() => {
     if (workflowMessages.length > 0 && isChatOpen) {
@@ -475,7 +527,6 @@ export function Chat() {
     }
   }, [workflowMessages.length, scrollToBottom, isChatOpen])
 
-  // Get selected workflow outputs (deduplicated)
   const selectedOutputs = useMemo(() => {
     if (!activeWorkflowId) return []
     const selected = selectedWorkflowOutputs[activeWorkflowId]
@@ -496,7 +547,6 @@ export function Chat() {
     }, delay)
   }, [])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       timeoutRef.current && clearTimeout(timeoutRef.current)
@@ -533,6 +583,7 @@ export function Chat() {
   /**
    * Processes streaming response from workflow execution
    * Reads the stream chunk by chunk and updates the message content in real-time
+   * When the final event arrives, extracts any additional selected outputs (model, tokens, toolCalls)
    * @param stream - ReadableStream containing the workflow execution response
    * @param responseMessageId - ID of the message to update with streamed content
    */
@@ -627,7 +678,6 @@ export function Chat() {
 
           buffer += chunk
 
-          // Process only complete SSE messages; keep any partial trailing data in buffer
           const separatorIndex = buffer.lastIndexOf('\n\n')
           if (separatorIndex === -1) {
             // No complete message yet, continue reading
@@ -656,6 +706,37 @@ export function Chat() {
               if (event === 'final' && eventData) {
                 receivedFinalEvent = true
                 finalEventData = eventData as ExecutionResult
+                if (
+                  selectedOutputs.length > 0 &&
+                  'logs' in finalEventData &&
+                  Array.isArray(finalEventData.logs) &&
+                  activeWorkflowId
+                ) {
+                  const additionalOutputs: string[] = []
+
+                  for (const outputId of selectedOutputs) {
+                    const blockId = extractBlockIdFromOutputId(outputId)
+                    const path = extractPathFromOutputId(outputId, blockId)
+
+                    if (path === 'content') continue
+
+                    const outputValue = extractOutputFromLogs(
+                      finalEventData.logs as BlockLog[],
+                      outputId
+                    )
+                    if (outputValue !== undefined) {
+                      const formattedValue =
+                        typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue)
+                      if (formattedValue) {
+                        additionalOutputs.push(`**${path}:** ${formattedValue}`)
+                      }
+                    }
+                  }
+
+                  if (additionalOutputs.length > 0) {
+                    appendMessageContent(responseMessageId, `\n\n${additionalOutputs.join('\n\n')}`)
+                  }
+                }
                 continue
               }
 
@@ -678,7 +759,6 @@ export function Chat() {
         }
         finalizeMessageStream(responseMessageId)
       } finally {
-        // Only clear ref if it's still our reader (prevents clobbering a new stream)
         if (streamReaderRef.current === reader) {
           streamReaderRef.current = null
         }
@@ -690,7 +770,7 @@ export function Chat() {
         focusInput(100)
       }
     },
-    [appendMessageContent, finalizeMessageStream, focusInput]
+    [appendMessageContent, finalizeMessageStream, focusInput, selectedOutputs, activeWorkflowId]
   )
 
   /**
@@ -702,7 +782,6 @@ export function Chat() {
       if (!result || !activeWorkflowId) return
       if (typeof result !== 'object') return
 
-      // Handle streaming response
       if ('stream' in result && result.stream instanceof ReadableStream) {
         const responseMessageId = crypto.randomUUID()
         addMessage({
@@ -716,7 +795,6 @@ export function Chat() {
         return
       }
 
-      // Handle success with logs
       if ('success' in result && result.success && 'logs' in result && Array.isArray(result.logs)) {
         selectedOutputs
           .map((outputId) => extractOutputFromLogs(result.logs as BlockLog[], outputId))
@@ -734,7 +812,6 @@ export function Chat() {
         return
       }
 
-      // Handle error response
       if ('success' in result && !result.success) {
         const errorMessage =
           'error' in result && typeof result.error === 'string'
@@ -812,7 +889,6 @@ export function Chat() {
 
     const sentMessage = chatMessage.trim()
 
-    // Update prompt history (only if new unique message)
     if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
       setPromptHistory((prev) => [...prev, sentMessage])
     }
@@ -836,7 +912,6 @@ export function Chat() {
       // Process file attachments
       const attachmentsWithData = await processFileAttachments(chatFiles)
 
-      // Add user message
       const messageContent =
         sentMessage || (chatFiles.length > 0 ? `Uploaded ${chatFiles.length} file(s)` : '')
       addMessage({
@@ -867,13 +942,11 @@ export function Chat() {
         }
       }
 
-      // Clear input and files
       setChatMessage('')
       clearFiles()
       clearErrors()
       focusInput(10)
 
-      // Execute workflow
       const result = await handleRunWorkflow(workflowInput)
       handleWorkflowResponse(result)
     } catch (error) {
@@ -1018,7 +1091,9 @@ export function Chat() {
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSendMessage()
+        if (!isStreaming && !isExecuting) {
+          handleSendMessage()
+        }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         if (promptHistory.length > 0) {
@@ -1041,7 +1116,7 @@ export function Chat() {
         }
       }
     },
-    [handleSendMessage, promptHistory, historyIndex]
+    [handleSendMessage, promptHistory, historyIndex, isStreaming, isExecuting]
   )
 
   /**
@@ -1173,9 +1248,8 @@ export function Chat() {
           )}
 
           {shouldShowConfigureStartInputsButton && (
-            <Badge
-              variant='outline'
-              className='flex-none cursor-pointer whitespace-nowrap rounded-[6px]'
+            <div
+              className='flex flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[9px] py-[2px] font-medium font-sans text-[12px] text-[var(--text-primary)] hover:bg-[var(--surface-7)] dark:hover:border-[var(--surface-7)] dark:hover:bg-[var(--border-1)]'
               title='Add chat inputs to Start block'
               onMouseDown={(e) => {
                 e.stopPropagation()
@@ -1186,8 +1260,8 @@ export function Chat() {
                 })
               }}
             >
-              <span className='whitespace-nowrap text-[12px]'>Add inputs</span>
-            </Badge>
+              <span className='whitespace-nowrap'>Add inputs</span>
+            </div>
           )}
 
           <OutputSelect
@@ -1195,7 +1269,7 @@ export function Chat() {
             selectedOutputs={selectedOutputs}
             onOutputSelect={handleOutputSelection}
             disabled={!activeWorkflowId}
-            placeholder='Select outputs'
+            placeholder='Outputs'
             align='end'
             maxHeight={180}
             workspaceName={workspaceName}
@@ -1205,7 +1279,7 @@ export function Chat() {
 
         <div className='flex flex-shrink-0 items-center gap-[8px]'>
           {/* More menu with actions */}
-          <Popover variant='default' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
+          <Popover variant='default' size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant='ghost'
@@ -1288,7 +1362,7 @@ export function Chat() {
                 <div className='flex items-start gap-2'>
                   <AlertCircle className='mt-0.5 h-3 w-3 shrink-0 text-[var(--text-error)]' />
                   <div className='flex-1'>
-                    <div className='mb-1 font-medium text-[11px] text-[var(--text-error)]'>
+                    <div className='mb-1 font-medium text-[12px] text-[var(--text-error)]'>
                       File upload error
                     </div>
                     <div className='space-y-1'>
@@ -1314,8 +1388,7 @@ export function Chat() {
             {chatFiles.length > 0 && (
               <div className='mt-[4px] flex gap-[6px] overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
                 {chatFiles.map((file) => {
-                  const isImage = file.type.startsWith('image/')
-                  const previewUrl = isImage ? URL.createObjectURL(file.file) : null
+                  const previewUrl = getFilePreviewUrl(file)
 
                   return (
                     <div
@@ -1332,7 +1405,6 @@ export function Chat() {
                           src={previewUrl}
                           alt={file.name}
                           className='h-full w-full object-cover'
-                          onLoad={() => URL.revokeObjectURL(previewUrl)}
                         />
                       ) : (
                         <div className='min-w-0 flex-1'>
@@ -1373,22 +1445,26 @@ export function Chat() {
                 onKeyDown={handleKeyPress}
                 placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
                 className='w-full border-0 bg-transparent pr-[56px] pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
-                disabled={!activeWorkflowId || isExecuting}
+                disabled={!activeWorkflowId}
               />
 
               {/* Buttons positioned absolutely on the right */}
               <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-[10px]'>
-                <Badge
-                  onClick={() => document.getElementById('floating-chat-file-input')?.click()}
-                  title='Attach file'
-                  className={cn(
-                    '!bg-transparent cursor-pointer rounded-[6px] p-[0px]',
-                    (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
-                      'cursor-not-allowed opacity-50'
-                  )}
-                >
-                  <Paperclip className='!h-3.5 !w-3.5' />
-                </Badge>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Badge
+                      onClick={() => document.getElementById('floating-chat-file-input')?.click()}
+                      className={cn(
+                        '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
+                        (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
+                          'cursor-not-allowed opacity-50'
+                      )}
+                    >
+                      <Paperclip className='!h-3.5 !w-3.5' />
+                    </Badge>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Attach file</Tooltip.Content>
+                </Tooltip.Root>
 
                 {isStreaming ? (
                   <Button
@@ -1403,7 +1479,8 @@ export function Chat() {
                     disabled={
                       (!chatMessage.trim() && chatFiles.length === 0) ||
                       !activeWorkflowId ||
-                      isExecuting
+                      isExecuting ||
+                      isStreaming
                     }
                     className={cn(
                       'h-[22px] w-[22px] rounded-full p-0 transition-colors',
@@ -1437,7 +1514,7 @@ export function Chat() {
         <StartBlockInputModal
           open={isInputModalOpen}
           onOpenChange={setIsInputModalOpen}
-          inputFormat={startBlockInputFormat}
+          inputFormat={startBlockInputFormat as InputFormatField[] | null | undefined}
           onSubmit={handleStartBlockInputsSubmit}
           initialValues={startBlockInputs}
         />

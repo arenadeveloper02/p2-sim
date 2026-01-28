@@ -26,7 +26,7 @@ export function extractDateRange(query: string): {
     /segments\.date\s+BETWEEN\s+'(\d{4}-\d{2}-\d{2})'\s+AND\s+'(\d{4}-\d{2}-\d{2})'/i
   const match = query.match(datePattern)
 
-  if (match && match[1] && match[2]) {
+  if (match?.[1] && match[2]) {
     return {
       startDate: match[1],
       endDate: match[2],
